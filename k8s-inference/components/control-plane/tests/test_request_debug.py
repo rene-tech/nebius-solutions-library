@@ -11,6 +11,7 @@ import pytest
 
 from fs2_serve.models import Principal
 from fs2_serve.request_debug import (
+    DebugBody,
     DebugCaptureMiddleware,
     DebugCapturePolicy,
     DebugExchange,
@@ -19,6 +20,7 @@ from fs2_serve.request_debug import (
     bounded_body_capture,
     capture_store_limit,
     credential_values,
+    normalize_exchange_for_read,
     persist_debug_exchange,
     redact_headers,
     redact_query,
@@ -1479,3 +1481,119 @@ async def test_persist_queue_reserves_before_buffering_and_bounds_inflight():
     a, b = queue.reserve(), queue.reserve()
     assert a is not None and b is not None
     await queue.aclose()
+
+
+async def test_persist_queue_ownership_is_server_side_forgery_replay_double_safe():
+    """SAI-01: reservation ownership is enforced SERVER-SIDE by the queue's token registry, not by a
+    handle flag. A fabricated/directly-constructed handle, a replayed/double commit, or a double
+    release can neither enqueue unreserved work nor free another reservation's slot. Authored
+    regression for forged/replay/double; not executed here."""
+    from fs2_serve.request_debug import DebugPersistQueue, _CaptureReservation
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=3)
+
+    # FORGERY: a directly-constructed handle carrying a token the queue never issued cannot enqueue
+    # and cannot free a slot.
+    forged = _CaptureReservation(queue, object())
+    assert forged.submit(lambda: row(id=uuid4())) is False
+    assert queue._inflight() == 0
+    with forged:  # __exit__ release of an unknown token is a no-op
+        pass
+    assert queue._inflight() == 0
+
+    # A committed slot stays counted until the worker frees it, and a REPLAY/DOUBLE commit or a
+    # post-commit context exit cannot double-free or undercount.
+    reservation = queue.reserve()
+    assert reservation is not None and queue._inflight() == 1
+    assert reservation.submit(lambda: row(id=uuid4())) is True
+    assert reservation.submit(lambda: row(id=uuid4())) is False  # replay/double commit rejected
+    assert queue._inflight() == 1
+    with reservation:  # post-commit exit must NOT free the worker-owned slot
+        pass
+    assert queue._inflight() == 1
+    await queue.drain()  # worker frees exactly its token
+    assert queue._inflight() == 0 and len(store.exchanges) == 1
+
+    # DOUBLE RELEASE of a reserved (un-committed) token decrements exactly once.
+    r2 = queue.reserve()
+    assert r2 is not None and queue._inflight() == 1
+    queue._release(r2._token)
+    queue._release(r2._token)  # idempotent
+    assert queue._inflight() == 0
+    with r2:  # context exit now a no-op
+        pass
+    assert queue._inflight() == 0
+    await queue.aclose()
+
+
+async def test_persist_queue_commit_enqueue_failure_leaves_token_reserved_not_orphaned():
+    """SAI-01 regression: a commit whose enqueue fails (queue full, or an allocation error building
+    the queue item) must leave the token RESERVED and releasable — never queued-but-unrecorded, which
+    would undercount the bound and let it be exceeded. The reserved->committed flip happens only after
+    a clean enqueue and is a non-allocating dict-value update. Authored; not executed here."""
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    store = InMemoryDebugStore()
+    queue = DebugPersistQueue(store, maxsize=1, max_inflight=5)  # depth 1, admission looser
+    a, b = queue.reserve(), queue.reserve()
+    assert a is not None and b is not None and queue._inflight() == 2
+    assert a.submit(lambda: row(id=uuid4())) is True  # fills the depth-1 queue
+    assert b.submit(lambda: row(id=uuid4())) is False  # enqueue drop: b stays RESERVED, counted
+    assert queue.dropped == 1 and queue._inflight() == 2
+    with b:  # b still reserved -> exit frees it exactly once (no undercount, no orphan)
+        pass
+    assert queue._inflight() == 1  # only a remains, committed/worker-owned
+    await queue.drain()
+    assert queue._inflight() == 0 and len(store.exchanges) == 1
+    await queue.aclose()
+
+
+async def test_read_withholds_preserved_legacy_response_and_incomplete_request_without_deleting():
+    """SAI-01: redact-on-read. A preserved (possibly legacy) row whose payload still holds a response
+    body or a wire-INCOMPLETE request body must NEVER disclose them on read — the store applies the
+    current withhold / whole-or-withhold contract on the way out, without rewriting or deleting the
+    stored row. Authored; not executed here."""
+    store = InMemoryDebugStore()
+    # A legacy-shaped row: response body stored verbatim, request body a stored partial prefix — the
+    # pre-remediation contract. (Directly constructed to simulate what an old capture left behind.)
+    legacy = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data="partial-legacy-INPUT",
+            content_type="application/json",
+            observed_bytes=64,
+            complete=False,
+            redacted=False,
+            truncated=False,
+        ),
+        response_body=DebugBody(
+            encoding="utf-8",
+            data='{"secret":"LEGACY-RESPONSE-LEAK"}',
+            content_type="application/json",
+            observed_bytes=33,
+            complete=True,
+            redacted=False,
+            truncated=False,
+        ),
+    )
+    await store.record(legacy)
+    got = await store.get(legacy.id)
+    assert got is not None
+    # Response body is served withheld regardless of what was stored.
+    assert got.response_body.truncated and got.response_body.redacted
+    assert "LEGACY-RESPONSE-LEAK" not in got.response_body.data and got.response_body.data == "[REDACTED]"
+    # Wire-incomplete request body is served withheld (whole-or-withhold), true length preserved.
+    assert got.request_body.truncated and "partial-legacy-INPUT" not in got.request_body.data
+    assert got.request_body.data == "[REDACTED]" and got.request_body.observed_bytes == 64
+    # The stored row itself is NOT rewritten or deleted (a separately owned purge handles TTL).
+    assert len(store.exchanges) == 1
+    stored = store.exchanges[legacy.id]
+    assert stored.response_body.data == '{"secret":"LEGACY-RESPONSE-LEAK"}' and not stored.response_body.truncated
+    # A wire-COMPLETE request body (the debugging target, redacted at capture) is served as stored.
+    fresh = row()
+    await store.record(fresh)
+    got_fresh = await store.get(fresh.id)
+    assert got_fresh is not None and got_fresh.request_body.data == fresh.request_body.data
+    # normalize_exchange_for_read is idempotent on an already-normalized exchange.
+    assert normalize_exchange_for_read(got) == got

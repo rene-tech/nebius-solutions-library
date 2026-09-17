@@ -498,6 +498,30 @@ def suppressed_body(content_type: str | None, observed_bytes: int, complete: boo
     )
 
 
+def normalize_exchange_for_read(exchange: DebugExchange) -> DebugExchange:
+    """Apply the CURRENT withhold / whole-or-withhold contract to a stored exchange AT READ TIME,
+    without mutating or deleting the stored row.
+
+    The no-delete retention preserves rows for 90 days, INCLUDING legacy rows captured under an
+    earlier contract whose payload may still hold a response body or a wire-incomplete request body.
+    Serving those verbatim (API detail, download, or UI render) would disclose exactly what the
+    current contract withholds. So on EVERY read: the response body is always served withheld, and a
+    wire-INCOMPLETE request body is served withheld (whole-or-withhold). An already-withheld body
+    normalizes to the same marker (idempotent), and a wire-complete request body — the debugging
+    target, redacted at capture — is served as stored. This is redaction on the way OUT; the stored
+    ciphertext is never rewritten or deleted (a separately owned purge handles TTL)."""
+    response = exchange.response_body
+    request = exchange.request_body
+    return exchange.model_copy(
+        update={
+            "response_body": suppressed_body(response.content_type, response.observed_bytes, response.complete),
+            "request_body": request
+            if request.complete
+            else suppressed_body(request.content_type, request.observed_bytes, request.complete),
+        }
+    )
+
+
 def _redact_prefix_runs(raw: bytes, prefixes: Credentials) -> bytes:
     """Redact a known credential PREFIX and the credential-like bytes around it.
 
@@ -776,7 +800,12 @@ class InMemoryDebugStore:
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
         row = self.exchanges.get(exchange_id)
-        return row.model_copy(deep=True) if row and (tenant_id is None or row.tenant_id == tenant_id) else None
+        if row is None or (tenant_id is not None and row.tenant_id != tenant_id):
+            return None
+        # Redact-on-read: apply the current withhold contract so a preserved (possibly legacy) row
+        # never discloses a stored response / wire-incomplete request body. Deep-copy first so the
+        # stored row is never mutated by the caller.
+        return normalize_exchange_for_read(row.model_copy(deep=True))
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Cutoff is fixed at the 90-day TTL, never caller-supplied. tenant_id (when set)
@@ -873,7 +902,10 @@ class PostgresDebugStore:
             Ciphertext(row["key_id"], bytes(row["nonce"]), bytes(row["ciphertext"])),
             aad=self._aad(row["id"], row["tenant_id"], row["model_id"]),
         )
-        return DebugExchange.model_validate_json(raw)
+        # Redact-on-read: apply the current withhold contract so a preserved (possibly legacy) row
+        # never discloses a stored response / wire-incomplete request body. The stored ciphertext is
+        # never rewritten — only the returned view is normalized.
+        return normalize_exchange_for_read(DebugExchange.model_validate_json(raw))
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Payload-free: aggregates over the clear started_at column only. No ciphertext is
@@ -1007,69 +1039,81 @@ class DebugPersistQueue:
         # queued/persisting phase. Defaults to the queue depth, so a reserved capture always fits
         # the queue (a submit drop is only a defensive backstop).
         self._max_inflight = max(1, max_inflight if max_inflight is not None else max(1, maxsize))
-        # Server-side ownership registry: each ``reserve`` mints an UNFORGEABLE token (a fresh
-        # object identity) and records it as _reserved; committing moves it to _committed (worker
-        # owns release); the handle frees a still-_reserved token on exit and the worker frees a
-        # _committed one after persisting. A token the queue does not recognize (a fabricated or
-        # directly-constructed handle, a replay, or a double commit/release) is ignored, so capacity
-        # is identity-bound and released EXACTLY ONCE — never by convention or by a handle flag.
-        self._reserved: set[object] = set()
-        self._committed: set[object] = set()
+        # Server-side ownership registry: ONE dict token -> committed?, where each ``reserve`` mints
+        # an UNFORGEABLE token (a fresh object identity) recorded with value False (reserved).
+        # Committing flips that EXISTING entry's value to True IN PLACE — a non-allocating dict-value
+        # update that cannot raise (no new key, no resize), so the reserved->committed transition is
+        # atomic and exception-safe: there is never a window where a queued capture's token is in
+        # neither state (which would undercount the bound and let it be exceeded). The handle frees a
+        # still-reserved token on exit; the worker frees a committed one after persisting. A token the
+        # queue does not recognize (a fabricated/directly-constructed handle, a replay, or a double
+        # commit/release) is ignored, so capacity is identity-bound and released EXACTLY ONCE — never
+        # by convention or a handle flag. The count is the whole registry size.
+        self._slots: dict[object, bool] = {}
         self.dropped = 0
 
     def _inflight(self) -> int:
-        """Captures currently holding a slot: reserved-and-building plus committed-and-not-yet-freed."""
-        return len(self._reserved) + len(self._committed)
+        """Captures currently holding a slot: every recorded token (reserved-and-building OR
+        committed-and-not-yet-freed)."""
+        return len(self._slots)
 
     def reserve(self) -> _CaptureReservation | None:
         """Non-blocking admission for ONE capture, taken BEFORE any buffer is allocated/copied.
 
-        Mints an UNFORGEABLE token, records it server-side as _reserved, and returns a handle bound
-        to it (use it as a context manager so the slot is released on every exit path — normal,
-        exception, or cancellation — or hand it to the worker via ``handle.submit``). Returns None
-        (counting a drop) at the bound, so the caller bypasses capture and allocates nothing. asyncio
-        is single-threaded, so this check-mint-record runs without a lock."""
+        Mints an UNFORGEABLE token, records it server-side as reserved (value False), and returns a
+        handle bound to it (use it as a context manager so the slot is released on every exit path —
+        normal, exception, or cancellation — or hand it to the worker via ``handle.submit``). Returns
+        None (counting a drop) at the bound, so the caller bypasses capture and allocates nothing.
+        asyncio is single-threaded, so this check-mint-record runs without a lock."""
         if self._inflight() >= self._max_inflight:
             self.dropped += 1
             return None
-        # Construct the handle around a fresh token FIRST, then record the token as live: a handle-
-        # construction failure (e.g. MemoryError) must not leave a recorded-but-unheld slot. Nothing
-        # between the record and the return can raise (set.add + return, no await).
+        # Construct the handle around a fresh token FIRST, then record the token: a handle-construction
+        # failure (e.g. MemoryError) must not leave a recorded-but-unheld slot. The record here is the
+        # ONLY allocating registry op (a new key, pre-buffer/pre-enqueue): if it raises, nothing was
+        # queued and the token was never counted, so there is no orphaned buffer and no undercount.
         token = object()
         reservation = _CaptureReservation(self, token)
-        self._reserved.add(token)
+        self._slots[token] = False
         return reservation
 
     def _commit(self, token: object, builder: Callable[[], DebugExchange | None]) -> bool:
         """Commit a reserved capture to the worker under its ISSUED token — the only enqueue path.
-        Rejects (returns False, no state change) a token the queue does not currently hold as
-        _reserved: a fabricated/directly-constructed handle, a replay, or a double commit. On success
-        the token moves _reserved -> _committed (the worker frees it after persisting); on QueueFull
-        (a defensive backstop) it stays _reserved and the handle frees it on context exit.
+        Rejects (returns False, no state change) a token the queue does not currently hold as reserved
+        (value False): a fabricated/directly-constructed handle, a replay, or a double commit. Enqueue
+        happens FIRST; only then is the EXISTING entry flipped to True (committed) — a non-allocating,
+        cannot-raise dict-value update, so there is never a window where a queued token is unrecorded
+        (no undercount, no bound-exceedance, and submit surfaces no allocation error). On QueueFull (a
+        defensive backstop) the token stays reserved and the handle frees it on context exit.
         Non-blocking: never blocks or awaits."""
-        if token not in self._reserved:
+        if self._slots.get(token) is not False:
             return False
-        self._ensure_worker()
         try:
+            self._ensure_worker()
             self._queue.put_nowait((builder, token))
-        except asyncio.QueueFull:
+        except Exception:
+            # Fail closed on ANY enqueue failure — QueueFull overload, or an allocation error while
+            # building/appending the queue item (MemoryError). Drop the capture and LEAVE the token
+            # RESERVED (unchanged), so the handle's context exit releases it exactly once: no orphaned
+            # queue item, no undercount, and no exception surfaced onto the request path.
             self.dropped += 1
             return False
-        self._reserved.discard(token)
-        self._committed.add(token)
+        self._slots[token] = True  # in-place update of an existing key: non-allocating, cannot raise
         return True
 
     def _release(self, token: object) -> None:
-        """Return a still-_reserved slot to the pool, IDENTIFIED BY ITS TOKEN. Called by a handle on
-        context exit. Idempotent and identity-bound: a token that is not currently _reserved
-        (already released, already committed — the worker owns that one — or never issued) is a
-        no-op, so a fabricated handle or a double exit can never free another owner's slot."""
-        self._reserved.discard(token)
+        """Return a still-RESERVED slot to the pool, IDENTIFIED BY ITS TOKEN. Called by a handle on
+        context exit. Idempotent and identity-bound: a token that is not currently reserved (value
+        False) — already released, already committed (value True — the worker owns that one), or never
+        issued — is a no-op, so a fabricated handle or a double exit can never free another owner's
+        slot. ``del`` on the present key is non-allocating and cannot raise."""
+        if self._slots.get(token) is False:
+            del self._slots[token]
 
     def _complete(self, token: object) -> None:
-        """Free a _committed slot after the worker has persisted (or failed) its capture — exactly
-        once, identity-bound to the token the worker dequeued."""
-        self._committed.discard(token)
+        """Free a COMMITTED slot after the worker has persisted (or failed) its capture — exactly
+        once, identity-bound to the token the worker dequeued. Non-allocating (pop), cannot raise."""
+        self._slots.pop(token, None)
 
     def _ensure_worker(self) -> None:
         if self._worker is None or self._worker.done():

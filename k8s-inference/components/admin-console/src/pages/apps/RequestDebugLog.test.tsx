@@ -62,13 +62,17 @@ const exchange: DebugExchange = {
     ["x-trace", "two"],
   ],
   request_body: requestBody,
+  // The server always serves the response body WITHHELD (redact-on-read); the true observed length
+  // and wire-completeness are kept, the content is not. `errorBody` is only used below to assert it
+  // never appears in the rendered/downloaded exchange.
   response_body: {
     encoding: "utf-8",
-    data: errorBody,
+    data: "[REDACTED]",
     content_type: "application/json",
     observed_bytes: errorBody.length,
     complete: true,
-    redacted: false,
+    redacted: true,
+    truncated: true,
   },
 };
 
@@ -139,7 +143,7 @@ afterEach(() => {
 });
 
 describe("actual request debug viewer", () => {
-  it("does not fetch payloads until expansion and shows the exact upstream 422 body and metadata", async () => {
+  it("does not fetch payloads until expansion and shows the withheld response plus metadata", async () => {
     renderPanel(<RequestDebugLog appId="app-one" operationId="run-one" />);
     expect(await screen.findByText("HTTP 422")).toBeInTheDocument();
     expect(screen.getByText("Model upstream")).toBeInTheDocument();
@@ -156,9 +160,12 @@ describe("actual request debug viewer", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Inspect exchange exchange-one" }),
     );
+    // The response body is served WITHHELD (redact-on-read) — the raw upstream 422 body is never
+    // rendered, only the withheld marker plus the safe metadata (headers, error detail, timing).
     expect(
       await screen.findByLabelText("Response body content"),
-    ).toHaveTextContent(errorBody);
+    ).toHaveTextContent("[REDACTED]");
+    expect(screen.queryByText(errorBody)).not.toBeInTheDocument();
     expect(screen.getByLabelText("Error detail")).toHaveTextContent(
       exchange.error_detail!,
     );
@@ -264,18 +271,16 @@ describe("actual request debug viewer", () => {
     expect(screen.queryByText("HTTP 0")).not.toBeInTheDocument();
   });
 
-  it("renders response and header markup as literal text, never HTML", async () => {
+  it("renders request-body and header markup as literal text, never HTML", async () => {
     const markup =
       '<img src=x onerror="window.fixture=1"><script>fixture()</script>';
     vi.mocked(requestDebugApi.detail).mockResolvedValue(
       testEnvelope({
         ...exchange,
         response_headers: [["x-fixture", markup]],
-        response_body: {
-          ...exchange.response_body,
-          data: markup,
-          content_type: "text/html",
-        },
+        // The response body is served withheld; the untrusted stored strings that ARE rendered (the
+        // request body, headers) must render as literal text, never as HTML.
+        request_body: { ...requestBody, data: markup, content_type: "text/html" },
       }),
     );
     const { container } = renderPanel(<RequestDebugLog appId="app-one" />);
@@ -285,7 +290,7 @@ describe("actual request debug viewer", () => {
       }),
     );
     expect(
-      await screen.findByLabelText("Response body content"),
+      await screen.findByLabelText("Request body content"),
     ).toHaveTextContent(markup);
     expect(container.querySelector("img,script")).toBeNull();
   });
@@ -310,7 +315,7 @@ describe("actual request debug viewer", () => {
       screen.getByText(/Binary body displayed as base64/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Only observed bytes are shown/),
+      screen.getByText(/did not complete on the wire/),
     ).toBeInTheDocument();
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
