@@ -16,7 +16,9 @@ artifactization. The release owner is handling that separate control-plane fix.
 
 Release 143 corrected binary media handling and passed one complete eight-case
 HTTP/MCP × HTTPS/upload × V2V/edge-transfer cohort with real artifact decode and
-replay checks. A subsequent typed PNG compatibility call exposed an independent
+replay checks; `public-media-release143-intermediate.json` preserves its exact
+operation/artifact identities, hashes, timings and limited scope. A subsequent
+typed PNG compatibility call exposed an independent
 fixed-default mismatch; `public-t2i-failure-20260917.json` records its HTTP422 and
 the exact offline reproduction. Further admissions stopped at that failure.
 The video cohort does not qualify the failing image tool or the full customer

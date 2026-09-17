@@ -1,0 +1,434 @@
+{
+  "schema": "fs2-cosmos-public-media-intermediate-evidence/v1",
+  "outcome": "one-intermediate-video-cohort-passed",
+  "customer_ready": false,
+  "final_unchanged_release_cohorts": 0,
+  "scope": "Release143 only; not evidence for the corrected final image or the later failed T2I tool",
+  "completed_at": "2026-09-17T15:03:25.631166+00:00",
+  "release": {
+    "adapter": "cbdea972edc77cc9735eea0d30dfc70d733464fb39f8cdc7889c12c8a435363e",
+    "config": {
+      "/etc/fs2-scientific-batch/execution-map.json": "sha256:88c83daa474b2b66976c2d286cee863e21b0de7e8b1e08796515fb37852c3040",
+      "/etc/fs2-scientific-batch/kueue-scheduling.json": "sha256:e7bb83c3bbd78646367df71b2fbac86afcf145b713b71194c057e20a13ad3e14",
+      "/etc/fs2-serve/admin-observability/..2026_09_17_14_55_59.2013711086/config.json": "sha256:5f9787f4b4f74d2903c562a6933fa987d99e7650d474f3869a38b9d51cb41549",
+      "/etc/fs2-serve/admin-observability/config.json": "sha256:5f9787f4b4f74d2903c562a6933fa987d99e7650d474f3869a38b9d51cb41549",
+      "/etc/fs2-serve/admin/admin-configuration.json": "sha256:fe0354706ca1c699e468d15f05084551ff3d41086851ac3e97d12ff7915e8e6e",
+      "/etc/fs2-serve/bindings/model-variant-promotions.json": "sha256:a1f4c5a2e76e1f7e98770fc64a16dc79a354e84011f9fc5360cc0ee072931a97",
+      "/etc/fs2-serve/bindings/serving-bindings.json": "sha256:c0ac8754f75d649c697a19cda3b755cd9a887cd50660864f6f8fc56c1899ad76",
+      "/etc/fs2-serve/lean-routes/..2026_09_17_14_55_59.2656614172/deployment-runtimes.json": "sha256:07234652c31a51dcb413da7cabdac1f8c369185cc8e44ea9ae77faaeb2554efa",
+      "/etc/fs2-serve/lean-routes/..2026_09_17_14_55_59.2656614172/lean-routes.json": "sha256:d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+      "/etc/fs2-serve/lean-routes/deployment-runtimes.json": "sha256:07234652c31a51dcb413da7cabdac1f8c369185cc8e44ea9ae77faaeb2554efa",
+      "/etc/fs2-serve/lean-routes/lean-routes.json": "sha256:d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+      "/etc/fs2-serve/model-controller/infrastructure-envelope.json": "sha256:03bda7e70440bc4ef1d6db6ea13b6b39b0539e51b18372c3bc8afd044d1f3076",
+      "/etc/fs2-serve/model-controller/renderer-bundles.json": "sha256:b28e336b8c935720552f11b4280783a9318e33d5cd16bf14df2eacfa57a0f8ee"
+    },
+    "image": {
+      "control-plane": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:624763c6141a990125c37b71fccc0a8d7ba5371a4efd5be325336cbc58d54020"
+    },
+    "policy": {
+      "gpu_seconds_budget": null,
+      "max_concurrency": 1,
+      "models": [
+        "cosmos3-nano"
+      ],
+      "rate_limit_requests": null,
+      "rate_window_seconds": null,
+      "request_budget": null,
+      "scopes": [
+        "catalog.read",
+        "inference.invoke",
+        "mcp.invoke",
+        "operations.acknowledge",
+        "operations.cancel",
+        "operations.read",
+        "operations.result"
+      ],
+      "tenant_id": "robotics"
+    },
+    "serving": [
+      {
+        "name": "cosmos3-nano-burst-h100-1x",
+        "runtime_images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587",
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587"
+        ],
+        "snapshot": "cosmos3-nano-h100-cuda-criu-20260907-r7",
+        "spec_digest": "sha256:96bacd2bcce5f6061f71c70613c4ee1d0fa9cb359cf5e00caf992779f6cc7b15"
+      }
+    ]
+  },
+  "source": {
+    "codec": "h264",
+    "decoded_rgb_sha256": "2c18954da66a86814f00af97a3424eab7bd1a302780e9a8604b0f4f524c2120d",
+    "duration_seconds": 1.65,
+    "fps": 20,
+    "frames": 33,
+    "height": 256,
+    "sha256": "9880133da0e4da3411e38a38069686b187a7bbb1893513f7d0b523accf5ddce4",
+    "size_bytes": 25013,
+    "width": 256
+  },
+  "calls": [
+    {
+      "case": "cold-mcp-https-video-to-video",
+      "operation_id": "cf1bbff4-bcec-4e75-8be6-6a68d5256db4",
+      "state": "passed",
+      "observed_start_state": "cold",
+      "artifact": {
+        "artifact_id": "a95b6321-15a4-405a-9f3a-23abd1766b6b",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "692d75643a74b22620fd04497f7829dfa3bfbc5be0c85dbff24ea46f1a11823b",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "cf1bbff4-bcec-4e75-8be6-6a68d5256db4",
+      "terminal_replay_operation_id": "cf1bbff4-bcec-4e75-8be6-6a68d5256db4",
+      "operation": {
+        "accepted_at": "2026-09-17T15:00:12.138255Z",
+        "started_at": "2026-09-17T15:00:50.169436Z",
+        "completed_at": "2026-09-17T15:00:54.068073Z",
+        "cold_start_seconds": 38.023528,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b6200db8-f405-5835-ded0-1bad487c79ff"
+          ],
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "pod_uid": "e1543b50-d33f-4406-937e-cd25f4408d93",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-mcp-https-transfer-video",
+      "operation_id": "2f8ad8d8-3f73-4c85-b70d-f62b1e6e435f",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "e10de0f1-e605-4a7b-b947-06e76e626e1f",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "b8563f07c13a6dfb628963b4c848607b7f61d2cf45aaa167c7fa818f6fb18ce6",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "2f8ad8d8-3f73-4c85-b70d-f62b1e6e435f",
+      "terminal_replay_operation_id": "2f8ad8d8-3f73-4c85-b70d-f62b1e6e435f",
+      "operation": {
+        "accepted_at": "2026-09-17T15:01:10.471849Z",
+        "started_at": "2026-09-17T15:01:10.920035Z",
+        "completed_at": "2026-09-17T15:01:16.976010Z",
+        "cold_start_seconds": 0.416589,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b6200db8-f405-5835-ded0-1bad487c79ff"
+          ],
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "pod_uid": "e1543b50-d33f-4406-937e-cd25f4408d93",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-mcp-upload-video-to-video",
+      "operation_id": "6997a740-b555-44c5-8ea0-be4070584cf7",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "e69ec5ae-035d-4b7e-9702-791bb2c16d69",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "692d75643a74b22620fd04497f7829dfa3bfbc5be0c85dbff24ea46f1a11823b",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "6997a740-b555-44c5-8ea0-be4070584cf7",
+      "terminal_replay_operation_id": "6997a740-b555-44c5-8ea0-be4070584cf7",
+      "operation": {
+        "accepted_at": "2026-09-17T15:01:35.629285Z",
+        "started_at": "2026-09-17T15:01:36.211086Z",
+        "completed_at": "2026-09-17T15:01:39.332252Z",
+        "cold_start_seconds": 0.560972,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b6200db8-f405-5835-ded0-1bad487c79ff"
+          ],
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "pod_uid": "e1543b50-d33f-4406-937e-cd25f4408d93",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-mcp-upload-transfer-video",
+      "operation_id": "05e0fc9f-2c34-40e9-809f-9e4525f41628",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "c990ff15-7afa-4c53-aee8-5104fcc35527",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "b8563f07c13a6dfb628963b4c848607b7f61d2cf45aaa167c7fa818f6fb18ce6",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "05e0fc9f-2c34-40e9-809f-9e4525f41628",
+      "terminal_replay_operation_id": "05e0fc9f-2c34-40e9-809f-9e4525f41628",
+      "operation": {
+        "accepted_at": "2026-09-17T15:01:55.010875Z",
+        "started_at": "2026-09-17T15:01:55.268515Z",
+        "completed_at": "2026-09-17T15:02:01.474498Z",
+        "cold_start_seconds": 0.240818,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b6200db8-f405-5835-ded0-1bad487c79ff"
+          ],
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "pod_uid": "e1543b50-d33f-4406-937e-cd25f4408d93",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-http-https-video-to-video",
+      "operation_id": "cf8af580-30dc-486a-a003-7f00ddeacee8",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "e26b6caa-264f-4adc-8b87-28666bea9f72",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "692d75643a74b22620fd04497f7829dfa3bfbc5be0c85dbff24ea46f1a11823b",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "cf8af580-30dc-486a-a003-7f00ddeacee8",
+      "terminal_replay_operation_id": "cf8af580-30dc-486a-a003-7f00ddeacee8",
+      "operation": {
+        "accepted_at": "2026-09-17T15:02:18.430997Z",
+        "started_at": "2026-09-17T15:02:18.639323Z",
+        "completed_at": "2026-09-17T15:02:22.416532Z",
+        "cold_start_seconds": 0.197961,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b6200db8-f405-5835-ded0-1bad487c79ff"
+          ],
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "pod_uid": "e1543b50-d33f-4406-937e-cd25f4408d93",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-http-https-transfer-video",
+      "operation_id": "b3a8df1f-8165-452e-b9c4-74b1e929944d",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "cc09d9e2-fd40-4a86-862f-520df5a535ea",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "b8563f07c13a6dfb628963b4c848607b7f61d2cf45aaa167c7fa818f6fb18ce6",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "b3a8df1f-8165-452e-b9c4-74b1e929944d",
+      "terminal_replay_operation_id": "b3a8df1f-8165-452e-b9c4-74b1e929944d",
+      "operation": {
+        "accepted_at": "2026-09-17T15:02:34.085770Z",
+        "started_at": "2026-09-17T15:02:34.522968Z",
+        "completed_at": "2026-09-17T15:02:40.611534Z",
+        "cold_start_seconds": 0.432943,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b6200db8-f405-5835-ded0-1bad487c79ff"
+          ],
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "pod_uid": "e1543b50-d33f-4406-937e-cd25f4408d93",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-http-upload-video-to-video",
+      "operation_id": "b2388ba0-e1c7-4c2d-872f-8829b7d39c43",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "36cbd201-1429-4888-a488-123173997042",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "692d75643a74b22620fd04497f7829dfa3bfbc5be0c85dbff24ea46f1a11823b",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "08f06e320b98a12fea6aec0fa6cc8f8e1f0465c87c6ecdb8133e343d5167a3ab",
+        "size_bytes": 146335,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "b2388ba0-e1c7-4c2d-872f-8829b7d39c43",
+      "terminal_replay_operation_id": "b2388ba0-e1c7-4c2d-872f-8829b7d39c43",
+      "operation": {
+        "accepted_at": "2026-09-17T15:02:52.591812Z",
+        "started_at": "2026-09-17T15:02:52.871236Z",
+        "completed_at": "2026-09-17T15:02:56.327393Z",
+        "cold_start_seconds": 0.27018,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b6200db8-f405-5835-ded0-1bad487c79ff"
+          ],
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "pod_uid": "e1543b50-d33f-4406-937e-cd25f4408d93",
+          "preemptible": true
+        }
+      }
+    },
+    {
+      "case": "cold-http-upload-transfer-video",
+      "operation_id": "9fc0c48a-8eec-4c33-94bd-4e92e81a9f46",
+      "state": "passed",
+      "observed_start_state": "hot",
+      "artifact": {
+        "artifact_id": "433daaa4-644c-4e15-a83a-69f1802f3a2d",
+        "compression": "none",
+        "media_type": "application/octet-stream",
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484
+      },
+      "decoded": {
+        "codec": "h264",
+        "decoded_rgb_sha256": "b8563f07c13a6dfb628963b4c848607b7f61d2cf45aaa167c7fa818f6fb18ce6",
+        "duration_seconds": 1.65,
+        "fps": 20,
+        "frames": 33,
+        "height": 256,
+        "sha256": "04ef01dbebbe59170b5a814370ce4d70700274bb77b2ed574e671d0535b8f9d6",
+        "size_bytes": 264484,
+        "width": 256
+      },
+      "inflight_replay_operation_id": "9fc0c48a-8eec-4c33-94bd-4e92e81a9f46",
+      "terminal_replay_operation_id": "9fc0c48a-8eec-4c33-94bd-4e92e81a9f46",
+      "operation": {
+        "accepted_at": "2026-09-17T15:03:06.912288Z",
+        "started_at": "2026-09-17T15:03:07.128907Z",
+        "completed_at": "2026-09-17T15:03:12.865203Z",
+        "cold_start_seconds": 0.212585,
+        "attempt": 1,
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-b6200db8-f405-5835-ded0-1bad487c79ff"
+          ],
+          "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+          "pod_uid": "e1543b50-d33f-4406-937e-cd25f4408d93",
+          "preemptible": true
+        }
+      }
+    }
+  ],
+  "first_cold_timing": {
+    "cold_start_seconds": 38.023528,
+    "accepted_to_completed_seconds": 41.929818,
+    "processing_seconds": 3.898637,
+    "capacity": "Existing cached preemptible H100; no new-node provisioning claim"
+  },
+  "snapshot_marker_observed": "cuda-criu-restored",
+  "log_retention": "Marker observed in live tool output; late full runtime/adapter log archive failed after natural pod deletion. Events and observer inventory retained; failed archive results are explicit.",
+  "visual_review": {
+    "source": "First-person gripper around a wooden office desk",
+    "video_to_video": "Later gripper trajectory/scene diverges; lighting instruction weak",
+    "transfer_video": "Warm lighting/coarse layout retained, but fine objects and gripper appearance stylized",
+    "robot_action_fidelity_qualified": false
+  },
+  "private_evidence_directory": "/home/tux/secure-handoff/cosmos-public-media-20260917-aiumy1sU/cohort3-release143",
+  "excluded_failures": [
+    "public-media-failure-20260917.json",
+    "public-t2i-failure-20260917.json"
+  ],
+  "not_tested": [
+    "Installed LibreChat/skills refresh",
+    "Timothy exact robot_pouring.mp4 request",
+    "Public LeRobot parent-child dataset workflow",
+    "Training utility or physical robot-action fidelity"
+  ]
+}
