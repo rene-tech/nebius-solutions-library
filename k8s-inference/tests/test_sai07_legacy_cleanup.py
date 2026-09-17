@@ -115,7 +115,7 @@ def test_finite_profile_network_policies_are_never_cleanup_candidates() -> None:
         cleanup.validate_live(candidate, live)
 
 
-def test_delete_path_is_namespaced_and_kind_bounded() -> None:
+def test_read_path_is_namespaced_and_kind_bounded() -> None:
     assert cleanup.path_for("ServiceAccount", "model/a") == "/api/v1/namespaces/fs2-models/serviceaccounts/model%2Fa"
     assert (
         cleanup.path_for("NetworkPolicy", "old")
@@ -125,10 +125,13 @@ def test_delete_path_is_namespaced_and_kind_bounded() -> None:
 
 def test_cleanup_contract_binds_resource_version_spec_and_result() -> None:
     source = (ROOT / "scripts" / "cleanup_sai07_legacy_resources.py").read_text()
-    assert '"resourceVersion": resource_version' in source
     assert "hashlib.sha256(canonical(live_projection(live))).hexdigest()" in source
     assert "validate_cleanup_fence(client, manifest)" in source
-    assert 'first_wave = [item for item in checked if item["kind"] in {"NetworkPolicy", "DaemonSet"}]' in source
+    assert "no-delete closure is blocked by retained legacy objects" in source
+    assert '"delete"' not in source
+    assert '"--execute"' not in source
+    assert '"retained_objects": []' in source
+    assert '"removed_objects": []' in source
     assert '"result_sha256"' in source
     for controller in (
         "StatefulSet",

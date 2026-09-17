@@ -65,7 +65,8 @@ locals {
     exception_admission_sha256 = sha256(jsonencode({
       host_policy_sha256     = filesha256("${path.module}/../foundation/pod_security_admission.tf")
       snapshot_policy_sha256 = filesha256("${path.module}/../foundation/pod_security_snapshot_admission.tf")
-      rollout_manager        = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
+      rollout_custodian      = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-custodian"
+      rollout_token_audience = "https://kubernetes.default.svc"
       host_agent_images      = local.pod_security_host_agent_images
       storage_probe_image    = local.pod_security_active_proof_generation.probe_image
       storage_tools_config   = "fs2-reference-data-tools-${substr(local.pod_security_active_proof_generation.tools_data_sha256, 0, 12)}"

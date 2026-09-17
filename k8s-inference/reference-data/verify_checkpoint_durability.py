@@ -8,6 +8,8 @@ import hashlib
 import json
 import os
 import re
+import secrets
+import stat
 import sys
 from pathlib import Path
 
@@ -34,6 +36,76 @@ def validate_root(root: Path) -> Path:
     return resolved
 
 
+def read_exact(path: Path, expected: bytes) -> None:
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size != len(expected):
+            raise DurabilityError("durability marker is not the exact regular file")
+        observed = bytearray()
+        while len(observed) < len(expected) + 1:
+            chunk = os.read(descriptor, len(expected) + 1 - len(observed))
+            if not chunk:
+                break
+            observed.extend(chunk)
+        if bytes(observed) != expected:
+            raise DurabilityError("existing durability marker differs")
+    finally:
+        os.close(descriptor)
+
+
+def write_all(descriptor: int, payload: bytes) -> None:
+    offset = 0
+    while offset < len(payload):
+        written = os.write(descriptor, payload[offset:])
+        if written <= 0:
+            raise DurabilityError("durability candidate write made no progress")
+        offset += written
+
+
+def publish_marker(root: Path, target: Path, generation: str, payload: bytes) -> None:
+    """Publish complete bytes without overwriting or deleting any filesystem entry.
+
+    A crash can leave only a uniquely named candidate.  A later retry writes a
+    different candidate and atomically hard-links it to the absent final name.
+    If another writer won the link race, its final bytes must be identical.
+    Candidates are intentionally retained; the signed generation/Job bounds
+    cap them at three per generation without requiring unlink cleanup.
+    """
+
+    payload_sha256 = hashlib.sha256(payload).hexdigest()
+    candidate = root / (
+        f".fs2-durability-candidate-{generation[:12]}-"
+        f"{payload_sha256[:12]}-{secrets.token_hex(12)}"
+    )
+    descriptor = os.open(
+        candidate,
+        os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+        0o600,
+    )
+    try:
+        write_all(descriptor, payload)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+    try:
+        os.link(candidate, target, follow_symlinks=False)
+    except FileExistsError:
+        read_exact(target, payload)
+    else:
+        # Verify through the published name rather than trusting only the
+        # candidate descriptor.  This also rejects an unexpected filesystem
+        # implementation that did not preserve the complete inode contents.
+        read_exact(target, payload)
+
+    directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
 def proof(args: argparse.Namespace) -> dict[str, object]:
     root = validate_root(args.root)
     if not SHA256.fullmatch(args.generation) or args.attempt < 1:
@@ -53,36 +125,12 @@ def proof(args: argparse.Namespace) -> dict[str, object]:
     payload = canonical(marker) + b"\n"
     target = marker_path(root, args.generation)
     if args.mode == "write":
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
-        try:
-            descriptor = os.open(target, flags, 0o600)
-        except FileExistsError:
-            descriptor = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
-            try:
-                if os.read(descriptor, len(payload) + 1) != payload:
-                    raise DurabilityError("existing durability marker differs")
-            finally:
-                os.close(descriptor)
+        if target.exists():
+            read_exact(target, payload)
         else:
-            try:
-                if os.write(descriptor, payload) != len(payload):
-                    raise DurabilityError("durability marker write was incomplete")
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
-        directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+            publish_marker(root, target, args.generation, payload)
     else:
-        descriptor = os.open(target, os.O_RDONLY | os.O_NOFOLLOW)
-        try:
-            observed = os.read(descriptor, len(payload) + 1)
-            if observed != payload:
-                raise DurabilityError("remounted durability marker content differs")
-        finally:
-            os.close(descriptor)
+        read_exact(target, payload)
     result: dict[str, object] = {
         "schema": "fs2-serve.nebius.ai/checkpoint-durability-proof/v2",
         "mode": args.mode,

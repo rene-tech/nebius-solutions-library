@@ -65,8 +65,13 @@ def test_exception_namespace_has_enforceable_identity_and_content_admission() ->
     assert "request.userInfo.username" in admission
     assert "Only the Kubernetes DaemonSet controller may create host-agent Pods" in admission
     assert "exact reviewed image, command, service account" in admission
-    assert "fs2-pod-security-rollout-manager" in admission
+    assert "fs2-pod-security-rollout-custodian" in admission
     assert 'resource "kubernetes_role_binding_v1" "pod_security_rollout_ledger"' in admission
+    assert 'resource "kubernetes_role_binding_v1" "pod_security_rollout_custodian_ledger"' in admission
+    assert (
+        'resource "kubernetes_cluster_role_binding_v1" "pod_security_rollout_custodian_reader"'
+        in admission
+    )
     assert '"podtemplates"' in admission
     assert 'resources   = ["pods/ephemeralcontainers"]' in admission
     assert "Ephemeral containers are forbidden" in admission
@@ -117,7 +122,15 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "_validate_live_observations" in verifier
     assert "_validate_baseline_artifact" in verifier
     assert "_validate_cleanup_result" in verifier
-    assert "--as=system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager" in verifier
+    assert '"create"' in verifier and '"token"' in verifier
+    assert "--duration=10m" in verifier
+    assert "https://kubernetes.default.svc" in verifier
+    assert "--as=" not in verifier
+    assert "SelfSubjectAccessReview" in verifier
+    assert "ambient identity has direct rollout-ledger authority" in verifier
+    assert "ambient identity may impersonate service accounts" in verifier
+    assert "ambient identity may forge authenticator credential metadata" in verifier
+    assert "os.memfd_create" in verifier
     assert "foundation resources have not acknowledged this authorization" in verifier
     assert "prior phase has not been acknowledged by both Terraform stages" in verifier
     assert '"owner-acknowledgement"' in verifier
@@ -133,6 +146,22 @@ def test_rollout_gate_consumes_prior_signed_state_without_phase_skips() -> None:
     assert "object.data.size() == 19" in admission
     assert "pod-security-rollout-ledger/v3" in admission
     assert "proof_generation_ids" in admission
+    assert "authentication.kubernetes.io/credential-id" in admission
+    assert "serviceaccounts/token" in admission
+    assert "fs2-pod-security-receipt-custodians" in admission
+    assert "directly authenticated external OIDC identity" in admission
+    token_binding = admission.split(
+        'resource "kubernetes_manifest" "pod_security_rollout_token_binding"', 1
+    )[1].split('resource "kubernetes_manifest" "pod_security_enforcement_fence_policy"', 1)[0]
+    cleanup_binding = admission.split(
+        'resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_binding"', 1
+    )[1].split('resource "kubernetes_manifest" "pod_security_ledger_policy"', 1)[0]
+    assert '"kubernetes.io/metadata.name" = "fs2-system"' in token_binding
+    assert '"kubernetes.io/metadata.name" = "fs2-models"' in cleanup_binding
+    assert "pod-security-rollout-ledger/v2" in admission
+    assert '"fresh-v3"' in _source("stages/workloads/variables.tf")
+    assert '"retained-v2"' in _source("stages/workloads/variables.tf")
+    assert "predecessor_adoption" in _source("stages/workloads/reference_data_successors.tf")
     assert "Proof-generation custody may append only with a phase transition" in admission
     assert "int(object.data.sequence) == int(oldObject.data.sequence) + 1" in admission
     assert "authorization_owner_acknowledged == 'false'" in admission
@@ -221,16 +250,19 @@ def test_non_test_iac_owns_every_retained_storage_successor_and_exact_proof() ->
 
     assert source.count('resource "kubernetes_persistent_volume_v1"') == 2
     assert source.count('resource "kubernetes_persistent_volume_claim_v1"') == 2
-    assert 'resource "kubernetes_config_map_v1" "pod_security_successor_tools"' in source
-    assert 'resource "kubernetes_job_v1" "pod_security_reference_successor_probe"' in source
-    assert 'resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write"' in source
-    assert 'resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read"' in source
+    assert 'resource "kubernetes_config_map_v1" "pod_security_successor_tools_adopted"' in source
+    assert 'resource "kubernetes_config_map_v1" "pod_security_successor_tools_generation"' in source
+    assert 'resource "kubernetes_job_v1" "pod_security_reference_successor_probe_adopted"' in source
+    assert 'resource "kubernetes_job_v1" "pod_security_reference_successor_probe_generation"' in source
+    assert 'resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_write_generation"' in source
+    assert 'resource "kubernetes_job_v1" "pod_security_snapshot_checkpoint_read_generation"' in source
     assert source.count("prevent_destroy = true") >= 8
     assert "pod_security_successor_tool_instances" in source
     assert "pod_security_reference_probe_instances" in source
-    assert "pod_security_checkpoint_probe_instances" in source
+    assert "pod_security_predecessor_resources" in source
+    assert source.count("moved {") >= 14
     assert '"${generation_id}/${successor_key}"' in source
-    assert '"${generation_id}/${mode}"' in source
+    assert "ignore_changes  = all" in source
     assert "backoff_limit           = 2" in source
     assert '"--generation"' in source
     assert '"--attempt"' in source
@@ -242,7 +274,7 @@ def test_non_test_iac_owns_every_retained_storage_successor_and_exact_proof() ->
     assert 'read_only         = true' in source
     assert 'volume_handle     = var.pod_security_successor_storage.reference_source.volume_handle' in source
     assert 'volume_handle     = var.pod_security_successor_storage.checkpoint_source.volume_handle' in source
-    assert 'depends_on = [kubernetes_job_v1.pod_security_snapshot_checkpoint_write]' in source
+    assert 'depends_on = [kubernetes_job_v1.pod_security_snapshot_checkpoint_write_generation[each.key]]' in source
     assert '"--pvc-resource-version"' in source
     assert '"--proof-output", "/dev/termination-log"' in source
     assert 'successor_storage = optional(object({' in variables
@@ -356,8 +388,10 @@ def test_functional_replacements_are_finite_tokenless_and_exactly_admitted() -> 
 def test_legacy_cleanup_is_exactly_fenced_and_never_touches_finite_profiles() -> None:
     cleanup = _source("scripts/cleanup_sai07_legacy_resources.py")
     assert 'NAMESPACE = "fs2-models"' in cleanup
-    assert '"preconditions": {"uid": uid, "resourceVersion": resource_version}' in cleanup
     assert "live_projection" in cleanup and '"object_sha256"' in cleanup
     assert "ServiceAccount" in cleanup and "DaemonSet" in cleanup and "NetworkPolicy" in cleanup
     assert 'item["name"].startswith("fs2-network-profile-")' in cleanup
     assert "Terraform-owned finite profile policies may never be cleaned" in cleanup
+    assert "no-delete closure is blocked by retained legacy objects" in cleanup
+    assert '"delete"' not in cleanup
+    assert '"--execute"' not in cleanup

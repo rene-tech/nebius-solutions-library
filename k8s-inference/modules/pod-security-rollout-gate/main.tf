@@ -154,9 +154,10 @@ resource "terraform_data" "verified" {
     quiet   = true
 
     environment = {
-      FS2_KUBECONFIG         = var.kubeconfig_path
-      FS2_KUBE_CONTEXT       = var.kube_context
-      FS2_POD_SECURITY_QUERY = jsonencode(local.consume_query)
+      FS2_KUBECONFIG                  = var.kubeconfig_path
+      FS2_KUBE_CONTEXT                = var.kube_context
+      FS2_POD_SECURITY_TOKEN_AUDIENCE = var.token_audience
+      FS2_POD_SECURITY_QUERY          = jsonencode(local.consume_query)
     }
   }
 

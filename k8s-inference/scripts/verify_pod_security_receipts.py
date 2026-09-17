@@ -20,7 +20,6 @@ import os
 import re
 import subprocess
 import sys
-import tempfile
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, Protocol
@@ -28,6 +27,7 @@ from urllib.parse import quote, urlencode
 
 BUNDLE_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-receipt/v4"
 LEDGER_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v3"
+LEGACY_LEDGER_SCHEMA = "fs2-serve.nebius.ai/pod-security-rollout-ledger/v2"
 LEDGER_DATA_KEYS = {
     "schema",
     "context_sha256",
@@ -49,6 +49,12 @@ LEDGER_DATA_KEYS = {
     "authorization_owner_acknowledged",
     "authorization_downstream_acknowledged",
 }
+LEGACY_LEDGER_DATA_KEYS = LEDGER_DATA_KEYS - {
+    "proof_generation_ids",
+    "proof_generation_ledger_sha256",
+    "proof_generation_sequence",
+    "proof_generation_active",
+}
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9](?:[-A-Za-z0-9._:@/]{0,251}[A-Za-z0-9])?$")
 DNS_RE = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
@@ -58,6 +64,49 @@ MAX_CLOCK_SKEW = dt.timedelta(seconds=30)
 MAX_OBJECTS = 2048
 MAX_INVENTORIES = 256
 MAX_PROOF_GENERATIONS = 8
+
+PREDECESSOR_TERRAFORM_ADDRESSES = {
+    **{
+        f'kubernetes_config_map_v1.pod_security_successor_tools["{namespace}"]': (
+            "v1",
+            "ConfigMap",
+            namespace,
+        )
+        for namespace in (
+            "fs2-bioir-boltz2",
+            "fs2-bioir-coverage",
+            "fs2-bioir-openfold",
+            "fs2-bioir-protenix",
+            "fs2-bioir-snapshot",
+            "fs2-snapshot-operations",
+        )
+    },
+    **{
+        f'kubernetes_job_v1.pod_security_reference_successor_probe["{namespace}/{claim}"]': (
+            "batch/v1",
+            "Job",
+            namespace,
+        )
+        for namespace, claim in (
+            ("fs2-bioir-boltz2", "fs2-reference-data-rwx"),
+            ("fs2-bioir-coverage", "fs2-reference-data-rwx"),
+            ("fs2-bioir-openfold", "fs2-reference-data-rwx"),
+            ("fs2-bioir-protenix", "fs2-reference-data-rwx"),
+            ("fs2-bioir-snapshot", "fs2-reference-data-rwx"),
+            ("fs2-snapshot-operations", "fs2-snapshot-reference"),
+        )
+    },
+    "kubernetes_job_v1.pod_security_snapshot_checkpoint_write[0]": (
+        "batch/v1",
+        "Job",
+        "fs2-snapshot-operations",
+    ),
+    "kubernetes_job_v1.pod_security_snapshot_checkpoint_read[0]": (
+        "batch/v1",
+        "Job",
+        "fs2-snapshot-operations",
+    ),
+}
 
 PHASE_TRANSITIONS = {
     "bootstrap-baseline": ("unmanaged", "baseline-captured"),
@@ -96,6 +145,8 @@ RESOURCE_PATHS = {
     ("batch/v1", "CronJob"): "cronjobs",
     ("batch/v1", "Job"): "jobs",
     ("networking.k8s.io/v1", "NetworkPolicy"): "networkpolicies",
+    ("rbac.authorization.k8s.io/v1", "ClusterRole"): "clusterroles",
+    ("rbac.authorization.k8s.io/v1", "ClusterRoleBinding"): "clusterrolebindings",
     ("rbac.authorization.k8s.io/v1", "Role"): "roles",
     ("rbac.authorization.k8s.io/v1", "RoleBinding"): "rolebindings",
     ("storage.k8s.io/v1", "StorageClass"): "storageclasses",
@@ -110,6 +161,8 @@ CLUSTER_SCOPED = {
     ("v1", "Namespace"),
     ("v1", "PersistentVolume"),
     ("storage.k8s.io/v1", "StorageClass"),
+    ("rbac.authorization.k8s.io/v1", "ClusterRole"),
+    ("rbac.authorization.k8s.io/v1", "ClusterRoleBinding"),
     ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicy"),
     ("admissionregistration.k8s.io/v1", "ValidatingAdmissionPolicyBinding"),
 }
@@ -158,6 +211,64 @@ EXCEPTION_SERVICE_ACCOUNTS = {
     "fs2-node-exporter",
     "fs2-otel-node",
     "fs2-serve-control-plane-gpu-observer",
+}
+ROLLOUT_CUSTODY_OBJECTS = {
+    ("v1", "ServiceAccount", "fs2-system", "fs2-pod-security-rollout-custodian"),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "ClusterRole",
+        "",
+        "fs2-pod-security-rollout-reader",
+    ),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "ClusterRoleBinding",
+        "",
+        "fs2-pod-security-rollout-custodian-reader",
+    ),
+    ("rbac.authorization.k8s.io/v1", "Role", "fs2-system", "fs2-pod-security-rollout-ledger"),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "RoleBinding",
+        "fs2-system",
+        "fs2-pod-security-rollout-custodian-ledger",
+    ),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "Role",
+        "fs2-system",
+        "fs2-pod-security-rollout-token-request",
+    ),
+    (
+        "rbac.authorization.k8s.io/v1",
+        "RoleBinding",
+        "fs2-system",
+        "fs2-pod-security-rollout-token-request",
+    ),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicy",
+        "",
+        "fs2-pod-security-rollout-token-request",
+    ),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicyBinding",
+        "",
+        "fs2-pod-security-rollout-token-request",
+    ),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicy",
+        "",
+        "fs2-pod-security-rollout-ledger",
+    ),
+    (
+        "admissionregistration.k8s.io/v1",
+        "ValidatingAdmissionPolicyBinding",
+        "",
+        "fs2-pod-security-rollout-ledger",
+    ),
 }
 SNAPSHOT_EXCEPTION_OBJECTS = {
     ("v1", "Namespace", "", "fs2-snapshot-operations"),
@@ -288,6 +399,110 @@ def _sha256(value: bytes) -> str:
     return hashlib.sha256(value).hexdigest()
 
 
+def _predecessor_adoption(
+    context: dict[str, Any],
+) -> tuple[str, str | None, list[dict[str, str]]]:
+    storage = _object(context["successor_storage"], "context.successor_storage")
+    adoption = _object(storage["predecessor_adoption"], "predecessor adoption")
+    _exact_keys(
+        adoption,
+        {"schema", "mode", "rollout_ledger_v2_data_sha256", "resources"},
+        "predecessor adoption",
+    )
+    if adoption["schema"] != "fs2-serve.nebius.ai/sai07-predecessor-adoption/v1":
+        raise ReceiptError("predecessor adoption schema is unsupported")
+    mode = _string(adoption["mode"], "predecessor adoption mode")
+    ledger_digest = adoption["rollout_ledger_v2_data_sha256"]
+    resources_raw = adoption["resources"]
+    if mode == "fresh-v3":
+        if ledger_digest is not None or resources_raw != []:
+            raise ReceiptError("fresh-v3 adoption may not claim predecessor state or resources")
+        return mode, None, []
+    if (
+        mode != "retained-v2"
+        or not isinstance(ledger_digest, str)
+        or not SHA256_RE.fullmatch(ledger_digest)
+        or not isinstance(resources_raw, list)
+        or len(resources_raw) != len(PREDECESSOR_TERRAFORM_ADDRESSES)
+    ):
+        raise ReceiptError("retained-v2 adoption must bind its ledger and fourteen resources")
+    resources: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for index, item_raw in enumerate(resources_raw):
+        item = _object(item_raw, f"predecessor adoption resource {index}")
+        _exact_keys(
+            item,
+            {
+                "terraform_address",
+                "api_version",
+                "kind",
+                "namespace",
+                "name",
+                "uid",
+                "resource_version",
+                "object_sha256",
+            },
+            f"predecessor adoption resource {index}",
+        )
+        normalized = {field: _string(item[field], f"predecessor resource {field}") for field in item}
+        address = normalized["terraform_address"]
+        expected = PREDECESSOR_TERRAFORM_ADDRESSES.get(address)
+        if expected is None or address in seen:
+            raise ReceiptError("predecessor Terraform address is unknown or duplicated")
+        if (
+            (normalized["api_version"], normalized["kind"], normalized["namespace"]) != expected
+            or not DNS_RE.fullmatch(normalized["name"])
+            or not IDENTIFIER_RE.fullmatch(normalized["uid"])
+            or not IDENTIFIER_RE.fullmatch(normalized["resource_version"])
+            or not SHA256_RE.fullmatch(normalized["object_sha256"])
+        ):
+            raise ReceiptError("predecessor retained object identity is malformed")
+        if normalized["kind"] == "ConfigMap" and not re.fullmatch(
+            r"fs2-reference-data-tools-[a-f0-9]{12}", normalized["name"]
+        ):
+            raise ReceiptError("predecessor tooling ConfigMap name is not content addressed")
+        if normalized["kind"] == "Job" and not re.fullmatch(
+            r"(?:fs2-reference-data-rwx|fs2-snapshot-reference)-read-probe-[a-f0-9]{12}-[a-f0-9]{12}|"
+            r"fs2-snapshot-checkpoints-durability-(?:write|read)-[a-f0-9]{12}",
+            normalized["name"],
+        ):
+            raise ReceiptError("predecessor retained Job name is outside the reviewed scheme")
+        seen.add(address)
+        resources.append(normalized)
+    if seen != set(PREDECESSOR_TERRAFORM_ADDRESSES):
+        raise ReceiptError("predecessor Terraform address inventory differs")
+    resources.sort(key=lambda item: item["terraform_address"])
+    return mode, ledger_digest, resources
+
+
+def _validate_predecessor_adoption_live(client: KubeClient, context: dict[str, Any]) -> None:
+    """Bind every retained predecessor address before Terraform moves state.
+
+    This read happens after whole-bundle signature verification and before the
+    phase CAS.  It makes a v2-to-v3 crash resumable: an exact retry can finish
+    Terraform's moved blocks, while a missing or changed predecessor can never
+    be silently adopted through ``ignore_changes``.
+    """
+
+    _mode, _legacy_ledger_digest, resources = _predecessor_adoption(context)
+    for retained in resources:
+        live = client.get_object(
+            retained["api_version"],
+            retained["kind"],
+            retained["namespace"],
+            retained["name"],
+        )
+        if live is None:
+            raise ReceiptError("a signed predecessor Terraform object is absent before state adoption")
+        metadata = _object(live.get("metadata"), "predecessor retained object metadata")
+        if (
+            metadata.get("uid") != retained["uid"]
+            or metadata.get("resourceVersion") != retained["resource_version"]
+            or _sha256(_canonical(_live_projection(live))) != retained["object_sha256"]
+        ):
+            raise ReceiptError("a predecessor Terraform object differs before state adoption")
+
+
 def _proof_generations(context: dict[str, Any]) -> tuple[str, dict[str, Any], dict[str, dict[str, Any]]]:
     storage = _object(context["successor_storage"], "context.successor_storage")
     ledger = _object(storage["proof_generation_ledger"], "successor proof-generation ledger")
@@ -297,7 +512,7 @@ def _proof_generations(context: dict[str, Any]) -> tuple[str, dict[str, Any], di
         "successor proof-generation ledger",
     )
     if (
-        ledger["schema"] != "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v1"
+        ledger["schema"] != "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v2"
         or ledger["maximum_generations"] != MAX_PROOF_GENERATIONS
     ):
         raise ReceiptError("successor proof-generation ledger contract is unsupported")
@@ -457,20 +672,24 @@ def _verify_signature(bundle: dict[str, Any], public_key_bytes: bytes, expected_
 
     unsigned = dict(bundle)
     del unsigned["signature"]
-    with tempfile.TemporaryDirectory(prefix="fs2-psa-receipt-") as directory:
-        root = Path(directory)
-        message_path = root / "bundle.json"
-        signature_path = root / "signature.bin"
-        public_key_path = root / "public-key.pem"
-        message_path.write_bytes(_canonical(unsigned))
-        signature_path.write_bytes(signature_bytes)
-        # Verify the same descriptor-fenced bytes whose digest was checked.
-        # Reopening the operator-supplied path here would permit a pathname or
-        # symlink swap between digest and signature verification.
-        public_key_path.write_bytes(public_key_bytes)
-        os.chmod(message_path, 0o600)
-        os.chmod(signature_path, 0o600)
-        os.chmod(public_key_path, 0o600)
+    descriptors: list[int] = []
+    try:
+        for label, payload in (
+            ("bundle", _canonical(unsigned)),
+            ("signature", signature_bytes),
+            ("public-key", public_key_bytes),
+        ):
+            descriptor = os.memfd_create(f"fs2-psa-{label}", flags=0)
+            descriptors.append(descriptor)
+            offset = 0
+            while offset < len(payload):
+                written = os.write(descriptor, payload[offset:])
+                if written <= 0:
+                    raise ReceiptError("descriptor-fenced signature material write made no progress")
+                offset += written
+            os.fsync(descriptor)
+        # OpenSSL consumes the descriptor-fenced bytes directly.  No temporary
+        # filesystem object is created, unlinked, or exposed to pathname swaps.
         completed = subprocess.run(
             [
                 "openssl",
@@ -478,17 +697,21 @@ def _verify_signature(bundle: dict[str, Any], public_key_bytes: bytes, expected_
                 "-verify",
                 "-pubin",
                 "-inkey",
-                str(public_key_path),
+                f"/proc/self/fd/{descriptors[2]}",
                 "-rawin",
                 "-in",
-                str(message_path),
+                f"/proc/self/fd/{descriptors[0]}",
                 "-sigfile",
-                str(signature_path),
+                f"/proc/self/fd/{descriptors[1]}",
             ],
             check=False,
             capture_output=True,
             timeout=10,
+            pass_fds=tuple(descriptors),
         )
+    finally:
+        for descriptor in descriptors:
+            os.close(descriptor)
     if completed.returncode != 0:
         raise ReceiptError("whole-bundle signature verification failed")
 
@@ -652,10 +875,16 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
         raise ReceiptError("context successor-storage custody contract digest differs")
     _exact_keys(
         successor_storage,
-        {"schema", "reference_source", "checkpoint_source", "proof_generation_ledger"},
+        {
+            "schema",
+            "reference_source",
+            "checkpoint_source",
+            "predecessor_adoption",
+            "proof_generation_ledger",
+        },
         "context.successor_storage",
     )
-    if successor_storage["schema"] != "fs2-serve.nebius.ai/sai07-successor-storage/v2":
+    if successor_storage["schema"] != "fs2-serve.nebius.ai/sai07-successor-storage/v3":
         raise ReceiptError("context successor-storage schema is unsupported")
     reference_source = _object(successor_storage["reference_source"], "successor reference source")
     _exact_keys(
@@ -711,13 +940,17 @@ def _validate_context(context: dict[str, Any], expected: dict[str, Any]) -> None
             )
             or not IDENTIFIER_RE.fullmatch(_string(source["storage_owner"], f"{label} storage owner"))
             or not isinstance(source["volume_attributes"], dict)
-            or not all(isinstance(key, str) and isinstance(value, str) for key, value in source["volume_attributes"].items())
+            or not all(
+                isinstance(key, str) and isinstance(value, str)
+                for key, value in source["volume_attributes"].items()
+            )
         ):
             raise ReceiptError(f"successor {label} custody fields are malformed")
     for field in ("uid", "resource_version"):
         if not IDENTIFIER_RE.fullmatch(_string(reference_source[field], f"successor reference {field}")):
             raise ReceiptError(f"successor reference {field} is malformed")
 
+    _predecessor_adoption(context)
     _active_generation_id, active_generation, _generations = _proof_generations(context)
     if (
         active_generation["dataset_id"] != dataset["id"]
@@ -862,6 +1095,7 @@ def _validate_cleanup_result(
         "kube_system_uid",
         "fence_objects",
         "checked_objects",
+        "retained_objects",
         "removed_objects",
         "result_sha256",
     }
@@ -869,8 +1103,8 @@ def _validate_cleanup_result(
     unsigned = dict(result)
     result_self_digest = unsigned.pop("result_sha256")
     if (
-        result["schema"] != "fs2-serve.nebius.ai/sai07-legacy-cleanup-result/v3"
-        or result["mode"] != "execute"
+        result["schema"] != "fs2-serve.nebius.ai/sai07-no-delete-closure-result/v4"
+        or result["mode"] != "no-delete-closure"
         or result_self_digest != _sha256(_canonical(unsigned))
         or result["manifest_sha256"] != assertions["cleanup_manifest_sha256"]
         or result["baseline_artifact_sha256"] != context["baseline"]["artifact_sha256"]
@@ -880,11 +1114,13 @@ def _validate_cleanup_result(
         or result["kube_system_uid"] != context["kube_system_uid"]
         or not isinstance(result["fence_objects"], list)
         or len(result["fence_objects"]) != 3
-        or result["checked_objects"] != assertions["removed_objects"]
-        or result["removed_objects"] != assertions["removed_objects"]
-        or result["checked_objects"] != baseline_artifact["legacy_controller_objects"]
+        or result["checked_objects"] != []
+        or result["retained_objects"] != []
+        or result["removed_objects"] != []
+        or assertions["removed_objects"] != []
+        or baseline_artifact["legacy_controller_objects"] != []
     ):
-        raise ReceiptError("cleanup result does not bind the signed manifest, context, and removed objects")
+        raise ReceiptError("no-delete closure requires an already empty exact legacy-object inventory")
 
 
 def _resource_path(api_version: str, kind: str, namespace: str, name: str = "") -> str:
@@ -1049,7 +1285,8 @@ def _validate_observation_contract(
     if not isinstance(inventories_raw, list) or len(inventories_raw) > MAX_INVENTORIES:
         raise ReceiptError("observations.inventories must be a bounded list")
     objects = [
-        _validate_object_observation(value, f"observations.objects[{index}]") for index, value in enumerate(objects_raw)
+        _validate_object_observation(value, f"observations.objects[{index}]")
+        for index, value in enumerate(objects_raw)
     ]
     inventories = [
         _validate_inventory(value, f"observations.inventories[{index}]") for index, value in enumerate(inventories_raw)
@@ -1072,7 +1309,9 @@ def _validate_observation_contract(
 
     assertions = _object(observations["assertions"], "observations.assertions")
     present = {
-        (value["api_version"], value["kind"], value["namespace"], value["name"]) for value in objects if value["exists"]
+        (value["api_version"], value["kind"], value["namespace"], value["name"])
+        for value in objects
+        if value["exists"]
     }
     absent = {
         (value["api_version"], value["kind"], value["namespace"], value["name"])
@@ -1144,6 +1383,7 @@ def _validate_observation_contract(
                 "fs2-pod-security-legacy-cleanup-fence",
             ),
             *{("v1", "ConfigMap", item["namespace"], item["name"]) for item in context["host_agent_configs"]},
+            *ROLLOUT_CUSTODY_OBJECTS,
             *SNAPSHOT_EXCEPTION_OBJECTS,
             *{
                 ("apps/v1", "DaemonSet", identity[location]["namespace"], identity[location]["name"])
@@ -1175,6 +1415,7 @@ def _validate_observation_contract(
         }:
             raise ReceiptError("reference-data-ready assertions do not bind the exact dataset")
         _active_generation_id, _active_generation, proof_generations = _proof_generations(context)
+        _mode, _legacy_ledger_digest, predecessor_resources = _predecessor_adoption(context)
         required = {
             ("v1", "PersistentVolumeClaim", "fs2-reference-data", "fs2-reference-data-rwx"),
             (
@@ -1238,6 +1479,10 @@ def _validate_observation_contract(
                 )
                 for generation_id in proof_generations
                 for namespace, name in REFERENCE_SUCCESSOR_CLAIMS
+            },
+            *{
+                (item["api_version"], item["kind"], item["namespace"], item["name"])
+                for item in predecessor_resources
             },
         }
         if not required.issubset(present):
@@ -1333,25 +1578,8 @@ def _validate_observation_contract(
         if assertions["live_legacy_controller_objects"] != []:
             raise ReceiptError("cleanup-complete retains legacy controller-owned objects")
         removed = assertions["removed_objects"]
-        if not isinstance(removed, list) or not all(isinstance(item, dict) for item in removed):
-            raise ReceiptError("removed_objects must be a list of exact object identities")
-        removed_keys: list[str] = []
-        for index, item in enumerate(removed):
-            _exact_keys(
-                item,
-                {"api_version", "kind", "namespace", "name", "uid", "resource_version", "object_sha256"},
-                f"removed_objects[{index}]",
-            )
-            for field in ("api_version", "kind", "namespace", "name", "uid", "resource_version"):
-                _string(item[field], f"removed_objects[{index}].{field}")
-            if not SHA256_RE.fullmatch(item["object_sha256"]):
-                raise ReceiptError("removed object hash is malformed")
-            removed_keys.append("/".join((item["api_version"], item["kind"], item["namespace"], item["name"])))
-        if removed_keys != sorted(set(removed_keys)):
-            raise ReceiptError("removed_objects must be sorted and unique")
-        absent_keys = {"/".join((item[0], item[1], item[2], item[3])) for item in absent}
-        if set(removed_keys) != absent_keys:
-            raise ReceiptError("cleanup-complete absent objects differ from the signed cleanup result")
+        if removed != [] or absent:
+            raise ReceiptError("no-delete closure may not claim removed or absent objects")
     elif state == "baseline-enforced":
         _exact_keys(assertions, {"privileged_probe_rejected", "positive_smoke_passed"}, "baseline-enforced assertions")
         if not all(assertions.values()):
@@ -2033,6 +2261,25 @@ def _validate_storage_successors(
 ) -> None:
     tree = context["dataset"]["tree_sha256"]
     active_generation_id, _active_generation, _generations = _proof_generations(context)
+    _mode, _legacy_ledger_digest, predecessor_resources = _predecessor_adoption(context)
+    for retained in predecessor_resources:
+        live = live_objects.get(
+            (
+                retained["api_version"],
+                retained["kind"],
+                retained["namespace"],
+                retained["name"],
+            )
+        )
+        if live is None:
+            raise ReceiptError("a signed predecessor Terraform object is absent")
+        metadata = _object(live.get("metadata"), "predecessor retained object metadata")
+        if (
+            metadata.get("uid") != retained["uid"]
+            or metadata.get("resourceVersion") != retained["resource_version"]
+            or _sha256(_canonical(_live_projection(live))) != retained["object_sha256"]
+        ):
+            raise ReceiptError("a predecessor Terraform object differs from signed adoption custody")
     custody = _object(context["successor_storage"], "successor storage custody")
     reference_source = _object(custody["reference_source"], "reference source custody")
     checkpoint_source = _object(custody["checkpoint_source"], "checkpoint source custody")
@@ -2568,7 +2815,11 @@ def _validate_bundle(
     dict[str, Any],
     str,
 ]:
-    _exact_keys(bundle, {"schema", "authority", "context", "transition", "observations", "signature"}, "receipt bundle")
+    _exact_keys(
+        bundle,
+        {"schema", "authority", "context", "transition", "observations", "signature"},
+        "receipt bundle",
+    )
     if bundle["schema"] != BUNDLE_SCHEMA:
         raise ReceiptError("receipt bundle schema is unsupported")
     authority = _object(bundle["authority"], "authority")
@@ -2666,6 +2917,64 @@ def _ledger_from_config_map(value: dict[str, Any], query: dict[str, Any]) -> dic
     ):
         raise ReceiptError("durable ledger ConfigMap identity is invalid")
     data = _object(value.get("data"), "ledger ConfigMap data")
+    if data.get("schema") == LEGACY_LEDGER_SCHEMA:
+        if set(data) != LEGACY_LEDGER_DATA_KEYS or not all(isinstance(item, str) for item in data.values()):
+            raise ReceiptError("legacy durable ledger ConfigMap has unexpected keys")
+        adoption_mode, expected_digest, _resources = _predecessor_adoption(query["expected_context"])
+        if adoption_mode != "retained-v2" or _sha256(_terraform_canonical(data)) != expected_digest:
+            raise ReceiptError("legacy durable ledger differs from signed predecessor adoption")
+        try:
+            sequence = int(data["sequence"])
+        except ValueError as error:
+            raise ReceiptError("legacy durable ledger sequence is invalid") from error
+        authorization = None
+        if any(
+            data[field]
+            for field in (
+                "authorization_phase",
+                "authorization_bundle_sha256",
+                "authorization_nonce",
+                "authorization_owner_acknowledged",
+                "authorization_downstream_acknowledged",
+            )
+        ):
+            if data["authorization_owner_acknowledged"] not in {"true", "false"} or data[
+                "authorization_downstream_acknowledged"
+            ] not in {"true", "false"}:
+                raise ReceiptError("legacy durable ledger acknowledgement flag is invalid")
+            authorization = {
+                "phase": data["authorization_phase"],
+                "bundle_sha256": data["authorization_bundle_sha256"],
+                "nonce": data["authorization_nonce"],
+                "owner_acknowledged": data["authorization_owner_acknowledged"] == "true",
+                "downstream_acknowledged": data["authorization_downstream_acknowledged"] == "true",
+            }
+        initial = _initial_ledger(query)
+        authority = {
+            "key_id": data["authority_key_id"],
+            "signer_identity": data["authority_signer_identity"],
+            "public_key_sha256": data["authority_public_key_sha256"],
+        }
+        if authority != initial["authority"]:
+            raise ReceiptError("legacy durable ledger signing authority differs")
+        _integer(sequence, "legacy ledger.sequence")
+        if not SHA256_RE.fullmatch(data["context_sha256"]):
+            raise ReceiptError("legacy durable ledger context digest is malformed")
+        # The whole signed v4 bundle binds the exact predecessor data digest.
+        # Convert only in memory; the next owner-transition CAS atomically
+        # writes v3 and the authorized phase edge in one non-replayable update.
+        return {
+            "schema": LEDGER_SCHEMA,
+            "context_sha256": initial["context_sha256"],
+            "authority": authority,
+            "sequence": sequence,
+            "state": data["state"],
+            "last_bundle_sha256": data["last_bundle_sha256"] or None,
+            "last_receipt_id": data["last_receipt_id"] or None,
+            "last_nonce": data["last_nonce"] or None,
+            "proof_generations": initial["proof_generations"],
+            "authorization": authorization,
+        }
     if set(data) != LEDGER_DATA_KEYS or not all(isinstance(item, str) for item in data.values()):
         raise ReceiptError("durable ledger ConfigMap has unexpected keys")
     try:
@@ -3172,6 +3481,10 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
     ledger_config_map = client.get_object("v1", "ConfigMap", query["ledger_namespace"], query["ledger_name"])
     if ledger_config_map is None:
         raise ReceiptError("durable rollout ledger is absent")
+    ledger_config_data = _object(ledger_config_map.get("data"), "ledger ConfigMap data")
+    legacy_ledger_upgrade = ledger_config_data.get("schema") == LEGACY_LEDGER_SCHEMA
+    if legacy_ledger_upgrade and mode != "owner-transition":
+        raise ReceiptError("legacy ledger v2 may migrate only with a signed owner transition")
     ledger = _ledger_from_config_map(ledger_config_map, query)
     incoming_proof_generations = _proof_generation_state(query["expected_context"])
     candidate_bundle_sha256 = _sha256(_canonical(bundle))
@@ -3184,6 +3497,7 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
         current_time,
         allow_expired_resume=exact_resume,
     )
+    _validate_predecessor_adoption_live(client, _object(bundle["context"], "context"))
     baseline_artifact = Path(_string(query["baseline_artifact_path"], "baseline_artifact_path"))
     baseline = _validate_baseline_artifact(
         _read_regular_file(baseline_artifact, "baseline artifact", 128 * 1024 * 1024),
@@ -3318,19 +3632,260 @@ def verify_and_consume(query: dict[str, Any], client: KubeClient, now: dt.dateti
 
 
 class KubectlClient:
-    def __init__(self, kubeconfig: Path, context: str) -> None:
+    CUSTODIAN_NAMESPACE = "fs2-system"
+    CUSTODIAN_NAME = "fs2-pod-security-rollout-custodian"
+
+    def __init__(self, kubeconfig: Path, context: str, audience: str) -> None:
         if not kubeconfig.is_absolute() or ".." in kubeconfig.parts:
             raise ReceiptError("kubeconfig_path must be absolute without parent traversal")
         if not IDENTIFIER_RE.fullmatch(context):
             raise ReceiptError("kube_context is malformed")
-        self._base = [
+        if audience != "https://kubernetes.default.svc":
+            raise ReceiptError("rollout token audience differs from the reviewed API audience")
+        bootstrap = [
             "kubectl",
             "--kubeconfig",
             str(kubeconfig),
             "--context",
             context,
-            "--as=system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager",
         ]
+        self._require_external_custody(bootstrap)
+        token_request = subprocess.run(
+            [
+                *bootstrap,
+                "create",
+                "token",
+                self.CUSTODIAN_NAME,
+                "--namespace",
+                self.CUSTODIAN_NAMESPACE,
+                f"--audience={audience}",
+                "--duration=10m",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if token_request.returncode != 0:
+            raise ReceiptError("short-lived rollout custodian TokenRequest failed")
+        token = token_request.stdout.strip()
+        claims = self._validate_token_claims(token, audience)
+
+        rendered = subprocess.run(
+            [*bootstrap, "config", "view", "--raw", "--minify", "-o", "json"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if rendered.returncode != 0:
+            raise ReceiptError("could not render the selected cluster transport configuration")
+        try:
+            source_config = _object(json.loads(rendered.stdout), "selected kubeconfig")
+            clusters = source_config["clusters"]
+            contexts = source_config["contexts"]
+            if (
+                not isinstance(clusters, list)
+                or len(clusters) != 1
+                or not isinstance(contexts, list)
+                or len(contexts) != 1
+            ):
+                raise ReceiptError("selected kubeconfig is not a single cluster/context")
+            cluster_name = _string(clusters[0]["name"], "selected kubeconfig cluster")
+        except (KeyError, TypeError, json.JSONDecodeError) as error:
+            raise ReceiptError("selected kubeconfig transport is malformed") from error
+        token_config = {
+            "apiVersion": "v1",
+            "kind": "Config",
+            "clusters": clusters,
+            "contexts": [
+                {
+                    "name": "fs2-sai07-custodian",
+                    "context": {
+                        "cluster": cluster_name,
+                        "user": "fs2-sai07-custodian",
+                    },
+                }
+            ],
+            "current-context": "fs2-sai07-custodian",
+            "users": [{"name": "fs2-sai07-custodian", "user": {"token": token}}],
+        }
+        self._credential_fd = os.memfd_create("fs2-sai07-custodian-kubeconfig", flags=0)
+        os.write(self._credential_fd, _canonical(token_config))
+        os.fsync(self._credential_fd)
+        self._base = [
+            "kubectl",
+            "--kubeconfig",
+            f"/proc/self/fd/{self._credential_fd}",
+            "--context",
+            "fs2-sai07-custodian",
+        ]
+        self._pass_fds = (self._credential_fd,)
+        service_account = self._raw(
+            "/api/v1/namespaces/fs2-system/serviceaccounts/fs2-pod-security-rollout-custodian"
+        )
+        if service_account is None or _object(service_account.get("metadata"), "custodian metadata").get(
+            "uid"
+        ) != claims["kubernetes.io"]["serviceaccount"]["uid"]:
+            self.close()
+            raise ReceiptError("short-lived token is not bound to the exact live custodian identity")
+
+    @classmethod
+    def _require_external_custody(cls, bootstrap: list[str]) -> None:
+        """Prove the ambient principal has only the reviewed token-mint edge."""
+
+        checks = [
+            (
+                True,
+                {
+                    "group": "",
+                    "resource": "serviceaccounts",
+                    "subresource": "token",
+                    "verb": "create",
+                    "namespace": cls.CUSTODIAN_NAMESPACE,
+                    "name": cls.CUSTODIAN_NAME,
+                },
+                "ambient identity cannot mint the exact rollout token",
+            ),
+            (
+                False,
+                {
+                    "group": "",
+                    "resource": "serviceaccounts",
+                    "subresource": "token",
+                    "verb": "create",
+                    "namespace": cls.CUSTODIAN_NAMESPACE,
+                    "name": "fs2-pod-security-rollout-manager",
+                },
+                "ambient identity has token-mint authority outside the exact custodian",
+            ),
+            (
+                False,
+                {
+                    "group": "",
+                    "resource": "configmaps",
+                    "verb": "update",
+                    "namespace": cls.CUSTODIAN_NAMESPACE,
+                    "name": "fs2-pod-security-rollout-ledger",
+                },
+                "ambient identity has direct rollout-ledger authority",
+            ),
+            (
+                False,
+                {
+                    "group": "",
+                    "resource": "serviceaccounts",
+                    "verb": "impersonate",
+                    "namespace": cls.CUSTODIAN_NAMESPACE,
+                    "name": cls.CUSTODIAN_NAME,
+                },
+                "ambient identity may impersonate service accounts",
+            ),
+            (
+                False,
+                {
+                    "group": "authentication.k8s.io",
+                    "resource": "users",
+                    "verb": "impersonate",
+                    "name": f"system:serviceaccount:{cls.CUSTODIAN_NAMESPACE}:{cls.CUSTODIAN_NAME}",
+                },
+                "ambient identity may impersonate users",
+            ),
+            (
+                False,
+                {
+                    "group": "authentication.k8s.io",
+                    "resource": "groups",
+                    "verb": "impersonate",
+                    "name": f"system:serviceaccounts:{cls.CUSTODIAN_NAMESPACE}",
+                },
+                "ambient identity may impersonate groups",
+            ),
+            (
+                False,
+                {
+                    "group": "authentication.k8s.io",
+                    "resource": "userextras",
+                    "subresource": "authentication.kubernetes.io%2fcredential-id",
+                    "verb": "impersonate",
+                },
+                "ambient identity may forge authenticator credential metadata",
+            ),
+        ]
+        for required, attributes, error_message in checks:
+            review = {
+                "apiVersion": "authorization.k8s.io/v1",
+                "kind": "SelfSubjectAccessReview",
+                "spec": {"resourceAttributes": attributes},
+            }
+            completed = subprocess.run(
+                [
+                    *bootstrap,
+                    "create",
+                    "--raw",
+                    "/apis/authorization.k8s.io/v1/selfsubjectaccessreviews",
+                    "-f",
+                    "-",
+                ],
+                input=_canonical(review),
+                check=False,
+                capture_output=True,
+                timeout=30,
+            )
+            try:
+                response = _object(json.loads(completed.stdout), "SelfSubjectAccessReview response")
+                status = _object(response.get("status"), "SelfSubjectAccessReview status")
+            except (UnicodeDecodeError, json.JSONDecodeError, ReceiptError) as error:
+                raise ReceiptError("external custody authorization review failed") from error
+            if completed.returncode != 0 or status.get("allowed") is not required:
+                raise ReceiptError(error_message)
+
+    @classmethod
+    def _validate_token_claims(cls, token: str, audience: str) -> dict[str, Any]:
+        segments = token.split(".")
+        if len(segments) != 3:
+            raise ReceiptError("TokenRequest response is not a service-account JWT")
+        try:
+            payload = segments[1] + "=" * (-len(segments[1]) % 4)
+            claims = _object(json.loads(base64.urlsafe_b64decode(payload)), "TokenRequest claims")
+        except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ReceiptError("TokenRequest claims are malformed") from error
+        now = int(dt.datetime.now(dt.UTC).timestamp())
+        issued = claims.get("iat")
+        expires = claims.get("exp")
+        audiences = claims.get("aud")
+        kubernetes = claims.get("kubernetes.io")
+        if (
+            claims.get("sub")
+            != f"system:serviceaccount:{cls.CUSTODIAN_NAMESPACE}:{cls.CUSTODIAN_NAME}"
+            or audiences != [audience]
+            or not isinstance(issued, int)
+            or isinstance(issued, bool)
+            or not isinstance(expires, int)
+            or isinstance(expires, bool)
+            or issued > now + 30
+            or expires <= now
+            or expires - issued > 600
+            or not isinstance(kubernetes, dict)
+            or kubernetes.get("namespace") != cls.CUSTODIAN_NAMESPACE
+            or not isinstance(kubernetes.get("serviceaccount"), dict)
+            or kubernetes["serviceaccount"].get("name") != cls.CUSTODIAN_NAME
+            or not IDENTIFIER_RE.fullmatch(str(kubernetes["serviceaccount"].get("uid", "")))
+        ):
+            raise ReceiptError("TokenRequest is not exact, short-lived, and API-audience bound")
+        return claims
+
+    def close(self) -> None:
+        descriptor = getattr(self, "_credential_fd", None)
+        if descriptor is not None:
+            os.close(descriptor)
+            self._credential_fd = None
+
+    def __enter__(self) -> KubectlClient:
+        return self
+
+    def __exit__(self, _type: object, _value: object, _traceback: object) -> None:
+        self.close()
 
     def _raw(self, path: str) -> dict[str, Any] | None:
         completed = subprocess.run(
@@ -3339,6 +3894,7 @@ class KubectlClient:
             capture_output=True,
             text=True,
             timeout=30,
+            pass_fds=self._pass_fds,
         )
         if completed.returncode != 0:
             lowered = completed.stderr.lower()
@@ -3386,6 +3942,7 @@ class KubectlClient:
             check=False,
             capture_output=True,
             timeout=30,
+            pass_fds=self._pass_fds,
         )
         if completed.returncode != 0:
             stderr = completed.stderr.decode("utf-8", errors="replace").lower()
@@ -3413,7 +3970,9 @@ def main() -> int:
         query = _query_from_environment()
         kubeconfig = Path(_string(os.environ.get("FS2_KUBECONFIG"), "FS2_KUBECONFIG"))
         kube_context = _string(os.environ.get("FS2_KUBE_CONTEXT"), "FS2_KUBE_CONTEXT")
-        result = verify_and_consume(query, KubectlClient(kubeconfig, kube_context))
+        audience = _string(os.environ.get("FS2_POD_SECURITY_TOKEN_AUDIENCE"), "token audience")
+        with KubectlClient(kubeconfig, kube_context, audience) as client:
+            result = verify_and_consume(query, client)
     except (OSError, ReceiptError, json.JSONDecodeError, subprocess.SubprocessError) as error:
         print(f"pod-security receipt consumption failed: {error}", file=sys.stderr)
         return 1

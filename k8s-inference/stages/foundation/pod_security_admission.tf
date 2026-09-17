@@ -24,7 +24,9 @@ locals {
       pair[1],
     )
   ])
-  pod_security_rollout_manager_username = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
+  pod_security_rollout_custodian_username = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-custodian"
+  pod_security_rollout_custodian_group    = "fs2-pod-security-receipt-custodians"
+  pod_security_rollout_token_audience     = "https://kubernetes.default.svc"
   pod_security_daemonset_controller_expression = format(
     "request.userInfo.username in %s",
     jsonencode([
@@ -362,13 +364,26 @@ resource "kubernetes_manifest" "node_observability_daemonset_binding" {
   ]
 }
 
-# Receipt consumption uses one Terraform-owned, tokenless identity. The caller
-# may request a short-lived TokenRequest, but the API server sees this exact
-# service account for every live read and monotonic ledger update. No tfvars
-# username can become rollout authority.
+# Retain the predecessor manager object for non-destructive state continuity.
+# Its predecessor bindings also remain unchanged, but fail-closed ledger
+# admission rejects that username. Receipt consumption uses the separately
+# authenticated rollout-custodian identity below.
 resource "kubernetes_service_account_v1" "pod_security_rollout_manager" {
   metadata {
     name      = "fs2-pod-security-rollout-manager"
+    namespace = "fs2-system"
+    labels    = local.common_labels
+  }
+  automount_service_account_token = false
+
+  depends_on = [kubernetes_namespace_v1.platform]
+}
+
+# A distinct tokenless identity owns receipt consumption. New, separately
+# named bindings avoid replacing the retained predecessor RBAC objects.
+resource "kubernetes_service_account_v1" "pod_security_rollout_custodian" {
+  metadata {
+    name      = "fs2-pod-security-rollout-custodian"
     namespace = "fs2-system"
     labels    = local.common_labels
   }
@@ -417,6 +432,18 @@ resource "kubernetes_cluster_role_v1" "pod_security_rollout_reader" {
     verbs      = ["get", "list"]
   }
   rule {
+    api_groups     = ["rbac.authorization.k8s.io"]
+    resources      = ["clusterroles"]
+    resource_names = ["fs2-pod-security-rollout-reader"]
+    verbs          = ["get"]
+  }
+  rule {
+    api_groups     = ["rbac.authorization.k8s.io"]
+    resources      = ["clusterrolebindings"]
+    resource_names = ["fs2-pod-security-rollout-custodian-reader"]
+    verbs          = ["get"]
+  }
+  rule {
     api_groups = ["storage.k8s.io"]
     resources  = ["storageclasses"]
     verbs      = ["get", "list"]
@@ -460,6 +487,23 @@ resource "kubernetes_cluster_role_binding_v1" "pod_security_rollout_reader" {
   }
 }
 
+resource "kubernetes_cluster_role_binding_v1" "pod_security_rollout_custodian_reader" {
+  metadata {
+    name   = "fs2-pod-security-rollout-custodian-reader"
+    labels = local.common_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "ClusterRole"
+    name      = kubernetes_cluster_role_v1.pod_security_rollout_reader.metadata[0].name
+  }
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account_v1.pod_security_rollout_custodian.metadata[0].name
+    namespace = kubernetes_service_account_v1.pod_security_rollout_custodian.metadata[0].namespace
+  }
+}
+
 resource "kubernetes_role_v1" "pod_security_rollout_ledger" {
   metadata {
     name      = "fs2-pod-security-rollout-ledger"
@@ -490,6 +534,125 @@ resource "kubernetes_role_binding_v1" "pod_security_rollout_ledger" {
     name      = kubernetes_service_account_v1.pod_security_rollout_manager.metadata[0].name
     namespace = kubernetes_service_account_v1.pod_security_rollout_manager.metadata[0].namespace
   }
+}
+
+resource "kubernetes_role_binding_v1" "pod_security_rollout_custodian_ledger" {
+  metadata {
+    name      = "fs2-pod-security-rollout-custodian-ledger"
+    namespace = "fs2-system"
+    labels    = local.common_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = kubernetes_role_v1.pod_security_rollout_ledger.metadata[0].name
+  }
+  subject {
+    kind      = "ServiceAccount"
+    name      = kubernetes_service_account_v1.pod_security_rollout_custodian.metadata[0].name
+    namespace = kubernetes_service_account_v1.pod_security_rollout_custodian.metadata[0].namespace
+  }
+}
+
+# The external receipt-custodian OIDC group may mint only a short-lived token
+# for the exact rollout custodian service account.  It receives no impersonate
+# verb, no direct ledger permission, and no reusable token Secret.
+resource "kubernetes_role_v1" "pod_security_rollout_token_request" {
+  metadata {
+    name      = "fs2-pod-security-rollout-token-request"
+    namespace = "fs2-system"
+    labels    = local.common_labels
+  }
+  rule {
+    api_groups     = [""]
+    resources      = ["serviceaccounts/token"]
+    resource_names = [kubernetes_service_account_v1.pod_security_rollout_custodian.metadata[0].name]
+    verbs          = ["create"]
+  }
+}
+
+resource "kubernetes_role_binding_v1" "pod_security_rollout_token_request" {
+  metadata {
+    name      = "fs2-pod-security-rollout-token-request"
+    namespace = "fs2-system"
+    labels    = local.common_labels
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = kubernetes_role_v1.pod_security_rollout_token_request.metadata[0].name
+  }
+  subject {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Group"
+    name      = local.pod_security_rollout_custodian_group
+  }
+}
+
+resource "kubernetes_manifest" "pod_security_rollout_token_policy" {
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-pod-security-rollout-token-request"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [{
+          apiGroups   = [""]
+          apiVersions = ["v1"]
+          operations  = ["CREATE"]
+          resources   = ["serviceaccounts/token"]
+        }]
+      }
+      matchConditions = [{
+        name       = "exact-custodian-token"
+        expression = "request.name == 'fs2-pod-security-rollout-custodian'"
+      }]
+      validations = [
+        {
+          expression = "request.userInfo.groups.exists(group, group == '${local.pod_security_rollout_custodian_group}')"
+          message    = "Only the external receipt-custodian group may request a rollout token."
+        },
+        {
+          expression = "!request.userInfo.username.startsWith('system:') && has(request.userInfo.extra) && 'authentication.kubernetes.io/credential-id' in request.userInfo.extra && request.userInfo.extra['authentication.kubernetes.io/credential-id'].size() == 1 && request.userInfo.extra['authentication.kubernetes.io/credential-id'][0].startsWith('JTI=')"
+          message    = "Rollout TokenRequests require a directly authenticated external OIDC identity; service-account and impersonated identities are denied."
+        },
+        {
+          expression = "object.spec.audiences == ['${local.pod_security_rollout_token_audience}'] && object.spec.expirationSeconds > 0 && object.spec.expirationSeconds <= 600"
+          message    = "The rollout token must be API-audience bound and expire within ten minutes."
+        },
+      ]
+    }
+  }
+
+  depends_on = [kubernetes_service_account_v1.pod_security_rollout_custodian]
+}
+
+resource "kubernetes_manifest" "pod_security_rollout_token_binding" {
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-pod-security-rollout-token-request"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-pod-security-rollout-token-request"
+      validationActions = ["Deny"]
+      matchResources = {
+        namespaceSelector = {
+          matchLabels = {
+            "kubernetes.io/metadata.name" = "fs2-system"
+          }
+        }
+      }
+    }
+  }
+
+  depends_on = [kubernetes_manifest.pod_security_rollout_token_policy]
 }
 
 # Installed during the signed baseline bootstrap and inactive in ordinary
@@ -716,10 +879,11 @@ resource "kubernetes_manifest" "pod_security_legacy_cleanup_fence_binding" {
   depends_on = [kubernetes_manifest.pod_security_legacy_cleanup_fence_policy]
 }
 
-# The rollout verifier is the only component that advances this ConfigMap and
-# does so with a resourceVersion compare-and-swap. Admission makes the ledger
-# non-deletable and restricts updates to the exact reviewed rollout identities;
-# broad namespace RBAC cannot reset or replace the monotonic history.
+# The rollout verifier advances this ConfigMap with a resourceVersion CAS using
+# only the short-lived TokenRequest credential.  Requiring the authenticator's
+# JTI credential-id denies ordinary --as impersonation even when an ambient
+# principal can impersonate the service-account username.  The one legacy-v2
+# edge atomically performs the signed predecessor adoption and next phase.
 resource "kubernetes_manifest" "pod_security_ledger_policy" {
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -748,8 +912,12 @@ resource "kubernetes_manifest" "pod_security_ledger_policy" {
           message    = "The monotonic pod-security rollout ledger may not be deleted."
         },
         {
-          expression = "request.userInfo.username == '${local.pod_security_rollout_manager_username}'"
-          message    = "Only the Terraform-owned rollout-manager service account may advance the pod-security ledger."
+          expression = "request.userInfo.username == '${local.pod_security_rollout_custodian_username}'"
+          message    = "Only the Terraform-owned rollout-custodian service account may advance the pod-security ledger."
+        },
+        {
+          expression = "has(request.userInfo.extra) && 'authentication.kubernetes.io/credential-id' in request.userInfo.extra && request.userInfo.extra['authentication.kubernetes.io/credential-id'].size() == 1 && request.userInfo.extra['authentication.kubernetes.io/credential-id'][0].startsWith('JTI=')"
+          message    = "Rollout ledger writes require a real short-lived service-account JWT; impersonated usernames are denied."
         },
         {
           expression = "request.operation == 'DELETE' || (object.metadata.uid == oldObject.metadata.uid && object.metadata.name == oldObject.metadata.name && object.metadata.namespace == oldObject.metadata.namespace)"
@@ -760,15 +928,15 @@ resource "kubernetes_manifest" "pod_security_ledger_policy" {
           message    = "The rollout ledger must contain exactly the canonical admission-readable fields."
         },
         {
-          expression = "request.operation == 'DELETE' || (object.data.schema == 'fs2-serve.nebius.ai/pod-security-rollout-ledger/v3' && object.data.schema == oldObject.data.schema && object.data.context_sha256 == oldObject.data.context_sha256 && object.data.authority_key_id == oldObject.data.authority_key_id && object.data.authority_signer_identity == oldObject.data.authority_signer_identity && object.data.authority_public_key_sha256 == oldObject.data.authority_public_key_sha256)"
-          message    = "The rollout ledger context and signing authority are immutable."
+          expression = "request.operation == 'DELETE' || (object.data.schema == 'fs2-serve.nebius.ai/pod-security-rollout-ledger/v3' && object.data.authority_key_id == oldObject.data.authority_key_id && object.data.authority_signer_identity == oldObject.data.authority_signer_identity && object.data.authority_public_key_sha256 == oldObject.data.authority_public_key_sha256 && ((oldObject.data.schema == object.data.schema && object.data.context_sha256 == oldObject.data.context_sha256) || (oldObject.data.schema == 'fs2-serve.nebius.ai/pod-security-rollout-ledger/v2' && oldObject.data.size() == 15 && ['schema','context_sha256','authority_key_id','authority_signer_identity','authority_public_key_sha256','sequence','state','last_bundle_sha256','last_receipt_id','last_nonce','authorization_phase','authorization_bundle_sha256','authorization_nonce','authorization_owner_acknowledged','authorization_downstream_acknowledged'].all(k, k in oldObject.data))))"
+          message    = "The rollout ledger context and signing authority are immutable except for the one signed v2-to-v3 adoption edge."
         },
         {
           expression = "request.operation == 'DELETE' || (object.data.proof_generation_ids.matches('^\\[\"[a-f0-9]{64}\"(,\"[a-f0-9]{64}\"){0,7}\\]$') && object.data.proof_generation_ledger_sha256.matches('^[a-f0-9]{64}$') && object.data.proof_generation_sequence.matches('^[1-8]$') && object.data.proof_generation_active.matches('^[a-f0-9]{64}$'))"
           message    = "The bounded proof-generation custody fields must be canonical."
         },
         {
-          expression = "request.operation == 'DELETE' || ((int(object.data.sequence) == int(oldObject.data.sequence) + 1 && int(object.data.proof_generation_sequence) >= int(oldObject.data.proof_generation_sequence) && (int(object.data.proof_generation_sequence) > int(oldObject.data.proof_generation_sequence) || (object.data.proof_generation_ids == oldObject.data.proof_generation_ids && object.data.proof_generation_ledger_sha256 == oldObject.data.proof_generation_ledger_sha256 && object.data.proof_generation_active == oldObject.data.proof_generation_active))) || (object.data.sequence == oldObject.data.sequence && object.data.proof_generation_ids == oldObject.data.proof_generation_ids && object.data.proof_generation_ledger_sha256 == oldObject.data.proof_generation_ledger_sha256 && object.data.proof_generation_sequence == oldObject.data.proof_generation_sequence && object.data.proof_generation_active == oldObject.data.proof_generation_active))"
+          expression = "request.operation == 'DELETE' || oldObject.data.schema == 'fs2-serve.nebius.ai/pod-security-rollout-ledger/v2' || ((int(object.data.sequence) == int(oldObject.data.sequence) + 1 && int(object.data.proof_generation_sequence) >= int(oldObject.data.proof_generation_sequence) && (int(object.data.proof_generation_sequence) > int(oldObject.data.proof_generation_sequence) || (object.data.proof_generation_ids == oldObject.data.proof_generation_ids && object.data.proof_generation_ledger_sha256 == oldObject.data.proof_generation_ledger_sha256 && object.data.proof_generation_active == oldObject.data.proof_generation_active))) || (object.data.sequence == oldObject.data.sequence && object.data.proof_generation_ids == oldObject.data.proof_generation_ids && object.data.proof_generation_ledger_sha256 == oldObject.data.proof_generation_ledger_sha256 && object.data.proof_generation_sequence == oldObject.data.proof_generation_sequence && object.data.proof_generation_active == oldObject.data.proof_generation_active))"
           message    = "Proof-generation custody may append only with a phase transition and is immutable during acknowledgements."
         },
         {

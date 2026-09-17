@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Delete only UID/resourceVersion/spec-fenced legacy controller objects.
+"""Prove a no-delete SAI-07 legacy-object closure or fail closed.
 
-The default is a read-only plan.  Execution additionally requires the SHA-256
-of the exact canonical manifest on the command line.  Every DELETE carries a
-Kubernetes UID precondition, and ServiceAccounts are refused while any Pod or
-controller template still references them.  The resulting UID list belongs in
-the signed ``legacy-clean`` transition receipt; this tool is not receipt
-authority by itself.
+The hard no-delete contract forbids this tool from mutating Kubernetes. It
+re-reads the exact signed inventory and cleanup fence, then emits a closure only
+when the approved legacy-object set is already empty. A non-empty set is a real
+integration blocker; this program does not rewrite or remove retained objects.
 """
 
 from __future__ import annotations
@@ -22,8 +20,8 @@ from urllib.parse import quote
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from sai07_inventory_projection import ProjectionError, live_projection  # noqa: E402
 
-SCHEMA = "fs2-serve.nebius.ai/sai07-legacy-cleanup/v3"
-RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-legacy-cleanup-result/v3"
+SCHEMA = "fs2-serve.nebius.ai/sai07-no-delete-closure/v4"
+RESULT_SCHEMA = "fs2-serve.nebius.ai/sai07-no-delete-closure-result/v4"
 NAMESPACE = "fs2-models"
 MAX_OBJECTS = 128
 KINDS = {
@@ -84,23 +82,6 @@ class Kubectl:
         if completed.returncode != 0:
             raise CleanupError(f"read failed for {uri}: {completed.stderr.strip()}")
         return json.loads(completed.stdout)
-
-    def delete_exact(self, uri: str, uid: str, resource_version: str) -> None:
-        body = {
-            "apiVersion": "v1",
-            "kind": "DeleteOptions",
-            "preconditions": {"uid": uid, "resourceVersion": resource_version},
-        }
-        completed = subprocess.run(
-            [*self.base, "delete", "--raw", uri, "-f", "-"],
-            input=json.dumps(body),
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        if completed.returncode != 0:
-            raise CleanupError(f"UID-fenced delete failed for {uri}: {completed.stderr.strip()}")
-
 
 def validate_manifest(raw: object) -> tuple[dict[str, object], list[dict[str, str]]]:
     if not isinstance(raw, dict) or set(raw) != {
@@ -269,7 +250,9 @@ def validate_live(item: dict[str, str], live: dict[str, object]) -> None:
     else:
         if labels.get("app.kubernetes.io/part-of") != "fs2-serve":
             raise CleanupError("NetworkPolicy is not a legacy FS2 policy")
-        if labels.get("app.kubernetes.io/managed-by") == "terraform" or item["name"].startswith("fs2-network-profile-"):
+        if labels.get("app.kubernetes.io/managed-by") == "terraform" or item[
+            "name"
+        ].startswith("fs2-network-profile-"):
             raise CleanupError("Terraform-owned finite profile policies may never be cleaned by this tool")
 
 
@@ -345,8 +328,6 @@ def run(args: argparse.Namespace) -> dict[str, object]:
     payload = json.loads(args.manifest.read_text(encoding="utf-8"))
     manifest, objects = validate_manifest(payload)
     digest = hashlib.sha256(canonical(manifest)).hexdigest()
-    if args.execute and args.approval_sha256 != digest:
-        raise CleanupError("--execute requires the exact canonical manifest SHA-256")
     client = Kubectl(args.kubeconfig, args.context)
     kube_system = client.raw("/api/v1/namespaces/kube-system")
     if kube_system is None:  # pragma: no cover - mandatory object
@@ -363,37 +344,15 @@ def run(args: argparse.Namespace) -> dict[str, object]:
             raise CleanupError(f"cleanup object disappeared before validation: {item['kind']}/{item['name']}")
         validate_live(item, live)
         checked.append(item)
-    if args.execute:
-        first_wave = [item for item in checked if item["kind"] in {"NetworkPolicy", "DaemonSet"}]
-        service_accounts = [item for item in checked if item["kind"] == "ServiceAccount"]
-        for item in first_wave:
-            client.delete_exact(
-                path_for(item["kind"], item["name"]),
-                item["uid"],
-                item["resource_version"],
-            )
-        for item in first_wave:
-            if client.raw(path_for(item["kind"], item["name"]), allow_absent=True) is not None:
-                raise CleanupError(f"deleted object remains present: {item['kind']}/{item['name']}")
-        validate_cleanup_fence(client, manifest)
-        for item in service_accounts:
-            live = client.raw(path_for(item["kind"], item["name"]))
-            if live is None:  # pragma: no cover - mandatory read
-                raise CleanupError(f"cleanup object disappeared: {item['kind']}/{item['name']}")
-            validate_live(item, live)
-            references = service_account_references(client, item["name"])
-            if references:
-                raise CleanupError(f"ServiceAccount {item['name']} is still referenced by {', '.join(references)}")
-            client.delete_exact(
-                path_for(item["kind"], item["name"]),
-                item["uid"],
-                item["resource_version"],
-            )
-            if client.raw(path_for(item["kind"], item["name"]), allow_absent=True) is not None:
-                raise CleanupError(f"deleted object remains present: {item['kind']}/{item['name']}")
+    if checked:
+        retained = ", ".join(f"{item['kind']}/{item['name']}" for item in checked)
+        raise CleanupError(
+            "no-delete closure is blocked by retained legacy objects; "
+            f"no mutation was attempted: {retained}"
+        )
     result = {
         "schema": RESULT_SCHEMA,
-        "mode": "execute" if args.execute else "plan",
+        "mode": "no-delete-closure",
         "manifest_sha256": digest,
         "baseline_artifact_sha256": manifest["baseline_artifact_sha256"],
         "prior_inventory_sha256": manifest["prior_inventory_sha256"],
@@ -402,7 +361,8 @@ def run(args: argparse.Namespace) -> dict[str, object]:
         "kube_system_uid": manifest["kube_system_uid"],
         "fence_objects": manifest["fence_objects"],
         "checked_objects": checked,
-        "removed_objects": checked if args.execute else [],
+        "retained_objects": [],
+        "removed_objects": [],
     }
     result["result_sha256"] = hashlib.sha256(canonical(result)).hexdigest()
     return result
@@ -413,8 +373,6 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--manifest", required=True, type=Path)
     result.add_argument("--kubeconfig", required=True, type=Path)
     result.add_argument("--context", required=True)
-    result.add_argument("--execute", action="store_true")
-    result.add_argument("--approval-sha256")
     return result
 
 
@@ -422,7 +380,7 @@ def main() -> int:
     try:
         result = run(parser().parse_args())
     except (CleanupError, ProjectionError, OSError, json.JSONDecodeError) as error:
-        print(f"SAI-07 cleanup refused: {error}", file=sys.stderr)
+        print(f"SAI-07 no-delete closure refused: {error}", file=sys.stderr)
         return 1
     json.dump(result, sys.stdout, sort_keys=True)
     sys.stdout.write("\n")

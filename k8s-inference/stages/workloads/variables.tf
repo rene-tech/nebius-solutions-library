@@ -92,6 +92,21 @@ variable "pod_security_successor_storage" {
       provisioning_receipt_sha256 = string
       storage_owner               = string
     })
+    predecessor_adoption = object({
+      schema                        = string
+      mode                          = string
+      rollout_ledger_v2_data_sha256 = optional(string)
+      resources = list(object({
+        terraform_address = string
+        api_version       = string
+        kind              = string
+        namespace         = string
+        name              = string
+        uid               = string
+        resource_version  = string
+        object_sha256     = string
+      }))
+    })
     proof_generation_ledger = object({
       schema              = string
       maximum_generations = number
@@ -114,7 +129,7 @@ variable "pod_security_successor_storage" {
 
   validation {
     condition = var.pod_security_successor_storage == null ? true : try(
-      var.pod_security_successor_storage.schema == "fs2-serve.nebius.ai/sai07-successor-storage/v2" &&
+      var.pod_security_successor_storage.schema == "fs2-serve.nebius.ai/sai07-successor-storage/v3" &&
       var.pod_security_successor_storage.reference_source.csi_driver == "reference-data.mounted-fs-path.csi.nebius.ai" &&
       can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", var.pod_security_successor_storage.reference_source.capacity_quantity)) &&
       var.pod_security_successor_storage.reference_source.capacity_quantity == "${var.pod_security_successor_storage.reference_source.capacity_gib}Gi" &&
@@ -129,7 +144,26 @@ variable "pod_security_successor_storage" {
       var.pod_security_successor_storage.checkpoint_source.capacity_gib >= var.pod_security_successor_storage.checkpoint_source.requested_gib &&
       var.pod_security_successor_storage.checkpoint_source.requested_gib >= 1 &&
       can(regex("^[a-f0-9]{64}$", var.pod_security_successor_storage.checkpoint_source.provisioning_receipt_sha256)) &&
-      var.pod_security_successor_storage.proof_generation_ledger.schema == "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v1" &&
+      var.pod_security_successor_storage.predecessor_adoption.schema == "fs2-serve.nebius.ai/sai07-predecessor-adoption/v1" &&
+      contains(["fresh-v3", "retained-v2"], var.pod_security_successor_storage.predecessor_adoption.mode) &&
+      (var.pod_security_successor_storage.predecessor_adoption.mode == "retained-v2" ? (
+        can(regex("^[a-f0-9]{64}$", var.pod_security_successor_storage.predecessor_adoption.rollout_ledger_v2_data_sha256)) &&
+        length(var.pod_security_successor_storage.predecessor_adoption.resources) == 14 &&
+        length(distinct([
+          for item in var.pod_security_successor_storage.predecessor_adoption.resources : item.terraform_address
+        ])) == 14
+        ) : (
+        var.pod_security_successor_storage.predecessor_adoption.rollout_ledger_v2_data_sha256 == null &&
+        var.pod_security_successor_storage.predecessor_adoption.resources == []
+      )) &&
+      alltrue([
+        for item in var.pod_security_successor_storage.predecessor_adoption.resources :
+        contains(["ConfigMap", "Job"], item.kind) &&
+        contains(["v1", "batch/v1"], item.api_version) &&
+        item.namespace != "" && item.name != "" && item.uid != "" && item.resource_version != "" &&
+        can(regex("^[a-f0-9]{64}$", item.object_sha256))
+      ]) &&
+      var.pod_security_successor_storage.proof_generation_ledger.schema == "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v2" &&
       var.pod_security_successor_storage.proof_generation_ledger.maximum_generations == 8 &&
       length(var.pod_security_successor_storage.proof_generation_ledger.generations) >= 1 &&
       length(var.pod_security_successor_storage.proof_generation_ledger.generations) <= 8 &&

@@ -53,8 +53,35 @@ def context() -> dict[str, object]:
         "tools_data_sha256": hashlib.sha256(verifier._terraform_canonical(proof_tools)).hexdigest(),
     }
     proof_generation_id = hashlib.sha256(verifier._terraform_canonical(proof_generation)).hexdigest()
+    predecessor_resources = []
+    for index, (address, (api_version, kind, namespace)) in enumerate(
+        sorted(verifier.PREDECESSOR_TERRAFORM_ADDRESSES.items()), start=1
+    ):
+        if kind == "ConfigMap":
+            name = "fs2-reference-data-tools-" + "1" * 12
+        elif "checkpoint_write" in address:
+            name = "fs2-snapshot-checkpoints-durability-write-" + "2" * 12
+        elif "checkpoint_read" in address:
+            name = "fs2-snapshot-checkpoints-durability-read-" + "2" * 12
+        else:
+            claim = "fs2-snapshot-reference" if namespace == "fs2-snapshot-operations" else "fs2-reference-data-rwx"
+            name = f"{claim}-read-probe-{'3' * 12}-{'4' * 12}"
+        retained = {
+            "terraform_address": address,
+            "api_version": api_version,
+            "kind": kind,
+            "namespace": namespace,
+            "name": name,
+            "uid": f"predecessor-{index}",
+            "resource_version": str(1000 + index),
+            "object_sha256": "",
+        }
+        retained["object_sha256"] = hashlib.sha256(
+            canonical(verifier._live_projection(predecessor_live_object(retained)))
+        ).hexdigest()
+        predecessor_resources.append(retained)
     successor_storage = {
-        "schema": "fs2-serve.nebius.ai/sai07-successor-storage/v2",
+        "schema": "fs2-serve.nebius.ai/sai07-successor-storage/v3",
         "reference_source": {
             "persistent_volume_name": "pv-reference-data-test",
             "uid": "pv-reference-data-uid",
@@ -77,8 +104,14 @@ def context() -> dict[str, object]:
             "provisioning_receipt_sha256": "d" * 64,
             "storage_owner": "platform-storage",
         },
+        "predecessor_adoption": {
+            "schema": "fs2-serve.nebius.ai/sai07-predecessor-adoption/v1",
+            "mode": "retained-v2",
+            "rollout_ledger_v2_data_sha256": "e" * 64,
+            "resources": predecessor_resources,
+        },
         "proof_generation_ledger": {
-            "schema": "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v1",
+            "schema": "fs2-serve.nebius.ai/sai07-proof-generation-ledger/v2",
             "maximum_generations": 8,
             "active_generation": proof_generation_id,
             "generations": {proof_generation_id: proof_generation},
@@ -217,6 +250,42 @@ def live_object(
         value["status"] = {"phase": "Active"}
     else:
         value["spec"] = {}
+    return value
+
+
+def predecessor_live_object(item: dict[str, str]) -> dict[str, object]:
+    value: dict[str, object] = {
+        "apiVersion": item["api_version"],
+        "kind": item["kind"],
+        "metadata": {
+            "name": item["name"],
+            "namespace": item["namespace"],
+            "uid": item["uid"],
+            "resourceVersion": item["resource_version"],
+            "generation": 1,
+            "labels": {"app.kubernetes.io/managed-by": "terraform"},
+            "annotations": {},
+            "ownerReferences": [],
+        },
+    }
+    if item["kind"] == "ConfigMap":
+        value["immutable"] = True
+        value["data"] = {"retained-predecessor": "true"}
+    else:
+        value["spec"] = {
+            "template": {
+                "spec": {
+                    "restartPolicy": "Never",
+                    "containers": [
+                        {
+                            "name": "retained-predecessor",
+                            "image": "example.invalid/retained@sha256:" + "a" * 64,
+                        }
+                    ],
+                }
+            }
+        }
+        value["status"] = {"succeeded": 1}
     return value
 
 
@@ -650,6 +719,7 @@ def exception_objects() -> list[dict[str, object]]:
             "",
             "fs2-node-observability-pods",
         ),
+        *sorted(verifier.ROLLOUT_CUSTODY_OBJECTS),
         *sorted(verifier.SNAPSHOT_EXCEPTION_OBJECTS),
         *[
             ("apps/v1", "DaemonSet", identity[location]["namespace"], identity[location]["name"])
@@ -686,7 +756,13 @@ def successor_storage_objects(context: dict[str, object], start: int = 20) -> li
     assert isinstance(reference_source, dict) and isinstance(checkpoint_source, dict) and isinstance(ledger, dict)
     generation_id = ledger["active_generation"]
     assert isinstance(generation_id, str)
-    values: list[dict[str, object]] = []
+    adoption = custody["predecessor_adoption"]
+    assert isinstance(adoption, dict) and isinstance(adoption["resources"], list)
+    values: list[dict[str, object]] = [
+        predecessor_live_object(item)
+        for item in adoption["resources"]
+        if isinstance(item, dict)
+    ]
     checkpoint_class = live_object(
         "storage.k8s.io/v1",
         "StorageClass",
@@ -1114,7 +1190,18 @@ def setup_case(
 ) -> tuple[dict[str, object], FakeClient, Path, list[dict[str, object]]]:
     private_key, public_key = authority
     query_value = query(public_key, context)
-    objects = exception_objects()
+    storage = context["successor_storage"]
+    assert isinstance(storage, dict)
+    adoption = storage["predecessor_adoption"]
+    assert isinstance(adoption, dict) and isinstance(adoption["resources"], list)
+    objects = [
+        *exception_objects(),
+        *(
+            predecessor_live_object(item)
+            for item in adoption["resources"]
+            if isinstance(item, dict)
+        ),
+    ]
     ledger = initial_ledger(query_value)
     path = signed_bundle(tmp_path, private_key, query_value, ledger, objects)
     return query_value, FakeClient(objects, ledger), path, objects
@@ -1230,6 +1317,91 @@ def test_durable_ledger_accepts_only_append_only_proof_generation_history(
             config_map,
             {**ledger_query, "expected_context": rewritten_context},
         )
+
+
+def test_exact_legacy_v2_ledger_is_adopted_in_memory_for_one_owner_transition(
+    context: dict[str, object],
+) -> None:
+    legacy_data = {
+        "schema": verifier.LEGACY_LEDGER_SCHEMA,
+        "context_sha256": "1" * 64,
+        "authority_key_id": "sai07-review-authority",
+        "authority_signer_identity": "platform-security-reviewer",
+        "authority_public_key_sha256": "e" * 64,
+        "sequence": "1",
+        "state": "baseline-captured",
+        "last_bundle_sha256": "2" * 64,
+        "last_receipt_id": "legacy-receipt",
+        "last_nonce": "legacy-nonce",
+        "authorization_phase": "bootstrap-baseline",
+        "authorization_bundle_sha256": "2" * 64,
+        "authorization_nonce": "legacy-nonce",
+        "authorization_owner_acknowledged": "true",
+        "authorization_downstream_acknowledged": "true",
+    }
+    storage = context["successor_storage"]
+    assert isinstance(storage, dict)
+    adoption = storage["predecessor_adoption"]
+    assert isinstance(adoption, dict)
+    adoption["rollout_ledger_v2_data_sha256"] = hashlib.sha256(
+        verifier._terraform_canonical(legacy_data)
+    ).hexdigest()
+    context["successor_storage_sha256"] = hashlib.sha256(
+        verifier._terraform_canonical(storage)
+    ).hexdigest()
+    query = {
+        "expected_context": context,
+        "expected_key_id": "sai07-review-authority",
+        "expected_signer_identity": "platform-security-reviewer",
+        "public_key_sha256": "e" * 64,
+        "ledger_namespace": "fs2-system",
+        "ledger_name": "fs2-pod-security-rollout-ledger",
+    }
+    config_map = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "namespace": "fs2-system",
+            "name": "fs2-pod-security-rollout-ledger",
+            "resourceVersion": "44",
+        },
+        "data": legacy_data,
+    }
+    migrated = verifier._ledger_from_config_map(config_map, query)
+    assert migrated["schema"] == verifier.LEDGER_SCHEMA
+    assert migrated["sequence"] == 1
+    assert migrated["state"] == "baseline-captured"
+    assert migrated["proof_generations"] == verifier._proof_generation_state(context)
+
+    tampered = deepcopy(config_map)
+    tampered["data"]["last_nonce"] = "tampered"  # type: ignore[index]
+    with pytest.raises(verifier.ReceiptError, match="differs from signed predecessor adoption"):
+        verifier._ledger_from_config_map(tampered, query)
+
+
+def test_fresh_v3_install_cannot_claim_predecessor_state(context: dict[str, object]) -> None:
+    storage = context["successor_storage"]
+    assert isinstance(storage, dict)
+    adoption = storage["predecessor_adoption"]
+    assert isinstance(adoption, dict)
+    adoption.update(
+        {
+            "mode": "fresh-v3",
+            "rollout_ledger_v2_data_sha256": None,
+            "resources": [],
+        }
+    )
+    context["successor_storage_sha256"] = hashlib.sha256(
+        verifier._terraform_canonical(storage)
+    ).hexdigest()
+    verifier._validate_context(context, deepcopy(context))
+
+    adoption["resources"] = [{"not": "empty"}]
+    context["successor_storage_sha256"] = hashlib.sha256(
+        verifier._terraform_canonical(storage)
+    ).hexdigest()
+    with pytest.raises(verifier.ReceiptError, match="may not claim predecessor"):
+        verifier._validate_context(context, deepcopy(context))
 
 
 def test_bootstrap_rejects_same_count_object_or_collection_drift(context: dict[str, object]) -> None:

@@ -55,15 +55,15 @@ workload movement. Advance only after the checks for the current phase pass:
    successors are Bound to retained classes and their exact content/durability
    probes pass. Missing claims or probes fail closed.
 6. `quiesce-enforcement` consumes `reference-data-ready`. Reconcile every
-   retained model and App under the finite network profiles, then execute only
-   a separately approved UID/resourceVersion/spec-fenced cleanup manifest for
-   controller-created NetworkPolicies, ServiceAccounts, and DaemonSets. The
-   installed admission fence prevents recreation and new ServiceAccount
-   consumers; the cleanup removes DaemonSets before its final ServiceAccount
-   reference scan. The signed cleanup result and a fresh clean inventory must
-   match the frozen baseline identities before the ledger CAS advances to
-   `enforcement-quiesced`. That CAS activates a fail-closed admission fence for
-   every Pod-producing write.
+   retained model and App under the finite network profiles. Under a no-delete
+   operating constraint, the source has no resource-removal path: its closure
+   command performs exact read-only UID/resourceVersion/spec checks and emits a
+   result only when both the v4 baseline and immediate live inventory already
+   contain zero legacy controller-owned NetworkPolicies, ServiceAccounts, and
+   DaemonSets. Any retained object is a hard integration blocker, not a cleanup
+   success. Only that empty signed result can advance the ledger to
+   `enforcement-quiesced`; the CAS then activates a fail-closed admission fence
+   for every Pod-producing write.
 7. `enforce` consumes `enforcement-quiesced` and applies `baseline` enforcement
    plus pinned-minor restricted warn/audit labels to
    the foundation, reference-data, academic, ModelExpress, and explicitly listed
@@ -157,11 +157,25 @@ unique, monotonically sequenced generations; each retry appends a new
 nonce/attempt generation, while every earlier ConfigMap and Job remains in
 Terraform state with `prevent_destroy`. Reaching eight generations fails closed
 pending a separately reviewed archival procedure. Within one generation, a
-failed Job may create at most three Pods; the checkpoint writer accepts an
-already-fsynced marker only when its exact bytes match, so a crash after durable
-write resumes without replacing or rewriting it. All six reference read probes
-and both checkpoint Jobs bind the generation, attempt, signed nonce, and live
-PVC UID, resourceVersion and volumeName.
+failed Job may create at most three Pods. The writer first creates and fsyncs a
+unique candidate, then atomically hard-links that complete inode into the final
+no-overwrite name and fsyncs the directory. A crash or short write before
+publication leaves only a bounded retained candidate; a retry uses a new
+candidate. A crash after publication resumes only when the final marker's exact
+bytes match. No marker or candidate is unlinked or rewritten. All six reference
+read probes and both checkpoint Jobs bind the generation, attempt, signed nonce,
+and live PVC UID, resourceVersion and volumeName.
+
+The predecessor layout is adopted without replacement. A signed `retained-v2`
+mode binds fourteen exact retained ConfigMap/Job addresses, their live UIDs,
+resourceVersions and canonical object hashes, plus the exact v2 rollout-ledger
+data digest. A mutually exclusive `fresh-v3` mode requires a null v2 digest and
+an empty predecessor set. Explicit Terraform `moved` blocks transfer old
+namespace/successor/count addresses to destruction-protected retained addresses.
+The verifier re-reads every predecessor after signature verification and before
+the CAS. Its one allowed v2-to-v3 ledger edge writes the new proof-generation
+custody and the next signed phase in one resourceVersion-guarded update; an
+exact retry can resume Terraform after a crash without replaying a nonce.
 
 The rollout ConfigMap ledger separately persists the ordered generation IDs,
 latest sequence/active ID, and signed generation-ledger digest. Its CAS accepts
@@ -211,6 +225,22 @@ spec/status drift, inventory omission, context substitution, and concurrent
 ledger updates all fail closed. A digest-shaped string or a valid signature
 without successful live reconciliation and ledger consumption has no authority.
 
+The verifier does not impersonate the rollout identity. Its ambient external
+OIDC principal has only exact-name `serviceaccounts/token` creation through a
+dedicated receipt-custodian group. A fail-closed admission policy requires a
+directly authenticated non-system identity with authenticator JTI metadata and
+permits only the exact API audience for at most ten minutes. The returned JWT
+is checked for subject, audience, lifetime and live ServiceAccount UID, then
+held in an anonymous in-memory kubeconfig. Before minting, exact
+SelfSubjectAccessReviews require the one token edge and deny direct ledger
+update, any second ServiceAccount token, custodian user/ServiceAccount/group
+impersonation, and authenticator-extra impersonation. Ledger admission
+independently requires that short-lived ServiceAccount JWT's authenticator JTI;
+ordinary username/group impersonation cannot write the ledger. The retained
+predecessor manager and its bindings remain unchanged for non-destructive state
+continuity, but that username cannot pass ledger admission and is never used by
+the verifier.
+
 ## Model-controller ownership
 
 The dynamic model controller does not own ConfigMaps, NetworkPolicies,
@@ -252,7 +282,13 @@ kubectl get namespace \
 The rollout evidence must include the exact deployment inputs, CSI driver/class
 and claim UID, whole-bundle signature identity, pre/post ledger resourceVersion
 and sequence, one-time consumption result, DaemonSet readiness, exact namespace
-and live object/list hashes, bounded legacy cleanup UIDs, admission-policy
-identity, negative privileged-Pod result, positive customer/App/inference
-checks, and the slot-time stable rollback revision with request debugging
-disabled.
+and live object/list hashes, exact no-delete legacy closure inventory,
+admission-policy identity, negative privileged-Pod result, positive
+customer/App/inference checks, and the slot-time stable rollback revision with
+request debugging disabled.
+
+Under the current no-delete operating constraint, any baseline or live
+inventory containing a legacy controller-owned NetworkPolicy, ServiceAccount,
+or DaemonSet keeps integration and enforcement blocked. This source does not
+claim that such retained objects have been removed, and source conformance is
+not live closure evidence.

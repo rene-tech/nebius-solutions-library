@@ -68,7 +68,8 @@ locals {
     exception_admission_sha256 = sha256(jsonencode({
       host_policy_sha256     = filesha256("${path.module}/pod_security_admission.tf")
       snapshot_policy_sha256 = filesha256("${path.module}/pod_security_snapshot_admission.tf")
-      rollout_manager        = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-manager"
+      rollout_custodian      = "system:serviceaccount:fs2-system:fs2-pod-security-rollout-custodian"
+      rollout_token_audience = "https://kubernetes.default.svc"
       host_agent_images      = var.pod_security_host_agent_images
       storage_probe_image    = var.pod_security_storage_probe_image
       storage_tools_config   = var.pod_security_storage_tools_config_map
@@ -183,8 +184,9 @@ module "pod_security_rollout_gate" {
 
   depends_on = [
     kubernetes_manifest.pod_security_ledger_binding,
-    kubernetes_cluster_role_binding_v1.pod_security_rollout_reader,
-    kubernetes_role_binding_v1.pod_security_rollout_ledger,
+    kubernetes_manifest.pod_security_rollout_token_binding,
+    kubernetes_cluster_role_binding_v1.pod_security_rollout_custodian_reader,
+    kubernetes_role_binding_v1.pod_security_rollout_custodian_ledger,
   ]
 }
 

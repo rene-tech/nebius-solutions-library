@@ -52,6 +52,16 @@ variable "kube_context" {
   }
 }
 
+variable "token_audience" {
+  description = "Exact Kubernetes API audience for the ten-minute rollout-custodian TokenRequest."
+  type        = string
+  default     = "https://kubernetes.default.svc"
+  validation {
+    condition     = var.token_audience == "https://kubernetes.default.svc"
+    error_message = "token_audience must equal the reviewed Kubernetes API audience."
+  }
+}
+
 variable "ledger_namespace" {
   type    = string
   default = "fs2-system"
