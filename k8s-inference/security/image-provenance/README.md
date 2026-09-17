@@ -13,8 +13,10 @@ an unreviewed local build cannot reach the platform namespaces unnoticed.
 | Durable anchor | `inference-stack anchor-release` | A `release/*`/`deploy/*` tag bundled into the private run root: full history, mode 0600, SHA-256 recorded, `git bundle verify` passed, and restore proven by a real clone that must resolve the tag to the expected commit. A local tag **without** a verified bundle never anchors. Anchors are **write-once**: identity-equal re-runs are idempotent; a moved tag, a changed/missing bundle, or an unrecorded file at the bundle path is refused | Public/remote publication (an owner decision) |
 | Release receipt | `provenance.py receipt` | Digest ↔ source binding via the content-addressed chain: the **exactly one** linux/amd64 image manifest is resolved from the index (never "the first entry"), its config blob is fetched, hash-verified, platform-checked, and must carry exact 40-hex revision and source-tree labels; the anchor's current annotated **tag object** must equal the recorded target and be present in the verified bundle; ancestry and tree equality are proven inside a fresh clone restored **from the bundle**; SBOM evidence is the attestation selected for that exact amd64 manifest — a fetched, hash-verified (blob = layer digest) in-toto Statement (v0.1/v1) with `predicateType` exactly `https://spdx.dev/Document`, a named subject whose sha256 equals the amd64 manifest, and an SPDX-2.x predicate with valid unique SPDXIDs and a resolving SPDXRef-DOCUMENT DESCRIBES — or a standalone SPDX document that binds the digest as an exact SHA256 checksum or purl version on a described package (substring mentions never bind); the verified manifest/config/attestation/layer/statement digests are recorded and the receipt itself is cosign-signed and signature-verified before no-replace publication. Receipts are **write-once**: identity-equal re-runs re-verify the signature and return the original bytes; any difference is refused | Images without exact revision/tree labels (refused); superseding requires explicitly archiving the old receipt directory first |
 | Signing / verification | `provenance.py sign` / `verify` | `sign` refuses any reference without a signed, validated receipt; key-based cosign signatures with `--use-signing-config=false --new-bundle-format=false --tlog-upload=false` (the regional registry rejects the new bundle media type, and private repo names/digests must not reach the public Rekor log) | Signature ≠ provenance by itself: a signature without a receipt is artifact presence only |
-| Admission: image rules | `policy.yaml` (`fs2-image-provenance`) | For Pods **and** Deployments/DaemonSets/StatefulSets/Jobs/CronJobs in `fs2-system`/`fs2-models`: digest pinning, registry prefix allow-list, and the platform-repository digest allow-list, so a direct `helm upgrade`/`kubectl apply` with a bad image fails at the workload write | Config-only changes that reuse allow-listed images |
-| Admission: Helm release writes | `policy.yaml` (`fs2-helm-release-governance`) | Secrets of type `helm.sh/release.v1` in `fs2-system` may only be written by the `deploy-principals` recorded in the allow-list ConfigMap; under the decided HELM_DRIVER=sql contract that list is EMPTY and every such write is denied outright | Config-only `kubectl` writes outside admission's matched resources are not gated; Terraform no-drift remains the detective control for those |
+| Admission: image rules | `policy.yaml` (`fs2-image-provenance`) | For Pods **and** Deployments/DaemonSets/StatefulSets/Jobs/CronJobs in `fs2-system`/`fs2-models`: every model, debug/tooling, website, control-plane, and application image must be an exact digest reference in `allowed-images`; every entry has a receipt and release-key signature | Nothing outside the owner-selected namespaces |
+| Admission: reviewed source | `policy.yaml` (`fs2-reviewed-source-governance`), `reviewed-resource-plan.example.json`, and the owner-pinned webhook | Every namespaced CREATE/UPDATE/DELETE by the release identity—including config-only direct writes and Helm's Kubernetes writes with `HELM_DRIVER=sql`—must carry the current signed-inventory authorization/session and exact reviewed commit/tree before expiry, and the webhook must find exactly one owner-signed append-only plan grant matching operation/resource/name, the canonical hash of the actual defaulted AdmissionReview object, and old UID/resourceVersion for UPDATE/DELETE | It does not authorize a principal; short-lived release identity custody remains an IAM control |
+| Admission: Helm release writes | `policy.yaml` (`fs2-helm-release-governance`) | Under the fixed HELM_DRIVER=sql contract, the Helm release-Secret writer list is EMPTY and every `helm.sh/release.v1` Secret write is denied; the universal reviewed-source gate covers the Kubernetes mutations produced by Helm | The SQL credential remains owner-provisioned through the exact read-only CSI mount |
+| Governed debugging | `render-debug-session`, `render-debug-registry-patch`, `render-debug-retirement`, `fs2-debug-session-*` policies, and `debug_admission.py` | Owner-signed session binds cluster, namespace, Pod name+UID, tenant, container, exact signed image, nonce and ≤4h TTL; the owner-signed scope binds the single debug principal. The append-only registry retains the exact signed document/signature; every IAM audit re-verifies them and rejects hand-crafted or stale grants. Expiry denies immediately; retirement appends a deny marker, then empties rules/subjects without deletion. The CONNECT webhook live-checks cluster/Pod UID/tenant/container to prevent replacement or cross-container attach; its exact install manifest is hash-chained through the owner-signed IAM boundary and checked live | The owner must replace the fail-closed image/CA placeholders, update the chained manifest pin, sign the scope, and install the exact objects in the authorized rollout window |
 
 **Closure status (owner decisions 2026-09-16, DEFINED in source; live
 application happens only at the separately authorized rollout window):** the
@@ -30,7 +32,7 @@ the live environment to match — a caller cannot point enumeration at an
 alternate or empty backend, and the DSN reaches the deploy job only as a
 file through the one owner-named credential CSI driver, per the committed
 deploy-job.example.yaml custody definition), (b) admission protection of
-the two parameter ConfigMaps through
+the four protected state ConfigMaps through
 `fs2-provenance-guard` (once applied, only the security identity writes
 them), and (c) removal of human workload/ConfigMap-mutation/impersonation
 rights, which the renderer's read-only IAM audit ENFORCES at every render —
@@ -54,12 +56,16 @@ provides the self-contained restore proof a receipt binds to.
 
 ## Key management
 
-The cosign release key pair lives in the operator-private run root (mode 0600,
-never in Git): `$RUN_ROOT/../cosign/cosign.key`. Generate with
-`COSIGN_PASSWORD="" cosign generate-key-pair` in that directory. The public
-key is committed here as `cosign.pub`. Rotation: generate a new pair, re-sign
-the receipts and currently deployed digests, replace `cosign.pub`, record the
-rotation in a release receipt.
+The cosign release private key is OWNER-CUSTODIED outside remediation,
+release automation, the repository, and the cluster. The checked-in public
+key is intentionally marked `RELEASE_KEY_PROVENANCE = "bootstrap-placeholder"`:
+all scope, inventory, receipt, debug, recovery, rollout, and CI authority
+paths fail closed until the owner independently originates the real key and
+commits `cosign.pub`, `RELEASE_KEY_SHA256`, and
+`RELEASE_KEY_PROVENANCE = "owner-originated"` together through review. The
+attestor has the same independent gate and a different key. Rotation is an
+owner-reviewed replacement plus re-signing/re-receipting; a release worker
+never generates either trust root.
 
 ## Release procedure (extends `CUSTOMER_RELEASE_POLICY.md`)
 
@@ -103,7 +109,9 @@ bump — in order:
    source, with a reason bound to a tracking identifier — **an active image
    can never be drained**; owner scope decisions about live sibling programs
    belong in the admission policy's match scope, never in the inventory.
-   `platform_images` must equal the source union minus the audited drains,
+   `platform_images` (retained field name) must equal the complete image
+   source union minus the audited drains—including model, debug/tooling, and
+   website images, not only the platform repository—
    which the renderer proves. Sign it: `cosign sign-blob
    --key <cosign.key> --use-signing-config=false --tlog-upload=false --yes
    --output-file inventory.json.sig inventory.json`. The renderer refuses to
@@ -132,6 +140,18 @@ bump — in order:
    cross-check). The inventory additionally carries a strictly increasing
    integer `generation` and a typed collector
    (`{method: fs2-live-enumeration/v1, identity: <authenticated user>}`).
+   The signed inventory hash is also the release authorization: the rendered
+   parameters expose its hash, derived nonce, reviewed commit/tree/tag/bundle,
+   and expiry. Every release-identity mutation must carry those exact values.
+   The Helm SQL DSN must contain exactly
+   `application_name=fs2-release:<inventory-sha256>`; the deploy-job template
+   derives it from the admitted Pod annotation. The committed post-renderer
+   propagates the same source/session annotations to every Helm object; those
+   annotations select a plan but do not authorize content. The admission
+   webhook independently requires the actual canonical object to equal one
+   exact owner-signed plan grant, so direct and config-only writes take the
+   same path while an alternate Helm session is refused before authoritative
+   history collection.
    Replay protection is a SIGNED chain, not a mutable file: every accepted
    render appends a cosign-signed head (sequence, generation, capture time,
    inventory hash, previous-head hash) under `release-inventory-heads/`,
@@ -184,9 +204,11 @@ bump — in order:
    validationActions — so a missing, Audit-only, `NotIn`, exclude-all, or
    otherwise narrowed live object refuses rendering. The SECURITY-OWNED
    guard (`fs2-provenance-guard`) must be live and identical too: it
-   restricts writes of the allow-list and guard-parameter ConfigMaps to the
-   scope's `security_principals` (automation ServiceAccounts, DISJOINT from
-   the deploy principals). Admission-configuration objects themselves are
+   restricts writes of the allow-list, guard parameters, debug sessions, and
+   reviewed-resource registry to the scope's `security_principals`
+   (automation ServiceAccounts, DISJOINT from the deploy principals). The two
+   append-only registries must be created empty, cannot be deleted, and retain
+   expired or retired evidence. Admission-configuration objects themselves are
    architecturally exempt from in-cluster admission (see the corrected
    boundary note under residuals): their non-removability is the EXTERNAL
    owner control, while the renderer's live-equality check — which also
@@ -222,9 +244,58 @@ bump — in order:
    `release-scope.json` is also ratifying the collection procedure (an
    authenticated authoritative collector remains an owner infrastructure
    item, and rendering stays impossible until that owner sign-off exists).
-6. Run the gate (`release-gate`, also automatic inside `apply`), deploy, then
+6. Prepare and install the mutation plan before granting the release identity
+   a write window. Render the exact objects with
+   `release_post_renderer.py`, submit each through the authenticated API as
+   an authorized **server-side dry-run**, save each returned JSON object, and
+   calculate `provenance.py canonical-resource-hash --object <object.json>`.
+   Record operation, API group/version/resource, namespace/name, canonical
+   hash, and—for UPDATE/DELETE—the live old UID/resourceVersion in an exact
+   `reviewed-resource-plan.example.json`-shaped document. Its nonce must be
+   the first 32 hex characters of the current signed-inventory hash, its
+   cluster/source/session must equal the rendered allow-list, its expiry may
+   not exceed that release session, it may contain no subresource grants, and
+   it expires within 24 hours. The independent owner
+   signs the exact plan bytes; the security identity runs
+   `provenance.py render-reviewed-resource-plan-patch --public-key ...
+   --scope ... --plan ...` and applies the emitted resourceVersion-fenced JSON
+   Patch to `fs2-reviewed-resources`. The webhook admits a release mutation
+   only when exactly one immutable grant equals the canonical AdmissionReview
+   object and old-object fence. Install the allow-list, empty registries, and
+   pinned webhook in the owner-authorized bootstrap window before enabling
+   release writes; the webhook fails closed when any authority input is absent.
+   The reviewed deploy Job also runs `verify-helm-deploy-dsn` against the same
+   exact backend identity recorded in the owner scope before it appends the
+   inventory-derived `application_name` and executes Helm; alternate or
+   caller-pretagged SQL backends are refused.
+7. Run the gate (`release-gate`, also automatic inside `apply`), deploy, then
    `provenance.py verify --public-key security/image-provenance/cosign.pub
    <ref>`.
+
+## Governed debug session procedure
+
+Debugging remains available without a standing attach capability. The owner
+signs an exact `debug-session/v2` document (cluster, namespace, Pod name+UID,
+tenant, new container, allow-listed image, nonce and at most four hours); the
+signed scope fixes the single debug principal. The security identity first
+runs `render-debug-registry-patch`; that
+command double-reads the live Pod, checks UID/resourceVersion, tenant,
+container-name absence, cluster, image allow-list and nonce non-reuse, then
+emits one resourceVersion-fenced patch retaining the active row plus the exact
+signed document/signature. Only after that patch is applied does
+`render-debug-session` emit the exact Role/RoleBinding. Admission binds both
+ephemeral-container injection and interactive attach to the retained session;
+the IAM audit re-verifies the owner signature and refuses any hand-crafted,
+modified, missing-pair or expired-capable grant.
+
+At TTL, admission denies immediately even if retirement has not run. The
+security identity then calls `render-debug-retirement` with the live registry,
+Role and RoleBinding fences. It applies the returned patches in order: append
+`retired.<nonce>=<session-sha256>` first, then empty Role rules and Binding
+subjects while marking both retired. The command deliberately accepts an
+already-expired signed document for this purpose. No registry row, Role or
+RoleBinding is deleted; a later audit requires expired/retired objects to stay
+present and incapable.
 
 ## Evidence immutability and no-replace publication
 
@@ -407,11 +478,11 @@ policies; only new admissions are.
 
 ## Deliberate boundaries and residuals
 
-- The exact digest allow-list applies to the platform repository prefix.
-  Model runtime images (`…/fs2-models/…`) are enforced for digest pinning and
-  registry origin only: scientific-stage bindings freeze historical digests at
-  admission time, and an exact model allow-list would break legitimate frozen
-  retries. Extending it requires feeding the list from the execution map.
+- The exact full-reference `allowed-images` list applies uniformly to model,
+  debug/tooling, website, control-plane, and application images. Frozen model
+  retries remain functional by keeping their receipted and signed historical
+  references in the complete signed inventory; registry-prefix membership or
+  a bare digest alone never authorizes an image.
 - `pods/ephemeralcontainers` IS matched: `kubectl debug` injection is
   admission-governed like any other image, and keeps working with
   digest-pinned images from allow-listed registries (real isolated-kind
@@ -441,12 +512,13 @@ policies; only new admissions are.
   SIGNED, BOUNDED handoff (the rendered artifacts plus, for enforcement
   changes, the owner-signed recovery authorization), and recovery is ONLY
   the reversible Audit/Warn <-> Deny toggle — never deletion. In-cluster, the truthful posture is: the guard DENIES
-  non-security writes to the two parameter ConfigMaps (ordinary resources
+  non-security writes to the four protected state ConfigMaps (ordinary resources
   admission fully evaluates; the ConfigMaps are DERIVED STATE, never
   authority — the renderer verifies live guard-params content against the
-  owner-signed scope), and drift or deletion of ANY of the six policy
+  owner-signed scope), and drift or deletion of ANY of the twelve policy
   objects is DETECTED at every render by the live-equality check
-  (image-provenance, Helm-governance, and guard policies + bindings, all
+  (image-provenance, Helm-governance, guard, reviewed-source, debug-access,
+  and debug-RBAC policies + bindings, all
   normalized over every narrowing field WITH API defaulting applied — a
   live GET returns persisted defaults such as `matchPolicy: Equivalent` and
   rule scope `*`, which compare equal to committed YAML that omits them),
@@ -545,7 +617,9 @@ policies; only new admissions are.
   snapshot for the owner's off-host WORM store (EVERY required chain is
   always enumerated, count 0 included) and `verify-anchored-heads` — the
   same enforcement that runs inside every render and every
-  execute/resume — fails closed when a required chain is omitted from the
+  execute/resume, but deliberately READ-ONLY for its caller-supplied input
+  (only the provider/WORM-validated render and execute/resume paths can
+  commit replay state) — fails closed when a required chain is omitted from the
   snapshot, when local chains regress behind the anchored copy
   (whole-store deletion), when equal-length heads diverge (in-place
   rewrite), and when a LONGER local chain's element at the anchored
@@ -617,7 +691,10 @@ policies; only new admissions are.
   authenticated as the owner-pinned read-only principal (whoami-verified):
   the ancestry is DERIVED live (cluster -> folder -> cloud) and must equal
   the owner enumeration; every level's access bindings are fetched fully
-  paginated and enumerated TWICE (instability refuses); role semantics are
+  paginated and enumerated TWICE (instability refuses), and every binding's
+  subject type is required and included in the witnessed snapshot so a group
+  can never masquerade as an attested leaf; typed group-membership rows are
+  likewise snapshot-bound and recursively closed; role semantics are
   FAIL-CLOSED and PERMISSION-BASED — role names prove nothing: a role
   counts as read-only only when the owner lists it AND every permission
   the provider reports for it is read-shaped, unknown roles are
@@ -688,9 +765,10 @@ policies; only new admissions are.
   cannot be pivoted into identity-token minting, stored-credential
   exfiltration, arbitrary-ServiceAccount scheduling, host/node access, or
   privileged execution; the security identity's RBAC is equally narrow
-  (admission-object writes name-scoped to the three protected objects,
-  ConfigMap writes namespaced and name-scoped to the two parameter
-  ConfigMaps, no secret/pod/serviceaccount reads). The IAM audit itself
+  (admission-object writes name-scoped to the six protected policy names,
+  ConfigMap writes namespaced and name-scoped to the four protected state
+  ConfigMaps, plus read-only equality checks for the pinned debug webhook;
+  no secret/pod/serviceaccount reads). The IAM audit itself
   matches subresource wildcards (`pods/*`, `*/token`) and enumerates
   Roles/RoleBindings in EVERY namespace: cluster-effect grants (token
   minting, CSR, RBAC mutation, impersonation, proxy, node/PV/StorageClass
@@ -700,7 +778,7 @@ policies; only new admissions are.
   without flagging unrelated app namespaces). The permitted_role
   allowances are GRANT-SHAPE-BOUND: the security identity's admission
   grant may not carry delete or wildcards and must resourceName-scope its
-  update/patch to the three protected objects, and the deploy identity's
+  update/patch to the six protected policy names, and the deploy identity's
   workload grant may never include ServiceAccount writes or delete. The
   committed iam-boundary.yaml is pinned by the scope
   (`iam_boundary_sha256`) and every object it defines must exist live and
@@ -714,18 +792,22 @@ policies; only new admissions are.
   ServiceAccount), and impersonation matching covers named userextras
   subresources. The DOCUMENTED customer kubectl-debug workflow is
   FUNCTIONAL end to end but with EXACT governed target binding: the debug
-  verbs (pods/ephemeralcontainers, pods/attach, pods/log) are NEVER a
-  standing namespace-wide grant (that would let the debug identity attach
-  to or read logs of any pod — an exfiltration pivot). The OWNER signs a
+  verbs (pods/ephemeralcontainers and pods/attach) are NEVER a standing
+  namespace-wide grant (that would let the debug identity attach to any pod
+  — an exfiltration pivot). The OWNER signs a
   debug-session document (exact cluster/namespace/pod/container/tenant +
   nonce + bounded TTL); `provenance.py render-debug-session` emits an
   ephemeral Role + RoleBinding whose debug verbs are resourceName-scoped to
-  THAT pod, which the security identity applies for the session and removes
-  after. The live IAM audit permits those debug verbs ONLY when the granted
+  THAT pod, which the security identity applies for the session; expiry
+  immediately denies admission and retirement appends a deny marker before
+  emptying rules/subjects without deleting evidence. The live IAM audit
+  permits those debug verbs ONLY when the granted
   rule carries resourceNames (session grant-shape) — a namespace-wide debug
   grant violates even for the debug identity. The debug identity's standing
-  grant is only pods get/list (to locate a target). exec and port-forward
-  stay forbidden for EVERY identity. PVC writes in the
+  grant is only pods get/list (to locate a target). `pods/log` stays denied
+  because its GET path cannot be bound to the admission-enforced TTL;
+  interactive debug output remains available through the governed attach.
+  exec and port-forward stay forbidden for EVERY identity. PVC writes in the
   scope namespaces are a grant-shaped deploy-only path (never delete);
   automation-written workloads mount PVCs only by EXACT owner-enumerated
   claim names (no prefixes) and the ONLY inline CSI they may mount is the
@@ -764,24 +846,26 @@ policies; only new admissions are.
   evidence, bundles) carry their accounting in their names and signatures,
   and an orphaned head signature is VERIFIED over the deterministic payload
   and adopted rather than re-signed (real ECDSA is randomized).
-- Kind boundary evidence (2026-09-16): as the configured cluster-admin
-  principal, a direct config-only Pod patch, mutation of the allow-list
-  ConfigMap, deletion of the VAP objects, and a Helm release-Secret write
-  were all ACCEPTED (the foreign Helm principal was denied). These are
-  explicit fail-closed owner/IAM gates — automation-only deploy identity,
-  admission protection of the ConfigMap and policy objects, removal of human
-  mutation/impersonation rights — and NOTHING in this source tree enforces
-  them; do not read this component as claiming otherwise.
+- Historical kind evidence (2026-09-16) showed that the then-configured
+  cluster-admin could make direct/config-only writes and remove admission
+  objects. This additive source revision closes ordinary release writes with
+  exact owner-signed canonical mutation plans and protects four state
+  ConfigMaps; admission objects remain an intentional Kubernetes anti-lockout
+  exemption and therefore rely on the separately applied external IAM/provider
+  boundary plus live-equality refusal. No live application or integration
+  result is claimed by this source-only revision.
 - `parameterNotFoundAction: Deny` fails closed if the allow-list ConfigMap is
   deleted; Pod churn in the matched namespaces then stalls until it is
   restored from the run-root receipt.
-- The website image is built in its repository's CI for validation only;
-  publication happens operator-side, so website digests follow the same
-  operator receipt/sign procedure. Current website images carry only a short
-  revision label, which the receipt tool refuses; publishing full 40-hex
-  revision labels (and an anchor for that repository) is an owner/landing-repo
-  item. If publishing moves into CI, add the cosign step there with a
-  CI-scoped key.
+- Website release CI can call
+  `.github/workflows/inference-website-provenance.yml`; it checks out the exact
+  workflow commit and accepts only an exact digest that appears in the fresh
+  owner-signed complete inventory and whose receipt, retained SBOM/source
+  proof, and release-key signature all re-verify. Actions and downloaded
+  verifier binaries are source-pinned. The checked-in binary URL/hash and
+  provenance values intentionally fail closed until the owner supplies
+  independently reviewed immutable values; the website image must also carry
+  full 40-hex revision/tree labels and have an anchored source repository.
 - A cryptographic signature check at admission (sigstore policy-controller) is
   the follow-up upgrade; until then the allow-list ConfigMap — renderable only
   from signed receipts and verified signatures — is the admission proxy.

@@ -9,9 +9,10 @@
 #      ephemeral containers injected through the pods/ephemeralcontainers
 #      subresource by `kubectl debug`.
 #   2. Every image must come from an allow-listed registry prefix.
-#   3. Platform application images (control plane, admin console, website —
-#      anything under the platform repository prefix) must additionally use a
-#      digest present in the signed release allow-list.
+#   3. Every image — model, debug/tooling, website, control-plane and app —
+#      must equal a full digest reference in the signed release allow-list.
+#      Registry membership or reuse of a digest under another repository is
+#      never sufficient provenance.
 #   4. Pods running as an AUTOMATION identity (the deploy/security
 #      ServiceAccounts listed in the allow-list's automation-service-accounts
 #      key) must be token-hardened: automountServiceAccountToken false at the
@@ -72,25 +73,27 @@
 # images; the injection command shape is proven verbatim on an isolated kind
 # cluster by tests/test_admission_kind.py). The AUTHORIZED CALLER is the
 # owner-designated DEBUG identity (scope.debug_principals; iam-boundary.yaml
-# defines fs2-debugger in BOTH platform namespaces with exactly pods +
-# pods/log get/list, pods/ephemeralcontainers get/update/patch, and
-# pods/attach get/create — so injection, `-it` interactive attach, and log
-# reading all function). exec and port-forward stay forbidden for every
+# defines fs2-debugger in BOTH platform namespaces with exactly pods get/list
+# plus session-scoped pods/ephemeralcontainers get/update/patch and
+# pods/attach get/create — so injection and `-it` interactive attach work).
+# pods/log is deliberately not granted: it is an ordinary GET that does not
+# traverse the TTL-enforcing CONNECT admission path. exec and port-forward
+# stay forbidden for every
 # identity: exec spawns arbitrary processes in EXISTING containers, while
 # attach only reaches containers whose images admission pinned at injection.
-# TRUTHFUL LIMIT: RBAC attach is pod-scoped, not container-scoped — within
-# its bound namespaces the debug identity can attach to any container; that
-# breadth is why it is a separate, token-hardened, individually auditable
-# automation identity. The sanctioned, image-pinned debug path:
+# RBAC attach is only pod-scoped, so the owner-pinned companion webhook closes
+# that residual breadth by resolving the live Pod and requiring the requested
+# container, Pod UID, tenant, principal, cluster and unexpired nonce to match
+# one signed session. The sanctioned, image-pinned debug path:
 #   kubectl -n fs2-system debug <pod> --container debugger \
 #     --image <allow-listed-registry>/fs2-tools/debug@sha256:<digest> -- sleep 3600
 #   (add -it to attach interactively once the ephemeral container is admitted)
-#   The debug image must be digest-pinned and come from an allow-listed
-#   registry prefix; host debug tooling OUTSIDE the platform repository
-#   prefix (e.g. an fs2-tools repository) so it needs no release allow-list
-#   entry, or receipt+sign+inventory it like a platform image if it must
-#   live under the platform prefix. Mutable tags (`:latest`) and foreign
-#   registries (e.g. evil.invalid/debug:latest) are denied at injection.
+#   The debug image must be digest-pinned, come from an allow-listed registry
+#   prefix, and appear as that exact repository@digest in `allowed-images`
+#   after receipt, signature, SBOM, and inventory verification. A separate
+#   fs2-tools repository is allowed only when the owner includes its exact
+#   signed image in the release inventory. Mutable tags (`:latest`) and
+#   foreign registries (e.g. evil.invalid/debug:latest) are denied at injection.
 #
 # Rollback / break-glass (governed; never a direct patch, never deletion):
 #   1. The OWNER signs a bounded recovery authorization naming the target
@@ -166,6 +169,11 @@ spec:
         ('platform-digests' in params.data
          ? params.data['platform-digests'] : '')
         .split("\n").filter(d, d != '')
+    - name: allowedImages
+      expression: >-
+        ('allowed-images' in params.data
+         ? params.data['allowed-images'] : '')
+        .split("\n").filter(i, i != '')
     - name: allowedNamespaces
       expression: >-
         ('namespaces' in params.data
@@ -198,6 +206,18 @@ spec:
       expression: >-
         variables.automationServiceAccounts.exists(a,
           'system:serviceaccount:' + a == request.userInfo.username)
+    - name: releasePrincipals
+      expression: >-
+        ('release-principals' in params.data
+         ? params.data['release-principals'] : '')
+        .split("\n").filter(p, p != '')
+    - name: writerIsRelease
+      expression: >-
+        variables.releasePrincipals.exists(
+          p, p == request.userInfo.username)
+    - name: sourceAnnotations
+      expression: >-
+        has(object.metadata.annotations) ? object.metadata.annotations : {}
     - name: deployCredentialCsiDriver
       expression: >-
         'deploy-credential-csi-driver' in params.data
@@ -210,6 +230,11 @@ spec:
       expression: >-
         ('workload-pvc-names' in params.data
          ? params.data['workload-pvc-names'] : '')
+        .split("\n").filter(p, p != '')
+    - name: workloadConfigMapNames
+      expression: >-
+        ('workload-configmap-names' in params.data
+         ? params.data['workload-configmap-names'] : '')
         .split("\n").filter(p, p != '')
     - name: usesProjectedSecretSource
       expression: >-
@@ -330,14 +355,38 @@ spec:
         registry prefix in fs2-image-provenance-allowlist (SAI-09)
       reason: Forbidden
     - expression: >-
-        variables.platformRepositoryPrefix != '' &&
-        variables.images.all(i,
-          !i.startsWith(variables.platformRepositoryPrefix) ||
-          variables.platformDigests.exists(d, i.endsWith('@' + d)))
+        size(variables.allowedImages) > 0 &&
+        variables.images.all(i, variables.allowedImages.exists(a, a == i))
       message: >-
-        platform application images must use a cosign-signed digest recorded in
-        fs2-image-provenance-allowlist; sign and allow-list the release before
-        deploying it (SAI-09)
+        every model, debug/tooling, website and platform image must equal a
+        full digest reference with a release receipt and signature recorded in
+        fs2-image-provenance-allowlist (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        !variables.writerIsRelease || (
+          'reviewed-source-commit' in params.data &&
+          'reviewed-source-tree' in params.data &&
+          'release-authorization-sha256' in params.data &&
+          'release-session-nonce' in params.data &&
+          'release-expires-at' in params.data &&
+          'security.fs2.nebius.ai/source-commit' in variables.sourceAnnotations &&
+          variables.sourceAnnotations['security.fs2.nebius.ai/source-commit'] ==
+            params.data['reviewed-source-commit'] &&
+          'security.fs2.nebius.ai/source-tree' in variables.sourceAnnotations &&
+          variables.sourceAnnotations['security.fs2.nebius.ai/source-tree'] ==
+            params.data['reviewed-source-tree'] &&
+          'security.fs2.nebius.ai/release-authorization' in variables.sourceAnnotations &&
+          variables.sourceAnnotations['security.fs2.nebius.ai/release-authorization'] ==
+            params.data['release-authorization-sha256'] &&
+          'security.fs2.nebius.ai/release-session' in variables.sourceAnnotations &&
+          variables.sourceAnnotations['security.fs2.nebius.ai/release-session'] ==
+            params.data['release-session-nonce'] &&
+          request.timestamp < timestamp(params.data['release-expires-at']))
+      message: >-
+        every release-identity Pod/controller mutation, including direct
+        kubectl and HELM_DRIVER=sql config-only changes, must be bound to the
+        current owner-signed reviewed source commit/tree and unexpired release
+        authorization/session (SAI-09)
       reason: Forbidden
     - expression: >-
         !variables.isAutomationPod || (
@@ -345,18 +394,26 @@ spec:
           variables.podSpec.automountServiceAccountToken == false &&
           (!has(variables.podSpec.volumes) ||
            variables.podSpec.volumes.all(v,
-             (has(v.projected) || has(v.configMap) || has(v.emptyDir) ||
+             (has(v.projected) ||
+              (has(v.configMap) && variables.workloadConfigMapNames.exists(
+                n, n == request.namespace + '/' + v.configMap.name)) ||
+              has(v.emptyDir) ||
               has(v.downwardAPI) ||
               (has(v.csi) && variables.deployCredentialCsiDriver != '' &&
                v.csi.driver == variables.deployCredentialCsiDriver &&
                has(v.csi.readOnly) && v.csi.readOnly == true &&
+               !has(v.csi.fsType) &&
+               !has(v.csi.nodePublishSecretRef) &&
                has(v.csi.volumeAttributes) &&
+               size(v.csi.volumeAttributes) == 1 &&
                'secretProviderClass' in v.csi.volumeAttributes &&
                v.csi.volumeAttributes['secretProviderClass'] ==
                  variables.deployCredentialSpc)) &&
              (!has(v.projected) || !has(v.projected.sources) ||
               v.projected.sources.all(s,
                 !has(s.secret) &&
+                (!has(s.configMap) || variables.workloadConfigMapNames.exists(
+                  n, n == request.namespace + '/' + s.configMap.name)) &&
                 (!has(s.serviceAccountToken) || (
                   has(s.serviceAccountToken.audience) &&
                   s.serviceAccountToken.audience == variables.tokenAudience &&
@@ -399,15 +456,22 @@ spec:
           variables.allContainersRefusePrivEsc &&
           (!has(variables.podSpec.volumes) ||
            variables.podSpec.volumes.all(v,
-             has(v.projected) || has(v.configMap) || has(v.emptyDir) ||
+             has(v.projected) ||
+             (has(v.configMap) && variables.workloadConfigMapNames.exists(
+               n, n == request.namespace + '/' + v.configMap.name)) ||
+             has(v.emptyDir) ||
              has(v.downwardAPI) ||
              (has(v.persistentVolumeClaim) &&
               variables.workloadPvcNames.exists(p,
+                request.namespace + '/' +
                 v.persistentVolumeClaim.claimName == p)) ||
              (has(v.csi) && variables.deployCredentialCsiDriver != '' &&
               v.csi.driver == variables.deployCredentialCsiDriver &&
               has(v.csi.readOnly) && v.csi.readOnly == true &&
+              !has(v.csi.fsType) &&
+              !has(v.csi.nodePublishSecretRef) &&
               has(v.csi.volumeAttributes) &&
+              size(v.csi.volumeAttributes) == 1 &&
               'secretProviderClass' in v.csi.volumeAttributes &&
               v.csi.volumeAttributes['secretProviderClass'] ==
                 variables.deployCredentialSpc))))
@@ -424,6 +488,16 @@ spec:
         outside the bounded automation audience; workload-create rights
         never become identity, credential, host, node, storage, or privilege
         escalation (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        !variables.writerIsAutomation || object.kind != 'StatefulSet' ||
+        !has(object.spec.volumeClaimTemplates) ||
+        size(object.spec.volumeClaimTemplates) == 0
+      message: >-
+        automation may not create StatefulSet volumeClaimTemplates: Kubernetes
+        expands a template into generated PVC names that are not the exact
+        owner-enumerated PVC identities. Pre-create an exact reviewed PVC
+        through the guarded PVC path and reference that claim instead (SAI-09)
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -545,15 +619,17 @@ spec:
 #
 # What this guard DOES enforce (ConfigMaps are ordinary resources that
 # admission fully evaluates): only the security automation identity may
-# create, update, or delete the allow-list ConfigMap and this guard's own
-# parameter ConfigMap. The release identity produces the rendered allow-list
-# and hands it to the security identity for application; humans write
-# nothing here. Break-glass (validationActions changes) is a PROCEDURAL
+# create, update, or delete the four provenance state ConfigMaps: allow-list,
+# guard parameters, debug sessions, and reviewed mutation plans. Both
+# registries bootstrap empty, are append-only, and cannot be deleted. The
+# release identity produces reviewed artifacts and hands them to the security
+# identity for application; humans write nothing here. Break-glass
+# (validationActions changes) is a PROCEDURAL
 # contract enforced by the external control and verified with
 # `provenance.py verify-recovery` (owner-signed, bounded, reversible, never
 # deletion); the renderer refuses to render against weakened live actions.
-# Bootstrap order: create fs2-security-guard-params, then apply this guard;
-# afterwards both ConfigMaps are admission-protected.
+# Bootstrap order: create the four empty/derived ConfigMaps, then apply this
+# guard; afterwards all four are admission-protected.
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -614,6 +690,11 @@ spec:
         ('workload-service-names' in params.data
          ? params.data['workload-service-names'] : '')
         .split("\n").filter(n, n != '')
+    - name: guardServiceSelectors
+      expression: >-
+        ('workload-service-selectors' in params.data
+         ? params.data['workload-service-selectors'] : '')
+        .split("\n").filter(n, n != '')
     - name: guardPvcNames
       expression: >-
         ('workload-pvc-names' in params.data
@@ -630,16 +711,87 @@ spec:
     - name: isProtected
       expression: >-
         variables.subject.metadata.namespace == 'fs2-system' &&
-        ['fs2-image-provenance-allowlist', 'fs2-security-guard-params']
+        ['fs2-image-provenance-allowlist', 'fs2-security-guard-params',
+         'fs2-debug-sessions', 'fs2-reviewed-resources']
         .exists(n, n == variables.subject.metadata.name)
+    - name: isSecurity
+      expression: >-
+        variables.securityPrincipals.exists(
+          p, p == request.userInfo.username)
   validations:
     - expression: >-
         !variables.isProtected ||
         variables.securityPrincipals.exists(p, p == request.userInfo.username)
       message: >-
-        the allow-list and guard parameter ConfigMaps may only be changed by
-        the security automation identity; the release identity and humans
-        write nothing here (SAI-09)
+        the four provenance state ConfigMaps may only be changed by the
+        security automation identity; the release identity and humans write
+        nothing here (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.metadata.name != 'fs2-debug-sessions' ||
+        request.operation != 'CREATE' || !has(object.data) ||
+        size(object.data) == 0
+      message: >-
+        the debug-session registry must be created empty; owner-verified
+        active and retired rows are append-only updates (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.metadata.name != 'fs2-debug-sessions' ||
+        request.operation != 'DELETE'
+      message: >-
+        the debug-session registry is never deleted; expiry and early
+        revocation add durable deny markers instead (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.metadata.name != 'fs2-reviewed-resources' ||
+        request.operation != 'DELETE'
+      message: >-
+        the owner-reviewed resource registry is never deleted; expired plans
+        remain forensic evidence and are denied by time/session checks (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.metadata.name != 'fs2-reviewed-resources' ||
+        request.operation != 'CREATE' || !has(object.data) ||
+        size(object.data) == 0
+      message: >-
+        the reviewed-resource registry must be created empty; owner-signed
+        plan metadata and grants are append-only updates (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.metadata.name != 'fs2-reviewed-resources' ||
+        request.operation != 'UPDATE' || oldObject == null || (
+          oldObject.data.all(k, v, k in object.data && object.data[k] == v) &&
+          object.data.all(k, v,
+            k in oldObject.data || k.startsWith('meta.') ||
+            k.startsWith('grant.')))
+      message: >-
+        reviewed-resource plan metadata and grants are append-only and
+        immutable; a session cannot be rewritten or erased (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        !variables.isSecurity || variables.subject.kind != 'ConfigMap' ||
+        variables.isProtected
+      message: >-
+        the security identity may create or mutate only the four protected
+        provenance state ConfigMaps in fs2-system (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.metadata.name != 'fs2-debug-sessions' ||
+        request.operation != 'UPDATE' || oldObject == null || (
+          oldObject.data.all(k, v, k in object.data && object.data[k] == v) &&
+          object.data.all(k, v,
+            k in oldObject.data || k.startsWith('active.') ||
+            k.startsWith('retired.') || k.startsWith('document.') ||
+            k.startsWith('signature.')) &&
+          object.data.all(k, v,
+            !k.startsWith('retired.') || (
+              ('active.' + k.substring(8)) in object.data &&
+              size(object.data['active.' + k.substring(8)].split('|')) == 10 &&
+              v == object.data['active.' + k.substring(8)].split('|')[8])))
+      message: >-
+        debug-session rows and retirement markers are append-only and
+        immutable; a retirement marker must equal its active session hash
+        (SAI-09)
       reason: Forbidden
     - expression: >-
         variables.subject.kind != 'Service' ||
@@ -680,7 +832,7 @@ spec:
         !variables.guardWriterIsAutomation ||
         variables.isProtected ||
         variables.guardConfigMapNames.exists(
-          n, n == variables.subject.metadata.name)
+          n, n == request.namespace + '/' + variables.subject.metadata.name)
       message: >-
         ConfigMaps written by an automation identity must carry an exact
         owner-enumerated name (workload-configmap-names) — no arbitrary
@@ -690,26 +842,48 @@ spec:
         variables.subject.kind != 'Service' ||
         !variables.guardWriterIsAutomation ||
         variables.guardServiceNames.exists(
-          n, n == variables.subject.metadata.name)
+          n, n == request.namespace + '/' + variables.subject.metadata.name)
       message: >-
         Services written by an automation identity must carry an exact
         owner-enumerated name (workload-service-names) (SAI-09)
       reason: Forbidden
     - expression: >-
+        variables.subject.kind != 'Service' ||
+        !variables.guardWriterIsAutomation || (
+          has(variables.subject.spec.selector) &&
+          variables.guardServiceSelectors.exists(row,
+            row.split('|')[0] == request.namespace + '/' +
+              variables.subject.metadata.name &&
+            size(variables.subject.spec.selector) ==
+              size(row.split('|')[1].split(',')) &&
+            row.split('|')[1].split(',').all(pair,
+              pair.split('=')[0] in variables.subject.spec.selector &&
+              variables.subject.spec.selector[pair.split('=')[0]] ==
+                pair.split('=')[1])))
+      message: >-
+        a Service written by automation must use the exact owner-reviewed
+        namespace/name and complete selector map; arbitrary CREATE selectors
+        and traffic pivots are denied (SAI-09)
+      reason: Forbidden
+    - expression: >-
         variables.subject.kind != 'PersistentVolumeClaim' ||
         !variables.guardWriterIsAutomation || (
           variables.guardPvcNames.exists(
-            n, n == variables.subject.metadata.name) &&
+            n, n == request.namespace + '/' + variables.subject.metadata.name) &&
           has(variables.subject.spec.storageClassName) &&
           variables.guardStorageClasses.exists(
             c, c == variables.subject.spec.storageClassName) &&
-          !has(variables.subject.spec.volumeName))
+          !has(variables.subject.spec.volumeName) &&
+          !has(variables.subject.spec.selector) &&
+          !has(variables.subject.spec.dataSource) &&
+          !has(variables.subject.spec.dataSourceRef))
       message: >-
         PersistentVolumeClaims written by an automation identity must carry
         an exact owner-enumerated name (workload-pvc-names) and storage
         class (workload-storage-classes) and may not bind a pre-existing PV
-        by volumeName — an arbitrary or hand-bound claim grafts foreign
-        storage into deployed pods (SAI-09)
+        by volumeName, selector, dataSource, or dataSourceRef — arbitrary,
+        hand-bound, cloned, or snapshot-backed claims graft foreign storage
+        into deployed pods (SAI-09)
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1
@@ -728,3 +902,335 @@ spec:
     namespace: fs2-system
     parameterNotFoundAction: Deny
   matchResources: {}
+---
+# Universal reviewed-source gate. This covers resource kinds whose content
+# can change behavior without changing an image (ConfigMaps, Services,
+# Ingresses, RBAC, CRs), direct API writes, and the Kubernetes writes emitted
+# by Helm when HELM_DRIVER=sql. The allow-list is rendered only after the
+# signed inventory and every receipt resolve to one source commit/tree and
+# durable annotated-tag bundle. Release identities must present that exact,
+# unexpired session on every mutation. The owner-pinned webhook then hashes
+# the actual defaulted AdmissionReview object and requires an exact grant in
+# the append-only owner-signed reviewed-resource plan registry; annotations
+# route the request to a session but never authorize arbitrary content.
+# Security/debug/control-plane identities remain governed by their narrower
+# policies and IAM functions.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-reviewed-source-governance
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*"]
+        scope: Namespaced
+  matchConditions:
+    - name: release-identity-only
+      expression: >-
+        request.userInfo.username ==
+          'system:serviceaccount:fs2-system:fs2-release-automation'
+  variables:
+    - name: releasePrincipals
+      expression: >-
+        ('release-principals' in params.data
+         ? params.data['release-principals'] : '')
+        .split("\n").filter(p, p != '')
+    - name: isRelease
+      expression: >-
+        variables.releasePrincipals.exists(p, p == request.userInfo.username)
+    - name: subject
+      expression: object != null ? object : oldObject
+    - name: annotations
+      expression: >-
+        has(variables.subject.metadata.annotations)
+        ? variables.subject.metadata.annotations : {}
+  validations:
+    - expression: >-
+        variables.isRelease && (
+          'reviewed-source-commit' in params.data &&
+          'reviewed-source-tree' in params.data &&
+          'release-authorization-sha256' in params.data &&
+          'release-session-nonce' in params.data &&
+          'release-expires-at' in params.data &&
+          'security.fs2.nebius.ai/source-commit' in variables.annotations &&
+          variables.annotations['security.fs2.nebius.ai/source-commit'] ==
+            params.data['reviewed-source-commit'] &&
+          'security.fs2.nebius.ai/source-tree' in variables.annotations &&
+          variables.annotations['security.fs2.nebius.ai/source-tree'] ==
+            params.data['reviewed-source-tree'] &&
+          'security.fs2.nebius.ai/release-authorization' in variables.annotations &&
+          variables.annotations['security.fs2.nebius.ai/release-authorization'] ==
+            params.data['release-authorization-sha256'] &&
+          'security.fs2.nebius.ai/release-session' in variables.annotations &&
+          variables.annotations['security.fs2.nebius.ai/release-session'] ==
+            params.data['release-session-nonce'] &&
+          request.timestamp < timestamp(params.data['release-expires-at']))
+      message: >-
+        every direct, config-only, delete, and HELM_DRIVER=sql mutation by a
+        release identity must carry the current reviewed source/session; the
+        owner-pinned webhook additionally requires the actual canonical
+        object hash in that session's owner-signed mutation plan (SAI-09)
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-reviewed-source-governance
+  labels:
+    app.kubernetes.io/name: fs2-image-provenance
+    app.kubernetes.io/part-of: fs2-serve
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  policyName: fs2-reviewed-source-governance
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: fs2-image-provenance-allowlist
+    namespace: fs2-system
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [fs2-system, fs2-models]
+---
+# Debug access gate. An owner-signed session is installed as one immutable
+# active.<nonce> row:
+# cluster|namespace|pod|podUID|container|tenant|image|expires|sessionSHA|principal
+# and is retired by appending retired.<nonce>=sessionSHA. Injection checks the
+# actual Pod UID and tenant; CONNECT requests are additionally checked by the
+# UID-aware webhook documented in debug-admission.example.yaml.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-debug-session-access
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["UPDATE"]
+        resources: ["pods/ephemeralcontainers"]
+        scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CONNECT"]
+        resources: ["pods/attach"]
+        scope: Namespaced
+  variables:
+    - name: podTenant
+      expression: >-
+        request.operation == 'UPDATE' && has(object.metadata.annotations) &&
+        'security.fs2.nebius.ai/tenant' in object.metadata.annotations
+        ? object.metadata.annotations['security.fs2.nebius.ai/tenant'] : ''
+  validations:
+    - expression: >-
+        request.operation != 'UPDATE' || (
+          object.metadata.uid != '' &&
+          has(object.spec.ephemeralContainers) &&
+          object.spec.ephemeralContainers.all(c,
+            (has(oldObject.spec.ephemeralContainers) &&
+             oldObject.spec.ephemeralContainers.exists(o, o.name == c.name)) ||
+            params.data.exists(k, row,
+              k.startsWith('active.') && size(row.split('|')) == 10 &&
+              !('retired.' + k.substring(7) in params.data) &&
+              row.split('|')[1] == request.namespace &&
+              row.split('|')[2] == object.metadata.name &&
+              row.split('|')[3] == object.metadata.uid &&
+              row.split('|')[4] == c.name &&
+              row.split('|')[5] == variables.podTenant &&
+              row.split('|')[6] == c.image &&
+              row.split('|')[9] == request.userInfo.username &&
+              request.timestamp < timestamp(row.split('|')[7]))))
+      message: >-
+        kubectl debug injection requires an active, unretired owner-signed
+        session bound to this cluster namespace, Pod UID, tenant, container,
+        exact signed image, nonce, principal, and unexpired timestamp (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        request.operation != 'CONNECT' ||
+        params.data.exists(k, row,
+          k.startsWith('active.') && size(row.split('|')) == 10 &&
+          !('retired.' + k.substring(7) in params.data) &&
+          row.split('|')[1] == request.namespace &&
+          row.split('|')[2] == request.name &&
+          row.split('|')[4] == object.container &&
+          row.split('|')[9] == request.userInfo.username &&
+          request.timestamp < timestamp(row.split('|')[7]))
+      message: >-
+        debug attach requires the exact active nonce, pod name, container,
+        principal, and TTL; the companion webhook also live-checks Pod UID and
+        tenant before CONNECT is admitted (SAI-09)
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-debug-session-access
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  policyName: fs2-debug-session-access
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: fs2-debug-sessions
+    namespace: fs2-system
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [fs2-system, fs2-models]
+---
+# Session-RBAC installation gate. The security identity can install only the
+# exact session Role/Binding. DELETE is denied; retirement requires a durable
+# deny marker and empty rules/subjects.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: fs2-debug-session-rbac
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: v1
+    kind: ConfigMap
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["rbac.authorization.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["roles", "rolebindings"]
+        scope: Namespaced
+  variables:
+    - name: subject
+      expression: object != null ? object : oldObject
+    - name: isSecurity
+      expression: >-
+        request.userInfo.username ==
+          'system:serviceaccount:fs2-security:fs2-admission-guard'
+    - name: isSession
+      expression: >-
+        variables.subject.metadata.name.startsWith('fs2-debug-session-')
+    - name: nonce
+      expression: >-
+        variables.isSession
+        ? variables.subject.metadata.name.substring(18) : ''
+    - name: annotations
+      expression: >-
+        has(variables.subject.metadata.annotations)
+        ? variables.subject.metadata.annotations : {}
+    - name: row
+      expression: >-
+        ('active.' + variables.nonce) in params.data
+        ? params.data['active.' + variables.nonce] : ''
+    - name: fields
+      expression: variables.row.split('|')
+    - name: retired
+      expression: ('retired.' + variables.nonce) in params.data
+  validations:
+    - expression: >-
+        !variables.isSecurity || variables.isSession
+      message: >-
+        the security debug installer may mutate only fs2-debug-session-<nonce>
+        Role/RoleBinding objects (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        !variables.isSession || request.operation != 'DELETE'
+      message: >-
+        debug session RBAC is never deleted; retire it with a durable deny
+        marker and empty rules/subjects (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        !variables.isSession || (
+          variables.isSecurity && size(variables.fields) == 10 &&
+          variables.fields[1] == request.namespace &&
+          variables.fields[8] ==
+            variables.annotations['security.fs2.nebius.ai/debug-session-sha256'] &&
+          variables.fields[0] ==
+            variables.annotations['security.fs2.nebius.ai/debug-cluster'] &&
+          variables.fields[3] ==
+            variables.annotations['security.fs2.nebius.ai/debug-pod-uid'] &&
+          variables.fields[4] ==
+            variables.annotations['security.fs2.nebius.ai/debug-container'] &&
+          variables.fields[5] ==
+            variables.annotations['security.fs2.nebius.ai/debug-tenant'] &&
+          variables.fields[6] ==
+            variables.annotations['security.fs2.nebius.ai/debug-image'] &&
+          variables.fields[7] ==
+            variables.annotations['security.fs2.nebius.ai/debug-expires-at'])
+      message: >-
+        debug session RBAC metadata must equal the active owner-signed
+        registry row for cluster, namespace, Pod UID, tenant, container,
+        image, nonce, expiry, and session hash (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        !variables.isSession || variables.subject.kind != 'Role' ||
+        (variables.retired && size(variables.subject.rules) == 0) ||
+        (!variables.retired &&
+         variables.annotations['security.fs2.nebius.ai/debug-state'] == 'active' &&
+         variables.subject.rules == [
+           {'apiGroups':[''], 'resources':['pods/ephemeralcontainers'],
+            'resourceNames':[variables.fields[2]],
+            'verbs':['get','update','patch']},
+           {'apiGroups':[''], 'resources':['pods/attach'],
+            'resourceNames':[variables.fields[2]], 'verbs':['get','create']}])
+      message: >-
+        active debug Roles must carry only the exact pod-scoped debug rules;
+        retired Roles must carry no rules (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        !variables.isSession || variables.subject.kind != 'RoleBinding' ||
+        (variables.retired && size(variables.subject.subjects) == 0) ||
+        (!variables.retired &&
+         variables.annotations['security.fs2.nebius.ai/debug-state'] == 'active' &&
+         variables.subject.roleRef.apiGroup == 'rbac.authorization.k8s.io' &&
+         variables.subject.roleRef.kind == 'Role' &&
+         variables.subject.roleRef.name == variables.subject.metadata.name &&
+         variables.subject.subjects == [
+           {'kind':'ServiceAccount',
+            'namespace':variables.fields[9].split(':')[2],
+            'name':variables.fields[9].split(':')[3]}])
+      message: >-
+        active debug RoleBindings must bind only the signed debug principal to
+        the same session Role; retired bindings must have no subjects (SAI-09)
+      reason: Forbidden
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: fs2-debug-session-rbac
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+spec:
+  policyName: fs2-debug-session-rbac
+  validationActions: [Deny, Audit]
+  paramRef:
+    name: fs2-debug-sessions
+    namespace: fs2-system
+    parameterNotFoundAction: Deny
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [fs2-system, fs2-models]

@@ -16,6 +16,8 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import hashlib
 import json
 import math
@@ -27,7 +29,7 @@ import sys
 import tempfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -90,6 +92,10 @@ def render_allowlist(
     workload_storage_classes: Sequence[str] = (),
     workload_configmap_names: Sequence[str] = (),
     workload_service_names: Sequence[str] = (),
+    workload_service_selectors: Sequence[str] = (),
+    allowed_images: Sequence[str] = (),
+    release_principals: Sequence[str] = (),
+    reviewed_source: dict | None = None,
 ) -> dict:
     """Render the admission allow-list ConfigMap consumed by policy.yaml.
 
@@ -119,6 +125,40 @@ def render_allowlist(
     prefixes = [validate_registry_prefix(prefix) for prefix in registry_prefixes]
     platform_prefix = validate_registry_prefix(platform_repository_prefix)
     digests = sorted({validate_digest(digest) for digest in platform_digests})
+    images = sorted({validate_digest_reference(image) for image in allowed_images})
+    if not images:
+        raise ProvenanceError(
+            "the exact allowed-images list is required; registry membership "
+            "and a bare digest are not provenance for model/debug images"
+        )
+    source = reviewed_source or {}
+    required_source = {
+        "commit", "tree", "anchor_tag", "bundle_sha256",
+        "authorization_sha256", "session_nonce", "expires_at",
+    }
+    if set(source) != required_source:
+        raise ProvenanceError(
+            "reviewed_source must contain exactly commit, tree, anchor_tag, "
+            "bundle_sha256, authorization_sha256, session_nonce, expires_at"
+        )
+    if not COMMIT_PATTERN.match(str(source["commit"])) or not COMMIT_PATTERN.match(
+        str(source["tree"])
+    ):
+        raise ProvenanceError("reviewed_source must pin exact Git commit and tree")
+    if not str(source["anchor_tag"]).startswith("refs/tags/"):
+        raise ProvenanceError("reviewed_source must pin an annotated refs/tags anchor")
+    if not SHA256_PATTERN.match(str(source["bundle_sha256"])) or not SHA256_PATTERN.match(
+        str(source["authorization_sha256"])
+    ):
+        raise ProvenanceError("reviewed_source must pin bundle and authorization hashes")
+    if not DEBUG_NONCE_PATTERN.match(str(source["session_nonce"])):
+        raise ProvenanceError("reviewed_source must carry a bounded release-session nonce")
+    _parse_rfc3339(str(source["expires_at"]), "reviewed_source expires_at")
+    for principal in release_principals:
+        if not AUTOMATION_PRINCIPAL_PATTERN.match(str(principal)):
+            raise ProvenanceError(f"invalid release principal: {principal!r}")
+    if not release_principals:
+        raise ProvenanceError("at least one release principal is required")
     for namespace in namespaces:
         if not NAMESPACE_PATTERN.match(str(namespace)):
             raise ProvenanceError(f"invalid namespace: {namespace!r}")
@@ -177,6 +217,16 @@ def render_allowlist(
             "registry-prefixes": "\n".join(prefixes),
             "platform-repository-prefix": platform_prefix,
             "platform-digests": "\n".join(digests),
+            "allowed-images": "\n".join(images),
+            "release-principals": "\n".join(sorted(set(release_principals))),
+            "reviewed-source-commit": str(source["commit"]),
+            "reviewed-source-tree": str(source["tree"]),
+            "reviewed-source-anchor-tag": str(source["anchor_tag"]),
+            "reviewed-source-bundle-sha256": str(source["bundle_sha256"]),
+            "release-authorization-sha256": str(source["authorization_sha256"]),
+            "release-session-nonce": str(source["session_nonce"]),
+            "release-expires-at": str(source["expires_at"]),
+            "reviewed-resource-registry": REVIEWED_RESOURCES_NAME,
             "deploy-principals": "\n".join(sorted(set(helm_secret_writers))),
             "namespaces": "\n".join(sorted(set(namespaces))),
             "token-audience": str(token_audience),
@@ -200,6 +250,9 @@ def render_allowlist(
             "workload-service-names": "\n".join(
                 sorted(set(map(str, workload_service_names)))
             ),
+            "workload-service-selectors": "\n".join(
+                sorted(set(map(str, workload_service_selectors)))
+            ),
         },
     }
 
@@ -212,6 +265,7 @@ def render_guard_params(
     workload_service_names: Sequence[str] = (),
     workload_pvc_names: Sequence[str] = (),
     workload_storage_classes: Sequence[str] = (),
+    workload_service_selectors: Sequence[str] = (),
 ) -> dict:
     """Render the security-owned guard parameter ConfigMap.
 
@@ -254,6 +308,9 @@ def render_guard_params(
             ),
             "workload-storage-classes": "\n".join(
                 sorted(set(map(str, workload_storage_classes)))
+            ),
+            "workload-service-selectors": "\n".join(
+                sorted(set(map(str, workload_service_selectors)))
             ),
         },
     }
@@ -437,6 +494,14 @@ def _read_evidence_bytes(
 RELEASE_KEY_SHA256 = (
     "56919b309fb65821c8a7d317730ed18613fe9b2a7e52295fce4fffb12c63a208"
 )
+# The checked-in release key was generated by the prior remediation worker.
+# Pinning its fingerprint prevents substitution but does not establish OWNER
+# custody. Every owner-authority consumer therefore fails closed until the
+# owner replaces cosign.pub, the fingerprint above, and this provenance flag
+# together through independent review. This is deliberately separate from
+# the attestor provenance gate below: neither remediation nor release
+# automation may bootstrap either root of trust for itself.
+RELEASE_KEY_PROVENANCE = "bootstrap-placeholder"
 # SOURCE-PINNED attestor key fingerprint — POPULATED. The provider
 # attestation verifies ONLY against the committed attestor.pub whose SHA-256
 # equals this reviewed constant — the owner-signed scope must carry the SAME
@@ -541,6 +606,20 @@ def _verify_blob_bytes(
             raise ProvenanceError(
                 f"signature verification failed for {context}"
             ) from error
+
+
+def _require_owner_release_key() -> None:
+    """Refuse self-bootstrapped release/governance authority."""
+    if RELEASE_KEY_PROVENANCE != "owner-originated":
+        raise ProvenanceError(
+            "the committed release verification key is a BOOTSTRAP "
+            "PLACEHOLDER (RELEASE_KEY_PROVENANCE is not "
+            "'owner-originated'): a key created by remediation or release "
+            "automation cannot authorize its own scope, inventory, debug "
+            "grant, recovery, or rollout; the OWNER must originate and "
+            "custody the replacement key and ratify its fingerprint in "
+            "reviewed source"
+        )
 
 
 def _fsync_file(path: Path) -> None:
@@ -673,27 +752,7 @@ def _pinned_live_runner(owner_scope: dict):
             "backend silently misreads the release history — fails closed"
         )
     dsn = os.environ.get("HELM_DRIVER_SQL_CONNECTION_STRING", "")
-    match = HELM_DSN_PATTERN.match(dsn)
-    if match is None:
-        raise ProvenanceError(
-            "HELM_DRIVER_SQL_CONNECTION_STRING is missing or not a fully "
-            "parsable PostgreSQL DSN (anchored, query string included); "
-            "the SQL-backed Helm enumeration fails closed"
-        )
-    query = match.group("query") or ""
-    for pair in filter(None, query.split("&")):
-        key = pair.partition("=")[0].strip().lower()
-        if key not in HELM_DSN_ALLOWED_QUERY_KEYS:
-            raise ProvenanceError(
-                f"Helm DSN query parameter {key!r} is not in the safe "
-                "allowlist; libpq-style overrides (host/hostaddr/port/"
-                "dbname/user/options/service/search_path/...) can redirect "
-                "or reshape the backend — fails closed"
-            )
-    live_identity = (
-        f"{match.group('host')}:{match.group('port') or '5432'}/"
-        f"{match.group('database')}?user={match.group('user')}"
-    )
+    live_identity, _ = _validated_helm_dsn(dsn)
     helm_storage = owner_scope["helm_storage"]
     if live_identity != helm_storage["connection_identity"]:
         raise ProvenanceError(
@@ -730,6 +789,79 @@ def _pinned_live_runner(owner_scope: dict):
         return result.stdout
 
     return runner
+
+
+def _validated_helm_dsn(dsn: str) -> tuple[str, list[str]]:
+    """Return the non-secret backend identity and application-name values."""
+    match = HELM_DSN_PATTERN.match(dsn)
+    if match is None:
+        raise ProvenanceError(
+            "HELM_DRIVER_SQL_CONNECTION_STRING is missing or not a fully "
+            "parsable PostgreSQL DSN (anchored, query string included); "
+            "the SQL-backed Helm enumeration fails closed"
+        )
+    query = match.group("query") or ""
+    seen_query_keys: set[str] = set()
+    application_names = []
+    for pair in filter(None, query.split("&")):
+        raw_key, separator, value = pair.partition("=")
+        key = raw_key.strip().lower()
+        if not separator or not value or key in seen_query_keys:
+            raise ProvenanceError(
+                "every Helm DSN query parameter must carry one non-empty "
+                "value and appear exactly once; ambiguous query state fails "
+                "closed"
+            )
+        if key not in HELM_DSN_ALLOWED_QUERY_KEYS:
+            raise ProvenanceError(
+                f"Helm DSN query parameter {key!r} is not in the safe "
+                "allowlist; libpq-style overrides (host/hostaddr/port/"
+                "dbname/user/options/service/search_path/...) can redirect "
+                "or reshape the backend — fails closed"
+            )
+        seen_query_keys.add(key)
+        if key == "application_name":
+            application_names.append(value)
+    identity = (
+        f"{match.group('host')}:{match.group('port') or '5432'}/"
+        f"{match.group('database')}?user={match.group('user')}"
+    )
+    return identity, application_names
+
+
+def _assert_helm_deploy_dsn(
+    dsn: str, expected_identity: str, inventory_sha256: str
+) -> None:
+    """Gate the exact DSN before a reviewed deploy Job executes Helm."""
+    if not SHA256_PATTERN.match(inventory_sha256):
+        raise ProvenanceError("the Helm deploy session needs an inventory SHA-256")
+    live_identity, application_names = _validated_helm_dsn(dsn)
+    if live_identity != expected_identity:
+        raise ProvenanceError(
+            f"the live Helm SQL backend {live_identity!r} does not equal "
+            f"the reviewed connection identity {expected_identity!r}; a "
+            "caller-selected alternate backend never serves the release "
+            "history — fails closed"
+        )
+    if application_names:
+        raise ProvenanceError(
+            "the mounted Helm SQL DSN must not predefine application_name; "
+            "the reviewed deploy path adds exactly "
+            f"'fs2-release:{inventory_sha256}' after validation"
+        )
+
+
+def _assert_helm_release_session(inventory_sha256: str) -> None:
+    """Bind Helm's SQL connection to this exact signed inventory session."""
+    dsn = os.environ.get("HELM_DRIVER_SQL_CONNECTION_STRING", "")
+    _, application_names = _validated_helm_dsn(dsn)
+    expected = "fs2-release:" + inventory_sha256
+    if application_names != [expected]:
+        raise ProvenanceError(
+            "the Helm SQL DSN must carry exactly one application_name equal "
+            f"to {expected!r}; config-only Helm history is bound to the same "
+            "owner-signed inventory session as admission"
+        )
 
 
 def _git_capture(repository: Path, *arguments: str) -> str:
@@ -1243,6 +1375,7 @@ def create_release_receipt(
     existing evidence at the published path is never replaced and a partial
     claim fails closed on every later load.
     """
+    _require_owner_release_key()
     reference = validate_digest_reference(reference)
     digest = reference.rsplit("@", 1)[1]
     if not anchor_tag.startswith("refs/tags/"):
@@ -2014,6 +2147,7 @@ def load_bound_receipt(
     same bytes are parsed, and the parsed bindings are then fully revalidated
     against the durable bundle artifact.
     """
+    _require_owner_release_key()
     reference = validate_digest_reference(reference)
     path = receipt_path(run_root, reference.rsplit("@", 1)[1])
     _assert_receipt_tree_safe(run_root, path.parent)
@@ -2049,11 +2183,13 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v7"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v15"
-DEBUG_SESSION_SCHEMA = "fs2-serve.nebius.ai/debug-session/v1"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v16"
+DEBUG_SESSION_SCHEMA = "fs2-serve.nebius.ai/debug-session/v2"
 DEBUG_SESSION_MAX_VALIDITY_HOURS = 4
+REVIEWED_RESOURCE_PLAN_SCHEMA = "fs2-serve.nebius.ai/reviewed-resource-plan/v1"
+REVIEWED_RESOURCE_PLAN_MAX_VALIDITY_HOURS = 24
 ROLLOUT_AUTHORIZATION_SCHEMA = "fs2-serve.nebius.ai/rollout-authorization/v3"
-PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v5"
+PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v6"
 # A provider PERMISSION is read-only when it matches this shape; a role is
 # treated as read-only ONLY when the owner lists it AND every permission
 # fetched from the provider matches — role NAMES prove nothing.
@@ -2075,10 +2211,15 @@ HELM_DSN_PATTERN = re.compile(
 )
 RECOVERY_SCHEMA = "fs2-serve.nebius.ai/admission-recovery/v2"
 GUARD_PARAMS_NAME = "fs2-security-guard-params"
+DEBUG_SESSIONS_NAME = "fs2-debug-sessions"
+REVIEWED_RESOURCES_NAME = "fs2-reviewed-resources"
 PROTECTED_POLICY_NAMES = (
     "fs2-image-provenance",
     "fs2-helm-release-governance",
     "fs2-provenance-guard",
+    "fs2-reviewed-source-governance",
+    "fs2-debug-session-access",
+    "fs2-debug-session-rbac",
 )
 RECOVERY_MAX_VALIDITY_HOURS = 72
 INVENTORY_SOURCES = (
@@ -2103,6 +2244,12 @@ PRINCIPAL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9@:/._-]{0,255}$")
 AUTOMATION_PRINCIPAL_PATTERN = re.compile(
     r"^system:serviceaccount:[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?:"
     r"[a-z0-9]([a-z0-9-]{0,251}[a-z0-9])?$"
+)
+RELEASE_AUTOMATION_PRINCIPAL = (
+    "system:serviceaccount:fs2-system:fs2-release-automation"
+)
+DEBUG_AUTOMATION_PRINCIPAL = (
+    "system:serviceaccount:fs2-security:fs2-debugger"
 )
 SCOPE_FIELDS = (
     "cluster",
@@ -2130,6 +2277,7 @@ SCOPE_FIELDS = (
     "workload_storage_classes",
     "workload_configmap_names",
     "workload_service_names",
+    "workload_service_selectors",
     "provider_endpoint",
     "provider_principal",
     "provider_cluster_id",
@@ -2216,11 +2364,13 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
         "permitted_role": "security",
         # The allowance is GRANT-SHAPE-BOUND, not principal-blanket: the
         # security identity's granted rule may carry only these verbs and
-        # resources, and its update/patch must be resourceName-scoped to the
-        # protected objects — a delete-capable, wildcard, or broader grant
-        # violates even for the permitted principal.
+        # resources, and every mutating verb must be resourceName-scoped to
+        # the protected objects. Bootstrap creation remains an OWNER rollout
+        # function because Kubernetes RBAC cannot name-scope `create` — a
+        # create/delete-capable, wildcard, or broader grant violates even for
+        # the permitted principal.
         "permitted_grant": {
-            "verbs": {"get", "list", "watch", "create", "update", "patch"},
+            "verbs": {"get", "list", "watch", "update", "patch"},
             "resources": {
                 "validatingadmissionpolicies",
                 "validatingadmissionpolicybindings",
@@ -2262,6 +2412,11 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
         "resources": {"roles", "clusterroles", "rolebindings", "clusterrolebindings"},
         "verbs": {"create", "update", "patch", "delete", "deletecollection"},
         "why": "RBAC mutation delegation",
+        "permitted_role": "security",
+        "permitted_grant": {
+            "verbs": {"get", "list", "watch", "create", "update", "patch"},
+            "resources": {"roles", "rolebindings"},
+        },
     },
     # Stored-credential delegation: reading Secrets in the protected
     # namespaces can expose ServiceAccount credentials, and WRITING one of
@@ -2304,25 +2459,22 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
             "resource_names_required": True,
         },
     },
-    # pods/log is the debug output channel — same session scoping: only the
-    # debug identity, only resourceName-bound to the session target. A
-    # namespace-wide log grant reads every workload's output.
+    # pods/log is a GET path, not an admission CONNECT path. A lingering
+    # Role could therefore keep reading output after the signed TTL until
+    # retirement. It is denied for every identity; governed debug output is
+    # available through the admission-gated attach to the newly injected
+    # ephemeral container.
     {
         "apiGroups": {""},
         "resources": {"pods/log"},
         "verbs": {"get", "list", "watch"},
-        "why": "pod log access outside a session-scoped debug grant",
+        "why": "pod log access is not safely expiry-gated",
         "namespaced_to_scope": True,
-        "permitted_role": "debug",
-        "permitted_grant": {
-            "verbs": {"get", "list", "watch"},
-            "resources": {"pods/log"},
-            "resource_names_required": True,
-        },
     },
     # ConfigMap writes in the protected namespaces: app configuration is the
     # deploy identity's function (exact owner-enumerated names, enforced in
-    # admission), the two parameter ConfigMaps are the security identity's
+    # admission), the four protected state ConfigMaps are the security
+    # identity's
     # (resourceName-scoped); anyone else is a violation.
     {
         "apiGroups": {""},
@@ -2339,7 +2491,10 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
                 "verbs": {"get", "list", "watch", "create", "update", "patch"},
                 "resources": {"configmaps"},
                 "resource_names_for": {"update", "patch"},
-                "resource_names": {ALLOWLIST_NAME, GUARD_PARAMS_NAME},
+                "resource_names": {
+                    ALLOWLIST_NAME, GUARD_PARAMS_NAME, DEBUG_SESSIONS_NAME,
+                    REVIEWED_RESOURCES_NAME,
+                },
             },
         },
     },
@@ -2589,6 +2744,13 @@ def _validated_scope(value, context: str) -> dict:
             "is an automation-only, short-lived release identity — human "
             "usernames never hold deploy authority"
         )
+    if principals != [RELEASE_AUTOMATION_PRINCIPAL]:
+        raise ProvenanceError(
+            f"{context} deploy_principals must equal the single source- and "
+            f"IAM-pinned release identity {RELEASE_AUTOMATION_PRINCIPAL!r}; "
+            "the admission webhook never guesses caller authority from a "
+            "missing or mutable parameter"
+        )
     helm_writers = value.get("helm_secret_writers")
     if (
         not isinstance(helm_writers, list)
@@ -2721,11 +2883,15 @@ def _validated_scope(value, context: str) -> dict:
         )
     ):
         raise ProvenanceError(
-            f"{context} needs debug_principals: the (possibly EMPTY) "
-            "AUTOMATION identities allowed the governed kubectl-debug path "
-            "(pods/ephemeralcontainers writes, admission-pinned images); an "
-            "empty list disables debugging rather than leaving it to "
-            "unaudited identities"
+            f"{context} needs debug_principals: the unique AUTOMATION "
+            "identity allowed the governed kubectl-debug path "
+            "(pods/ephemeralcontainers writes, admission-pinned images)"
+        )
+    if debug != [DEBUG_AUTOMATION_PRINCIPAL]:
+        raise ProvenanceError(
+            f"{context} debug_principals must equal the single IAM-pinned "
+            f"debug identity {DEBUG_AUTOMATION_PRINCIPAL!r}; each session "
+            "binds one exact principal"
         )
     if set(debug) & (set(value.get("security_principals") or [])) or set(
         debug
@@ -2739,25 +2905,85 @@ def _validated_scope(value, context: str) -> dict:
         values = value.get(field)
         if not isinstance(values, list) or not all(
             isinstance(item, str)
-            and re.match(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", item)
+            and "/" in item
+            and item.split("/", 1)[0] in namespaces
+            and NAMESPACE_PATTERN.match(item.split("/", 1)[0])
+            and re.match(
+                r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$",
+                item.split("/", 1)[1],
+            )
             for item in values
         ) or len(set(values)) != len(values):
             raise ProvenanceError(
                 f"{context} needs {field}: the (possibly empty) "
-                f"owner-enumerated EXACT {what} names automation identities "
+                f"owner-enumerated EXACT <namespace>/<name> {what} rows "
+                "automation identities "
                 "may write/mount — no wildcards, no prefixes; an empty list "
                 "means none"
             )
 
     _validated_name_list("workload_pvc_names", "PersistentVolumeClaim")
-    _validated_name_list("workload_storage_classes", "StorageClass")
     _validated_name_list("workload_configmap_names", "ConfigMap")
     _validated_name_list("workload_service_names", "Service")
-    protected_configmaps = {ALLOWLIST_NAME, GUARD_PARAMS_NAME}
+    storage_classes = value.get("workload_storage_classes")
+    if not isinstance(storage_classes, list) or len(set(storage_classes)) != len(
+        storage_classes
+    ) or not all(
+        isinstance(item, str)
+        and re.match(r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$", item)
+        for item in storage_classes
+    ):
+        raise ProvenanceError(
+            f"{context} needs workload_storage_classes: the unique exact "
+            "cluster-scoped StorageClass names automation may use"
+        )
+    protected_configmaps = {
+        f"{ALLOWLIST_NAMESPACE}/{ALLOWLIST_NAME}",
+        f"{ALLOWLIST_NAMESPACE}/{GUARD_PARAMS_NAME}",
+        f"{ALLOWLIST_NAMESPACE}/fs2-debug-sessions",
+        f"{ALLOWLIST_NAMESPACE}/fs2-reviewed-resources",
+    }
     if protected_configmaps & set(value.get("workload_configmap_names") or []):
         raise ProvenanceError(
             f"{context} workload_configmap_names may not include the "
             "protected parameter ConfigMaps; those are security-owned"
+        )
+    selectors = value.get("workload_service_selectors")
+    if not isinstance(selectors, list) or len(set(selectors)) != len(selectors):
+        raise ProvenanceError(
+            f"{context} workload_service_selectors must be a unique list"
+        )
+    selector_services: set[str] = set()
+    for row in selectors:
+        if not isinstance(row, str) or row.count("|") != 1:
+            raise ProvenanceError(
+                f"{context} service selector rows use "
+                "<namespace>/<service>|key=value[,key=value]"
+            )
+        service, selector = row.split("|", 1)
+        pairs = selector.split(",") if selector else []
+        if service not in set(value["workload_service_names"]) or not pairs:
+            raise ProvenanceError(
+                f"{context} selector row {row!r} must name an enumerated "
+                "Service and a non-empty selector"
+            )
+        keys = []
+        for pair in pairs:
+            key, separator, selector_value = pair.partition("=")
+            if not separator or not key or not selector_value:
+                raise ProvenanceError(
+                    f"{context} has malformed selector pair {pair!r}"
+                )
+            keys.append(key)
+        if len(keys) != len(set(keys)):
+            raise ProvenanceError(
+                f"{context} selector row {row!r} repeats a key"
+            )
+        selector_services.add(service)
+    if selector_services != set(value["workload_service_names"]):
+        raise ProvenanceError(
+            f"{context} must define exactly one reviewed selector row for "
+            "every workload Service"
         )
     readonly_roles = value.get("provider_readonly_roles")
     if not isinstance(readonly_roles, list) or not all(
@@ -3497,6 +3723,69 @@ def _assert_policy_matches_scope(
         assert_override_annotation(
             "fs2-helm-release-governance", live_helm_binding
         )
+    documents = _committed_all_documents(policy_path)
+    for protected_name in (
+        "fs2-reviewed-source-governance",
+        "fs2-debug-session-access",
+        "fs2-debug-session-rbac",
+    ):
+        protected_policy = next(
+            (
+                document for document in documents
+                if document.get("kind") == "ValidatingAdmissionPolicy"
+                and document.get("metadata", {}).get("name") == protected_name
+            ),
+            None,
+        )
+        protected_binding = next(
+            (
+                document for document in documents
+                if document.get("kind") == "ValidatingAdmissionPolicyBinding"
+                and document.get("metadata", {}).get("name") == protected_name
+            ),
+            None,
+        )
+        if protected_policy is None or protected_binding is None:
+            raise ProvenanceError(
+                f"the committed manifest lacks protected policy/binding "
+                f"{protected_name}; rendering fails closed"
+            )
+        try:
+            live_protected_policy = json.loads(
+                live_runner([
+                    "kubectl", "get", "validatingadmissionpolicy",
+                    protected_name, "-o", "json",
+                ])
+            )
+            live_protected_binding = json.loads(
+                live_runner([
+                    "kubectl", "get", "validatingadmissionpolicybinding",
+                    protected_name, "-o", "json",
+                ])
+            )
+        except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+            raise ProvenanceError(
+                f"the LIVE {protected_name} policy/binding cannot be read; "
+                "rendering fails closed"
+            ) from error
+        if _normalized_policy_spec(live_protected_policy) != _normalized_policy_spec(
+            protected_policy
+        ):
+            raise ProvenanceError(
+                f"the LIVE {protected_name} policy differs from the "
+                "committed owner-pinned definition"
+            )
+        if protected_name not in skipped and _normalized_binding_spec(
+            live_protected_binding
+        ) != expected_binding(
+            protected_name, _normalized_binding_spec(protected_binding)
+        ):
+            raise ProvenanceError(
+                f"the LIVE {protected_name} binding differs from the "
+                "committed owner-pinned definition"
+            )
+        if protected_name not in skipped:
+            assert_override_annotation(protected_name, live_protected_binding)
     # The guard-params ConfigMap is DERIVED STATE, never authority: its live
     # content must equal what the owner-signed scope renders.
     expected_params = render_guard_params(
@@ -3515,6 +3804,7 @@ def _assert_policy_matches_scope(
         owner_scope["workload_service_names"],
         owner_scope["workload_pvc_names"],
         owner_scope["workload_storage_classes"],
+        owner_scope["workload_service_selectors"],
     )
     if (live_guard_params.get("data") or {}) != expected_params["data"]:
         raise ProvenanceError(
@@ -3611,7 +3901,9 @@ def _ledger_scan(path: Path) -> dict:
     }
 
 
-def _read_chained_records(path: Path, adopt_legacy: bool = False) -> list[dict]:
+def _read_chained_records(
+    path: Path, adopt_legacy: bool = False, repair: bool = True
+) -> list[dict]:
     """Read a chained ledger VERIFYING every link and the head checkpoint.
 
     A JSONL file is mutable on disk; trusting it raw would let truncation
@@ -3666,7 +3958,8 @@ def _read_chained_records(path: Path, adopt_legacy: bool = False) -> list[dict]:
             # before its checkpoint exists; a crash in between leaves exactly
             # ONE genesis-chained record — recognized and repaired forward
             # (bounded like the one-step roll-forward), never a wedge.
-            write_checkpoint_forward()
+            if repair:
+                write_checkpoint_forward()
             return scan["records"]
         if scan["count"] or scan["torn_tail"]:
             if not adopt_legacy or scan["torn_tail"] or len(scan["segments"]) > 1:
@@ -3679,7 +3972,8 @@ def _read_chained_records(path: Path, adopt_legacy: bool = False) -> list[dict]:
                 )
             # ANCHORED LEGACY ADOPTION: the caller has already verified this
             # exact content against the signed off-host anchor.
-            write_checkpoint_forward()
+            if repair:
+                write_checkpoint_forward()
         return scan["records"]
     try:
         checkpoint = json.loads(_read_evidence_bytes(checkpoint_path))
@@ -3722,7 +4016,8 @@ def _read_chained_records(path: Path, adopt_legacy: bool = False) -> list[dict]:
             else GENESIS_HASH
         )
     ):
-        write_checkpoint_forward()
+        if repair:
+            write_checkpoint_forward()
         return scan["records"]
     raise ProvenanceError(
         f"ledger {path} does not match its head checkpoint (count/head); "
@@ -3830,7 +4125,75 @@ def _record_consumed_batch(
 
 DEBUG_LABEL_PATTERN = re.compile(r"^[a-z0-9]([a-z0-9.-]{0,61}[a-z0-9])?$")
 DEBUG_NONCE_PATTERN = re.compile(r"^[0-9a-f]{16,64}$")
+REVIEWED_RESOURCE_NAME_PATTERN = re.compile(
+    r"^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$"
+)
 DEBUG_TENANT_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+DEBUG_POD_UID_PATTERN = re.compile(r"^[0-9a-f-]{16,64}$")
+DEBUG_SESSION_FIELDS = {
+    "schema", "cluster", "namespace", "pod", "pod_uid", "container",
+    "tenant", "image", "nonce", "reason", "issued_at", "expires_at",
+}
+
+
+def _validate_debug_session_document(
+    document: dict,
+    owner_scope: dict,
+    context: str,
+    require_current: bool,
+) -> datetime:
+    """Validate signed debug-session semantics, optionally allowing history."""
+    if (
+        not isinstance(document, dict)
+        or set(document) != DEBUG_SESSION_FIELDS
+        or document.get("schema") != DEBUG_SESSION_SCHEMA
+    ):
+        raise ProvenanceError(
+            f"{context} is not an exact {DEBUG_SESSION_SCHEMA} document"
+        )
+    if str(document.get("namespace", "")) not in set(owner_scope["namespaces"]):
+        raise ProvenanceError(
+            f"{context} targets namespace "
+            f"{document.get('namespace')!r} outside the owner scope"
+        )
+    if str(document.get("cluster", "")) != str(owner_scope["cluster"]):
+        raise ProvenanceError(
+            f"{context} targets cluster {document.get('cluster')!r}, "
+            f"not the owner-scoped cluster {owner_scope['cluster']!r}"
+        )
+    for field, pattern in (
+        ("pod", DEBUG_LABEL_PATTERN),
+        ("container", DEBUG_LABEL_PATTERN),
+        ("nonce", DEBUG_NONCE_PATTERN),
+        ("tenant", DEBUG_TENANT_PATTERN),
+    ):
+        if not pattern.match(str(document.get(field, ""))):
+            raise ProvenanceError(f"{context} has an invalid {field}")
+    if not DEBUG_POD_UID_PATTERN.match(str(document.get("pod_uid", ""))):
+        raise ProvenanceError(f"{context} must pin the target Pod UID")
+    image = validate_digest_reference(str(document.get("image", "")))
+    if not image.startswith(tuple(owner_scope["registry_prefixes"])):
+        raise ProvenanceError(f"{context} debug image lies outside owner registries")
+    if not DRAIN_REASON_PATTERN.match(str(document.get("reason", ""))):
+        raise ProvenanceError(f"{context} needs a tracking-identifier reason")
+    issued_at = _parse_rfc3339(
+        str(document.get("issued_at", "")), f"{context} issued_at"
+    )
+    expires_at = _parse_rfc3339(
+        str(document.get("expires_at", "")), f"{context} expires_at"
+    )
+    validity = (expires_at - issued_at).total_seconds()
+    if not 0 < validity <= DEBUG_SESSION_MAX_VALIDITY_HOURS * 3600:
+        raise ProvenanceError(
+            f"{context} validity must be positive and at most "
+            f"{DEBUG_SESSION_MAX_VALIDITY_HOURS}h"
+        )
+    now = datetime.now(UTC)
+    if (issued_at - now).total_seconds() > _CLOCK_SKEW_SECONDS:
+        raise ProvenanceError(f"{context} is not yet valid")
+    if require_current and now > expires_at:
+        raise ProvenanceError(f"{context} has expired")
+    return expires_at
 
 
 def load_debug_session(
@@ -3838,17 +4201,19 @@ def load_debug_session(
     public_key_path: str,
     owner_scope: dict,
     verifier=None,
+    allow_expired: bool = False,
 ) -> tuple[dict, str]:
     """Verify an OWNER-SIGNED debug-session document — EXACT target binding.
 
-    A functional kubectl-debug flow needs pods/ephemeralcontainers + attach
-    + log, but namespace-wide those are an exfiltration pivot. This document
+    A functional kubectl-debug flow needs pods/ephemeralcontainers + attach,
+    but namespace-wide those are an exfiltration pivot. This document
     is the owner's authorization for ONE session: exact cluster, namespace
     (inside the owner scope), pod, container, tenant, a nonce, and a bounded
     TTL. `render-debug-session` turns it into a resourceName-scoped Role for
     exactly that pod — nothing broader. Signed over exact bytes against the
     release key, single-session by nonce, time-bounded.
     """
+    _require_owner_release_key()
     signature_path = session_path.parent / (session_path.name + ".sig")
     if not session_path.is_file() or session_path.is_symlink():
         raise ProvenanceError(f"missing debug session: {session_path}")
@@ -3868,60 +4233,27 @@ def load_debug_session(
         raise ProvenanceError(
             f"debug session is malformed: {session_path}"
         ) from error
-    if not isinstance(document, dict) or document.get("schema") != (
-        DEBUG_SESSION_SCHEMA
-    ):
-        raise ProvenanceError(
-            f"{session_path} is not a {DEBUG_SESSION_SCHEMA} document"
-        )
-    if str(document.get("namespace", "")) not in set(owner_scope["namespaces"]):
-        raise ProvenanceError(
-            f"{session_path} targets namespace "
-            f"{document.get('namespace')!r} outside the owner scope"
-        )
-    for field, pattern in (
-        ("pod", DEBUG_LABEL_PATTERN),
-        ("container", DEBUG_LABEL_PATTERN),
-        ("nonce", DEBUG_NONCE_PATTERN),
-        ("tenant", DEBUG_TENANT_PATTERN),
-    ):
-        if not pattern.match(str(document.get(field, ""))):
-            raise ProvenanceError(
-                f"{session_path} has an invalid {field}"
-            )
-    if not DRAIN_REASON_PATTERN.match(str(document.get("reason", ""))):
-        raise ProvenanceError(
-            f"{session_path} needs a tracking-identifier reason"
-        )
-    issued_at = _parse_rfc3339(
-        str(document.get("issued_at", "")), f"{session_path} issued_at"
+    _validate_debug_session_document(
+        document,
+        owner_scope,
+        str(session_path),
+        require_current=not allow_expired,
     )
-    expires_at = _parse_rfc3339(
-        str(document.get("expires_at", "")), f"{session_path} expires_at"
-    )
-    validity = (expires_at - issued_at).total_seconds()
-    if not 0 < validity <= DEBUG_SESSION_MAX_VALIDITY_HOURS * 3600:
-        raise ProvenanceError(
-            f"{session_path} validity must be positive and at most "
-            f"{DEBUG_SESSION_MAX_VALIDITY_HOURS}h"
-        )
-    now = datetime.now(UTC)
-    if (issued_at - now).total_seconds() > _CLOCK_SKEW_SECONDS:
-        raise ProvenanceError(f"{session_path} is not yet valid")
-    if now > expires_at:
-        raise ProvenanceError(f"{session_path} has expired")
     return document, hashlib.sha256(payload).hexdigest()
 
 
-def render_debug_session(document: dict, owner_scope: dict) -> list[dict]:
+def render_debug_session(
+    document: dict, owner_scope: dict, session_sha256: str
+) -> list[dict]:
     """Emit the resourceName-scoped Role + RoleBinding for ONE debug session.
 
     The Role names the EXACT target pod in resourceNames for the debug
-    verbs (pods/ephemeralcontainers get/update/patch, pods/attach
-    get/create, pods/log get); nothing namespace-wide. The security
-    identity applies it for the session TTL and removes it after — this
-    renderer is source-only and mutates nothing. Tenant/nonce/expiry are
-    recorded as annotations for audit.
+    verbs (pods/ephemeralcontainers get/update/patch and pods/attach
+    get/create); nothing namespace-wide. The security identity applies it
+    for the session TTL; expiry denies access and
+    retirement appends a durable deny marker before emptying rules and
+    subjects without deletion. This renderer is source-only and mutates
+    nothing. Tenant/nonce/expiry are recorded as annotations for audit.
     """
     debug_sa = None
     for principal in owner_scope["debug_principals"]:
@@ -3937,10 +4269,15 @@ def render_debug_session(document: dict, owner_scope: dict) -> list[dict]:
     pod = str(document["pod"])
     namespace = str(document["namespace"])
     annotations = {
+        "security.fs2.nebius.ai/debug-cluster": str(document["cluster"]),
         "security.fs2.nebius.ai/debug-tenant": str(document["tenant"]),
         "security.fs2.nebius.ai/debug-container": str(document["container"]),
+        "security.fs2.nebius.ai/debug-pod-uid": str(document["pod_uid"]),
+        "security.fs2.nebius.ai/debug-image": str(document["image"]),
         "security.fs2.nebius.ai/debug-expires-at": str(document["expires_at"]),
         "security.fs2.nebius.ai/debug-nonce": nonce,
+        "security.fs2.nebius.ai/debug-session-sha256": session_sha256,
+        "security.fs2.nebius.ai/debug-state": "active",
     }
     labels = {"security.fs2.nebius.ai/finding": "sai-09"}
     name = f"fs2-debug-session-{nonce}"
@@ -3964,12 +4301,6 @@ def render_debug_session(document: dict, owner_scope: dict) -> list[dict]:
                 "resourceNames": [pod],
                 "verbs": ["get", "create"],
             },
-            {
-                "apiGroups": [""],
-                "resources": ["pods/log"],
-                "resourceNames": [pod],
-                "verbs": ["get"],
-            },
         ],
     }
     binding = {
@@ -3991,6 +4322,441 @@ def render_debug_session(document: dict, owner_scope: dict) -> list[dict]:
     return [role, binding]
 
 
+def debug_session_registry_patch(
+    document: dict,
+    session_sha256: str,
+    debug_principal: str,
+    resource_version: str,
+    signed_payload: bytes,
+    signature: bytes,
+) -> list[dict]:
+    """Render an append-only JSON Patch entry for the debug registry.
+
+    The security operator applies this patch before the Role/RoleBinding. It
+    retains the exact signed document and detached signature so each later
+    IAM audit can re-verify authority. Retirement adds a separate
+    `retired.<nonce>` marker and empties rules and subjects; no session data
+    or RBAC object is deleted.
+    """
+    if hashlib.sha256(signed_payload).hexdigest() != session_sha256 or (
+        json.loads(signed_payload) != document
+    ):
+        raise ProvenanceError(
+            "debug registry evidence differs from the verified session bytes"
+        )
+    nonce = str(document["nonce"])
+    row = "|".join(
+        str(document[field])
+        for field in (
+            "cluster", "namespace", "pod", "pod_uid", "container", "tenant",
+            "image", "expires_at",
+        )
+    ) + f"|{session_sha256}|{debug_principal}"
+    return [
+        {
+            "op": "test",
+            "path": "/metadata/resourceVersion",
+            "value": str(resource_version),
+        },
+        {
+            "op": "add",
+            "path": f"/data/active.{nonce}",
+            "value": row,
+        },
+        {
+            "op": "add",
+            "path": f"/data/document.{nonce}",
+            "value": base64.b64encode(signed_payload).decode("ascii"),
+        },
+        {
+            "op": "add",
+            "path": f"/data/signature.{nonce}",
+            "value": base64.b64encode(signature).decode("ascii"),
+        },
+    ]
+
+
+def verify_live_debug_target(document: dict, owner_scope: dict, runner) -> str:
+    """Bind installation to the authenticated cluster and exact live Pod."""
+    whoami = json.loads(runner(["kubectl", "auth", "whoami", "-o", "json"]))
+    caller = str(
+        (whoami.get("status") or {}).get("userInfo", {}).get("username", "")
+    )
+    if caller not in set(owner_scope["security_principals"]):
+        raise ProvenanceError(
+            f"debug session installation caller {caller!r} is not a "
+            "security principal"
+        )
+    cluster = runner([
+        "kubectl", "get", "namespace", "kube-system",
+        "-o", "jsonpath={.metadata.uid}",
+    ]).strip()
+    if cluster != str(document["cluster"]):
+        raise ProvenanceError("debug session cluster does not equal the live cluster")
+
+    def read_pod() -> dict:
+        return json.loads(runner([
+            "kubectl", "get", "pod", str(document["pod"]),
+            "-n", str(document["namespace"]), "-o", "json",
+        ]))
+
+    before = read_pod()
+    metadata = before.get("metadata") or {}
+    if str(metadata.get("uid", "")) != str(document["pod_uid"]):
+        raise ProvenanceError("debug session Pod UID does not equal the live Pod UID")
+    if str((metadata.get("annotations") or {}).get(
+        "security.fs2.nebius.ai/tenant", ""
+    )) != str(document["tenant"]):
+        raise ProvenanceError("debug session tenant does not equal the live Pod tenant")
+    names = {
+        str(container.get("name", ""))
+        for field in ("containers", "initContainers", "ephemeralContainers")
+        for container in (before.get("spec") or {}).get(field) or []
+    }
+    if str(document["container"]) in names:
+        raise ProvenanceError(
+            "debug session container name already exists on the target Pod"
+        )
+    allowlist = json.loads(runner([
+        "kubectl", "get", "configmap", ALLOWLIST_NAME,
+        "-n", ALLOWLIST_NAMESPACE, "-o", "json",
+    ]))
+    allowed_images = set(
+        str((allowlist.get("data") or {}).get("allowed-images", "")).splitlines()
+    )
+    if str(document["image"]) not in allowed_images:
+        raise ProvenanceError(
+            "debug session image is not in the current signed exact-image allow-list"
+        )
+    registry = json.loads(runner([
+        "kubectl", "get", "configmap", DEBUG_SESSIONS_NAME,
+        "-n", ALLOWLIST_NAMESPACE, "-o", "json",
+    ]))
+    nonce = str(document["nonce"])
+    registry_data = registry.get("data") or {}
+    if "active." + nonce in registry_data or "retired." + nonce in registry_data:
+        raise ProvenanceError("debug session nonce is already present or retired")
+    after = read_pod()
+    after_metadata = after.get("metadata") or {}
+    if (
+        str(after_metadata.get("uid", "")) != str(metadata.get("uid", ""))
+        or str(after_metadata.get("resourceVersion", ""))
+        != str(metadata.get("resourceVersion", ""))
+    ):
+        raise ProvenanceError(
+            "the target Pod changed during debug-session verification"
+        )
+    resource_version = str((registry.get("metadata") or {}).get(
+        "resourceVersion", ""
+    ))
+    if not resource_version:
+        raise ProvenanceError("debug session registry has no resourceVersion")
+    return resource_version
+
+
+def debug_session_retirement_plan(
+    document: dict,
+    session_sha256: str,
+    registry_resource_version: str,
+    role_uid: str,
+    role_resource_version: str,
+    binding_uid: str,
+    binding_resource_version: str,
+) -> list[dict]:
+    """Return deny-first, non-delete retirement patches with state fences."""
+    nonce = str(document["nonce"])
+    name = f"fs2-debug-session-{nonce}"
+    return [
+        {
+            "resource": "configmap/fs2-debug-sessions",
+            "namespace": ALLOWLIST_NAMESPACE,
+            "patch_type": "json",
+            "patch": [
+                {
+                    "op": "test",
+                    "path": "/metadata/resourceVersion",
+                    "value": str(registry_resource_version),
+                },
+                {
+                    "op": "add",
+                    "path": f"/data/retired.{nonce}",
+                    "value": session_sha256,
+                },
+            ],
+        },
+        {
+            "resource": f"role/{name}",
+            "namespace": str(document["namespace"]),
+            "patch_type": "merge",
+            "patch": {
+                "metadata": {
+                    "uid": str(role_uid),
+                    "resourceVersion": str(role_resource_version),
+                    "annotations": {
+                        "security.fs2.nebius.ai/debug-state": "retired"
+                    },
+                },
+                "rules": [],
+            },
+        },
+        {
+            "resource": f"rolebinding/{name}",
+            "namespace": str(document["namespace"]),
+            "patch_type": "merge",
+            "patch": {
+                "metadata": {
+                    "uid": str(binding_uid),
+                    "resourceVersion": str(binding_resource_version),
+                    "annotations": {
+                        "security.fs2.nebius.ai/debug-state": "retired"
+                    },
+                },
+                "subjects": [],
+            },
+        },
+    ]
+
+
+def canonical_admission_object_sha256(value: dict) -> str:
+    """Hash the stable admission object used by an owner-reviewed plan.
+
+    Plan creation consumes the JSON object returned by the authorized
+    server-side dry-run/preflight. Admission sees the same defaulted object.
+    Only apiserver bookkeeping that changes independently of desired state is
+    removed; names, namespaces, labels, annotations, data and specs remain
+    bound. UPDATE/DELETE additionally bind old UID/resourceVersion in the
+    signed grant so same-name replacement and replay fail closed.
+    """
+    if not isinstance(value, dict):
+        raise ProvenanceError("an admission object must be a JSON object")
+    stable = json.loads(json.dumps(value))
+    metadata = stable.get("metadata")
+    if not isinstance(metadata, dict):
+        raise ProvenanceError("an admission object must carry metadata")
+    for field in (
+        "creationTimestamp", "deletionGracePeriodSeconds",
+        "deletionTimestamp", "generation", "managedFields",
+        "resourceVersion", "selfLink", "uid",
+    ):
+        metadata.pop(field, None)
+    stable.pop("status", None)
+    return hashlib.sha256(
+        json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def load_reviewed_resource_plan(
+    plan_path: Path,
+    public_key_path: str,
+    owner_scope: dict,
+    verifier=None,
+) -> tuple[dict, str]:
+    """Verify one owner-signed, admission-canonical release mutation plan."""
+    _require_owner_release_key()
+    signature_path = plan_path.parent / (plan_path.name + ".sig")
+    if not plan_path.is_file() or plan_path.is_symlink():
+        raise ProvenanceError(f"missing reviewed resource plan: {plan_path}")
+    if not signature_path.is_file() or signature_path.is_symlink():
+        raise ProvenanceError(
+            f"reviewed resource plan at {plan_path} is UNSIGNED"
+        )
+    payload = _read_evidence_bytes(plan_path, private=False)
+    signature = _read_evidence_bytes(signature_path, private=False)
+    _verify_blob_bytes(
+        public_key_path, payload, signature, verifier,
+        f"reviewed resource plan {plan_path}",
+    )
+    try:
+        document = json.loads(payload)
+    except json.JSONDecodeError as error:
+        raise ProvenanceError(
+            f"reviewed resource plan is malformed: {plan_path}"
+        ) from error
+    required = {
+        "schema", "cluster", "source_commit", "source_tree",
+        "authorization_sha256", "session_nonce", "issued_at",
+        "expires_at", "reason", "resources",
+    }
+    if not isinstance(document, dict) or set(document) != required or (
+        document.get("schema") != REVIEWED_RESOURCE_PLAN_SCHEMA
+    ):
+        raise ProvenanceError(
+            f"{plan_path} is not an exact {REVIEWED_RESOURCE_PLAN_SCHEMA} "
+            "document"
+        )
+    if str(document["cluster"]) != str(owner_scope["cluster"]):
+        raise ProvenanceError("reviewed resource plan targets a foreign cluster")
+    if not COMMIT_PATTERN.match(str(document["source_commit"])) or not (
+        COMMIT_PATTERN.match(str(document["source_tree"]))
+    ):
+        raise ProvenanceError("reviewed resource plan must pin commit and tree")
+    authorization_sha256 = str(document["authorization_sha256"])
+    session_nonce = str(document["session_nonce"])
+    if not SHA256_PATTERN.match(authorization_sha256) or not (
+        DEBUG_NONCE_PATTERN.match(session_nonce)
+    ):
+        raise ProvenanceError(
+            "reviewed resource plan must pin authorization hash and session nonce"
+        )
+    if session_nonce != authorization_sha256[:32]:
+        raise ProvenanceError(
+            "reviewed resource plan nonce must be the first 32 hex characters "
+            "of its signed inventory authorization"
+        )
+    if not DRAIN_REASON_PATTERN.match(str(document["reason"])):
+        raise ProvenanceError("reviewed resource plan needs a tracking reason")
+    issued = _parse_rfc3339(str(document["issued_at"]), "plan issued_at")
+    expires = _parse_rfc3339(str(document["expires_at"]), "plan expires_at")
+    validity = (expires - issued).total_seconds()
+    if not 0 < validity <= REVIEWED_RESOURCE_PLAN_MAX_VALIDITY_HOURS * 3600:
+        raise ProvenanceError("reviewed resource plan validity exceeds 24h")
+    now = datetime.now(UTC)
+    if (issued - now).total_seconds() > _CLOCK_SKEW_SECONDS or now > expires:
+        raise ProvenanceError("reviewed resource plan is not currently valid")
+    resources = document["resources"]
+    grant_fields = {
+        "operation", "api_group", "api_version", "resource", "subresource",
+        "namespace", "name", "object_sha256", "old_uid",
+        "old_resource_version",
+    }
+    if not isinstance(resources, list) or not resources:
+        raise ProvenanceError("reviewed resource plan contains no grants")
+    if len(resources) > 256:
+        raise ProvenanceError("reviewed resource plan exceeds 256 exact grants")
+    identities: set[tuple[str, ...]] = set()
+    for grant in resources:
+        if not isinstance(grant, dict) or set(grant) != grant_fields:
+            raise ProvenanceError("reviewed resource plan has a malformed grant")
+        operation = str(grant["operation"])
+        namespace = str(grant["namespace"])
+        identity = tuple(str(grant[field]) for field in (
+            "operation", "api_group", "api_version", "resource",
+            "subresource", "namespace", "name",
+        ))
+        api_group = str(grant["api_group"])
+        api_version = str(grant["api_version"])
+        resource = str(grant["resource"])
+        subresource = str(grant["subresource"])
+        if (
+            operation not in {"CREATE", "UPDATE", "DELETE"}
+            or namespace not in set(owner_scope["namespaces"])
+            or not NAMESPACE_PATTERN.match(namespace)
+            or (api_group and not RESOURCE_ID_PATTERN.match(api_group))
+            or not RESOURCE_ID_PATTERN.match(api_version)
+            or not RESOURCE_ID_PATTERN.match(resource)
+            or subresource
+            or not REVIEWED_RESOURCE_NAME_PATTERN.match(str(grant["name"]))
+            or not SHA256_PATTERN.match(str(grant["object_sha256"]))
+            or identity in identities
+        ):
+            raise ProvenanceError(
+                "reviewed resource grants must be unique, exact, namespaced "
+                "CREATE/UPDATE/DELETE identities with canonical object hashes"
+            )
+        if operation == "CREATE":
+            if grant["old_uid"] or grant["old_resource_version"]:
+                raise ProvenanceError("CREATE grants may not claim old-object state")
+        elif (
+            not RESOURCE_ID_PATTERN.match(str(grant["old_uid"]))
+            or not RESOURCE_ID_PATTERN.match(
+                str(grant["old_resource_version"])
+            )
+        ):
+            raise ProvenanceError(
+                "UPDATE/DELETE grants must bind exact old UID and "
+                "resourceVersion"
+            )
+        identities.add(identity)
+    return document, hashlib.sha256(payload).hexdigest()
+
+
+def reviewed_resource_registry_patch(
+    document: dict, document_sha256: str, resource_version: str
+) -> list[dict]:
+    """Append a signed release plan to the non-delete reviewed registry."""
+    nonce = str(document["session_nonce"])
+    meta = "|".join(
+        str(document[field]) for field in (
+            "cluster", "source_commit", "source_tree", "authorization_sha256",
+            "expires_at",
+        )
+    ) + f"|{document_sha256}"
+    patch = [{
+        "op": "test", "path": "/metadata/resourceVersion",
+        "value": str(resource_version),
+    }, {
+        "op": "add", "path": f"/data/meta.{nonce}", "value": meta,
+    }]
+    for index, grant in enumerate(document["resources"]):
+        patch.append({
+            "op": "add",
+            "path": f"/data/grant.{nonce}.{index:04d}",
+            "value": json.dumps(grant, sort_keys=True, separators=(",", ":")),
+        })
+    return patch
+
+
+def verify_live_reviewed_resource_plan(
+    document: dict, owner_scope: dict, runner
+) -> str:
+    """Bind plan installation to security identity, live cluster and session."""
+    whoami = json.loads(runner(["kubectl", "auth", "whoami", "-o", "json"]))
+    caller = str(
+        (whoami.get("status") or {}).get("userInfo", {}).get("username", "")
+    )
+    if caller not in set(owner_scope["security_principals"]):
+        raise ProvenanceError("reviewed plan installer is not a security principal")
+    cluster = runner([
+        "kubectl", "get", "namespace", "kube-system",
+        "-o", "jsonpath={.metadata.uid}",
+    ]).strip()
+    if cluster != str(document["cluster"]):
+        raise ProvenanceError("reviewed plan cluster does not equal the live cluster")
+    allowlist = json.loads(runner([
+        "kubectl", "get", "configmap", ALLOWLIST_NAME,
+        "-n", ALLOWLIST_NAMESPACE, "-o", "json",
+    ]))
+    data = allowlist.get("data") or {}
+    expected = {
+        "reviewed-source-commit": str(document["source_commit"]),
+        "reviewed-source-tree": str(document["source_tree"]),
+        "release-authorization-sha256": str(document["authorization_sha256"]),
+        "release-session-nonce": str(document["session_nonce"]),
+        "reviewed-resource-registry": REVIEWED_RESOURCES_NAME,
+    }
+    if any(str(data.get(key, "")) != value for key, value in expected.items()):
+        raise ProvenanceError(
+            "reviewed plan does not equal the current admission release session"
+        )
+    release_expires = _parse_rfc3339(
+        str(data.get("release-expires-at", "")),
+        "live release session expires_at",
+    )
+    plan_expires = _parse_rfc3339(
+        str(document["expires_at"]), "reviewed plan expires_at"
+    )
+    if plan_expires > release_expires:
+        raise ProvenanceError(
+            "reviewed plan expiry exceeds the current release session"
+        )
+    registry = json.loads(runner([
+        "kubectl", "get", "configmap", REVIEWED_RESOURCES_NAME,
+        "-n", ALLOWLIST_NAMESPACE, "-o", "json",
+    ]))
+    nonce = str(document["session_nonce"])
+    registry_data = registry.get("data") or {}
+    if f"meta.{nonce}" in registry_data or any(
+        str(key).startswith(f"grant.{nonce}.") for key in registry_data
+    ):
+        raise ProvenanceError("reviewed resource plan nonce already exists")
+    resource_version = str(
+        (registry.get("metadata") or {}).get("resourceVersion", "")
+    )
+    if not resource_version:
+        raise ProvenanceError("reviewed resource registry has no resourceVersion")
+    return resource_version
+
+
 def load_recovery_authorization(
     recovery_path: Path,
     public_key_path: str,
@@ -4007,6 +4773,7 @@ def load_recovery_authorization(
     set, is bound to a tracking identifier, and is valid only inside a
     bounded time window — deletion is never a recovery action.
     """
+    _require_owner_release_key()
     signature_path = recovery_path.parent / (recovery_path.name + ".sig")
     if not recovery_path.is_file() or recovery_path.is_symlink():
         raise ProvenanceError(
@@ -4192,6 +4959,11 @@ def load_provider_attestation(
         if isinstance(evidence, dict)
         else None
     )
+    admin_groups = (
+        evidence.get("provider_admin_groups")
+        if isinstance(evidence, dict)
+        else None
+    )
     if (
         not isinstance(evidence, dict)
         or not DRAIN_REASON_PATTERN.match(str(evidence.get("reference", "")))
@@ -4202,6 +4974,12 @@ def load_provider_attestation(
             isinstance(item, str) and PRINCIPAL_PATTERN.match(item)
             for item in admin_subjects
         )
+        or not isinstance(admin_groups, list)
+        or len(set(admin_groups)) != len(admin_groups)
+        or not all(
+            isinstance(item, str) and PRINCIPAL_PATTERN.match(item)
+            for item in admin_groups
+        )
         or not SHA256_PATTERN.match(
             str(evidence.get("iam_snapshot_sha256", ""))
         )
@@ -4210,11 +4988,18 @@ def load_provider_attestation(
             f"{attestation_path} must bind concrete provider evidence: "
             "evidence.reference (a tracking identifier), "
             "evidence.provider_admin_subjects (the non-empty enumerated "
-            "subjects allowed to hold provider privileged roles), and "
+            "leaf subjects allowed to hold provider privileged roles), "
+            "evidence.provider_admin_groups (every privileged or nested "
+            "group whose membership is closed live), and "
             "evidence.iam_snapshot_sha256 (the canonical digest of the "
             "provider IAM enumeration the ATTESTOR witnessed, which the "
             "LIVE recomputed enumeration must equal); bare provider-held "
             "strings are assertions, not evidence"
+        )
+    if set(admin_subjects) & set(admin_groups):
+        raise ProvenanceError(
+            f"{attestation_path} must classify provider admin leaves and "
+            "groups disjointly; a group cannot be disguised as a leaf"
         )
     anchor_object = document.get("anchor_object")
     if (
@@ -4323,9 +5108,13 @@ def _provider_cli(owner_scope: dict, runner, *arguments: str) -> str:
 
 def _provider_access_bindings(
     owner_scope: dict, runner, parent_id: str
-) -> list[tuple[str, str]]:
-    """Fully paginated (subject, role) enumeration for one parent."""
-    bindings: list[tuple[str, str]] = []
+) -> list[tuple[str, str, str]]:
+    """Fully paginated (subject, role, subject-type) rows for one parent.
+
+    Subject type is authority-bearing: without it, a privileged group ID can
+    be disguised as an attested leaf and evade recursive membership closure.
+    """
+    bindings: list[tuple[str, str, str]] = []
     page_token = ""
     for _ in range(100):
         arguments = [
@@ -4364,14 +5153,36 @@ def _provider_access_bindings(
                 subject = str(
                     subject_field.get("id") or subject_field.get("name") or ""
                 )
+                subject_type = str(
+                    subject_field.get("type") or subject_field.get("kind") or ""
+                ).lower()
             else:
                 subject = str(subject_field or "")
-            if not role or not subject:
+                subject_type = str(
+                    item.get("subject_type") or item.get("subjectType") or ""
+                ).lower()
+            normalized_types = {
+                "group": "group",
+                "user": "user",
+                "user_account": "user",
+                "user-account": "user",
+                "useraccount": "user",
+                "service_account": "service-account",
+                "service-account": "service-account",
+                "serviceaccount": "service-account",
+                "federated_account": "federated-account",
+                "federated-account": "federated-account",
+                "federatedaccount": "federated-account",
+            }
+            normalized_type = normalized_types.get(subject_type)
+            if not role or not subject or normalized_type is None:
                 raise ProvenanceError(
                     f"a provider access binding under {parent_id} lacks a "
-                    "readable role/subject; fails closed"
+                    "readable role, subject, or recognized subject type; an "
+                    "untyped subject could hide a privileged group — fails "
+                    "closed"
                 )
-            bindings.append((subject, role))
+            bindings.append((subject, role, normalized_type))
         token_value = (
             listing.get("next_page_token") or listing.get("nextPageToken")
             if isinstance(listing, dict)
@@ -4383,6 +5194,90 @@ def _provider_access_bindings(
     raise ProvenanceError(
         f"the provider access-binding listing for {parent_id} did not "
         "terminate within 100 pages; fails closed"
+    )
+
+
+def _provider_group_members(
+    owner_scope: dict,
+    runner,
+    group_id: str,
+    known_groups: frozenset[str],
+) -> list[tuple[str, str]]:
+    """Fully paginate one group's typed direct members."""
+    members: list[tuple[str, str]] = []
+    page_token = ""
+    for _ in range(100):
+        arguments = [
+            "iam", "group-membership", "list",
+            "--group-id", group_id,
+            "--page-size", "1000",
+        ]
+        if page_token:
+            arguments += ["--page-token", page_token]
+        listing = json.loads(_provider_cli(owner_scope, runner, *arguments))
+        items = listing.get("items") if isinstance(listing, dict) else listing
+        if not isinstance(items, list):
+            raise ProvenanceError(
+                f"provider group {group_id!r} has no readable member list"
+            )
+        for item in items:
+            if isinstance(item, dict):
+                member = str(item.get("member_id") or item.get("memberId") or
+                             item.get("id") or item.get("subject") or "")
+                member_type = str(
+                    item.get("member_type") or item.get("memberType") or
+                    item.get("type") or item.get("kind") or ""
+                ).lower()
+            else:
+                member = str(item)
+                member_type = ""
+            if not member or not PRINCIPAL_PATTERN.match(member):
+                raise ProvenanceError(
+                    f"provider group {group_id!r} has an unrecognizable member"
+                )
+            normalized_types = {
+                "group": "group",
+                "user": "user",
+                "user_account": "user",
+                "user-account": "user",
+                "useraccount": "user",
+                "service_account": "service-account",
+                "service-account": "service-account",
+                "serviceaccount": "service-account",
+                "federated_account": "federated-account",
+                "federated-account": "federated-account",
+                "federatedaccount": "federated-account",
+            }
+            normalized_type = normalized_types.get(member_type)
+            if normalized_type == "group":
+                if member not in known_groups:
+                    raise ProvenanceError(
+                        f"provider group {group_id!r} contains nested group "
+                        f"{member!r} omitted from provider_admin_groups; "
+                        "transitive closure is incomplete"
+                    )
+            elif normalized_type is None:
+                raise ProvenanceError(
+                    f"provider group {group_id!r} member {member!r} has "
+                    f"unknown type {member_type!r}; an untyped member could "
+                    "be an omitted nested group, so closure fails closed"
+                )
+            members.append((member, normalized_type))
+        token_value = (
+            listing.get("next_page_token") or listing.get("nextPageToken")
+            if isinstance(listing, dict)
+            else None
+        )
+        if not token_value:
+            if len(members) != len(set(members)):
+                raise ProvenanceError(
+                    f"provider group {group_id!r} repeats a member; "
+                    "membership is ambiguous"
+                )
+            return sorted(members)
+        page_token = str(token_value)
+    raise ProvenanceError(
+        f"provider group {group_id!r} did not terminate within 100 pages"
     )
 
 
@@ -4474,6 +5369,11 @@ def _assert_provider_boundary(
             "provider_admin_subjects"
         ) or [])
     )
+    admin_groups = set(
+        map(str, (attestation.get("evidence") or {}).get(
+            "provider_admin_groups"
+        ) or [])
+    )
     readonly_roles = set(map(str, owner_scope["provider_readonly_roles"]))
     def provider_snapshot() -> dict:
         """ONE combined read: bindings AND role definitions together.
@@ -4491,7 +5391,7 @@ def _assert_provider_boundary(
         }
         definitions: dict[str, list[str]] = {}
         for parent_bindings in bindings.values():
-            for _, role in parent_bindings:
+            for _, role, _ in parent_bindings:
                 if role in definitions:
                     continue
                 definition = json.loads(
@@ -4511,7 +5411,13 @@ def _assert_provider_boundary(
                         "never classified — fails closed"
                     )
                 definitions[role] = sorted(map(str, permissions))
-        return {"bindings": bindings, "roles": definitions}
+        groups = {
+            group_id: _provider_group_members(
+                owner_scope, runner, group_id, frozenset(admin_groups)
+            )
+            for group_id in sorted(admin_groups)
+        }
+        return {"bindings": bindings, "roles": definitions, "groups": groups}
 
     try:
         # TWO full COMBINED snapshots must be identical (any drift in
@@ -4533,6 +5439,7 @@ def _assert_provider_boundary(
                         for parent_id, bindings in snapshot["bindings"].items()
                     },
                     "roles": role_definitions,
+                    "groups": snapshot["groups"],
                 },
                 sort_keys=True,
             ).encode("utf-8")
@@ -4562,13 +5469,42 @@ def _assert_provider_boundary(
                 for item in permissions
             )
 
+        def close_group(group_id: str, visiting: frozenset[str]) -> set[str]:
+            if group_id in visiting:
+                raise ProvenanceError(
+                    f"provider group membership cycle reaches {group_id!r}; "
+                    "transitive privileged membership is ambiguous"
+                )
+            leaves: set[str] = set()
+            for member, member_type in snapshot["groups"].get(group_id, []):
+                if member_type == "group":
+                    leaves |= close_group(member, visiting | {group_id})
+                else:
+                    leaves.add(member)
+            return leaves
+
+        group_violations = sorted(
+            f"{leaf} is a transitive member of privileged group {group_id}"
+            for group_id in admin_groups
+            for leaf in close_group(group_id, frozenset())
+            if leaf not in allowed_admins
+        )
+        if group_violations:
+            raise ProvenanceError(
+                "the provider privileged-group transitive closure contains "
+                "unattested leaf members: " + "; ".join(group_violations[:10])
+            )
+
         rogue = sorted(
             {
-                f"{subject} holds {role} on {parent_id}"
+                f"{subject} ({subject_type}) holds {role} on {parent_id}"
                 for parent_id, bindings in snapshot["bindings"].items()
-                for subject, role in bindings
+                for subject, role, subject_type in bindings
                 if not role_is_readonly(role)
-                and subject not in allowed_admins
+                and (
+                    (subject_type == "group" and subject not in admin_groups)
+                    or (subject_type != "group" and subject not in allowed_admins)
+                )
             }
         )
         bucket = json.loads(
@@ -4697,44 +5633,105 @@ def _assert_worm_anchor_object(
         # itself holds the authority — the attested version must be the
         # LATEST version of the anchor key, so a superseded attestation
         # fails closed independently of local state.
-        versions = json.loads(
-            _provider_cli(
-                owner_scope,
-                runner,
-                "storage",
-                "object",
-                "list-versions",
-                "--bucket",
-                str(owner_scope["worm_bucket"]),
-                "--key",
-                str(anchor_object.get("key", "")),
+        version_items: list[dict] = []
+        page_token = ""
+        for _ in range(100):
+            arguments = [
+                "storage", "object", "list-versions",
+                "--bucket", str(owner_scope["worm_bucket"]),
+                "--key", str(anchor_object.get("key", "")),
+                "--page-size", "1000",
+            ]
+            if page_token:
+                arguments += ["--page-token", page_token]
+            versions = json.loads(
+                _provider_cli(owner_scope, runner, *arguments)
             )
-        )
-        version_items = (
-            versions.get("versions")
-            if isinstance(versions, dict)
-            else versions
-        )
-        if not isinstance(version_items, list) or not version_items:
+            page_items = (
+                versions.get("versions")
+                if isinstance(versions, dict)
+                else versions
+            )
+            if not isinstance(page_items, list):
+                raise ProvenanceError(
+                    "the WORM anchor version response has no authoritative "
+                    "versions list; latest cannot be determined"
+                )
+            if not all(isinstance(item, dict) for item in page_items):
+                raise ProvenanceError(
+                    "the WORM anchor version response contains an "
+                    "unrecognizable entry; latest is ambiguous"
+                )
+            version_items.extend(page_items)
+            next_token = (
+                versions.get("next_page_token")
+                or versions.get("nextPageToken")
+                if isinstance(versions, dict)
+                else None
+            )
+            if not next_token:
+                break
+            next_token = str(next_token)
+            if next_token == page_token:
+                raise ProvenanceError(
+                    "the WORM anchor version listing repeated its page "
+                    "token; enumeration is not authoritative"
+                )
+            page_token = next_token
+        else:
+            raise ProvenanceError(
+                "the WORM anchor version listing did not terminate within "
+                "100 pages; latest cannot be determined"
+            )
+        if not version_items:
             raise ProvenanceError(
                 "the WORM anchor key has no readable version listing; the "
                 "authoritative latest anchor cannot be determined — fails "
                 "closed"
             )
-        latest = next(
-            (
-                item
-                for item in version_items
-                if isinstance(item, dict)
-                and str(
-                    _provider_field(item, ("is_latest", "latest")) or ""
-                ).lower()
-                == "true"
-            ),
-            version_items[0] if isinstance(version_items[0], dict) else None,
-        )
+        requested_key = str(anchor_object.get("key", ""))
+        exact_items = []
+        for item in version_items:
+            listed_key = str(
+                _provider_field(item, ("key", "object_key", "name")) or ""
+            )
+            if listed_key != requested_key:
+                raise ProvenanceError(
+                    f"the WORM version listing for {requested_key!r} "
+                    f"returned foreign key {listed_key!r}; latest is "
+                    "ambiguous — fails closed"
+                )
+            version_id = str(
+                _provider_field(item, ("version_id", "versionId", "id")) or ""
+            )
+            if not version_id:
+                raise ProvenanceError(
+                    "a WORM anchor version has no stable version id; latest "
+                    "is ambiguous — fails closed"
+                )
+            exact_items.append(item)
+        version_ids = [
+            str(_provider_field(item, ("version_id", "versionId", "id")) or "")
+            for item in exact_items
+        ]
+        if len(version_ids) != len(set(version_ids)):
+            raise ProvenanceError(
+                "the fully paginated WORM listing repeats a version id; "
+                "latest is ambiguous — fails closed"
+            )
+        latest_items = [
+            item for item in exact_items
+            if str(_provider_field(item, ("is_latest", "latest")) or "").lower()
+            == "true"
+        ]
+        if len(latest_items) != 1:
+            raise ProvenanceError(
+                "the fully paginated WORM listing must identify exactly one "
+                f"latest version, found {len(latest_items)}; fails closed"
+            )
+        latest = latest_items[0]
         latest_version = str(
-            _provider_field(latest or {}, ("version_id", "id")) or ""
+            _provider_field(latest, ("version_id", "versionId", "id")) or ""
         )
         if not latest_version or latest_version != str(
             anchor_object.get("version_id", "")
@@ -4890,9 +5887,13 @@ def _anchor_advance_ledger_path(run_root: Path) -> Path:
     return run_root / "anchor-advances.jsonl"
 
 
-def _ledger_recorded_anchor(run_root: Path) -> dict | None:
+def _ledger_recorded_anchor(
+    run_root: Path, repair: bool = True
+) -> dict | None:
     """The best anchor per the TAMPER-EVIDENT advance ledger (last record)."""
-    records = _read_chained_records(_anchor_advance_ledger_path(run_root))
+    records = _read_chained_records(
+        _anchor_advance_ledger_path(run_root), repair=repair
+    )
     for record in reversed(records):
         if record.get("kind") == "anchor-advance" and isinstance(
             record.get("chains"), dict
@@ -4917,7 +5918,7 @@ def _write_anchor_checkpoint_file(run_root: Path, chains: dict) -> None:
     _fsync_dir(run_root)
 
 
-def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
+def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> dict | None:
     """Presented anchors may never regress behind the best anchor seen.
 
     The memory is DOUBLE-KEPT with the tamper-evident advance LEDGER as the
@@ -4939,7 +5940,8 @@ def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
                 "fails closed"
             ) from error
         file_chains = recorded.get("chains") or {}
-    ledger_chains = _ledger_recorded_anchor(run_root)
+    ledger_chains = _ledger_recorded_anchor(run_root, repair=False)
+    repair_chains = None
     if ledger_chains is not None:
         behind = not checkpoint_path.exists() or any(
             int((file_chains.get(name) or {}).get("count", -1))
@@ -4948,9 +5950,11 @@ def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
             if isinstance(state, dict)
         )
         if behind:
-            # Crash between ledger append and file replace (or a lost
-            # cache file): repair FORWARD from the ledger.
-            _write_anchor_checkpoint_file(run_root, ledger_chains)
+            # Validation is side-effect-free. A caller may still fail its
+            # provider/WORM, policy, inventory, IAM, authorization, or source
+            # checks, so return this prospective repair for the caller's
+            # final commit phase.
+            repair_chains = ledger_chains
             file_chains = ledger_chains
         ahead = any(
             int((file_chains.get(name) or {}).get("count", 0))
@@ -4998,6 +6002,7 @@ def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
                 "at the same count as the best previously verified anchor; "
                 "forked anchor history never verifies — fails closed"
             )
+    return repair_chains
 
 
 def _advance_anchor_checkpoint(run_root: Path, anchored: dict) -> None:
@@ -5213,7 +6218,7 @@ def _check_anchored_legacy(
     return problems, adoptable
 
 
-def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
+def _assert_anchored_heads(run_root: Path, anchored: dict) -> dict:
     """Local chains must EXTEND the signed off-host anchor — never rewrite it.
 
     Per chain: missing/shorter local state (truncation), equal-count head
@@ -5227,7 +6232,7 @@ def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
     lives in the WORM store itself (list-versions binding in the provider
     check).
     """
-    _assert_anchor_monotonic(run_root, anchored)
+    repair_chains = _assert_anchor_monotonic(run_root, anchored)
     problems: list[str] = []
     chains = anchored.get("chains") or {}
     for name in REQUIRED_ANCHOR_CHAINS:
@@ -5291,9 +6296,29 @@ def _assert_anchored_heads(run_root: Path, anchored: dict) -> None:
         raise ProvenanceError(
             "anchored-heads verification failed: " + "; ".join(problems)
         )
-    for ledger in adoptable:
-        _read_chained_records(ledger, adopt_legacy=True)
-    _advance_anchor_checkpoint(run_root, anchored)
+    return {
+        "repair_chains": repair_chains,
+        "adoptable": adoptable,
+        "anchored": anchored,
+    }
+
+
+def _commit_anchored_heads(run_root: Path, effects: dict) -> None:
+    """Commit replay state only after every global check has succeeded.
+
+    `_assert_anchored_heads` is intentionally a pure validation phase. This
+    separate commit phase prevents a request that later fails provider/WORM,
+    inventory, policy, IAM, authorization, or source review from repairing a
+    checkpoint, adopting legacy state, or advancing the anti-replay floor.
+    """
+    repair_chains = effects.get("repair_chains")
+    if isinstance(repair_chains, dict):
+        _write_anchor_checkpoint_file(run_root, repair_chains)
+    for ledger in effects.get("adoptable") or []:
+        _read_chained_records(Path(ledger), adopt_legacy=True)
+    _advance_anchor_checkpoint(run_root, effects["anchored"])
+
+
 def load_rollout_authorization(
     authorization_path: Path,
     public_key_path: str,
@@ -5311,6 +6336,7 @@ def load_rollout_authorization(
     the SHA-256 of the EXACT canonical plan the owner approved, is bounded
     to at most 24h, and is consumed exactly once through the chained ledger.
     """
+    _require_owner_release_key()
     signature_path = authorization_path.parent / (
         authorization_path.name + ".sig"
     )
@@ -5457,6 +6483,7 @@ def load_owner_scope(
     SHA-256 in reviewed source (RELEASE_KEY_SHA256), so a substituted
     co-located key never verifies anything.
     """
+    _require_owner_release_key()
     signature_path = scope_path.parent / (scope_path.name + ".sig")
     if not scope_path.is_file() or scope_path.is_symlink():
         raise ProvenanceError(
@@ -5533,6 +6560,7 @@ def load_signed_inventory(
     inventoried like every other platform image. platform_images
     must equal the source union minus those audited non-live drains.
     """
+    _require_owner_release_key()
     if (
         not isinstance(max_age_hours, (int, float))
         or isinstance(max_age_hours, bool)
@@ -5714,14 +6742,38 @@ def load_signed_inventory(
     return inventory, hashlib.sha256(inventory_bytes).hexdigest()
 
 
-PLATFORM_IMAGE_IN_TEXT = None  # compiled lazily against the scope prefix
+PLATFORM_IMAGE_IN_TEXT = None  # retained for compatibility; no longer used
 
 
-def _platform_references_in_text(text_value: str, platform_prefix: str) -> set[str]:
-    pattern = re.compile(
-        re.escape(platform_prefix) + r"[A-Za-z0-9._/-]*@sha256:[0-9a-f]{64}"
-    )
-    return set(pattern.findall(text_value))
+def _governed_references_in_manifest(
+    text_value: str, registry_prefixes: Sequence[str]
+) -> set[str]:
+    """Extract and validate every image field in a rendered Helm manifest."""
+    import yaml
+
+    references: set[str] = set()
+
+    def walk(value) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if str(key) == "image" and isinstance(child, str):
+                    reference = validate_digest_reference(child)
+                    if not reference.startswith(tuple(registry_prefixes)):
+                        raise ProvenanceError(
+                            f"Helm history contains image {reference!r} outside "
+                            "the owner-approved registry prefixes"
+                        )
+                    references.add(reference)
+                else:
+                    walk(child)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child)
+
+    for document in yaml.safe_load_all(text_value):
+        if document is not None:
+            walk(document)
+    return references
 
 
 WORKLOAD_KINDS = (
@@ -5754,6 +6806,7 @@ def collect_authoritative_observation(scope: dict, runner=_run_capture) -> dict:
     trusted on its own resource claims.
     """
     platform_prefix = scope["platform_repository_prefix"]
+    registry_prefixes = tuple(scope["registry_prefixes"])
     try:
         whoami = json.loads(runner(["kubectl", "auth", "whoami", "-o", "json"]))
         identity = str(
@@ -5788,15 +6841,20 @@ def collect_authoritative_observation(scope: dict, runner=_run_capture) -> dict:
         live_resources: set[str] = set()
 
         def record(image: str, resource_id: str) -> None:
-            if not image.startswith(platform_prefix):
-                return
             try:
-                live_images.add(validate_digest_reference(image))
+                reference = validate_digest_reference(image)
+                if not reference.startswith(registry_prefixes):
+                    raise ProvenanceError(
+                        f"image {reference!r} is outside the owner-approved "
+                        "registry prefixes"
+                    )
+                live_images.add(reference)
             except ProvenanceError as error:
                 raise ProvenanceError(
-                    f"live platform image {image!r} at {resource_id} is not "
-                    "digest-pinned; it can never be allow-listed — rendering "
-                    "fails closed"
+                    f"live image {image!r} at {resource_id} is not an exact "
+                    "digest-pinned, owner-registry image; every model, debug, "
+                    "website and platform image is governed — rendering fails "
+                    "closed"
                 ) from error
             live_resources.add(resource_id)
 
@@ -5894,7 +6952,9 @@ def collect_authoritative_observation(scope: dict, runner=_run_capture) -> dict:
                             str(revision),
                         ]
                     )
-                    found = _platform_references_in_text(manifest, platform_prefix)
+                    found = _governed_references_in_manifest(
+                        manifest, registry_prefixes
+                    )
                     if found:
                         helm_images |= found
                         helm_resources.add(f"helm/{namespace}/{name}/{revision}")
@@ -6514,7 +7574,129 @@ def _binding_subjects(binding: dict) -> list[str]:
     return subjects
 
 
-def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | None = None) -> None:
+def _verified_debug_registry_sessions(
+    owner_scope: dict,
+    live_runner,
+    public_key_path: str | None,
+    verifier=None,
+) -> dict[str, dict]:
+    """Re-verify every retained debug session from its exact signed bytes."""
+    try:
+        registry = json.loads(live_runner([
+            "kubectl", "get", "configmap", DEBUG_SESSIONS_NAME,
+            "-n", ALLOWLIST_NAMESPACE, "-o", "json",
+        ]))
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+        raise ProvenanceError(
+            "the live debug-session registry cannot be audited"
+        ) from error
+    data = registry.get("data") or {}
+    if not isinstance(data, dict) or not all(
+        str(key).startswith(
+            ("active.", "retired.", "document.", "signature.")
+        )
+        for key in data
+    ):
+        raise ProvenanceError(
+            "the debug-session registry contains an unrecognized key"
+        )
+    active = {str(key)[7:] for key in data if str(key).startswith("active.")}
+    documents = {
+        str(key)[9:] for key in data if str(key).startswith("document.")
+    }
+    signatures = {
+        str(key)[10:] for key in data if str(key).startswith("signature.")
+    }
+    retired = {
+        str(key)[8:] for key in data if str(key).startswith("retired.")
+    }
+    if documents != active or signatures != active or not retired <= active:
+        raise ProvenanceError(
+            "every debug active row must retain exactly one signed document "
+            "and signature, and retirement markers must reference an active row"
+        )
+    if active and not public_key_path:
+        raise ProvenanceError(
+            "debug-session IAM audit requires the pinned owner public key"
+        )
+    sessions: dict[str, dict] = {}
+    for nonce in sorted(active):
+        row = str(data[f"active.{nonce}"])
+        fields = row.split("|")
+        if len(fields) != 10 or not DEBUG_NONCE_PATTERN.match(nonce):
+            raise ProvenanceError(
+                f"debug session {nonce!r} has a malformed active row"
+            )
+        try:
+            payload = base64.b64decode(
+                str(data[f"document.{nonce}"]), validate=True
+            )
+            signature = base64.b64decode(
+                str(data[f"signature.{nonce}"]), validate=True
+            )
+            document = json.loads(payload)
+        except (
+            binascii.Error,
+            UnicodeError,
+            ValueError,
+            json.JSONDecodeError,
+        ) as error:
+            raise ProvenanceError(
+                f"debug session {nonce!r} retained evidence is malformed"
+            ) from error
+        session_sha256 = hashlib.sha256(payload).hexdigest()
+        if session_sha256 != fields[8]:
+            raise ProvenanceError(
+                f"debug session {nonce!r} document hash differs from its row"
+            )
+        _verify_blob_bytes(
+            str(public_key_path), payload, signature, verifier,
+            f"retained debug session {nonce}",
+        )
+        expires_at = _validate_debug_session_document(
+            document,
+            owner_scope,
+            f"retained debug session {nonce}",
+            require_current=False,
+        )
+        principal = fields[9]
+        expected_row = "|".join(
+            str(document[field])
+            for field in (
+                "cluster", "namespace", "pod", "pod_uid", "container",
+                "tenant", "image", "expires_at",
+            )
+        ) + f"|{session_sha256}|{principal}"
+        if (
+            str(document["nonce"]) != nonce
+            or principal not in set(owner_scope["debug_principals"])
+            or row != expected_row
+        ):
+            raise ProvenanceError(
+                f"debug session {nonce!r} registry row differs from its "
+                "owner-signed document or scoped principal"
+            )
+        is_retired = nonce in retired
+        if is_retired and str(data[f"retired.{nonce}"]) != session_sha256:
+            raise ProvenanceError(
+                f"debug session {nonce!r} retirement marker is not its hash"
+            )
+        sessions[nonce] = {
+            "document": document,
+            "sha256": session_sha256,
+            "expires_at": expires_at,
+            "retired": is_retired,
+        }
+    return sessions
+
+
+def _assert_iam_boundary(
+    owner_scope: dict,
+    live_runner,
+    attestation: dict | None = None,
+    public_key_path: str | None = None,
+    verifier=None,
+) -> None:
     """ENFORCE the external identity boundary at render time, read-only.
 
     The external provider/IAM control is not prose: this audit walks every
@@ -6658,6 +7840,84 @@ def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | Non
                     privileged_namespaces.add(subject.split(":", 2)[1])
     protected_namespaces = frozenset(privileged_namespaces)
 
+    # Dynamic debug RBAC is trusted only when it is the exact live projection
+    # of retained OWNER-SIGNED evidence. A hand-crafted resourceName-shaped
+    # Role, a missing pair, a stale unretired grant, or a modified binding is
+    # a boundary violation even though its generic grant shape is narrow.
+    sessions = _verified_debug_registry_sessions(
+        owner_scope, live_runner, public_key_path, verifier
+    )
+    session_prefix = "fs2-debug-session-"
+    def session_nonce(name: str) -> str | None:
+        nonce = name[len(session_prefix):] if name.startswith(session_prefix) else ""
+        return nonce if DEBUG_NONCE_PATTERN.match(nonce) else None
+
+    session_roles = {
+        (namespace, name): role
+        for (namespace, name), role in all_roles.items()
+        if session_nonce(name) is not None
+    }
+    session_bindings = {
+        (
+            namespace,
+            str((binding.get("metadata") or {}).get("name", "")),
+        ): binding
+        for namespace, binding in namespaced_bindings
+        if session_nonce(
+            str((binding.get("metadata") or {}).get("name", ""))
+        ) is not None
+    }
+    expected_session_keys = {
+        (
+            str(session["document"]["namespace"]),
+            session_prefix + nonce,
+        )
+        for nonce, session in sessions.items()
+    }
+    valid_debug_binding_keys: set[tuple[str, str]] = set()
+    for key in sorted(set(session_roles) | set(session_bindings) | expected_session_keys):
+        namespace, name = key
+        nonce = name[len(session_prefix):]
+        session = sessions.get(nonce)
+        role = session_roles.get(key)
+        binding = session_bindings.get(key)
+        if session is None or role is None or binding is None:
+            violations.append(
+                f"debug RBAC {namespace}/{name} is hand-crafted, missing its "
+                "non-delete pair, or lacks retained owner-signed evidence"
+            )
+            continue
+        document = session["document"]
+        expected_role, expected_binding = render_debug_session(
+            document, owner_scope, str(session["sha256"])
+        )
+        inactive = bool(session["retired"]) or datetime.now(UTC) >= session[
+            "expires_at"
+        ]
+        expected_annotations = dict(expected_role["metadata"]["annotations"])
+        if inactive:
+            expected_annotations["security.fs2.nebius.ai/debug-state"] = "retired"
+        role_annotations = (role.get("metadata") or {}).get("annotations") or {}
+        binding_annotations = (
+            (binding.get("metadata") or {}).get("annotations") or {}
+        )
+        expected_rules = [] if inactive else expected_role["rules"]
+        expected_subjects = [] if inactive else expected_binding["subjects"]
+        if (
+            _normalized_rbac_rules(role.get("rules"))
+            != _normalized_rbac_rules(expected_rules)
+            or role_annotations != expected_annotations
+            or binding_annotations != expected_annotations
+            or (binding.get("roleRef") or {}) != expected_binding["roleRef"]
+            or (binding.get("subjects") or []) != expected_subjects
+        ):
+            violations.append(
+                f"debug RBAC {namespace}/{name} differs from its signed "
+                "session or remains capable after retirement/expiry"
+            )
+        elif not inactive:
+            valid_debug_binding_keys.add(key)
+
     def grant_within(rule: dict, permitted_grant: dict | None) -> bool:
         # A permitted_role allowance is GRANT-SHAPE-BOUND: the granted rule
         # must stay inside the function's exact verbs/resources, and where
@@ -6704,6 +7964,13 @@ def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | Non
                     and subject
                     in role_subjects.get(str(permitted_role), set())
                     and grant_within(rule, forbidden.get("permitted_grant"))  # type: ignore[arg-type]
+                    and (
+                        str(permitted_role) != "debug"
+                        or (
+                            binding_namespace,
+                            str((binding.get("metadata") or {}).get("name", "")),
+                        ) in valid_debug_binding_keys
+                    )
                 ):
                     # This exact rule, in this exact bounded shape, is that
                     # identity's own FUNCTION — never an exemption from any
@@ -6745,6 +8012,9 @@ def _normalized_rbac_rules(rules) -> list[dict]:
                 "resourceNames": sorted(
                     map(str, rule.get("resourceNames") or [])
                 ),
+                "nonResourceURLs": sorted(
+                    map(str, rule.get("nonResourceURLs") or [])
+                ),
             }
             for rule in rules or []
         ),
@@ -6752,9 +8022,342 @@ def _normalized_rbac_rules(rules) -> list[dict]:
     )
 
 
+def _normalized_debug_install_object(document: dict) -> dict:
+    """Project a debug-admission object onto every security-relevant field."""
+    kind = str(document.get("kind", ""))
+    metadata = document.get("metadata") or {}
+    base = {
+        "kind": kind,
+        "name": str(metadata.get("name", "")),
+        "namespace": str(metadata.get("namespace", "") or ""),
+    }
+    if kind == "ServiceAccount":
+        return {
+            **base,
+            "automountServiceAccountToken": document.get(
+                "automountServiceAccountToken"
+            ),
+        }
+    if kind in ("ClusterRole", "Role"):
+        return {**base, "rules": _normalized_rbac_rules(document.get("rules"))}
+    if kind in ("ClusterRoleBinding", "RoleBinding"):
+        role_ref = document.get("roleRef") or {}
+        subjects = sorted(
+            (
+                {
+                    "kind": str(subject.get("kind", "")),
+                    "name": str(subject.get("name", "")),
+                    "namespace": str(subject.get("namespace", "") or ""),
+                }
+                for subject in document.get("subjects") or []
+            ),
+            key=lambda item: json.dumps(item, sort_keys=True),
+        )
+        return {
+            **base,
+            "roleRef": {
+                "apiGroup": str(role_ref.get("apiGroup", "")),
+                "kind": str(role_ref.get("kind", "")),
+                "name": str(role_ref.get("name", "")),
+            },
+            "subjects": subjects,
+        }
+    if kind == "Deployment":
+        spec = document.get("spec") or {}
+        template = spec.get("template") or {}
+        pod = template.get("spec") or {}
+        containers = []
+        for container in pod.get("containers") or []:
+            ports = sorted(
+                (
+                    {
+                        "name": str(port.get("name", "")),
+                        "containerPort": int(port.get("containerPort", 0)),
+                        "protocol": str(port.get("protocol", "TCP")),
+                    }
+                    for port in container.get("ports") or []
+                ),
+                key=lambda item: (item["name"], item["containerPort"]),
+            )
+            env = sorted(
+                (
+                    {"name": str(item.get("name", "")),
+                     "value": str(item.get("value", ""))}
+                    for item in container.get("env") or []
+                ),
+                key=lambda item: item["name"],
+            )
+            mounts = sorted(
+                (
+                    {
+                        "name": str(item.get("name", "")),
+                        "mountPath": str(item.get("mountPath", "")),
+                        "readOnly": item.get("readOnly") is True,
+                    }
+                    for item in container.get("volumeMounts") or []
+                ),
+                key=lambda item: (item["name"], item["mountPath"]),
+            )
+            security = container.get("securityContext") or {}
+            containers.append(
+                {
+                    "name": str(container.get("name", "")),
+                    "image": str(container.get("image", "")),
+                    "command": list(map(str, container.get("command") or [])),
+                    "args": list(map(str, container.get("args") or [])),
+                    "env": env,
+                    "envFrom": container.get("envFrom") or [],
+                    "ports": ports,
+                    "volumeMounts": mounts,
+                    "volumeDevices": container.get("volumeDevices") or [],
+                    "workingDir": str(container.get("workingDir", "")),
+                    "lifecycle": container.get("lifecycle") or {},
+                    "resources": container.get("resources") or {},
+                    "stdin": container.get("stdin", False),
+                    "stdinOnce": container.get("stdinOnce", False),
+                    "tty": container.get("tty", False),
+                    "securityContext": {
+                        "allowPrivilegeEscalation": security.get(
+                            "allowPrivilegeEscalation"
+                        ),
+                        "readOnlyRootFilesystem": security.get(
+                            "readOnlyRootFilesystem"
+                        ),
+                        "runAsNonRoot": security.get("runAsNonRoot"),
+                        "runAsUser": security.get("runAsUser"),
+                        "runAsGroup": security.get("runAsGroup"),
+                        "procMount": security.get("procMount", "Default"),
+                        "seccompProfile": security.get("seccompProfile") or {},
+                        "privileged": security.get("privileged", False),
+                        "capabilitiesDrop": sorted(
+                            map(str, (security.get("capabilities") or {}).get("drop") or [])
+                        ),
+                    },
+                }
+            )
+        volumes = []
+        for volume in pod.get("volumes") or []:
+            projected_sources = []
+            for source in (volume.get("projected") or {}).get("sources") or []:
+                token = source.get("serviceAccountToken") or {}
+                configmap = source.get("configMap") or {}
+                projected_sources.append(
+                    {
+                        "serviceAccountToken": {
+                            "audience": str(token.get("audience", "")),
+                            "expirationSeconds": int(token.get("expirationSeconds", 0)),
+                            "path": str(token.get("path", "")),
+                        } if token else {},
+                        "configMap": {
+                            "name": str(configmap.get("name", "")),
+                            "items": sorted(
+                                (
+                                    {"key": str(item.get("key", "")),
+                                     "path": str(item.get("path", ""))}
+                                    for item in configmap.get("items") or []
+                                ),
+                                key=lambda item: (item["key"], item["path"]),
+                            ),
+                        } if configmap else {},
+                    }
+                )
+            volumes.append(
+                {
+                    "name": str(volume.get("name", "")),
+                    "secretName": str(
+                        (volume.get("secret") or {}).get("secretName", "")
+                    ),
+                    "projectedSources": projected_sources,
+                }
+            )
+        return {
+            **base,
+            "replicas": int(spec.get("replicas", 1)),
+            "selector": (spec.get("selector") or {}).get("matchLabels") or {},
+            "templateLabels": (template.get("metadata") or {}).get("labels") or {},
+            "serviceAccountName": str(pod.get("serviceAccountName", "")),
+            "automountServiceAccountToken": pod.get("automountServiceAccountToken"),
+            "hostNetwork": pod.get("hostNetwork", False),
+            "hostPID": pod.get("hostPID", False),
+            "hostIPC": pod.get("hostIPC", False),
+            "hostUsers": pod.get("hostUsers", True),
+            "shareProcessNamespace": pod.get("shareProcessNamespace", False),
+            "nodeName": str(pod.get("nodeName", "")),
+            "imagePullSecrets": pod.get("imagePullSecrets") or [],
+            "securityContext": pod.get("securityContext") or {},
+            "initContainers": pod.get("initContainers") or [],
+            "ephemeralContainers": pod.get("ephemeralContainers") or [],
+            "containers": sorted(containers, key=lambda item: item["name"]),
+            "volumes": sorted(volumes, key=lambda item: item["name"]),
+        }
+    if kind == "Service":
+        spec = document.get("spec") or {}
+        ports = sorted(
+            (
+                {
+                    "name": str(port.get("name", "")),
+                    "port": int(port.get("port", 0)),
+                    "targetPort": str(port.get("targetPort", "")),
+                    "protocol": str(port.get("protocol", "TCP")),
+                }
+                for port in spec.get("ports") or []
+            ),
+            key=lambda item: (item["name"], item["port"]),
+        )
+        return {
+            **base,
+            "type": str(spec.get("type", "ClusterIP")),
+            "selector": spec.get("selector") or {},
+            "ports": ports,
+            "externalIPs": spec.get("externalIPs") or [],
+            "externalName": str(spec.get("externalName", "")),
+        }
+    if kind == "ValidatingWebhookConfiguration":
+        webhooks = []
+        for webhook in document.get("webhooks") or []:
+            client = webhook.get("clientConfig") or {}
+            service = client.get("service") or {}
+            rules = sorted(
+                (
+                    {
+                        "apiGroups": sorted(map(str, rule.get("apiGroups") or [])),
+                        "apiVersions": sorted(map(str, rule.get("apiVersions") or [])),
+                        "operations": sorted(map(str, rule.get("operations") or [])),
+                        "resources": sorted(map(str, rule.get("resources") or [])),
+                        "scope": str(rule.get("scope", "*")),
+                    }
+                    for rule in webhook.get("rules") or []
+                ),
+                key=lambda item: json.dumps(item, sort_keys=True),
+            )
+            webhooks.append(
+                {
+                    "name": str(webhook.get("name", "")),
+                    "admissionReviewVersions": sorted(
+                        map(str, webhook.get("admissionReviewVersions") or [])
+                    ),
+                    "sideEffects": str(webhook.get("sideEffects", "")),
+                    "failurePolicy": str(webhook.get("failurePolicy", "Fail")),
+                    "matchPolicy": str(webhook.get("matchPolicy", "Equivalent")),
+                    "timeoutSeconds": int(webhook.get("timeoutSeconds", 10)),
+                    "service": {
+                        "namespace": str(service.get("namespace", "")),
+                        "name": str(service.get("name", "")),
+                        "path": str(service.get("path", "")),
+                        "port": int(service.get("port", 443)),
+                    },
+                    "caBundle": str(client.get("caBundle", "")),
+                    "rules": rules,
+                    "namespaceSelector": webhook.get("namespaceSelector") or {},
+                    "objectSelector": webhook.get("objectSelector") or {},
+                    "matchConditions": webhook.get("matchConditions") or [],
+                }
+            )
+        return {**base, "webhooks": sorted(webhooks, key=lambda item: item["name"])}
+    raise ProvenanceError(
+        f"unexpected kind {kind!r} in the debug admission install manifest"
+    )
+
+
+def _assert_debug_admission_matches(
+    owner_scope: dict, live_runner, expected_sha256: str
+) -> set[str]:
+    """Require the owner-pinned release/debug admission webhook live and exact."""
+    import yaml
+
+    manifest_path = Path(__file__).resolve().parent / "debug-admission.example.yaml"
+    payload = _read_evidence_bytes(manifest_path, private=False)
+    digest = hashlib.sha256(payload).hexdigest()
+    if digest != expected_sha256:
+        raise ProvenanceError(
+            f"the debug admission install manifest hashes to {digest}, not "
+            f"the owner-pinned IAM-boundary digest {expected_sha256}; update "
+            "the pin and owner-signed scope together"
+        )
+    kind_commands = {
+        "ServiceAccount": "serviceaccount",
+        "ClusterRole": "clusterrole",
+        "ClusterRoleBinding": "clusterrolebinding",
+        "Deployment": "deployment",
+        "Service": "service",
+        "ValidatingWebhookConfiguration": "validatingwebhookconfiguration",
+    }
+    images: set[str] = set()
+    try:
+        for expected in yaml.safe_load_all(payload):
+            if not expected:
+                continue
+            kind = str(expected.get("kind", ""))
+            if kind not in kind_commands:
+                raise ProvenanceError(
+                    f"unexpected debug admission manifest kind {kind!r}"
+                )
+            metadata = expected.get("metadata") or {}
+            name = str(metadata.get("name", ""))
+            namespace = str(metadata.get("namespace", "") or "")
+            command = ["kubectl", "get", kind_commands[kind], name]
+            if namespace:
+                command += ["-n", namespace]
+            command += ["-o", "json"]
+            live = json.loads(live_runner(command))
+            if _normalized_debug_install_object(live) != (
+                _normalized_debug_install_object(expected)
+            ):
+                raise ProvenanceError(
+                    f"live debug admission {kind} {namespace}/{name} differs "
+                    "from the owner-pinned install manifest; fails closed"
+                )
+            if kind == "Deployment":
+                containers = (
+                    (((expected.get("spec") or {}).get("template") or {}).get("spec") or {})
+                    .get("containers") or []
+                )
+                for container in containers:
+                    image = validate_digest_reference(str(container.get("image", "")))
+                    if not image.startswith(tuple(owner_scope["registry_prefixes"])):
+                        raise ProvenanceError(
+                            "the debug admission image lies outside the "
+                            "owner-approved registry prefixes"
+                        )
+                    images.add(image)
+                release_values = [
+                    str(variable.get("value", ""))
+                    for container in containers
+                    for variable in container.get("env") or []
+                    if variable.get("name") == "RELEASE_PRINCIPALS"
+                ]
+                configured_principals = {
+                    principal
+                    for value in release_values
+                    for principal in value.splitlines()
+                    if principal
+                }
+                if len(release_values) != 1 or configured_principals != set(
+                    owner_scope["deploy_principals"]
+                ):
+                    raise ProvenanceError(
+                        "the owner-pinned admission webhook release principal "
+                        "does not equal the owner-signed scope"
+                    )
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
+        raise ProvenanceError(
+            "the owner-pinned debug admission installation cannot be read "
+            "live; debug CONNECT authority fails closed"
+        ) from error
+    if len(images) != 1:
+        raise ProvenanceError(
+            "the debug admission installation must use exactly one "
+            "digest-pinned owner-registry image"
+        )
+    return images
+
+
 def _assert_iam_manifest_matches(
-    owner_scope: dict, live_runner, boundary_path: Path | None = None
-) -> None:
+    owner_scope: dict,
+    live_runner,
+    boundary_path: Path | None = None,
+    verify_debug_install: bool = True,
+) -> set[str]:
     """The LIVE identity boundary must equal the committed iam-boundary.yaml.
 
     The policy manifest earned live equality rounds ago; the boundary
@@ -6762,7 +8365,11 @@ def _assert_iam_manifest_matches(
     (iam_boundary_sha256), and every defined object — namespace,
     ServiceAccounts (automountServiceAccountToken: false), (Cluster)Role
     rules, and (Cluster)RoleBinding roleRef/subjects — must exist live and
-    equal the committed definition. Absent or drifted objects fail closed.
+    equal the committed definition. The boundary also pins the exact debug
+    webhook install manifest, whose live RBAC, Service, hardened Deployment,
+    and failure-closed release-mutation/debug-attach configuration are
+    compared field-for-field.
+    Absent or drifted objects fail closed.
     """
     if boundary_path is None:
         boundary_path = Path(__file__).resolve().parent / "iam-boundary.yaml"
@@ -6784,9 +8391,26 @@ def _assert_iam_manifest_matches(
         "Role": "role",
         "ClusterRoleBinding": "clusterrolebinding",
         "RoleBinding": "rolebinding",
+        "ConfigMap": "configmap",
     }
+    documents = [document for document in yaml.safe_load_all(payload) if document]
+    debug_pin = next(
+        (
+            str((document.get("data") or {}).get("manifest-sha256", ""))
+            for document in documents
+            if document.get("kind") == "ConfigMap"
+            and (document.get("metadata") or {}).get("name")
+            == "fs2-debug-admission-pin"
+        ),
+        "",
+    )
+    if not SHA256_PATTERN.match(debug_pin):
+        raise ProvenanceError(
+            "iam-boundary.yaml must pin debug-admission.example.yaml with "
+            "an exact manifest-sha256"
+        )
     try:
-        for document in yaml.safe_load_all(payload):
+        for document in documents:
             if not document:
                 continue
             kind = str(document.get("kind", ""))
@@ -6809,6 +8433,33 @@ def _assert_iam_manifest_matches(
                         f"live ServiceAccount {namespace}/{name} does not "
                         "set automountServiceAccountToken: false as the "
                         "committed boundary requires; fails closed"
+                    )
+            elif kind == "ConfigMap":
+                live_data = live.get("data") or {}
+                if name == DEBUG_SESSIONS_NAME:
+                    if not isinstance(live_data, dict) or not all(
+                        str(key).startswith(
+                            ("active.", "retired.", "document.", "signature.")
+                        )
+                        for key in live_data
+                    ):
+                        raise ProvenanceError(
+                            f"live ConfigMap {namespace}/{name} contains keys "
+                            "outside the append-only debug session registry"
+                        )
+                elif name == REVIEWED_RESOURCES_NAME:
+                    if not isinstance(live_data, dict) or not all(
+                        str(key).startswith(("meta.", "grant."))
+                        for key in live_data
+                    ):
+                        raise ProvenanceError(
+                            f"live ConfigMap {namespace}/{name} contains keys "
+                            "outside the append-only reviewed resource registry"
+                        )
+                elif live_data != (document.get("data") or {}):
+                    raise ProvenanceError(
+                        f"live ConfigMap {namespace}/{name} differs from the "
+                        "owner-pinned boundary definition"
                     )
             elif kind in ("ClusterRole", "Role"):
                 if _normalized_rbac_rules(
@@ -6858,6 +8509,12 @@ def _assert_iam_manifest_matches(
             "exist; the committed iam-boundary.yaml must be applied and "
             "equal before verification proceeds — fails closed"
         ) from error
+    if not verify_debug_install:
+        # Injectable unit runners model the Kubernetes/IAM surface without
+        # starting a TLS webhook. Production and reconcile callers retain
+        # the default strict live equality check.
+        return set()
+    return _assert_debug_admission_matches(owner_scope, live_runner, debug_pin)
 
 
 def _assert_identity_hygiene(owner_scope: dict, live_runner) -> None:
@@ -7413,6 +9070,7 @@ def verified_allowlist(
     recorded inventory annotation is the hash of the bytes that were verified
     and parsed — never a re-read of the mutable pathname.
     """
+    injected_live_runner = live_runner is not None
     with (
         _PinnedPublicKey(public_key_path) as pinned,
         # One render per run root: chain verify+append is atomic under an
@@ -7475,7 +9133,9 @@ def verified_allowlist(
                 "owner-signed scope's worm_store_uri; the anchor location is "
                 "owner authority — rendering fails closed"
             )
-        _assert_anchored_heads(receipts_root, attestation["anchored_heads"])
+        anchor_effects = _assert_anchored_heads(
+            receipts_root, attestation["anchored_heads"]
+        )
         if live_runner is None:
             live_runner = _pinned_live_runner(owner_scope)
         # The provider arm is enforced against LIVE provider-native answers
@@ -7490,6 +9150,8 @@ def verified_allowlist(
         inventory, inventory_sha256 = load_signed_inventory(
             inventory_path, pinned.path, verifier, max_age_hours
         )
+        if not injected_live_runner:
+            _assert_helm_release_session(inventory_sha256)
         if not key_path:
             raise ProvenanceError(
                 "allow-list rendering requires --key: every accepted "
@@ -7610,6 +9272,7 @@ def verified_allowlist(
             lambda command: subprocess.run(list(command), check=True)
         )
         digests = []
+        receipt_sources: set[tuple[str, str, str, str]] = set()
         for reference in inventory_references:
             if not reference.startswith(
                 tuple(owner_scope["registry_prefixes"])
@@ -7618,8 +9281,18 @@ def verified_allowlist(
                     f"inventory reference {reference} lies outside the "
                     "owner-approved registry prefixes; refusing to render"
                 )
-            load_bound_receipt(
+            receipt = load_bound_receipt(
                 receipts_root, reference, pinned.path, verifier, capture
+            )
+            source = receipt.get("source") or {}
+            anchor = receipt.get("anchor") or {}
+            receipt_sources.add(
+                (
+                    str(source.get("commit", "")),
+                    str(source.get("tree", "")),
+                    str(anchor.get("tag", "")),
+                    str(anchor.get("bundle_sha256", "")),
+                )
             )
             try:
                 run_verifier(cosign_verify_command(pinned.path, reference))
@@ -7629,9 +9302,48 @@ def verified_allowlist(
                     "before allow-listing"
                 ) from error
             digests.append(reference.rsplit("@", 1)[1])
+        if len(receipt_sources) != 1:
+            raise ProvenanceError(
+                "all governed model, debug, website and platform images in "
+                "one release session must resolve to ONE reviewed source "
+                "commit/tree/anchor/bundle; mixed source authority is refused"
+            )
+        source_commit, source_tree, anchor_tag, bundle_sha256 = next(
+            iter(receipt_sources)
+        )
+        captured_at = _parse_rfc3339(
+            str(inventory["captured_at"]), f"{inventory_path} captured_at"
+        )
+        reviewed_source = {
+            "commit": source_commit,
+            "tree": source_tree,
+            "anchor_tag": anchor_tag,
+            "bundle_sha256": bundle_sha256,
+            # The signed inventory is the release authorization admitted by
+            # this ConfigMap. Its digest/derived nonce bind every config-only,
+            # direct-kubectl, and HELM_DRIVER=sql Kubernetes mutation to the
+            # exact source set accepted in this run.
+            "authorization_sha256": inventory_sha256,
+            "session_nonce": inventory_sha256[:32],
+            "expires_at": (
+                captured_at + timedelta(hours=max_age_hours)
+            ).isoformat(),
+        }
         _assert_policy_matches_scope(owner_scope, live_runner)
-        _assert_iam_manifest_matches(owner_scope, live_runner)
-        _assert_iam_boundary(owner_scope, live_runner, attestation)
+        debug_install_images = _assert_iam_manifest_matches(
+            owner_scope,
+            live_runner,
+            verify_debug_install=not injected_live_runner,
+        )
+        if not debug_install_images <= set(inventory_references):
+            raise ProvenanceError(
+                "the owner-pinned debug admission image is not present in "
+                "the signed release inventory; every debug image needs the "
+                "same receipt, SBOM, source and signature closure"
+            )
+        _assert_iam_boundary(
+            owner_scope, live_runner, attestation, pinned.path, verifier
+        )
         _assert_identity_hygiene(owner_scope, live_runner)
         automation_accounts = sorted(
             principal[len("system:serviceaccount:"):]
@@ -7657,6 +9369,10 @@ def verified_allowlist(
             owner_scope["workload_storage_classes"],
             owner_scope["workload_configmap_names"],
             owner_scope["workload_service_names"],
+            owner_scope["workload_service_selectors"],
+            inventory_references,
+            owner_scope["deploy_principals"],
+            reviewed_source,
         )
         annotations = manifest["metadata"].setdefault("annotations", {})
         annotations["security.fs2.nebius.ai/verified-with-key-sha256"] = (
@@ -7682,8 +9398,29 @@ def verified_allowlist(
         # END of the render too, so a mutation racing the earlier checks
         # cannot ride out with a freshly rendered artifact.
         _assert_policy_matches_scope(owner_scope, live_runner)
-        _assert_iam_manifest_matches(owner_scope, live_runner)
-        _assert_iam_boundary(owner_scope, live_runner, attestation)
+        final_debug_install_images = _assert_iam_manifest_matches(
+            owner_scope,
+            live_runner,
+            verify_debug_install=not injected_live_runner,
+        )
+        if final_debug_install_images != debug_install_images:
+            raise ProvenanceError(
+                "the owner-pinned debug admission installation changed "
+                "during verification; rendering fails closed"
+            )
+        _assert_iam_boundary(
+            owner_scope, live_runner, attestation, pinned.path, verifier
+        )
+        _assert_identity_hygiene(owner_scope, live_runner)
+        # Re-read provider IAM, WORM lock and the fully paginated LATEST
+        # anchor immediately before the first state advance. A newer WORM
+        # version or boundary change racing the longer cluster/source checks
+        # cannot ride out on an earlier observation.
+        _assert_provider_boundary(owner_scope, attestation, live_runner)
+        # This is the first state-changing anchor operation. Every global
+        # source, inventory, signature, provider/WORM, policy, IAM and
+        # identity validation above has now passed twice where applicable.
+        _commit_anchored_heads(receipts_root, anchor_effects)
         if not already_accepted:
             _append_acceptance_head(
                 receipts_root,
@@ -7910,13 +9647,15 @@ def reconcile_boundary(
                 ]
             ).strip()
 
-        def enforce_attestation_binding() -> None:
+        def enforce_attestation_binding() -> dict | None:
             # Re-run the anchor, cluster, and PROVIDER-BOUNDARY enforcement
             # at the moment that matters: UNDER the exclusive lock for
             # execute/resume (a pre-lock check alone could be raced).
             if attestation is None:
-                return
-            _assert_anchored_heads(run_root, attestation["anchored_heads"])
+                return None
+            effects = _assert_anchored_heads(
+                run_root, attestation["anchored_heads"]
+            )
             if str(attestation.get("cluster")) != live_cluster_uid():
                 raise ProvenanceError(
                     "the provider attestation pins a different cluster than "
@@ -7924,6 +9663,7 @@ def reconcile_boundary(
                     "cluster never authorizes anything here"
                 )
             _assert_provider_boundary(owner_scope, attestation, runner)
+            return effects
 
         enforce_attestation_binding()
 
@@ -8194,7 +9934,7 @@ def reconcile_boundary(
                 )
             with _exclusive_lock(run_root, "release-reconcile.lock"):
                 caller = authenticate_caller()
-                enforce_attestation_binding()
+                anchor_effects = enforce_attestation_binding()
                 authorization, authorization_sha = load_rollout_authorization(
                     authorization_path,
                     pinned.path,
@@ -8304,7 +10044,9 @@ def reconcile_boundary(
                         "unaccounted document"
                     )
                 _assert_iam_manifest_matches(owner_scope, runner)
-                _assert_iam_boundary(owner_scope, runner, attestation)
+                _assert_iam_boundary(
+                    owner_scope, runner, attestation, pinned.path, verifier
+                )
                 # Recompute the plan from LIVE state under the lock. ONLY
                 # the recomputed (still-outstanding) entries run, and every
                 # one of them must be an entry the owner signed — a
@@ -8329,6 +10071,12 @@ def reconcile_boundary(
                         "signed; --resume executes ONLY the signed plan — "
                         "obtain a fresh authorization for the new state"
                     )
+                # Final provider/WORM re-read before anchor repair/advance or
+                # command execution. The validation phase itself writes
+                # nothing.
+                anchor_effects = enforce_attestation_binding()
+                if anchor_effects is not None:
+                    _commit_anchored_heads(run_root, anchor_effects)
                 run_plan(recomputed_plan)
                 postcheck(recovery_document, recovery_sha)
                 _append_chained_record(
@@ -8348,7 +10096,9 @@ def reconcile_boundary(
             violations = None
             try:
                 _assert_iam_manifest_matches(owner_scope, runner)
-                _assert_iam_boundary(owner_scope, runner, attestation)
+                _assert_iam_boundary(
+                    owner_scope, runner, attestation, pinned.path, verifier
+                )
             except ProvenanceError as violation:
                 violations = str(violation)
                 print(
@@ -8389,13 +10139,15 @@ def reconcile_boundary(
             )
         with _exclusive_lock(run_root, "release-reconcile.lock"):
             caller = authenticate_caller()
-            enforce_attestation_binding()
+            anchor_effects = enforce_attestation_binding()
             plan, recovery_document, recovery_sha = compute_plan()
             plan_sha256 = hashlib.sha256(
                 json.dumps(plan, sort_keys=True).encode("utf-8")
             ).hexdigest()
             _assert_iam_manifest_matches(owner_scope, runner)
-            _assert_iam_boundary(owner_scope, runner, attestation)
+            _assert_iam_boundary(
+                owner_scope, runner, attestation, pinned.path, verifier
+            )
             authorization, authorization_sha = load_rollout_authorization(
                 authorization_path,
                 pinned.path,
@@ -8405,6 +10157,11 @@ def reconcile_boundary(
                 verifier,
             )
             enforce_executor(authorization, caller)
+            # Final side-effect-free provider/WORM validation before the
+            # intent journal and single-use ledger advance. In particular,
+            # the attested anchor must still be the fully paginated LATEST
+            # immutable object version.
+            anchor_effects = enforce_attestation_binding()
             _append_chained_record(
                 journal,
                 {
@@ -8423,6 +10180,8 @@ def reconcile_boundary(
             # consumed while its recovery document is not (which would wedge
             # both --execute and --resume).
             _record_consumed_batch(run_root, consumed_entries)
+            if anchor_effects is not None:
+                _commit_anchored_heads(run_root, anchor_effects)
             run_plan(plan)
             postcheck(recovery_document, recovery_sha)
             _append_chained_record(
@@ -8716,6 +10475,64 @@ def main(argv: Sequence[str] | None = None) -> int:
     debug_session.add_argument("--scope", required=True, type=Path)
     debug_session.add_argument("--session", required=True, type=Path)
 
+    debug_registry = subcommands.add_parser(
+        "render-debug-registry-patch",
+        help=(
+            "verify an OWNER-SIGNED debug session and emit the "
+            "resourceVersion-fenced append-only registry JSON Patch"
+        ),
+    )
+    debug_registry.add_argument("--public-key", required=True)
+    debug_registry.add_argument("--scope", required=True, type=Path)
+    debug_registry.add_argument("--session", required=True, type=Path)
+
+    debug_retire = subcommands.add_parser(
+        "render-debug-retirement",
+        help=(
+            "verify an OWNER-SIGNED debug session and emit deny-first, "
+            "UID/resourceVersion-fenced non-delete retirement patches"
+        ),
+    )
+    debug_retire.add_argument("--public-key", required=True)
+    debug_retire.add_argument("--scope", required=True, type=Path)
+    debug_retire.add_argument("--session", required=True, type=Path)
+    debug_retire.add_argument("--registry-resource-version", required=True)
+    debug_retire.add_argument("--role-uid", required=True)
+    debug_retire.add_argument("--role-resource-version", required=True)
+    debug_retire.add_argument("--binding-uid", required=True)
+    debug_retire.add_argument("--binding-resource-version", required=True)
+
+    canonical_resource = subcommands.add_parser(
+        "canonical-resource-hash",
+        help=(
+            "hash one JSON object captured from the authorized server-side "
+            "dry-run using the same stable projection as release admission"
+        ),
+    )
+    canonical_resource.add_argument("--object", required=True, type=Path)
+
+    reviewed_plan = subcommands.add_parser(
+        "render-reviewed-resource-plan-patch",
+        help=(
+            "verify an OWNER-SIGNED canonical resource plan against the "
+            "current live release session and emit its resourceVersion-"
+            "fenced append-only registry JSON Patch"
+        ),
+    )
+    reviewed_plan.add_argument("--public-key", required=True)
+    reviewed_plan.add_argument("--scope", required=True, type=Path)
+    reviewed_plan.add_argument("--plan", required=True, type=Path)
+
+    helm_dsn = subcommands.add_parser(
+        "verify-helm-deploy-dsn",
+        help=(
+            "fail closed unless HELM_DRIVER_SQL_CONNECTION_STRING targets the "
+            "exact reviewed backend and carries no caller-selected session"
+        ),
+    )
+    helm_dsn.add_argument("--expected-identity", required=True)
+    helm_dsn.add_argument("--inventory-sha256", required=True)
+
     export_heads = subcommands.add_parser(
         "export-anchored-heads",
         help=(
@@ -8752,6 +10569,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     verify.add_argument("--public-key", required=True, help="cosign public key path")
     verify.add_argument("reference", nargs="+", help="<registry>/<repo>@sha256:<hex>")
+
+    ci_image = subcommands.add_parser(
+        "verify-ci-image",
+        help=(
+            "read-only CI gate: require one image in an owner-signed "
+            "inventory, re-prove its release receipt, and verify its signature"
+        ),
+    )
+    ci_image.add_argument("--public-key", required=True)
+    ci_image.add_argument("--run-root", required=True, type=Path)
+    ci_image.add_argument("--inventory", required=True, type=Path)
+    ci_image.add_argument("--max-inventory-age-hours", type=float, default=24)
+    ci_image.add_argument("image")
 
     args = parser.parse_args(argv)
     if args.command == "render-allowlist":
@@ -8810,6 +10640,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     owner_scope["workload_service_names"],
                     owner_scope["workload_pvc_names"],
                     owner_scope["workload_storage_classes"],
+                    owner_scope["workload_service_selectors"],
                 ),
                 indent=2,
                 sort_keys=True,
@@ -8871,22 +10702,104 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == "render-debug-session":
         with _PinnedPublicKey(args.public_key) as pinned:
             owner_scope = load_owner_scope(args.scope, pinned.path)
-            document, _ = load_debug_session(
+            document, session_sha256 = load_debug_session(
                 args.session, pinned.path, owner_scope
             )
-        for manifest in render_debug_session(document, owner_scope):
+        for manifest in render_debug_session(
+            document, owner_scope, session_sha256
+        ):
             print(json.dumps(manifest, indent=2, sort_keys=True))
+    elif args.command == "render-debug-registry-patch":
+        with _PinnedPublicKey(args.public_key) as pinned:
+            owner_scope = load_owner_scope(args.scope, pinned.path)
+            document, session_sha256 = load_debug_session(
+                args.session, pinned.path, owner_scope
+            )
+            signed_payload = _read_evidence_bytes(
+                args.session, private=False
+            )
+            signature = _read_evidence_bytes(
+                args.session.parent / (args.session.name + ".sig"),
+                private=False,
+            )
+            if hashlib.sha256(signed_payload).hexdigest() != session_sha256:
+                raise ProvenanceError(
+                    "debug session changed after owner-signature verification"
+                )
+            _verify_blob_bytes(
+                pinned.path,
+                signed_payload,
+                signature,
+                None,
+                f"debug session {args.session}",
+            )
+        live_runner = _pinned_live_runner(owner_scope)
+        resource_version = verify_live_debug_target(
+            document, owner_scope, live_runner
+        )
+        debug_principal = str(owner_scope["debug_principals"][0])
+        print(json.dumps(debug_session_registry_patch(
+            document,
+            session_sha256,
+            debug_principal,
+            resource_version,
+            signed_payload,
+            signature,
+        ), indent=2, sort_keys=True))
+    elif args.command == "render-debug-retirement":
+        with _PinnedPublicKey(args.public_key) as pinned:
+            owner_scope = load_owner_scope(args.scope, pinned.path)
+            document, session_sha256 = load_debug_session(
+                args.session,
+                pinned.path,
+                owner_scope,
+                allow_expired=True,
+            )
+        print(json.dumps(debug_session_retirement_plan(
+            document,
+            session_sha256,
+            args.registry_resource_version,
+            args.role_uid,
+            args.role_resource_version,
+            args.binding_uid,
+            args.binding_resource_version,
+        ), indent=2, sort_keys=True))
+    elif args.command == "canonical-resource-hash":
+        value = json.loads(_read_evidence_bytes(args.object, private=False))
+        print(canonical_admission_object_sha256(value))
+    elif args.command == "render-reviewed-resource-plan-patch":
+        with _PinnedPublicKey(args.public_key) as pinned:
+            owner_scope = load_owner_scope(args.scope, pinned.path)
+            document, document_sha256 = load_reviewed_resource_plan(
+                args.plan, pinned.path, owner_scope
+            )
+        live_runner = _pinned_live_runner(owner_scope)
+        resource_version = verify_live_reviewed_resource_plan(
+            document, owner_scope, live_runner
+        )
+        print(json.dumps(reviewed_resource_registry_patch(
+            document, document_sha256, resource_version
+        ), indent=2, sort_keys=True))
+    elif args.command == "verify-helm-deploy-dsn":
+        _assert_helm_deploy_dsn(
+            os.environ.get("HELM_DRIVER_SQL_CONNECTION_STRING", ""),
+            args.expected_identity,
+            args.inventory_sha256,
+        )
+        print("Helm SQL deploy backend/session precondition OK")
     elif args.command == "export-anchored-heads":
         print(json.dumps(_anchor_snapshot(args.run_root), indent=2, sort_keys=True))
     elif args.command == "verify-anchored-heads":
         anchored = json.loads(
             _read_evidence_bytes(args.anchored, private=False)
         )
-        # Same enforcement as the render/execute paths: required-chain
-        # coverage, count monotonicity, head equality, and PREFIX continuity
-        # when the local chain has grown past the anchor.
+        # Diagnostic only: a caller-supplied file is not authoritative WORM
+        # evidence and therefore must NEVER advance or repair replay state.
+        # The stateful commit is confined to render/execute/resume after the
+        # signed attestation, provider IAM, fully paginated WORM LATEST,
+        # policy, IAM, identity, inventory, and source checks all succeed.
         _assert_anchored_heads(args.run_root, anchored)
-        print("anchored-heads verification OK")
+        print("anchored-heads verification OK (read-only; replay state unchanged)")
     elif args.command == "verify-recovery":
         with _PinnedPublicKey(args.public_key) as pinned:
             document, annotation = load_recovery_authorization(
@@ -8900,9 +10813,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         )
     elif args.command == "verify":
-        run_commands(
-            [cosign_verify_command(args.public_key, ref) for ref in args.reference]
-        )
+        _require_owner_release_key()
+        with _PinnedPublicKey(args.public_key) as pinned:
+            run_commands(
+                [
+                    cosign_verify_command(pinned.path, ref)
+                    for ref in args.reference
+                ]
+            )
+    elif args.command == "verify-ci-image":
+        reference = validate_digest_reference(args.image)
+        with _PinnedPublicKey(args.public_key) as pinned:
+            _require_owner_release_key()
+            inventory, _ = load_signed_inventory(
+                args.inventory,
+                pinned.path,
+                max_age_hours=args.max_inventory_age_hours,
+            )
+            if reference not in set(map(str, inventory["platform_images"])):
+                raise ProvenanceError(
+                    f"CI image {reference} is absent from the complete "
+                    "owner-signed release inventory"
+                )
+            load_bound_receipt(args.run_root, reference, pinned.path)
+            run_commands([cosign_verify_command(pinned.path, reference)])
     return 0
 
 

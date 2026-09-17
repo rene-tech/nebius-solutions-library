@@ -30,12 +30,24 @@ metadata:
     app.kubernetes.io/name: fs2-image-provenance
     app.kubernetes.io/part-of: fs2-serve
     security.fs2.nebius.ai/finding: sai-09
+  annotations:
+    # Replaced mechanically from the signed inventory/receipt-derived
+    # allow-list. Admission rejects placeholders and mismatches.
+    security.fs2.nebius.ai/source-commit: <reviewed-source-commit>
+    security.fs2.nebius.ai/source-tree: <reviewed-source-tree>
+    security.fs2.nebius.ai/release-authorization: <signed-inventory-sha256>
+    security.fs2.nebius.ai/release-session: <release-session-nonce>
 spec:
   backoffLimit: 0
   template:
     metadata:
       labels:
         security.fs2.nebius.ai/finding: sai-09
+      annotations:
+        security.fs2.nebius.ai/source-commit: <reviewed-source-commit>
+        security.fs2.nebius.ai/source-tree: <reviewed-source-tree>
+        security.fs2.nebius.ai/release-authorization: <signed-inventory-sha256>
+        security.fs2.nebius.ai/release-session: <release-session-nonce>
     spec:
       serviceAccountName: fs2-release-automation
       automountServiceAccountToken: false
@@ -53,8 +65,54 @@ spec:
             - -ec
             - |
               export HELM_DRIVER=sql
-              export HELM_DRIVER_SQL_CONNECTION_STRING="$(cat /var/run/fs2-credentials/helm-dsn)"
-              exec /usr/local/bin/fs2-release-deploy
+              dsn="$(cat /var/run/fs2-credentials/helm-dsn)"
+              HELM_DRIVER_SQL_CONNECTION_STRING="${dsn}" \
+                python3 /usr/local/bin/provenance.py verify-helm-deploy-dsn \
+                  --expected-identity \
+                    'postgres.fs2-system.svc:5432/helm_releases?user=fs2_helm' \
+                  --inventory-sha256 "${FS2_RELEASE_AUTHORIZATION_SHA256}"
+              case "${dsn}" in
+                (*\?*) dsn="${dsn}&application_name=fs2-release:${FS2_RELEASE_AUTHORIZATION_SHA256}" ;;
+                (*) dsn="${dsn}?application_name=fs2-release:${FS2_RELEASE_AUTHORIZATION_SHA256}" ;;
+              esac
+              export HELM_DRIVER_SQL_CONNECTION_STRING="${dsn}"
+              # The release-tooling image packages release_post_renderer.py
+              # at this path. It stamps all rendered objects with this exact
+              # session; the webhook independently hashes the actual
+              # AdmissionReview objects and requires owner-signed plan rows.
+              test "$#" -gt 0 && test "$1" = helm
+              exec "$@" --post-renderer \
+                /usr/local/bin/fs2-release-post-renderer
+            - --
+          # Replace these example arguments with the reviewed release/chart
+          # inputs. The owner plan is produced from this exact render plus an
+          # authorized server-side dry-run before the security identity
+          # appends its grants to fs2-reviewed-resources.
+          args:
+            - helm
+            - upgrade
+            - --install
+            - <release-name>
+            - <reviewed-chart-path>
+            - --namespace
+            - fs2-system
+          env:
+            - name: FS2_SOURCE_COMMIT
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['security.fs2.nebius.ai/source-commit']
+            - name: FS2_SOURCE_TREE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['security.fs2.nebius.ai/source-tree']
+            - name: FS2_RELEASE_AUTHORIZATION_SHA256
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['security.fs2.nebius.ai/release-authorization']
+            - name: FS2_RELEASE_SESSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['security.fs2.nebius.ai/release-session']
           volumeMounts:
             - name: release-token
               mountPath: /var/run/fs2-release-token

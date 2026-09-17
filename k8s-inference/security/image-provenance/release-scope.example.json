@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v15",
+  "schema": "fs2-serve.nebius.ai/release-scope/v16",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
     "namespaces": [
@@ -72,19 +72,23 @@
       "system:serviceaccount:fs2-security:fs2-debugger"
     ],
     "workload_pvc_names": [
-      "fs2-models-cache",
-      "fs2-serve-scratch"
+      "fs2-models/fs2-models-cache",
+      "fs2-system/fs2-serve-scratch"
     ],
     "workload_storage_classes": [
       "fs2-standard"
     ],
     "workload_configmap_names": [
-      "fs2-serve-config",
-      "fs2-models-config"
+      "fs2-system/fs2-serve-config",
+      "fs2-models/fs2-models-config"
     ],
     "workload_service_names": [
-      "fs2-serve",
-      "fs2-serve-internal"
+      "fs2-system/fs2-serve",
+      "fs2-system/fs2-serve-internal"
+    ],
+    "workload_service_selectors": [
+      "fs2-system/fs2-serve|app=fs2-serve",
+      "fs2-system/fs2-serve-internal|app=fs2-serve,component=control-plane"
     ]
   }
 }

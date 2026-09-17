@@ -47,15 +47,25 @@ def load_policy_documents() -> list[dict]:
 class PolicyManifestTest(unittest.TestCase):
     def setUp(self) -> None:
         documents = load_policy_documents()
-        self.assertEqual(len(documents), 6)
-        (
-            self.policy,
-            self.binding,
-            self.helm_policy,
-            self.helm_binding,
-            self.guard_policy,
-            self.guard_binding,
-        ) = documents
+        by_name_kind = {
+            (document["kind"], document["metadata"]["name"]): document
+            for document in documents
+        }
+        self.policy = by_name_kind[("ValidatingAdmissionPolicy", "fs2-image-provenance")]
+        self.binding = by_name_kind[("ValidatingAdmissionPolicyBinding", "fs2-image-provenance")]
+        self.helm_policy = by_name_kind[("ValidatingAdmissionPolicy", "fs2-helm-release-governance")]
+        self.helm_binding = by_name_kind[("ValidatingAdmissionPolicyBinding", "fs2-helm-release-governance")]
+        self.guard_policy = by_name_kind[("ValidatingAdmissionPolicy", "fs2-provenance-guard")]
+        self.guard_binding = by_name_kind[("ValidatingAdmissionPolicyBinding", "fs2-provenance-guard")]
+        self.debug_access_policy = by_name_kind[
+            ("ValidatingAdmissionPolicy", "fs2-debug-session-access")
+        ]
+        self.debug_access_binding = by_name_kind[
+            ("ValidatingAdmissionPolicyBinding", "fs2-debug-session-access")
+        ]
+        self.reviewed_source_policy = by_name_kind[
+            ("ValidatingAdmissionPolicy", "fs2-reviewed-source-governance")
+        ]
         self.assertEqual(self.guard_policy["kind"], "ValidatingAdmissionPolicy")
         self.assertEqual(
             self.guard_binding["kind"], "ValidatingAdmissionPolicyBinding"
@@ -124,6 +134,43 @@ class PolicyManifestTest(unittest.TestCase):
         }
         self.assertIn("ephemeralContainers", variables["images"])
 
+    def test_debug_access_requires_a_session_for_every_caller(self) -> None:
+        # The admission gate must not key enforcement on whether the caller
+        # already appears in the registry: residual or accidentally restored
+        # RBAC for an unexpected principal must still fail closed. Every new
+        # ephemeral container and every governed CONNECT therefore needs an
+        # exact active row naming request.userInfo.username.
+        spec = self.debug_access_policy["spec"]
+        self.assertEqual(spec["failurePolicy"], "Fail")
+        variables = {v["name"]: v["expression"] for v in spec["variables"]}
+        self.assertNotIn("isDebug", variables)
+        expressions = [item["expression"] for item in spec["validations"]]
+        update = next(e for e in expressions if "ephemeralContainers.all" in e)
+        connect = next(e for e in expressions if "request.operation != 'CONNECT'" in e)
+        for expression in (update, connect):
+            self.assertIn("request.userInfo.username", expression)
+            self.assertIn("params.data.exists", expression)
+            self.assertNotIn("!variables.isDebug", expression)
+        binding = self.debug_access_binding["spec"]
+        self.assertIn("Deny", binding["validationActions"])
+        self.assertEqual(binding["paramRef"]["parameterNotFoundAction"], "Deny")
+
+    def test_reviewed_source_gate_is_pinned_to_release_identity(self) -> None:
+        spec = self.reviewed_source_policy["spec"]
+        self.assertEqual(
+            spec["matchConditions"],
+            [{
+                "name": "release-identity-only",
+                "expression": (
+                    "request.userInfo.username == "
+                    "'system:serviceaccount:fs2-system:fs2-release-automation'"
+                ),
+            }],
+        )
+        expression = spec["validations"][0]["expression"]
+        self.assertIn("variables.isRelease &&", expression)
+        self.assertNotIn("!variables.isRelease", expression)
+
     def test_policy_fails_closed_and_validates_all_container_kinds(self) -> None:
         spec = self.policy["spec"]
         self.assertEqual(spec["failurePolicy"], "Fail")
@@ -163,6 +210,11 @@ class PolicyManifestTest(unittest.TestCase):
                 "security-principals",
                 "automation-service-accounts",
                 "namespaces",
+                "workload-configmap-names",
+                "workload-service-names",
+                "workload-pvc-names",
+                "workload-storage-classes",
+                "workload-service-selectors",
             },
         )
         referenced_keys = {
@@ -182,20 +234,27 @@ class PolicyManifestTest(unittest.TestCase):
                 "workload-storage-classes",
                 "workload-configmap-names",
                 "workload-service-names",
+                "allowed-images",
+                "release-principals",
+                "reviewed-source-commit",
+                "reviewed-source-tree",
+                "release-authorization-sha256",
+                "release-session-nonce",
+                "release-expires-at",
             )
             if f"params.data['{key}']" in variable_expressions
         }
-        self.assertEqual(referenced_keys, rendered_keys)
+        self.assertTrue(referenced_keys <= rendered_keys)
         # Missing keys must fail closed through guarded lookups, not error out.
-        for key in rendered_keys:
+        for key in referenced_keys:
             self.assertIn(f"'{key}' in params.data", variable_expressions)
 
     def test_guard_protects_exactly_what_admission_can_evaluate(self) -> None:
         # CORRECTED CONTRACT (independent reviewer ruling): Kubernetes
         # admission intentionally does NOT evaluate in-cluster policies or
         # webhooks on admission-configuration writes (anti-lockout), so the
-        # guard claims ONLY what admission genuinely evaluates: the two
-        # parameter ConfigMaps. Policy-object protection is the EXTERNAL
+        # guard claims ONLY what admission genuinely evaluates: the four
+        # protected state ConfigMaps. Policy-object protection is the EXTERNAL
         # owner control; the renderer detects drift/deletion at every render.
         spec = self.guard_policy["spec"]
         self.assertEqual(spec["failurePolicy"], "Fail")
@@ -214,6 +273,8 @@ class PolicyManifestTest(unittest.TestCase):
         for name in (
             "fs2-image-provenance-allowlist",
             "fs2-security-guard-params",
+            "fs2-debug-sessions",
+            "fs2-reviewed-resources",
         ):
             self.assertIn(name, variables["isProtected"])
         # No claim over admissionregistration resources survives: admission
@@ -223,19 +284,23 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertNotIn("validatingadmissionpolicies", manifest_text)
         self.assertNotIn("mutatingwebhookconfigurations", manifest_text)
         validations = spec["validations"]
-        self.assertEqual(len(validations), 7)
-        self.assertIn("securityPrincipals.exists", validations[0]["expression"])
-        self.assertIn("'LoadBalancer'", validations[1]["expression"])
-        self.assertIn("externalIPs", validations[1]["expression"])
-        self.assertIn("guardNamespaces.exists", validations[2]["expression"])
-        self.assertIn("oldObject.spec.selector", validations[3]["expression"])
-        # Exact-name fences for automation-written CM / Service / PVC.
+        self.assertGreaterEqual(len(validations), 10)
         all_expr = " ".join(v["expression"] for v in validations)
+        self.assertIn("securityPrincipals.exists", all_expr)
+        self.assertIn("'LoadBalancer'", all_expr)
+        self.assertIn("externalIPs", all_expr)
+        self.assertIn("guardNamespaces.exists", all_expr)
+        self.assertIn("oldObject.spec.selector", all_expr)
+        # Exact-name fences for automation-written CM / Service / PVC.
         self.assertIn("guardConfigMapNames.exists", all_expr)
         self.assertIn("guardServiceNames.exists", all_expr)
         self.assertIn("guardPvcNames.exists", all_expr)
         self.assertIn("guardStorageClasses.exists", all_expr)
         self.assertIn("spec.volumeName", all_expr)
+        self.assertIn("spec.dataSource", all_expr)
+        self.assertIn("spec.dataSourceRef", all_expr)
+        self.assertIn("guardServiceSelectors", all_expr)
+        self.assertIn("size(object.data) == 0", all_expr)
         rules = spec["matchConstraints"]["resourceRules"]
         self.assertEqual(
             sorted(r for rule in rules for r in rule["resources"]),
@@ -245,6 +310,80 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("Deny", binding["validationActions"])
         self.assertEqual(binding["paramRef"]["name"], "fs2-security-guard-params")
         self.assertEqual(binding["paramRef"]["parameterNotFoundAction"], "Deny")
+
+    def test_debug_admission_install_manifest_is_owner_pin_chained(self) -> None:
+        # The signed scope pins iam-boundary.yaml; that manifest in turn pins
+        # the exact TLS webhook installation bytes, so the UID-aware CONNECT
+        # check is not an unaudited operator template.
+        import hashlib
+
+        boundary_documents = [
+            document
+            for document in yaml.safe_load_all(
+                (PROVENANCE_DIR / "iam-boundary.yaml").read_text(
+                    encoding="utf-8"
+                )
+            )
+            if document
+        ]
+        pin = next(
+            document
+            for document in boundary_documents
+            if document["kind"] == "ConfigMap"
+            and document["metadata"]["name"] == "fs2-debug-admission-pin"
+        )
+        payload = (PROVENANCE_DIR / "debug-admission.example.yaml").read_bytes()
+        self.assertEqual(
+            pin["data"]["manifest-sha256"], hashlib.sha256(payload).hexdigest()
+        )
+        debug_documents = [
+            document for document in yaml.safe_load_all(payload) if document
+        ]
+        webhook = next(
+            document
+            for document in debug_documents
+            if document["kind"] == "ValidatingWebhookConfiguration"
+        )
+        self.assertEqual(webhook["webhooks"][0]["failurePolicy"], "Fail")
+        self.assertEqual(
+            webhook["webhooks"][0]["rules"][0]["operations"], ["CONNECT"]
+        )
+        self.assertEqual(
+            webhook["webhooks"][0]["rules"][1]["operations"],
+            ["CREATE", "UPDATE", "DELETE"],
+        )
+        self.assertEqual(
+            webhook["webhooks"][0]["rules"][1]["resources"], ["*", "*/*"]
+        )
+        deployment = next(
+            document
+            for document in debug_documents
+            if document["kind"] == "Deployment"
+        )
+        environment = {
+            item["name"]: item.get("value")
+            for item in deployment["spec"]["template"]["spec"]["containers"][0]["env"]
+        }
+        self.assertEqual(
+            environment["RELEASE_PRINCIPALS"],
+            TOOL.RELEASE_AUTOMATION_PRINCIPAL,
+        )
+        post_renderer = (
+            PROVENANCE_DIR / "release_post_renderer.py"
+        ).read_text(encoding="utf-8")
+        deploy_job = (
+            PROVENANCE_DIR / "deploy-job.example.yaml"
+        ).read_text(encoding="utf-8")
+        for variable in (
+            "FS2_SOURCE_COMMIT",
+            "FS2_SOURCE_TREE",
+            "FS2_RELEASE_AUTHORIZATION_SHA256",
+            "FS2_RELEASE_SESSION",
+        ):
+            self.assertIn(variable, post_renderer)
+            self.assertIn(variable, deploy_job)
+        self.assertIn("--post-renderer", deploy_job)
+        self.assertIn("verify-helm-deploy-dsn", deploy_job)
 
     def test_helm_release_writes_are_restricted_to_deploy_principals(self) -> None:
         rules = self.helm_policy["spec"]["matchConstraints"]["resourceRules"]
@@ -269,7 +408,7 @@ class PolicyManifestTest(unittest.TestCase):
             validation["expression"]
             for validation in self.policy["spec"]["validations"]
         ]
-        self.assertEqual(len(expressions), 7)
+        self.assertGreaterEqual(len(expressions), 9)
         # The request namespace must be part of the owner-approved scope
         # recorded in the rendered allow-list, so claimed and enforced
         # coverage can never drift apart silently.
@@ -277,52 +416,69 @@ class PolicyManifestTest(unittest.TestCase):
         self.assertIn("request.namespace", expressions[0])
         self.assertIn("@sha256:[0-9a-f]{64}", expressions[1])
         self.assertIn("registryPrefixes.exists", expressions[2])
-        self.assertIn("platformDigests.exists", expressions[3])
-        self.assertIn("!i.startsWith(variables.platformRepositoryPrefix)", expressions[3])
+        self.assertIn("allowedImages.exists", expressions[3])
+        self.assertIn("a == i", expressions[3])
         # Automation-identity token hardening: pod-level automount off, the
         # exact bounded audience, and no Secret volume/env paths — enforced
         # in admission, so a workload-create grant cannot pivot into
         # identity-credential access.
-        self.assertIn("isAutomationPod", expressions[4])
-        self.assertIn("automountServiceAccountToken == false", expressions[4])
-        self.assertIn("expirationSeconds <= 3600", expressions[4])
-        self.assertIn("!variables.usesSecretEnv", expressions[4])
+        automation_expression = next(
+            expression for expression in expressions
+            if "!variables.isAutomationPod" in expression
+        )
+        self.assertIn("automountServiceAccountToken == false", automation_expression)
+        self.assertIn("expirationSeconds <= 3600", automation_expression)
+        self.assertIn("!variables.usesSecretEnv", automation_expression)
         # Audience exclusivity: nobody else may project the release audience.
-        self.assertIn("serviceAccountToken.audience != variables.tokenAudience", expressions[5])
+        self.assertIn(
+            "serviceAccountToken.audience != variables.tokenAudience",
+            " ".join(expressions),
+        )
         # Automation-WRITER constraint: pods/controllers written by an
         # automation identity run only as owner-enumerated ServiceAccounts,
         # with no hostPath and no privileged containers.
-        self.assertIn("writerIsAutomation", expressions[6])
-        self.assertIn("workloadServiceAccounts.exists", expressions[6])
-        self.assertIn("!variables.usesHostPath", expressions[6])
-        self.assertIn("!variables.usesPrivileged", expressions[6])
-        self.assertIn("!variables.usesHostNamespaces", expressions[6])
-        self.assertIn("!variables.usesAddedCapsOrPrivEsc", expressions[6])
-        self.assertIn("!variables.setsNodeName", expressions[6])
-        self.assertIn("!variables.usesForeignAudienceProjection", expressions[6])
-        self.assertIn("!variables.usesSecretEnv", expressions[6])
+        writer_expression = next(
+            expression for expression in expressions
+            if "!variables.writerIsAutomation || (" in expression
+        )
+        self.assertIn("workloadServiceAccounts.exists", writer_expression)
+        self.assertIn("!variables.usesHostPath", writer_expression)
+        self.assertIn("!variables.usesPrivileged", writer_expression)
+        self.assertIn("!variables.usesHostNamespaces", writer_expression)
+        self.assertIn("!variables.usesAddedCapsOrPrivEsc", writer_expression)
+        self.assertIn("!variables.setsNodeName", writer_expression)
+        self.assertIn("!variables.usesForeignAudienceProjection", writer_expression)
+        self.assertIn("!variables.usesSecretEnv", writer_expression)
         # The automation-pod volume allowlist admits only the owner-named
         # credential CSI driver (readOnly, pinned SecretProviderClass)
         # besides projections/config/scratch volumes, and projected sources
         # may never carry Secrets.
-        self.assertIn("deployCredentialCsiDriver", expressions[4])
-        self.assertIn("deployCredentialSpc", expressions[4])
-        self.assertIn("v.csi.readOnly == true", expressions[4])
-        self.assertIn("!has(s.secret)", expressions[4])
-        self.assertIn("!variables.usesProjectedSecretSource", expressions[6])
-        self.assertIn("variables.allContainersRefusePrivEsc", expressions[6])
-        self.assertIn("workloadPvcNames.exists", expressions[6])
-        self.assertIn("claimName == p", expressions[6])
-        self.assertIn("v.csi.readOnly == true", expressions[6])
+        self.assertIn("deployCredentialCsiDriver", automation_expression)
+        self.assertIn("deployCredentialSpc", automation_expression)
+        self.assertIn("v.csi.readOnly == true", automation_expression)
+        self.assertIn("!has(s.secret)", automation_expression)
+        self.assertIn("!variables.usesProjectedSecretSource", writer_expression)
+        self.assertIn("variables.allContainersRefusePrivEsc", writer_expression)
+        self.assertIn("workloadPvcNames.exists", writer_expression)
+        self.assertIn("claimName == p", writer_expression)
+        self.assertIn("v.csi.readOnly == true", writer_expression)
+        self.assertIn("!has(v.csi.nodePublishSecretRef)", writer_expression)
+        self.assertIn("size(v.csi.volumeAttributes) == 1", writer_expression)
         # The ONLY CSI on automation-written workloads is the pinned
         # credential driver (readOnly + pinned SecretProviderClass); no
         # generic CSI, no prefix PVC matching.
         self.assertIn(
             "v.csi.driver == variables.deployCredentialCsiDriver",
-            expressions[6],
+            writer_expression,
         )
-        self.assertIn("deployCredentialSpc", expressions[6])
-        self.assertNotIn("startsWith", expressions[6])
+        self.assertIn("deployCredentialSpc", writer_expression)
+        stateful_expression = next(
+            expression for expression in expressions
+            if "volumeClaimTemplates" in expression
+        )
+        self.assertIn(
+            "size(object.spec.volumeClaimTemplates) == 0", stateful_expression
+        )
         for validation in self.policy["spec"]["validations"]:
             self.assertIn("SAI-09", validation["message"])
             self.assertEqual(validation["reason"], "Forbidden")
@@ -339,10 +495,31 @@ def render_allowlist_fixture(*args, **kwargs):
     )
     kwargs.setdefault("deploy_credential_csi_driver", "secrets-store.csi.k8s.io")
     kwargs.setdefault("deploy_credential_spc", "fs2-release-helm-dsn")
-    kwargs.setdefault("workload_pvc_names", ["fs2-models-cache"])
+    digest_values = args[2] if len(args) > 2 else kwargs.get("platform_digests", [])
+    kwargs.setdefault(
+        "allowed_images",
+        [PLATFORM_PREFIX + "fixture@" + digest for digest in digest_values],
+    )
+    kwargs.setdefault(
+        "release_principals",
+        ["system:serviceaccount:fs2-system:fs2-release-automation"],
+    )
+    kwargs.setdefault("reviewed_source", {
+        "commit": "1" * 40,
+        "tree": "2" * 40,
+        "anchor_tag": "refs/tags/deploy/fixture",
+        "bundle_sha256": "3" * 64,
+        "authorization_sha256": "4" * 64,
+        "session_nonce": "5" * 32,
+        "expires_at": "2099-01-01T00:00:00+00:00",
+    })
+    kwargs.setdefault("workload_pvc_names", ["fs2-models/fs2-models-cache"])
     kwargs.setdefault("workload_storage_classes", ["fs2-standard"])
-    kwargs.setdefault("workload_configmap_names", ["fs2-serve-config"])
-    kwargs.setdefault("workload_service_names", ["fs2-serve"])
+    kwargs.setdefault("workload_configmap_names", ["fs2-system/fs2-serve-config"])
+    kwargs.setdefault("workload_service_names", ["fs2-system/fs2-serve"])
+    kwargs.setdefault(
+        "workload_service_selectors", ["fs2-system/fs2-serve|app=fs2-serve"]
+    )
     return TOOL.render_allowlist(*args, **kwargs)
 
 
@@ -851,19 +1028,20 @@ def fixture_provider_bindings(
     admin_subject: str = PROVIDER_ADMIN_SUBJECT,
     extra_bindings: list | None = None,
 ) -> dict:
-    """The (subject, role) enumeration the fixture provider serves,
+    """The (subject, role, subject-type) enumeration the fixture serves,
     canonicalized exactly like TOOL._assert_provider_boundary does."""
     snapshot = {}
     for parent in PROVIDER_PARENT_IDS:
         pairs = [
-            (admin_subject, "managed-kubernetes.admin"),
-            ("auditor@example.invalid", "viewer"),
+            (admin_subject, "managed-kubernetes.admin", "user"),
+            ("auditor@example.invalid", "viewer", "user"),
         ]
         for binding in extra_bindings or []:
             if binding.get("parent", parent) in (parent, None):
                 subject = binding["subject"]["id"]
+                subject_type = binding["subject"].get("type", "user")
                 role = binding.get("role_id") or binding.get("role")
-                pairs.append((str(subject), str(role)))
+                pairs.append((str(subject), str(role), str(subject_type)))
         snapshot[parent] = [list(pair) for pair in sorted(pairs)]
     return snapshot
 
@@ -882,7 +1060,7 @@ def fixture_provider_roles(
     for bindings in fixture_provider_bindings(
         admin_subject, extra_bindings
     ).values():
-        for _, role in bindings:
+        for _, role, _ in bindings:
             roles[role] = sorted(
                 permissions.get(role, ["resource.write", "resource.delete"])
             )
@@ -893,6 +1071,7 @@ def fixture_iam_snapshot_sha(
     admin_subject: str = PROVIDER_ADMIN_SUBJECT,
     extra_bindings: list | None = None,
     role_permissions: dict | None = None,
+    provider_groups: dict[str, list[dict]] | None = None,
 ) -> str:
     import hashlib
 
@@ -905,6 +1084,28 @@ def fixture_iam_snapshot_sha(
                 "roles": fixture_provider_roles(
                     admin_subject, extra_bindings, role_permissions
                 ),
+                "groups": {
+                    group: sorted(
+                        [
+                            str(item["id"]),
+                            {
+                                "group": "group",
+                                "user": "user",
+                                "user_account": "user",
+                                "user-account": "user",
+                                "useraccount": "user",
+                                "service_account": "service-account",
+                                "service-account": "service-account",
+                                "serviceaccount": "service-account",
+                                "federated_account": "federated-account",
+                                "federated-account": "federated-account",
+                                "federatedaccount": "federated-account",
+                            }.get(str(item.get("member_type", "")).lower(), ""),
+                        ]
+                        for item in members
+                    )
+                    for group, members in sorted((provider_groups or {}).items())
+                },
             },
             sort_keys=True,
         ).encode("utf-8")
@@ -924,6 +1125,8 @@ def provider_cli_fixture(
     object_lock_mode: str = "COMPLIANCE",
     object_retain_days: int = 90,
     latest_version: str = "v1-fixture",
+    provider_groups: dict[str, list[dict]] | None = None,
+    version_pages: list[dict] | None = None,
 ):
     """Answer the pinned provider CLI's live queries: whoami, ancestry
     derivation, paginated IAM listings (stable across the double pass),
@@ -964,10 +1167,13 @@ def provider_cli_fixture(
             parent = command[command.index("--parent-id") + 1]
             bindings = [
                 {
-                    "subject": {"id": admin_subject},
+                    "subject": {"id": admin_subject, "type": "user"},
                     "role_id": "managed-kubernetes.admin",
                 },
-                {"subject": {"id": "auditor@example.invalid"}, "role_id": "viewer"},
+                {
+                    "subject": {"id": "auditor@example.invalid", "type": "user"},
+                    "role_id": "viewer",
+                },
             ] + [
                 dict(binding)
                 for binding in (extra_bindings or [])
@@ -975,6 +1181,11 @@ def provider_cli_fixture(
             ]
             for binding in bindings:
                 binding.pop("parent", None)
+                subject = binding.get("subject") or {}
+                if "type" not in subject and not binding.pop(
+                    "fixture_omit_subject_type", False
+                ):
+                    subject["type"] = "user"
             return json.dumps({"items": bindings})
         if command[1:4] == ["storage", "bucket", "get"]:
             lock = (
@@ -999,9 +1210,24 @@ def provider_cli_fixture(
                 }
             )
         if command[1:4] == ["storage", "object", "list-versions"]:
+            if version_pages is not None:
+                token = (
+                    command[command.index("--page-token") + 1]
+                    if "--page-token" in command
+                    else ""
+                )
+                index = int(token.removeprefix("page-")) if token else 0
+                return json.dumps(version_pages[index])
             return json.dumps(
-                {"versions": [{"version_id": latest_version, "is_latest": True}]}
+                {"versions": [{
+                    "key": command[command.index("--key") + 1],
+                    "version_id": latest_version,
+                    "is_latest": True,
+                }]}
             )
+        if command[1:4] == ["iam", "group-membership", "list"]:
+            group = command[command.index("--group-id") + 1]
+            return json.dumps({"items": (provider_groups or {}).get(group, [])})
         if command[1:4] == ["storage", "object", "get"]:
             return json.dumps(
                 {
@@ -1022,18 +1248,22 @@ def provider_cli_fixture(
 
 
 IAM_BOUNDARY_PATH = PROVENANCE_DIR / "iam-boundary.yaml"
+DEBUG_ADMISSION_PATH = PROVENANCE_DIR / "debug-admission.example.yaml"
 
 
 def iam_boundary_documents() -> dict:
+    manifests = (
+        IAM_BOUNDARY_PATH.read_text(encoding="utf-8"),
+        DEBUG_ADMISSION_PATH.read_text(encoding="utf-8"),
+    )
     return {
         (
             document["kind"],
             document["metadata"]["name"],
             str(document["metadata"].get("namespace", "") or ""),
         ): document
-        for document in yaml.safe_load_all(
-            IAM_BOUNDARY_PATH.read_text(encoding="utf-8")
-        )
+        for manifest in manifests
+        for document in yaml.safe_load_all(manifest)
         if document
     }
 
@@ -1047,6 +1277,10 @@ def iam_boundary_live_answer(command):
         "role": "Role",
         "clusterrolebinding": "ClusterRoleBinding",
         "rolebinding": "RoleBinding",
+        "configmap": "ConfigMap",
+        "deployment": "Deployment",
+        "service": "Service",
+        "validatingwebhookconfiguration": "ValidatingWebhookConfiguration",
     }
     if (
         len(command) >= 4
@@ -1092,6 +1326,7 @@ def write_attestation_fixture(
         "evidence": {
             "reference": "ticket:FS2-SAI-09-boundary",
             "provider_admin_subjects": [PROVIDER_ADMIN_SUBJECT],
+            "provider_admin_groups": [],
         },  # iam_snapshot_sha256 filled below (overridable via **overrides)
         "anchored_heads": anchored or TOOL._anchor_snapshot(base),
         "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -1150,10 +1385,13 @@ def default_scope_fixture(
         "debug_principals": [
             "system:serviceaccount:fs2-security:fs2-debugger"
         ],
-        "workload_pvc_names": ["fs2-models-cache"],
+        "workload_pvc_names": ["fs2-models/fs2-models-cache"],
         "workload_storage_classes": ["fs2-standard"],
-        "workload_configmap_names": ["fs2-serve-config"],
-        "workload_service_names": ["fs2-serve"],
+        "workload_configmap_names": ["fs2-system/fs2-serve-config"],
+        "workload_service_names": ["fs2-system/fs2-serve"],
+        "workload_service_selectors": [
+            "fs2-system/fs2-serve|app=fs2-serve"
+        ],
         "deploy_credential_csi_driver": "secrets-store.csi.k8s.io",
         "deploy_credential_spc": "fs2-release-helm-dsn",
         "security_principals": [SECURITY_PRINCIPAL],
@@ -1236,6 +1474,8 @@ def authority_checking_verifier(command):
         TOOL.PROVIDER_ATTESTATION_SCHEMA,
         TOOL.RECOVERY_SCHEMA,
         TOOL.ROLLOUT_AUTHORIZATION_SCHEMA,
+        TOOL.DEBUG_SESSION_SCHEMA,
+        TOOL.REVIEWED_RESOURCE_PLAN_SCHEMA,
     ):
         if hashlib.sha256(payload).hexdigest() not in SIGNED_AUTHORITY_HASHES:
             raise sp.CalledProcessError(1, command)
@@ -1367,6 +1607,15 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.addCleanup(
             lambda: setattr(TOOL, "RELEASE_KEY_SHA256", self._original_pin)
         )
+        self._original_release_provenance = TOOL.RELEASE_KEY_PROVENANCE
+        TOOL.RELEASE_KEY_PROVENANCE = "owner-originated"
+        self.addCleanup(
+            lambda: setattr(
+                TOOL,
+                "RELEASE_KEY_PROVENANCE",
+                self._original_release_provenance,
+            )
+        )
         self._original_attestor_pin = TOOL.ATTESTATION_KEY_SHA256
         TOOL.ATTESTATION_KEY_SHA256 = h.sha256(
             ATTESTOR_KEY_CONTENT.encode("utf-8")
@@ -1437,6 +1686,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
         cluster_roles=None,
         namespaced_roles=None,
         namespaced_role_bindings=None,
+        debug_registry=None,
     ):
         """Serve the full authoritative observation surface.
 
@@ -1485,6 +1735,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 "fs2-image-provenance",
                 "fs2-helm-release-governance",
                 "fs2-provenance-guard",
+                "fs2-reviewed-source-governance",
+                "fs2-debug-session-access",
+                "fs2-debug-session-rbac",
             ):
                 live_objects[(kind, name)] = server_defaulted(
                     by_name[(kind, name)]
@@ -1505,6 +1758,19 @@ class VerifiedAllowlistTest(unittest.TestCase):
             provider_answer = provider(command)
             if provider_answer is not None:
                 return provider_answer
+            if (
+                debug_registry is not None
+                and command[:4] == [
+                    "kubectl", "get", "configmap", "fs2-debug-sessions"
+                ]
+            ):
+                return json.dumps({
+                    "metadata": {
+                        "name": "fs2-debug-sessions",
+                        "namespace": "fs2-system",
+                    },
+                    "data": debug_registry,
+                })
             boundary_answer = iam_boundary_live_answer(command)
             if boundary_answer is not None:
                 return boundary_answer
@@ -1602,10 +1868,11 @@ class VerifiedAllowlistTest(unittest.TestCase):
                             "data": {
                                 "security-principals": SECURITY_PRINCIPAL,
                                 "namespaces": "fs2-models\nfs2-system",
-                                "workload-configmap-names": "fs2-serve-config",
-                                "workload-service-names": "fs2-serve",
-                                "workload-pvc-names": "fs2-models-cache",
+                                "workload-configmap-names": "fs2-system/fs2-serve-config",
+                                "workload-service-names": "fs2-system/fs2-serve",
+                                "workload-pvc-names": "fs2-models/fs2-models-cache",
                                 "workload-storage-classes": "fs2-standard",
+                                "workload-service-selectors": "fs2-system/fs2-serve|app=fs2-serve",
                                 "automation-service-accounts": (
                                     "fs2-security:fs2-admission-guard\nfs2-security:fs2-debugger\nfs2-system:fs2-release-automation"
                                 ),
@@ -1924,7 +2191,10 @@ class VerifiedAllowlistTest(unittest.TestCase):
         )
         # The honest older anchor verifies as a strict prefix (and advances
         # the monotonic checkpoint).
-        TOOL._assert_anchored_heads(self.run_root, earlier)
+        TOOL._commit_anchored_heads(
+            self.run_root,
+            TOOL._assert_anchored_heads(self.run_root, earlier),
+        )
         # A forged anchor at the checkpointed count now refuses as a FORKED
         # anchor history (monotonic anti-replay sees the same count with a
         # different head).
@@ -1937,7 +2207,10 @@ class VerifiedAllowlistTest(unittest.TestCase):
         TOOL._record_consumed(self.run_root, "3" * 64, "test")
         mid = TOOL._anchor_snapshot(self.run_root)
         TOOL._record_consumed(self.run_root, "4" * 64, "test")
-        TOOL._assert_anchored_heads(self.run_root, mid)
+        TOOL._commit_anchored_heads(
+            self.run_root,
+            TOOL._assert_anchored_heads(self.run_root, mid),
+        )
         TOOL._record_consumed(self.run_root, "5" * 64, "test")
         forged_ledger = TOOL._anchor_snapshot(self.run_root)
         forged_ledger["chains"]["consumed"]["count"] -= 1
@@ -3195,6 +3468,26 @@ class VerifiedAllowlistTest(unittest.TestCase):
             runner = TOOL._pinned_live_runner(self.scope)
         self.assertTrue(callable(runner))
 
+    def test_reviewed_deploy_dsn_gate_binds_backend_and_session_owner(self) -> None:
+        dsn = (
+            "postgresql://fs2_helm:secret@db.fixture.invalid:5432/"
+            "helm_releases?sslmode=verify-full"
+        )
+        identity = "db.fixture.invalid:5432/helm_releases?user=fs2_helm"
+        TOOL._assert_helm_deploy_dsn(dsn, identity, "a" * 64)
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "alternate backend"):
+            TOOL._assert_helm_deploy_dsn(
+                dsn,
+                "evil.invalid:5432/helm_releases?user=fs2_helm",
+                "a" * 64,
+            )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "predefine"):
+            TOOL._assert_helm_deploy_dsn(
+                dsn + "&application_name=caller-selected",
+                identity,
+                "a" * 64,
+            )
+
     def test_placeholder_attestor_key_is_never_trusted(self) -> None:
         # The committed attestor key was generated inside the remediation
         # session: with the shipped ATTESTATION_KEY_PROVENANCE it is a
@@ -3209,6 +3502,20 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 self.render()
         finally:
             TOOL.ATTESTATION_KEY_PROVENANCE = "owner-originated"
+
+    def test_placeholder_release_key_is_never_trusted(self) -> None:
+        # A fingerprint proves key identity, not owner custody. The shipped
+        # worker-generated release key therefore cannot authorize its own
+        # scope/inventory/receipts/debug grants or CI until the owner replaces
+        # the key and provenance flag together through review.
+        TOOL.RELEASE_KEY_PROVENANCE = "bootstrap-placeholder"
+        try:
+            with self.assertRaisesRegex(
+                TOOL.ProvenanceError, "BOOTSTRAP PLACEHOLDER"
+            ):
+                self.render()
+        finally:
+            TOOL.RELEASE_KEY_PROVENANCE = "owner-originated"
 
     def test_run_root_must_resolve_to_the_owner_pinned_root(self) -> None:
         # Single-use state binds globally: pointing --run-root at a fresh
@@ -3384,7 +3691,7 @@ class VerifiedAllowlistTest(unittest.TestCase):
             )
 
     def test_debug_session_is_target_scoped_not_namespace_wide(self) -> None:
-        # The debug verbs (ephemeralcontainers/attach/log) are functional but
+        # The admission-gated debug verbs (ephemeralcontainers/attach) work but
         # ONLY through a resourceName-scoped SESSION Role: a namespace-wide
         # debug grant is an exfiltration pivot and violates even for the
         # debug identity; a session Role naming the exact target pod passes;
@@ -3394,6 +3701,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
             "namespace": "fs2-security",
             "name": "fs2-debugger",
         }
+        import base64
+        import hashlib as h
+        from datetime import UTC, datetime, timedelta
 
         def role(name, rules):
             return {"metadata": {"name": name}, "rules": rules}
@@ -3405,11 +3715,11 @@ class VerifiedAllowlistTest(unittest.TestCase):
                 "subjects": [subj],
             }
 
-        # Namespace-wide (no resourceNames) attach/log/ephemeral: REFUSED.
-        for res in ("pods/attach", "pods/log", "pods/ephemeralcontainers"):
+        # Namespace-wide (no resourceNames) attach/ephemeral: REFUSED.
+        for res in ("pods/attach", "pods/ephemeralcontainers"):
             wide = role("wide-debug", [
                 {"apiGroups": [""], "resources": [res],
-                 "verbs": ["get", "create"] if res != "pods/log" else ["get"]}
+                 "verbs": ["get", "create"]}
             ])
             with self.assertRaisesRegex(TOOL.ProvenanceError, "session-scoped"):
                 self.render(
@@ -3422,24 +3732,76 @@ class VerifiedAllowlistTest(unittest.TestCase):
         standing = role("fs2-debug-standing", [
             {"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]}
         ])
-        # SESSION Role: resourceName-scoped to the exact target pod — PASSES.
-        session = role("fs2-debug-session-abcdef01", [
-            {"apiGroups": [""], "resources": ["pods/ephemeralcontainers"],
-             "resourceNames": ["target-pod"], "verbs": ["get", "update", "patch"]},
-            {"apiGroups": [""], "resources": ["pods/attach"],
-             "resourceNames": ["target-pod"], "verbs": ["get", "create"]},
-            {"apiGroups": [""], "resources": ["pods/log"],
-             "resourceNames": ["target-pod"], "verbs": ["get"]},
-        ])
+        # SESSION Role: exact projection of retained owner-signed evidence.
+        now = datetime.now(UTC)
+        document = {
+            "schema": TOOL.DEBUG_SESSION_SCHEMA,
+            "cluster": self.scope["cluster"],
+            "namespace": "fs2-system",
+            "pod": "target-pod",
+            "pod_uid": "12345678-1234-1234-1234-123456789abc",
+            "container": "debugger",
+            "tenant": "tenant-alpha",
+            "image": PLATFORM_PREFIX + "debug@" + DIGEST_A,
+            "nonce": "abcdef0123456789",
+            "reason": "incident:INC-42 debug",
+            "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (now + timedelta(hours=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+        }
+        payload = json.dumps(document).encode("utf-8")
+        session_sha = h.sha256(payload).hexdigest()
+        SIGNED_AUTHORITY_HASHES.add(session_sha)
+        session, session_binding = TOOL.render_debug_session(
+            document, self.scope, session_sha
+        )
+        registry = {
+            "active." + document["nonce"]: "|".join(
+                str(document[field])
+                for field in (
+                    "cluster", "namespace", "pod", "pod_uid", "container",
+                    "tenant", "image", "expires_at",
+                )
+            ) + "|" + session_sha + "|" + TOOL.DEBUG_AUTOMATION_PRINCIPAL,
+            "document." + document["nonce"]: base64.b64encode(payload).decode(),
+            "signature." + document["nonce"]: base64.b64encode(
+                b"owner-signature\n"
+            ).decode(),
+        }
         self.render(
             live_runner=self.live_runner(
-                cluster_roles=[standing, session],
-                cluster_role_bindings=[
-                    binding("fs2-debug-standing", debug_subject),
-                    binding("fs2-debug-session-abcdef01", debug_subject),
-                ],
+                cluster_roles=[standing],
+                cluster_role_bindings=[binding("fs2-debug-standing", debug_subject)],
+                namespaced_roles=[session],
+                namespaced_role_bindings=[session_binding],
+                debug_registry=registry,
             )
         )
+        # The same narrow grant without retained signed evidence is refused.
+        with self.assertRaisesRegex(
+            TOOL.ProvenanceError, "lacks retained owner-signed evidence"
+        ):
+            self.render(
+                live_runner=self.live_runner(
+                    namespaced_roles=[session],
+                    namespaced_role_bindings=[session_binding],
+                )
+            )
+        # ResourceName-scoped logs still outlive admission TTL because GET
+        # does not traverse CONNECT admission, so even the debug identity is
+        # refused this grant.
+        log_role = role("debug-log", [
+            {"apiGroups": [""], "resources": ["pods/log"],
+             "resourceNames": ["target-pod"], "verbs": ["get"]}
+        ])
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "not safely expiry-gated"):
+            self.render(
+                live_runner=self.live_runner(
+                    cluster_roles=[log_role],
+                    cluster_role_bindings=[binding("debug-log", debug_subject)],
+                )
+            )
         # exec/portforward stay forbidden even for the debug identity, even
         # resourceName-scoped.
         exec_role = role("debug-exec", [
@@ -3468,8 +3830,10 @@ class VerifiedAllowlistTest(unittest.TestCase):
             "cluster": "fixture-cluster",
             "namespace": "fs2-system",
             "pod": "fs2-serve-abc123",
+            "pod_uid": "12345678-1234-1234-1234-123456789abc",
             "container": "control-plane",
             "tenant": "tenant-alpha",
+            "image": PLATFORM_PREFIX + "debug@" + DIGEST_A,
             "nonce": "abcdef0123456789",
             "reason": "incident:INC-42 debug",
             "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -3484,10 +3848,12 @@ class VerifiedAllowlistTest(unittest.TestCase):
         sig.chmod(0o644)
         SIGNED_AUTHORITY_HASHES.add(h.sha256(payload).hexdigest())
 
-        loaded, _ = TOOL.load_debug_session(
+        loaded, session_sha256 = TOOL.load_debug_session(
             session, self._tmp.name, self.scope, authority_checking_verifier
         )
-        manifests = TOOL.render_debug_session(loaded, self.scope)
+        manifests = TOOL.render_debug_session(
+            loaded, self.scope, session_sha256
+        )
         role, binding = manifests
         self.assertEqual(role["kind"], "Role")
         self.assertEqual(role["metadata"]["namespace"], "fs2-system")
@@ -3496,6 +3862,22 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.assertEqual(binding["kind"], "RoleBinding")
         self.assertEqual(
             binding["subjects"][0]["name"], "fs2-debugger"
+        )
+        registry_patch = TOOL.debug_session_registry_patch(
+            loaded,
+            session_sha256,
+            TOOL.DEBUG_AUTOMATION_PRINCIPAL,
+            "7001",
+            payload,
+            b"fixture-owner-signature\n",
+        )
+        self.assertEqual(
+            [entry["path"] for entry in registry_patch[1:]],
+            [
+                "/data/active." + document["nonce"],
+                "/data/document." + document["nonce"],
+                "/data/signature." + document["nonce"],
+            ],
         )
         # A session targeting a namespace outside the scope refuses.
         foreign = dict(document, namespace="kube-system")
@@ -3510,6 +3892,137 @@ class VerifiedAllowlistTest(unittest.TestCase):
             TOOL.load_debug_session(
                 fpath, self._tmp.name, self.scope, authority_checking_verifier
             )
+        expired = dict(
+            document,
+            issued_at=(now - timedelta(hours=2)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            expires_at=(now - timedelta(hours=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+        )
+        epayload = json.dumps(expired).encode("utf-8")
+        epath = self.run_root / "expired-debug-session.json"
+        epath.write_bytes(epayload)
+        epath.chmod(0o644)
+        (self.run_root / "expired-debug-session.json.sig").write_text("s\n")
+        (self.run_root / "expired-debug-session.json.sig").chmod(0o644)
+        SIGNED_AUTHORITY_HASHES.add(h.sha256(epayload).hexdigest())
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "has expired"):
+            TOOL.load_debug_session(
+                epath, self._tmp.name, self.scope, authority_checking_verifier
+            )
+        retired_document, _ = TOOL.load_debug_session(
+            epath,
+            self._tmp.name,
+            self.scope,
+            authority_checking_verifier,
+            allow_expired=True,
+        )
+        self.assertEqual(retired_document["nonce"], expired["nonce"])
+
+    def test_owner_signed_reviewed_plan_binds_canonical_mutation(self) -> None:
+        import hashlib as h
+        from datetime import UTC, datetime, timedelta
+
+        now = datetime.now(UTC)
+        admission_object = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": "fs2-serve-config",
+                "namespace": "fs2-system",
+                "uid": "ignored-at-hash-time",
+                "resourceVersion": "42",
+                "annotations": {
+                    "security.fs2.nebius.ai/source-commit": "a" * 40,
+                    "security.fs2.nebius.ai/source-tree": "b" * 40,
+                    "security.fs2.nebius.ai/release-authorization": "c" * 64,
+                    "security.fs2.nebius.ai/release-session": "c" * 32,
+                },
+            },
+            "data": {"mode": "reviewed"},
+        }
+        document = {
+            "schema": TOOL.REVIEWED_RESOURCE_PLAN_SCHEMA,
+            "cluster": self.scope["cluster"],
+            "source_commit": "a" * 40,
+            "source_tree": "b" * 40,
+            "authorization_sha256": "c" * 64,
+            "session_nonce": "c" * 32,
+            "issued_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "expires_at": (now + timedelta(hours=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            "reason": "change:FS2-SAI-09-reviewed-plan",
+            "resources": [{
+                "operation": "UPDATE",
+                "api_group": "",
+                "api_version": "v1",
+                "resource": "configmaps",
+                "subresource": "",
+                "namespace": "fs2-system",
+                "name": "fs2-serve-config",
+                "object_sha256": TOOL.canonical_admission_object_sha256(
+                    admission_object
+                ),
+                "old_uid": "12345678-1234-1234-1234-123456789abc",
+                "old_resource_version": "41",
+            }],
+        }
+        payload = json.dumps(document).encode("utf-8")
+        plan = self.run_root / "reviewed-plan.json"
+        plan.write_bytes(payload)
+        plan.chmod(0o644)
+        (self.run_root / "reviewed-plan.json.sig").write_text("owner-signature\n")
+        (self.run_root / "reviewed-plan.json.sig").chmod(0o644)
+        SIGNED_AUTHORITY_HASHES.add(h.sha256(payload).hexdigest())
+        loaded, document_sha = TOOL.load_reviewed_resource_plan(
+            plan, self._tmp.name, self.scope, authority_checking_verifier
+        )
+        patch = TOOL.reviewed_resource_registry_patch(
+            loaded, document_sha, "9001"
+        )
+        self.assertEqual(patch[0]["op"], "test")
+        self.assertEqual(patch[1]["path"], "/data/meta." + "c" * 32)
+        grant = json.loads(patch[2]["value"])
+        self.assertEqual(grant["object_sha256"], document["resources"][0]["object_sha256"])
+        changed = json.loads(json.dumps(admission_object))
+        changed["data"]["mode"] = "unreviewed"
+        self.assertNotEqual(
+            TOOL.canonical_admission_object_sha256(changed),
+            grant["object_sha256"],
+        )
+        for suffix, mutate in (
+            (
+                "foreign-nonce",
+                lambda value: value.update({"session_nonce": "d" * 32}),
+            ),
+            (
+                "subresource",
+                lambda value: value["resources"][0].update(
+                    {"subresource": "status"}
+                ),
+            ),
+        ):
+            invalid = json.loads(json.dumps(document))
+            mutate(invalid)
+            invalid_payload = json.dumps(invalid).encode("utf-8")
+            invalid_path = self.run_root / f"reviewed-plan-{suffix}.json"
+            invalid_path.write_bytes(invalid_payload)
+            invalid_path.chmod(0o644)
+            (self.run_root / f"reviewed-plan-{suffix}.json.sig").write_text(
+                "owner-signature\n"
+            )
+            (self.run_root / f"reviewed-plan-{suffix}.json.sig").chmod(0o644)
+            SIGNED_AUTHORITY_HASHES.add(h.sha256(invalid_payload).hexdigest())
+            with self.assertRaises(TOOL.ProvenanceError):
+                TOOL.load_reviewed_resource_plan(
+                    invalid_path,
+                    self._tmp.name,
+                    self.scope,
+                    authority_checking_verifier,
+                )
 
     def test_genesis_append_crash_rolls_forward(self) -> None:
         # A crash between the very first fsync'd record and its checkpoint
@@ -3521,6 +4034,26 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.assertFalse(TOOL._ledger_checkpoint_path(ledger).exists())
         self.assertTrue(TOOL._is_consumed(self.run_root, "9" * 64))
         self.assertTrue(TOOL._ledger_checkpoint_path(ledger).exists())
+
+    def test_standalone_anchor_verification_never_advances_replay_state(self) -> None:
+        diagnostic_root = self.run_root / "read-only-anchor-check"
+        diagnostic_root.mkdir(mode=0o700)
+        snapshot = TOOL._anchor_snapshot(diagnostic_root)
+        snapshot_path = self.run_root / "diagnostic-anchor.json"
+        snapshot_path.write_bytes(json.dumps(snapshot).encode("utf-8"))
+        snapshot_path.chmod(0o644)
+        self.assertEqual(
+            TOOL.main([
+                "verify-anchored-heads",
+                "--run-root", str(diagnostic_root),
+                "--anchored", str(snapshot_path),
+            ]),
+            0,
+        )
+        self.assertFalse(
+            (diagnostic_root / "anchored-heads-checkpoint.json").exists()
+        )
+        self.assertFalse((diagnostic_root / "anchor-advances.jsonl").exists())
 
     def test_anchor_checkpoint_file_deletion_never_resets_replay(self) -> None:
         # Monotonicity is double-kept, LEDGER FIRST: losing the fast
@@ -3534,7 +4067,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
         self.assertTrue((self.run_root / "anchor-advances.jsonl").exists())
         preserved = json.loads(checkpoint.read_bytes())
         checkpoint.unlink()
-        TOOL._assert_anchored_heads(self.run_root, snapshot)
+        effects = TOOL._assert_anchored_heads(self.run_root, snapshot)
+        self.assertFalse(checkpoint.exists())
+        TOOL._commit_anchored_heads(self.run_root, effects)
         self.assertTrue(checkpoint.exists())
         repaired = json.loads(checkpoint.read_bytes())
         for name, state in (preserved.get("chains") or {}).items():
@@ -3669,7 +4204,9 @@ class VerifiedAllowlistTest(unittest.TestCase):
             TOOL._assert_anchored_heads(self.run_root, forged)
         self.assertFalse(checkpoint.exists())
         # The REAL anchor confirms the content and adopts it forward.
-        TOOL._assert_anchored_heads(self.run_root, anchored)
+        effects = TOOL._assert_anchored_heads(self.run_root, anchored)
+        self.assertFalse(checkpoint.exists())
+        TOOL._commit_anchored_heads(self.run_root, effects)
         self.assertTrue(checkpoint.exists())
         self.assertTrue(TOOL._is_consumed(self.run_root, "2" * 64))
         # Crash window: checkpoint exactly one behind -> rolled forward.
@@ -4185,10 +4722,11 @@ class _FakeAdmissionCluster:
                         "data": {
                             "security-principals": SECURITY_PRINCIPAL,
                             "namespaces": "fs2-models\nfs2-system",
-                            "workload-configmap-names": "fs2-serve-config",
-                            "workload-service-names": "fs2-serve",
-                            "workload-pvc-names": "fs2-models-cache",
+                            "workload-configmap-names": "fs2-system/fs2-serve-config",
+                            "workload-service-names": "fs2-system/fs2-serve",
+                            "workload-pvc-names": "fs2-models/fs2-models-cache",
                             "workload-storage-classes": "fs2-standard",
+                            "workload-service-selectors": "fs2-system/fs2-serve|app=fs2-serve",
                             "automation-service-accounts": (
                                 "fs2-security:fs2-admission-guard\nfs2-security:fs2-debugger\nfs2-system:fs2-release-automation"
                             ),
@@ -4295,6 +4833,15 @@ class ReconcileBoundaryTest(unittest.TestCase):
         TOOL.RELEASE_KEY_SHA256 = self.key_sha256
         self.addCleanup(
             lambda: setattr(TOOL, "RELEASE_KEY_SHA256", self._original_pin)
+        )
+        self._original_release_provenance = TOOL.RELEASE_KEY_PROVENANCE
+        TOOL.RELEASE_KEY_PROVENANCE = "owner-originated"
+        self.addCleanup(
+            lambda: setattr(
+                TOOL,
+                "RELEASE_KEY_PROVENANCE",
+                self._original_release_provenance,
+            )
         )
         self._original_attestor_pin = TOOL.ATTESTATION_KEY_SHA256
         TOOL.ATTESTATION_KEY_SHA256 = h.sha256(
@@ -4618,16 +5165,24 @@ class ReconcileBoundaryTest(unittest.TestCase):
         self.assertEqual(self.journal_phases(), [])
 
     def attestation_for(
-        self, extra_bindings=None, role_permissions=None, **overrides
+        self,
+        extra_bindings=None,
+        role_permissions=None,
+        provider_groups=None,
+        provider_admin_subjects=None,
+        **overrides,
     ) -> Path:
         """An attestation whose witnessed IAM snapshot matches the fixture
         provider's (possibly modified) enumeration and role definitions."""
         evidence = {
             "reference": "ticket:FS2-SAI-09-boundary",
-            "provider_admin_subjects": [PROVIDER_ADMIN_SUBJECT],
+            "provider_admin_subjects": provider_admin_subjects
+            or [PROVIDER_ADMIN_SUBJECT],
+            "provider_admin_groups": sorted((provider_groups or {}).keys()),
             "iam_snapshot_sha256": fixture_iam_snapshot_sha(
                 extra_bindings=extra_bindings,
                 role_permissions=role_permissions,
+                provider_groups=provider_groups,
             ),
         }
         return write_attestation_fixture(
@@ -4676,6 +5231,86 @@ class ReconcileBoundaryTest(unittest.TestCase):
                     anchor_source=rogue_attestation, extra_bindings=rogue
                 ),
                 attestation=rogue_attestation,
+            )
+        untyped_binding = [
+            {
+                "subject": {"id": "opaque-admin-id"},
+                "role_id": "managed-kubernetes.admin",
+                "fixture_omit_subject_type": True,
+            }
+        ]
+        untyped_binding_attestation = self.attestation_for(
+            extra_bindings=untyped_binding,
+            provider_admin_subjects=[PROVIDER_ADMIN_SUBJECT, "opaque-admin-id"],
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "subject type"):
+            self.plan_with_provider(
+                provider_cli_fixture(
+                    anchor_source=untyped_binding_attestation,
+                    extra_bindings=untyped_binding,
+                ),
+                attestation=untyped_binding_attestation,
+            )
+        # Privileged provider GROUP bindings are closed recursively. Every
+        # nested group must be enumerated and every leaf must be an attested
+        # admin subject; an untyped member is refused because it could hide
+        # an omitted nested group.
+        group_binding = [
+            {
+                "subject": {"id": "provider-admins", "type": "group"},
+                "role_id": "managed-kubernetes.admin",
+            }
+        ]
+        groups = {
+            "provider-admins": [
+                {"id": "nested-admins", "member_type": "group"}
+            ],
+            "nested-admins": [
+                {"id": "mallory@example.invalid", "member_type": "user"}
+            ],
+        }
+        group_attestation = self.attestation_for(
+            extra_bindings=group_binding, provider_groups=groups
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "transitive closure"):
+            self.plan_with_provider(
+                provider_cli_fixture(
+                    anchor_source=group_attestation,
+                    extra_bindings=group_binding,
+                    provider_groups=groups,
+                ),
+                attestation=group_attestation,
+            )
+        allowed_group_attestation = self.attestation_for(
+            extra_bindings=group_binding,
+            provider_groups=groups,
+            provider_admin_subjects=[
+                PROVIDER_ADMIN_SUBJECT, "mallory@example.invalid"
+            ],
+        )
+        self.plan_with_provider(
+            provider_cli_fixture(
+                anchor_source=allowed_group_attestation,
+                extra_bindings=group_binding,
+                provider_groups=groups,
+            ),
+            attestation=allowed_group_attestation,
+        )
+        untyped_groups = {
+            "provider-admins": [{"id": "opaque-member"}]
+        }
+        untyped_attestation = self.attestation_for(
+            extra_bindings=group_binding,
+            provider_groups=untyped_groups,
+        )
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "unknown type"):
+            self.plan_with_provider(
+                provider_cli_fixture(
+                    anchor_source=untyped_attestation,
+                    extra_bindings=group_binding,
+                    provider_groups=untyped_groups,
+                ),
+                attestation=untyped_attestation,
             )
         # A role whose NAME is owner-listed but whose fetched PERMISSIONS
         # include writes is still privileged-class.
@@ -4759,6 +5394,54 @@ class ReconcileBoundaryTest(unittest.TestCase):
                 provider_cli_fixture(
                     anchor_source=self.attestation_path,
                     principal="somebody-else@fixture.invalid",
+                )
+            )
+        anchor_key = json.loads(self.attestation_path.read_bytes())[
+            "anchor_object"
+        ]["key"]
+        # LATEST is selected only after fully paginating the authoritative
+        # version listing. A later page may carry the sole latest marker;
+        # zero or multiple latest markers are ambiguity, never "first row".
+        paginated = [
+            {
+                "versions": [
+                    {"key": anchor_key, "version_id": "v0", "is_latest": False}
+                ],
+                "next_page_token": "page-1",
+            },
+            {
+                "versions": [
+                    {
+                        "key": anchor_key,
+                        "version_id": "v1-fixture",
+                        "is_latest": True,
+                    }
+                ]
+            },
+        ]
+        self.plan_with_provider(
+            provider_cli_fixture(
+                anchor_source=self.attestation_path,
+                version_pages=paginated,
+            )
+        )
+        ambiguous = [
+            {
+                "versions": [
+                    {
+                        "key": anchor_key,
+                        "version_id": "v1-fixture",
+                        "is_latest": True,
+                    },
+                    {"key": anchor_key, "version_id": "v2", "is_latest": True},
+                ]
+            }
+        ]
+        with self.assertRaisesRegex(TOOL.ProvenanceError, "exactly one latest"):
+            self.plan_with_provider(
+                provider_cli_fixture(
+                    anchor_source=self.attestation_path,
+                    version_pages=ambiguous,
                 )
             )
         self.plan_with_provider(

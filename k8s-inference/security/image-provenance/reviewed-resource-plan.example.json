@@ -1,0 +1,25 @@
+{
+  "schema": "fs2-serve.nebius.ai/reviewed-resource-plan/v1",
+  "cluster": "<kube-system-namespace-uid>",
+  "source_commit": "<40-hex-reviewed-commit>",
+  "source_tree": "<40-hex-reviewed-tree>",
+  "authorization_sha256": "<sha256-of-the-signed-release-inventory>",
+  "session_nonce": "<first-32-hex-of-authorization-sha256>",
+  "issued_at": "<RFC3339>",
+  "expires_at": "<RFC3339-no-more-than-24h-later>",
+  "reason": "change:<tracking-id>",
+  "resources": [
+    {
+      "operation": "UPDATE",
+      "api_group": "",
+      "api_version": "v1",
+      "resource": "configmaps",
+      "subresource": "",
+      "namespace": "fs2-system",
+      "name": "fs2-serve-config",
+      "object_sha256": "<canonical-resource-hash-of-server-dry-run-object>",
+      "old_uid": "<live-object-uid>",
+      "old_resource_version": "<live-object-resourceVersion>"
+    }
+  ]
+}

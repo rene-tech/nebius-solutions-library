@@ -13,7 +13,8 @@
 #         gated wrapper path (Helm state on the SQL driver); may NOT touch
 #         admission configuration, parameter ConfigMaps, RBAC, tokens, or
 #         secrets.
-#       - SECURITY identity: sole writer of the two parameter ConfigMaps and
+#       - SECURITY identity: sole writer of the four protected state
+#         ConfigMaps and
 #         sole executor of reconcile-boundary under an owner-signed,
 #         plan-bound, single-use authorization.
 #       - DEBUG identity: sole holder of pods/ephemeralcontainers writes —
@@ -81,11 +82,10 @@ metadata:
 automountServiceAccountToken: false
 ---
 # SECURITY identity: the MINIMUM its reconciler function needs, nothing
-# broad. Mutation is resourceName-scoped to the three protected admission
-# objects (update/patch cannot reach any other policy; `create` cannot be
-# name-scoped by Kubernetes RBAC, but creating the protected objects IS the
-# bootstrap function and creating anything else is caught by the render-time
-# audit and the live-equality check). NO secrets verbs, NO pod/serviceaccount
+# broad. Mutation is resourceName-scoped to the six protected admission
+# objects. Bootstrap creation is an OWNER rollout action because Kubernetes
+# RBAC cannot resourceName-scope `create`; the reconciler therefore has no
+# admission-object create/delete authority. NO secrets verbs, NO pod/serviceaccount
 # reads, NO cluster-wide ConfigMap authority: the reconciler never reads
 # stored credentials, and the function-scoped audit refuses a security
 # identity holding anything beyond admission-configuration writes.
@@ -100,7 +100,7 @@ rules:
     resources:
       - validatingadmissionpolicies
       - validatingadmissionpolicybindings
-    verbs: ["get", "list", "create"]
+    verbs: ["get", "list"]
   - apiGroups: ["admissionregistration.k8s.io"]
     resources:
       - validatingadmissionpolicies
@@ -109,6 +109,9 @@ rules:
       - fs2-image-provenance
       - fs2-helm-release-governance
       - fs2-provenance-guard
+      - fs2-reviewed-source-governance
+      - fs2-debug-session-access
+      - fs2-debug-session-rbac
     verbs: ["update", "patch"]
   - apiGroups: [""]
     resources: ["namespaces"]
@@ -116,6 +119,18 @@ rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]
     verbs: ["get", "list"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["fs2-debug-admission"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["fs2-debug-admission"]
+    verbs: ["get"]
+  - apiGroups: ["admissionregistration.k8s.io"]
+    resources: ["validatingwebhookconfigurations"]
+    resourceNames: ["fs2-debug-session-connect"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -133,9 +148,9 @@ subjects:
     name: fs2-admission-guard
 ---
 # SECURITY identity's ConfigMap authority: NAMESPACED to fs2-system and
-# name-scoped to exactly the two parameter ConfigMaps (create is
+# name-scoped to exactly the four protected state ConfigMaps (create is
 # namespace-bounded; updates/patches are name-bounded; the guard VAP
-# additionally denies any other principal writing these two names).
+# additionally denies any other principal writing these names).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -152,6 +167,8 @@ rules:
     resourceNames:
       - fs2-image-provenance-allowlist
       - fs2-security-guard-params
+      - fs2-debug-sessions
+      - fs2-reviewed-resources
     verbs: ["update", "patch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -170,6 +187,111 @@ subjects:
     namespace: fs2-security
     name: fs2-admission-guard
 ---
+# Append-only debug-session registry. The guard policy prevents deletion,
+# mutation of active rows, or removal of retirement markers. Session rows are
+# installed only after owner-signature, cluster, Pod UID, tenant, container,
+# image, nonce, and expiry verification by provenance.py. The exact signed
+# document and detached signature are retained beside each active row so the
+# read-only IAM audit re-verifies authority instead of trusting row shape.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-debug-sessions
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+data: {}
+---
+# Append-only owner-reviewed release-resource registry. Each session stores
+# one immutable meta.<nonce> row and immutable grant.<nonce>.<index> rows
+# rendered only from an owner-signed plan. The release admission webhook
+# hashes the actual defaulted AdmissionReview object and requires an exact
+# operation/resource/name/hash/old-UID/old-resourceVersion grant before any
+# direct, config-only, or HELM_DRIVER=sql mutation is admitted.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-reviewed-resources
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+data: {}
+---
+# The owner-signed scope pins this IAM manifest, which in turn pins the exact
+# installable debug-admission manifest bytes. provenance.py refuses if this
+# digest does not match debug-admission.example.yaml or if any live webhook,
+# deployment, Service, SA, or read-only RBAC object differs from those bytes.
+# The owner replaces the template image/CA, updates this digest, and signs the
+# resulting scope as one review transaction.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-debug-admission-pin
+  namespace: fs2-security
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+data:
+  manifest-sha256: "90f73f39b8c8e85b1a14753ae078859e95fb3c59d3a72f58e6ad424cb566c559"
+---
+# SECURITY installs and retires exact session Roles/RoleBindings. Delete is
+# deliberately absent: retirement is a deny marker followed by empty rules
+# and subjects, preserving forensic history.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-debug-session-installer
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-debug-session-installer
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-debug-session-installer
+subjects:
+  - kind: ServiceAccount
+    namespace: fs2-security
+    name: fs2-admission-guard
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-debug-session-installer
+  namespace: fs2-models
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-debug-session-installer
+  namespace: fs2-models
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-debug-session-installer
+subjects:
+  - kind: ServiceAccount
+    namespace: fs2-security
+    name: fs2-admission-guard
+---
 # DEBUG identity: the DOCUMENTED customer kubectl-debug workflow stays
 # FUNCTIONAL end to end, but with EXACT governed target binding — the debug
 # verbs are never a standing namespace-wide grant (that would let the
@@ -178,11 +300,14 @@ subjects:
 #      cluster/namespace/pod/container/tenant + a nonce and a bounded TTL.
 #   2. `provenance.py render-debug-session` emits an ephemeral Role +
 #      RoleBinding scoped by resourceNames to THAT pod
-#      (pods/ephemeralcontainers get/update/patch, pods/attach get/create,
-#      pods/log get) plus the standing pods get/list below; the security
-#      identity applies it for the TTL and removes it after.
-#   3. kubectl -n <ns> debug <pod> --image <pinned> …  (inject; -it attaches;
-#      logs read) all function against exactly that pod.
+#      (pods/ephemeralcontainers get/update/patch, pods/attach get/create)
+#      plus the standing pods get/list below; the security
+#      identity applies it for the TTL; expiry denies access, and retirement
+#      appends a durable deny marker before emptying rules/subjects. Objects
+#      are never deleted, so the grant history remains inspectable.
+#   3. kubectl -n <ns> debug <pod> --image <pinned> …  (inject; -it attaches)
+#      functions against exactly that pod. pods/log stays denied because GET
+#      does not traverse the TTL-enforcing CONNECT admission path.
 # exec and port-forward remain forbidden for EVERYONE. The live IAM audit
 # permits the session Role only because it is resourceName-scoped
 # (session grant-shape); a namespace-wide debug grant still violates. The
@@ -205,7 +330,7 @@ metadata:
     security.fs2.nebius.ai/finding: sai-09
 rules:
   # STANDING grant: only enumerate pods to locate a target. The debug
-  # verbs (pods/ephemeralcontainers, pods/attach, pods/log) are NOT
+  # verbs (pods/ephemeralcontainers, pods/attach) are NOT
   # standing — they are rendered per OWNER-SIGNED debug-session,
   # resourceName-scoped to the exact target pod, by
   # `provenance.py render-debug-session` and applied for the session's TTL.
@@ -238,7 +363,7 @@ metadata:
     security.fs2.nebius.ai/finding: sai-09
 rules:
   # STANDING grant: only enumerate pods to locate a target. The debug
-  # verbs (pods/ephemeralcontainers, pods/attach, pods/log) are NOT
+  # verbs (pods/ephemeralcontainers, pods/attach) are NOT
   # standing — they are rendered per OWNER-SIGNED debug-session,
   # resourceName-scoped to the exact target pod, by
   # `provenance.py render-debug-session` and applied for the session's TTL.

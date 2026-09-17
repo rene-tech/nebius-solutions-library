@@ -1,0 +1,137 @@
+# OWNER-INSTALL TEMPLATE. Replace the two angle-bracket values, pin the final
+# bytes in reviewed release source, and install through the owner/security
+# rollout. The image must be present in `allowed-images` with a receipt and
+# release-key signature. `caBundle` must be the CA for the serving certificate.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fs2-debug-admission
+  namespace: fs2-security
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: fs2-debug-admission-reader
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    resourceNames: ["kube-system"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames:
+      - fs2-debug-sessions
+      - fs2-image-provenance-allowlist
+      - fs2-reviewed-resources
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: fs2-debug-admission-reader
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: fs2-debug-admission-reader
+subjects:
+  - kind: ServiceAccount
+    namespace: fs2-security
+    name: fs2-debug-admission
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fs2-debug-admission
+  namespace: fs2-security
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: fs2-debug-admission}
+  template:
+    metadata:
+      labels: {app: fs2-debug-admission}
+    spec:
+      serviceAccountName: fs2-debug-admission
+      automountServiceAccountToken: false
+      containers:
+        - name: webhook
+          # Syntactically valid fail-closed placeholder. The owner replaces
+          # this with an exact image already present in the signed release
+          # inventory, then updates the IAM-boundary manifest pin and signs
+          # the resulting scope. The zero digest has no release receipt.
+          image: cr.example-region.example.invalid/registryid/fs2-platform/debug-admission@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          command: ["python3", "/app/debug_admission.py"]
+          env:
+            - {name: TLS_CERT_FILE, value: /tls/tls.crt}
+            - {name: TLS_KEY_FILE, value: /tls/tls.key}
+            - {name: RELEASE_PRINCIPALS, value: "system:serviceaccount:fs2-system:fs2-release-automation"}
+          ports: [{name: https, containerPort: 8443}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: {drop: ["ALL"]}
+          volumeMounts:
+            - {name: tls, mountPath: /tls, readOnly: true}
+            - {name: api-token, mountPath: /var/run/secrets/kubernetes.io/serviceaccount, readOnly: true}
+      volumes:
+        - name: tls
+          secret: {secretName: fs2-debug-admission-tls}
+        - name: api-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: https://kubernetes.default.svc
+                  expirationSeconds: 600
+                  path: token
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fs2-debug-admission
+  namespace: fs2-security
+spec:
+  selector: {app: fs2-debug-admission}
+  ports: [{name: https, port: 443, targetPort: https}]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: fs2-debug-session-connect
+webhooks:
+  - name: debug-connect.security.fs2.nebius.ai
+    admissionReviewVersions: ["v1"]
+    sideEffects: None
+    failurePolicy: Fail
+    matchPolicy: Equivalent
+    timeoutSeconds: 5
+    clientConfig:
+      service:
+        namespace: fs2-security
+        name: fs2-debug-admission
+        path: /validate
+        port: 443
+      caBundle: <owner-pinned-base64-ca>
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: In
+          values: [fs2-system, fs2-models]
+    rules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CONNECT"]
+        resources: ["pods/attach"]
+        scope: Namespaced
+      - apiGroups: ["*"]
+        apiVersions: ["*"]
+        operations: ["CREATE", "UPDATE", "DELETE"]
+        resources: ["*", "*/*"]
+        scope: Namespaced

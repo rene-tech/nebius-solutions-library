@@ -1,0 +1,98 @@
+name: 'Inference website image provenance'
+
+# The website build/release repository calls this job after uploading one
+# `fs2-release-evidence` artifact containing inventory.json(.sig) and run-root/
+# (receipts, signatures, bundle and retained SBOM evidence). Branch protection
+# must require this reusable job for every website release/deploy tag.
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: 'Exact website image reference: registry/repo@sha256:...'
+        required: true
+        type: string
+      evidence_artifact:
+        description: 'Artifact containing inventory.json(.sig) and run-root/'
+        required: false
+        default: 'fs2-release-evidence'
+        type: string
+    secrets:
+      registry_auth_json:
+        description: 'Read-only Docker config JSON for private evidence checks'
+        required: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  provenance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # These values are deliberately fail-closed placeholders. The owner
+      # replaces them in reviewed source with immutable release URLs and
+      # hashes; repository/environment variables cannot redefine verifier
+      # binaries at runtime.
+      FS2_VERIFIER_TOOL_PROVENANCE: bootstrap-placeholder
+      COSIGN_URL: https://owner.invalid/fs2-tools/cosign
+      COSIGN_SHA256: 0000000000000000000000000000000000000000000000000000000000000000
+      CRANE_URL: https://owner.invalid/fs2-tools/crane
+      CRANE_SHA256: 0000000000000000000000000000000000000000000000000000000000000000
+    steps:
+      - name: Checkout reviewed provenance verifier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: rene-tech/nebius-solutions-library
+          # For reusable calls, checkout the exact commit containing the
+          # invoked workflow rather than the caller repository or a branch.
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 1
+
+      - name: Download owner-signed release evidence
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+        with:
+          name: ${{ inputs.evidence_artifact }}
+          path: '${{ runner.temp }}/fs2-evidence'
+
+      - name: Install source-pinned verification tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${FS2_VERIFIER_TOOL_PROVENANCE}" = owner-originated
+          test -n "${COSIGN_URL}" && test -n "${COSIGN_SHA256}"
+          test -n "${CRANE_URL}" && test -n "${CRANE_SHA256}"
+          [[ "${COSIGN_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          [[ "${CRANE_SHA256}" =~ ^[0-9a-f]{64}$ ]]
+          mkdir -p "${RUNNER_TEMP}/fs2-tools"
+          curl --fail --silent --show-error --location \
+            "${COSIGN_URL}" --output "${RUNNER_TEMP}/fs2-tools/cosign"
+          echo "${COSIGN_SHA256}  ${RUNNER_TEMP}/fs2-tools/cosign" | sha256sum --check --strict
+          curl --fail --silent --show-error --location \
+            "${CRANE_URL}" --output "${RUNNER_TEMP}/fs2-tools/crane"
+          echo "${CRANE_SHA256}  ${RUNNER_TEMP}/fs2-tools/crane" | sha256sum --check --strict
+          chmod 0500 "${RUNNER_TEMP}/fs2-tools/cosign" "${RUNNER_TEMP}/fs2-tools/crane"
+
+      - name: Verify exact website image receipt, signature, SBOM, source and allow-list
+        shell: bash
+        env:
+          WEBSITE_IMAGE: ${{ inputs.image }}
+          REGISTRY_AUTH_JSON: ${{ secrets.registry_auth_json }}
+        run: |
+          set -euo pipefail
+          case "${WEBSITE_IMAGE}" in
+            (*@sha256:????????????????????????????????????????????????????????????????) ;;
+            (*) echo 'website image is not an exact sha256 reference' >&2; exit 2 ;;
+          esac
+          export PATH="${RUNNER_TEMP}/fs2-tools:${PATH}"
+          export DOCKER_CONFIG="${RUNNER_TEMP}/docker-config"
+          mkdir -p "${DOCKER_CONFIG}"
+          chmod 0700 "${DOCKER_CONFIG}"
+          printf '%s' "${REGISTRY_AUTH_JSON}" >"${DOCKER_CONFIG}/config.json"
+          chmod 0600 "${DOCKER_CONFIG}/config.json"
+          python3 k8s-inference/security/image-provenance/provenance.py \
+            verify-ci-image \
+            --public-key k8s-inference/security/image-provenance/cosign.pub \
+            --run-root "${RUNNER_TEMP}/fs2-evidence/run-root" \
+            --inventory "${RUNNER_TEMP}/fs2-evidence/inventory.json" \
+            "${WEBSITE_IMAGE}"
