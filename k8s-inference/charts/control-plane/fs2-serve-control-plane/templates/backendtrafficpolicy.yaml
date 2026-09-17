@@ -1,4 +1,20 @@
-{{- if and .Values.publicGateway.enabled .Values.edgeRateLimit.enabled }}
+{{- if .Values.publicGateway.enabled }}
+{{- if not .Values.edgeRateLimit.enabled }}
+{{- fail "a public Gateway requires edgeRateLimit.enabled=true" }}
+{{- end }}
+{{- $identity := .Values.edgeClientIdentity }}
+{{- if not $identity.verified }}
+{{- fail "a public Gateway requires a verified edgeClientIdentity provider/LB contract" }}
+{{- end }}
+{{- if lt (int $identity.trustedHops) 1 }}
+{{- fail "a verified edgeClientIdentity requires at least one authoritative trusted hop" }}
+{{- end }}
+{{- if not (regexMatch "^[a-f0-9]{64}$" $identity.providerContractSha256) }}
+{{- fail "a verified edgeClientIdentity requires an exact provider contract SHA-256" }}
+{{- end }}
+{{- if not $identity.directAccessExcluded }}
+{{- fail "a verified edgeClientIdentity requires proof that direct access cannot forge X-Forwarded-For" }}
+{{- end }}
 apiVersion: gateway.envoyproxy.io/v1alpha1
 kind: BackendTrafficPolicy
 metadata:
@@ -11,6 +27,10 @@ spec:
       kind: Gateway
       name: {{ .Values.publicGateway.gatewayName }}
       sectionName: {{ .Values.publicGateway.httpsListenerName }}
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: {{ .Values.publicGateway.gatewayName }}
+      sectionName: {{ .Values.publicGateway.httpListenerName }}
   rateLimit:
     global:
       rules:

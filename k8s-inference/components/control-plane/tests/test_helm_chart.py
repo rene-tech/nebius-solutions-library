@@ -29,6 +29,7 @@ TEST_AUTHORIZATION_URL = "https://identity.unit.test"
 TEST_TARGET_PROJECT_ID = "project-e00abc123xyz"
 TEST_ALLOCATION_ID = "vpcallocation-e00abc123xyz"
 TEST_ACME_EMAIL = "edge-owner@unit.test"
+TEST_EDGE_PROVIDER_CONTRACT_SHA256 = "d" * 64
 TEST_HTTP_NODE_PORT = 31425
 TEST_HTTPS_NODE_PORT = 32633
 TEST_CATALOG_ROLLOUT_DIGEST = "sha256:" + "3" * 64
@@ -72,6 +73,14 @@ def helm_values() -> list[str]:
         "config.publicAuthorityMode=ip",
         "--set",
         "httpRoute.authorityMode=ip",
+        "--set",
+        "edgeClientIdentity.verified=true",
+        "--set",
+        "edgeClientIdentity.trustedHops=1",
+        "--set",
+        f"edgeClientIdentity.providerContractSha256={TEST_EDGE_PROVIDER_CONTRACT_SHA256}",
+        "--set",
+        "edgeClientIdentity.directAccessExcluded=true",
     ]
 
 
@@ -2259,7 +2268,13 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
             "kind": "Gateway",
             "name": "public",
             "sectionName": "public-https",
-        }
+        },
+        {
+            "group": "gateway.networking.k8s.io",
+            "kind": "Gateway",
+            "name": "public",
+            "sectionName": "acme-http",
+        },
     ]
     assert "mergeType" not in rate_limit["spec"]
     rules = rate_limit["spec"]["rateLimit"]["global"]["rules"]
@@ -2301,6 +2316,17 @@ def test_enabled_public_route_rejects_an_incomplete_edge() -> None:
     )
     assert result.returncode != 0
     assert "publicGateway" in result.stderr and "enabled" in result.stderr
+
+
+def test_public_edge_rejects_unverified_client_identity() -> None:
+    result = subprocess.run(  # noqa: S603 - fixed Helm binary and test-owned arguments
+        render_command("--set", "edgeClientIdentity.verified=false"),
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "verified edgeClientIdentity provider/LB contract" in result.stderr
 
 
 def test_internal_only_chart_lints_and_renders_configured_loopback_origin() -> None:
@@ -2539,9 +2565,9 @@ def test_direct_ip_edge_is_complete_tls_only_and_acme_reachable() -> None:
     assert "addresses" not in gateway["spec"]
     connection_limits = {
         "connectionLimit": {"value": 2000},
-        "maxConnectionDuration": "2h",
+        "maxConnectionDuration": "7800s",
         "maxRequestsPerConnection": 1000,
-        "maxStreamDuration": "2h",
+        "maxStreamDuration": "7500s",
     }
     timeout_limits = {
         "http": {
@@ -2566,6 +2592,7 @@ def test_direct_ip_edge_is_complete_tls_only_and_acme_reachable() -> None:
     }
     assert http_client_policy["spec"] == {
         "targetRefs": [{**target, "sectionName": "acme-http"}],
+        "clientIPDetection": {"xForwardedFor": {"numTrustedHops": 1}},
         "connection": connection_limits,
         "timeout": timeout_limits,
         "http2": {"maxConcurrentStreams": 100},

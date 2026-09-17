@@ -13,7 +13,7 @@ spec:
       sectionName: {{ .Values.publicGateway.httpsListenerName }}
   clientIPDetection:
     xForwardedFor:
-      numTrustedHops: {{ .Values.edgeRateLimit.trustedHops }}
+      numTrustedHops: {{ .Values.edgeClientIdentity.trustedHops }}
   connection:
     connectionLimit:
       value: {{ .Values.edgeConnectionLimits.connectionLimit }}
@@ -43,6 +43,9 @@ spec:
       kind: Gateway
       name: {{ .Values.publicGateway.gatewayName }}
       sectionName: {{ .Values.publicGateway.httpListenerName }}
+  clientIPDetection:
+    xForwardedFor:
+      numTrustedHops: {{ .Values.edgeClientIdentity.trustedHops }}
   connection:
     connectionLimit:
       value: {{ .Values.edgeConnectionLimits.connectionLimit }}

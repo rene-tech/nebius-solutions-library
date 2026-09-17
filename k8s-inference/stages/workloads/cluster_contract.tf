@@ -76,6 +76,7 @@ resource "terraform_data" "cluster_contract" {
     infrastructure_contract          = var.infrastructure_contract
     infrastructure_contract_sha256   = local.infrastructure_contract_sha256
     public_edge_contract             = var.public_edge_contract
+    public_edge_client_identity      = var.public_edge_client_identity
   }
 
   lifecycle {
@@ -90,7 +91,14 @@ resource "terraform_data" "cluster_contract" {
           can(cidrhost(format("%s/32", var.public_edge_contract.public_ipv4_address), 0)) &&
           !var.public_edge_contract.port_forward.enabled &&
           length(var.public_edge_contract.security_group_destination_ports) == 6 &&
-          var.acme_email != null,
+          var.acme_email != null &&
+          var.public_edge_client_identity.verified &&
+          floor(var.public_edge_client_identity.trusted_hops) == var.public_edge_client_identity.trusted_hops &&
+          var.public_edge_client_identity.trusted_hops >= 1 &&
+          var.public_edge_client_identity.trusted_hops <= 8 &&
+          can(regex("^[a-f0-9]{64}$", var.public_edge_client_identity.provider_contract_sha256)) &&
+          var.public_edge_client_identity.provider_contract_sha256 != "0000000000000000000000000000000000000000000000000000000000000000" &&
+          var.public_edge_client_identity.direct_access_excluded,
           false,
         )
         ) || (
@@ -122,7 +130,7 @@ resource "terraform_data" "cluster_contract" {
           false,
         )
       )
-      error_message = "public_edge_contract and ACME inputs do not match the exact public or internal-only topology."
+      error_message = "public_edge_contract, ACME inputs, and the digest-bound client-identity proof do not match the exact public or internal-only topology."
     }
     precondition {
       condition     = local.public_edge_enabled || !data.terraform_remote_state.foundation.outputs.grafana_publication_contract.enabled

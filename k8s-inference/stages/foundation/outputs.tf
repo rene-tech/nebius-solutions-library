@@ -21,13 +21,19 @@ output "cluster_contract" {
 output "managed_resource_count" {
   description = "Expected managed Terraform address count for plan review."
   # 29 pre-existing addresses, the Kueue release verification, and the always
-  # present jobset-system namespace. The JobSet module itself contributes five
+  # present jobset-system namespace. The six exact rate-limit-store addresses
+  # below are always present. The JobSet module itself contributes five
   # addresses only when it is enabled.
   value = (
-    31 +
+    31 + length(local.edge_rate_limit_managed_resource_addresses) +
     (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1) +
     (var.jobset.enabled ? 5 : 0)
   )
+}
+
+output "edge_rate_limit_managed_resource_addresses" {
+  description = "Closed allowlist of HA rate-limit-store Terraform addresses included in managed_resource_count."
+  value       = local.edge_rate_limit_managed_resource_addresses
 }
 
 output "jobset_contract" {

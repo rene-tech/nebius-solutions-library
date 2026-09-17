@@ -47,6 +47,15 @@ config:
                   matchLabels:
                     fs2.nebius.ai/edge-rate-limit-service: "true"
           container:
+            env:
+              - name: REDIS_TYPE
+                value: sentinel
+              # Reconnect instead of retaining a pooled connection to a
+              # demoted primary after Sentinel failover.
+              - name: REDIS_CLOSE_CONNECTION_ON_READONLY_ERROR
+                value: "true"
+              - name: REDIS_HEALTH_CHECK_ACTIVE_CONNECTION
+                value: "true"
             resources:
               requests:
                 cpu: 100m
@@ -58,11 +67,15 @@ config:
       backend:
         type: Redis
         redis:
-          url: fs2-edge-rate-limit-redis.envoy-gateway-system.svc.cluster.local:6379
+          # Envoy RLS Sentinel URL format is
+          # <master-name>,<sentinel-host:port>... . Each endpoint is a stable
+          # StatefulSet Pod identity; no Service ever balances Redis writes.
+          url: fs2-edge-rate-limit,fs2-edge-rate-limit-redis-0.fs2-edge-rate-limit-redis-headless.envoy-gateway-system.svc.cluster.local:26379,fs2-edge-rate-limit-redis-1.fs2-edge-rate-limit-redis-headless.envoy-gateway-system.svc.cluster.local:26379,fs2-edge-rate-limit-redis-2.fs2-edge-rate-limit-redis-headless.envoy-gateway-system.svc.cluster.local:26379
       timeout: 100ms
-      # Preserve customer availability during a rate-limit backend incident;
-      # the proxy connection caps and application token budgets remain active.
-      failClosed: false
+      # A total RLS/store failure must not silently turn off edge protection.
+      # Sentinel handles a single store loss without this path; fail-closed is
+      # the final bounded behavior after loss of the complete HA authority.
+      failClosed: true
       telemetry:
         metrics:
           prometheus:

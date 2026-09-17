@@ -205,6 +205,12 @@ locals {
       }
     }
     publicGateway = { enabled = local.public_edge_enabled }
+    edgeClientIdentity = {
+      verified               = var.public_edge_client_identity.verified
+      trustedHops            = var.public_edge_client_identity.trusted_hops
+      providerContractSha256 = var.public_edge_client_identity.provider_contract_sha256
+      directAccessExcluded   = var.public_edge_client_identity.direct_access_excluded
+    }
     httpRoute = {
       enabled       = local.public_edge_enabled
       authorityMode = local.public_edge_enabled ? "ip" : "dns"

@@ -101,8 +101,9 @@ resource "helm_release" "envoy_gateway" {
 
   depends_on = [
     terraform_data.cluster_contract,
-    kubernetes_deployment_v1.edge_rate_limit_redis,
-    kubernetes_service_v1.edge_rate_limit_redis,
+    kubernetes_stateful_set_v1.edge_rate_limit_redis,
+    kubernetes_service_v1.edge_rate_limit_redis_headless,
+    kubernetes_service_v1.edge_rate_limit_redis_sentinel,
   ]
 }
 

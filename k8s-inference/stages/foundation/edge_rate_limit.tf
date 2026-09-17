@@ -1,5 +1,8 @@
 locals {
-  edge_rate_limit_redis_name = "fs2-edge-rate-limit-redis"
+  edge_rate_limit_redis_name          = "fs2-edge-rate-limit-redis"
+  edge_rate_limit_redis_headless_name = "${local.edge_rate_limit_redis_name}-headless"
+  edge_rate_limit_redis_sentinel_name = "${local.edge_rate_limit_redis_name}-sentinel"
+  edge_rate_limit_redis_master_name   = "fs2-edge-rate-limit"
   # Immutable linux/amd64 manifest recorded by docker-library/repo-info for
   # Redis 8.10.0. This source pin still requires the normal independent image
   # scan and promotion gate before any deployment.
@@ -8,13 +11,106 @@ locals {
     "app.kubernetes.io/name"      = local.edge_rate_limit_redis_name
     "app.kubernetes.io/component" = "edge-rate-limit-store"
   })
+  edge_rate_limit_managed_resource_addresses = [
+    "kubernetes_config_map_v1.edge_rate_limit_redis",
+    "kubernetes_stateful_set_v1.edge_rate_limit_redis",
+    "kubernetes_service_v1.edge_rate_limit_redis_headless",
+    "kubernetes_service_v1.edge_rate_limit_redis_sentinel",
+    "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
+    "kubernetes_network_policy_v1.edge_rate_limit_redis",
+  ]
 }
 
-# Global rate-limit counters are deliberately ephemeral: losing this Pod may
-# reset a window but cannot lose customer or operator data. A PDB and rolling
-# surge avoid voluntary single-Pod gaps; Envoy retains independent connection
-# caps and application token budgets if the store is unavailable.
-resource "kubernetes_deployment_v1" "edge_rate_limit_redis" {
+# The rate-limit store is an ephemeral three-member Redis replication group
+# supervised by three co-located Sentinels. Sentinels expose one logical write
+# authority and require quorum before failover; the RLS connects to stable
+# Sentinel endpoints instead of load-balancing writes across Redis Pods.
+# Restarted members ask the live quorum for the current primary before Redis
+# starts, preventing a StatefulSet rollout from creating independent writers.
+resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
+  metadata {
+    name      = "${local.edge_rate_limit_redis_name}-bootstrap"
+    namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
+    labels    = local.edge_rate_limit_redis_labels
+  }
+
+  data = {
+    "configure.sh" = <<-EOT
+      #!/bin/sh
+      set -eu
+
+      master_name="${local.edge_rate_limit_redis_master_name}"
+      headless_service="${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"
+      sentinel_service="${local.edge_rate_limit_redis_sentinel_name}.envoy-gateway-system.svc.cluster.local"
+      bootstrap_master="${local.edge_rate_limit_redis_name}-0.$headless_service"
+      self_address="$HOSTNAME.$headless_service"
+      master_address=""
+      master_port="6379"
+
+      master_reply="$(redis-cli -h "$sentinel_service" -p 26379 --raw \
+        SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
+      if [ -n "$master_reply" ]; then
+        master_address="$(printf '%s\n' "$master_reply" | sed -n '1p')"
+        master_port="$(printf '%s\n' "$master_reply" | sed -n '2p')"
+      fi
+      # During a primary restart, keep Redis stopped long enough for the two
+      # surviving Sentinels to agree on and publish a replacement. This avoids
+      # resurrecting the old ordinal as an independent writable authority.
+      if [ -n "$master_reply" ] && [ "$master_address" = "$self_address" ]; then
+        attempts=0
+        while [ "$attempts" -lt 30 ]; do
+          sleep 1
+          master_reply="$(redis-cli -h "$sentinel_service" -p 26379 --raw \
+            SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
+          candidate="$(printf '%s\n' "$master_reply" | sed -n '1p')"
+          if [ -n "$candidate" ] && [ "$candidate" != "$self_address" ]; then
+            master_address="$candidate"
+            master_port="$(printf '%s\n' "$master_reply" | sed -n '2p')"
+            break
+          fi
+          attempts=$((attempts + 1))
+        done
+      fi
+      if [ -z "$master_address" ]; then
+        master_address="$bootstrap_master"
+        master_port="6379"
+      fi
+
+      mkdir -p /work/sentinel /data
+      printf '%s\n' \
+        'bind 0.0.0.0' \
+        'protected-mode no' \
+        'port 6379' \
+        'dir /data' \
+        'save ""' \
+        'appendonly no' \
+        'maxmemory 192mb' \
+        'maxmemory-policy allkeys-lru' \
+        'replica-read-only yes' \
+        "replica-announce-ip $self_address" \
+        'replica-announce-port 6379' > /work/redis.conf
+      if [ "$self_address" != "$master_address" ]; then
+        printf 'replicaof %s %s\n' "$master_address" "$master_port" >> /work/redis.conf
+      fi
+
+      printf '%s\n' \
+        'bind 0.0.0.0' \
+        'protected-mode no' \
+        'port 26379' \
+        'dir /work/sentinel' \
+        'sentinel resolve-hostnames yes' \
+        'sentinel announce-hostnames yes' \
+        "sentinel announce-ip $self_address" \
+        'sentinel announce-port 26379' \
+        "sentinel monitor $master_name $master_address $master_port 2" \
+        "sentinel down-after-milliseconds $master_name 5000" \
+        "sentinel failover-timeout $master_name 15000" \
+        "sentinel parallel-syncs $master_name 1" > /work/sentinel.conf
+    EOT
+  }
+}
+
+resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
   metadata {
     name      = local.edge_rate_limit_redis_name
     namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
@@ -22,18 +118,15 @@ resource "kubernetes_deployment_v1" "edge_rate_limit_redis" {
   }
 
   spec {
-    replicas = 1
+    replicas     = 3
+    service_name = local.edge_rate_limit_redis_headless_name
 
     selector {
       match_labels = local.edge_rate_limit_redis_labels
     }
 
-    strategy {
+    update_strategy {
       type = "RollingUpdate"
-      rolling_update {
-        max_surge       = 1
-        max_unavailable = 0
-      }
     }
 
     template {
@@ -57,19 +150,41 @@ resource "kubernetes_deployment_v1" "edge_rate_limit_redis" {
           }
         }
 
+        init_container {
+          name              = "configure"
+          image             = local.edge_rate_limit_redis_image
+          image_pull_policy = "IfNotPresent"
+          command           = ["/bin/sh", "/bootstrap/configure.sh"]
+
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            run_as_non_root            = true
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
+
+          volume_mount {
+            name       = "bootstrap"
+            mount_path = "/bootstrap"
+            read_only  = true
+          }
+          volume_mount {
+            name       = "configuration"
+            mount_path = "/work"
+          }
+          volume_mount {
+            name       = "data"
+            mount_path = "/data"
+          }
+        }
+
         container {
           name              = "redis"
           image             = local.edge_rate_limit_redis_image
           image_pull_policy = "IfNotPresent"
-          command           = ["redis-server"]
-          args = [
-            "--bind", "0.0.0.0",
-            "--protected-mode", "no",
-            "--save", "",
-            "--appendonly", "no",
-            "--maxmemory", "192mb",
-            "--maxmemory-policy", "allkeys-lru",
-          ]
+          command           = ["redis-server", "/work/redis.conf"]
 
           port {
             name           = "redis"
@@ -98,8 +213,8 @@ resource "kubernetes_deployment_v1" "edge_rate_limit_redis" {
           }
 
           readiness_probe {
-            tcp_socket {
-              port = 6379
+            exec {
+              command = ["redis-cli", "ping"]
             }
             initial_delay_seconds = 2
             period_seconds        = 5
@@ -108,8 +223,8 @@ resource "kubernetes_deployment_v1" "edge_rate_limit_redis" {
           }
 
           liveness_probe {
-            tcp_socket {
-              port = 6379
+            exec {
+              command = ["redis-cli", "ping"]
             }
             initial_delay_seconds = 10
             period_seconds        = 10
@@ -118,20 +233,98 @@ resource "kubernetes_deployment_v1" "edge_rate_limit_redis" {
           }
 
           volume_mount {
+            name       = "configuration"
+            mount_path = "/work"
+          }
+          volume_mount {
             name       = "data"
             mount_path = "/data"
+          }
+        }
+
+        container {
+          name              = "sentinel"
+          image             = local.edge_rate_limit_redis_image
+          image_pull_policy = "IfNotPresent"
+          command           = ["redis-server", "/work/sentinel.conf", "--sentinel"]
+
+          port {
+            name           = "sentinel"
+            container_port = 26379
+            protocol       = "TCP"
+          }
+
+          resources {
+            requests = {
+              cpu    = "25m"
+              memory = "32Mi"
+            }
+            limits = {
+              cpu    = "125m"
+              memory = "128Mi"
+            }
+          }
+
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            run_as_non_root            = true
+            capabilities {
+              drop = ["ALL"]
+            }
+          }
+
+          readiness_probe {
+            exec {
+              command = ["redis-cli", "-p", "26379", "ping"]
+            }
+            initial_delay_seconds = 2
+            period_seconds        = 5
+            timeout_seconds       = 2
+            failure_threshold     = 3
+          }
+
+          liveness_probe {
+            exec {
+              command = ["redis-cli", "-p", "26379", "ping"]
+            }
+            initial_delay_seconds = 10
+            period_seconds        = 10
+            timeout_seconds       = 2
+            failure_threshold     = 3
+          }
+
+          volume_mount {
+            name       = "configuration"
+            mount_path = "/work"
           }
         }
 
         topology_spread_constraint {
           max_skew           = 1
           topology_key       = "kubernetes.io/hostname"
-          when_unsatisfiable = "ScheduleAnyway"
+          when_unsatisfiable = "DoNotSchedule"
           label_selector {
             match_labels = local.edge_rate_limit_redis_labels
           }
         }
 
+        volume {
+          name = "bootstrap"
+          config_map {
+            name         = kubernetes_config_map_v1.edge_rate_limit_redis.metadata[0].name
+            # 0444 in the Kubernetes API's decimal representation. The init
+            # container invokes the file through /bin/sh, so execute bits are
+            # intentionally unnecessary.
+            default_mode = 292
+          }
+        }
+        volume {
+          name = "configuration"
+          empty_dir {
+            size_limit = "16Mi"
+          }
+        }
         volume {
           name = "data"
           empty_dir {
@@ -141,11 +334,46 @@ resource "kubernetes_deployment_v1" "edge_rate_limit_redis" {
       }
     }
   }
+
+  depends_on = [
+    kubernetes_service_v1.edge_rate_limit_redis_headless,
+    kubernetes_service_v1.edge_rate_limit_redis_sentinel,
+    kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis,
+    kubernetes_network_policy_v1.edge_rate_limit_redis,
+  ]
 }
 
-resource "kubernetes_service_v1" "edge_rate_limit_redis" {
+resource "kubernetes_service_v1" "edge_rate_limit_redis_headless" {
   metadata {
-    name      = local.edge_rate_limit_redis_name
+    name      = local.edge_rate_limit_redis_headless_name
+    namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
+    labels    = local.edge_rate_limit_redis_labels
+  }
+
+  spec {
+    cluster_ip                  = "None"
+    publish_not_ready_addresses = true
+    selector                    = local.edge_rate_limit_redis_labels
+    port {
+      name        = "redis"
+      port        = 6379
+      target_port = "redis"
+      protocol    = "TCP"
+    }
+    port {
+      name        = "sentinel"
+      port        = 26379
+      target_port = "sentinel"
+      protocol    = "TCP"
+    }
+  }
+}
+
+# Bootstrap queries use only Ready Sentinel endpoints. RLS uses each stable Pod
+# DNS name directly, so this Service never load-balances Redis writes.
+resource "kubernetes_service_v1" "edge_rate_limit_redis_sentinel" {
+  metadata {
+    name      = local.edge_rate_limit_redis_sentinel_name
     namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
     labels    = local.edge_rate_limit_redis_labels
   }
@@ -153,9 +381,9 @@ resource "kubernetes_service_v1" "edge_rate_limit_redis" {
   spec {
     selector = local.edge_rate_limit_redis_labels
     port {
-      name        = "redis"
-      port        = 6379
-      target_port = "redis"
+      name        = "sentinel"
+      port        = 26379
+      target_port = "sentinel"
       protocol    = "TCP"
     }
   }
@@ -169,7 +397,7 @@ resource "kubernetes_pod_disruption_budget_v1" "edge_rate_limit_redis" {
   }
 
   spec {
-    min_available = "1"
+    min_available = "2"
     selector {
       match_labels = local.edge_rate_limit_redis_labels
     }
@@ -199,6 +427,65 @@ resource "kubernetes_network_policy_v1" "edge_rate_limit_redis" {
       }
       ports {
         port     = "6379"
+        protocol = "TCP"
+      }
+      ports {
+        port     = "26379"
+        protocol = "TCP"
+      }
+    }
+
+    ingress {
+      from {
+        pod_selector {
+          match_labels = local.edge_rate_limit_redis_labels
+        }
+      }
+      ports {
+        port     = "6379"
+        protocol = "TCP"
+      }
+      ports {
+        port     = "26379"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        pod_selector {
+          match_labels = local.edge_rate_limit_redis_labels
+        }
+      }
+      ports {
+        port     = "6379"
+        protocol = "TCP"
+      }
+      ports {
+        port     = "26379"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "kube-system"
+          }
+        }
+        pod_selector {
+          match_labels = {
+            "k8s-app" = "kube-dns"
+          }
+        }
+      }
+      ports {
+        port     = "53"
+        protocol = "UDP"
+      }
+      ports {
+        port     = "53"
         protocol = "TCP"
       }
     }

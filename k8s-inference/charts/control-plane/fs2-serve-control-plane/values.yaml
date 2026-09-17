@@ -640,13 +640,14 @@ envoyProxy:
           gateway.envoyproxy.io/owning-gateway-namespace: fs2-system
 
 # Bound downstream connection and stream occupancy without shortening the
-# normal synchronous API timeout. Active speech streams may run for up to two
-# hours; idle streams and incomplete request bodies are released earlier.
+# supported 7,500-second active audio stream. The connection lifetime includes
+# five minutes of transport/setup headroom; idle streams and incomplete request
+# bodies are released earlier.
 edgeConnectionLimits:
   connectionLimit: 2000
-  maxConnectionDuration: 2h
+  maxConnectionDuration: 7800s
   maxRequestsPerConnection: 1000
-  maxStreamDuration: 2h
+  maxStreamDuration: 7500s
   requestReceivedTimeout: 60s
   idleTimeout: 5m
   streamIdleTimeout: 5m
@@ -702,13 +703,22 @@ publicTls:
     accountPrivateKeySecretName: fs2-serve-ip-acme-account
     profile: shortlived
 
+# Public client identity is deliberately unusable by default. A release owner
+# must supply a digest-bound provider/LB contract proving which hop appends or
+# overwrites X-Forwarded-For and that direct access cannot forge that position.
+# The templates fail before rendering a public Gateway until all gates hold.
+edgeClientIdentity:
+  verified: false
+  trustedHops: 0
+  providerContractSha256: ""
+  directAccessExcluded: false
+
 # Shared edge abuse protection. Envoy Gateway's global rate-limit service uses
-# a foundation-owned Redis backend, so every proxy replica observes the same
-# counters. The trusted hop is the reviewed external load-balancer hop; Envoy
-# ignores caller-prepended X-Forwarded-For entries beyond that boundary.
+# the foundation-owned Sentinel topology, so every proxy observes one logical
+# counter authority. Both the HTTP redirect/ACME listener and HTTPS listener
+# receive the same per-client baseline; /admin has an additional lower budget.
 edgeRateLimit:
   enabled: true
-  trustedHops: 1
   sourceCidr: 0.0.0.0/0
   requests: 200
   unit: Second

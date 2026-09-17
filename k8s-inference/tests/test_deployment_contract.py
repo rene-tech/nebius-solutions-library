@@ -522,15 +522,31 @@ class DeploymentContractTests(unittest.TestCase):
                 "mode": "public",
                 "source_cidrs": ["192.0.2.0/24"],
                 "acme_email": "operator@example.invalid",
+                "client_identity": {
+                    "verified": True,
+                    "trusted_hops": 1,
+                    "provider_contract_sha256": "a" * 64,
+                    "direct_access_excluded": True,
+                },
             },
         }
         variable_file = self._write_configuration("alertmanager-contract", deployment)
         outputs = self._planned_outputs(variable_file, "alertmanager-contract")
 
         expected = deployment["observability"]["alertmanager"]
+        expected_identity = deployment["edge"]["client_identity"]
         self.assertEqual(
             outputs["deployment_contract"]["stages"]["foundation"]["alertmanager"],
             expected,
+        )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["workloads"]
+            ["public_edge_client_identity"],
+            expected_identity,
+        )
+        self.assertEqual(
+            outputs["effective_configuration"]["edge_client_identity"],
+            expected_identity,
         )
         self.assertEqual(
             outputs["effective_configuration"]["observability"]["alertmanager"],
@@ -540,6 +556,25 @@ class DeploymentContractTests(unittest.TestCase):
                 "storage_class_name": "compute-csi-default-sc",
                 "storage_size_gib": 20,
             },
+        )
+
+    def test_public_edge_rejects_unproven_client_identity(self) -> None:
+        deployment = {
+            "schema_version": 1,
+            "name": "fs2-unproven-public-client-identity",
+            "target": self.catalog_target(),
+            "edge": {
+                "mode": "public",
+                "source_cidrs": ["192.0.2.0/24"],
+                "acme_email": "operator@example.invalid",
+            },
+        }
+        variable_file = self._write_configuration("unproven-client-identity", deployment)
+        result, _ = self._plan_file(variable_file, "unproven-client-identity")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "verified digest-bound client-identity contract",
+            f"{result.stdout}\n{result.stderr}",
         )
 
     def test_request_debug_capture_is_an_opt_in_tfvars_workload_setting(self) -> None:

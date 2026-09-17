@@ -1454,6 +1454,35 @@ variable "public_edge_contract" {
   }
 }
 
+variable "public_edge_client_identity" {
+  description = "Fail-closed XFF trust proof. Public edge rendering is forbidden until a provider/LB contract digest and direct-access exclusion are supplied."
+  type = object({
+    verified                 = bool
+    trusted_hops             = number
+    provider_contract_sha256 = string
+    direct_access_excluded   = bool
+  })
+  default = {
+    verified                 = false
+    trusted_hops             = 0
+    provider_contract_sha256 = ""
+    direct_access_excluded   = false
+  }
+  nullable = false
+
+  validation {
+    condition = !var.public_edge_client_identity.verified || (
+      floor(var.public_edge_client_identity.trusted_hops) == var.public_edge_client_identity.trusted_hops &&
+      var.public_edge_client_identity.trusted_hops >= 1 &&
+      var.public_edge_client_identity.trusted_hops <= 8 &&
+      can(regex("^[a-f0-9]{64}$", var.public_edge_client_identity.provider_contract_sha256)) &&
+      var.public_edge_client_identity.provider_contract_sha256 != "0000000000000000000000000000000000000000000000000000000000000000" &&
+      var.public_edge_client_identity.direct_access_excluded
+    )
+    error_message = "A verified public_edge_client_identity requires one to eight trusted hops, a nonzero provider contract SHA-256, and direct-access exclusion."
+  }
+}
+
 variable "acme_email" {
   description = "Contact for the selected IP ACME Issuer."
   type        = string

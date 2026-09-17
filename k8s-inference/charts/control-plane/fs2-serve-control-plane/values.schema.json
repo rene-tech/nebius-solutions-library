@@ -25,6 +25,7 @@
     "publicGateway",
     "envoyProxy",
     "edgeConnectionLimits",
+    "edgeClientIdentity",
     "edgeRateLimit",
     "publicLoadBalancer",
     "publicTls",
@@ -2069,11 +2070,37 @@
       ],
       "additionalProperties": false
     },
+    "edgeClientIdentity": {
+      "type": "object",
+      "required": [
+        "verified",
+        "trustedHops",
+        "providerContractSha256",
+        "directAccessExcluded"
+      ],
+      "properties": {
+        "verified": {
+          "type": "boolean"
+        },
+        "trustedHops": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 8
+        },
+        "providerContractSha256": {
+          "type": "string",
+          "pattern": "^$|^[a-f0-9]{64}$"
+        },
+        "directAccessExcluded": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
     "edgeRateLimit": {
       "type": "object",
       "required": [
         "enabled",
-        "trustedHops",
         "sourceCidr",
         "requests",
         "unit",
@@ -2083,9 +2110,6 @@
       "properties": {
         "enabled": {
           "type": "boolean"
-        },
-        "trustedHops": {
-          "const": 1
         },
         "sourceCidr": {
           "const": "0.0.0.0/0"

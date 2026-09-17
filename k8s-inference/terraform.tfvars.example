@@ -313,6 +313,14 @@ deployment = {
     source_cidrs     = ["0.0.0.0/0"]
     acme_email       = "operator@example.com"
     acme_environment = "production"
+    # Public mode remains plan-blocked until an authoritative load-balancer
+    # contract proves the XFF hop and that clients cannot reach Envoy directly.
+    client_identity = {
+      verified                 = false
+      trusted_hops             = 0
+      provider_contract_sha256 = ""
+      direct_access_excluded   = false
+    }
   }
 
   observability = {
