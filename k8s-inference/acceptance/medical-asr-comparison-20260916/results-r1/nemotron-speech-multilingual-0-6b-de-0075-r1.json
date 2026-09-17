@@ -1,0 +1,115 @@
+{
+  "case": "de-0075",
+  "language": "de",
+  "audio_seconds": 10.83,
+  "source_sha256": "f3e74643530840907e5b2c31b6dc3792c388ce23deec8e7802ba725996941bfe",
+  "reference": "Aber er hat wahnsinnig geblutet und dann noch der Sprung? Das kann man doch gar nicht überleben. Oder? Herr Doktor, wird er überleben? Ich fühle mich so schuldig …",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 75
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:45:31.410624+00:00",
+  "submit_status": 202,
+  "operation_id": "b8fbf912-a88e-4800-b473-c05e93c6bbea",
+  "operation": {
+    "id": "b8fbf912-a88e-4800-b473-c05e93c6bbea",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-986ceb88efa64ddfa7454a5bfd4f87c3",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:45:32.045707Z",
+    "available_at": "2026-09-16T21:45:32.045707Z",
+    "deadline_at": "2026-09-16T23:45:32.039380Z",
+    "activation_started_at": "2026-09-16T21:45:32.068811Z",
+    "ready_at": "2026-09-16T21:45:32.271347Z",
+    "started_at": "2026-09-16T21:45:32.284050Z",
+    "completed_at": "2026-09-16T21:45:33.429423Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:45:32.045707Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.22564,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 10.83
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.531974857673049,
+  "text": "Aber er hat wahnsinnig geblutet und dann noch der SprungDas kann man doch gar nicht überleben, oder Herr Doktor, wird er überleben. Ich fühle mich so schuldig",
+  "result_audio_seconds": 10.83,
+  "processing_seconds": 0.6297871260903776,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "c7c6c2e30090cc444e603c938c47382a91c399cf10bb0aba72aeb3dcaa2de62b",
+  "quality": {
+    "reference_words": 28,
+    "hypothesis_words": 27,
+    "wer": 0.07142857142857142,
+    "substitutions": 1,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 26,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 9,
+        "reference": "sprung"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 10,
+        "reference": "das",
+        "recognized": "sprungdas"
+      }
+    ],
+    "reference_characters": 129,
+    "character_errors": 0,
+    "cer": 0.0
+  },
+  "finished_at": "2026-09-16T21:45:33.943578+00:00"
+}

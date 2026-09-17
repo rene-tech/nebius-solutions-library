@@ -1,0 +1,129 @@
+{
+  "case": "de-1052",
+  "language": "de",
+  "audio_seconds": 10.95,
+  "source_sha256": "a411087e591c4625b0363912b64d4b222cb144fc596dc970321b74c498dece6f",
+  "reference": "Muss ich ja! Alles Gute, Herr Trabitz. So, und das ist der Herr … Die junge Frau kenn ich! Das ist die Frau Steffens. Die hat heute Morgen bei Ihnen Blut abgenommen.",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 1052
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:47:05.481866+00:00",
+  "submit_status": 202,
+  "operation_id": "d7603347-2c79-49ea-95a5-efe854c25620",
+  "operation": {
+    "id": "d7603347-2c79-49ea-95a5-efe854c25620",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-19d6f12cf06a43bd91390576706f109d",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:47:05.948496Z",
+    "available_at": "2026-09-16T21:47:05.948496Z",
+    "deadline_at": "2026-09-16T23:47:05.939319Z",
+    "activation_started_at": "2026-09-16T21:47:05.975855Z",
+    "ready_at": "2026-09-16T21:47:06.139668Z",
+    "started_at": "2026-09-16T21:47:06.142754Z",
+    "completed_at": "2026-09-16T21:47:07.239927Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:47:05.948496Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.191172,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 10.95
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.380974866449833,
+  "text": "Muss ich ja alles Guterabitz so und das ist der Herr, die junge Frau kenne ich. Das ist die Frau Steffens, die hat heute morgen bei Ihnen Blut",
+  "result_audio_seconds": 10.95,
+  "processing_seconds": 0.6432773200795054,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "ca142053f543f9fd4f54cb221b79ac03492ebe9fd9e028354895a9c0868667f6",
+  "quality": {
+    "reference_words": 31,
+    "hypothesis_words": 28,
+    "wer": 0.16129032258064516,
+    "substitutions": 2,
+    "deletions": 3,
+    "insertions": 0,
+    "correct": 26,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 4,
+        "reference": "gute"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 5,
+        "reference": "herr"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 6,
+        "reference": "trabitz",
+        "recognized": "guterabitz"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 16,
+        "reference": "kenn",
+        "recognized": "kenne"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 30,
+        "reference": "abgenommen"
+      }
+    ],
+    "reference_characters": 126,
+    "character_errors": 16,
+    "cer": 0.12698412698412698
+  },
+  "finished_at": "2026-09-16T21:47:07.863859+00:00"
+}

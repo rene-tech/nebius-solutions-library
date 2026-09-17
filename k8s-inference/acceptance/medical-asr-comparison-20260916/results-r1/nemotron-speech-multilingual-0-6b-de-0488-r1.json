@@ -1,0 +1,119 @@
+{
+  "case": "de-0488",
+  "language": "de",
+  "audio_seconds": 11.64,
+  "source_sha256": "e5c629b041e19d4b93313a7f6f7e888de76b0eeb96a58c1bb89f3ac1029fd919",
+  "reference": "oder Bären die geplante Untersuchung vorspielen … … das dürfte wohl kaum das Jahresbudget sprengen. Frau Dierhof, Sie möchten noch etwas einwenden? Nein, nein. Ich möchte auf einen weiteren Punkt",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 488
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:14.576968+00:00",
+  "submit_status": 202,
+  "operation_id": "34f6f7dd-190b-424c-aa0a-55f057bb5cf0",
+  "operation": {
+    "id": "34f6f7dd-190b-424c-aa0a-55f057bb5cf0",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-e6fbf9fd12834c97809423119193c7d6",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:15.071176Z",
+    "available_at": "2026-09-16T21:46:15.071176Z",
+    "deadline_at": "2026-09-16T23:46:15.063267Z",
+    "activation_started_at": "2026-09-16T21:46:15.097492Z",
+    "ready_at": "2026-09-16T21:46:15.261081Z",
+    "started_at": "2026-09-16T21:46:15.265956Z",
+    "completed_at": "2026-09-16T21:46:16.294173Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:15.071176Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.189905,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 11.64
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.81579696200788,
+  "text": "oder Bären. Die geplante Untersuchung vorspielen. Das dürfte wohl kaum das Jahresbudget springen. Frau Dierhoff, Sie möchten noch etwas einwenden. Nein, nein, ich möchte auf einen weiteren",
+  "result_audio_seconds": 11.64,
+  "processing_seconds": 0.6766120630782098,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "4aa8bd4b9600af47ceb820b17e97d5f0ecb6c49936941418f347674569fd55eb",
+  "quality": {
+    "reference_words": 28,
+    "hypothesis_words": 27,
+    "wer": 0.10714285714285714,
+    "substitutions": 2,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 25,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 12,
+        "reference": "sprengen",
+        "recognized": "springen"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 14,
+        "reference": "dierhof",
+        "recognized": "dierhoff"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 27,
+        "reference": "punkt"
+      }
+    ],
+    "reference_characters": 159,
+    "character_errors": 7,
+    "cer": 0.0440251572327044
+  },
+  "finished_at": "2026-09-16T21:46:17.393760+00:00"
+}

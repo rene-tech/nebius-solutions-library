@@ -1,0 +1,115 @@
+{
+  "case": "de-0451",
+  "language": "de",
+  "audio_seconds": 10.24,
+  "source_sha256": "09206d21e39da39a8eb5b4976abf770fa55eeb8873874f4b2b3c0f0e33de500c",
+  "reference": "Sie studiert Pflegemanagement. Ich weiß, wenn ich abends schlafen gehe, kann ich mit einem guten Gewissen schlafen.",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 451
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:11.008886+00:00",
+  "submit_status": 202,
+  "operation_id": "d58e1940-42c0-4aa3-b118-2df8df19588a",
+  "operation": {
+    "id": "d58e1940-42c0-4aa3-b118-2df8df19588a",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-521a4a53a9c640eb91060b95232527a6",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:11.783940Z",
+    "available_at": "2026-09-16T21:46:11.783940Z",
+    "deadline_at": "2026-09-16T23:46:11.753753Z",
+    "activation_started_at": "2026-09-16T21:46:11.803145Z",
+    "ready_at": "2026-09-16T21:46:12.018693Z",
+    "started_at": "2026-09-16T21:46:12.024746Z",
+    "completed_at": "2026-09-16T21:46:12.961926Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:11.783940Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.234753,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 10.24
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.7845521038398147,
+  "text": "studierten Pflegemanagement. Ich weiß, wenn ich abends schlafen gehe, kann ich mit einem guten Gewissen schlafen.",
+  "result_audio_seconds": 10.24,
+  "processing_seconds": 0.5926826929207891,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "e61598da9349b75d13deaea817043d70985198849bf0699e7204a7371c09e6ee",
+  "quality": {
+    "reference_words": 17,
+    "hypothesis_words": 16,
+    "wer": 0.11764705882352941,
+    "substitutions": 1,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 15,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 0,
+        "reference": "sie"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 1,
+        "reference": "studiert",
+        "recognized": "studierten"
+      }
+    ],
+    "reference_characters": 95,
+    "character_errors": 5,
+    "cer": 0.05263157894736842
+  },
+  "finished_at": "2026-09-16T21:46:13.794488+00:00"
+}

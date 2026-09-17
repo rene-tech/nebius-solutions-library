@@ -1,0 +1,180 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "boltz2-bir-h100",
+    "namespace": "fs2-bioir-boltz2",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "boltz2",
+      "variant": "bir"
+    }
+  },
+  "spec": {
+    "automountServiceAccountToken": false,
+    "restartPolicy": "Never",
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00fkt1bsa4ec657sn"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "securityContext": {
+      "runAsUser": 1000,
+      "runAsGroup": 1000,
+      "runAsNonRoot": true,
+      "fsGroup": 1000,
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      },
+      "fsGroupChangePolicy": "OnRootMismatch"
+    },
+    "containers": [
+      {
+        "name": "boltz2",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+        "imagePullPolicy": "IfNotPresent",
+        "env": [
+          {
+            "name": "HF_HOME",
+            "value": "/models/huggingface"
+          },
+          {
+            "name": "HF_HUB_CACHE",
+            "value": "/models/huggingface/hub"
+          },
+          {
+            "name": "HF_HUB_DISABLE_XET",
+            "value": "1"
+          },
+          {
+            "name": "CUDA_CACHE_PATH",
+            "value": "/models/eval-cache/cuda"
+          },
+          {
+            "name": "TORCH_EXTENSIONS_DIR",
+            "value": "/models/eval-cache/torch-extensions"
+          },
+          {
+            "name": "TORCHINDUCTOR_CACHE_DIR",
+            "value": "/models/eval-cache/torchinductor"
+          },
+          {
+            "name": "TRITON_CACHE_DIR",
+            "value": "/models/eval-cache/triton"
+          },
+          {
+            "name": "XDG_CACHE_HOME",
+            "value": "/models/eval-cache/xdg"
+          },
+          {
+            "name": "BOLTZ_SOURCE_REVISION",
+            "value": "401c6fcc4a43925bcf1342b6c0979b060130b396"
+          },
+          {
+            "name": "BOLTZ_MODEL_REPOSITORY",
+            "value": "boltz-community/boltz-2"
+          },
+          {
+            "name": "BOLTZ_MODEL_REVISION",
+            "value": "6fdef46d763fee7fbb83ca5501ccceff43b85607"
+          },
+          {
+            "name": "BOLTZ_CONF_SHA256",
+            "value": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1"
+          },
+          {
+            "name": "BOLTZ_AFF_SHA256",
+            "value": "dcc5cd3722b1c9eaa34267e4ae32f55cbbf1963f4c19319381ccfa30fdd2ca9e"
+          },
+          {
+            "name": "BOLTZ_MOLS_SHA256",
+            "value": "39e076d96dbec6b4e86982bbda16f3a53a2a60c9bdc17828d88f6f9a0c7d1fd7"
+          },
+          {
+            "name": "BOLTZ2_CKPT",
+            "value": "/models/boltz2_conf.ckpt"
+          },
+          {
+            "name": "BOLTZ_MOL_DIR",
+            "value": "/models/mols"
+          },
+          {
+            "name": "BIOIR_CACHE",
+            "value": "/models/bioir-cache"
+          }
+        ],
+        "ports": [
+          {
+            "containerPort": 8000,
+            "name": "http"
+          }
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "12",
+            "memory": "96Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "limits": {
+            "cpu": "32",
+            "memory": "192Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "readinessProbe": {
+          "httpGet": {
+            "path": "/v1/health/ready",
+            "port": "http"
+          },
+          "periodSeconds": 5,
+          "timeoutSeconds": 3,
+          "failureThreshold": 360
+        },
+        "volumeMounts": [
+          {
+            "name": "cache",
+            "mountPath": "/models"
+          },
+          {
+            "name": "dshm",
+            "mountPath": "/dev/shm"
+          }
+        ],
+        "command": [
+          "sh",
+          "-c",
+          "python /models/gpu_preflight.py && exec python -m uvicorn bir_worker:app --app-dir /models --host 0.0.0.0 --port 8000"
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "cache",
+        "persistentVolumeClaim": {
+          "claimName": "evaluation-cache"
+        }
+      },
+      {
+        "name": "dshm",
+        "emptyDir": {
+          "medium": "Memory",
+          "sizeLimit": "16Gi"
+        }
+      }
+    ]
+  }
+}

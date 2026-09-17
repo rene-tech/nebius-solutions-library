@@ -1,0 +1,583 @@
+{
+  "schema": "clinical-documentation/v4",
+  "kind": "consultation",
+  "language": "de",
+  "transcript_sha256": "c0c0aeebaef6383955d8fb4e98d34820d0a90c675302ec6bbb522bab4bb729e8",
+  "facts": [
+    {
+      "id": "F0001",
+      "section": "history",
+      "statement": "Der Patient Jens Mager berichtet seit etwa sechs Wochen über Herzrasen, das plötzlich in Ruhe auftritt, mit einer Frequenz von bis zu 160 Schlägen pro Minute.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S1",
+          "quote": "Sie arbeiten als Vertretung des Hausarztes in der Praxis von Doktor Berg. Der Patient Jens Mager stellt sich heute mit Herzbeschwerden bei Ihnen vor.  Vor der körperlichen Untersuchung möchten Sie mit ihm eingespräch führen. Was führt Sie her?  Ich habe seit einer Weile immer Herzrasen und zwar total heftig, also das pumpt wie verrückt und und und ein",
+          "spans": [
+            {
+              "start": 0,
+              "end": 353
+            }
+          ]
+        },
+        {
+          "source_id": "S2",
+          "quote": " ganzer Brustkorb zittert, das fühlt sich auch nicht so gut an, als müsste das irgendwie gegen ein Widerstand irgendwie kämpfen und und jetzt nicht wenn ich gerannt bin oder so.  Ich sitze auf dem Sofa und plötzlich gebe das los, also so bisschen bringt unangenehm in der Tat, also in Ruhe pocht ihr Herz wie gegen einen Widerstand und und heftig sehr sehr",
+          "spans": [
+            {
+              "start": 353,
+              "end": 709
+            }
+          ]
+        },
+        {
+          "source_id": "S3",
+          "quote": " schnell.  Ja, haben Sie mal gemessen.  Ja hundertsechzig Schläge pro Minute.  Seit wann sagen Sie sechs Wochen vielleicht, ich kann es nicht genau sagen, aber so seit einer Weile fällt mir das auf, also auch abends, wenn ich verso einzuschlafen oder so plötzlich nehme ich das richtig wahr, dass auch sonst eine gewisse Unruhe in ihnen steckt. Es kann sein,",
+          "spans": [
+            {
+              "start": 709,
+              "end": 1067
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0001",
+        "verdict": "supported",
+        "reason": "Der Patient berichtet über Herzrasen in Ruhe, das plötzlich auftritt, und nennt explizit eine Herzfrequenz von 160 Schlägen pro Minute sowie eine Dauer von etwa sechs Wochen. Diese Angaben sind direkt in den Zitaten aus S1, S2 und S3 enthalten und werden im Kontext klar zugeordnet."
+      }
+    },
+    {
+      "id": "F0002",
+      "section": "history",
+      "statement": "Das Herzrasen wird beschrieben als heftiges Pochen, als müsse das Herz gegen einen Widerstand arbeiten, begleitet von Zittern des gesamten Brustkorbs.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " ganzer Brustkorb zittert, das fühlt sich auch nicht so gut an, als müsste das irgendwie gegen ein Widerstand irgendwie kämpfen und und jetzt nicht wenn ich gerannt bin oder so.  Ich sitze auf dem Sofa und plötzlich gebe das los, also so bisschen bringt unangenehm in der Tat, also in Ruhe pocht ihr Herz wie gegen einen Widerstand und und heftig sehr sehr",
+          "spans": [
+            {
+              "start": 353,
+              "end": 709
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0002",
+        "verdict": "supported",
+        "reason": "Die Aussage über das Herzrasen als heftiges Pochen, als müsse das Herz gegen einen Widerstand arbeiten, mit Zittern des gesamten Brustkorbs wird durch die zitierte Passage aus S2 direkt belegt. Die Beschreibung im Quelltext ('pochnen wie gegen einen Widerstand', 'heftig sehr sehr', 'ganzer Brustkorb zittert') entspricht inhaltlich exakt der behaupteten Tatsache und befindet sich im richtigen Kontext der Anamnese."
+      }
+    },
+    {
+      "id": "F0003",
+      "section": "history",
+      "statement": "Die Beschwerden treten auch abends beim Einschlafen auf und sind mit einer allgemeinen Unruhe verbunden.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " schnell.  Ja, haben Sie mal gemessen.  Ja hundertsechzig Schläge pro Minute.  Seit wann sagen Sie sechs Wochen vielleicht, ich kann es nicht genau sagen, aber so seit einer Weile fällt mir das auf, also auch abends, wenn ich verso einzuschlafen oder so plötzlich nehme ich das richtig wahr, dass auch sonst eine gewisse Unruhe in ihnen steckt. Es kann sein,",
+          "spans": [
+            {
+              "start": 709,
+              "end": 1067
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0003",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Beschwerden abends beim Einschlafen auftreten und mit einer allgemeinen Unruhe verbunden sind, wird durch die direkte Patientenäußerung gestützt: 'also auch abends, wenn ich verso einzuschlafen oder so plötzlich nehme ich das richtig wahr, dass auch sonst eine gewisse Unruhe in ihnen steckt.' Dies entspricht inhaltlich exakt der behaupteten Tatsache."
+      }
+    },
+    {
+      "id": "F0004",
+      "section": "history",
+      "statement": "Der Patient bemerkt eine emotionale Veränderung mit Reizbarkeit und geringer Stressresistenz, die sich von der früheren depressiven Episode unterscheidet.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " ich hatte auch mal eine depressive Episode vor ein paar Jahren, da hat ne aber war Trennung und alles Mögliche so und und das hatten ganz konkreten Grund und es wurde behandelt und es ging auch wieder weg und seitdem gab es das nie, aber ich habe mich gewundert eben oder habe mich das gefragt, weil ich auch emotional irgendwie seltsam unterwegs bin gerade.",
+          "spans": [
+            {
+              "start": 1426,
+              "end": 1785
+            }
+          ]
+        },
+        {
+          "source_id": "S6",
+          "quote": " Seltsam unterwegs heißt dünn häufig gereizt, also ganz ganz wenig Kapazität für irgendwie Stress oder so emotional so ein bisschen von der Rolle damals hat sich irgendwas verändert vor sechs Wochen, was sie nicht so richtig benennen können und was sich auch anders anfühlt als die Depression vor einigen Jahren und sie haben sich Sorge um ihr Herz gemacht,",
+          "spans": [
+            {
+              "start": 1785,
+              "end": 2142
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0004",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient eine emotionale Veränderung mit Reizbarkeit und geringer Stressresistenz bemerkt, die sich von der früheren depressiven Episode unterscheidet, wird durch die Zitate aus S5 und S6 gestützt. In S5 beschreibt der Patient die frühere depressive Episode mit klarem Auslöser und vollständiger Remission, während er in S6 aktuelle emotionale Veränderungen als 'seltsam unterwegs', 'häufig gereizt', mit 'ganz wenig Kapazität für Stress' schildert und explizit betont, dass sich dies 'anders anfühlt als die Depression vor einigen Jahren'. Diese direkten Äußerungen belegen die Differenzierung und die beschriebenen Symptome."
+      }
+    },
+    {
+      "id": "F0005",
+      "section": "history",
+      "statement": "Die depressive Episode vor einigen Jahren war auf eine Trennung zurückzuführen, wurde behandelt und ist seitdem nicht wieder aufgetreten.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " ich hatte auch mal eine depressive Episode vor ein paar Jahren, da hat ne aber war Trennung und alles Mögliche so und und das hatten ganz konkreten Grund und es wurde behandelt und es ging auch wieder weg und seitdem gab es das nie, aber ich habe mich gewundert eben oder habe mich das gefragt, weil ich auch emotional irgendwie seltsam unterwegs bin gerade.",
+          "spans": [
+            {
+              "start": 1426,
+              "end": 1785
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0005",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die depressive Episode vor einigen Jahren auf eine Trennung zurückzuführen war, behandelt wurde und seither nicht wieder aufgetreten ist, wird durch die direkte Aussage des Patienten im Zitat aus S5 gestützt: 'da hat ne aber war Trennung und alles Mögliche so und und das hatten ganz konkreten Grund und es wurde behandelt und es ging auch wieder weg und seitdem gab es das nie'. Damit sind alle Teile der Behauptung im Kontext der Äußerung enthalten und eindeutig belegt."
+      }
+    },
+    {
+      "id": "F0007",
+      "section": "history",
+      "statement": "Es besteht nächtliches Schwitzen, sodass das T-Shirt morgens ausgewrungen werden könnte.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " sonst irgendwelche Ideen.  Okay, also um ihr Herz sollten wir uns kümmern und möglichst eine Erklärung finden, wie es mit Ihrem Schlaf schlecht.  Ich weiß nicht, wann ich es letzte Mal mehr als fünf Stunden ein Stück geschlafen habe und ich schwitze auch absurd viel nachts.  Ich kann mein T Shirt morgens ausbringen, damit die Wohnung putzen, wie ist der",
+          "spans": [
+            {
+              "start": 2142,
+              "end": 2498
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0007",
+        "verdict": "supported",
+        "reason": "Die Aussage über nächtliches Schwitzen, bei dem das T-Shirt morgens ausgewrungen werden könnte, wird durch die direkte Aussage des Patienten im Zitat unterstützt: 'ich schwitze auch absurd viel nachts. Ich kann mein T Shirt morgens ausbringen, damit die Wohnung putzen'. Dies entspricht inhaltlich und wörtlich der behaupteten Tatsache, wobei die Formulierung 'ausbringen' als umgangssprachliche Variante von 'auswringen' im Kontext verständlich ist und die Intensität des Schwitzens bekräftigt."
+      }
+    },
+    {
+      "id": "F0008",
+      "section": "history",
+      "statement": "Der Appetit ist gut, es besteht jedoch ein unerklärlicher Gewichtsverlust von vier Kilogramm in sechs Wochen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " Appetit?  Gut, gut, ich hab ich habe viel Hunger und das Gewicht.  Es sind vier Kilo weg in den letzten sechs Wochen, obwohl sie viel Appetit und vier Kilo sind für mich eine ganze Menge ehrlich gesagt.  Ja vielleicht erzählen Sie mir noch zwei, drei Dinge aus Ihrem sonstigen Leben, wenn Sie mögen.  Was machen Sie genau beruflich?  Ich studiere",
+          "spans": [
+            {
+              "start": 2498,
+              "end": 2845
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0008",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Appetit gut ist und ein unerklärlicher Gewichtsverlust von vier Kilogramm in sechs Wochen vorliegt, wird durch die direkte Patientenäußerung im Zitat aus S8 belegt: 'Appetit? Gut, gut, ich hab ich habe viel Hunger und das Gewicht. Es sind vier Kilo weg in den letzten sechs Wochen, obwohl sie viel Appetit...'. Dies entspricht exakt der behaupteten Tatsache, einschließlich der Quantifizierung des Gewichtsverlusts und der Beibehaltung des guten Appetits."
+      }
+    },
+    {
+      "id": "F0009",
+      "section": "history",
+      "statement": "Der Patient studiert Maschinenbau, befindet sich in der Prüfungsphase und arbeitet nebenbei am Autoschrauben und Fahrrädern, was ihn eher entspannt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " Maschinenbau, ich habe gerade Prüfungsphase, muss ich ein bisschen mehr machen als sonst, aber es ist nicht hier wirklich dranmatisch verdiene mir ein bisschen was neben mir dazu, bisschen Autoschrauben oder Fahrräder oder so, was was mich eher entspannt als stresst mit meiner Freundin läuft alles prima, also eigentlich alles super Sexualität alles gut. ",
+          "spans": [
+            {
+              "start": 2845,
+              "end": 3202
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0009",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient Maschinenbau studiert, sich in der Prüfungsphase befindet und nebenbei am Autoschrauben und Fahrrädern arbeitet, was ihn eher entspannt, wird durch das Zitat aus S9 direkt belegt. Der Patient äußert explizit: 'Maschinenbau, ich habe gerade Prüfungsphase', 'verdiene mir ein bisschen was neben mir dazu, bisschen Autoschrauben oder Fahrräder oder so, was was mich eher entspannt als stresst'. Damit ist die gesamte Aussage im Kontext der Quelle enthalten und korrekt wiedergegeben."
+      }
+    },
+    {
+      "id": "F0010",
+      "section": "history",
+      "statement": "Die Beziehung zur Freundin läuft gut, die Sexualität ist unauffällig.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " Maschinenbau, ich habe gerade Prüfungsphase, muss ich ein bisschen mehr machen als sonst, aber es ist nicht hier wirklich dranmatisch verdiene mir ein bisschen was neben mir dazu, bisschen Autoschrauben oder Fahrräder oder so, was was mich eher entspannt als stresst mit meiner Freundin läuft alles prima, also eigentlich alles super Sexualität alles gut. ",
+          "spans": [
+            {
+              "start": 2845,
+              "end": 3202
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0010",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Beziehung zur Freundin gut läuft und die Sexualität unauffällig ist, wird durch die direkte Aussage im Zitat belegt: 'mit meiner Freundin läuft alles prima, also eigentlich alles super Sexualität alles gut.' Dies entspricht exakt der behaupteten Tatsache."
+      }
+    },
+    {
+      "id": "F0011",
+      "section": "background",
+      "statement": "Der Großvater des Patienten hatte drei Herzinfarkte und verstarb am dritten Infarkt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " es ist mir, ich habe ja irgendwie schon ersi oder ist das auch neu das ist eher neu, auch eher neu.  Eher, ich glaube schon hatten Sie nie Idee, was dahinter stecken könnte.  Ich weiß nicht einmal mein Opa hatte drei Herzinfarkte und und wo ich mich natürlich fragte, ob das irgendwie erblich sein kann oder so und erst am dritten leider auch verstorben dann",
+          "spans": [
+            {
+              "start": 1067,
+              "end": 1426
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0011",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Großvater des Patienten drei Herzinfarkte hatte und am dritten verstarb, wird durch die direkte Aussage im Zitat aus S4 belegt: 'mein Opa hatte drei Herzinfarkte und [...] erst am dritten leider auch verstorben dann'. Die Angabe ist klar und entspricht exakt der Behauptung."
+      }
+    },
+    {
+      "id": "F0012",
+      "section": "background",
+      "statement": "Der Patient fragt sich, ob Herzprobleme erblich sein könnten.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " es ist mir, ich habe ja irgendwie schon ersi oder ist das auch neu das ist eher neu, auch eher neu.  Eher, ich glaube schon hatten Sie nie Idee, was dahinter stecken könnte.  Ich weiß nicht einmal mein Opa hatte drei Herzinfarkte und und wo ich mich natürlich fragte, ob das irgendwie erblich sein kann oder so und erst am dritten leider auch verstorben dann",
+          "spans": [
+            {
+              "start": 1067,
+              "end": 1426
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0012",
+        "verdict": "supported",
+        "reason": "Der Patient äußert im zitierten Abschnitt explizit die Frage, ob Herzprobleme erblich sein könnten, und begründet dies mit dem Beispiel seines Opas, der mehrere Herzinfarkte hatte. Die Aussage im Fakt ist direkt im Kontext der Äußerung enthalten."
+      }
+    },
+    {
+      "id": "F0013",
+      "section": "findings",
+      "statement": "Der Patient beschreibt eine Wesensveränderung mit innerer Unruhe, Reizbarkeit und emotionaler Labilität, die sich von früheren depressiven Episoden unterscheidet.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " ich hatte auch mal eine depressive Episode vor ein paar Jahren, da hat ne aber war Trennung und alles Mögliche so und und das hatten ganz konkreten Grund und es wurde behandelt und es ging auch wieder weg und seitdem gab es das nie, aber ich habe mich gewundert eben oder habe mich das gefragt, weil ich auch emotional irgendwie seltsam unterwegs bin gerade.",
+          "spans": [
+            {
+              "start": 1426,
+              "end": 1785
+            }
+          ]
+        },
+        {
+          "source_id": "S6",
+          "quote": " Seltsam unterwegs heißt dünn häufig gereizt, also ganz ganz wenig Kapazität für irgendwie Stress oder so emotional so ein bisschen von der Rolle damals hat sich irgendwas verändert vor sechs Wochen, was sie nicht so richtig benennen können und was sich auch anders anfühlt als die Depression vor einigen Jahren und sie haben sich Sorge um ihr Herz gemacht,",
+          "spans": [
+            {
+              "start": 1785,
+              "end": 2142
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0013",
+        "verdict": "supported",
+        "reason": "Der Patient beschreibt in den Zitaten aus S5 und S6, dass er früher eine depressive Episode mit klarem Auslöser hatte, die behandelt wurde und wieder verschwand. Er betont, dass sein aktueller Zustand – emotional 'seltsam unterwegs', gereizt, mit geringer Stressresistenz und einer nicht näher benennbaren Wesensveränderung seit sechs Wochen – sich von der früheren Depression unterscheidet. Diese Aussagen belegen direkt die Behauptung, dass es sich um eine Wesensveränderung mit innerer Unruhe, Reizbarkeit und emotionaler Labilität handelt, die sich von früheren depressiven Episoden unterscheidet."
+      }
+    },
+    {
+      "id": "F0014",
+      "section": "assessment",
+      "statement": "Die Symptome des Patienten (Herzrasen, Gewichtsabnahme bei gutem Appetit, Schlafstörungen, nächtliches Schwitzen, Unruhe) sprechen für eine mögliche Schilddrüsenüberfunktion.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S12",
+          "quote": " so dass ich Ihnen jetzt vorschlagen möchte, dass wir eine sorgfältige körperliche Untersuchung machen, das machen wir gleich hinten im Nachbarzimmer und dabei insbesondere auf ihr Herz schauen.  Die Beschwerden, die sich schildern, lassen mich eine Schilddrüsenüberfunktion denken, deswegen würde ich Ihnen gerne Blut abnehmen, um zu klären, ob mit der",
+          "spans": [
+            {
+              "start": 3915,
+              "end": 4268
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0014",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die geschilderten Symptome auf eine mögliche Schilddrüsenüberfunktion hindeuten, wird durch die direkte Äußerung des Arztes gestützt: 'Die Beschwerden, die sich schildern, lassen mich eine Schilddrüsenüberfunktion denken'. Dies zeigt, dass der Arzt die Symptome (implizit einschließlich Herzrasen, Gewichtsabnahme, Schlafstörungen, nächtliches Schwitzen, Unruhe) als Hinweis auf eine Schilddrüsenüberfunktion interpretiert. Die Erwähnung der geplanten Blutabnahme zur Abklärung bestätigt den Verdacht als möglich, nicht bestätigt – was mit 'mögliche Schilddrüsenüberfunktion' im Fakt korrekt wiedergegeben ist."
+      }
+    },
+    {
+      "id": "F0015",
+      "section": "assessment",
+      "statement": "Die familiäre Vorgeschichte mit Herzinfarkten beim Großvater wird als Grund für die Sorge um das Herz genannt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " es ist mir, ich habe ja irgendwie schon ersi oder ist das auch neu das ist eher neu, auch eher neu.  Eher, ich glaube schon hatten Sie nie Idee, was dahinter stecken könnte.  Ich weiß nicht einmal mein Opa hatte drei Herzinfarkte und und wo ich mich natürlich fragte, ob das irgendwie erblich sein kann oder so und erst am dritten leider auch verstorben dann",
+          "spans": [
+            {
+              "start": 1067,
+              "end": 1426
+            }
+          ]
+        },
+        {
+          "source_id": "S11",
+          "quote": " rund läuft im Moment Studium, Arbeit, Beziehung.  Da gibt es eigentlich nichts, wo Sie jetzt spontan sagen würden.  Das erklärt das anders als damals, als Sie diese depressive Episode hatten, dann haben Sie die Sorge, dass mit dem Herzen das nicht stimmen könnte, weil in der Familie diese Beschwerden vorgekommen sind, vor allen Dingen bei ihrem Großvater,",
+          "spans": [
+            {
+              "start": 3557,
+              "end": 3915
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0015",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die familiäre Vorgeschichte mit Herzinfarkten beim Großvater als Grund für die Sorge um das Herz genannt wird, ist durch die zitierten Stellen belegt. In S4 erwähnt der Patient, dass sein Opa drei Herzinfarkte hatte und er sich fragt, ob das erblich sein könnte. In S11 wird explizit gesagt, dass die Sorge um das Herz damit zusammenhängt, dass in der Familie, vor allem beim Großvater, solche Beschwerden vorgekommen sind."
+      }
+    },
+    {
+      "id": "F0016",
+      "section": "plan",
+      "statement": "Es wird eine körperliche Untersuchung, insbesondere der Herzfunktion, geplant.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S12",
+          "quote": " so dass ich Ihnen jetzt vorschlagen möchte, dass wir eine sorgfältige körperliche Untersuchung machen, das machen wir gleich hinten im Nachbarzimmer und dabei insbesondere auf ihr Herz schauen.  Die Beschwerden, die sich schildern, lassen mich eine Schilddrüsenüberfunktion denken, deswegen würde ich Ihnen gerne Blut abnehmen, um zu klären, ob mit der",
+          "spans": [
+            {
+              "start": 3915,
+              "end": 4268
+            }
+          ]
+        },
+        {
+          "source_id": "S14",
+          "quote": " Untersuchung sehen.  Wenn Sie damit einverstanden, das klingt nach einem Plan.  Ja schön, dann bis gleich.",
+          "spans": [
+            {
+              "start": 4624,
+              "end": 4731
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0016",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass eine körperliche Untersuchung, insbesondere der Herzfunktion, geplant ist, wird durch die Quelle S12 direkt belegt: 'dass wir eine sorgfältige körperliche Untersuchung machen... und dabei insbesondere auf ihr Herz schauen.' Die zweite Quelle (S14) bestätigt die Zustimmung zur Untersuchung. Die Aussage im Fakt entspricht dem Inhalt der Zitate im Kontext."
+      }
+    },
+    {
+      "id": "F0017",
+      "section": "plan",
+      "statement": "Es wird eine Blutabnahme zur Abklärung einer Schilddrüsenfunktionsstörung vorgeschlagen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S12",
+          "quote": " so dass ich Ihnen jetzt vorschlagen möchte, dass wir eine sorgfältige körperliche Untersuchung machen, das machen wir gleich hinten im Nachbarzimmer und dabei insbesondere auf ihr Herz schauen.  Die Beschwerden, die sich schildern, lassen mich eine Schilddrüsenüberfunktion denken, deswegen würde ich Ihnen gerne Blut abnehmen, um zu klären, ob mit der",
+          "spans": [
+            {
+              "start": 3915,
+              "end": 4268
+            }
+          ]
+        },
+        {
+          "source_id": "S13",
+          "quote": " Schilddröse alles in Ordnung ist, wenn das so wäre, könnte man das gut behandeln, bis wir uns das nächste Mal sehen in einigen Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt, und dann würden wir in zwei, drei Tagen uns nochmal wiedersehen und die Laborwerte besprechen und jetzt aber zuerst uns nebenan nochmal für eine",
+          "spans": [
+            {
+              "start": 4268,
+              "end": 4624
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0017",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass eine Blutabnahme zur Abklärung einer Schilddrüsenfunktionsstörung vorgeschlagen wird, wird durch die zitierten Textstellen belegt. Im ersten Zitat sagt der Arzt: 'die Beschwerden, die sie schildern, lassen mich eine Schilddrüsenüberfunktion denken, deswegen würde ich Ihnen gerne Blut abnehmen, um zu klären, ob mit der [Schilddrüse] alles in Ordnung ist'. Dies wird im zweiten Zitat fortgeführt. Der Vorschlag ist explizit und unmissverständlich formuliert."
+      }
+    },
+    {
+      "id": "F0018",
+      "section": "plan",
+      "statement": "Der Patient soll bis zum nächsten Termin überlegen, ob ihm weitere Beschwerden oder Veränderungen einfallen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S13",
+          "quote": " Schilddröse alles in Ordnung ist, wenn das so wäre, könnte man das gut behandeln, bis wir uns das nächste Mal sehen in einigen Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt, und dann würden wir in zwei, drei Tagen uns nochmal wiedersehen und die Laborwerte besprechen und jetzt aber zuerst uns nebenan nochmal für eine",
+          "spans": [
+            {
+              "start": 4268,
+              "end": 4624
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0018",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Patient bis zum nächsten Termin überlegen soll, ob ihm weitere Beschwerden oder Veränderungen einfallen, wird durch die zitierte Stelle unterstützt, in der es heißt: „...in einigen Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt, und dann würden wir in zwei, drei Tagen uns nochmal wiedersehen...“ Dies entspricht inhaltlich der Behauptung, dass der Patient bis zum nächsten Termin darüber nachdenken soll, ob ihm weitere Symptome oder Veränderungen auffallen."
+      }
+    },
+    {
+      "id": "F0019",
+      "section": "plan",
+      "statement": "Die Laborwerte sollen in zwei bis drei Tagen besprochen werden, danach wird ein weiterer Termin vereinbart.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S13",
+          "quote": " Schilddröse alles in Ordnung ist, wenn das so wäre, könnte man das gut behandeln, bis wir uns das nächste Mal sehen in einigen Tagen können Sie ja nochmal ein bisschen schauen, ob Ihnen sonst noch was einfällt, und dann würden wir in zwei, drei Tagen uns nochmal wiedersehen und die Laborwerte besprechen und jetzt aber zuerst uns nebenan nochmal für eine",
+          "spans": [
+            {
+              "start": 4268,
+              "end": 4624
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0019",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Laborwerte in zwei bis drei Tagen besprochen werden sollen, wird durch die direkte Aussage im Zitat aus S13 gestützt: 'dann würden wir in zwei, drei Tagen uns nochmal wiedersehen und die Laborwerte besprechen'. Der weitere Termin wird damit explizit im Kontext der Besprechung der Laborwerte erwähnt, was die Aussage im Fakt vollständig belegt."
+      }
+    }
+  ],
+  "uncertainties": [],
+  "questions": [
+    {
+      "question": "Gibt es bekannte Vorerkrankungen der Schilddrüse oder wurden in der Vergangenheit Schilddrüsenfunktionsstörungen ausgeschlossen?",
+      "reason": "Ein Ausschluss oder eine Vorgeschichte einer Schilddrüsenerkrankung wäre wichtig für die Differenzialdiagnose der Symptome, da diese stark auf eine Schilddrüsenüberfunktion hindeuten.",
+      "fact_ids": [
+        "F0014"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Wurden bereits Medikamente, Nahrungsergänzungsmittel oder Drogen eingenommen, die Herzrasen oder Gewichtsverlust auslösen könnten?",
+      "reason": "Substanzen wie Stimulanzien, Schilddrüsenhormone oder bestimmte Nahrungsergänzungsmittel könnten die Symptome erklären, sind aber nicht dokumentiert.",
+      "fact_ids": [
+        "F0001",
+        "F0008",
+        "F0013"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Bestehen weitere autonome Symptome wie Tremor, Hitzeintoleranz oder Haarausfall, die auf eine Schilddrüsenüberfunktion hindeuten könnten?",
+      "reason": "Diese Symptome würden den Verdacht auf eine Hyperthyreose stützen, wurden aber im Gespräch nicht erwähnt.",
+      "fact_ids": [
+        "F0014"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Wie ist die genaue familiäre Vorgeschichte hinsichtlich Schilddrüsenerkrankungen?",
+      "reason": "Da eine mögliche Schilddrüsenüberfunktion im Fokus steht, wäre eine familiäre Belastung für Autoimmunerkrankungen wie Morbus Basedow relevant.",
+      "fact_ids": [
+        "F0011",
+        "F0012"
+      ],
+      "basis": "not_documented"
+    },
+    {
+      "question": "Wann wurde zuletzt eine körperliche Untersuchung oder ein EKG durchgeführt, und liegen vorbestehende kardiale Befunde vor?",
+      "reason": "Obwohl eine körperliche Untersuchung geplant ist, ist unklar, ob bereits frühere kardiale Untersuchungen stattgefunden haben, die für die Beurteilung des Herzrhythmus relevant wären.",
+      "fact_ids": [
+        "F0016"
+      ],
+      "basis": "not_documented"
+    }
+  ],
+  "rejected": [
+    {
+      "candidate": {
+        "id": "F0006",
+        "section": "history",
+        "statement": "Seit etwa sechs Wochen bestehen Schlafstörungen mit weniger als fünf Stunden ununterbrochenem Schlaf pro Nacht.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S7",
+            "quote": " sonst irgendwelche Ideen.  Okay, also um ihr Herz sollten wir uns kümmern und möglichst eine Erklärung finden, wie es mit Ihrem Schlaf schlecht.  Ich weiß nicht, wann ich es letzte Mal mehr als fünf Stunden ein Stück geschlafen habe und ich schwitze auch absurd viel nachts.  Ich kann mein T Shirt morgens ausbringen, damit die Wohnung putzen, wie ist der",
+            "spans": [
+              {
+                "start": 2142,
+                "end": 2498
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S7",
+              "quote": " sonst irgendwelche Ideen.  Okay, also um ihr Herz sollten wir uns kümmern und möglichst eine Erklärung finden, wie es mit Ihrem Schlaf schlecht.  Ich weiß nicht, wann ich es letzte Mal mehr als fünf Stunden ein Stück geschlafen habe und ich schwitze auch absurd viel nachts.  Ich kann mein T Shirt morgens ausbringen, damit die Wohnung putzen, wie ist der",
+              "spans": [
+                {
+                  "start": 2142,
+                  "end": 2498
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage behauptet, dass Schlafstörungen seit etwa sechs Wochen bestehen, aber im zitierten Text (S7) wird keine Dauer von sechs Wochen erwähnt. Der Patient berichtet lediglich über kurze Schlafphasen (weniger als fünf Stunden) und nächtliches Schwitzen, ohne zeitliche Angabe des Beginns. Die zitierte Passage enthält daher keinen Beleg für die Dauer der Schlafstörungen."
+        }
+      },
+      "reason": "Die Aussage behauptet eine Dauer von etwa sechs Wochen für die Schlafstörungen, doch im zitierten Text (S7) wird keine zeitliche Angabe zum Beginn der Schlafprobleme gemacht. Der Patient erwähnt lediglich, dass er zuletzt nicht mehr als fünf Stunden am Stück geschlafen hat und unter nächtlichem Schwitzen leidet, ohne einen Anfangszeitpunkt zu nennen. Daher fehlt im Zitat der Beleg für die behauptete Dauer."
+    }
+  ],
+  "validation": "literal source checks and automated fact review; not clinical validation",
+  "projection": {
+    "source_document_sha256": "897f53bbfa0bbe9ec2335221c87a554fffa8d2a4f42e84dadb537f529dda72b0",
+    "source": "k8s-inference/acceptance/clinical-documentation-20260917/full-r2/de-herzrasen",
+    "live_inference": false,
+    "change": "unclear source support withheld for human review; neutral empty-section text; readable review queue"
+  }
+}
