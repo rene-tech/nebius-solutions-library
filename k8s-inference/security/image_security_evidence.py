@@ -111,7 +111,148 @@ def validate_detached_signature(
         raise EvidenceError(f"{subject}: detached attestation signature is invalid")
 
 
-def validate_inventory(path: Path) -> list[dict[str, Any]]:
+def validate_attestation_identity(
+    identity: Any, trust_path: Path, *, purpose: str
+) -> dict[str, str]:
+    trust = _load_object(trust_path)
+    policy = trust.get("oidc_release_attestation")
+    if not isinstance(policy, dict):
+        raise EvidenceError(f"{trust_path}: OIDC attestation policy is missing")
+    if not isinstance(identity, dict):
+        raise EvidenceError(f"{purpose}: OIDC attestation identity is missing")
+    expected = {
+        "issuer": policy.get("issuer"),
+        "audience": policy.get("audience"),
+        "repository": policy.get("repository"),
+        "environment": policy.get("protected_environment"),
+    }
+    for field, value in expected.items():
+        if not isinstance(value, str) or not value or identity.get(field) != value:
+            raise EvidenceError(f"{purpose}: OIDC {field} is not authorized")
+    expected_subject = (
+        f"repo:{expected['repository']}:environment:{expected['environment']}"
+    )
+    if identity.get("subject") != expected_subject:
+        raise EvidenceError(f"{purpose}: OIDC subject is not the protected environment")
+    workflow_ref = identity.get("workflow_ref")
+    allowed_workflows = policy.get("allowed_workflow_refs")
+    if (
+        not isinstance(workflow_ref, str)
+        or not isinstance(allowed_workflows, list)
+        or workflow_ref not in allowed_workflows
+    ):
+        raise EvidenceError(f"{purpose}: workflow ref is not authorized")
+    for field in ("run_id", "run_attempt"):
+        if not isinstance(identity.get(field), str) or not identity[field]:
+            raise EvidenceError(f"{purpose}: OIDC {field} is missing")
+    return identity
+
+
+def _repository_and_tag(reference: str) -> tuple[str, str]:
+    repository, separator, tag = reference.rpartition(":")
+    if not separator or not repository or not tag or "/" in tag:
+        raise EvidenceError(f"invalid exact tag reference: {reference}")
+    return repository, tag
+
+
+def _validate_registry_resolution(
+    image: dict[str, Any], inventory_path: Path, trust_path: Path
+) -> None:
+    identifier = image["id"]
+    source_reference = image["source_reference"]
+    digest_reference = image["digest_reference"]
+    repository, tag = _repository_and_tag(source_reference)
+    registry = repository.split("/", 1)[0]
+    manifest_digest = digest_reference.rsplit("@", 1)[1]
+    provenance = image["resolution_provenance"]
+    receipt_value = provenance.get("resolution_receipt_path")
+    signature_value = provenance.get("resolution_receipt_signature_path")
+    signature_sha256 = provenance.get("resolution_receipt_signature_sha256")
+    for value, label in (
+        (receipt_value, "receipt"),
+        (signature_value, "receipt signature"),
+    ):
+        if not isinstance(value, str) or not value or Path(value).is_absolute():
+            raise EvidenceError(
+                f"{inventory_path}: {identifier} resolution {label} path is invalid"
+            )
+    if not isinstance(signature_sha256, str) or not HEX_SHA256.fullmatch(
+        signature_sha256
+    ):
+        raise EvidenceError(
+            f"{inventory_path}: {identifier} resolution signature hash is invalid"
+        )
+    receipt_path = (inventory_path.parent / receipt_value).resolve()
+    signature_path = (inventory_path.parent / signature_value).resolve()
+    for resolved, label in (
+        (receipt_path, "receipt"),
+        (signature_path, "receipt signature"),
+    ):
+        try:
+            resolved.relative_to(inventory_path.parent.resolve())
+        except ValueError as exc:
+            raise EvidenceError(
+                f"{inventory_path}: {identifier} resolution {label} escapes inventory root"
+            ) from exc
+    if _sha256(receipt_path) != provenance["resolution_receipt_sha256"]:
+        raise EvidenceError(
+            f"{inventory_path}: {identifier} resolution receipt hash mismatch"
+        )
+    if _sha256(signature_path) != signature_sha256:
+        raise EvidenceError(
+            f"{inventory_path}: {identifier} resolution signature hash mismatch"
+        )
+    validate_detached_signature(receipt_path, signature_path, trust_path)
+    receipt = _load_object(receipt_path)
+    if receipt.get("schema") != "fs2-serve.nebius.ai/registry-resolution-receipt/v1":
+        raise EvidenceError(f"{receipt_path}: unsupported resolution receipt schema")
+    expected_scalars = {
+        "source_reference": source_reference,
+        "resolved_reference": digest_reference,
+        "registry": registry,
+        "repository": repository,
+        "tag": tag,
+    }
+    for field, expected in expected_scalars.items():
+        if receipt.get(field) != expected:
+            raise EvidenceError(f"{receipt_path}: {field} differs from inventory")
+    manifest = receipt.get("manifest")
+    if not isinstance(manifest, dict):
+        raise EvidenceError(f"{receipt_path}: manifest evidence is missing")
+    if manifest.get("digest") != manifest_digest:
+        raise EvidenceError(f"{receipt_path}: manifest digest differs from subject")
+    if manifest.get("sha256") != manifest_digest.removeprefix("sha256:"):
+        raise EvidenceError(f"{receipt_path}: manifest bytes do not hash to digest")
+    if manifest.get("media_type") != provenance.get("manifest_media_type"):
+        raise EvidenceError(f"{receipt_path}: manifest media type differs")
+    resolution = receipt.get("resolution")
+    resolver = resolution.get("resolver") if isinstance(resolution, dict) else None
+    if not isinstance(resolver, dict):
+        raise EvidenceError(f"{receipt_path}: resolver identity is missing")
+    trust = _load_object(trust_path)
+    resolver_policy = trust.get("registry_resolution")
+    allowed = (
+        resolver_policy.get("authorized_resolver_identities")
+        if isinstance(resolver_policy, dict)
+        else None
+    )
+    if not isinstance(allowed, list) or resolver.get("identity") not in allowed:
+        raise EvidenceError(f"{receipt_path}: resolver identity is not authorized")
+    if resolver.get("identity") != provenance.get("resolver_identity"):
+        raise EvidenceError(f"{receipt_path}: resolver identity differs from inventory")
+    if resolution.get("resolved_at") != provenance.get("resolved_at"):
+        raise EvidenceError(f"{receipt_path}: resolution time differs from inventory")
+    command_contract = resolution.get("command_contract")
+    if not isinstance(command_contract, str) or not command_contract:
+        raise EvidenceError(f"{receipt_path}: resolution command contract is missing")
+    validate_attestation_identity(
+        receipt.get("attestation"), trust_path, purpose=str(receipt_path)
+    )
+
+
+def validate_inventory(
+    path: Path, trust_path: Path | None = None
+) -> list[dict[str, Any]]:
     inventory = _load_object(path)
     if inventory.get("schema") != "fs2-serve.nebius.ai/third-party-image-lock/v1":
         raise EvidenceError(f"{path}: unsupported schema")
@@ -168,12 +309,7 @@ def validate_inventory(path: Path) -> list[dict[str, Any]]:
             raise EvidenceError(f"{path}: {identifier} provenance source differs")
         if provenance.get("digest_reference") != digest_reference:
             raise EvidenceError(f"{path}: {identifier} provenance digest differs")
-        for field in (
-            "registry",
-            "manifest_media_type",
-            "resolved_at",
-            "resolver_identity",
-        ):
+        for field in ("manifest_media_type", "resolved_at", "resolver_identity"):
             if not isinstance(provenance.get(field), str) or not provenance[field]:
                 raise EvidenceError(
                     f"{path}: {identifier} provenance {field} is missing"
@@ -185,28 +321,207 @@ def validate_inventory(path: Path) -> list[dict[str, Any]]:
                 raise EvidenceError(
                     f"{path}: {identifier} provenance {field} is invalid"
                 )
-        receipt_value = provenance.get("resolution_receipt_path")
-        if (
-            not isinstance(receipt_value, str)
-            or not receipt_value
-            or Path(receipt_value).is_absolute()
-        ):
+        if provenance["manifest_sha256"] != digest_reference.rsplit(":", 1)[1]:
             raise EvidenceError(
-                f"{path}: {identifier} resolution receipt path is invalid"
+                f"{path}: {identifier} manifest hash differs from OCI digest"
             )
-        receipt_path = (path.parent / receipt_value).resolve()
-        try:
-            receipt_path.relative_to(path.parent.resolve())
-        except ValueError as exc:
+        if trust_path is None:
             raise EvidenceError(
-                f"{path}: {identifier} resolution receipt escapes inventory root"
-            ) from exc
-        if _sha256(receipt_path) != provenance["resolution_receipt_sha256"]:
-            raise EvidenceError(
-                f"{path}: {identifier} resolution receipt hash mismatch"
+                f"{path}: {identifier} resolution trust policy is required"
             )
+        _validate_registry_resolution(image, path, trust_path)
         validated.append(image)
     return validated
+
+
+def validate_first_party_inventory(
+    path: Path, trust_path: Path
+) -> list[dict[str, Any]]:
+    inventory = _load_object(path)
+    if inventory.get("schema") != "fs2-serve.nebius.ai/first-party-image-lock/v1":
+        raise EvidenceError(f"{path}: unsupported first-party image lock schema")
+    if inventory.get("inventory_state") != "protected-build-attested":
+        raise EvidenceError(f"{path}: first-party image lock is not accepted")
+    images = inventory.get("images")
+    if not isinstance(images, list) or not images:
+        raise EvidenceError(f"{path}: first-party images must be non-empty")
+    identifiers: set[str] = set()
+    references: set[str] = set()
+    for index, image in enumerate(images):
+        if not isinstance(image, dict):
+            raise EvidenceError(f"{path}: images[{index}] must be an object")
+        identifier = image.get("id")
+        digest_reference = image.get("digest_reference")
+        if not isinstance(identifier, str) or not identifier or identifier in identifiers:
+            raise EvidenceError(f"{path}: invalid or duplicate first-party image id")
+        identifiers.add(identifier)
+        if not isinstance(digest_reference, str) or not DIGEST_REFERENCE.fullmatch(
+            digest_reference
+        ):
+            raise EvidenceError(f"{path}: {identifier} is not digest-bound")
+        if digest_reference in references:
+            raise EvidenceError(f"{path}: duplicate first-party digest reference")
+        references.add(digest_reference)
+        repository_suffix = image.get("repository_suffix")
+        repository = digest_reference.split("@", 1)[0]
+        if (
+            not isinstance(repository_suffix, str)
+            or not repository_suffix.startswith("/")
+            or not repository.endswith(repository_suffix)
+            or repository.startswith("registry.example.invalid/")
+        ):
+            raise EvidenceError(f"{path}: {identifier} production repository is invalid")
+        build_source = image.get("build_source")
+        if not isinstance(build_source, dict) or not all(
+            GIT_OBJECT.fullmatch(str(build_source.get(field, "")))
+            for field in ("commit", "tree")
+        ):
+            raise EvidenceError(f"{path}: {identifier} build source is invalid")
+        receipt = image.get("build_receipt")
+        if not isinstance(receipt, dict):
+            raise EvidenceError(f"{path}: {identifier} build receipt is missing")
+        receipt_value = receipt.get("path")
+        expected_sha256 = receipt.get("sha256")
+        signature_value = receipt.get("signature_path")
+        signature_sha256 = receipt.get("signature_sha256")
+        if (
+            not isinstance(receipt_value, str)
+            or Path(receipt_value).is_absolute()
+            or not isinstance(expected_sha256, str)
+            or not HEX_SHA256.fullmatch(expected_sha256)
+            or signature_value != f"{receipt_value}.sig"
+            or not isinstance(signature_sha256, str)
+            or not HEX_SHA256.fullmatch(signature_sha256)
+        ):
+            raise EvidenceError(f"{path}: {identifier} build receipt binding is invalid")
+        receipt_path = (path.parent / receipt_value).resolve()
+        signature_path = (path.parent / signature_value).resolve()
+        try:
+            receipt_path.relative_to(path.parent.resolve())
+            signature_path.relative_to(path.parent.resolve())
+        except ValueError as exc:
+            raise EvidenceError(f"{path}: {identifier} build receipt escapes lock root") from exc
+        if _sha256(receipt_path) != expected_sha256:
+            raise EvidenceError(f"{path}: {identifier} build receipt hash mismatch")
+        if _sha256(signature_path) != signature_sha256:
+            raise EvidenceError(f"{path}: {identifier} build signature hash mismatch")
+        validate_receipt(receipt_path, trust_path)
+        document = _load_object(receipt_path)
+        if document.get("source") != build_source:
+            raise EvidenceError(f"{path}: {identifier} build source differs from receipt")
+        if document.get("subject") != {
+            "kind": "image",
+            "identity": digest_reference,
+        }:
+            raise EvidenceError(f"{path}: {identifier} build subject differs from lock")
+    return images
+
+
+def validate_catalog_image_map(
+    path: Path, trust_path: Path
+) -> dict[str, str]:
+    document = _load_object(path)
+    if document.get("schema") != "fs2-serve.nebius.ai/catalog-image-map/v1":
+        raise EvidenceError(f"{path}: unsupported catalog image map schema")
+    if document.get("mapping_state") != "production-mapped":
+        raise EvidenceError(f"{path}: catalog image map is not accepted")
+    placeholders = document.get("placeholder_registries")
+    mappings = document.get("mappings")
+    if not isinstance(placeholders, list) or not placeholders:
+        raise EvidenceError(f"{path}: placeholder registries are missing")
+    if not isinstance(mappings, list) or not mappings:
+        raise EvidenceError(f"{path}: catalog mappings must be non-empty")
+    result: dict[str, str] = {}
+    for index, mapping in enumerate(mappings):
+        if not isinstance(mapping, dict):
+            raise EvidenceError(f"{path}: mappings[{index}] must be an object")
+        source = mapping.get("source_reference")
+        production = mapping.get("production_reference")
+        if (
+            not isinstance(source, str)
+            or not DIGEST_REFERENCE.fullmatch(source)
+            or source.split("/", 1)[0] not in placeholders
+        ):
+            raise EvidenceError(f"{path}: mappings[{index}] source is not a placeholder digest")
+        if (
+            not isinstance(production, str)
+            or not DIGEST_REFERENCE.fullmatch(production)
+            or production.split("/", 1)[0] in placeholders
+            or production.rsplit("@", 1)[1] != source.rsplit("@", 1)[1]
+        ):
+            raise EvidenceError(f"{path}: mappings[{index}] production digest is invalid")
+        if source in result:
+            raise EvidenceError(f"{path}: duplicate mapping for {source}")
+        receipt = mapping.get("mapping_receipt")
+        if not isinstance(receipt, dict):
+            raise EvidenceError(f"{path}: mappings[{index}] receipt is missing")
+        receipt_value = receipt.get("path")
+        signature_value = receipt.get("signature_path")
+        if not all(
+            isinstance(value, str) and value and not Path(value).is_absolute()
+            for value in (receipt_value, signature_value)
+        ):
+            raise EvidenceError(f"{path}: mappings[{index}] receipt paths are invalid")
+        receipt_path = (path.parent / receipt_value).resolve()
+        signature_path = (path.parent / signature_value).resolve()
+        for resolved in (receipt_path, signature_path):
+            try:
+                resolved.relative_to(path.parent.resolve())
+            except ValueError as exc:
+                raise EvidenceError(
+                    f"{path}: mappings[{index}] receipt escapes lock root"
+                ) from exc
+        expected_receipt = receipt.get("sha256")
+        expected_signature = receipt.get("signature_sha256")
+        if (
+            not isinstance(expected_receipt, str)
+            or not HEX_SHA256.fullmatch(expected_receipt)
+            or not isinstance(expected_signature, str)
+            or not HEX_SHA256.fullmatch(expected_signature)
+            or _sha256(receipt_path) != expected_receipt
+            or _sha256(signature_path) != expected_signature
+        ):
+            raise EvidenceError(f"{path}: mappings[{index}] receipt hash mismatch")
+        validate_detached_signature(receipt_path, signature_path, trust_path)
+        receipt_document = _load_object(receipt_path)
+        if receipt_document.get("schema") != "fs2-serve.nebius.ai/catalog-image-mapping-receipt/v1":
+            raise EvidenceError(f"{receipt_path}: unsupported mapping receipt schema")
+        if receipt_document.get("source_reference") != source or receipt_document.get(
+            "production_reference"
+        ) != production:
+            raise EvidenceError(f"{receipt_path}: mapping subject differs from lock")
+        production_repository = production.split("@", 1)[0]
+        production_registry = production_repository.split("/", 1)[0]
+        if receipt_document.get("production_repository") != production_repository:
+            raise EvidenceError(f"{receipt_path}: production repository differs")
+        if receipt_document.get("production_registry") != production_registry:
+            raise EvidenceError(f"{receipt_path}: production registry differs")
+        manifest = receipt_document.get("manifest")
+        production_digest = production.rsplit("@", 1)[1]
+        if not isinstance(manifest, dict) or manifest != {
+            "digest": production_digest,
+            "sha256": production_digest.removeprefix("sha256:"),
+        }:
+            raise EvidenceError(f"{receipt_path}: mapped manifest identity differs")
+        resolver = receipt_document.get("resolver")
+        trust = _load_object(trust_path)
+        resolver_policy = trust.get("registry_resolution")
+        authorized_resolvers = (
+            resolver_policy.get("authorized_resolver_identities")
+            if isinstance(resolver_policy, dict)
+            else None
+        )
+        if (
+            not isinstance(resolver, dict)
+            or not isinstance(authorized_resolvers, list)
+            or resolver.get("identity") not in authorized_resolvers
+        ):
+            raise EvidenceError(f"{receipt_path}: mapping resolver is not authorized")
+        validate_attestation_identity(
+            receipt_document.get("attestation"), trust_path, purpose=str(receipt_path)
+        )
+        result[source] = production
+    return result
 
 
 def alpine_package_constraint(path: Path, package_name: str) -> str:
@@ -332,7 +647,7 @@ def create_receipt(args: argparse.Namespace) -> None:
     actual_commit, actual_tree = _git_identity(args.repository.resolve())
     if (args.source_commit, args.source_tree) != (actual_commit, actual_tree):
         raise EvidenceError("source commit/tree differs from the clean checkout")
-    if args.kind in {"image", "third-party-image"} and not DIGEST_REFERENCE.fullmatch(
+    if args.kind in {"image", "release-image"} and not DIGEST_REFERENCE.fullmatch(
         args.subject
     ):
         raise EvidenceError("image receipt subject must be an exact digest reference")
@@ -400,18 +715,45 @@ def create_receipt(args: argparse.Namespace) -> None:
                 serialized_provenance.encode("utf-8")
             ).hexdigest(),
         }
-    elif args.kind == "third-party-image":
-        if args.resolution_receipt is None:
+    elif args.kind == "release-image":
+        if args.release_closure is None or args.trust is None:
             raise EvidenceError(
-                "third-party image receipt requires a resolution receipt"
+                "release image receipt requires an attested release closure and trust"
             )
-        artifacts["resolution_receipt"] = {
-            "path": args.resolution_receipt.name,
-            "sha256": _sha256(args.resolution_receipt),
+        closure = _load_object(args.release_closure)
+        subject_provenance = closure.get("subject_provenance")
+        if (
+            closure.get("schema") != "fs2-serve.nebius.ai/release-image-closure/v2"
+            or args.subject not in closure.get("subjects", [])
+            or not isinstance(subject_provenance, dict)
+            or not isinstance(subject_provenance.get(args.subject), dict)
+        ):
+            raise EvidenceError("release closure does not bind the scan subject")
+        validate_attestation_identity(
+            closure.get("attestation"), args.trust, purpose=str(args.release_closure)
+        )
+        closure_signature = Path(f"{args.release_closure}.sig")
+        validate_detached_signature(
+            args.release_closure, closure_signature, args.trust
+        )
+        artifacts["release_closure"] = {
+            "path": args.release_closure.name,
+            "sha256": _sha256(args.release_closure),
         }
-        provenance = {"kind": "registry-resolution"}
+        artifacts["release_closure_signature"] = {
+            "path": closure_signature.name,
+            "sha256": _sha256(closure_signature),
+        }
+        provenance = {
+            "kind": "attested-release-closure",
+            "subject": subject_provenance[args.subject],
+        }
     else:
         provenance = {"kind": "git-filesystem"}
+
+    attestation = None
+    if args.attestation_identity is not None:
+        attestation = _load_object(args.attestation_identity.resolve())
 
     receipt = {
         "schema": "fs2-serve.nebius.ai/image-scan-receipt/v2",
@@ -434,6 +776,8 @@ def create_receipt(args: argparse.Namespace) -> None:
             "passed": not summary["fixable_high_critical"] and not summary["secrets"],
         },
     }
+    if attestation is not None:
+        receipt["attestation"] = attestation
     args.output.write_text(
         json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -453,7 +797,7 @@ def validate_receipt(path: Path, trust_path: Path | None = None) -> None:
     ):
         raise EvidenceError(f"{path}: invalid source binding")
     if not isinstance(subject, dict) or (
-        subject.get("kind") in {"image", "third-party-image"}
+        subject.get("kind") in {"image", "release-image"}
         and not DIGEST_REFERENCE.fullmatch(str(subject.get("identity", "")))
     ):
         raise EvidenceError(f"{path}: image subject is not digest-bound")
@@ -484,12 +828,15 @@ def validate_receipt(path: Path, trust_path: Path | None = None) -> None:
     provenance = receipt.get("provenance")
     if not isinstance(provenance, dict) or provenance.get("kind") not in {
         "local-oci-build",
-        "registry-resolution",
+        "attested-release-closure",
         "git-filesystem",
     }:
         raise EvidenceError(f"{path}: build/resolution provenance is missing")
     if trust_path is None:
         raise EvidenceError(f"{path}: attestation trust policy is required")
+    validate_attestation_identity(
+        receipt.get("attestation"), trust_path, purpose=str(path)
+    )
     validate_detached_signature(path, Path(f"{path}.sig"), trust_path)
 
 
@@ -499,6 +846,7 @@ def _parser() -> argparse.ArgumentParser:
 
     inventory = commands.add_parser("inventory")
     inventory.add_argument("path", type=Path)
+    inventory.add_argument("--trust", type=Path)
     inventory.add_argument("--print-digest-references", action="store_true")
 
     report = commands.add_parser("report")
@@ -518,7 +866,7 @@ def _parser() -> argparse.ArgumentParser:
     receipt.add_argument("--source-commit", required=True)
     receipt.add_argument("--source-tree", required=True)
     receipt.add_argument(
-        "--kind", choices=("image", "third-party-image", "filesystem"), required=True
+        "--kind", choices=("image", "release-image", "filesystem"), required=True
     )
     receipt.add_argument("--subject", required=True)
     receipt.add_argument("--scanner-release", required=True)
@@ -530,7 +878,9 @@ def _parser() -> argparse.ArgumentParser:
     receipt.add_argument("--package-inventory", type=Path)
     receipt.add_argument("--build-metadata", type=Path)
     receipt.add_argument("--oci-archive", type=Path)
-    receipt.add_argument("--resolution-receipt", type=Path)
+    receipt.add_argument("--release-closure", type=Path)
+    receipt.add_argument("--trust", type=Path)
+    receipt.add_argument("--attestation-identity", type=Path)
     receipt.add_argument("--output", required=True, type=Path)
 
     validate = commands.add_parser("receipt")
@@ -543,7 +893,7 @@ def main() -> int:
     args = _parser().parse_args()
     try:
         if args.command == "inventory":
-            images = validate_inventory(args.path)
+            images = validate_inventory(args.path, args.trust)
             if args.print_digest_references:
                 for image in images:
                     print(image["digest_reference"])

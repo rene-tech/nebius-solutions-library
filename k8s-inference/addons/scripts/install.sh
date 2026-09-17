@@ -18,6 +18,10 @@ image_gate=(
   --post-renderer-args "$security_dir/helm_image_postrenderer.py"
   --post-renderer-args=--lock
   --post-renderer-args "$security_dir/third-party-images.lock.json"
+  --post-renderer-args=--first-party-lock
+  --post-renderer-args "$security_dir/first-party-images.lock.json"
+  --post-renderer-args=--trust
+  --post-renderer-args "$security_dir/image-attestation-trust.json"
 )
 
 [[ "$("${k[@]}" version -o json | jq -r .serverVersion.gitVersion)" == v1.35.* ]] || {

@@ -5,5 +5,19 @@
   "public_key_path": null,
   "public_key_sha256": null,
   "owner": "Platform Security",
-  "authority": "The public key and its independently reviewed fingerprint must be supplied before any render packet or scan receipt can pass."
+  "authority": "The public key and its independently reviewed fingerprint must be supplied before any render packet or scan receipt can pass.",
+  "oidc_release_attestation": {
+    "issuer": "https://token.actions.githubusercontent.com",
+    "audience": "fs2-sai24-release-attestation",
+    "repository": "rene-tech/nebius-solutions-library",
+    "protected_environment": "sai24-release-attestation",
+    "signing_broker_url": null,
+    "allowed_workflow_refs": []
+  },
+  "render_provenance": {
+    "authorized_builder_ids": []
+  },
+  "registry_resolution": {
+    "authorized_resolver_identities": []
+  }
 }

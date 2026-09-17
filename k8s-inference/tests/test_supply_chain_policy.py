@@ -88,12 +88,24 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
     assert "retention-days: 90" in workflow
     assert "--provenance=mode=max" in workflow
     assert "release_image_closure.py" in workflow
-    assert "SAI24_EVIDENCE_SIGNING_KEY_PEM" in workflow
+    assert "SAI24_EVIDENCE_SIGNING_KEY_PEM" not in workflow
+    assert "environment: sai24-release-attestation" in workflow
+    assert "id-token: write" in workflow
+    assert "oidc_attestation_broker.py sign" in workflow
+    assert "github.event_name != 'pull_request'" in workflow
+    assert '--render-packet "$RENDER_PACKET"' in workflow
+    assert "--render-packet k8s-inference/security/production-render-packet.json" not in workflow
+    assert "--first-party-inventory" in workflow
+    assert "--catalog-image-map" in workflow
+    assert "--release-closure" in workflow
+    assert "--resolution-receipt" not in workflow
 
     normal_workflow = (ROOT.parent / ".github/workflows/k8s-inference.yml").read_text()
     assert "uses: ./.github/workflows/k8s-inference-image-security.yml" in normal_workflow
     assert "needs: image-security" in normal_workflow
     assert "promotion-gate:" in normal_workflow
+    assert "secrets: inherit" not in normal_workflow
+    assert "protected-release-promotion-gate:" in normal_workflow
 
     inventory = json.loads((ROOT / "security/third-party-images.lock.json").read_text())
     assert "rendered_inventory_complete" not in inventory
@@ -113,3 +125,27 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
         "otel-collector-k8s",
     ):
         assert by_id[image_id]["digest_reference"] is None
+
+    first_party = json.loads(
+        (ROOT / "security/first-party-images.lock.json").read_text()
+    )
+    assert first_party["inventory_state"] == (
+        "blocked_pending_protected_build_attestation"
+    )
+    assert {image["id"] for image in first_party["images"]} == {
+        "control-plane",
+        "admin-console",
+    }
+    assert all(image["digest_reference"] is None for image in first_party["images"])
+
+    catalog_map = json.loads((ROOT / "security/catalog-images.lock.json").read_text())
+    assert catalog_map["mapping_state"] == (
+        "blocked_pending_authoritative_production_mappings"
+    )
+    assert catalog_map["mappings"] == []
+
+    packet_template = json.loads(
+        (ROOT / "security/production-render-packet.json").read_text()
+    )
+    assert packet_template["status"] == "template_only_not_release_evidence"
+    assert packet_template["source"] == {"commit": None, "tree": None}

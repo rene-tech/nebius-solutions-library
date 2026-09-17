@@ -6,6 +6,8 @@ readonly SCRIPT_DIR
 readonly LOCK_FILE="$SCRIPT_DIR/components.lock.json"
 readonly IMAGE_POST_RENDERER="$SCRIPT_DIR/../../../security/helm_image_postrenderer.py"
 readonly IMAGE_LOCK="$SCRIPT_DIR/../../../security/third-party-images.lock.json"
+readonly FIRST_PARTY_IMAGE_LOCK="$SCRIPT_DIR/../../../security/first-party-images.lock.json"
+readonly IMAGE_ATTESTATION_TRUST="$SCRIPT_DIR/../../../security/image-attestation-trust.json"
 readonly KUEUE_CLUSTER_POLICY="$SCRIPT_DIR/../../infra/kubernetes/kueue-cluster-queues.json"
 readonly KUEUE_LOCAL_QUEUES="$SCRIPT_DIR/../../catalog/kubernetes/localqueues.json"
 readonly CLUSTER_ID_PREFIX="mk8scluster-"
@@ -125,6 +127,10 @@ install_chart() {
     --post-renderer-args "$IMAGE_POST_RENDERER" \
     --post-renderer-args=--lock \
     --post-renderer-args "$IMAGE_LOCK" \
+    --post-renderer-args=--first-party-lock \
+    --post-renderer-args "$FIRST_PARTY_IMAGE_LOCK" \
+    --post-renderer-args=--trust \
+    --post-renderer-args "$IMAGE_ATTESTATION_TRUST" \
     "$@"
 }
 

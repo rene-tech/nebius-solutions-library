@@ -14,7 +14,10 @@
       "HIGH"
     ],
     "maximum_secret_findings": 0,
-    "require_digest_bound_result": true
+    "require_digest_bound_result": true,
+    "untrusted_pull_request_scope": "unsigned-source-scan-only",
+    "protected_release_environment": "sai24-release-attestation",
+    "release_signing_identity": "github-oidc-short-lived-broker-authorized"
   },
   "remediation_sla": {
     "critical_hours": 24,
@@ -32,6 +35,24 @@
       "apply only the reviewed digest-bound values",
       "derive closure from every exact chart+values render and authoritative catalog source",
       "apply the digest inventory through the mandatory Helm post-renderer"
+    ]
+  },
+  "first_party_images": {
+    "inventory": "security/first-party-images.lock.json",
+    "promotion_status": "blocked_pending_protected_build_attestation",
+    "requirements": [
+      "bind the production repository and digest to a signed build-and-scan receipt",
+      "require the exact production digest in the rendered release",
+      "scan the rendered production digest rather than treating a local source build as promotion evidence"
+    ]
+  },
+  "catalog_images": {
+    "mapping": "security/catalog-images.lock.json",
+    "promotion_status": "blocked_pending_authoritative_production_mappings",
+    "requirements": [
+      "replace every placeholder registry subject with an authorized production reference",
+      "preserve the exact manifest digest across the mapping",
+      "bind each mapping to a signed authorized-resolver receipt"
     ]
   },
   "evidence": {
@@ -52,7 +73,11 @@
       "report_sha256",
       "sbom_sha256",
       "buildkit_provenance_sha256",
-      "render_packet_signature_sha256"
+      "render_packet_signature_sha256",
+      "release_declaration_sha256",
+      "ordered_values_sha256",
+      "registry_resolution_receipt_signature_sha256",
+      "oidc_protected_environment_identity"
     ]
   }
 }

@@ -19,12 +19,14 @@ try:
     from .image_security_evidence import (
         DIGEST_REFERENCE,
         EvidenceError,
+        validate_first_party_inventory,
         validate_inventory,
     )
 except ImportError:
     from image_security_evidence import (
         DIGEST_REFERENCE,
         EvidenceError,
+        validate_first_party_inventory,
         validate_inventory,
     )
 
@@ -36,13 +38,23 @@ IMAGE_LINE = re.compile(
 )
 
 
-def rewrite(rendered: str, lock_path: Path) -> tuple[str, set[str]]:
-    images = validate_inventory(lock_path)
+def rewrite(
+    rendered: str,
+    lock_path: Path,
+    first_party_lock_path: Path,
+    trust_path: Path,
+) -> tuple[str, set[str]]:
+    images = validate_inventory(lock_path, trust_path)
+    first_party_images = validate_first_party_inventory(
+        first_party_lock_path, trust_path
+    )
     mappings = {
         image["source_reference"]: image["digest_reference"]
         for image in images
     }
-    accepted_digests = {image["digest_reference"] for image in images}
+    accepted_digests = {
+        image["digest_reference"] for image in images + first_party_images
+    }
     output: list[str] = []
     subjects: set[str] = set()
     found = 0
@@ -81,10 +93,14 @@ def rewrite(rendered: str, lock_path: Path) -> tuple[str, set[str]]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lock", required=True, type=Path)
+    parser.add_argument("--first-party-lock", required=True, type=Path)
+    parser.add_argument("--trust", required=True, type=Path)
     args = parser.parse_args()
     try:
         rendered = sys.stdin.read()
-        rewritten, _ = rewrite(rendered, args.lock)
+        rewritten, _ = rewrite(
+            rendered, args.lock, args.first_party_lock, args.trust
+        )
     except EvidenceError as exc:
         print(f"image post-render gate: {exc}", file=sys.stderr)
         return 1

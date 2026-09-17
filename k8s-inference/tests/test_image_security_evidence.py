@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -14,7 +13,11 @@ from security.image_security_evidence import (
     validate_receipt,
 )
 from security.helm_image_postrenderer import rewrite
-from security.release_image_closure import validate_source_surfaces
+from security.release_image_closure import (
+    _production_reference,
+    _release_declaration_hashes,
+    validate_source_surfaces,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +46,37 @@ def test_inventory_rejects_tag_only_entries_after_completion(tmp_path: Path) -> 
     path = tmp_path / "inventory.json"
     path.write_text(json.dumps(inventory))
     with pytest.raises(EvidenceError, match="not bound to an exact sha256 digest"):
+        validate_inventory(path)
+
+
+def test_inventory_requires_manifest_bytes_to_match_the_oci_digest(
+    tmp_path: Path,
+) -> None:
+    digest_reference = f"registry.example/image@{DIGEST}"
+    inventory = {
+        "schema": "fs2-serve.nebius.ai/third-party-image-lock/v1",
+        "images": [
+            {
+                "id": "example",
+                "source_reference": "registry.example/image:1.0",
+                "digest_reference": digest_reference,
+                "consumers": ["unit"],
+                "resolution_provenance": {
+                    "source_reference": "registry.example/image:1.0",
+                    "digest_reference": digest_reference,
+                    "manifest_media_type": "application/vnd.oci.image.manifest.v1+json",
+                    "resolved_at": "2026-09-17T00:00:00Z",
+                    "resolver_identity": "unit",
+                    "manifest_sha256": "b" * 64,
+                    "resolution_receipt_path": "resolution.json",
+                    "resolution_receipt_sha256": "c" * 64,
+                },
+            }
+        ],
+    }
+    path = tmp_path / "inventory.json"
+    path.write_text(json.dumps(inventory))
+    with pytest.raises(EvidenceError, match="manifest hash differs from OCI digest"):
         validate_inventory(path)
 
 
@@ -99,44 +133,66 @@ def test_package_inventory_requires_exact_versions_for_every_named_package(
         create_package_inventory(sbom, ["libssl3", "libcrypto3"], output)
 
 
-def test_postrenderer_rewrites_reviewed_tag_and_rejects_unlisted_digest(
-    tmp_path: Path,
+def test_postrenderer_accepts_reviewed_first_party_and_rejects_unlisted_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     digest_reference = f"registry.example/image@{DIGEST}"
-    resolution_receipt = tmp_path / "resolution.json"
-    resolution_receipt.write_text('{"subject":"registry.example/image:1.0"}\n')
-    resolution_sha256 = hashlib.sha256(resolution_receipt.read_bytes()).hexdigest()
-    inventory = {
-        "schema": "fs2-serve.nebius.ai/third-party-image-lock/v1",
-        "images": [
+    import security.helm_image_postrenderer as postrenderer
+
+    monkeypatch.setattr(
+        postrenderer,
+        "validate_inventory",
+        lambda _path, _trust: [
             {
-                "id": "example",
                 "source_reference": "registry.example/image:1.0",
                 "digest_reference": digest_reference,
-                "consumers": ["unit"],
-                "resolution_provenance": {
-                    "source_reference": "registry.example/image:1.0",
-                    "digest_reference": digest_reference,
-                    "registry": "registry.example",
-                    "manifest_media_type": "application/vnd.oci.image.manifest.v1+json",
-                    "resolved_at": "2026-09-17T00:00:00Z",
-                    "resolver_identity": "unit",
-                    "manifest_sha256": "b" * 64,
-                    "resolution_receipt_path": resolution_receipt.name,
-                    "resolution_receipt_sha256": resolution_sha256,
-                },
             }
         ],
-    }
-    path = tmp_path / "inventory.json"
-    path.write_text(json.dumps(inventory))
+    )
+    first_party_reference = f"registry.example/first-party@{'sha256:' + 'b' * 64}"
+    monkeypatch.setattr(
+        postrenderer,
+        "validate_first_party_inventory",
+        lambda _path, _trust: [{"digest_reference": first_party_reference}],
+    )
     rendered, subjects = rewrite(
-        "containers:\n  - image: registry.example/image:1.0\n", path
+        "containers:\n"
+        "  - image: registry.example/image:1.0\n"
+        f"  - image: {first_party_reference}\n",
+        tmp_path / "third-party.json",
+        tmp_path / "first-party.json",
+        tmp_path / "trust.json",
     )
     assert digest_reference in rendered
-    assert subjects == {digest_reference}
+    assert subjects == {digest_reference, first_party_reference}
     with pytest.raises(EvidenceError, match="absent from the reviewed scan inventory"):
-        rewrite(f"containers:\n  - image: registry.example/other@{DIGEST}\n", path)
+        rewrite(
+            f"containers:\n  - image: registry.example/other@{DIGEST}\n",
+            tmp_path / "third-party.json",
+            tmp_path / "first-party.json",
+            tmp_path / "trust.json",
+        )
+
+
+def test_placeholder_images_require_authoritative_production_mapping() -> None:
+    source = f"registry.example.invalid/model@{DIGEST}"
+    used: set[str] = set()
+    with pytest.raises(EvidenceError, match="no production mapping"):
+        _production_reference(
+            source, {}, {"registry.example.invalid"}, used, "unit"
+        )
+    production = f"registry.production.example/model@{DIGEST}"
+    assert (
+        _production_reference(
+            source,
+            {source: production},
+            {"registry.example.invalid"},
+            used,
+            "unit",
+        )
+        == production
+    )
+    assert used == {source}
 
 
 def test_source_surface_manifest_is_derived_from_actual_helm_consumers() -> None:
@@ -149,3 +205,12 @@ def test_source_surface_manifest_is_derived_from_actual_helm_consumers() -> None
     assert "stages/infrastructure/bootstrap/bootstrap.sh" in manifest[
         "direct_installer_scripts"
     ]
+    declaration_hashes = _release_declaration_hashes(ROOT, manifest)
+    assert set(declaration_hashes) == set(manifest["terraform_helm_releases"]) | set(
+        manifest["direct_render_surfaces"]
+    )
+    assert all(len(value) == 64 for value in declaration_hashes.values())
+    assert {build["id"] for build in manifest["first_party_builds"]} == {
+        "control-plane",
+        "admin-console",
+    }

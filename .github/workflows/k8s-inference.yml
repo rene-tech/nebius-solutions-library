@@ -32,9 +32,12 @@ env:
 
 jobs:
   image-security:
-    name: 'Required exact-image security gate'
+    name: 'Required source scan and protected release-image gate'
     uses: ./.github/workflows/k8s-inference-image-security.yml
-    secrets: inherit
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
 
   static-validation:
     name: 'Static and staged validation'
@@ -125,12 +128,26 @@ jobs:
             --run-root "${RUNNER_TEMP}/k8s-inference-validation"
 
   promotion-gate:
-    name: 'Required promotion gate'
+    name: 'Required event-appropriate security gate'
     if: ${{ always() }}
     needs: [image-security, static-validation]
     runs-on: ubuntu-latest
     steps:
       - name: Require both normal and image-security validation
+        env:
+          IMAGE_SECURITY: ${{ needs.image-security.result }}
+          STATIC_VALIDATION: ${{ needs.static-validation.result }}
+        run: |
+          test "$IMAGE_SECURITY" = success
+          test "$STATIC_VALIDATION" = success
+
+  protected-release-promotion-gate:
+    name: 'Protected release promotion gate'
+    if: ${{ always() && github.event_name != 'pull_request' }}
+    needs: [image-security, static-validation]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require protected release evidence and normal validation
         env:
           IMAGE_SECURITY: ${{ needs.image-security.result }}
           STATIC_VALIDATION: ${{ needs.static-validation.result }}

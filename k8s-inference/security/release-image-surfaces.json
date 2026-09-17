@@ -81,7 +81,19 @@
     "stages/infrastructure/smoke"
   ],
   "first_party_builds": [
-    "components/admin-console/Dockerfile",
-    "components/control-plane/Dockerfile"
+    {
+      "id": "admin-console",
+      "dockerfile": "components/admin-console/Dockerfile",
+      "render_surfaces": [
+        "stages/workloads/control_plane.tf::control_plane"
+      ]
+    },
+    {
+      "id": "control-plane",
+      "dockerfile": "components/control-plane/Dockerfile",
+      "render_surfaces": [
+        "stages/workloads/control_plane.tf::control_plane"
+      ]
+    }
   ]
 }

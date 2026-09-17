@@ -1,0 +1,29 @@
+{
+  "schema": "fs2-serve.nebius.ai/first-party-image-lock/v1",
+  "inventory_state": "blocked_pending_protected_build_attestation",
+  "authority": "A protected release worker must bind each production repository and digest to a signed build-and-scan receipt. Source-only local builds are not promotion evidence.",
+  "images": [
+    {
+      "id": "control-plane",
+      "dockerfile": "components/control-plane/Dockerfile",
+      "repository_suffix": "/k8s-inference/control-plane",
+      "digest_reference": null,
+      "build_source": null,
+      "build_receipt": null,
+      "render_surfaces": [
+        "stages/workloads/control_plane.tf::control_plane"
+      ]
+    },
+    {
+      "id": "admin-console",
+      "dockerfile": "components/admin-console/Dockerfile",
+      "repository_suffix": "/k8s-inference/admin-console",
+      "digest_reference": null,
+      "build_source": null,
+      "build_receipt": null,
+      "render_surfaces": [
+        "stages/workloads/control_plane.tf::control_plane"
+      ]
+    }
+  ]
+}

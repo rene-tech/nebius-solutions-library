@@ -2,9 +2,27 @@ name: 'Kubernetes Inference Image Security'
 
 on:
   workflow_call:
+    inputs:
+      render_evidence_artifact_id:
+        description: 'GitHub artifact ID containing the signed out-of-tree render packet'
+        required: false
+        type: string
+      render_evidence_archive_sha256:
+        description: 'SHA-256 of the exact render evidence artifact archive'
+        required: false
+        type: string
   schedule:
     - cron: '17 3 * * *'
   workflow_dispatch:
+    inputs:
+      render_evidence_artifact_id:
+        description: 'GitHub artifact ID containing the signed out-of-tree render packet'
+        required: false
+        type: string
+      render_evidence_archive_sha256:
+        description: 'SHA-256 of the exact render evidence artifact archive'
+        required: false
+        type: string
   pull_request:
     paths:
       - 'k8s-inference/components/control-plane/Dockerfile'
@@ -33,7 +51,9 @@ env:
 
 jobs:
   scan-first-party-and-catalog:
-    name: 'Scan exact first-party candidates and catalog lock'
+    name: 'Untrusted source scan (not promotion evidence)'
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -159,19 +179,17 @@ jobs:
             --sbom "${evidence}/catalog-runtime.spdx.json" \
             --output "${evidence}/catalog-runtime.receipt.json"
 
-      - name: Attest exact first-party and filesystem receipts
+      - name: Record unsigned source-scan evidence boundary
         shell: bash
-        env:
-          EVIDENCE_SIGNING_KEY: ${{ secrets.SAI24_EVIDENCE_SIGNING_KEY_PEM }}
         run: |
           set -euo pipefail
-          test -n "$EVIDENCE_SIGNING_KEY"
-          umask 077
-          key="${RUNNER_TEMP}/sai-24-evidence-signing-key.pem"
-          printf '%s' "$EVIDENCE_SIGNING_KEY" > "$key"
-          for receipt in "${RUNNER_TEMP}/sai-24-evidence"/*.receipt.json; do
-            openssl dgst -sha256 -sign "$key" -out "${receipt}.sig" "$receipt"
-          done
+          evidence="${RUNNER_TEMP}/sai-24-evidence"
+          printf '%s\n' \
+            'These reports are untrusted source-scan evidence only.' \
+            'They are neither signed promotion evidence nor authorization to deploy.' \
+            > "${evidence}/SOURCE-SCAN-ONLY.txt"
+          find "${evidence}" -maxdepth 1 -type f ! -name UNSIGNED-SHA256SUMS -print0 | sort -z | \
+            xargs -0 sha256sum > "${evidence}/UNSIGNED-SHA256SUMS"
 
       - name: Retain complete first-party evidence
         if: ${{ always() }}
@@ -182,7 +200,7 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
-      - name: Enforce report and receipt policy after evidence retention
+      - name: Enforce source-scan report policy after evidence retention
         shell: bash
         run: |
           set -euo pipefail
@@ -191,21 +209,75 @@ jobs:
             "${evidence}/control-plane.trivy.json" \
             "${evidence}/admin-console.trivy.json" \
             "${evidence}/catalog-runtime.trivy.json"
-          python3 k8s-inference/security/image_security_evidence.py receipt \
-            --trust k8s-inference/security/image-attestation-trust.json \
-            "${evidence}/control-plane.receipt.json" \
-            "${evidence}/admin-console.receipt.json" \
-            "${evidence}/catalog-runtime.receipt.json"
 
   scan-release-image-closure:
-    name: 'Scan exact attested render and catalog image closure'
+    name: 'Protected release closure and OIDC attestation'
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    environment: sai24-release-attestation
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      RENDER_EVIDENCE_ARTIFACT_ID: ${{ inputs.render_evidence_artifact_id || vars.SAI24_RENDER_EVIDENCE_ARTIFACT_ID }}
+      RENDER_EVIDENCE_ARCHIVE_SHA256: ${{ inputs.render_evidence_archive_sha256 || vars.SAI24_RENDER_EVIDENCE_ARCHIVE_SHA256 }}
+      ATTESTATION_BROKER_URL: ${{ vars.SAI24_ATTESTATION_BROKER_URL }}
+      ATTESTATION_AUDIENCE: 'fs2-sai24-release-attestation'
+      ATTESTATION_ENVIRONMENT: 'sai24-release-attestation'
     steps:
       - name: Checkout exact source
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
+
+      - name: Acquire exact signed render packet outside the Git tree
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$RENDER_EVIDENCE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$RENDER_EVIDENCE_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          archive="${RUNNER_TEMP}/sai-24-render-evidence.zip"
+          bundle="${RUNNER_TEMP}/sai-24-render-evidence"
+          mkdir -p "$bundle"
+          curl --fail --location --silent --show-error \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header 'Accept: application/vnd.github+json' \
+            --header 'X-GitHub-Api-Version: 2022-11-28' \
+            --output "$archive" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${RENDER_EVIDENCE_ARTIFACT_ID}/zip"
+          printf '%s  %s\n' "$RENDER_EVIDENCE_ARCHIVE_SHA256" "$archive" | \
+            sha256sum --check --strict
+          BUNDLE_ARCHIVE="$archive" BUNDLE_ROOT="$bundle" python3 - <<'PY'
+          import os
+          import pathlib
+          import zipfile
+
+          archive = pathlib.Path(os.environ["BUNDLE_ARCHIVE"])
+          root = pathlib.Path(os.environ["BUNDLE_ROOT"]).resolve()
+          with zipfile.ZipFile(archive) as bundle:
+              for member in bundle.infolist():
+                  target = (root / member.filename).resolve()
+                  target.relative_to(root)
+              bundle.extractall(root)
+          PY
+          test -f "${bundle}/production-render-packet.json"
+          printf 'RENDER_PACKET=%s\n' \
+            "${bundle}/production-render-packet.json" >> "$GITHUB_ENV"
+
+      - name: Materialize protected OIDC attestation identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ATTESTATION_BROKER_URL"
+          python3 k8s-inference/security/oidc_attestation_broker.py identity \
+            --audience "$ATTESTATION_AUDIENCE" \
+            --environment "$ATTESTATION_ENVIRONMENT" \
+            --trust k8s-inference/security/image-attestation-trust.json \
+            --output "${RUNNER_TEMP}/sai-24-attestation-identity.json"
 
       - name: Install checksum-bound Trivy
         shell: bash
@@ -228,14 +300,24 @@ jobs:
           evidence="${RUNNER_TEMP}/sai-24-third-party"
           source_tree=$(git rev-parse HEAD^{tree})
           python3 k8s-inference/security/image_security_evidence.py inventory \
+            --trust k8s-inference/security/image-attestation-trust.json \
             k8s-inference/security/third-party-images.lock.json
           python3 k8s-inference/security/release_image_closure.py \
             --root k8s-inference \
             --surfaces k8s-inference/security/release-image-surfaces.json \
-            --render-packet k8s-inference/security/production-render-packet.json \
+            --render-packet "$RENDER_PACKET" \
             --trust k8s-inference/security/image-attestation-trust.json \
             --inventory k8s-inference/security/third-party-images.lock.json \
+            --first-party-inventory k8s-inference/security/first-party-images.lock.json \
+            --catalog-image-map k8s-inference/security/catalog-images.lock.json \
+            --attestation-identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
             --output "${evidence}/release-image-closure.json"
+          python3 k8s-inference/security/oidc_attestation_broker.py sign \
+            --broker-url "$ATTESTATION_BROKER_URL" \
+            --audience "$ATTESTATION_AUDIENCE" \
+            --identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
+            --trust k8s-inference/security/image-attestation-trust.json \
+            "${evidence}/release-image-closure.json"
           jq -er '.subjects[]' "${evidence}/release-image-closure.json" \
             > "${RUNNER_TEMP}/release-image-digests.txt"
           while IFS= read -r image_ref; do
@@ -251,30 +333,32 @@ jobs:
             python3 k8s-inference/security/image_security_evidence.py create-receipt \
               --repository "$GITHUB_WORKSPACE" \
               --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
-              --kind third-party-image --subject "${image_ref}" \
+              --kind release-image --subject "${image_ref}" \
               --scanner-release "${TRIVY_RELEASE}" \
               --scanner-archive-sha256 "${TRIVY_ARCHIVE_SHA256}" \
               --scanner-version "${evidence}/trivy-version.json" \
               --command-contract 'trivy image DIGEST_REFERENCE --scanners vuln,secret --format json' \
               --report "${evidence}/${artifact_id}.trivy.json" \
               --sbom "${evidence}/${artifact_id}.spdx.json" \
-              --resolution-receipt "${evidence}/release-image-closure.json" \
+              --release-closure "${evidence}/release-image-closure.json" \
+              --trust k8s-inference/security/image-attestation-trust.json \
+              --attestation-identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
               --output "${evidence}/${artifact_id}.receipt.json"
           done < "${RUNNER_TEMP}/release-image-digests.txt"
 
-      - name: Attest every release-closure scan receipt
+      - name: Attest every release-closure scan receipt with protected OIDC identity
         shell: bash
-        env:
-          EVIDENCE_SIGNING_KEY: ${{ secrets.SAI24_EVIDENCE_SIGNING_KEY_PEM }}
         run: |
           set -euo pipefail
-          test -n "$EVIDENCE_SIGNING_KEY"
-          umask 077
-          key="${RUNNER_TEMP}/sai-24-closure-signing-key.pem"
-          printf '%s' "$EVIDENCE_SIGNING_KEY" > "$key"
-          for receipt in "${RUNNER_TEMP}/sai-24-third-party"/*.receipt.json; do
-            openssl dgst -sha256 -sign "$key" -out "${receipt}.sig" "$receipt"
-          done
+          mapfile -t receipts < <(find "${RUNNER_TEMP}/sai-24-third-party" \
+            -maxdepth 1 -name '*.receipt.json' -print | sort)
+          test "${#receipts[@]}" -gt 0
+          python3 k8s-inference/security/oidc_attestation_broker.py sign \
+            --broker-url "$ATTESTATION_BROKER_URL" \
+            --audience "$ATTESTATION_AUDIENCE" \
+            --identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
+            --trust k8s-inference/security/image-attestation-trust.json \
+            "${receipts[@]}"
 
       - name: Retain complete third-party evidence
         if: ${{ always() }}

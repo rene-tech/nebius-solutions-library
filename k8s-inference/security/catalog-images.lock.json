@@ -1,0 +1,9 @@
+{
+  "schema": "fs2-serve.nebius.ai/catalog-image-map/v1",
+  "mapping_state": "blocked_pending_authoritative_production_mappings",
+  "placeholder_registries": [
+    "registry.example.invalid"
+  ],
+  "authority": "A protected resolver must map every catalog or static-manifest placeholder to the same manifest digest in an authorized production registry and sign each mapping receipt.",
+  "mappings": []
+}

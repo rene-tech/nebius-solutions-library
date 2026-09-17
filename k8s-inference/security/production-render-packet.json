@@ -1,16 +1,20 @@
 {
   "schema": "fs2-serve.nebius.ai/release-render-packet/v1",
-  "status": "blocked_pending_authorized_exact_render",
+  "status": "template_only_not_release_evidence",
+  "authority": "This checked-in document is a schema example only. A release workflow must obtain a signed packet out-of-tree so its source commit and tree do not self-reference this file.",
   "source": {
     "commit": null,
     "tree": null
   },
   "surface_manifest_sha256": null,
   "inventory_sha256": null,
+  "first_party_inventory_sha256": null,
+  "catalog_image_map_sha256": null,
   "terraform_plan": null,
   "renders": [],
   "attestation": {
     "signature_path": null,
-    "trust_policy_sha256": null
+    "trust_policy_sha256": null,
+    "identity": null
   }
 }

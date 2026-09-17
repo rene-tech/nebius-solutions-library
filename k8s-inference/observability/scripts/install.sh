@@ -15,6 +15,10 @@ task_image_gate=(
   --post-renderer-args "$task_security_dir/helm_image_postrenderer.py"
   --post-renderer-args=--lock
   --post-renderer-args "$task_security_dir/third-party-images.lock.json"
+  --post-renderer-args=--first-party-lock
+  --post-renderer-args "$task_security_dir/first-party-images.lock.json"
+  --post-renderer-args=--trust
+  --post-renderer-args "$task_security_dir/image-attestation-trust.json"
 )
 
 cleanup() {
