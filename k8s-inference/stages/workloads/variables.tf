@@ -1,17 +1,29 @@
 variable "release_image_contract" {
-  description = "Protected signed release-image closure and JSON exported from the exact saved Terraform plan. Both absolute paths are mandatory for every production plan/apply."
+  description = "Protected closure and external capsule authority used by the sole authorized Terraform lifecycle."
   type = object({
     closure_path   = string
-    plan_json_path = string
+    toolchain_path = string
+    bootstrap_path = string
+    external_trust_path = string
+    registry_auth_receipt_path = string
+    registry_refresh_registration_path = string
   })
   nullable = false
 
   validation {
     condition = (
       startswith(var.release_image_contract.closure_path, "/") &&
-      startswith(var.release_image_contract.plan_json_path, "/") &&
+      startswith(var.release_image_contract.toolchain_path, "/") &&
+      startswith(var.release_image_contract.bootstrap_path, "/") &&
+      startswith(var.release_image_contract.external_trust_path, "/") &&
+      startswith(var.release_image_contract.registry_auth_receipt_path, "/") &&
+      startswith(var.release_image_contract.registry_refresh_registration_path, "/") &&
       !strcontains(var.release_image_contract.closure_path, "..") &&
-      !strcontains(var.release_image_contract.plan_json_path, "..")
+      !strcontains(var.release_image_contract.toolchain_path, "..") &&
+      !strcontains(var.release_image_contract.bootstrap_path, "..") &&
+      !strcontains(var.release_image_contract.external_trust_path, "..") &&
+      !strcontains(var.release_image_contract.registry_auth_receipt_path, "..") &&
+      !strcontains(var.release_image_contract.registry_refresh_registration_path, "..")
     )
     error_message = "release_image_contract paths must be absolute and traversal-free."
   }
@@ -1600,11 +1612,54 @@ variable "ngc_api_key" {
 }
 
 variable "nvcrio_dockerconfigjson" {
-  description = "Docker config JSON for selected nvcr.io model images and the full-catalog DCGM exporter; stored in disposable local state."
+  description = "Ephemeral broker-issued Docker config for exact nvcr.io digests. It may flow only into write-only Secret data and is never retained in plan or state."
   type        = string
   sensitive   = true
+  ephemeral   = true
   nullable    = true
   default     = null
+}
+
+variable "nvcrio_credential_authorization" {
+  description = "Non-secret signed-receipt projection for the short-lived pull-only credential."
+  type = object({
+    receipt_sha256                     = string
+    expires_at                         = string
+    revision                           = number
+    subjects                           = set(string)
+    refresh_owner_id                   = string
+    refresh_interval_seconds           = number
+    rotate_before_expiry_seconds       = number
+    management_mode                    = string
+    retire_superseded_without_delete   = bool
+    refresh_registration_sha256        = string
+  })
+  nullable = true
+  default  = null
+
+  validation {
+    condition = var.nvcrio_credential_authorization == null || (
+      can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.receipt_sha256)) &&
+      can(timecmp(var.nvcrio_credential_authorization.expires_at, timestamp())) &&
+      floor(var.nvcrio_credential_authorization.revision) == var.nvcrio_credential_authorization.revision &&
+      var.nvcrio_credential_authorization.revision > 0 &&
+      length(var.nvcrio_credential_authorization.refresh_owner_id) > 0 &&
+      floor(var.nvcrio_credential_authorization.refresh_interval_seconds) == var.nvcrio_credential_authorization.refresh_interval_seconds &&
+      var.nvcrio_credential_authorization.refresh_interval_seconds >= 60 &&
+      var.nvcrio_credential_authorization.refresh_interval_seconds <= 300 &&
+      floor(var.nvcrio_credential_authorization.rotate_before_expiry_seconds) == var.nvcrio_credential_authorization.rotate_before_expiry_seconds &&
+      var.nvcrio_credential_authorization.rotate_before_expiry_seconds >= 60 &&
+      var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
+      var.nvcrio_credential_authorization.retire_superseded_without_delete &&
+      can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.refresh_registration_sha256)) &&
+      length(var.nvcrio_credential_authorization.subjects) > 0 &&
+      alltrue([
+        for subject in var.nvcrio_credential_authorization.subjects :
+        can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", subject))
+      ])
+    )
+    error_message = "NVCR authorization requires a signed receipt, exact digest subjects, and an approved <=300-second non-delete refresh lifecycle."
+  }
 }
 
 variable "run_acceptance_job" {

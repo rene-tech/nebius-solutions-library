@@ -279,9 +279,16 @@ resource "terraform_data" "cluster_contract" {
     precondition {
       condition = (
         (!local.ngc_api_key_required || var.ngc_api_key != null) &&
-        (!(local.model_nvcr_credentials_required || local.dcgm_nvcr_credentials_required) || var.nvcrio_dockerconfigjson != null)
+        (!(local.model_nvcr_credentials_required || local.dcgm_nvcr_credentials_required || local.modelexpress_nvcr_required) || (
+          var.nvcrio_dockerconfigjson != null &&
+          var.nvcrio_credential_authorization != null &&
+          timecmp(var.nvcrio_credential_authorization.expires_at, timestamp()) > 0 &&
+          var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
+          var.nvcrio_credential_authorization.refresh_interval_seconds <= 300 &&
+          var.nvcrio_credential_authorization.retire_superseded_without_delete
+        ))
       )
-      error_message = "The selected NIM models require ngc_api_key and nvcrio_dockerconfigjson; the full-catalog DCGM exporter independently requires nvcrio_dockerconfigjson."
+      error_message = "Private NVCR pulls require an unexpired broker receipt, ephemeral write-only bytes, and the signed non-delete refresh-controller contract; static or state-retained credentials are forbidden."
     }
     precondition {
       condition     = try(data.kubernetes_resource.envoyproxy_crd.object.metadata.name, "") == "envoyproxies.gateway.envoyproxy.io"

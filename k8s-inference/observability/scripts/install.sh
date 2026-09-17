@@ -1,18 +1,40 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-task_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ "${FS2_EXTERNAL_CAPSULE_ACTIVE:-}" != "1" ]]; then
+  printf 'observability installation must start through the external capsule shell-entry command\n' >&2
+  exit 1
+fi
+case "${FS2_CAPSULE_SOURCE_ROOT:-}" in /*) ;; *) printf 'capsule read-only source root is absent\n' >&2; exit 1 ;; esac
+case "${FS2_CAPSULE_TOOL_DIR:-}" in /*) ;; *) printf 'capsule read-only tool directory is absent\n' >&2; exit 1 ;; esac
+export PATH="$FS2_CAPSULE_TOOL_DIR"
+unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
+task_root="$FS2_CAPSULE_SOURCE_ROOT/observability"
 task_lock="$task_root/versions.lock.yaml"
-task_security_dir=$(cd "$task_root/../security" && pwd)
+task_security_dir="$FS2_CAPSULE_SOURCE_ROOT/security"
 task_kubeconfig=${FS2_OBSERVABILITY_KUBECONFIG:-${KUBECONFIG:-$HOME/.kube/config}}
 task_context=${FS2_OBSERVABILITY_CONTEXT:?set FS2_OBSERVABILITY_CONTEXT to the target Kubernetes context}
 task_namespace=fs2-observability
 task_owner=fs2-serve-lean-observability-live
 task_tmp=$(mktemp -d /tmp/fs2-observability-install.XXXXXX)
+gate_bootstrap=${FS2_IMAGE_GATE_BOOTSTRAP:?set externally installed capsule bootstrap}
+external_trust=${FS2_EXTERNAL_CAPSULE_TRUST:?set external capsule trust}
+gate_toolchain=${FS2_IMAGE_GATE_TOOLCHAIN:?set execution toolchain lock}
+registry_auth_receipt=${FS2_REGISTRY_AUTH_RECEIPT:?set signed short-lived pull receipt}
+reviewed_helm=("$gate_bootstrap" exec-tool --external-trust "$external_trust" --toolchain "$gate_toolchain" --source-root "$task_security_dir/.." --tool helm --)
+reviewed_kubectl=("$gate_bootstrap" exec-tool --external-trust "$external_trust" --toolchain "$gate_toolchain" --source-root "$task_security_dir/.." --tool kubectl --)
 task_image_gate=(
-  --post-renderer /usr/bin/env
-  --post-renderer-args python3
-  --post-renderer-args "$task_security_dir/helm_image_postrenderer.py"
+  --post-renderer "$gate_bootstrap"
+  --post-renderer-args=python-entry
+  --post-renderer-args=--external-trust
+  --post-renderer-args "$external_trust"
+  --post-renderer-args=--toolchain
+  --post-renderer-args "$gate_toolchain"
+  --post-renderer-args=--source-root
+  --post-renderer-args "$task_security_dir/.."
+  --post-renderer-args=--entry
+  --post-renderer-args security/helm_image_postrenderer.py
+  --post-renderer-args=--
   --post-renderer-args=--lock
   --post-renderer-args "$task_security_dir/third-party-images.lock.json"
   --post-renderer-args=--first-party-lock
@@ -21,6 +43,10 @@ task_image_gate=(
   --post-renderer-args "$task_security_dir/image-attestation-trust.json"
   --post-renderer-args=--authorization
   --post-renderer-args "${FS2_IMAGE_GATE_AUTHORIZATION:-$task_security_dir/image-materials-authorization.json}"
+  --post-renderer-args=--toolchain
+  --post-renderer-args "$gate_toolchain"
+  --post-renderer-args=--registry-auth-receipt
+  --post-renderer-args "$registry_auth_receipt"
 )
 
 cleanup() {
@@ -31,17 +57,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for task_bin in helm kubectl yq sha256sum openssl; do
+for task_bin in yq sha256sum openssl; do
   command -v "$task_bin" >/dev/null || { printf 'missing required command: %s\n' "$task_bin" >&2; exit 1; }
 done
 test -r "$task_kubeconfig" || { printf 'kubeconfig is not readable: %s\n' "$task_kubeconfig" >&2; exit 1; }
 
 kctl() {
-  kubectl --kubeconfig "$task_kubeconfig" --context "$task_context" "$@"
+  "${reviewed_kubectl[@]}" --kubeconfig "$task_kubeconfig" --context "$task_context" "$@"
 }
 
 hctl() {
-  helm --kubeconfig "$task_kubeconfig" --kube-context "$task_context" "$@"
+  "${reviewed_helm[@]}" --kubeconfig "$task_kubeconfig" --kube-context "$task_context" "$@"
 }
 
 pull_chart() {
@@ -51,7 +77,7 @@ pull_chart() {
   task_name=$(yq -r ".charts.${task_key}.name" "$task_lock")
   task_version=$(yq -r ".charts.${task_key}.version" "$task_lock")
   task_sha=$(yq -r ".charts.${task_key}.sha256" "$task_lock")
-  helm pull --repo "$task_repo" "$task_name" --version "$task_version" --destination "$task_tmp"
+  "${reviewed_helm[@]}" pull --repo "$task_repo" "$task_name" --version "$task_version" --destination "$task_tmp"
   task_archive="$task_tmp/${task_name}-${task_version}.tgz"
   test "$(sha256sum "$task_archive" | awk '{print $1}')" = "$task_sha" || {
     printf 'chart digest mismatch: %s\n' "$task_key" >&2

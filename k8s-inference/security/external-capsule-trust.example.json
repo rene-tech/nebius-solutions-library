@@ -1,0 +1,40 @@
+{
+  "schema": "fs2-serve.nebius.ai/external-capsule-trust/v1",
+  "state": "blocked_example_not_an_authority",
+  "authority": "This example must never be used in place. Platform Security installs the real document and bootstrap outside the Git checkout on a root-owned read-only or fs-verity-backed path.",
+  "bootstrap": {"path": null, "sha256": null},
+  "repository_trust": {"path": null, "sha256": null},
+  "toolchain_lock": {"path": null, "sha256": null},
+  "source_root": {"path": null, "tree_sha256": null, "transport": null},
+  "tool_dispatch_directory": {"path": null, "tree_sha256": null, "transport": "sealed-read-only-private-mount"},
+  "capsule_contract": {
+    "bootstrap_commands": [
+      "verify",
+      "python-entry",
+      "python-stdin",
+      "shell-entry",
+      "exec-tool",
+      "tool-sha256",
+      "terraform-init",
+      "terraform-validate-root",
+      "signed-terraform-plan",
+      "signed-terraform-apply",
+      "verify-workload-registry-credential",
+      "apply-registry-secret",
+      "register-workload-registry-refresh"
+    ],
+    "seal_flags": ["F_SEAL_SEAL", "F_SEAL_SHRINK", "F_SEAL_GROW", "F_SEAL_WRITE"],
+    "source_transport": "sealed-zip-memfd",
+    "source_filesystem_transport": "fs-verity-or-sealed-read-only-private-mount",
+    "file_transport": "sealed-memfd",
+    "terraform_provider_transport": "verified-read-only-private-mount",
+    "terraform_modes": ["init", "plan", "show", "apply"],
+    "deny_path_reopen": true,
+    "deny_path_lookup": true,
+    "protected_entrypoint_environment": {
+      "FS2_EXTERNAL_CAPSULE_ACTIVE": "1",
+      "FS2_CAPSULE_SOURCE_ROOT": "externally-bound-read-only-tree",
+      "FS2_CAPSULE_TOOL_DIR": "externally-bound-read-only-tools"
+    }
+  }
+}

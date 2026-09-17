@@ -82,22 +82,23 @@ accelerator contract digest before treating capacity as effective.
 
 ## Validation
 
-From the repository root, source validation requires no backend or cloud
-credentials:
+Direct Terraform execution is not an accepted validation or lifecycle path.
+The external SAI-24 capsule binds the Terraform executable, configuration,
+module graph, provider mirror and provisioners before it performs the
+backend-disabled root validation. To validate the complete facade and all
+three stage roots with an example configuration, use the capsule-loaded
+`inference-stack` entrypoint described in `docs/SAI24_EXECUTION_CAPSULE.md`:
 
 ```bash
-terraform -chdir=k8s-inference/stages/infrastructure fmt -check -recursive
-export TF_DATA_DIR="$(mktemp -d)"
-terraform -chdir=k8s-inference/stages/infrastructure init -backend=false
-terraform -chdir=k8s-inference/stages/infrastructure validate
-```
-
-To validate the complete provider-free facade and all three stage roots with
-an example configuration:
-
-```bash
-./k8s-inference/inference-stack validate \
+"$FS2_IMAGE_GATE_BOOTSTRAP" python-entry \
+  --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+  --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+  --source-root /absolute/read-only/candidate/k8s-inference \
+  --entry inference-stack -- validate \
   --var-file k8s-inference/terraform.tfvars.example \
+  --image-gate-bootstrap "$FS2_IMAGE_GATE_BOOTSTRAP" \
+  --external-capsule-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+  --image-gate-toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
   --run-root "${XDG_STATE_HOME:-$HOME/.local/state}/nebius-k8s-inference/validation"
 ```
 

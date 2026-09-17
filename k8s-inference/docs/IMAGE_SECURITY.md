@@ -20,11 +20,14 @@ requests run only an untrusted, unsigned source scan and never receive signing
 authority. Non-PR release runs additionally require the protected
 `sai24-release-attestation` environment, GitHub's short-lived OIDC identity,
 and an authorized signing broker; no long-lived signing key is inherited or
-written to the runner. The workflow installs a specific Trivy archive only
-after checking its SHA-256, records the locally built OCI digest, emits
-complete JSON results and SPDX JSON SBOMs, and retains the receipt bundle for
-90 days. It scans the control-plane and admin source candidates and catalog
-filesystem in the untrusted lane. The protected lane separately scans every
+written to the runner. The untrusted lane installs a specific Trivy archive
+only after checking its SHA-256. The protected lane instead executes the exact
+Trivy bytes bound by external capsule trust and records that executable digest
+in every promotion receipt. Both emit complete JSON results and SPDX JSON
+SBOMs and retain their receipt bundles for 90 days. The untrusted lane scans
+the control-plane and admin source candidates and catalog filesystem. Its
+receipts are explicitly marked `untrusted-source-scan-only` and promotion
+validation rejects them. The protected lane separately scans every
 production digest in the render-derived release closure, including first-party
 control/admin images, chart hooks/init containers, and mapped catalog model
 runtimes. A new critical result has a 24-hour remediation SLA; a
@@ -110,11 +113,16 @@ protected authentication classification fails before scanning.
   for raw install commands. Non-release test fixtures require an explicit
   purpose ledger. ModelExpress additionally verifies the signed release name,
   namespace, install/upgrade mode, chart source tree, ordered values and actual
-  post-rendered manifest before any cluster request. The two production
-  Terraform roots require a closure contract and place a signed plan-closure
-  gate before their cluster contract. `security/apply_signed_terraform_plan.sh`
-  streams JSON from the exact saved binary plan into that verifier and applies
-  that same plan only after every planned Helm resource matches the closure.
+  post-rendered manifest before any cluster mutation. The production Terraform
+  roots require a closure contract and place a signed plan-closure gate before
+  their cluster contract. `security/apply_signed_terraform_plan.sh` is only a
+  sealed-shell compatibility dispatcher. The independently installed capsule
+  copies the binary plan, closure, signatures, trust, configuration, providers,
+  modules and tools into sealed descriptors/read-only mounts, renders and
+  applies the same plan descriptor, and permits cluster mutation only after
+  every planned Helm resource matches the closure. Root facade and
+  infrastructure plans use the same capsule even though they own no Helm
+  release; no ordinary Terraform apply path remains.
   A caller may select a candidate evidence path, but cannot replace the
   source-pinned trust authority or authorize values absent from signed evidence.
 - `security/catalog-images.lock.json` maps `registry.example.invalid` source
@@ -135,8 +143,10 @@ The post-renderer accepts protected out-of-tree inventories only when a signed
 materials authorization (during rendering) or signed final release closure
 (during apply) binds their exact hashes to the current clean commit/tree and
 the source-pinned trust policy. Caller-supplied hashes are not authority. The
-checked-in materials document authorizes nothing. The trust policy cannot be
-replaced by an environment variable. This keeps source templates fail-closed
+checked-in materials document authorizes nothing. The repository trust policy
+and toolchain lock are subordinate to the external root-owned, read-only
+capsule authority; an environment variable can only name that exact externally
+bound object, not replace it. This keeps source templates fail-closed
 while preserving the install path once the external evidence packet has been
 independently accepted.
 
@@ -171,6 +181,22 @@ currently null/blocked values are independently resolved, this candidate
 remains **SOURCE NO-GO**. The installers remain present and become usable once
 those mandatory inputs are accepted; no tag/default path can bypass the
 post-render gate.
+
+All protected Python and shell entrypoints are loaded by the external capsule,
+not by pathname. The capsule verifies external root-owned trust before loading
+one sealed Python package or shell source, exposes an exact read-only source
+tree, seals each plan/evidence input, and binds the root, infrastructure,
+foundation and workloads Terraform lifecycles to the same provider/module/tool
+graph. Repository-local launchers are non-authoritative fail-closed stubs.
+
+Private workload pulls additionally require a signed refresh registration.
+The accepted refresh owner must rotate each exact repository+digest pull token
+before its <=900-second expiry, retain the last valid revision on failure,
+audit every transition, and supersede without deleting the Secret. Static
+Docker config environment variables and host credential merging are rejected.
+The checked-in refresh controller contract has null runtime/provenance fields,
+so private-image integration remains blocked rather than pretending that one
+short-lived initial Secret preserves later scale or reschedule behavior.
 
 Rollback is a normal Git revert of the integration commit plus restoration of
 the previously recorded first-party image digests or Helm revisions. The

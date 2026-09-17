@@ -42,11 +42,12 @@ spec:
             {{- toYaml .Values.securityContext | nindent 12 }}
           {{- end }}
           {{- if .Values.image }}
-          {{- if .Values.image.digest }}
-          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
-          {{- else }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          {{- $repository := required "image.repository is required" .Values.image.repository }}
+          {{- $digest := required "image.digest from the protected inventory is required; tags are forbidden" .Values.image.digest }}
+          {{- if not (regexMatch "^sha256:[0-9a-f]{64}$" $digest) }}
+          {{- fail "image.digest must be an exact sha256 digest" }}
           {{- end }}
+          image: "{{ $repository }}@{{ $digest }}"
           imagePullPolicy: {{ .Values.image.pullPolicy | default "IfNotPresent" }}
           {{- end }}
           ports:

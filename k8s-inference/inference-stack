@@ -18,7 +18,12 @@ from typing import Any, Iterator, Mapping, Sequence
 from urllib.parse import urlsplit
 
 
-SOLUTION_ROOT = Path(__file__).resolve().parent
+_capsule_source = os.environ.get("FS2_CAPSULE_SOURCE_ROOT", "")
+SOLUTION_ROOT = (
+    Path(_capsule_source).resolve()
+    if _capsule_source and Path(_capsule_source).is_absolute()
+    else Path(__file__).resolve().parent
+)
 DEPLOY_ROOT = SOLUTION_ROOT
 REPOSITORY_ROOT = SOLUTION_ROOT.parent
 INFRA_ROOT = SOLUTION_ROOT / "stages" / "infrastructure"
@@ -41,6 +46,8 @@ STAGE_COMPLETION_OUTPUTS = {
     "foundation": "cluster_contract",
     "workloads": "deployment_contract",
 }
+CAPSULE_ENVIRONMENT: dict[str, str] = {}
+REGISTRY_CREDENTIAL: dict[str, Any] | None = None
 
 
 class DeploymentError(RuntimeError):
@@ -118,13 +125,28 @@ def private_text(path: Path, value: str) -> None:
 def clean_environment() -> dict[str, str]:
     # Stage inputs are generated explicitly. Inherited TF_VAR values could
     # otherwise make the same customer file produce a different deployment.
-    return {
+    cleaned = {
         key: value
         for key, value in os.environ.items()
         if not key.startswith("TF_VAR_")
         and not key.startswith("TF_CLI_ARGS")
-        and key not in {"TF_DATA_DIR", "TF_WORKSPACE"}
+        and key
+        not in {
+            "TF_DATA_DIR",
+            "TF_WORKSPACE",
+            "PATH",
+            "PYTHONHOME",
+            "PYTHONPATH",
+            "PYTHONSTARTUP",
+        }
     }
+    cleaned.update(CAPSULE_ENVIRONMENT)
+    if os.environ.get("FS2_EXTERNAL_CAPSULE_ACTIVE") == "1":
+        tool_directory = CAPSULE_ENVIRONMENT.get("FS2_CAPSULE_TOOL_DIR", "")
+        if not tool_directory or not Path(tool_directory).is_absolute():
+            raise DeploymentError("capsule command environment has no exact tool directory")
+        cleaned["PATH"] = tool_directory
+    return cleaned
 
 
 # Write-only Secret arguments (`data_wo`) are a Terraform 1.11 feature. On an
@@ -166,6 +188,39 @@ def terraform_environment(run_root: Path, stage: str) -> dict[str, str]:
     return environment
 
 
+def terraform_root_name(root: Path) -> str:
+    roots = {
+        DEPLOY_ROOT.resolve(): ".",
+        INFRA_ROOT.resolve(): "stages/infrastructure",
+        FOUNDATION_ROOT.resolve(): "stages/foundation",
+        WORKLOADS_ROOT.resolve(): "stages/workloads",
+    }
+    name = roots.get(root.resolve())
+    if name is None:
+        raise DeploymentError("Terraform root is outside the reviewed capsule contract")
+    return name
+
+
+def terraform_capsule_command(operation: str, root: Path) -> list[str]:
+    bootstrap = CAPSULE_ENVIRONMENT.get("FS2_IMAGE_GATE_BOOTSTRAP", "")
+    external_trust = CAPSULE_ENVIRONMENT.get("FS2_EXTERNAL_CAPSULE_TRUST", "")
+    toolchain = CAPSULE_ENVIRONMENT.get("FS2_IMAGE_GATE_TOOLCHAIN", "")
+    if not bootstrap or not external_trust or not toolchain:
+        raise DeploymentError("Terraform execution requires the external capsule")
+    return [
+        bootstrap,
+        operation,
+        "--external-trust",
+        external_trust,
+        "--toolchain",
+        toolchain,
+        "--source-root",
+        str(SOLUTION_ROOT),
+        "--root",
+        terraform_root_name(root),
+    ]
+
+
 def terraform_init(
     terraform: str,
     root: Path,
@@ -176,14 +231,14 @@ def terraform_init(
         raise DeploymentError(
             f"Terraform backend path must not be a symlink: {backend}"
         )
+    expected = str((Path(CAPSULE_ENVIRONMENT["FS2_CAPSULE_TOOL_DIR"]) / "terraform").resolve())
+    if str(Path(terraform).resolve()) != expected:
+        raise DeploymentError("Terraform binary differs from the capsule tool binding")
     run(
         [
-            terraform,
-            f"-chdir={root}",
-            "init",
-            "-input=false",
-            "-reconfigure",
-            f"-backend-config=path={backend}",
+            *terraform_capsule_command("terraform-init", root),
+            "--backend-state",
+            str(backend),
         ],
         env=environment,
     )
@@ -194,17 +249,7 @@ def validate_stage_roots(terraform: str, run_root: Path) -> None:
         environment = terraform_environment(run_root, f"validate-{stage}")
         root = stage_root(stage)
         run(
-            [
-                terraform,
-                f"-chdir={root}",
-                "init",
-                "-backend=false",
-                "-input=false",
-            ],
-            env=environment,
-        )
-        run(
-            [terraform, f"-chdir={root}", "validate", "-no-color"],
+            terraform_capsule_command("terraform-validate-root", root),
             env=environment,
         )
 
@@ -273,24 +318,36 @@ def plan_json(
 ) -> dict[str, Any]:
     if plan_path.is_symlink() or json_path.is_symlink():
         raise DeploymentError("plan and plan JSON paths must not be symlinks")
+    expected = str((Path(CAPSULE_ENVIRONMENT["FS2_CAPSULE_TOOL_DIR"]) / "terraform").resolve())
+    if str(Path(terraform).resolve()) != expected:
+        raise DeploymentError("Terraform binary differs from the capsule tool binding")
+    plan_receipt = Path(f"{plan_path}.capsule.json")
+    plan_signature = Path(f"{plan_receipt}.sig")
     arguments = [
-        terraform,
-        f"-chdir={root}",
-        "plan",
-        "-input=false",
-        "-lock=true",
-        f"-var-file={variable_file}",
-        f"-out={plan_path}",
+        *terraform_capsule_command("signed-terraform-plan", root),
+        "--var-file",
+        str(variable_file),
+        "--plan",
+        str(plan_path),
+        "--plan-receipt",
+        str(plan_receipt),
+        "--plan-receipt-signature",
+        str(plan_signature),
+        "--output-plan-json",
     ]
     if destroy:
-        arguments.insert(3, "-destroy")
-    run(arguments, env=environment)
+        arguments.append("--destroy")
+    result = run(arguments, env=environment, capture=True)
     plan_path.chmod(0o600)
-    result = run(
-        [terraform, f"-chdir={root}", "show", "-json", str(plan_path)],
-        env=environment,
-        capture=True,
-    )
+    if (
+        plan_receipt.is_symlink()
+        or plan_signature.is_symlink()
+        or not plan_receipt.is_file()
+        or not plan_signature.is_file()
+    ):
+        raise DeploymentError(
+            "external Terraform capsule did not emit its signed binary-plan receipt"
+        )
     private_text(json_path, result.stdout)
     return json.loads(result.stdout)
 
@@ -321,8 +378,29 @@ def plan_changes_managed_resources_or_outputs(document: Mapping[str, Any]) -> bo
 
 
 def source_commit() -> str:
+    bootstrap = CAPSULE_ENVIRONMENT.get("FS2_IMAGE_GATE_BOOTSTRAP")
+    external_trust = CAPSULE_ENVIRONMENT.get("FS2_EXTERNAL_CAPSULE_TRUST")
+    toolchain = CAPSULE_ENVIRONMENT.get("FS2_IMAGE_GATE_TOOLCHAIN")
+    if not bootstrap or not external_trust or not toolchain:
+        raise DeploymentError("source identity requires the external capsule")
     result = run(
-        ["git", "-C", str(REPOSITORY_ROOT), "rev-parse", "HEAD"],
+        [
+            bootstrap,
+            "exec-tool",
+            "--external-trust",
+            external_trust,
+            "--toolchain",
+            toolchain,
+            "--source-root",
+            str(SOLUTION_ROOT),
+            "--tool",
+            "git",
+            "--",
+            "-C",
+            str(REPOSITORY_ROOT),
+            "rev-parse",
+            "HEAD",
+        ],
         capture=True,
         env=clean_environment(),
     )
@@ -1255,22 +1333,12 @@ def derived_admin_configuration(
 
 
 def merge_docker_config(base: Any, extra: Any) -> dict[str, Any]:
-    """Merge Docker auth documents without logging or persisting credentials."""
-    if not isinstance(base, dict) or not isinstance(extra, dict):
-        raise DeploymentError("registry Docker configuration must be a JSON object")
-    merged = dict(base)
-    for key in ("auths", "credHelpers"):
-        base_values = merged.get(key, {})
-        extra_values = extra.get(key, {})
-        if not isinstance(base_values, dict) or not isinstance(extra_values, dict):
-            raise DeploymentError(
-                f"registry Docker configuration {key} must be an object"
-            )
-        merged[key] = {**base_values, **extra_values}
-    for key, value in extra.items():
-        if key not in {"auths", "credHelpers"}:
-            merged[key] = value
-    return merged
+    """Retired: release operations never merge ambient registry credentials."""
+
+    del base, extra
+    raise DeploymentError(
+        "Docker configuration merging is forbidden; use the exact capsule projection"
+    )
 
 
 @contextmanager
@@ -1281,8 +1349,11 @@ def registry_client_environment(
     """Materialize optional private registry auth only in an ephemeral directory."""
     environment = clean_environment()
     environment["NEBIUS_PROFILE"] = nebius_profile
-    secret_name = contract["secret_environment"]["nvcr_dockerconfig"]
-    encoded_extra = os.environ.get(secret_name)
+    encoded_extra = (
+        REGISTRY_CREDENTIAL.get("docker_config_json")
+        if REGISTRY_CREDENTIAL is not None
+        else None
+    )
     if not encoded_extra:
         yield environment
         return
@@ -1290,26 +1361,16 @@ def registry_client_environment(
         extra = json.loads(encoded_extra)
     except json.JSONDecodeError as exc:
         raise DeploymentError(
-            f"the Docker configuration in environment reference {secret_name!r} is not valid JSON"
+            "the capsule-validated short-lived Docker configuration is not valid JSON"
         ) from exc
-
-    docker_config_root = Path(
-        environment.get("DOCKER_CONFIG", str(Path.home() / ".docker"))
-    )
-    base_path = docker_config_root / "config.json"
-    base: Any = {}
-    if base_path.is_file() and not base_path.is_symlink():
-        try:
-            base = json.loads(base_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise DeploymentError(
-                "the existing Docker configuration is not valid JSON"
-            ) from exc
 
     with tempfile.TemporaryDirectory(prefix="fs2-registry-auth-") as temporary:
         temporary_root = Path(temporary)
         temporary_root.chmod(0o700)
-        private_json(temporary_root / "config.json", merge_docker_config(base, extra))
+        # Never merge host credentials into a release operation. The broker
+        # token's server-side authorization is exact repository+digest+pull;
+        # its Docker document is the complete and only client auth set.
+        private_json(temporary_root / "config.json", extra)
         environment["DOCKER_CONFIG"] = str(temporary_root)
         yield environment
 
@@ -1498,7 +1559,16 @@ def stage_environment(
 
     if stage == "workloads":
         ngc_key = os.environ.get(secret_names["ngc_api_key"])
-        docker_config = os.environ.get(secret_names["nvcr_dockerconfig"])
+        docker_config = (
+            REGISTRY_CREDENTIAL.get("docker_config_json")
+            if REGISTRY_CREDENTIAL is not None
+            else None
+        )
+        authorization = (
+            REGISTRY_CREDENTIAL.get("authorization")
+            if REGISTRY_CREDENTIAL is not None
+            else None
+        )
         requirements = contract["secret_requirements"]
         if requirements["ngc_api_key"] and not ngc_key:
             raise DeploymentError(
@@ -1506,12 +1576,17 @@ def stage_environment(
             )
         if requirements["nvcr_dockerconfig"] and not docker_config:
             raise DeploymentError(
-                "the selected workloads require the configured NVCR dockerconfig environment reference"
+                "the selected workloads require a capsule-validated short-lived NVCR credential"
             )
         if ngc_key:
             environment["TF_VAR_ngc_api_key"] = ngc_key
         if docker_config:
             environment["TF_VAR_nvcrio_dockerconfigjson"] = docker_config
+            environment["TF_VAR_nvcrio_credential_authorization"] = json.dumps(
+                authorization,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
 
     return environment
 
@@ -1836,10 +1911,123 @@ def existing_controller_ownership(
         return False
 
 
+def release_image_contract(args: argparse.Namespace) -> dict[str, str]:
+    values = {
+        "closure_path": args.release_image_closure,
+        "toolchain_path": args.image_gate_toolchain,
+        "bootstrap_path": args.image_gate_bootstrap,
+        "external_trust_path": args.external_capsule_trust,
+        "registry_auth_receipt_path": args.registry_auth_receipt,
+        "registry_refresh_registration_path": args.registry_refresh_registration,
+    }
+    if any(value is None for value in values.values()):
+        raise DeploymentError(
+            "plan/apply/destroy requires --release-image-closure, "
+            "--image-gate-toolchain, --image-gate-bootstrap, "
+            "--external-capsule-trust, --registry-auth-receipt, and "
+            "--registry-refresh-registration"
+        )
+    resolved = {key: str(Path(value).expanduser().resolve()) for key, value in values.items()}
+    if not Path(resolved["bootstrap_path"]).is_absolute():
+        raise DeploymentError("image-gate bootstrap must be an absolute external executable")
+    return resolved
+
+
+def load_registry_credential(args: argparse.Namespace) -> dict[str, Any]:
+    """Ask the external capsule to join an exact receipt to secret bytes.
+
+    The bootstrap validates the detached signature, closure subjects, refresh
+    owner and Docker-config digest before returning the captured JSON. Neither
+    the command nor an error path prints credential bytes.
+    """
+
+    if (
+        args.release_image_closure is None
+        or args.registry_docker_config is None
+        or args.registry_auth_receipt is None
+        or args.registry_refresh_registration is None
+    ):
+        raise DeploymentError(
+            "all lifecycle operations require --registry-docker-config and "
+            "--registry-auth-receipt from one broker response plus the signed "
+            "--registry-refresh-registration"
+        )
+    command = [
+        str(args.image_gate_bootstrap.expanduser().resolve()),
+        "verify-workload-registry-credential",
+        "--external-trust",
+        str(args.external_capsule_trust.expanduser().resolve()),
+        "--toolchain",
+        str(args.image_gate_toolchain.expanduser().resolve()),
+        "--source-root",
+        str(SOLUTION_ROOT),
+        "--trust",
+        str(SOLUTION_ROOT / "security" / "image-attestation-trust.json"),
+        "--closure",
+        str(args.release_image_closure.expanduser().resolve()),
+        "--receipt",
+        str(args.registry_auth_receipt.expanduser().resolve()),
+        "--docker-config",
+        str(args.registry_docker_config.expanduser().resolve()),
+        "--refresh-registration",
+        str(args.registry_refresh_registration.expanduser().resolve()),
+        "--output-format",
+        "inference-stack-json",
+    ]
+    completed = subprocess.run(
+        command,
+        env=clean_environment(),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise DeploymentError("external capsule rejected the workload registry credential")
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise DeploymentError("external capsule returned malformed credential metadata") from exc
+    authorization = result.get("authorization") if isinstance(result, dict) else None
+    docker_config = result.get("docker_config_json") if isinstance(result, dict) else None
+    required_authorization = {
+        "receipt_sha256",
+        "expires_at",
+        "revision",
+        "subjects",
+        "refresh_owner_id",
+        "refresh_interval_seconds",
+        "rotate_before_expiry_seconds",
+        "management_mode",
+        "retire_superseded_without_delete",
+        "refresh_registration_sha256",
+    }
+    if (
+        not isinstance(docker_config, str)
+        or not docker_config
+        or not isinstance(authorization, dict)
+        or set(authorization) != required_authorization
+        or not isinstance(authorization.get("subjects"), list)
+        or not authorization["subjects"]
+        or authorization.get("management_mode")
+        != "external-short-lived-refresh-controller"
+        or authorization.get("retire_superseded_without_delete") is not True
+    ):
+        raise DeploymentError("external capsule credential projection is incomplete")
+    try:
+        decoded = json.loads(docker_config)
+    except json.JSONDecodeError as exc:
+        raise DeploymentError("external capsule Docker configuration is invalid") from exc
+    if not isinstance(decoded, dict) or not isinstance(decoded.get("auths"), dict):
+        raise DeploymentError("external capsule Docker configuration has no exact auth set")
+    return {"docker_config_json": docker_config, "authorization": authorization}
+
+
 def write_downstream_variables(
     run_root: Path,
     contract: Mapping[str, Any],
     dynamic: Mapping[str, Any],
+    release_image_contract: Mapping[str, str],
 ) -> tuple[Path, Path]:
     identity_keys = (
         "run_root",
@@ -1855,12 +2043,17 @@ def write_downstream_variables(
         "accelerator_pool_contract",
     )
     identity = {key: dynamic[key] for key in identity_keys}
-    foundation = {**contract["stages"]["foundation"], **identity}
+    foundation = {
+        **contract["stages"]["foundation"],
+        **identity,
+        "release_image_contract": dict(release_image_contract),
+    }
     workloads = {
         **rewritten_workloads(contract, dynamic),
         **identity,
         "nebius_profile": dynamic.get("nebius_profile", "sandbox"),
         "public_edge_contract": dynamic["public_edge_contract"],
+        "release_image_contract": dict(release_image_contract),
     }
     controller = workloads.get("model_controller")
     if isinstance(controller, Mapping):
@@ -2110,10 +2303,58 @@ def apply_plan(
     root: Path,
     plan_path: Path,
     environment: Mapping[str, str],
+    release_image_contract: Mapping[str, str] | None = None,
 ) -> None:
+    if release_image_contract is None:
+        raise DeploymentError("every saved plan requires the external signed-plan capsule")
+    root_names = {
+        DEPLOY_ROOT: ".",
+        INFRA_ROOT: "stages/infrastructure",
+        FOUNDATION_ROOT: "stages/foundation",
+        WORKLOADS_ROOT: "stages/workloads",
+    }
+    root_name = root_names.get(root.resolve())
+    if root_name is None:
+        raise DeploymentError("Terraform apply root is not in the reviewed capsule contract")
+    gate_environment = dict(environment)
+    gate_environment.update(
+        {
+            "FS2_IMAGE_GATE_BOOTSTRAP": release_image_contract["bootstrap_path"],
+            "FS2_EXTERNAL_CAPSULE_TRUST": release_image_contract["external_trust_path"],
+            "FS2_IMAGE_GATE_TOOLCHAIN": release_image_contract["toolchain_path"],
+            "FS2_IMAGE_GATE_TRUST": str(
+                SOLUTION_ROOT / "security" / "image-attestation-trust.json"
+            ),
+        }
+    )
     run(
-        [terraform, f"-chdir={root}", "apply", "-input=false", str(plan_path)],
-        env=environment,
+        [
+            release_image_contract["bootstrap_path"],
+            "signed-terraform-apply",
+            "--external-trust",
+            release_image_contract["external_trust_path"],
+            "--toolchain",
+            release_image_contract["toolchain_path"],
+            "--source-root",
+            str(SOLUTION_ROOT),
+            "--surfaces",
+            str(SOLUTION_ROOT / "security" / "release-image-surfaces.json"),
+            "--trust",
+            str(SOLUTION_ROOT / "security" / "image-attestation-trust.json"),
+            "--root",
+            root_name,
+            "--plan",
+            str(plan_path),
+            "--plan-receipt",
+            f"{plan_path}.capsule.json",
+            "--closure",
+            release_image_contract["closure_path"],
+            "--registry-auth-receipt",
+            release_image_contract["registry_auth_receipt_path"],
+            "--registry-refresh-registration",
+            release_image_contract["registry_refresh_registration_path"],
+        ],
+        env=gate_environment,
     )
 
 
@@ -2475,6 +2716,7 @@ def apply_stack(
     commit: str,
     configuration_environment: Mapping[str, str],
 ) -> None:
+    release_contract = release_image_contract(args)
     infrastructure_variables = write_infrastructure_variables(
         run_root, contract, commit, args.nebius_profile
     )
@@ -2485,7 +2727,7 @@ def apply_stack(
         contract=contract,
         variable_file=infrastructure_variables,
     )
-    apply_plan(args.terraform, INFRA_ROOT, plan_path, environment)
+    apply_plan(args.terraform, INFRA_ROOT, plan_path, environment, release_contract)
 
     dynamic = infrastructure_outputs(
         args.terraform,
@@ -2497,7 +2739,7 @@ def apply_stack(
     )
     mirror_selected_images(args, run_root, contract, dynamic)
     foundation_variables, workloads_variables = write_downstream_variables(
-        run_root, contract, dynamic
+        run_root, contract, dynamic, release_contract
     )
 
     plan_path, _, environment = plan_stage(
@@ -2507,7 +2749,13 @@ def apply_stack(
         contract=contract,
         variable_file=foundation_variables,
     )
-    apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
+    apply_plan(
+        args.terraform,
+        FOUNDATION_ROOT,
+        plan_path,
+        environment,
+        release_contract,
+    )
 
     plan_path, _, environment = plan_stage(
         args.terraform,
@@ -2516,7 +2764,13 @@ def apply_stack(
         contract=contract,
         variable_file=workloads_variables,
     )
-    apply_plan(args.terraform, WORKLOADS_ROOT, plan_path, environment)
+    apply_plan(
+        args.terraform,
+        WORKLOADS_ROOT,
+        plan_path,
+        environment,
+        release_contract,
+    )
 
     # Record the accepted root contract after all of its staged consumers converge.
     apply_plan(
@@ -2524,6 +2778,7 @@ def apply_stack(
         DEPLOY_ROOT,
         run_root / "configuration.tfplan",
         configuration_environment,
+        release_contract,
     )
 
     endpoints = workload_endpoint_outputs(args.terraform, run_root, contract)
@@ -2536,6 +2791,7 @@ def plan_stack(
     contract: Mapping[str, Any],
     commit: str,
 ) -> None:
+    release_contract = release_image_contract(args)
     infrastructure_variables = write_infrastructure_variables(
         run_root, contract, commit, args.nebius_profile
     )
@@ -2586,7 +2842,7 @@ def plan_stack(
         )
         return
     foundation_variables, workloads_variables = write_downstream_variables(
-        run_root, contract, dynamic
+        run_root, contract, dynamic, release_contract
     )
     if not state_ready(args.terraform, run_root, "foundation", contract):
         plan_stage(
@@ -2738,7 +2994,9 @@ def destroy_stack(
                     nebius_profile=args.nebius_profile,
                     kubectl=args.kubectl,
                 )
-            downstream = write_downstream_variables(run_root, contract, dynamic)
+            downstream = write_downstream_variables(
+                run_root, contract, dynamic, release_image_contract(args)
+            )
         else:
             raise DeploymentError(
                 "downstream resources exist but their private generated tfvars and a complete infrastructure handoff are both unavailable"
@@ -2782,7 +3040,13 @@ def destroy_stack(
             variable_file=variable_file,
             destroy=True,
         )
-        apply_plan(args.terraform, stage_root(stage), plan_path, environment)
+        apply_plan(
+            args.terraform,
+            stage_root(stage),
+            plan_path,
+            environment,
+            release_image_contract(args),
+        )
         destroyed_stages.append(stage)
 
     if retain_infrastructure:
@@ -3201,12 +3465,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="private state/evidence directory; defaults to an XDG state path bound to the tfvars path",
     )
-    parser.add_argument("--terraform", default="terraform")
-    parser.add_argument("--kubectl", default="kubectl")
-    parser.add_argument("--nebius", default="nebius")
+    parser.add_argument("--terraform")
+    parser.add_argument("--kubectl")
+    parser.add_argument("--nebius")
     parser.add_argument(
         "--crane",
-        default="crane",
+        default=None,
         help="OCI registry client used for digest-preserving regional mirrors",
     )
     parser.add_argument(
@@ -3214,12 +3478,89 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=os.environ.get("NEBIUS_PROFILE", "sandbox"),
         help="authenticated Nebius CLI profile (default: NEBIUS_PROFILE or sandbox)",
     )
+    parser.add_argument(
+        "--release-image-closure",
+        type=Path,
+        help="protected signed closure consumed by foundation/workloads plans and applies",
+    )
+    parser.add_argument(
+        "--image-gate-toolchain",
+        type=Path,
+        help="source-pinned execution-toolchain lock for release gates",
+    )
+    parser.add_argument(
+        "--image-gate-bootstrap",
+        type=Path,
+        help="absolute externally installed capsule bootstrap",
+    )
+    parser.add_argument(
+        "--external-capsule-trust",
+        type=Path,
+        help="root-owned read-only trust authority outside the checkout",
+    )
+    parser.add_argument(
+        "--registry-auth-receipt",
+        type=Path,
+        help="signed short-lived repository+digest pull authorization receipt",
+    )
+    parser.add_argument(
+        "--registry-docker-config",
+        type=Path,
+        help="broker response bytes joined to the signed receipt only inside the capsule",
+    )
+    parser.add_argument(
+        "--registry-refresh-registration",
+        type=Path,
+        help="signed registration proving the authorized refresh owner accepted this subject set",
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    global CAPSULE_ENVIRONMENT, REGISTRY_CREDENTIAL
     os.umask(0o077)
     args = parse_args(argv)
+    if os.environ.get("FS2_EXTERNAL_CAPSULE_ACTIVE") != "1":
+        raise DeploymentError(
+            "inference-stack must be loaded from the externally anchored sealed package"
+        )
+    capsule_source = os.environ.get("FS2_CAPSULE_SOURCE_ROOT", "")
+    if not capsule_source or not Path(capsule_source).is_absolute():
+        raise DeploymentError("capsule read-only source root is absent")
+    tool_directory = os.environ.get("FS2_CAPSULE_TOOL_DIR", "")
+    if not tool_directory or not Path(tool_directory).is_absolute():
+        raise DeploymentError("capsule read-only tool directory is absent")
+    if args.image_gate_bootstrap is None or args.external_capsule_trust is None or args.image_gate_toolchain is None:
+        raise DeploymentError(
+            "all inference-stack operations require the external capsule bootstrap, trust, and toolchain"
+        )
+    bootstrap = str(args.image_gate_bootstrap.expanduser().resolve())
+    reviewed_tools = {
+        "terraform": str((Path(tool_directory) / "terraform").resolve()),
+        "kubectl": str((Path(tool_directory) / "kubectl").resolve()),
+        "nebius": str((Path(tool_directory) / "nebius").resolve()),
+        "crane": str((Path(tool_directory) / "crane").resolve()),
+    }
+    for argument, expected in reviewed_tools.items():
+        supplied = getattr(args, argument)
+        if supplied is not None and str(Path(supplied).expanduser().resolve()) != expected:
+            raise DeploymentError(f"--{argument} cannot bypass the external capsule tool directory")
+        setattr(args, argument, expected)
+    CAPSULE_ENVIRONMENT = {
+        "FS2_EXTERNAL_CAPSULE_ACTIVE": "1",
+        "FS2_IMAGE_GATE_BOOTSTRAP": bootstrap,
+        "FS2_EXTERNAL_CAPSULE_TRUST": str(args.external_capsule_trust.expanduser().resolve()),
+        "FS2_IMAGE_GATE_TOOLCHAIN": str(args.image_gate_toolchain.expanduser().resolve()),
+        "FS2_IMAGE_GATE_TRUST": str(SOLUTION_ROOT / "security" / "image-attestation-trust.json"),
+        "FS2_CAPSULE_SOURCE_ROOT": str(SOLUTION_ROOT),
+        "FS2_SOURCE_ROOT": str(SOLUTION_ROOT),
+        "FS2_CAPSULE_TOOL_DIR": str(Path(tool_directory).resolve()),
+    }
+    REGISTRY_CREDENTIAL = (
+        load_registry_credential(args)
+        if args.command in {"plan", "apply", "destroy"}
+        else None
+    )
     require_terraform_version(args.terraform)
     variable_file = args.var_file.expanduser().resolve()
     if not variable_file.is_file():

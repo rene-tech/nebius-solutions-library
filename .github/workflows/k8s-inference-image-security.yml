@@ -141,6 +141,7 @@ jobs:
             --output "${evidence}/catalog-runtime.spdx.json"
           trivy version --format json > "${evidence}/trivy-version.json"
           python3 k8s-inference/security/image_security_evidence.py create-receipt \
+            --source-scan-only \
             --repository "$GITHUB_WORKSPACE" \
             --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
             --kind image \
@@ -159,6 +160,7 @@ jobs:
             --package libcrypto3 --package libssl3 --package libexpat --package libuuid \
             --output "${evidence}/admin-console-runtime-packages.json"
           python3 k8s-inference/security/image_security_evidence.py create-receipt \
+            --source-scan-only \
             --repository "$GITHUB_WORKSPACE" \
             --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
             --kind image \
@@ -174,6 +176,7 @@ jobs:
             --oci-archive "${evidence}/admin-console.oci.tar" \
             --output "${evidence}/admin-console.receipt.json"
           python3 k8s-inference/security/image_security_evidence.py create-receipt \
+            --source-scan-only \
             --repository "$GITHUB_WORKSPACE" \
             --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
             --kind filesystem --subject "git-tree:${source_tree}:k8s-inference/catalog/runtime" \
@@ -233,17 +236,29 @@ jobs:
       REGISTRY_AUTH_BROKER_URL: ${{ vars.SAI24_REGISTRY_AUTH_BROKER_URL }}
       ATTESTATION_AUDIENCE: 'fs2-sai24-release-attestation'
       ATTESTATION_ENVIRONMENT: 'sai24-release-attestation'
+      FS2_IMAGE_GATE_BOOTSTRAP: ${{ vars.SAI24_IMAGE_GATE_BOOTSTRAP }}
+      FS2_EXTERNAL_CAPSULE_TRUST: ${{ vars.SAI24_EXTERNAL_CAPSULE_TRUST }}
+      FS2_CAPSULE_TOOL_DIR: ${{ vars.SAI24_CAPSULE_TOOL_DIR }}
+      FS2_IMAGE_GATE_TOOLCHAIN: ${{ github.workspace }}/k8s-inference/security/execution-toolchain.lock.json
+      FS2_IMAGE_GATE_TRUST: ${{ github.workspace }}/k8s-inference/security/image-attestation-trust.json
     steps:
       - name: Checkout exact source
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
         with:
           persist-credentials: false
 
-      - name: Install hash-bound independent YAML parser
+      - name: Verify protected immutable execution capsule
         shell: bash
         run: |
-          python3 -m pip install --require-hashes --only-binary=:all: \
-            --requirement k8s-inference/security/image-gate-requirements.lock
+          set -euo pipefail
+          case "$FS2_IMAGE_GATE_BOOTSTRAP" in /*) ;; *) exit 1 ;; esac
+          case "$FS2_EXTERNAL_CAPSULE_TRUST" in /*) ;; *) exit 1 ;; esac
+          case "$FS2_CAPSULE_TOOL_DIR" in /*) ;; *) exit 1 ;; esac
+          "$FS2_IMAGE_GATE_BOOTSTRAP" verify \
+            --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+            --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+            --source-root k8s-inference \
+            --tool-directory "$FS2_CAPSULE_TOOL_DIR"
 
       - name: Acquire exact signed render packet outside the Git tree
         shell: bash
@@ -251,6 +266,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          export PATH="$FS2_CAPSULE_TOOL_DIR"
+          unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
           [[ "$RENDER_EVIDENCE_ARTIFACT_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$RENDER_EVIDENCE_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
           archive="${RUNNER_TEMP}/sai-24-render-evidence.zip"
@@ -264,7 +281,11 @@ jobs:
             "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${RENDER_EVIDENCE_ARTIFACT_ID}/zip"
           printf '%s  %s\n' "$RENDER_EVIDENCE_ARCHIVE_SHA256" "$archive" | \
             sha256sum --check --strict
-          BUNDLE_ARCHIVE="$archive" BUNDLE_ROOT="$bundle" python3 - <<'PY'
+          BUNDLE_ARCHIVE="$archive" BUNDLE_ROOT="$bundle" \
+            "$FS2_IMAGE_GATE_BOOTSTRAP" python-stdin \
+              --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+              --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+              --source-root k8s-inference -- <<'PY'
           import os
           import pathlib
           import zipfile
@@ -298,37 +319,40 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export PATH="$FS2_CAPSULE_TOOL_DIR"
+          unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
           test -n "$ATTESTATION_BROKER_URL"
-          python3 k8s-inference/security/oidc_attestation_broker.py identity \
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/oidc_attestation_broker.py -- identity \
             --audience "$ATTESTATION_AUDIENCE" \
             --environment "$ATTESTATION_ENVIRONMENT" \
             --trust k8s-inference/security/image-attestation-trust.json \
             --output "${RUNNER_TEMP}/sai-24-attestation-identity.json"
 
-      - name: Install checksum-bound Trivy
+      - name: Record externally bound Trivy identity
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "${RUNNER_TEMP}/trivy-bin" "${RUNNER_TEMP}/sai-24-third-party"
-          curl --fail --location --silent --show-error \
-            --output "${RUNNER_TEMP}/${TRIVY_ARCHIVE}" \
-            "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_RELEASE}/${TRIVY_ARCHIVE}"
-          printf '%s  %s\n' "${TRIVY_ARCHIVE_SHA256}" "${RUNNER_TEMP}/${TRIVY_ARCHIVE}" | sha256sum --check --strict
-          tar --extract --gzip --file "${RUNNER_TEMP}/${TRIVY_ARCHIVE}" \
-            --directory "${RUNNER_TEMP}/trivy-bin" trivy
-          printf '%s\n' "${RUNNER_TEMP}/trivy-bin" >> "${GITHUB_PATH}"
-          "${RUNNER_TEMP}/trivy-bin/trivy" --version > "${RUNNER_TEMP}/sai-24-third-party/trivy-binary-version.txt"
+          export PATH="$FS2_CAPSULE_TOOL_DIR"
+          unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
+          mkdir -p "${RUNNER_TEMP}/sai-24-third-party"
+          "$FS2_IMAGE_GATE_BOOTSTRAP" exec-tool \
+            --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+            --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+            --source-root k8s-inference --tool trivy -- \
+            --version > "${RUNNER_TEMP}/sai-24-third-party/trivy-binary-version.txt"
 
       - name: Derive exact release-closure subjects
         shell: bash
         run: |
           set -euo pipefail
+          export PATH="$FS2_CAPSULE_TOOL_DIR"
+          unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
           evidence="${RUNNER_TEMP}/sai-24-third-party"
           source_tree=$(git rev-parse HEAD^{tree})
-          python3 k8s-inference/security/image_security_evidence.py inventory \
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/image_security_evidence.py -- inventory \
             --trust k8s-inference/security/image-attestation-trust.json \
             "$THIRD_PARTY_INVENTORY"
-          python3 k8s-inference/security/release_image_closure.py \
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/release_image_closure.py -- \
             --root k8s-inference \
             --surfaces k8s-inference/security/release-image-surfaces.json \
             --render-packet "$RENDER_PACKET" \
@@ -339,7 +363,7 @@ jobs:
             --materials-authorization "$MATERIALS_AUTHORIZATION" \
             --attestation-identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
             --output "${evidence}/release-image-closure.json"
-          python3 k8s-inference/security/oidc_attestation_broker.py sign \
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/oidc_attestation_broker.py -- sign \
             --broker-url "$ATTESTATION_BROKER_URL" \
             --audience "$ATTESTATION_AUDIENCE" \
             --identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
@@ -352,13 +376,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export PATH="$FS2_CAPSULE_TOOL_DIR"
+          unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
           test -n "$REGISTRY_AUTH_BROKER_URL"
           auth_dir="${RUNNER_TEMP}/sai-24-registry-auth"
           mkdir -p "$auth_dir"
           jq -r '.subjects[] | split("/")[0]' \
             "${RUNNER_TEMP}/sai-24-third-party/release-image-closure.json" | \
             sort -u > "${RUNNER_TEMP}/release-registries.txt"
-          python3 - <<'PY'
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-stdin --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference -- <<'PY'
           import json
           import os
           import pathlib
@@ -394,7 +420,7 @@ jobs:
           ).write_text("".join(f"--subject\n{value}\n" for value in selected_subjects))
           PY
           mapfile -t subject_args < "${RUNNER_TEMP}/authenticated-subjects.txt"
-          python3 k8s-inference/security/oidc_attestation_broker.py registry-auth \
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/oidc_attestation_broker.py -- registry-auth \
             --broker-url "$REGISTRY_AUTH_BROKER_URL" \
             --audience "$ATTESTATION_AUDIENCE" \
             --identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
@@ -407,8 +433,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export PATH="$FS2_CAPSULE_TOOL_DIR"
+          unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
           evidence="${RUNNER_TEMP}/sai-24-third-party"
           source_tree=$(git rev-parse HEAD^{tree})
+          scanner_executable_sha256=$("$FS2_IMAGE_GATE_BOOTSTRAP" tool-sha256 \
+            --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+            --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+            --source-root k8s-inference --tool trivy)
+          [[ "$scanner_executable_sha256" =~ ^[0-9a-f]{64}$ ]]
           while IFS= read -r image_ref; do
             artifact_id=$(printf '%s' "${image_ref}" | sha256sum | cut -c1-16)
             trivy image "${image_ref}" --scanners vuln,secret --format json \
@@ -419,12 +452,12 @@ jobs:
           trivy version --format json > "${evidence}/trivy-version.json"
           while IFS= read -r image_ref; do
             artifact_id=$(printf '%s' "${image_ref}" | sha256sum | cut -c1-16)
-            python3 k8s-inference/security/image_security_evidence.py create-receipt \
+            "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/image_security_evidence.py -- create-receipt \
               --repository "$GITHUB_WORKSPACE" \
               --source-commit "${GITHUB_SHA}" --source-tree "${source_tree}" \
               --kind release-image --subject "${image_ref}" \
               --scanner-release "${TRIVY_RELEASE}" \
-              --scanner-archive-sha256 "${TRIVY_ARCHIVE_SHA256}" \
+              --scanner-executable-sha256 "${scanner_executable_sha256}" \
               --scanner-version "${evidence}/trivy-version.json" \
               --command-contract 'trivy image DIGEST_REFERENCE --scanners vuln,secret --format json' \
               --report "${evidence}/${artifact_id}.trivy.json" \
@@ -439,10 +472,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export PATH="$FS2_CAPSULE_TOOL_DIR"
+          unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
           mapfile -t receipts < <(find "${RUNNER_TEMP}/sai-24-third-party" \
             -maxdepth 1 -name '*.receipt.json' -print | sort)
           test "${#receipts[@]}" -gt 0
-          python3 k8s-inference/security/oidc_attestation_broker.py sign \
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/oidc_attestation_broker.py -- sign \
             --broker-url "$ATTESTATION_BROKER_URL" \
             --audience "$ATTESTATION_AUDIENCE" \
             --identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
@@ -462,12 +497,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export PATH="$FS2_CAPSULE_TOOL_DIR"
+          unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
           evidence="${RUNNER_TEMP}/sai-24-third-party"
           mapfile -t reports < <(find "${evidence}" -maxdepth 1 -name '*.trivy.json' -print | sort)
           mapfile -t receipts < <(find "${evidence}" -maxdepth 1 -name '*.receipt.json' -print | sort)
           test "${#reports[@]}" -gt 0
           test "${#reports[@]}" -eq "${#receipts[@]}"
-          python3 k8s-inference/security/image_security_evidence.py report "${reports[@]}"
-          python3 k8s-inference/security/image_security_evidence.py receipt \
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/image_security_evidence.py -- report "${reports[@]}"
+          "$FS2_IMAGE_GATE_BOOTSTRAP" python-entry --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" --source-root k8s-inference --entry security/image_security_evidence.py -- receipt \
             --trust k8s-inference/security/image-attestation-trust.json \
             "${receipts[@]}"

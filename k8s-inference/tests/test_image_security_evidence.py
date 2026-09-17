@@ -120,9 +120,12 @@ def test_report_rejects_only_fixable_high_or_critical_and_all_secrets(
 def test_receipt_rejects_tag_subject_even_when_gate_claims_pass(tmp_path: Path) -> None:
     receipt = {
         "schema": "fs2-serve.nebius.ai/image-scan-receipt/v2",
+        "authority": "protected-release-attestation",
         "source": {"commit": "b" * 40, "tree": "c" * 40},
         "subject": {"kind": "image", "identity": "registry.example/image:1.0"},
-        "scanner": {"archive_sha256": "d" * 64},
+        "scanner": {
+            "artifact": {"kind": "download-archive", "sha256": "d" * 64}
+        },
         "artifacts": {"report": {"sha256": "e" * 64}},
         "gate": {"passed": True},
     }

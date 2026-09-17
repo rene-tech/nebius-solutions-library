@@ -85,13 +85,23 @@ def contract() -> dict:
             "grafana_username": "TEST_FS2_GRAFANA_USERNAME",
             "grafana_password": "TEST_FS2_GRAFANA_PASSWORD",
             "ngc_api_key": "TEST_FS2_NGC_API_KEY",
-            "nvcr_dockerconfig": "TEST_FS2_NVCR_DOCKERCONFIGJSON",
         },
         "secret_requirements": {
             "grafana_bootstrap": True,
             "ngc_api_key": True,
             "nvcr_dockerconfig": True,
         },
+    }
+
+
+def release_contract() -> dict[str, str]:
+    return {
+        "closure_path": "/protected/release-image-closure.json",
+        "toolchain_path": "/external/execution-toolchain.lock.json",
+        "bootstrap_path": "/external/fs2-capsule-bootstrap",
+        "external_trust_path": "/external/capsule-trust.json",
+        "registry_auth_receipt_path": "/private/workload-pull-receipt.json",
+        "registry_refresh_registration_path": "/private/refresh-registration.json",
     }
 
 
@@ -352,7 +362,6 @@ class InferenceStackTests(unittest.TestCase):
             "TEST_FS2_GRAFANA_USERNAME": "grafana-user-SENTINEL",
             "TEST_FS2_GRAFANA_PASSWORD": "grafana-password-SENTINEL",
             "TEST_FS2_NGC_API_KEY": "ngc-key-SENTINEL",
-            "TEST_FS2_NVCR_DOCKERCONFIGJSON": '{"auths":{"SENTINEL":"value"}}',
         }
         with tempfile.TemporaryDirectory(prefix="inference-stack-files-") as temporary:
             run_root = Path(temporary) / "private-run"
@@ -362,12 +371,34 @@ class InferenceStackTests(unittest.TestCase):
                 run_root, configuration, "b" * 40, "sandbox"
             )
             foundation_path, workloads_path = STACK.write_downstream_variables(
-                run_root, configuration, dynamic_outputs(run_root)
+                run_root, configuration, dynamic_outputs(run_root), release_contract()
             )
             paths = (infrastructure_path, foundation_path, workloads_path)
             first_bytes = {path.name: path.read_bytes() for path in paths}
 
-            with mock.patch.dict(os.environ, secret_values, clear=False):
+            authorization = {
+                "receipt_sha256": "a" * 64,
+                "expires_at": "2099-01-01T00:00:00Z",
+                "revision": 1,
+                "subjects": ["nvcr.io/example/runtime@sha256:" + "b" * 64],
+                "refresh_owner_id": "reviewed-owner",
+                "refresh_interval_seconds": 300,
+                "rotate_before_expiry_seconds": 120,
+                "management_mode": "external-short-lived-refresh-controller",
+                "retire_superseded_without_delete": True,
+                "refresh_registration_sha256": "c" * 64,
+            }
+            with (
+                mock.patch.dict(os.environ, secret_values, clear=False),
+                mock.patch.object(
+                    STACK,
+                    "REGISTRY_CREDENTIAL",
+                    {
+                        "docker_config_json": '{"auths":{"nvcr.io":{"auth":"SENTINEL"}}}',
+                        "authorization": authorization,
+                    },
+                ),
+            ):
                 foundation_environment = STACK.stage_environment(
                     run_root, "foundation", configuration
                 )
@@ -390,7 +421,15 @@ class InferenceStackTests(unittest.TestCase):
             )
             self.assertEqual(
                 workloads_environment["TF_VAR_nvcrio_dockerconfigjson"],
-                secret_values["TEST_FS2_NVCR_DOCKERCONFIGJSON"],
+                '{"auths":{"nvcr.io":{"auth":"SENTINEL"}}}',
+            )
+            self.assertEqual(
+                json.loads(
+                    workloads_environment[
+                        "TF_VAR_nvcrio_credential_authorization"
+                    ]
+                ),
+                authorization,
             )
 
             generated = b"".join(first_bytes.values()).decode("utf-8")
@@ -404,7 +443,7 @@ class InferenceStackTests(unittest.TestCase):
                 run_root, configuration, "b" * 40, "sandbox"
             )
             STACK.write_downstream_variables(
-                run_root, configuration, dynamic_outputs(run_root)
+                run_root, configuration, dynamic_outputs(run_root), release_contract()
             )
             self.assertEqual(
                 first_bytes, {path.name: path.read_bytes() for path in paths}
@@ -442,7 +481,7 @@ class InferenceStackTests(unittest.TestCase):
             run_root = Path(temporary)
             STACK.private_directory(run_root)
             _foundation, workloads_path = STACK.write_downstream_variables(
-                run_root, configuration, dynamic
+                run_root, configuration, dynamic, release_contract()
             )
             generated_text = workloads_path.read_text(encoding="utf-8")
             workloads = json.loads(generated_text)
@@ -532,6 +571,7 @@ class InferenceStackTests(unittest.TestCase):
                 run_root,
                 configuration,
                 dynamic,
+                release_contract(),
             )
             workloads = json.loads(workloads_path.read_text(encoding="utf-8"))
 
@@ -664,7 +704,7 @@ class InferenceStackTests(unittest.TestCase):
                 "public_origin": "https://192.0.2.20",
             }
             foundation_path, workloads_path = STACK.write_downstream_variables(
-                run_root, configuration, dynamic
+                run_root, configuration, dynamic, release_contract()
             )
 
             foundation = json.loads(foundation_path.read_text(encoding="utf-8"))
@@ -741,7 +781,7 @@ class InferenceStackTests(unittest.TestCase):
                 "public_origin": "https://192.0.2.21",
             }
             foundation_path, workloads_path = STACK.write_downstream_variables(
-                run_root, configuration, dynamic
+                run_root, configuration, dynamic, release_contract()
             )
 
             foundation = json.loads(foundation_path.read_text(encoding="utf-8"))
@@ -769,7 +809,6 @@ class InferenceStackTests(unittest.TestCase):
                 os.environ,
                 {
                     "TEST_FS2_NGC_API_KEY": "",
-                    "TEST_FS2_NVCR_DOCKERCONFIGJSON": "",
                 },
                 clear=False,
             ):

@@ -3,6 +3,19 @@ variable "enabled" {
   type        = bool
 }
 
+variable "release_image_contract" {
+  description = "Externally anchored capsule and signed release closure inherited from foundation."
+  type = object({
+    closure_path                   = string
+    toolchain_path                 = string
+    bootstrap_path                 = string
+    external_trust_path            = string
+    registry_auth_receipt_path     = string
+    registry_refresh_registration_path = string
+  })
+  nullable = false
+}
+
 variable "run_id" {
   type = string
 }

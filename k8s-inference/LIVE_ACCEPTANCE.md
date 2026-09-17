@@ -251,7 +251,9 @@ For an internal-only deployment, the operator starts its foreground transport
 with:
 
 ```bash
-./inference-stack proxy --var-file /private/path/terraform.tfvars \
+"${stack[@]}" proxy --var-file /private/path/terraform.tfvars \
+  --image-gate-bootstrap "$capsule" --external-capsule-trust "$external_trust" \
+  --image-gate-toolchain "$toolchain" \
   --run-root /private/path/run
 ```
 

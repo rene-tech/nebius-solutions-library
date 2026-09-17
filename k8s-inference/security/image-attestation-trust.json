@@ -6,6 +6,11 @@
   "public_key_sha256": null,
   "owner": "Platform Security",
   "authority": "The public key and its independently reviewed fingerprint must be supplied before any render packet or scan receipt can pass.",
+  "execution_toolchain": {
+    "lock_path": "execution-toolchain.lock.json",
+    "lock_sha256": null,
+    "authority": "This source-local cross-check is not a trust root. An external root-owned read-only capsule authority must independently bind this complete trust document, the toolchain lock, and the bootstrap executable."
+  },
   "oidc_release_attestation": {
     "issuer": "https://token.actions.githubusercontent.com",
     "audience": "fs2-sai24-release-attestation",
@@ -42,5 +47,19 @@
     "authorized_broker_ids": [],
     "allowed_registries": [],
     "anonymous_registries": []
+  },
+  "workload_registry_authentication": {
+    "broker_url": null,
+    "issuer": null,
+    "audience": "fs2-sai24-workload-pull",
+    "maximum_ttl_seconds": 900,
+    "required_authorization_model": "repository-digest-action",
+    "authorized_broker_ids": [],
+    "authorized_service_accounts": [],
+    "authorized_refresh_owner_ids": [],
+    "maximum_refresh_interval_seconds": 300,
+    "refresh_controller_contract_path": "workload-registry-refresh-contract.json",
+    "refresh_controller_contract_sha256": null,
+    "allowed_registries": []
   }
 }

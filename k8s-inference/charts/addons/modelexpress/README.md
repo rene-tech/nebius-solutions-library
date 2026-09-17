@@ -15,65 +15,53 @@ This Helm chart deploys ModelExpress, a model serving and management platform, t
 
 ## Installation
 
-### 1. Create NVIDIA Container Registry Secret
+### 1. Obtain short-lived workload pull authorization
 
-Before installing the chart, you must create a Kubernetes secret to access the private NVIDIA Container Registry (nvcr.io). The default image requires authentication.
-
-```bash
-# Create the secret in your target namespace
-kubectl create secret docker-registry nvcr-secret \
-  --docker-server=nvcr.io \
-  --docker-username='$oauthtoken' \
-  --docker-password='YOUR_NVCR_API_KEY' \
-  --docker-email='your-email@nvidia.com' \
-  --namespace=your-namespace
-
-# Or create it in the default namespace if you plan to use that
-kubectl create secret docker-registry nvcr-secret \
-  --docker-server=nvcr.io \
-  --docker-username='$oauthtoken' \
-  --docker-password='YOUR_NVCR_API_KEY' \
-  --docker-email='your-email@nvidia.com'
-```
-
-**Important Notes:**
-- Replace `YOUR_NVCR_API_KEY` with your actual NVIDIA Container Registry API key
-- The username must be `$oauthtoken` (literal string, not a variable)
-- The email should be your NVIDIA email address
-- The secret name `nvcr-secret` is referenced in the default values
-
-### 2. Update Values to Use the Secret
-
-The default `values.yaml` already includes the image pull secret configuration:
+Long-lived NVCR API keys, manual Docker login, and hand-created registry
+Secrets are not supported. The reviewed workload-identity broker exchanges a
+projected service-account token for a pull-only credential scoped to one exact
+repository and manifest digest. `deploy.sh` validates the broker's signed
+receipt and rotates the following Secret without printing its data:
 
 ```yaml
 # values.yaml (default)
 imagePullSecrets:
-  - name: nvcr-secret
+  - name: fs2-modelexpress-pull
 ```
 
-If you're using a custom values file, ensure it includes this configuration or the deployment will fail with image pull errors.
+The trust policy deliberately contains null broker identities until Platform
+Security approves the production issuer, service account, registry and broker.
+The source candidate therefore fails closed; do not substitute a static key.
 
-### 3. Add the Helm repository (if using a repository)
-
-```bash
-helm repo add modelexpress https://your-repo-url
-helm repo update
-```
-
-### 4. Install the chart through the signed release gate
+### 2. Install through the signed release gate
 
 ```bash
 export FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json
-./deploy.sh
-./deploy.sh -f values.yaml
+export FS2_IMAGE_GATE_TOOLCHAIN=/absolute/path/to/execution-toolchain.lock.json
+export FS2_IMAGE_GATE_BOOTSTRAP=/external/root-owned/path/to/fs2-capsule-bootstrap
+export FS2_EXTERNAL_CAPSULE_TRUST=/external/root-owned/path/to/capsule-trust.json
+export FS2_WORKLOAD_OIDC_TOKEN_FILE=/absolute/path/to/projected/token
+export FS2_WORKLOAD_AUTH_IDENTITY=/absolute/path/to/workload-identity.json
+export FS2_WORKLOAD_AUTH_RUN_ROOT=/absolute/path/to/private-run-directory
+export FS2_MODELEXPRESS_IMAGE='nvcr.io/approved/repository@sha256:<64-hex-digest>'
+"$FS2_IMAGE_GATE_BOOTSTRAP" shell-entry \
+  --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+  --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+  --source-root /absolute/read-only/candidate/k8s-inference \
+  --entry charts/addons/modelexpress/deploy.sh --
+"$FS2_IMAGE_GATE_BOOTSTRAP" shell-entry \
+  --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+  --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+  --source-root /absolute/read-only/candidate/k8s-inference \
+  --entry charts/addons/modelexpress/deploy.sh -- -f values.yaml
 ```
 
 The adjacent detached signature is mandatory. The helper verifies the signed
-source, release name, namespace, chart tree, selected mode and values, then
-compares the actual post-rendered manifest with the retained exact render
-before it makes any cluster request. Direct Helm release commands are not a
-supported installation path.
+source, release name, namespace, chart tree, selected mode and values. The
+post-renderer compares the exact manifest emitted by the actual install or
+upgrade invocation with the retained render, and validates the short-lived
+pull receipt against every private digest in that same manifest. Direct Helm
+release commands are not a supported installation path.
 
 ## Configuration
 
@@ -92,8 +80,11 @@ supported installation path.
 # Copy and customize production values
 cp helm/values-production.yaml helm/my-production-values.yaml
 # Edit my-production-values.yaml with your actual values
-FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json \
-  ./deploy.sh -f my-production-values.yaml
+"$FS2_IMAGE_GATE_BOOTSTRAP" shell-entry \
+  --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+  --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+  --source-root /absolute/read-only/candidate/k8s-inference \
+  --entry charts/addons/modelexpress/deploy.sh -- -f my-production-values.yaml
 ```
 
 The following table lists the configurable parameters of the ModelExpress chart and their default values.
@@ -103,8 +94,8 @@ The following table lists the configurable parameters of the ModelExpress chart 
 | `replicaCount`                               | Number of ModelExpress replicas                | `1`     |
 | `image.repository`                           | ModelExpress image repository                  | `nvcr.io/nvidia/ai-dynamo/modelexpress-server` |
 | `image.pullPolicy`                           | Image pull policy                              | `IfNotPresent` |
-| `image.tag`                                  | ModelExpress image tag                         | `0.5.1` |
-| `imagePullSecrets`                           | Image pull secrets for nvcr.io access          | `[]`     |
+| `image.digest`                               | Protected exact manifest digest (required)     | blocked/empty |
+| `imagePullSecrets`                           | Broker-managed short-lived pull Secret         | `fs2-modelexpress-pull` |
 | `nameOverride`                               | Override the chart name                        | `""`     |
 | `fullnameOverride`                           | Override the full app name                     | `""`     |
 | `serviceAccount.create`                      | Create a service account                       | `true`   |
@@ -145,7 +136,7 @@ The following table lists the configurable parameters of the ModelExpress chart 
 ### Basic Installation
 
 ```bash
-FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json ./deploy.sh
+Use the capsule `shell-entry` invocation above without `-f`.
 ```
 
 ### Custom Image Repository
@@ -154,7 +145,7 @@ FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json ./deploy.
 # values.yaml
 image:
   repository: your-registry/modelexpress-server
-  tag: v1.0.0
+  digest: sha256:<64-hex-digest-from-protected-inventory>
   pullPolicy: Always
 ```
 
@@ -222,15 +213,18 @@ extraEnv:
 ## Upgrading
 
 ```bash
-FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json \
-  ./deploy.sh --upgrade
+"$FS2_IMAGE_GATE_BOOTSTRAP" shell-entry \
+  --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
+  --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
+  --source-root /absolute/read-only/candidate/k8s-inference \
+  --entry charts/addons/modelexpress/deploy.sh -- --upgrade
 ```
 
 ## Uninstalling
 
-```bash
-helm uninstall my-modelexpress
-```
+Removal is intentionally outside this helper and requires the platform's
+separately reviewed retention/decommission workflow. Raw Helm mutation is not
+an accepted path.
 
 ## Troubleshooting
 
@@ -262,46 +256,28 @@ kubectl port-forward svc/my-modelexpress 8001:8001
 
 If you encounter `ErrImagePull` or `ImagePullBackOff` errors:
 
-1. **Check if the nvcr.io secret exists:**
+1. **Check whether the broker-managed Secret reference exists (never print its data):**
    ```bash
-   kubectl get secrets -n your-namespace | grep nvcr
+   kubectl get secret fs2-modelexpress-pull -n your-namespace -o name
    ```
 
-2. **Verify the secret is properly configured:**
-   ```bash
-   kubectl describe secret nvcr-secret -n your-namespace
-   ```
-
-3. **Check if the secret is referenced in your values:**
+2. **Check whether the expected Secret name is referenced:**
    ```yaml
    imagePullSecrets:
-     - name: nvcr-secret
+     - name: fs2-modelexpress-pull
    ```
 
-4. **Verify your API key is correct:**
-   ```bash
-   # Test Docker login locally
-   docker login nvcr.io -u '$oauthtoken' -p 'YOUR_NVCR_API_KEY'
-   ```
-
-5. **Check pod events for detailed error messages:**
+3. **Check pod events for bounded diagnostic metadata:**
    ```bash
    kubectl describe pod -l app.kubernetes.io/name=modelexpress -n your-namespace
    ```
 
-## Using the Official Image
+## Image identity
 
-The Helm chart uses the official NVIDIA ModelExpress image from the NVIDIA Container Registry (nvcr.io):
-
-```bash
-# Login to nvcr.io (requires NVIDIA credentials)
-docker login nvcr.io -u '$oauthtoken' -p 'YOUR_NVCR_API_KEY'
-
-# Pull the image
-docker pull nvcr.io/nvidia/ai-dynamo/modelexpress-server:0.5.1
-```
-
-**Note:** The default image requires authentication. See the [Installation](#installation) section for creating the required Kubernetes secret.
+The repository default names the upstream ModelExpress repository but leaves
+the digest empty. A protected release must supply the independently resolved
+and scanned digest plus the matching short-lived pull receipt. Tags are never
+accepted as deployment identity.
 
 ## Contributing
 

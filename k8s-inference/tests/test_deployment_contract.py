@@ -334,7 +334,6 @@ class DeploymentContractTests(unittest.TestCase):
                 "grafana_username": "FS2_GRAFANA_ADMIN_USERNAME",
                 "grafana_password": "FS2_GRAFANA_ADMIN_PASSWORD",
                 "ngc_api_key": "FS2_NGC_API_KEY",
-                "nvcr_dockerconfig": "FS2_NVCR_DOCKERCONFIGJSON",
             },
         )
         self.assertEqual(

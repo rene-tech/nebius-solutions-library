@@ -69,6 +69,9 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
     assert "image_signature_subject_and_source_binding" in policy["evidence"][
         "required_bindings"
     ]
+    assert "protected_scanner_executable_toolchain_binding" in policy["evidence"][
+        "required_bindings"
+    ]
 
     observability_lock = (ROOT / "observability/versions.lock.yaml").read_text()
     assert "deployment: official-chart-tags" in observability_lock
@@ -184,20 +187,37 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
     assert "contains(local.catalog_placeholder_registries" in root_locals
 
     deploy = (ROOT / "charts/addons/modelexpress/deploy.sh").read_text()
-    assert 'helm upgrade "${helm_args[@]}" "${image_gate[@]}"' in deploy
-    assert 'helm install "${helm_args[@]}" "${image_gate[@]}"' in deploy
+    assert '"${reviewed_helm[@]}" upgrade "${helm_args[@]}" "${image_gate[@]}"' in deploy
+    assert '"${reviewed_helm[@]}" install "${helm_args[@]}" "${image_gate[@]}"' in deploy
     assert "FS2_SAI24_RELEASE_CLOSURE" in deploy
-    assert "--verify-direct-closure" in deploy
-    assert "--rendered-manifest-stdin" in deploy
+    assert 'FS2_EXTERNAL_CAPSULE_ACTIVE:-}" != "1"' in deploy
+    assert "register-workload-registry-refresh" in deploy
+    assert "--surface-id" in deploy
     assert '--release-name "$RELEASE_NAME"' in deploy
     assert '--namespace "$NAMESPACE"' in deploy
     assert '--chart-path "$CHART_DIR"' in deploy
     assert '--values-file "$VALUES_FILE"' in deploy
     assert "FS2_IMAGE_ATTESTATION_TRUST" not in deploy
     main_body = deploy.split("main() {", maxsplit=1)[1]
-    assert main_body.index("verify_release_evidence") < main_body.index(
-        "check_prerequisites"
+    assert main_body.index("acquire_pull_authorization") < main_body.index(
+        "deploy_chart"
     )
+    deploy_body = deploy.split("deploy_chart() {", maxsplit=1)[1].split(
+        "# Function to show deployment status", maxsplit=1
+    )[0]
+    assert deploy_body.index('template "$RELEASE_NAME"') < deploy_body.index(
+        "activate_pull_authorization"
+    )
+    assert deploy_body.index("activate_pull_authorization") < deploy_body.index(
+        '"${reviewed_helm[@]}" upgrade'
+    )
+    activation_body = deploy.split(
+        "activate_pull_authorization() {", maxsplit=1
+    )[1].split("configure_reviewed_tools() {", maxsplit=1)[0]
+    assert activation_body.index("register-workload-registry-refresh") < (
+        activation_body.index("apply-registry-secret")
+    )
+    assert "--refresh-registration" in activation_body
     postrenderer = (ROOT / "security/helm_image_postrenderer.py").read_text()
     assert "FS2_IMAGE_ATTESTATION_TRUST" not in postrenderer
     assert "validate_image_gate_authorization" in postrenderer
@@ -209,12 +229,15 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
     for stage in ("foundation", "workloads"):
         gate = (ROOT / f"stages/{stage}/release_image_gate.tf").read_text()
         assert "release_image_closure_gate" in gate
-        assert "--verify-terraform-closure" in gate
+        assert "terraform_apply_gate_entrypoint.py" in gate
+        assert "external_trust_path" in gate
         cluster_contract = (ROOT / f"stages/{stage}/cluster_contract.tf").read_text()
         assert "depends_on = [terraform_data.release_image_closure_gate]" in cluster_contract
     apply_wrapper = (ROOT / "security/apply_signed_terraform_plan.sh").read_text()
-    assert 'terraform -chdir="$source_root/$root" show -json "$saved_plan"' in apply_wrapper
-    assert 'exec terraform -chdir="$source_root/$root" apply "$saved_plan"' in apply_wrapper
+    assert 'exec "$FS2_IMAGE_GATE_BOOTSTRAP" signed-terraform-apply' in apply_wrapper
+    assert "stages/infrastructure|stages/foundation|stages/workloads" in apply_wrapper
+    assert "--registry-refresh-registration" in apply_wrapper
+    assert "terraform -chdir=" not in apply_wrapper
 
     evidence_validator = (ROOT / "security/image_security_evidence.py").read_text()
     assert "registry-referrers-query-receipt/v1" in evidence_validator
@@ -236,3 +259,106 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
     modelexpress_readme = (ROOT / "charts/addons/modelexpress/README.md").read_text()
     assert "helm install " not in modelexpress_readme
     assert "helm upgrade " not in modelexpress_readme
+
+
+def test_external_capsule_is_the_only_release_execution_authority() -> None:
+    external = json.loads(
+        (ROOT / "security/external-capsule-trust.example.json").read_text()
+    )
+    assert external["state"] == "blocked_example_not_an_authority"
+    assert external["source_root"]["transport"] is None
+    assert external["capsule_contract"]["deny_path_reopen"] is True
+    assert external["capsule_contract"]["deny_path_lookup"] is True
+    assert {
+        "terraform-init",
+        "terraform-validate-root",
+        "signed-terraform-plan",
+        "signed-terraform-apply",
+        "tool-sha256",
+    }.issubset(external["capsule_contract"]["bootstrap_commands"])
+    assert external["capsule_contract"]["protected_entrypoint_environment"] == {
+        "FS2_EXTERNAL_CAPSULE_ACTIVE": "1",
+        "FS2_CAPSULE_SOURCE_ROOT": "externally-bound-read-only-tree",
+        "FS2_CAPSULE_TOOL_DIR": "externally-bound-read-only-tools",
+    }
+
+    toolchain = json.loads(
+        (ROOT / "security/execution-toolchain.lock.json").read_text()
+    )
+    assert toolchain["state"] == "blocked_pending_independent_toolchain_capture"
+    assert set(toolchain["terraform_roots"]) == {
+        ".",
+        "stages/infrastructure",
+        "stages/foundation",
+        "stages/workloads",
+    }
+    assert toolchain["terraform_execution"]["bind_init_plan_show_apply_to_same_capsule"] is True
+    assert toolchain["terraform_execution"]["network_provider_installation"] is False
+    assert all(
+        not root["provider_packages"]
+        for root in toolchain["terraform_roots"].values()
+    )
+
+    validator = (ROOT / "security/execution_toolchain.py").read_text()
+    assert "def _load_fd(" in validator
+    assert "external = _load(external_path)" not in validator
+    assert "trust = _load(trust_path)" not in validator
+    assert "lock = _load(protected_path)" not in validator
+
+    stack = (ROOT / "inference-stack").read_text()
+    assert 'FS2_EXTERNAL_CAPSULE_ACTIVE") != "1"' in stack
+    assert "FS2_CAPSULE_TOOL_DIR" in stack
+    assert "signed-terraform-apply" in stack
+    assert "signed-terraform-plan" in stack
+    assert 'terraform_capsule_command("terraform-init"' in stack
+    assert "external Terraform capsule did not emit its signed binary-plan receipt" in stack
+    assert 'f"{plan_path}.capsule.json"' in stack
+    assert 'DEPLOY_ROOT: "."' in stack
+    assert 'INFRA_ROOT: "stages/infrastructure"' in stack
+    assert "FS2_NVCR_DOCKERCONFIGJSON" not in stack
+
+    jobset = (ROOT / "modules/jobset-controller/main.tf").read_text()
+    assert 'binary_path = var.release_image_contract.bootstrap_path' in jobset
+    assert 'binary_path = "/usr/bin/env"' not in jobset
+
+    workflow = (
+        ROOT.parent / ".github/workflows/k8s-inference-image-security.yml"
+    ).read_text()
+    protected = workflow.split("scan-release-image-closure:", maxsplit=1)[1]
+    assert 'export PATH="$FS2_CAPSULE_TOOL_DIR"' in protected
+    assert "Record externally bound Trivy identity" in protected
+    assert "releases/download" not in protected
+    assert "--scanner-executable-sha256" in protected
+
+
+def test_private_pull_refresh_contract_stays_fail_closed_until_attested() -> None:
+    trust = json.loads((ROOT / "security/image-attestation-trust.json").read_text())
+    policy = trust["workload_registry_authentication"]
+    assert policy["maximum_ttl_seconds"] == 900
+    assert policy["maximum_refresh_interval_seconds"] == 300
+    assert policy["authorized_refresh_owner_ids"] == []
+    assert policy["refresh_controller_contract_sha256"] is None
+
+    refresh = json.loads(
+        (ROOT / "security/workload-registry-refresh-contract.json").read_text()
+    )
+    assert refresh["state"] == (
+        "blocked_pending_security_owner_and_runtime_attestation"
+    )
+    assert refresh["retire_superseded_without_delete"] is True
+    assert refresh["failure_policy"]["delete_secret"] is False
+    assert refresh["runtime"]["image"] is None
+    assert refresh["runtime"]["sbom_sha256"] is None
+    assert refresh["runtime"]["provenance_sha256"] is None
+
+    variables = (ROOT / "variables.tf").read_text()
+    assert "static NVCR Docker config input is forbidden" in variables
+    workload_variables = (ROOT / "stages/workloads/variables.tf").read_text()
+    for field in (
+        "refresh_owner_id",
+        "refresh_interval_seconds",
+        "rotate_before_expiry_seconds",
+        "refresh_registration_sha256",
+        "retire_superseded_without_delete",
+    ):
+        assert field in workload_variables

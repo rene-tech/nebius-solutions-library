@@ -1325,7 +1325,6 @@ locals {
       grafana_username  = var.deployment.secrets.grafana_username_env
       grafana_password  = var.deployment.secrets.grafana_password_env
       ngc_api_key       = var.deployment.secrets.ngc_api_key_env
-      nvcr_dockerconfig = var.deployment.secrets.nvcr_dockerconfig_env
     }
     secret_requirements = {
       grafana_bootstrap = true

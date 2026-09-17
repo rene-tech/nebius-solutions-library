@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${FS2_EXTERNAL_CAPSULE_ACTIVE:-}" != "1" ]]; then
+  printf 'infrastructure bootstrap must start through the external capsule shell-entry command\n' >&2
+  exit 1
+fi
+case "${FS2_CAPSULE_SOURCE_ROOT:-}" in /*) ;; *) printf 'capsule read-only source root is absent\n' >&2; exit 1 ;; esac
+case "${FS2_CAPSULE_TOOL_DIR:-}" in /*) ;; *) printf 'capsule read-only tool directory is absent\n' >&2; exit 1 ;; esac
+export PATH="$FS2_CAPSULE_TOOL_DIR"
+unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
+SCRIPT_DIR="$FS2_CAPSULE_SOURCE_ROOT/stages/infrastructure/bootstrap"
 readonly SCRIPT_DIR
 readonly LOCK_FILE="$SCRIPT_DIR/components.lock.json"
 readonly IMAGE_POST_RENDERER="$SCRIPT_DIR/../../../security/helm_image_postrenderer.py"
@@ -9,11 +17,20 @@ readonly IMAGE_LOCK="$SCRIPT_DIR/../../../security/third-party-images.lock.json"
 readonly FIRST_PARTY_IMAGE_LOCK="$SCRIPT_DIR/../../../security/first-party-images.lock.json"
 readonly IMAGE_ATTESTATION_TRUST="$SCRIPT_DIR/../../../security/image-attestation-trust.json"
 readonly IMAGE_MATERIALS_AUTHORIZATION="${FS2_IMAGE_GATE_AUTHORIZATION:-$SCRIPT_DIR/../../../security/image-materials-authorization.json}"
+readonly IMAGE_GATE_BOOTSTRAP="${FS2_IMAGE_GATE_BOOTSTRAP:?set externally installed capsule bootstrap}"
+readonly EXTERNAL_CAPSULE_TRUST="${FS2_EXTERNAL_CAPSULE_TRUST:?set external capsule trust}"
+readonly IMAGE_GATE_TOOLCHAIN="${FS2_IMAGE_GATE_TOOLCHAIN:?set execution toolchain lock}"
+readonly REGISTRY_AUTH_RECEIPT="${FS2_REGISTRY_AUTH_RECEIPT:?set signed short-lived pull receipt}"
 readonly KUEUE_CLUSTER_POLICY="$SCRIPT_DIR/../../infra/kubernetes/kueue-cluster-queues.json"
 readonly KUEUE_LOCAL_QUEUES="$SCRIPT_DIR/../../catalog/kubernetes/localqueues.json"
 readonly CLUSTER_ID_PREFIX="mk8scluster-"
 readonly RETAINED_CLUSTER_ID="${CLUSTER_ID_PREFIX}u02y9yaj886ymys770"
 readonly PROHIBITED_CLUSTER_ID="${CLUSTER_ID_PREFIX}e00rj6hs72aa1sq0te"
+
+reviewed_helm=("$IMAGE_GATE_BOOTSTRAP" exec-tool --external-trust "$EXTERNAL_CAPSULE_TRUST" --toolchain "$IMAGE_GATE_TOOLCHAIN" --source-root "$SCRIPT_DIR/../../.." --tool helm --)
+reviewed_kubectl=("$IMAGE_GATE_BOOTSTRAP" exec-tool --external-trust "$EXTERNAL_CAPSULE_TRUST" --toolchain "$IMAGE_GATE_TOOLCHAIN" --source-root "$SCRIPT_DIR/../../.." --tool kubectl --)
+helm() { "${reviewed_helm[@]}" "$@"; }
+kubectl() { "${reviewed_kubectl[@]}" "$@"; }
 
 usage() {
   printf 'usage: %s fetch|install|verify|remove\n' "$0" >&2
@@ -123,9 +140,17 @@ install_chart() {
   ensure_namespace "$namespace"
   helm upgrade --install "$release" "$(chart_path "$component")" \
     --namespace "$namespace" --wait --timeout 15m \
-    --post-renderer /usr/bin/env \
-    --post-renderer-args python3 \
-    --post-renderer-args "$IMAGE_POST_RENDERER" \
+    --post-renderer "$IMAGE_GATE_BOOTSTRAP" \
+    --post-renderer-args=python-entry \
+    --post-renderer-args=--external-trust \
+    --post-renderer-args "$EXTERNAL_CAPSULE_TRUST" \
+    --post-renderer-args=--toolchain \
+    --post-renderer-args "$IMAGE_GATE_TOOLCHAIN" \
+    --post-renderer-args=--source-root \
+    --post-renderer-args "$SCRIPT_DIR/../../.." \
+    --post-renderer-args=--entry \
+    --post-renderer-args security/helm_image_postrenderer.py \
+    --post-renderer-args=-- \
     --post-renderer-args=--lock \
     --post-renderer-args "$IMAGE_LOCK" \
     --post-renderer-args=--first-party-lock \
@@ -134,6 +159,10 @@ install_chart() {
     --post-renderer-args "$IMAGE_ATTESTATION_TRUST" \
     --post-renderer-args=--authorization \
     --post-renderer-args "$IMAGE_MATERIALS_AUTHORIZATION" \
+    --post-renderer-args=--toolchain \
+    --post-renderer-args "$IMAGE_GATE_TOOLCHAIN" \
+    --post-renderer-args=--registry-auth-receipt \
+    --post-renderer-args "$REGISTRY_AUTH_RECEIPT" \
     "$@"
 }
 

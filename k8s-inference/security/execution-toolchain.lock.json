@@ -1,0 +1,99 @@
+{
+  "schema": "fs2-serve.nebius.ai/execution-toolchain-lock/v1",
+  "state": "blocked_pending_independent_toolchain_capture",
+  "authority": "Platform Security must publish and review every absolute executable, runtime tree, and source-file digest before a release gate can run.",
+  "python": {
+    "executable": null,
+    "sha256": null,
+    "version": null,
+    "implementation": "CPython",
+    "required_flags": ["isolated", "ignore_environment", "no_user_site"],
+    "sys_path": [],
+    "distribution_roots": []
+  },
+  "tools": {
+    "awk": {"path": null, "sha256": null},
+    "cat": {"path": null, "sha256": null},
+    "chmod": {"path": null, "sha256": null},
+    "bash": {"path": null, "sha256": null},
+    "crane": {"path": null, "sha256": null},
+    "curl": {"path": null, "sha256": null},
+    "cut": {"path": null, "sha256": null},
+    "dirname": {"path": null, "sha256": null},
+    "find": {"path": null, "sha256": null},
+    "git": {"path": null, "sha256": null},
+    "grep": {"path": null, "sha256": null},
+    "helm": {"path": null, "sha256": null},
+    "install": {"path": null, "sha256": null},
+    "jq": {"path": null, "sha256": null},
+    "kubectl": {"path": null, "sha256": null},
+    "mkdir": {"path": null, "sha256": null},
+    "mktemp": {"path": null, "sha256": null},
+    "nebius": {"path": null, "sha256": null},
+    "openssl": {"path": null, "sha256": null},
+    "rm": {"path": null, "sha256": null},
+    "sha256sum": {"path": null, "sha256": null},
+    "sort": {"path": null, "sha256": null},
+    "tar": {"path": null, "sha256": null},
+    "terraform": {"path": null, "sha256": null},
+    "tr": {"path": null, "sha256": null},
+    "trivy": {"path": null, "sha256": null},
+    "yq": {"path": null, "sha256": null}
+  },
+  "source_files": {},
+  "terraform_roots": {
+    ".": {
+      "configuration_tree_sha256": null,
+      "provider_lock_sha256": null,
+      "module_graph_sha256": null,
+      "provider_packages": [],
+      "permitted_provisioner_executables": []
+    },
+    "stages/infrastructure": {
+      "configuration_tree_sha256": null,
+      "provider_lock_sha256": null,
+      "module_graph_sha256": null,
+      "provider_packages": [],
+      "permitted_provisioner_executables": []
+    },
+    "stages/foundation": {
+      "configuration_tree_sha256": null,
+      "provider_lock_sha256": null,
+      "module_graph_sha256": null,
+      "provider_packages": [],
+      "permitted_provisioner_executables": []
+    },
+    "stages/workloads": {
+      "configuration_tree_sha256": null,
+      "provider_lock_sha256": null,
+      "module_graph_sha256": null,
+      "provider_packages": [],
+      "permitted_provisioner_executables": []
+    }
+  },
+  "terraform_execution": {
+    "provider_installation": "verified-filesystem-mirror-only",
+    "plugin_cache": "verified-read-only-private-mount",
+    "network_provider_installation": false,
+    "seal_plan_before_show_and_apply": true,
+    "signed_plan_receipt_schema": "fs2-serve.nebius.ai/external-capsule-terraform-plan/v1",
+    "signed_plan_receipt_bindings": [
+      "binary_plan_sha256",
+      "terraform_root",
+      "configuration_tree_sha256",
+      "module_graph_sha256",
+      "provider_lock_sha256",
+      "provider_package_sha256",
+      "provisioner_executable_sha256",
+      "terraform_executable_sha256",
+      "external_trust_sha256",
+      "toolchain_lock_sha256"
+    ],
+    "bind_init_plan_show_apply_to_same_capsule": true,
+    "source_transport": "verified-read-only-private-mount",
+    "input_transport": "sealed-memfd",
+    "permitted_external_executables": [],
+    "deny_module_downloads": true,
+    "deny_provisioner_path_lookup": true
+  }
+}

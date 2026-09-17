@@ -13,12 +13,12 @@ deploymentStrategy:
 image:
   repository: nvcr.io/nvidia/ai-dynamo/modelexpress-server
   pullPolicy: IfNotPresent
-  tag: "0.5.1"
-  # Prefer an immutable digest. When set, tag is ignored.
+  # Populated only from the protected digest inventory. There is deliberately
+  # no tag fallback.
   digest: ""
 
 imagePullSecrets:
-  - name: nvcr-secret
+  - name: fs2-modelexpress-pull
 nameOverride: ""
 fullnameOverride: ""
 

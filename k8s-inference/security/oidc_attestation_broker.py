@@ -22,6 +22,29 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+if __name__ == "__main__" or __package__ != "security":
+    print(
+        "OIDC broker access is an import-only external-capsule payload",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+from .execution_toolchain import (  # noqa: E402
+    ToolchainError,
+    environment_toolchain,
+    validate_current_python,
+    validate_source_file,
+)
+
+
+def _capsule_source_root() -> Path:
+    value = os.environ.get("FS2_CAPSULE_SOURCE_ROOT", "")
+    if not value and __name__ != "__main__":
+        return Path(__file__).resolve().parent.parent
+    if not value or not Path(value).is_absolute():
+        raise BrokerError("capsule read-only source root is absent")
+    return Path(value).resolve()
+
 
 DIGEST_REFERENCE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 
@@ -281,7 +304,181 @@ def registry_auth(
     output.chmod(0o600)
 
 
+def workload_registry_auth(
+    subjects: list[str],
+    identity_path: Path,
+    token_path: Path,
+    trust_path: Path,
+    docker_config_output: Path,
+    receipt_output: Path,
+) -> None:
+    """Exchange a projected Kubernetes identity for exact pull-only auth."""
+
+    trust = json.loads(trust_path.read_text(encoding="utf-8"))
+    policy = trust.get("workload_registry_authentication") if isinstance(trust, dict) else None
+    if not isinstance(policy, dict) or not isinstance(policy.get("broker_url"), str):
+        raise BrokerError("workload registry authentication broker is not trusted")
+    contract_relative = policy.get("refresh_controller_contract_path")
+    contract_sha256 = policy.get("refresh_controller_contract_sha256")
+    source_root = _capsule_source_root()
+    if (
+        not isinstance(contract_relative, str)
+        or Path(contract_relative).is_absolute()
+        or not isinstance(contract_sha256, str)
+    ):
+        raise BrokerError("refresh-controller trust is incomplete")
+    refresh_contract_path = (source_root / "security" / contract_relative).resolve()
+    refresh_contract = json.loads(refresh_contract_path.read_text(encoding="utf-8"))
+    refresh_runtime = (
+        refresh_contract.get("runtime") if isinstance(refresh_contract, dict) else None
+    )
+    if (
+        _sha256(refresh_contract_path) != contract_sha256
+        or refresh_contract.get("state") != "trusted"
+        or not isinstance(refresh_runtime, dict)
+        or refresh_runtime.get("owner_id")
+        not in policy.get("authorized_refresh_owner_ids", [])
+    ):
+        raise BrokerError("refresh-controller runtime is not trusted")
+    identity_document = json.loads(identity_path.read_text(encoding="utf-8"))
+    if not isinstance(identity_document, dict):
+        raise BrokerError("workload identity document must be an object")
+    service_account = identity_document.get("service_account")
+    expected_identity = {
+        "issuer": policy.get("issuer"),
+        "audience": policy.get("audience"),
+        "subject": f"system:serviceaccount:{service_account}",
+        "service_account": service_account,
+    }
+    allowed_accounts = policy.get("authorized_service_accounts")
+    if (
+        identity_document != expected_identity
+        or not isinstance(allowed_accounts, list)
+        or service_account not in allowed_accounts
+    ):
+        raise BrokerError("projected workload identity is not authorized")
+    if token_path.is_symlink() or not token_path.is_file():
+        raise BrokerError("projected workload token must be one regular file")
+    token = token_path.read_text(encoding="utf-8").strip()
+    if not token:
+        raise BrokerError("projected workload token is empty")
+    parsed: list[dict[str, Any]] = []
+    allowed_registries = policy.get("allowed_registries")
+    for subject in sorted(set(subjects)):
+        if not DIGEST_REFERENCE.fullmatch(subject):
+            raise BrokerError("workload registry subject is not digest-bound")
+        repository, digest = subject.rsplit("@", 1)
+        registry, separator, repository_path = repository.partition("/")
+        if (
+            not separator
+            or not isinstance(allowed_registries, list)
+            or registry not in allowed_registries
+        ):
+            raise BrokerError("workload registry subject is not authorized")
+        parsed.append(
+            {
+                "subject": subject,
+                "registry": registry,
+                "repository": repository_path,
+                "digest": digest,
+                "actions": ["pull"],
+            }
+        )
+    if not parsed:
+        raise BrokerError("at least one workload registry subject is required")
+    response = _json_response(
+        urllib.request.Request(
+            policy["broker_url"],
+            data=json.dumps(
+                {
+                    "schema": "fs2-serve.nebius.ai/workload-registry-auth-request/v1",
+                    "identity": expected_identity,
+                    "subjects": parsed,
+                    "oidc_token": token,
+                    "credential_format": "docker-config-json",
+                    "required_actions": ["pull"],
+                }
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+    )
+    if response.get("schema") != "fs2-serve.nebius.ai/workload-registry-auth-response/v1":
+        raise BrokerError("workload registry broker response schema is unsupported")
+    receipt = response.get("authorization_receipt")
+    signature_value = response.get("authorization_receipt_signature_base64")
+    encoded = response.get("docker_config_base64")
+    if not isinstance(receipt, dict) or not isinstance(signature_value, str):
+        raise BrokerError("workload registry broker omitted its signed receipt")
+    if (
+        receipt.get("schema")
+        != "fs2-serve.nebius.ai/workload-registry-auth-receipt/v1"
+        or receipt.get("identity") != expected_identity
+        or receipt.get("authorized_subjects") != parsed
+        or receipt.get("authorization_model") != "repository-digest-action"
+        or receipt.get("broker_id") not in policy.get("authorized_broker_ids", [])
+        or not isinstance(receipt.get("refresh"), dict)
+        or receipt["refresh"].get("owner_id")
+        not in policy.get("authorized_refresh_owner_ids", [])
+        or receipt["refresh"].get("owner_id") != refresh_runtime.get("owner_id")
+        or receipt["refresh"].get("interval_seconds")
+        != policy.get("maximum_refresh_interval_seconds")
+        or receipt["refresh"].get("management_mode")
+        != "external-short-lived-refresh-controller"
+        or not isinstance(receipt.get("revision"), int)
+        or isinstance(receipt.get("revision"), bool)
+        or receipt.get("revision") < 1
+        or not isinstance(receipt["refresh"].get("rotate_before_expiry_seconds"), int)
+        or receipt["refresh"].get("rotate_before_expiry_seconds") < 60
+        or receipt["refresh"].get("rotate_before_expiry_seconds")
+        >= policy.get("maximum_ttl_seconds", 0)
+        or receipt["refresh"].get("retire_superseded_without_delete") is not True
+    ):
+        raise BrokerError("workload registry receipt scope differs")
+    try:
+        expires_at = datetime.fromisoformat(
+            str(receipt.get("expires_at")).replace("Z", "+00:00")
+        )
+        issued_at = datetime.fromisoformat(
+            str(receipt.get("issued_at")).replace("Z", "+00:00")
+        )
+        docker_config = base64.b64decode(str(encoded), validate=True)
+        signature = base64.b64decode(signature_value, validate=True)
+        config_document = json.loads(docker_config)
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise BrokerError("workload registry broker payload is malformed") from exc
+    maximum_ttl = policy.get("maximum_ttl_seconds")
+    now = datetime.now(timezone.utc)
+    if (
+        expires_at.tzinfo is None
+        or issued_at.tzinfo is None
+        or not isinstance(maximum_ttl, int)
+        or not now < expires_at.astimezone(timezone.utc)
+        or expires_at - issued_at > timedelta(seconds=maximum_ttl)
+    ):
+        raise BrokerError("workload registry credential lifetime is not bounded")
+    if receipt.get("docker_config_sha256") != hashlib.sha256(docker_config).hexdigest():
+        raise BrokerError("workload registry Docker config hash differs")
+    auths = config_document.get("auths") if isinstance(config_document, dict) else None
+    if not isinstance(auths, dict) or sorted(auths) != sorted(
+        {row["registry"] for row in parsed}
+    ):
+        raise BrokerError("workload registry Docker config host scope differs")
+    docker_config_output.parent.mkdir(parents=True, exist_ok=True)
+    docker_config_output.write_bytes(docker_config)
+    docker_config_output.chmod(0o600)
+    receipt_output.write_text(
+        json.dumps(receipt, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    receipt_output.chmod(0o600)
+    Path(f"{receipt_output}.sig").write_bytes(signature)
+    Path(f"{receipt_output}.sig").chmod(0o600)
+
+
 def main() -> int:
+    if os.environ.get("FS2_EXTERNAL_CAPSULE_ACTIVE") != "1":
+        print("OIDC broker client requires the external capsule", file=sys.stderr)
+        return 1
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
     identity_command = commands.add_parser("identity")
@@ -302,8 +499,25 @@ def main() -> int:
     registry_command.add_argument("--trust", required=True, type=Path)
     registry_command.add_argument("--subject", action="append", required=True)
     registry_command.add_argument("--output", required=True, type=Path)
+    workload_command = commands.add_parser("workload-registry-auth")
+    workload_command.add_argument("--identity", required=True, type=Path)
+    workload_command.add_argument("--token-file", required=True, type=Path)
+    workload_command.add_argument("--trust", required=True, type=Path)
+    workload_command.add_argument("--subject", action="append", required=True)
+    workload_command.add_argument("--docker-config-output", required=True, type=Path)
+    workload_command.add_argument("--receipt-output", required=True, type=Path)
     args = parser.parse_args()
     try:
+        lock_path, environment_trust = environment_toolchain()
+        if environment_trust.resolve() != args.trust.resolve():
+            raise BrokerError("broker execution trust differs from requested trust")
+        validate_current_python(lock_path=lock_path, trust_path=args.trust.resolve())
+        validate_source_file(
+            "security/oidc_attestation_broker.py",
+            source_root=_capsule_source_root(),
+            lock_path=lock_path,
+            trust_path=args.trust.resolve(),
+        )
         if args.command == "identity":
             args.output.write_text(
                 json.dumps(
@@ -322,7 +536,7 @@ def main() -> int:
                 args.identity,
                 args.trust,
             )
-        else:
+        elif args.command == "registry-auth":
             registry_auth(
                 args.subject,
                 args.broker_url,
@@ -331,7 +545,16 @@ def main() -> int:
                 args.trust,
                 args.output,
             )
-    except (BrokerError, OSError, json.JSONDecodeError) as exc:
+        else:
+            workload_registry_auth(
+                args.subject,
+                args.identity,
+                args.token_file,
+                args.trust,
+                args.docker_config_output,
+                args.receipt_output,
+            )
+    except (BrokerError, OSError, ToolchainError, json.JSONDecodeError) as exc:
         print(f"OIDC attestation broker: {exc}", file=sys.stderr)
         return 1
     return 0

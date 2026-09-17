@@ -1,0 +1,37 @@
+{
+  "schema": "fs2-serve.nebius.ai/workload-registry-refresh-contract/v1",
+  "state": "blocked_pending_security_owner_and_runtime_attestation",
+  "authority": "Platform Security must independently install and attest the refresh owner before private workload pulls are enabled.",
+  "management_mode": "external-short-lived-refresh-controller",
+  "maximum_refresh_interval_seconds": 300,
+  "required_rotation_margin_seconds": 60,
+  "retire_superseded_without_delete": true,
+  "credential_storage": "kubernetes-secret-write-only-no-terraform-state",
+  "subject_scope": "exact-repository-digest-pull",
+  "watched_secrets": [
+    "fs2-models/nvcrio-cred",
+    "fs2-observability/fs2-dcgm-exporter-nvcrio",
+    "modelexpress/fs2-modelexpress-pull"
+  ],
+  "required_audit_events": [
+    "refresh-requested",
+    "receipt-validated",
+    "secret-revision-applied",
+    "superseded-revision-retired",
+    "refresh-failed"
+  ],
+  "failure_policy": {
+    "keep_last_valid_revision": true,
+    "delete_secret": false,
+    "admit_new_digest_after_expiry": false,
+    "surface_readiness_failure_before_expiry": true
+  },
+  "runtime": {
+    "owner_id": null,
+    "source_commit": null,
+    "source_tree": null,
+    "image": null,
+    "sbom_sha256": null,
+    "provenance_sha256": null
+  }
+}

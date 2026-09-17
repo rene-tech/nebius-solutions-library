@@ -190,11 +190,22 @@ resource "kubernetes_secret_v1" "nvcrio_cred" {
     name      = "nvcrio-cred"
     namespace = "fs2-models"
     labels    = local.common_labels
+    annotations = {
+      "fs2.nebius.ai/registry-auth-receipt-sha256" = try(var.nvcrio_credential_authorization.receipt_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-expires-at"     = try(var.nvcrio_credential_authorization.expires_at, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-owner"  = try(var.nvcrio_credential_authorization.refresh_owner_id, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-seconds" = tostring(try(var.nvcrio_credential_authorization.refresh_interval_seconds, 0))
+      "fs2.nebius.ai/registry-auth-rotate-before-seconds" = tostring(try(var.nvcrio_credential_authorization.rotate_before_expiry_seconds, 0))
+      "fs2.nebius.ai/registry-auth-management" = try(var.nvcrio_credential_authorization.management_mode, "blocked")
+      "fs2.nebius.ai/registry-auth-retirement" = try(var.nvcrio_credential_authorization.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
+      "fs2.nebius.ai/registry-auth-refresh-registration-sha256" = try(var.nvcrio_credential_authorization.refresh_registration_sha256, "blocked")
+    }
   }
   type = "kubernetes.io/dockerconfigjson"
-  data = {
+  data_wo = {
     ".dockerconfigjson" = var.nvcrio_dockerconfigjson
   }
+  data_wo_revision = try(var.nvcrio_credential_authorization.revision, 0)
   depends_on = [terraform_data.cluster_contract]
 }
 
@@ -205,10 +216,21 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
     name      = "fs2-dcgm-exporter-nvcrio"
     namespace = "fs2-observability"
     labels    = local.common_labels
+    annotations = {
+      "fs2.nebius.ai/registry-auth-receipt-sha256" = try(var.nvcrio_credential_authorization.receipt_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-expires-at"     = try(var.nvcrio_credential_authorization.expires_at, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-owner"  = try(var.nvcrio_credential_authorization.refresh_owner_id, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-seconds" = tostring(try(var.nvcrio_credential_authorization.refresh_interval_seconds, 0))
+      "fs2.nebius.ai/registry-auth-rotate-before-seconds" = tostring(try(var.nvcrio_credential_authorization.rotate_before_expiry_seconds, 0))
+      "fs2.nebius.ai/registry-auth-management" = try(var.nvcrio_credential_authorization.management_mode, "blocked")
+      "fs2.nebius.ai/registry-auth-retirement" = try(var.nvcrio_credential_authorization.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
+      "fs2.nebius.ai/registry-auth-refresh-registration-sha256" = try(var.nvcrio_credential_authorization.refresh_registration_sha256, "blocked")
+    }
   }
   type = "kubernetes.io/dockerconfigjson"
-  data = {
+  data_wo = {
     ".dockerconfigjson" = var.nvcrio_dockerconfigjson
   }
+  data_wo_revision = try(var.nvcrio_credential_authorization.revision, 0)
   depends_on = [terraform_data.cluster_contract]
 }

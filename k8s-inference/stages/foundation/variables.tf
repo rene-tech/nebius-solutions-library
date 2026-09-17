@@ -1,17 +1,29 @@
 variable "release_image_contract" {
-  description = "Protected signed release-image closure and JSON exported from the exact saved Terraform plan. Both absolute paths are mandatory for every production plan/apply."
+  description = "Protected closure and external capsule authority used by the sole authorized Terraform lifecycle."
   type = object({
     closure_path   = string
-    plan_json_path = string
+    toolchain_path = string
+    bootstrap_path = string
+    external_trust_path = string
+    registry_auth_receipt_path = string
+    registry_refresh_registration_path = string
   })
   nullable = false
 
   validation {
     condition = (
       startswith(var.release_image_contract.closure_path, "/") &&
-      startswith(var.release_image_contract.plan_json_path, "/") &&
+      startswith(var.release_image_contract.toolchain_path, "/") &&
+      startswith(var.release_image_contract.bootstrap_path, "/") &&
+      startswith(var.release_image_contract.external_trust_path, "/") &&
+      startswith(var.release_image_contract.registry_auth_receipt_path, "/") &&
+      startswith(var.release_image_contract.registry_refresh_registration_path, "/") &&
       !strcontains(var.release_image_contract.closure_path, "..") &&
-      !strcontains(var.release_image_contract.plan_json_path, "..")
+      !strcontains(var.release_image_contract.toolchain_path, "..") &&
+      !strcontains(var.release_image_contract.bootstrap_path, "..") &&
+      !strcontains(var.release_image_contract.external_trust_path, "..") &&
+      !strcontains(var.release_image_contract.registry_auth_receipt_path, "..") &&
+      !strcontains(var.release_image_contract.registry_refresh_registration_path, "..")
     )
     error_message = "release_image_contract paths must be absolute and traversal-free."
   }

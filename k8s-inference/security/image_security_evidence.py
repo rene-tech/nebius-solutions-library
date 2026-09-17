@@ -21,6 +21,27 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+if __package__ == "security":
+    from .execution_toolchain import (
+        ToolchainError,
+        environment_toolchain,
+        validate_current_python,
+        validated_tool,
+    )
+elif __import__("os").environ.get("FS2_EXTERNAL_CAPSULE_ACTIVE") == "1":
+    print(
+        "protected evidence validation is an import-only external-capsule payload",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+else:
+    from execution_toolchain import (
+        ToolchainError,
+        environment_toolchain,
+        validate_current_python,
+        validated_tool,
+    )
+
 
 DIGEST_REFERENCE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 TAG_REFERENCE = re.compile(r"^[^\s@]+:[^\s:@/]+$")
@@ -54,10 +75,33 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _git_identity(repository: Path) -> tuple[str, str]:
+def _utc(value: Any, label: str) -> datetime:
+    if not isinstance(value, str):
+        raise EvidenceError(f"{label}: timestamp is missing")
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise EvidenceError(f"{label}: timestamp is invalid") from exc
+    if parsed.tzinfo is None:
+        raise EvidenceError(f"{label}: timestamp has no timezone")
+    return parsed.astimezone(timezone.utc)
+
+
+def _trusted_tool(name: str, trust_path: Path) -> Path:
+    lock_path, environment_trust = environment_toolchain()
+    if environment_trust.resolve() != trust_path.resolve():
+        raise EvidenceError("execution trust differs from the requested trust policy")
+    validate_current_python(lock_path=lock_path, trust_path=trust_path)
+    path, _ = validated_tool(name, lock_path=lock_path, trust_path=trust_path)
+    return path
+
+
+def _git_identity(repository: Path, trust_path: Path) -> tuple[str, str]:
+    git_path = _trusted_tool("git", trust_path)
+
     def git(*arguments: str) -> str:
         completed = subprocess.run(
-            ["git", "-C", str(repository), *arguments],
+            [str(git_path), "-C", str(repository), *arguments],
             check=False,
             capture_output=True,
             text=True,
@@ -94,9 +138,10 @@ def validate_detached_signature(
         raise EvidenceError(f"{trust_path}: public key escapes trust root") from exc
     if _sha256(public_key) != public_key_sha256:
         raise EvidenceError(f"{trust_path}: public key fingerprint mismatch")
+    openssl_path = _trusted_tool("openssl", trust_path)
     completed = subprocess.run(
         [
-            "openssl",
+            str(openssl_path),
             "dgst",
             "-sha256",
             "-verify",
@@ -154,7 +199,7 @@ def validate_image_gate_authorization(
     path: Path,
     trust_path: Path,
     source_root: Path,
-) -> dict[str, str]:
+) -> dict[str, Any]:
     """Validate signed inventory authority for render or apply post-rendering."""
 
     validate_detached_signature(path, Path(f"{path}.sig"), trust_path)
@@ -170,7 +215,7 @@ def validate_image_gate_authorization(
         and document.get("status") != "authorized"
     ):
         raise EvidenceError(f"{path}: image materials are not authorized")
-    commit, tree = _git_identity(source_root.resolve())
+    commit, tree = _git_identity(source_root.resolve(), trust_path)
     if document.get("source") != {"commit": commit, "tree": tree}:
         raise EvidenceError(f"{path}: authorization source differs from checkout")
     if document.get("trust_policy_sha256") != _sha256(trust_path):
@@ -178,7 +223,7 @@ def validate_image_gate_authorization(
     validate_attestation_identity(
         document.get("attestation"), trust_path, purpose=str(path)
     )
-    result: dict[str, str] = {}
+    result: dict[str, Any] = {"schema": schema, "subjects": []}
     for field in (
         "inventory_sha256",
         "first_party_inventory_sha256",
@@ -188,7 +233,171 @@ def validate_image_gate_authorization(
         if not isinstance(value, str) or not HEX_SHA256.fullmatch(value):
             raise EvidenceError(f"{path}: authorization {field} is invalid")
         result[field] = value
+    if schema == "fs2-serve.nebius.ai/release-image-closure/v2":
+        subjects = document.get("subjects")
+        if (
+            not isinstance(subjects, list)
+            or not subjects
+            or len(subjects) != len(set(subjects))
+            or not all(
+                isinstance(subject, str) and DIGEST_REFERENCE.fullmatch(subject)
+                for subject in subjects
+            )
+        ):
+            raise EvidenceError(f"{path}: closure subjects are incomplete")
+        result["subjects"] = subjects
     return result
+
+
+def validate_workload_registry_auth_receipt(
+    path: Path,
+    trust_path: Path,
+    required_subjects: set[str],
+    allowed_subjects: set[str],
+) -> dict[str, Any]:
+    """Validate short-lived pull-only credentials consumed by Kubernetes."""
+
+    validate_detached_signature(path, Path(f"{path}.sig"), trust_path)
+    receipt = _load_object(path)
+    if (
+        receipt.get("schema")
+        != "fs2-serve.nebius.ai/workload-registry-auth-receipt/v1"
+    ):
+        raise EvidenceError(f"{path}: unsupported workload registry receipt")
+    trust = _load_object(trust_path)
+    policy = trust.get("workload_registry_authentication")
+    if not isinstance(policy, dict):
+        raise EvidenceError(f"{trust_path}: workload registry trust is missing")
+    source_root_value = __import__("os").environ.get("FS2_CAPSULE_SOURCE_ROOT", "")
+    contract_relative = policy.get("refresh_controller_contract_path")
+    contract_sha256 = policy.get("refresh_controller_contract_sha256")
+    if (
+        not source_root_value
+        or not Path(source_root_value).is_absolute()
+        or not isinstance(contract_relative, str)
+        or Path(contract_relative).is_absolute()
+        or not isinstance(contract_sha256, str)
+        or not HEX_SHA256.fullmatch(contract_sha256)
+    ):
+        raise EvidenceError(f"{trust_path}: refresh-controller trust is incomplete")
+    refresh_contract_path = (
+        Path(source_root_value) / "security" / contract_relative
+    ).resolve()
+    if _sha256(refresh_contract_path) != contract_sha256:
+        raise EvidenceError("refresh-controller contract differs from trust")
+    refresh_contract = _load_object(refresh_contract_path)
+    refresh_runtime = refresh_contract.get("runtime")
+    if (
+        refresh_contract.get("schema")
+        != "fs2-serve.nebius.ai/workload-registry-refresh-contract/v1"
+        or refresh_contract.get("state") != "trusted"
+        or refresh_contract.get("management_mode")
+        != "external-short-lived-refresh-controller"
+        or refresh_contract.get("retire_superseded_without_delete") is not True
+        or not isinstance(refresh_runtime, dict)
+        or refresh_runtime.get("owner_id")
+        not in policy.get("authorized_refresh_owner_ids", [])
+        or not isinstance(refresh_runtime.get("image"), str)
+        or not DIGEST_REFERENCE.fullmatch(refresh_runtime["image"])
+        or not all(
+            isinstance(refresh_runtime.get(field), str)
+            and HEX_SHA256.fullmatch(refresh_runtime[field])
+            for field in ("sbom_sha256", "provenance_sha256")
+        )
+    ):
+        raise EvidenceError("refresh-controller runtime is not independently trusted")
+    if receipt.get("authorization_model") != "repository-digest-action" or policy.get(
+        "required_authorization_model"
+    ) != "repository-digest-action":
+        raise EvidenceError(f"{path}: registry authorization model is not exact")
+    brokers = policy.get("authorized_broker_ids")
+    if not isinstance(brokers, list) or receipt.get("broker_id") not in brokers:
+        raise EvidenceError(f"{path}: workload registry broker is not authorized")
+    identity = receipt.get("identity")
+    service_accounts = policy.get("authorized_service_accounts")
+    if (
+        not isinstance(identity, dict)
+        or identity.get("issuer") != policy.get("issuer")
+        or identity.get("audience") != policy.get("audience")
+        or not isinstance(service_accounts, list)
+        or identity.get("service_account") not in service_accounts
+        or identity.get("subject")
+        != f"system:serviceaccount:{identity.get('service_account', '')}"
+    ):
+        raise EvidenceError(f"{path}: workload identity is not authorized")
+    authorized = receipt.get("authorized_subjects")
+    if not isinstance(authorized, list):
+        raise EvidenceError(f"{path}: authorized subjects are missing")
+    actual_subjects: set[str] = set()
+    allowed_registries = policy.get("allowed_registries")
+    for row in authorized:
+        if not isinstance(row, dict) or row.get("actions") != ["pull"]:
+            raise EvidenceError(f"{path}: registry credential is not pull-only")
+        subject = row.get("subject")
+        if not isinstance(subject, str) or not DIGEST_REFERENCE.fullmatch(subject):
+            raise EvidenceError(f"{path}: registry subject is not digest-bound")
+        repository, digest = subject.rsplit("@", 1)
+        registry, separator, repository_path = repository.partition("/")
+        if (
+            not separator
+            or row.get("registry") != registry
+            or row.get("repository") != repository_path
+            or row.get("digest") != digest
+            or not isinstance(allowed_registries, list)
+            or registry not in allowed_registries
+        ):
+            raise EvidenceError(f"{path}: registry subject scope differs")
+        actual_subjects.add(subject)
+    if len(actual_subjects) != len(authorized):
+        raise EvidenceError(f"{path}: pull credential contains duplicate subjects")
+    if (
+        not required_subjects
+        or not required_subjects.issubset(actual_subjects)
+        or not actual_subjects.issubset(allowed_subjects)
+    ):
+        raise EvidenceError(
+            f"{path}: pull credential omits this render or exceeds the signed closure"
+        )
+    issued_at = _utc(receipt.get("issued_at"), f"{path}: issued_at")
+    expires_at = _utc(receipt.get("expires_at"), f"{path}: expires_at")
+    maximum_ttl = policy.get("maximum_ttl_seconds")
+    now = datetime.now(timezone.utc)
+    if (
+        not isinstance(maximum_ttl, int)
+        or maximum_ttl < 60
+        or expires_at <= now
+        or expires_at - issued_at > timedelta(seconds=maximum_ttl)
+        or issued_at > now + timedelta(minutes=5)
+    ):
+        raise EvidenceError(f"{path}: workload pull credential lifetime is invalid")
+    docker_config_sha256 = receipt.get("docker_config_sha256")
+    if not isinstance(docker_config_sha256, str) or not HEX_SHA256.fullmatch(
+        docker_config_sha256
+    ):
+        raise EvidenceError(f"{path}: Docker config digest is invalid")
+    refresh = receipt.get("refresh")
+    refresh_owners = policy.get("authorized_refresh_owner_ids")
+    maximum_refresh = policy.get("maximum_refresh_interval_seconds")
+    if (
+        not isinstance(refresh, dict)
+        or not isinstance(refresh_owners, list)
+        or refresh.get("owner_id") not in refresh_owners
+        or refresh.get("owner_id") != refresh_runtime.get("owner_id")
+        or not isinstance(maximum_refresh, int)
+        or refresh.get("interval_seconds") != maximum_refresh
+        or not isinstance(refresh.get("rotate_before_expiry_seconds"), int)
+        or isinstance(refresh.get("rotate_before_expiry_seconds"), bool)
+        or refresh.get("rotate_before_expiry_seconds") < 60
+        or refresh.get("rotate_before_expiry_seconds") >= maximum_ttl
+        or refresh.get("management_mode")
+        != "external-short-lived-refresh-controller"
+        or refresh.get("retire_superseded_without_delete") is not True
+    ):
+        raise EvidenceError(f"{path}: pull credential refresh ownership is invalid")
+    revision = receipt.get("revision")
+    if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
+        raise EvidenceError(f"{path}: pull credential revision is invalid")
+    return receipt
 
 
 def _repository_and_tag(reference: str) -> tuple[str, str]:
@@ -391,7 +600,9 @@ def validate_first_party_inventory(
     images = inventory.get("images")
     if not isinstance(images, list) or not images:
         raise EvidenceError(f"{path}: first-party images must be non-empty")
-    source_identity = _git_identity(source_root.resolve()) if source_root else None
+    source_identity = (
+        _git_identity(source_root.resolve(), trust_path) if source_root else None
+    )
     identifiers: set[str] = set()
     references: set[str] = set()
 
@@ -1298,15 +1509,61 @@ def create_receipt(args: argparse.Namespace) -> None:
         raise EvidenceError("source commit must be a full Git object id")
     if not GIT_OBJECT.fullmatch(args.source_tree):
         raise EvidenceError("source tree must be a full Git object id")
-    actual_commit, actual_tree = _git_identity(args.repository.resolve())
+    if args.source_scan_only:
+        if args.trust is not None or args.kind == "release-image":
+            raise EvidenceError(
+                "untrusted source receipts cannot use release trust or release subjects"
+            )
+        completed = subprocess.run(
+            ["git", "-C", str(args.repository.resolve()), "status", "--porcelain"],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**__import__("os").environ, "GIT_OPTIONAL_LOCKS": "0"},
+        )
+        identity = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(args.repository.resolve()),
+                "rev-parse",
+                "HEAD",
+                "HEAD^{tree}",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            env={**__import__("os").environ, "GIT_OPTIONAL_LOCKS": "0"},
+        )
+        identities = identity.stdout.splitlines()
+        if completed.returncode != 0 or completed.stdout or identity.returncode != 0 or len(identities) != 2:
+            raise EvidenceError("untrusted source scan requires one clean Git checkout")
+        actual_commit, actual_tree = identities
+    else:
+        if args.trust is None:
+            raise EvidenceError("protected receipt creation requires execution trust")
+        actual_commit, actual_tree = _git_identity(
+            args.repository.resolve(), args.trust.resolve()
+        )
     if (args.source_commit, args.source_tree) != (actual_commit, actual_tree):
         raise EvidenceError("source commit/tree differs from the clean checkout")
     if args.kind in {"image", "release-image"} and not DIGEST_REFERENCE.fullmatch(
         args.subject
     ):
         raise EvidenceError("image receipt subject must be an exact digest reference")
-    if not HEX_SHA256.fullmatch(args.scanner_archive_sha256):
-        raise EvidenceError("scanner archive SHA-256 is invalid")
+    scanner_bindings = [
+        ("download-archive", args.scanner_archive_sha256),
+        ("capsule-executable", args.scanner_executable_sha256),
+    ]
+    selected_scanners = [
+        (kind, digest) for kind, digest in scanner_bindings if digest is not None
+    ]
+    if (
+        len(selected_scanners) != 1
+        or not HEX_SHA256.fullmatch(selected_scanners[0][1])
+    ):
+        raise EvidenceError("exactly one valid scanner artifact SHA-256 is required")
+    scanner_artifact_kind, scanner_artifact_sha256 = selected_scanners[0]
 
     report = args.report.resolve()
     sbom = args.sbom.resolve()
@@ -1427,6 +1684,11 @@ def create_receipt(args: argparse.Namespace) -> None:
 
     receipt = {
         "schema": "fs2-serve.nebius.ai/image-scan-receipt/v2",
+        "authority": (
+            "untrusted-source-scan-only"
+            if args.source_scan_only
+            else "protected-release-attestation"
+        ),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "source": {"commit": args.source_commit, "tree": args.source_tree},
         "subject": {"kind": args.kind, "identity": args.subject},
@@ -1434,7 +1696,10 @@ def create_receipt(args: argparse.Namespace) -> None:
         "scanner": {
             "name": "trivy",
             "version": args.scanner_release,
-            "archive_sha256": args.scanner_archive_sha256,
+            "artifact": {
+                "kind": scanner_artifact_kind,
+                "sha256": scanner_artifact_sha256,
+            },
             "vulnerability_database": database_identity,
         },
         "command_contract": args.command_contract,
@@ -1457,6 +1722,8 @@ def validate_receipt(path: Path, trust_path: Path | None = None) -> None:
     receipt = _load_object(path)
     if receipt.get("schema") != "fs2-serve.nebius.ai/image-scan-receipt/v2":
         raise EvidenceError(f"{path}: unsupported receipt schema")
+    if receipt.get("authority") != "protected-release-attestation":
+        raise EvidenceError(f"{path}: source-scan receipt is not promotion evidence")
     source = receipt.get("source")
     subject = receipt.get("subject")
     scanner = receipt.get("scanner")
@@ -1471,8 +1738,13 @@ def validate_receipt(path: Path, trust_path: Path | None = None) -> None:
         and not DIGEST_REFERENCE.fullmatch(str(subject.get("identity", "")))
     ):
         raise EvidenceError(f"{path}: image subject is not digest-bound")
-    if not isinstance(scanner, dict) or not HEX_SHA256.fullmatch(
-        str(scanner.get("archive_sha256", ""))
+    scanner_artifact = scanner.get("artifact") if isinstance(scanner, dict) else None
+    if (
+        not isinstance(scanner, dict)
+        or not isinstance(scanner_artifact, dict)
+        or scanner_artifact.get("kind")
+        not in {"download-archive", "capsule-executable"}
+        or not HEX_SHA256.fullmatch(str(scanner_artifact.get("sha256", "")))
     ):
         raise EvidenceError(f"{path}: invalid scanner binding")
     if not isinstance(scanner.get("vulnerability_database"), dict):
@@ -1504,6 +1776,15 @@ def validate_receipt(path: Path, trust_path: Path | None = None) -> None:
         raise EvidenceError(f"{path}: build/resolution provenance is missing")
     if trust_path is None:
         raise EvidenceError(f"{path}: attestation trust policy is required")
+    if subject.get("kind") == "release-image":
+        trusted_trivy = _trusted_tool("trivy", trust_path)
+        if scanner_artifact != {
+            "kind": "capsule-executable",
+            "sha256": _sha256(trusted_trivy),
+        }:
+            raise EvidenceError(
+                f"{path}: protected release scan did not use the capsule Trivy bytes"
+            )
     validate_attestation_identity(
         receipt.get("attestation"), trust_path, purpose=str(path)
     )
@@ -1540,7 +1821,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     receipt.add_argument("--subject", required=True)
     receipt.add_argument("--scanner-release", required=True)
-    receipt.add_argument("--scanner-archive-sha256", required=True)
+    scanner_artifact = receipt.add_mutually_exclusive_group(required=True)
+    scanner_artifact.add_argument("--scanner-archive-sha256")
+    scanner_artifact.add_argument("--scanner-executable-sha256")
     receipt.add_argument("--scanner-version", required=True, type=Path)
     receipt.add_argument("--command-contract", required=True)
     receipt.add_argument("--report", required=True, type=Path)
@@ -1551,6 +1834,7 @@ def _parser() -> argparse.ArgumentParser:
     receipt.add_argument("--release-closure", type=Path)
     receipt.add_argument("--trust", type=Path)
     receipt.add_argument("--attestation-identity", type=Path)
+    receipt.add_argument("--source-scan-only", action="store_true")
     receipt.add_argument("--output", required=True, type=Path)
 
     validate = commands.add_parser("receipt")
@@ -1579,7 +1863,7 @@ def main() -> int:
         elif args.command == "receipt":
             for path in args.paths:
                 validate_receipt(path, args.trust)
-    except EvidenceError as exc:
+    except (EvidenceError, ToolchainError) as exc:
         print(f"image security gate: {exc}", file=sys.stderr)
         return 1
     return 0

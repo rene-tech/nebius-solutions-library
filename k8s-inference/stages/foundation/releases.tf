@@ -11,8 +11,8 @@ resource "helm_release" "cert_manager" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [yamlencode({
@@ -49,8 +49,8 @@ resource "helm_release" "filesystem_csi" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [yamlencode({
@@ -87,8 +87,8 @@ resource "helm_release" "cloudnative_pg" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [file("${path.module}/values/cloudnative-pg.yaml")]
@@ -113,8 +113,8 @@ resource "helm_release" "envoy_gateway" {
   timeout         = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   depends_on = [terraform_data.cluster_contract]
@@ -174,8 +174,8 @@ resource "helm_release" "kueue" {
   timeout = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [yamlencode(local.kueue_effective_values)]
@@ -249,6 +249,7 @@ module "jobset_controller" {
   cluster_id         = var.cluster_id
   kubernetes_version = var.jobset.kubernetes_version
   labels             = local.common_labels
+  release_image_contract = var.release_image_contract
 
   # The resource-derived namespace input keeps its consumers behind namespace
   # creation. A module-wide depends_on would also defer the plan-time chart
@@ -272,8 +273,8 @@ resource "helm_release" "keda" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [file("${path.module}/values/keda.yaml")]
@@ -294,8 +295,8 @@ resource "helm_release" "kserve_crd" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   depends_on = [
@@ -318,8 +319,8 @@ resource "helm_release" "kserve_resources" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   depends_on = [
@@ -341,8 +342,8 @@ resource "helm_release" "monitoring" {
   timeout          = 1200
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [
@@ -543,8 +544,8 @@ resource "helm_release" "loki" {
   timeout          = 1200
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [file("${path.module}/values/loki.yaml")]
@@ -565,8 +566,8 @@ resource "helm_release" "otel_gateway" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [file("${path.module}/values/otel-gateway.yaml")]
@@ -590,8 +591,8 @@ resource "helm_release" "otel_node" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [file("${path.module}/values/otel-node.yaml")]

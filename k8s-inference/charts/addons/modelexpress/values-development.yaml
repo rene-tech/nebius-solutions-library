@@ -7,7 +7,7 @@ replicaCount: 1
 image:
   repository: nvcr.io/nvidia/ai-dynamo/modelexpress-server
   pullPolicy: IfNotPresent
-  tag: "0.5.1"
+  digest: ""
 
 serviceAccount:
   create: true

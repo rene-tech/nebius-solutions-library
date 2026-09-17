@@ -10,6 +10,12 @@ then requires its image multiset to equal the lexer's rewrite targets.
 from __future__ import annotations
 
 from collections import Counter
+import os
+from .execution_toolchain import (
+    ToolchainError,
+    environment_toolchain,
+    validate_current_python,
+)
 try:
     import yaml
     from yaml.events import AliasEvent
@@ -19,10 +25,7 @@ except ImportError as exc:  # pragma: no cover - exercised by installer prefligh
         "PyYAML 6.0.2 is required by the independent image semantic gate"
     ) from exc
 
-try:
-    from .yaml_image_references import ImageScalar, YamlImageError, image_scalars
-except ImportError:
-    from yaml_image_references import ImageScalar, YamlImageError, image_scalars
+from .yaml_image_references import ImageScalar, YamlImageError, image_scalars
 
 
 PY_YAML_VERSION = "6.0.2"
@@ -76,6 +79,14 @@ def _walk(node: Node, *, location: str, images: list[str]) -> None:
 def semantic_image_references(source: str) -> list[str]:
     """Parse YAML independently and return semantic image scalar values."""
 
+    if os.environ.get("FS2_EXTERNAL_CAPSULE_ACTIVE") == "1":
+        try:
+            lock_path, trust_path = environment_toolchain()
+            validate_current_python(lock_path=lock_path, trust_path=trust_path)
+        except ToolchainError as exc:
+            raise SemanticYamlError(
+                f"independent parser runtime is not trusted: {exc}"
+            ) from exc
     if getattr(yaml, "__version__", None) != PY_YAML_VERSION:
         raise SemanticYamlError(
             f"independent parser must be PyYAML {PY_YAML_VERSION}"

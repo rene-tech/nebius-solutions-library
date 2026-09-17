@@ -1,8 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-addons_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-security_dir=$(cd "$addons_dir/../security" && pwd)
+if [[ "${FS2_EXTERNAL_CAPSULE_ACTIVE:-}" != "1" ]]; then
+  printf 'addon installation must start through the external capsule shell-entry command\n' >&2
+  exit 1
+fi
+case "${FS2_CAPSULE_SOURCE_ROOT:-}" in /*) ;; *) printf 'capsule read-only source root is absent\n' >&2; exit 1 ;; esac
+case "${FS2_CAPSULE_TOOL_DIR:-}" in /*) ;; *) printf 'capsule read-only tool directory is absent\n' >&2; exit 1 ;; esac
+export PATH="$FS2_CAPSULE_TOOL_DIR"
+unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
+addons_dir="$FS2_CAPSULE_SOURCE_ROOT/addons"
+security_dir="$FS2_CAPSULE_SOURCE_ROOT/security"
 # shellcheck source=../lock.env
 source "$addons_dir/lock.env"
 state_home=${XDG_STATE_HOME:-$HOME/.local/state}
@@ -10,12 +18,26 @@ cache_dir=${ADDONS_CACHE_DIR:-$state_home/nebius-k8s-inference/addons-cache}
 kube_context=${KUBE_CONTEXT:?set KUBE_CONTEXT to the target Kubernetes context}
 kubeconfig=${KUBECONFIG:-$HOME/.kube/config}
 export KUBECONFIG=$kubeconfig
-k=(kubectl --context "$kube_context")
-h=(helm --kube-context "$kube_context")
+gate_bootstrap=${FS2_IMAGE_GATE_BOOTSTRAP:?set externally installed capsule bootstrap}
+external_trust=${FS2_EXTERNAL_CAPSULE_TRUST:?set external capsule trust}
+gate_toolchain=${FS2_IMAGE_GATE_TOOLCHAIN:?set execution toolchain lock}
+registry_auth_receipt=${FS2_REGISTRY_AUTH_RECEIPT:?set signed short-lived pull receipt}
+reviewed_kubectl=("$gate_bootstrap" exec-tool --external-trust "$external_trust" --toolchain "$gate_toolchain" --source-root "$security_dir/.." --tool kubectl --)
+reviewed_helm=("$gate_bootstrap" exec-tool --external-trust "$external_trust" --toolchain "$gate_toolchain" --source-root "$security_dir/.." --tool helm --)
+k=("${reviewed_kubectl[@]}" --context "$kube_context")
+h=("${reviewed_helm[@]}" --kube-context "$kube_context")
 image_gate=(
-  --post-renderer /usr/bin/env
-  --post-renderer-args python3
-  --post-renderer-args "$security_dir/helm_image_postrenderer.py"
+  --post-renderer "$gate_bootstrap"
+  --post-renderer-args=python-entry
+  --post-renderer-args=--external-trust
+  --post-renderer-args "$external_trust"
+  --post-renderer-args=--toolchain
+  --post-renderer-args "$gate_toolchain"
+  --post-renderer-args=--source-root
+  --post-renderer-args "$security_dir/.."
+  --post-renderer-args=--entry
+  --post-renderer-args security/helm_image_postrenderer.py
+  --post-renderer-args=--
   --post-renderer-args=--lock
   --post-renderer-args "$security_dir/third-party-images.lock.json"
   --post-renderer-args=--first-party-lock
@@ -24,6 +46,10 @@ image_gate=(
   --post-renderer-args "$security_dir/image-attestation-trust.json"
   --post-renderer-args=--authorization
   --post-renderer-args "${FS2_IMAGE_GATE_AUTHORIZATION:-$security_dir/image-materials-authorization.json}"
+  --post-renderer-args=--toolchain
+  --post-renderer-args "$gate_toolchain"
+  --post-renderer-args=--registry-auth-receipt
+  --post-renderer-args "$registry_auth_receipt"
 )
 
 [[ "$("${k[@]}" version -o json | jq -r .serverVersion.gitVersion)" == v1.35.* ]] || {
@@ -47,9 +73,9 @@ for pair in \
 do
   IFS=: read -r chart values <<<"$pair"
   if [[ -n "$values" ]]; then
-    helm template verify "$cache_dir/$chart" --values "$values" "${image_gate[@]}" >/dev/null
+    "${reviewed_helm[@]}" template verify "$cache_dir/$chart" --values "$values" "${image_gate[@]}" >/dev/null
   else
-    helm template verify "$cache_dir/$chart" "${image_gate[@]}" >/dev/null
+    "${reviewed_helm[@]}" template verify "$cache_dir/$chart" "${image_gate[@]}" >/dev/null
   fi
 done
 

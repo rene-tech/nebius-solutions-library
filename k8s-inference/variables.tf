@@ -703,7 +703,10 @@ variable "deployment" {
       grafana_username_env  = optional(string, "FS2_GRAFANA_ADMIN_USERNAME")
       grafana_password_env  = optional(string, "FS2_GRAFANA_ADMIN_PASSWORD")
       ngc_api_key_env       = optional(string, "FS2_NGC_API_KEY")
-      nvcr_dockerconfig_env = optional(string, "FS2_NVCR_DOCKERCONFIGJSON")
+      # Deprecated input retained only so old tfvars fail predictably during
+      # migration. Runtime code never reads this environment reference; exact
+      # short-lived bytes arrive only from the signed broker receipt pair.
+      nvcr_dockerconfig_env = optional(string, null)
     }), {})
 
     acceptance = optional(object({
@@ -1802,10 +1805,14 @@ variable "deployment" {
         var.deployment.secrets.grafana_username_env,
         var.deployment.secrets.grafana_password_env,
         var.deployment.secrets.ngc_api_key_env,
-        var.deployment.secrets.nvcr_dockerconfig_env,
       ] : can(regex("^[A-Z][A-Z0-9_]{2,127}$", name))
     ])
     error_message = "Secret environment-variable references must be uppercase shell variable names."
+  }
+
+  validation {
+    condition     = var.deployment.secrets.nvcr_dockerconfig_env == null
+    error_message = "deployment.secrets.nvcr_dockerconfig_env is retired; static NVCR Docker config input is forbidden. Use the signed short-lived broker receipt/config/refresh-registration inputs to the external capsule."
   }
 }
 variable "academic_assets" {

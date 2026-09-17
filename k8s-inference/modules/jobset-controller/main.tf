@@ -181,8 +181,8 @@ resource "helm_release" "jobset" {
   timeout         = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", "${path.module}/../../security/image-materials-authorization.json"]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [yamlencode({

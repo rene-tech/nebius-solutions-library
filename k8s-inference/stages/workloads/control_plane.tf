@@ -234,8 +234,8 @@ resource "helm_release" "control_plane" {
   timeout          = 1800
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${local.fs2_root}/security/helm_image_postrenderer.py", "--lock", "${local.fs2_root}/security/third-party-images.lock.json", "--first-party-lock", "${local.fs2_root}/security/first-party-images.lock.json", "--trust", "${local.fs2_root}/security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${local.fs2_root}", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${local.fs2_root}/security/third-party-images.lock.json", "--first-party-lock", "${local.fs2_root}/security/first-party-images.lock.json", "--trust", "${local.fs2_root}/security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [

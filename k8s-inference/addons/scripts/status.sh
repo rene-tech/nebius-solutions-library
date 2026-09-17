@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "${FS2_EXTERNAL_CAPSULE_ACTIVE:-}" != "1" ]]; then
+  printf 'add-on status must start through the external capsule shell-entry command\n' >&2
+  exit 1
+fi
+case "${FS2_CAPSULE_TOOL_DIR:-}" in /*) ;; *) printf 'capsule read-only tool directory is absent\n' >&2; exit 1 ;; esac
+export PATH="$FS2_CAPSULE_TOOL_DIR"
+unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
 kube_context=${KUBE_CONTEXT:?set KUBE_CONTEXT to the target Kubernetes context}
 kubeconfig=${KUBECONFIG:-$HOME/.kube/config}
 export KUBECONFIG=$kubeconfig

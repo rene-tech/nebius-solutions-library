@@ -157,11 +157,22 @@ resource "kubernetes_secret_v1" "modelexpress_nvcrio" {
     name      = local.modelexpress_pull_secret_name
     namespace = var.model_express.namespace
     labels    = local.common_labels
+    annotations = {
+      "fs2.nebius.ai/registry-auth-receipt-sha256" = try(var.nvcrio_credential_authorization.receipt_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-expires-at"     = try(var.nvcrio_credential_authorization.expires_at, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-owner"  = try(var.nvcrio_credential_authorization.refresh_owner_id, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-seconds" = tostring(try(var.nvcrio_credential_authorization.refresh_interval_seconds, 0))
+      "fs2.nebius.ai/registry-auth-rotate-before-seconds" = tostring(try(var.nvcrio_credential_authorization.rotate_before_expiry_seconds, 0))
+      "fs2.nebius.ai/registry-auth-management" = try(var.nvcrio_credential_authorization.management_mode, "blocked")
+      "fs2.nebius.ai/registry-auth-retirement" = try(var.nvcrio_credential_authorization.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
+      "fs2.nebius.ai/registry-auth-refresh-registration-sha256" = try(var.nvcrio_credential_authorization.refresh_registration_sha256, "blocked")
+    }
   }
   type = "kubernetes.io/dockerconfigjson"
-  data = {
+  data_wo = {
     ".dockerconfigjson" = var.nvcrio_dockerconfigjson
   }
+  data_wo_revision = try(var.nvcrio_credential_authorization.revision, 0)
 
   depends_on = [kubernetes_namespace_v1.modelexpress]
 }
@@ -179,8 +190,8 @@ resource "helm_release" "modelexpress" {
   timeout          = 900
 
   postrender {
-    binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
+    binary_path = var.release_image_contract.bootstrap_path
+    args = ["python-entry", "--external-trust", var.release_image_contract.external_trust_path, "--toolchain", var.release_image_contract.toolchain_path, "--source-root", "${path.module}/../..", "--entry", "security/helm_image_postrenderer.py", "--", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--toolchain", var.release_image_contract.toolchain_path, "--authorization", var.release_image_contract.closure_path, "--registry-auth-receipt", var.release_image_contract.registry_auth_receipt_path]
   }
 
   values = [yamlencode(local.modelexpress_helm_values)]
@@ -195,8 +206,18 @@ resource "helm_release" "modelexpress" {
     }
 
     precondition {
-      condition     = !local.modelexpress_nvcr_required || var.nvcrio_dockerconfigjson != null
-      error_message = "A managed nvcr.io ModelExpress server requires FS2_NVCR_DOCKERCONFIGJSON."
+      condition = !local.modelexpress_nvcr_required || (
+        var.nvcrio_dockerconfigjson != null &&
+        var.nvcrio_credential_authorization != null &&
+        timecmp(var.nvcrio_credential_authorization.expires_at, timestamp()) > 0 &&
+        var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
+        var.nvcrio_credential_authorization.retire_superseded_without_delete &&
+        contains(
+          var.nvcrio_credential_authorization.subjects,
+          "${var.model_express.server_image.repository}@${var.model_express.server_image.digest}",
+        )
+      )
+      error_message = "Managed NVCR ModelExpress requires a future, signed, pull-only broker authorization for its exact repository and digest."
     }
   }
 

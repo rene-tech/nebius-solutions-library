@@ -573,7 +573,9 @@ deployment = {
     grafana_username_env  = "FS2_GRAFANA_ADMIN_USERNAME"
     grafana_password_env  = "FS2_GRAFANA_ADMIN_PASSWORD"
     ngc_api_key_env       = "FS2_NGC_API_KEY"
-    nvcr_dockerconfig_env = "FS2_NVCR_DOCKERCONFIGJSON"
+    # nvcr_dockerconfig_env is intentionally unset. Static registry credentials
+    # are rejected; inference-stack accepts only a signed broker receipt paired
+    # with its short-lived Docker config inside the external capsule.
   }
 
   acceptance = {

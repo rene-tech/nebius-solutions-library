@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -20,48 +21,41 @@ import tarfile
 from pathlib import Path
 from typing import Any, Iterator
 
-try:
-    from .image_security_evidence import (
-        DIGEST_REFERENCE,
-        EvidenceError,
-        validate_attestation_identity,
-        validate_catalog_image_map,
-        validate_detached_signature,
-        validate_first_party_inventory,
-        validate_image_gate_authorization,
-        validate_inventory,
+if __name__ == "__main__" or __package__ != "security":
+    print(
+        "release closure verification is an import-only external-capsule payload",
+        file=sys.stderr,
     )
-except ImportError:
-    from image_security_evidence import (
-        DIGEST_REFERENCE,
-        EvidenceError,
-        validate_attestation_identity,
-        validate_catalog_image_map,
-        validate_detached_signature,
-        validate_first_party_inventory,
-        validate_image_gate_authorization,
-        validate_inventory,
-    )
-try:
-    from .semantic_yaml_images import (
-        SemanticYamlError,
-        independently_validated_image_scalars,
-    )
-except ImportError:
-    from semantic_yaml_images import (
-        SemanticYamlError,
-        independently_validated_image_scalars,
-    )
-try:
-    from .yaml_image_references import YamlImageError, image_key_lines
-except ImportError:
-    from yaml_image_references import YamlImageError, image_key_lines
+    raise SystemExit(1)
+
+from .execution_toolchain import (  # noqa: E402
+    ToolchainError,
+    environment_toolchain,
+    open_verified_file,
+    validate_current_python,
+    validated_tool,
+)
+from .image_security_evidence import (  # noqa: E402
+    DIGEST_REFERENCE,
+    EvidenceError,
+    validate_attestation_identity,
+    validate_catalog_image_map,
+    validate_detached_signature,
+    validate_first_party_inventory,
+    validate_image_gate_authorization,
+    validate_inventory,
+)
+from .semantic_yaml_images import (  # noqa: E402
+    SemanticYamlError,
+    independently_validated_image_scalars,
+)
+from .yaml_image_references import YamlImageError, image_key_lines  # noqa: E402
 
 
 HELM_RESOURCE = re.compile(r'resource\s+"helm_release"\s+"([^"]+)"\s*\{')
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 HELM_INSTALL = re.compile(
-    r"(?:^|\s)(?:helm|hctl)\s+"
+    r"(?:^|\s)(?:helm|hctl|\"?\$\{reviewed_helm\[@\]\}\"?)\s+"
     r"(?:install(?:\s|$)|upgrade(?:\s+--install)?(?:\s|$))"
 )
 HELM_ARRAY_ALIAS = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)=\(\s*helm(?:\s|\))")
@@ -255,6 +249,10 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
                 "first-party-images.lock.json",
                 "image-attestation-trust.json",
                 "--authorization",
+                "--toolchain",
+                "release_image_contract.bootstrap_path",
+                "release_image_contract.external_trust_path",
+                "registry_auth_receipt_path",
             ):
                 if required not in block:
                     raise EvidenceError(f"{identifier}: missing {required} consumer")
@@ -284,8 +282,10 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
         for required in (
             'resource "terraform_data" "release_image_closure_gate"',
             "triggers_replace = [timestamp()]",
-            "--verify-terraform-closure",
-            "--terraform-plan-json-stdin",
+            "terraform_apply_gate_entrypoint.py",
+            "release_image_contract.bootstrap_path",
+            "release_image_contract.external_trust_path",
+            "release_image_contract.toolchain_path",
         ):
             if required not in gate_source:
                 raise EvidenceError(f"{plan_root}: apply root omits {required}")
@@ -297,9 +297,13 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
         encoding="utf-8"
     )
     for required in (
-        'show -json "$saved_plan"',
-        "--verify-terraform-closure",
-        'apply "$saved_plan"',
+        "signed-terraform-apply",
+        "FS2_IMAGE_GATE_BOOTSTRAP",
+        "FS2_EXTERNAL_CAPSULE_TRUST",
+        "FS2_IMAGE_GATE_TOOLCHAIN",
+        "FS2_EXTERNAL_CAPSULE_ACTIVE",
+        "FS2_CAPSULE_SOURCE_ROOT",
+        "--registry-refresh-registration",
     ):
         if required not in apply_wrapper:
             raise EvidenceError(f"saved-plan apply wrapper omits {required}")
@@ -312,9 +316,29 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
             "first-party-images.lock.json",
             "image-attestation-trust.json",
             "--authorization",
+            "--toolchain",
+            "FS2_EXTERNAL_CAPSULE_ACTIVE",
+            "FS2_CAPSULE_SOURCE_ROOT",
         ):
             if required not in source:
                 raise EvidenceError(f"{relative}: missing {required} consumer")
+    stack_source = _resolve(root, "inference-stack").read_text(encoding="utf-8")
+    for required in (
+        'DEPLOY_ROOT: "."',
+        'INFRA_ROOT: "stages/infrastructure"',
+        'FOUNDATION_ROOT: "stages/foundation"',
+        'WORKLOADS_ROOT: "stages/workloads"',
+        "signed-terraform-apply",
+        "FS2_EXTERNAL_CAPSULE_ACTIVE",
+        "FS2_CAPSULE_SOURCE_ROOT",
+        "FS2_CAPSULE_TOOL_DIR",
+        "signed-terraform-plan",
+        "verify-workload-registry-credential",
+        "registry_refresh_registration_path",
+        'terraform_capsule_command("terraform-init"',
+    ):
+        if required not in stack_source:
+            raise EvidenceError(f"inference-stack omits capsule invariant {required}")
     entrypoints = _source_text_entrypoints(root)
     discovered_installers = {
         relative
@@ -579,10 +603,18 @@ def _source_tree_sha256(path: Path) -> str:
     ).hexdigest()
 
 
-def _git_identity(root: Path) -> tuple[str, str]:
+def _git_identity(root: Path, trust_path: Path) -> tuple[str, str]:
+    lock_path, environment_trust = environment_toolchain()
+    if environment_trust.resolve() != trust_path.resolve():
+        raise EvidenceError("execution trust differs from requested release trust")
+    validate_current_python(lock_path=lock_path, trust_path=trust_path)
+    git_path, _ = validated_tool(
+        "git", lock_path=lock_path, trust_path=trust_path
+    )
+
     def git(*arguments: str) -> str:
         completed = subprocess.run(
-            ["git", "-C", str(root), *arguments],
+            [str(git_path), "-C", str(root), *arguments],
             check=False,
             capture_output=True,
             text=True,
@@ -1063,7 +1095,7 @@ def derive_closure(
     )
     signature = _resolve(packet_path.parent.resolve(), signature_value)
     validate_detached_signature(packet_path, signature, trust_path)
-    commit, tree = _git_identity(root)
+    commit, tree = _git_identity(root, trust_path)
     if packet.get("source") != {"commit": commit, "tree": tree}:
         raise EvidenceError(f"{packet_path}: source identity differs from checkout")
     if packet.get("surface_manifest_sha256") != _sha256(manifest_path):
@@ -1437,7 +1469,7 @@ def verify_direct_invocation(
     validate_attestation_identity(
         closure.get("attestation"), trust_path, purpose=str(closure_path)
     )
-    commit, tree = _git_identity(root)
+    commit, tree = _git_identity(root, trust_path)
     if closure.get("source") != {"commit": commit, "tree": tree}:
         raise EvidenceError(f"{closure_path}: closure source differs from checkout")
     if closure.get("trust_policy_sha256") != _sha256(trust_path):
@@ -1507,7 +1539,7 @@ def verify_terraform_apply_gate(
     validate_attestation_identity(
         closure.get("attestation"), trust_path, purpose=str(closure_path)
     )
-    commit, tree = _git_identity(root)
+    commit, tree = _git_identity(root, trust_path)
     if closure.get("source") != {"commit": commit, "tree": tree}:
         raise EvidenceError(f"{closure_path}: closure source differs from checkout")
     if closure.get("trust_policy_sha256") != _sha256(trust_path):
@@ -1569,7 +1601,100 @@ def verify_terraform_apply_gate(
             raise EvidenceError(f"{surface_id}: applied Helm resource differs from closure")
 
 
+def _parent_pid(pid: int) -> int:
+    try:
+        stat_fields = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").split()
+        return int(stat_fields[3])
+    except (OSError, ValueError, IndexError) as exc:
+        raise EvidenceError("cannot prove Terraform apply process ancestry") from exc
+
+
+def _terraform_apply_process(terraform_path: Path, plan_fd: int) -> int:
+    """Find the exact Terraform ancestor applying the retained plan FD."""
+
+    expected_executable = terraform_path.resolve()
+    pid = os.getppid()
+    for _ in range(32):
+        if pid <= 1:
+            break
+        try:
+            executable = Path(f"/proc/{pid}/exe").resolve()
+            arguments = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+        except OSError:
+            pid = _parent_pid(pid)
+            continue
+        decoded = [value.decode("utf-8", "strict") for value in arguments if value]
+        if executable == expected_executable:
+            expected_plan = f"/proc/self/fd/{plan_fd}"
+            if "apply" not in decoded or expected_plan not in decoded:
+                raise EvidenceError(
+                    "Terraform ancestor is not applying the sealed saved-plan descriptor"
+                )
+            return pid
+        pid = _parent_pid(pid)
+    raise EvidenceError("release gate has no reviewed Terraform apply ancestor")
+
+
+def verify_live_terraform_apply_gate(
+    *,
+    root: Path,
+    manifest_path: Path,
+    trust_path: Path,
+    closure_path: Path,
+    plan_root: str,
+) -> None:
+    """Re-render the binary plan descriptor held by the actual apply process."""
+
+    lock_path, environment_trust = environment_toolchain()
+    if environment_trust.resolve() != trust_path.resolve():
+        raise EvidenceError("apply execution trust differs from release trust")
+    validate_current_python(lock_path=lock_path, trust_path=trust_path)
+    terraform_path, terraform_sha256 = validated_tool(
+        "terraform", lock_path=lock_path, trust_path=trust_path
+    )
+    if os.environ.get("FS2_SIGNED_PLAN_TERRAFORM_SHA256") != terraform_sha256:
+        raise EvidenceError("apply Terraform digest differs from execution capsule")
+    try:
+        plan_fd = int(os.environ["FS2_SIGNED_PLAN_FD"])
+    except (KeyError, ValueError) as exc:
+        raise EvidenceError("sealed saved-plan descriptor is absent") from exc
+    if os.environ.get("FS2_SIGNED_PLAN_ROOT") != plan_root:
+        raise EvidenceError("sealed saved-plan root differs from this apply root")
+    terraform_pid = _terraform_apply_process(terraform_path, plan_fd)
+    exact_plan = Path(f"/proc/{terraform_pid}/fd/{plan_fd}")
+    try:
+        descriptor = os.open(exact_plan, os.O_RDONLY | getattr(os, "O_CLOEXEC", 0))
+    except OSError as exc:
+        raise EvidenceError("actual Terraform saved-plan descriptor is unavailable") from exc
+    os.close(descriptor)
+    completed = subprocess.run(
+        [
+            str(terraform_path),
+            f"-chdir={root / plan_root}",
+            "show",
+            "-json",
+            str(exact_plan),
+        ],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    if completed.returncode != 0:
+        raise EvidenceError("actual Terraform saved plan cannot be rendered")
+    verify_terraform_apply_gate(
+        root=root,
+        manifest_path=manifest_path,
+        trust_path=trust_path,
+        closure_path=closure_path,
+        plan_root=plan_root,
+        plan_json=completed.stdout,
+    )
+
+
 def main() -> int:
+    if os.environ.get("FS2_EXTERNAL_CAPSULE_ACTIVE") != "1":
+        print("release closure requires the external capsule", file=sys.stderr)
+        return 1
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--surfaces", required=True, type=Path)
@@ -1592,6 +1717,7 @@ def main() -> int:
     parser.add_argument("--verify-terraform-closure", type=Path)
     parser.add_argument("--plan-root")
     parser.add_argument("--terraform-plan-json-stdin", action="store_true")
+    parser.add_argument("--verify-terraform-apply-process", action="store_true")
     args = parser.parse_args()
     try:
         root = args.root.resolve()
@@ -1599,22 +1725,34 @@ def main() -> int:
             if (
                 args.trust is None
                 or not args.plan_root
-                or not args.terraform_plan_json_stdin
                 or args.render_packet is not None
                 or args.verify_direct_closure is not None
             ):
                 raise EvidenceError(
-                    "--trust, --plan-root, and --terraform-plan-json-stdin are "
-                    "required exclusively with --verify-terraform-closure"
+                    "--trust and --plan-root are required exclusively with "
+                    "--verify-terraform-closure"
                 )
-            verify_terraform_apply_gate(
-                root=root,
-                manifest_path=args.surfaces.resolve(),
-                trust_path=args.trust.resolve(),
-                closure_path=args.verify_terraform_closure.resolve(),
-                plan_root=args.plan_root,
-                plan_json=sys.stdin.buffer.read(),
-            )
+            if args.verify_terraform_apply_process == args.terraform_plan_json_stdin:
+                raise EvidenceError(
+                    "choose exactly one actual-process or stdin Terraform plan source"
+                )
+            if args.verify_terraform_apply_process:
+                verify_live_terraform_apply_gate(
+                    root=root,
+                    manifest_path=args.surfaces.resolve(),
+                    trust_path=args.trust.resolve(),
+                    closure_path=args.verify_terraform_closure.resolve(),
+                    plan_root=args.plan_root,
+                )
+            else:
+                verify_terraform_apply_gate(
+                    root=root,
+                    manifest_path=args.surfaces.resolve(),
+                    trust_path=args.trust.resolve(),
+                    closure_path=args.verify_terraform_closure.resolve(),
+                    plan_root=args.plan_root,
+                    plan_json=sys.stdin.buffer.read(),
+                )
         elif args.verify_direct_closure is not None:
             if (
                 args.trust is None
@@ -1680,7 +1818,7 @@ def main() -> int:
                 json.dumps(closure, indent=2, sort_keys=True) + "\n",
                 encoding="utf-8",
             )
-    except EvidenceError as exc:
+    except (EvidenceError, ToolchainError) as exc:
         print(f"release image closure gate: {exc}", file=sys.stderr)
         return 1
     return 0

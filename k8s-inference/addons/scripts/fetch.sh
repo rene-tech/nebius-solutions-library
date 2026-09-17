@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-addons_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+if [[ "${FS2_EXTERNAL_CAPSULE_ACTIVE:-}" != "1" ]]; then
+  printf 'add-on fetch must start through the external capsule shell-entry command\n' >&2
+  exit 1
+fi
+case "${FS2_CAPSULE_SOURCE_ROOT:-}" in /*) ;; *) printf 'capsule read-only source root is absent\n' >&2; exit 1 ;; esac
+case "${FS2_CAPSULE_TOOL_DIR:-}" in /*) ;; *) printf 'capsule read-only tool directory is absent\n' >&2; exit 1 ;; esac
+export PATH="$FS2_CAPSULE_TOOL_DIR"
+unset PYTHONHOME PYTHONPATH PYTHONSTARTUP
+addons_dir="$FS2_CAPSULE_SOURCE_ROOT/addons"
 # shellcheck source=../lock.env
 source "$addons_dir/lock.env"
 state_home=${XDG_STATE_HOME:-$HOME/.local/state}
