@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Prepare a non-state-forgetting SAI-07 external-custody handoff.
+"""Prepare a non-state-forgetting SAI-07 external execution.
 
 This v3 entrypoint is deliberately verification-only.  It verifies raw
 provider/backend evidence and the immediately refreshed manifest bundle, then
-emits a canonical handoff for a separately administered external SSA service.
+emits a canonical preflight for the separately administered v3 executor.
 It never invokes Terraform, imports an object, removes a state address, writes
-the rollout ledger, or mutates Kubernetes.  Activation remains blocked until
-that external service and its provider-native custody evidence are separately
-reviewed and pinned.
+the rollout ledger, or mutates Kubernetes.  The executor owns zero fields on
+Terraform-retained objects: it may create only one immutable,
+generation-addressed acknowledgement and must prove every retained object is
+byte-for-byte unchanged across that SSA.  Activation remains blocked until the
+executor and provider-native custody facts are reviewed and pinned.
 """
 
 from __future__ import annotations
@@ -118,10 +120,10 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     if any(item in active_handoff_source for item in forbidden):
         raise PipelineV3Error("active platform source contains a state-forgetting/adoption primitive")
     return {
-        "action": "await-external-server-side-apply",
+        "action": "await-external-acknowledgement-ssa",
         "collection_id": trust["collection_id"],
         "contract_sha256": trust["contract_sha256"],
-        "custody_field_manager": "fs2-sai07-external-custody",
+        "custody_field_ownership": "zero-fields-on-platform-state",
         "manifest_bundle_sha256": manifests["bundle_sha256"],
         "manifest_objects_sha256": manifests["objects_sha256"],
         "platform_state_addresses_sha256": trust["state_addresses_sha256"],

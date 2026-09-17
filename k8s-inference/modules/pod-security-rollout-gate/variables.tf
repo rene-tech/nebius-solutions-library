@@ -118,7 +118,7 @@ variable "custody_owner_username" {
 }
 
 variable "external_handoff_path" {
-  description = "Absolute path to the short-lived whole-file signed handoff emitted by the independent custody root."
+  description = "Absolute path to the short-lived whole-file signed v3 execution acknowledgement emitted by external custody."
   type        = string
   default     = null
   nullable    = true

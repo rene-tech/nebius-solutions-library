@@ -16,8 +16,8 @@ from typing import Any
 
 import verify_sai07_custody_manifest_bundle_v2 as manifest_v2
 
-PROVIDER_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v1"
-BACKEND_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-backend-evidence/v1"
+PROVIDER_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v2"
+BACKEND_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-backend-evidence/v2"
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 MAX_COLLECTION_AGE = dt.timedelta(minutes=10)
 SKEW = dt.timedelta(seconds=30)
@@ -236,6 +236,7 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         contract["expected"],
         {
             "authority_required_permits",
+            "backend_access_group_id",
             "backend_collector_principal_id",
             "cluster_id",
             "kube_system_uid",
@@ -258,7 +259,6 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     calls = exact(
         artifact["calls"],
         {
-            "access_keys",
             "access_permits",
             "auth_public_keys",
             "bucket",
@@ -531,9 +531,7 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     permits.sort(key=lambda item: canonical(item))
 
     credential_collections: dict[str, list[dict[str, Any]]] = {}
-    access_key_owners: dict[str, str] = {}
     for field, service, method in (
-        ("access_keys", "nebius.iam.v2.AccessKeyService", "ListByAccount"),
         ("auth_public_keys", "nebius.iam.v1.AuthPublicKeyService", "ListByAccount"),
     ):
         raw = calls[field]
@@ -560,18 +558,9 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
                 status = item.get("status", {})
                 if not isinstance(status, dict):
                     raise EvidenceError(f"{field} {key_id} status is malformed")
-                if field == "access_keys" and status.get("secret") not in (None, ""):
-                    raise EvidenceError("provider evidence contains an access-key secret")
-                public_access_key = status.get("aws_access_key_id") if field == "access_keys" else None
-                if field == "access_keys":
-                    public_access_key = nonempty(public_access_key, f"access key {key_id} public identifier")
-                    if public_access_key in access_key_owners:
-                        raise EvidenceError("provider evidence contains a duplicate public access-key identifier")
-                    access_key_owners[public_access_key] = principal_id
                 normalized.append(
                     {
                         "account_id": principal_id,
-                        "access_key_id": public_access_key,
                         "credential_id": key_id,
                         "resource_version": version,
                         "status_sha256": hashlib.sha256(canonical(status)).hexdigest(),
@@ -667,6 +656,21 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
     ):
         raise EvidenceError("receipt/manifest authorities are not three distinct non-platform principals")
 
+    # AccessKeyService.ListByAccount is intentionally forbidden: its response
+    # schema can include status.secret, so no client-side projection can make
+    # that call metadata-only.  Bind S3 access instead to a reviewed bucket
+    # policy whose only IAM subject is this exact singleton group.  The raw
+    # forward/reverse membership collections above prove the group contents.
+    backend_group = nonempty(expected["backend_access_group_id"], "backend access group ID")
+    backend_principal = nonempty(
+        expected["backend_collector_principal_id"], "backend collector principal ID"
+    )
+    if backend_group not in groups or backend_principal not in principals:
+        raise EvidenceError("backend collector singleton group is absent from authoritative inventory")
+    backend_members = sorted(member for member, group in group_edges if group == backend_group)
+    if backend_members != [backend_principal]:
+        raise EvidenceError("backend access group is not the exact singleton collector boundary")
+
     protected = set(expected["protected_resource_ids"])
     scope_ancestors = {tenant_id, project_id, bucket_id}
     if not scope_ancestors.issubset(protected):
@@ -725,6 +729,20 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         raise EvidenceError("backend bucket has anonymous or malformed provider-native policy")
     if hashlib.sha256(canonical(native_rules)).hexdigest() != expected["native_bucket_rules_sha256"]:
         raise EvidenceError("backend provider-native policy differs from the reviewed rule set")
+
+    def policy_subjects(value: object) -> set[str]:
+        if isinstance(value, dict):
+            return set().union(*(policy_subjects(item) for item in value.values()), set())
+        if isinstance(value, list):
+            return set().union(*(policy_subjects(item) for item in value), set())
+        if isinstance(value, str) and value.startswith(
+            ("group-", "serviceaccount-", "tenantuseraccount-")
+        ):
+            return {value}
+        return set()
+
+    if policy_subjects(native_rules) != {backend_group}:
+        raise EvidenceError("backend provider-native policy is not limited to the singleton access group")
     if bucket_spec.get("versioning_policy") != "ENABLED" or bucket_status.get("state") != "ACTIVE":
         raise EvidenceError("backend bucket is not active with versioning enabled")
 
@@ -745,8 +763,14 @@ def provider_projection(artifact: dict[str, Any], contract: dict[str, Any]) -> d
         "scope": scope,
         "visible_tenants": sorted(tenant_inventory, key=lambda item: canonical(item)),
     }
+    backend_boundary = {
+        "backend_access_group_id": backend_group,
+        "backend_bucket_resource_id": bucket_id,
+        "backend_collector_principal_id": backend_principal,
+        "native_bucket_rules_sha256": expected["native_bucket_rules_sha256"],
+    }
     return {
-        "access_key_owners": access_key_owners,
+        "backend_boundary_sha256": hashlib.sha256(canonical(backend_boundary)).hexdigest(),
         "collection_id": artifact["collection_id"],
         "completed_at": artifact["completed_at"],
         "projection": projection,
@@ -833,7 +857,6 @@ def backend_projection(
         artifact,
         {
             "calls",
-            "caller_access_key_id",
             "collection_id",
             "collector",
             "completed_at",
@@ -870,14 +893,10 @@ def backend_projection(
         if scope[field] != scope_contract[contract_field]:
             raise EvidenceError(f"backend artifact {field} differs from the repository contract")
     state = exact(artifact["state"], {"bytes", "etag", "sha256", "version_id"}, "backend artifact state")
-    caller_access_key_id = nonempty(artifact["caller_access_key_id"], "backend caller access-key ID")
-    provider_access_keys = contract.get("verified_provider_access_keys")
-    if (
-        not isinstance(provider_access_keys, dict)
-        or provider_access_keys.get(caller_access_key_id)
-        != contract["expected"]["backend_collector_principal_id"]
-    ):
-        raise EvidenceError("backend caller access-key identity is not bound to provider evidence")
+    provider_boundary = sha256(
+        contract.get("verified_backend_boundary_sha256"),
+        "verified provider backend boundary SHA-256",
+    )
     if state["bytes"] != len(state_bytes) or state["sha256"] != hashlib.sha256(state_bytes).hexdigest():
         raise EvidenceError("raw platform state bytes differ from the authoritative backend artifact")
     sha256(state["sha256"], "backend state SHA-256")
@@ -977,7 +996,7 @@ def backend_projection(
     derived_state = state_projection(state_bytes)
     projection = {
         "bucket_acl_owner": owner_id,
-        "caller_access_key_id": caller_access_key_id,
+        "provider_backend_boundary_sha256": provider_boundary,
         "bucket_encryption_algorithms": sorted(algorithms),
         "bucket_policy_sha256": policy_sha,
         "bucket_versioning": versioning["Status"],

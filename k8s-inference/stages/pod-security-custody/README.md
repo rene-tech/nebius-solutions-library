@@ -6,22 +6,32 @@
 > imported or applied. Importing the same live objects into this state while
 > the platform state retains them would create dual Terraform ownership.
 
-The canonical successor is the non-state-forgetting v3 preflight:
-`scripts/run_sai07_retained_state_custody_v3.py`. The v3 design leaves every
+The canonical successor is the non-state-forgetting v3 preflight plus external
+executor: `scripts/run_sai07_retained_state_custody_v3.py` and
+`scripts/run_sai07_external_execution_v3.py`. The v3 design leaves every
 existing address in the platform state, independently downloads the exact
 versioned state object read-only, derives its complete custody address set,
 and binds that set to immediate live UID/resourceVersion/full-object reads.
-An external field manager may eventually own the protected Kubernetes fields,
-while provider IAM prevents platform mutation, but no second Terraform state
-imports them and the platform state never forgets them. The current v3 trust
-lock is also blocked: no external SSA, provider boundary, or custody activation
-is authorized by this commit.
+The external field manager owns no fields on those retained objects. It may
+only server-side apply a new immutable, content-bound acknowledgement object
+that raw platform state and the live pre-read both prove absent. Immediate
+post-SSA reads must prove every retained UID/resourceVersion/full-object hash is
+unchanged. No second Terraform state imports anything and the platform state
+never forgets an address. The current v3 trust lock is blocked: no external
+SSA, provider boundary, or custody activation is authorized by this commit.
 
 `collect_sai07_authoritative_custody_evidence.py` is the source-pinned,
 provider-native read-only adapter. It exhaustively paginates the tenant and
 every project returned under it, including principals, groups, bidirectional
-memberships, access permits and credential metadata through the Nebius SDK; it
-retains every RPC request/trace ID and never requests credential secrets. It
+memberships, access permits and non-secret credential metadata through the
+Nebius SDK; it retains every RPC request/trace ID and never requests credential
+secrets. It deliberately does not call the access-key list API because that
+response can contain the key secret before client-side filtering. No safe
+server-side metadata projection exists in the pinned provider API, so the lock
+records that concrete blocker and the collector refuses activation before any
+provider call. A later reviewed source revision must implement and pin such an
+endpoint. The exact singleton IAM group and native/S3 policies remain
+defense-in-depth controls; they are not treated as S3 caller-identity proof. It
 captures native bucket state plus S3 ACL, policy, encryption, versioning,
 Object Lock, retention, legal hold and an exact version-fenced platform-state
 download. Generation outputs are bounded, mode 0600, O_EXCL and retained.
@@ -34,11 +44,16 @@ do not establish any fact. The retained-state preflight requires two fresh,
 distinct signed collections and exact equality of their reconstructed IAM,
 backend-control and versioned-state projections before emitting a handoff.
 
-The v3 preflight performs no Terraform or Kubernetes mutation. A separately
-reviewed external executor, authoritative evidence, active trust-lock commit,
-post-SSA drift fence and independent acceptance are still required. Until
-then SAI-07 remains SOURCE/INTEGRATION/LIVE NO-GO, and SAI-03 remains an
-unaccepted dependency.
+The preflight performs no Terraform or Kubernetes mutation. The pinned executor
+is a distinct entrypoint: it invokes the external phase-ledger consumer, creates
+only the immutable acknowledgement through non-forcing SSA, performs immediate
+before/after reads, and emits a signed acknowledgement consumed offline by the
+platform rollout gate. Its name is generation-addressed, its exact field set is
+hashed, it is absent from platform state, and an existing exact object is only
+resumed. The repository lock deliberately contains no activation identities,
+keys, bucket, state, or cluster facts; a later independently reviewed
+deployment-bound commit is still required. Until then SAI-07 remains
+SOURCE/INTEGRATION/LIVE NO-GO, and SAI-03 remains an unaccepted dependency.
 
 The rejected v2 proposal intended this standalone Terraform root to become the
 only owner of SAI-07 admission, custody RBAC, token-anchor, ledger, and

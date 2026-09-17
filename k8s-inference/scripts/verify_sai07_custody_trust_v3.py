@@ -21,9 +21,9 @@ from typing import Any
 import sai07_authoritative_evidence as evidence
 import verify_sai07_custody_trust as v2
 
-LOCK_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v1"
-PROVIDER_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-provider-evidence-receipt/v3"
-BACKEND_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-backend-evidence-receipt/v3"
+LOCK_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v2"
+PROVIDER_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-provider-evidence-receipt/v4"
+BACKEND_RECEIPT_SCHEMA = "fs2-serve.nebius.ai/sai07-backend-evidence-receipt/v4"
 MAX_KEY_BYTES = 64 * 1024
 ROOT = Path(__file__).resolve().parents[1]
 TRUST_LOCK = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
@@ -148,7 +148,16 @@ def validate(query: dict[str, str]) -> dict[str, str]:
     )
     evidence.exact(
         contract,
-        {"activation", "authorities", "collector", "expected", "schema", "scope"},
+        {
+            "activation",
+            "authorities",
+            "backend_credential_projection",
+            "collector",
+            "executor",
+            "expected",
+            "schema",
+            "scope",
+        },
         "v3 trust lock",
     )
     if contract["schema"] != LOCK_SCHEMA or contract["activation"] != "active":
@@ -186,7 +195,9 @@ def validate(query: dict[str, str]) -> dict[str, str]:
     )
     provider_projection = evidence.provider_projection(provider_artifact, contract)
     backend_contract = dict(contract)
-    backend_contract["verified_provider_access_keys"] = provider_projection["access_key_owners"]
+    backend_contract["verified_backend_boundary_sha256"] = provider_projection[
+        "backend_boundary_sha256"
+    ]
     backend_projection = evidence.backend_projection(backend_artifact, state_bytes, backend_contract)
     if provider_projection["collection_id"] != backend_projection["collection_id"]:
         raise TrustV3Error("provider and backend evidence use different collection IDs")

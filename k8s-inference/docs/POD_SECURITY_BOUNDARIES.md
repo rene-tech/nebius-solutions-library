@@ -250,20 +250,29 @@ The v3 contract is source-pinned in
 `stages/pod-security-custody/custody-trust-lock-v3.json` and is also deliberately
 blocked. Its read-only Nebius/S3 adapter exhaustively paginates the exact tenant
 and every project returned under it: tenants, projects, service accounts,
-tenant users, groups,
-forward/reverse memberships, every subject's access permits, access-key/auth-
-key/static-key/federated-credential metadata, and the native bucket resource.
-Every provider response carries its request and trace IDs; it never calls a
-secret-delivery API. S3 evidence includes the public caller
-access-key ID, ACL, policy and public-status, encryption, versioning, Object
+tenant users, groups, forward/reverse memberships, every subject's access
+permits, auth-public-key/static-key/federated-credential metadata, and the
+native bucket resource. Every provider response carries its request and trace
+IDs; it never calls a secret-delivery API. In particular, it does not call
+`AccessKeyService.ListByAccount`: the reviewed response type can contain
+`status.secret`, so filtering a materialized response is not a metadata-only
+control. The lock therefore carries an explicit
+`blocked-no-provider-server-side-metadata-projection` boundary and the collector
+fails before any provider call if someone changes only `activation=active`.
+A later source revision must implement and pin an authoritative endpoint whose
+server-side response schema cannot contain secret bytes. The exact singleton
+backend IAM group and provider-native policy are retained as defense in depth,
+not misrepresented as proof of which S3 credential signed a request. S3
+evidence includes ACL, policy and public-status, encryption, versioning, Object
 Lock, retention, legal hold, and an exact VersionId/ETag/length-fenced download
 of the platform Terraform state. Bounded generation files are created once,
 mode 0600, fsynced and retained; retries use a new collection ID and paths.
 
 The v3 verifier digest-matches those raw files to two independently signed
 receipts, uses distinct provider/backend authorities, and reconstructs the
-semantics instead of trusting receipt fields. It binds the S3 caller key back
-to the enumerated provider account, proves the exact provider hierarchy and
+semantics instead of trusting receipt fields. Once a safe credential projection
+exists, it will combine that identity with the singleton provider group and
+exact native/S3 policies. It already proves the exact provider hierarchy and
 group graph, binds each required permit to its claimed identity or signer,
 rejects any platform path to the tenant/project/bucket inheritance chain and
 all other protected custody resources,
@@ -272,18 +281,32 @@ and derives every retained custody address from its lineage/serial/version.
 A third distinct authority signs the manifest bundle. Two fresh, distinct
 preflight collections must have identical reconstructed IAM, backend-control
 and versioned-state projections. Collection age, raw
-digests, semantic projection digests, access-key identity, state version and
+digests, semantic projection digests, singleton backend boundary, state version and
 address aggregate fence drift.
 
 The v3 handoff is non-state-forgetting. Every platform address remains in the
 platform state; no `removed`, `state rm`, import, second Terraform state or
 dual ownership is allowed. The external-custody preflight binds the raw-state
-address set to immediate live UID/resourceVersion/full-object reads and emits
-an `await-external-server-side-apply` handoff for one external field manager.
-It performs no mutation itself. Provider IAM must deny platform mutation of
-the protected resources before a separately reviewed external executor may
-act. This source does not contain that active external boundary or evidence,
-so it cannot authorize a rollout and makes no GO claim.
+address set to immediate live UID/resourceVersion/full-object reads. The
+source-pinned v3 executor then gives its field manager **zero fields** on every
+Terraform-retained object. It consumes the exact phase receipt through the
+separate short-lived receipt identity, re-reads the complete retained set, and
+server-side applies only one new immutable, generation-addressed acknowledgement
+ConfigMap that is proven absent from raw platform state. A second immediate
+full-object read must match the first exactly. The executor seals the
+acknowledgement UID, resourceVersion, full-object hash, exact SSA field-set hash,
+phase/action/consumer/context, state version, ledger-consumption digest, and
+before/after aggregate in a whole-file Ed25519 signature. The platform rollout
+gate uses only the offline v3 acknowledgement verifier; it receives no owner,
+receipt, provider, or backend credential. An exact existing acknowledgement can
+be resumed but never patched, overwritten, or deleted.
+
+The checked-in v3 lock intentionally remains `activation=blocked` with null
+deployment facts. Provider IAM must deny platform mutation of protected
+resources and an independent review must pin the exact external identities,
+backend controls, keys, cluster identity, collector, executor and verifier
+digests before activation. No deployment-bound facts were invented here, so
+this source cannot authorize a rollout and makes no GO claim.
 
 ### Retained rejected v2 archive (not operational)
 

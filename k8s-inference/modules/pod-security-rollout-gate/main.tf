@@ -216,29 +216,29 @@ resource "terraform_data" "verified" {
 */
 
 locals {
-  # Even `prepare` must carry an external handoff now: this module gates the
-  # non-destructive transfer of pre-existing custody addresses out of platform
-  # state. A prepare handoff binds the zero receipt digest.
-  receipt_required        = var.phase != "prepare"
-  receipt_bundle_sha256   = local.receipt_required ? filesha256(var.receipt_bundle_path) : null
-  expected_bundle_sha256  = local.receipt_required ? local.receipt_bundle_sha256 : strrep("0", 64)
-  external_handoff_sha256 = filesha256(var.external_handoff_path)
+  # Even `prepare` requires an external execution acknowledgement. No platform
+  # state address is transferred: the separately pinned executor owns only one
+  # additive immutable acknowledgement object and proves every retained object
+  # unchanged across that SSA. A prepare acknowledgement binds the zero digest.
+  receipt_required                = var.phase != "prepare"
+  receipt_bundle_sha256           = local.receipt_required ? filesha256(var.receipt_bundle_path) : null
+  expected_bundle_sha256          = local.receipt_required ? local.receipt_bundle_sha256 : strrep("0", 64)
+  external_acknowledgement_sha256 = filesha256(var.external_handoff_path)
 }
 
 # The platform invocation has no custody provider and receives no receipt,
 # owner, or token-minting kubeconfig.  It can only validate a short-lived,
-# whole-file signed handoff emitted by the independently administered custody
-# root after that root has completed live reads, full identity-bound authority
-# audits, exact adoption and ledger CAS. The signing key and provider/backend
-# trust facts come only from the repository trust lock; legacy key variables are
-# ignored and cannot select authority. This verifier is offline and cannot
-# mutate Kubernetes.
-data "external" "verified_handoff" {
-  program = ["python3", "${path.module}/../../scripts/verify_sai07_external_handoff_v2.py"]
+# whole-file signed v3 acknowledgement emitted by the independently
+# administered executor after phase-ledger consumption and immediate before/
+# after full-object reads. The signing key and provider/backend trust facts come
+# only from the repository v3 lock; legacy key variables are ignored and cannot
+# select authority. This verifier is offline and cannot mutate Kubernetes.
+data "external" "verified_execution_acknowledgement" {
+  program = ["python3", "${path.module}/../../scripts/verify_sai07_external_execution_ack_v3.py"]
 
   query = {
-    handoff_path            = var.external_handoff_path
-    trust_lock_path         = "${path.module}/../../stages/pod-security-custody/custody-trust-lock.json"
+    ack_path                = var.external_handoff_path
+    trust_lock_path         = "${path.module}/../../stages/pod-security-custody/custody-trust-lock-v3.json"
     receipt_bundle_sha256   = local.expected_bundle_sha256
     expected_context_sha256 = sha256(jsonencode(var.expected_context))
     expected_phase          = var.phase
@@ -250,20 +250,20 @@ data "external" "verified_handoff" {
 }
 
 resource "terraform_data" "verified" {
-  input = data.external.verified_handoff.result
+  input = data.external.verified_execution_acknowledgement.result
 
   lifecycle {
     precondition {
       condition = (
         var.external_handoff_path != null &&
-        data.external.verified_handoff.result.valid == "true" &&
-        data.external.verified_handoff.result.handoff_sha256 == local.external_handoff_sha256 &&
-        data.external.verified_handoff.result.bundle_sha256 == local.expected_bundle_sha256 &&
-        data.external.verified_handoff.result.phase == var.phase &&
-        data.external.verified_handoff.result.consumer == var.consumer_role &&
-        data.external.verified_handoff.result.action == var.action
+        data.external.verified_execution_acknowledgement.result.valid == "true" &&
+        data.external.verified_execution_acknowledgement.result.acknowledgement_sha256 == local.external_acknowledgement_sha256 &&
+        data.external.verified_execution_acknowledgement.result.bundle_sha256 == local.expected_bundle_sha256 &&
+        data.external.verified_execution_acknowledgement.result.phase == var.phase &&
+        data.external.verified_execution_acknowledgement.result.consumer == var.consumer_role &&
+        data.external.verified_execution_acknowledgement.result.action == var.action
       )
-      error_message = "A fresh independently signed external-custody handoff matching this exact phase, consumer, action, bundle and context is required."
+      error_message = "A fresh independently signed v3 external execution acknowledgement matching this exact phase, consumer, action, bundle and context is required."
     }
   }
 }

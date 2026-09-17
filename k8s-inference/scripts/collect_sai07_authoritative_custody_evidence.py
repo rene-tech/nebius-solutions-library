@@ -2,9 +2,13 @@
 """Collect bounded, read-only provider and backend evidence for SAI-07.
 
 This is the provider-native adapter for the v3 custody contract.  It obtains
-identity, IAM, group, credential-metadata and bucket data through the Nebius
+identity, IAM, group, non-secret credential-metadata and bucket data through the Nebius
 SDK, and obtains S3 control/state data through read-only S3 APIs.  It never
-requests a credential secret and never emits Terraform state on stdout.  Each
+calls AccessKeyService: that API's list response may itself carry
+``status.secret`` and therefore cannot be made metadata-only by filtering after
+receipt.  Backend authority is instead bounded by an exact singleton IAM group
+and reviewed native/S3 bucket policies.  It never requests a credential secret
+and never emits Terraform state on stdout.  Each
 output is an O_EXCL, mode-0600 generation file; a failed generation is retained
 and a retry must use a fresh collection ID and fresh paths.
 
@@ -30,13 +34,12 @@ from typing import Any, Awaitable, Callable
 
 import boto3
 from nebius.api.nebius.iam import v1 as iam
-from nebius.api.nebius.iam import v2 as iam_v2
 from nebius.api.nebius.storage import v1 as storage
 from nebius.sdk import SDK
 
-SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v1"
-BACKEND_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-backend-evidence/v1"
-CONTRACT_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v1"
+SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-provider-evidence/v2"
+BACKEND_SCHEMA = "fs2-serve.nebius.ai/sai07-authoritative-backend-evidence/v2"
+CONTRACT_SCHEMA = "fs2-serve.nebius.ai/sai07-evidence-collection-contract/v2"
 COLLECTION_RE = re.compile(r"^[a-z0-9][a-z0-9-]{15,95}$")
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "stages" / "pod-security-custody" / "custody-trust-lock-v3.json"
@@ -72,6 +75,31 @@ def read_contract() -> dict[str, Any]:
         raise CollectionError("v3 custody contract must be canonical JSON")
     if value.get("schema") != CONTRACT_SCHEMA or value.get("activation") != "active":
         raise CollectionError("v3 authoritative evidence collection is not active")
+    credential_projection = value.get("backend_credential_projection")
+    if not isinstance(credential_projection, dict) or set(credential_projection) != {
+        "endpoint",
+        "method",
+        "response_schema_sha256",
+        "server_side_fields",
+        "status",
+    }:
+        raise CollectionError("v3 contract omits the backend credential projection boundary")
+    # The pinned provider API offers no access-key list/get projection that is
+    # incapable of returning status.secret.  Do not silently substitute a CLI
+    # JSONPath/client filter: the secret has already reached that process.  A
+    # later reviewed source revision must implement and pin a genuinely
+    # server-side metadata-only endpoint before this collector can activate.
+    if credential_projection != {
+        "endpoint": None,
+        "method": None,
+        "response_schema_sha256": None,
+        "server_side_fields": [],
+        "status": "blocked-no-provider-server-side-metadata-projection",
+    }:
+        raise CollectionError("unreviewed backend credential projection must not activate")
+    raise CollectionError(
+        "provider has no reviewed server-side access-key metadata projection; collection remains blocked"
+    )
     collector = value.get("collector")
     if not isinstance(collector, dict):
         raise CollectionError("v3 custody contract omits collector pinning")
@@ -278,7 +306,6 @@ async def provider_artifact(
         auth_keys = iam.AuthPublicKeyServiceClient(sdk)
         static_keys = iam.StaticKeyServiceClient(sdk)
         federated = iam.FederatedCredentialsServiceClient(sdk)
-        access_keys = iam_v2.AccessKeyServiceClient(sdk)
         buckets = storage.BucketServiceClient(sdk)
 
         started = instant()
@@ -407,19 +434,9 @@ async def provider_artifact(
                 maximum=max_pages,
             )
 
-        calls["access_keys"] = {}
         calls["auth_public_keys"] = {}
         for principal_id in sorted(principal_ids):
             subject = account(principal_id)
-            calls["access_keys"][principal_id] = await pages(
-                "nebius.iam.v2.AccessKeyService",
-                "ListByAccount",
-                lambda token, subject=subject: iam_v2.ListAccessKeysByAccountRequest(
-                    account=subject, page_size=page_size, page_token=token, filter=""
-                ),
-                access_keys.list_by_account,
-                maximum=max_pages,
-            )
             calls["auth_public_keys"][principal_id] = await pages(
                 "nebius.iam.v1.AuthPublicKeyService",
                 "ListByAccount",
@@ -484,12 +501,8 @@ def backend_artifact(
 ) -> tuple[dict[str, Any], bytes]:
     scope = contract["scope"]
     session = boto3.session.Session(profile_name=profile, region_name=scope["backend_region"])
-    credentials = session.get_credentials()
-    if credentials is None:
+    if session.get_credentials() is None:
         raise CollectionError("S3 profile did not resolve a credential identity")
-    caller_access_key_id = credentials.get_frozen_credentials().access_key
-    if not isinstance(caller_access_key_id, str) or not caller_access_key_id:
-        raise CollectionError("S3 credential omits its non-secret access-key identifier")
     client = session.client("s3", endpoint_url=scope["backend_endpoint"])
     bucket = scope["backend_bucket"]
     key = scope["platform_state_key"]
@@ -537,7 +550,6 @@ def backend_artifact(
     return (
         {
             "calls": calls,
-            "caller_access_key_id": caller_access_key_id,
             "collection_id": collection_id,
             "collector": {
                 "boto3_version": importlib.metadata.version("boto3"),
