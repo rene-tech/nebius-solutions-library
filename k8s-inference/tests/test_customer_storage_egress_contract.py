@@ -185,7 +185,10 @@ def test_separate_security_owner_is_append_only_and_credential_isolated() -> Non
     assert "for_each = local.successor_contracts" in source
     assert "for_each = local.legacy_trusts" in source
     assert "for_each = local.successor_trusts" in source
-    assert "for_each = local.boundary_policy_names" in source
+    assert (
+        "for_each = var.provider_authority.retained_legacy_boundary_policies"
+        in source
+    )
     assert "customer_storage_external_egress_boundary" in control_plane
 
 
@@ -425,6 +428,21 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert 'resource "terraform_data" "security_generation_v4"' in boundary
     assert "successor_workload_policy_generations" in boundary
     assert "protected_node_target_cel" in boundary
+    assert "protected_node_blanket_toleration_cel" not in boundary
+    assert "kube_system_daemon_pod_cel" not in boundary
+    assert "protected_node_pod_spec_cel" not in boundary
+    assert "inventory_role_name_cel" in boundary
+    assert "inventory_role_content_cel" in boundary
+    assert "inventory_binding_content_cel" in boundary
+    assert "nondelegatable generation-named NetworkPolicy inventory Role" in boundary
+    assert "object.rules[0].resources == ['networkpolicies']" in boundary
+    assert "object.rules[0].verbs == ['get','list']" in boundary
+    assert "object.subjects[0].name == object.metadata.name" in boundary
+    assert "object.roleRef.name == object.metadata.name" in boundary
+    assert (
+        "request.userInfo.groups.exists(group, group == '${var.security_owner_group}')"
+        in boundary
+    )
     assert 'resources   = ["pods/binding"]' in boundary
     assert "scheduler_username" in boundary
     assert "daemonset_controller_username" in boundary

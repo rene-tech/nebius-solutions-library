@@ -50,12 +50,17 @@ Admission continuously permits only the exact content-bound selecting policy;
 an additional signed policy constrains every Pod or workload-producing object
 to the exact Secret allowlist, image and provider-protected node target.
 The same retained policy has no namespace exemption: it guards the protected
-selector and taint globally, constrains blanket `Exists` Pods to the exact
-provider-bound kube-system DaemonSet controller contract, and admits Pod
-binding only from the provider-bound scheduler. Ordinary `nodeName` use is not
-globally regressed; the exact storage/system Pod contracts and semantic RBAC
-closure prevent it from bypassing the dedicated lane. Every retained legacy
-and v3 policy and Deny binding is re-read and compared with the canonical
+selector and exact taint key globally, while a keyless blanket `Exists`
+toleration alone is not treated as intent to enter that lane. This preserves
+replacement Pods for node-wide telemetry and allocation observers without a
+broad DaemonSet exception. Pod binding is admitted only from the provider-bound
+scheduler. Ordinary `nodeName` use is not globally regressed; the exact storage
+Pod contract and semantic RBAC closure prevent it from bypassing the dedicated
+lane. The security owner's otherwise namespace-wide RBAC create permission is
+admission-confined to a generation-named, read-only NetworkPolicy inventory
+Role and a same-name ServiceAccount binding; it cannot delegate ConfigMap or
+workload authority. Every retained legacy and v3 policy and Deny binding is
+re-read and compared with the canonical
 separately signed prior checkpoint before a new generation is admitted.
 Public runtime NetworkPolicies do not contain a customer-storage HTTPS
 exception.
