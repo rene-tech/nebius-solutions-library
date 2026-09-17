@@ -1,0 +1,119 @@
+{
+  "case": "de-0601",
+  "language": "de",
+  "audio_seconds": 9.51,
+  "source_sha256": "55626205bc3f5903c50996ca8fc296f7347c471a4cfb17692780cee1e6480354",
+  "reference": "Wir wollen ja morgen früh nach Spanien. Und wegen der Bauchschmerzen. Also, die hat er schon öfter, bevor wir losfahren, wissen Sie … Morgen besuchen wir erst Oma und",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 601
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:24.815466+00:00",
+  "submit_status": 202,
+  "operation_id": "ec862b1b-b7bd-442c-87f0-68820aa2db77",
+  "operation": {
+    "id": "ec862b1b-b7bd-442c-87f0-68820aa2db77",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-8d8f0564349f4069938cfc0ff15f3b1a",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:25.315437Z",
+    "available_at": "2026-09-16T21:46:25.315437Z",
+    "deadline_at": "2026-09-16T23:46:25.309324Z",
+    "activation_started_at": "2026-09-16T21:46:25.337221Z",
+    "ready_at": "2026-09-16T21:46:25.509446Z",
+    "started_at": "2026-09-16T21:46:25.513940Z",
+    "completed_at": "2026-09-16T21:46:26.383288Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:25.315438Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.194009,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 9.51
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.659162638708949,
+  "text": "Wir wollen ja morgen früh nach Spanien. Und wegen der Bauchschmerzen, also die hat ja schon öfter, bevor wir losfahren, wissen Sie morgen besuchen wir erst O",
+  "result_audio_seconds": 9.51,
+  "processing_seconds": 0.5745778859999291,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "365da424991acea38929cb04037d52e319867f41f32990f78dbcb55962de8d6a",
+  "quality": {
+    "reference_words": 28,
+    "hypothesis_words": 27,
+    "wer": 0.10714285714285714,
+    "substitutions": 2,
+    "deletions": 1,
+    "insertions": 0,
+    "correct": 25,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 14,
+        "reference": "er",
+        "recognized": "ja"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 26,
+        "reference": "oma"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 27,
+        "reference": "und",
+        "recognized": "o"
+      }
+    ],
+    "reference_characters": 132,
+    "character_errors": 7,
+    "cer": 0.05303030303030303
+  },
+  "finished_at": "2026-09-16T21:46:27.475657+00:00"
+}

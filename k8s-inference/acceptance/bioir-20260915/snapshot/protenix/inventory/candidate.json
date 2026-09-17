@@ -1,0 +1,152 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "protenix-bir-h100",
+    "namespace": "fs2-bioir-protenix",
+    "labels": {
+      "evaluation": "fs2-bioir-20260915",
+      "lane": "protenix",
+      "app.kubernetes.io/name": "bioir-protenix-baseline",
+      "variant": "bir"
+    }
+  },
+  "spec": {
+    "restartPolicy": "Never",
+    "automountServiceAccountToken": false,
+    "nodeSelector": {
+      "kubernetes.io/hostname": "computeinstance-e00fkt1bsa4ec657sn"
+    },
+    "tolerations": [
+      {
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference",
+        "effect": "NoSchedule"
+      }
+    ],
+    "securityContext": {
+      "runAsUser": 10001,
+      "runAsGroup": 10001,
+      "fsGroup": 10001
+    },
+    "containers": [
+      {
+        "name": "scientific-stage",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+        "imagePullPolicy": "IfNotPresent",
+        "command": [
+          "/opt/protenix-venv/bin/python",
+          "/evaluation/bir_server.py"
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "8",
+            "memory": "96Gi",
+            "ephemeral-storage": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "limits": {
+            "cpu": "12",
+            "memory": "160Gi",
+            "ephemeral-storage": "128Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "env": [
+          {
+            "name": "HF_HUB_OFFLINE",
+            "value": "1"
+          },
+          {
+            "name": "TRANSFORMERS_OFFLINE",
+            "value": "1"
+          },
+          {
+            "name": "BIOIR_GRAPHS",
+            "value": "1"
+          },
+          {
+            "name": "FS2_PROTENIX_WORKER_URL",
+            "value": "http://127.0.0.1:8000"
+          },
+          {
+            "name": "TRITON_CACHE_DIR",
+            "value": "/cache/triton"
+          },
+          {
+            "name": "CUEQ_TRITON_CACHE_DIR",
+            "value": "/cache/cueq"
+          },
+          {
+            "name": "TORCH_EXTENSIONS_DIR",
+            "value": "/cache/torch-extensions"
+          },
+          {
+            "name": "XDG_CACHE_HOME",
+            "value": "/cache/xdg"
+          },
+          {
+            "name": "BIOIR_CACHE",
+            "value": "/cache/bioir"
+          },
+          {
+            "name": "MPLCONFIGDIR",
+            "value": "/cache/matplotlib"
+          }
+        ],
+        "volumeMounts": [
+          {
+            "name": "workspace",
+            "mountPath": "/mnt/fs2-scientific"
+          },
+          {
+            "name": "cache",
+            "mountPath": "/cache"
+          },
+          {
+            "name": "model",
+            "mountPath": "/models/protenix-v2",
+            "readOnly": true,
+            "subPath": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48"
+          },
+          {
+            "name": "source",
+            "mountPath": "/evaluation",
+            "readOnly": true
+          },
+          {
+            "name": "source",
+            "mountPath": "/opt/protenix-venv/bin/protenix",
+            "subPath": "protenix_cli_proxy.py",
+            "readOnly": true
+          }
+        ]
+      }
+    ],
+    "volumes": [
+      {
+        "name": "model",
+        "hostPath": {
+          "path": "/mnt/fs2-reference-data/data",
+          "type": "Directory"
+        }
+      },
+      {
+        "name": "workspace",
+        "emptyDir": {}
+      },
+      {
+        "name": "cache",
+        "emptyDir": {}
+      },
+      {
+        "name": "source",
+        "configMap": {
+          "name": "protenix-bir-h100-source",
+          "defaultMode": 365
+        }
+      }
+    ]
+  }
+}

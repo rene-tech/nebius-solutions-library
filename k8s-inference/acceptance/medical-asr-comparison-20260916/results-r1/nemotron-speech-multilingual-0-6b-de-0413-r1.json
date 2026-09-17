@@ -1,0 +1,131 @@
+{
+  "case": "de-0413",
+  "language": "de",
+  "audio_seconds": 13.71,
+  "source_sha256": "a6a0cb2543d062797d33fb6f2c81acfe52098699a462dc0000a136f9ddd400ef",
+  "reference": "Ja, da ist in der letzten Zeit einiges dazugekommen. Wieso? Nach dem Tod meiner Frau, da ging es mir gar nicht gut. Und da konnte ich überhaupt nicht mehr schlafen. Und es ging mit mir nur noch bergab …",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 413
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:07.061394+00:00",
+  "submit_status": 202,
+  "operation_id": "521d7039-e7d2-473a-b5d3-6cf960c90c27",
+  "operation": {
+    "id": "521d7039-e7d2-473a-b5d3-6cf960c90c27",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-354a8b336115450a899ba8e5e21d7f3a",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:07.731317Z",
+    "available_at": "2026-09-16T21:46:07.731317Z",
+    "deadline_at": "2026-09-16T23:46:07.727343Z",
+    "activation_started_at": "2026-09-16T21:46:07.748261Z",
+    "ready_at": "2026-09-16T21:46:08.086604Z",
+    "started_at": "2026-09-16T21:46:08.093101Z",
+    "completed_at": "2026-09-16T21:46:09.282899Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:07.731318Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.355287,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 13.71
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.8687419248744845,
+  "text": "Ja, da ist in der letzten Zeit einiges dazugekommen. Nach dem Tod meiner Frau, da ging es mir gar nicht gutUnd da konnte ich überhaupt nicht mehr schlafenUnd es ging mit mir nur noch bergab.",
+  "result_audio_seconds": 13.71,
+  "processing_seconds": 0.7732714260928333,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "8f444afc680842112ac6804018ce6912c97991b6815f1bbdd88721b88162f466",
+  "quality": {
+    "reference_words": 38,
+    "hypothesis_words": 35,
+    "wer": 0.13157894736842105,
+    "substitutions": 2,
+    "deletions": 3,
+    "insertions": 0,
+    "correct": 33,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 9,
+        "reference": "wieso"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 21,
+        "reference": "gut"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 22,
+        "reference": "und",
+        "recognized": "gutund"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 29,
+        "reference": "schlafen"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 30,
+        "reference": "und",
+        "recognized": "schlafenund"
+      }
+    ],
+    "reference_characters": 157,
+    "character_errors": 5,
+    "cer": 0.03184713375796178
+  },
+  "finished_at": "2026-09-16T21:46:09.931290+00:00"
+}

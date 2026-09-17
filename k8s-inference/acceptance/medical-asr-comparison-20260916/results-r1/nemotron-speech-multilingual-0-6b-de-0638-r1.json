@@ -1,0 +1,173 @@
+{
+  "case": "de-0638",
+  "language": "de",
+  "audio_seconds": 9.37,
+  "source_sha256": "a58575b5398aabefaef92c8b70d6bf53d4ba55e9739e51396aba09a657a990a0",
+  "reference": "auch in der Notaufnahme, wenn Sie zum Beispiel gegen Tetanus impfen! Es sollte auch klar sein, dass eine solche Prophylaxe nicht zu 100 Prozent wirkt! So, bevor wir später auf die Details eingehen, nun der zweite Fall:",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 638
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:28.347661+00:00",
+  "submit_status": 202,
+  "operation_id": "5691fa2d-4993-4a52-9f18-45c8fc26f218",
+  "operation": {
+    "id": "5691fa2d-4993-4a52-9f18-45c8fc26f218",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-b55f5c8937624193a63d88a10b85e312",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:28.958346Z",
+    "available_at": "2026-09-16T21:46:28.958346Z",
+    "deadline_at": "2026-09-16T23:46:28.925620Z",
+    "activation_started_at": "2026-09-16T21:46:28.995355Z",
+    "ready_at": "2026-09-16T21:46:29.161874Z",
+    "started_at": "2026-09-16T21:46:29.175738Z",
+    "completed_at": "2026-09-16T21:46:30.084229Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:28.958347Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.203528,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 9.37
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.572604773566127,
+  "text": "in der Notaufnahme, wenn Sie zum Beispiel gegen Tetanus impfen. Es sollte auch klar sein, dass eine solche Prophylaxe nicht zu hundert Prozent wirkt.",
+  "result_audio_seconds": 9.37,
+  "processing_seconds": 0.5906115539999064,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "781d8e51603bd1b7ef76f7577f03d71c2f42e62c18b8f7ed72747664b5f09ed4",
+  "quality": {
+    "reference_words": 37,
+    "hypothesis_words": 24,
+    "wer": 0.3783783783783784,
+    "substitutions": 1,
+    "deletions": 13,
+    "insertions": 0,
+    "correct": 23,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 0,
+        "reference": "auch"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 22,
+        "reference": "100",
+        "recognized": "hundert"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 25,
+        "reference": "so"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 26,
+        "reference": "bevor"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 27,
+        "reference": "wir"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 28,
+        "reference": "später"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 29,
+        "reference": "auf"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 30,
+        "reference": "die"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 31,
+        "reference": "details"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 32,
+        "reference": "eingehen"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 33,
+        "reference": "nun"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 34,
+        "reference": "der"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 35,
+        "reference": "zweite"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 36,
+        "reference": "fall"
+      }
+    ],
+    "reference_characters": 175,
+    "character_errors": 62,
+    "cer": 0.35428571428571426
+  },
+  "finished_at": "2026-09-16T21:46:30.921283+00:00"
+}

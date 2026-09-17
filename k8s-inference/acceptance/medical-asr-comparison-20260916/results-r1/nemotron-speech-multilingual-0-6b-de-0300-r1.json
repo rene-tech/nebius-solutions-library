@@ -1,0 +1,131 @@
+{
+  "case": "de-0300",
+  "language": "de",
+  "audio_seconds": 15.79,
+  "source_sha256": "12d589edea71119c453c7c9d35d3afbad639e27958dc64331ae5ce1373cbbf29",
+  "reference": "Wie ist Ihre Einschätzung bezüglich seiner Alkoholabhängigkeit? Er gibt an, seit einem Jahr fast nichts mehr zu trinken. Und er wirkt auf mich psychisch sehr geordnet und glaubwürdig. Darüber hinaus hat der Patient keine Vorerkrankungen. Vielleicht",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 300
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:45:56.404655+00:00",
+  "submit_status": 202,
+  "operation_id": "d1c59f05-ce8e-4949-a43d-2e63dbcf2d13",
+  "operation": {
+    "id": "d1c59f05-ce8e-4949-a43d-2e63dbcf2d13",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-365717beec1649c0998cfb021cfbe337",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:45:57.087380Z",
+    "available_at": "2026-09-16T21:45:57.087380Z",
+    "deadline_at": "2026-09-16T23:45:57.083609Z",
+    "activation_started_at": "2026-09-16T21:45:57.116295Z",
+    "ready_at": "2026-09-16T21:45:57.430852Z",
+    "started_at": "2026-09-16T21:45:57.441883Z",
+    "completed_at": "2026-09-16T21:45:58.858419Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:45:57.087380Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.343472,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 15.79
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.7196358665823936,
+  "text": "ist Ihre Einschätzung bezüglich seiner AlkoholabhängigkeitEr gibt an seit einem Jahr fast nichts mehr zu trinken und er wirkt auf mich psychisch sehr geordnet und glaubwürdigDarüber hinaus hat der Patient keine Vorerkrankungen. Vielleicht",
+  "result_audio_seconds": 15.79,
+  "processing_seconds": 0.9134880509227514,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "9cd5da58a26ea844ed58d5d9ac5c47f696da8c40e61cb56c16911612ac4bc5d0",
+  "quality": {
+    "reference_words": 36,
+    "hypothesis_words": 33,
+    "wer": 0.1388888888888889,
+    "substitutions": 2,
+    "deletions": 3,
+    "insertions": 0,
+    "correct": 31,
+    "errors": [
+      {
+        "type": "deletion",
+        "reference_index": 0,
+        "reference": "wie"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 6,
+        "reference": "alkoholabhängigkeit"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 7,
+        "reference": "er",
+        "recognized": "alkoholabhängigkeiter"
+      },
+      {
+        "type": "deletion",
+        "reference_index": 27,
+        "reference": "glaubwürdig"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 28,
+        "reference": "darüber",
+        "recognized": "glaubwürdigdarüber"
+      }
+    ],
+    "reference_characters": 208,
+    "character_errors": 3,
+    "cer": 0.014423076923076924
+  },
+  "finished_at": "2026-09-16T21:45:59.125439+00:00"
+}

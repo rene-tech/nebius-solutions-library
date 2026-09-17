@@ -1,0 +1,13 @@
+# Raw model-call receipts remain local and are published together in the archive.
+**/calls/
+# Earlier live/provider cohorts are preserved in the same evidence archive.
+live-r1/
+live-r2/
+nemotron-r1/
+nemotron-r2/
+nemotron-r3/
+qwen235-r1/
+qwen235-r2/
+qwen235-r3/
+full-r1/
+full-r2/
