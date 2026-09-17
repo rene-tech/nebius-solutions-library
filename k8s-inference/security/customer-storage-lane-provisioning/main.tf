@@ -35,6 +35,7 @@ resource "terraform_data" "signed_provisioning" {
     manifest_sha256         = data.external.provisioning.result.manifest_sha256
     provisioning_generation = each.key
     provider_identity_sha256 = data.external.provider_identity.result.provider_identity_sha256
+    daemonset_admission_fence_receipt_sha256 = data.external.provisioning.result.daemonset_admission_fence_receipt_sha256
   }
   lifecycle {
     prevent_destroy = true
@@ -161,7 +162,10 @@ resource "nebius_mk8s_v1_node_group" "lane" {
     max_node_count = each.value.max_node_count
   }
   strategy = {
-    max_surge       = { count = 1 }
+    # One generation never repairs or replaces its attested member in place.
+    # A new lane/NodeGroup may be prepared additively, but cutover and
+    # predecessor retirement require a separately reviewed lifecycle protocol.
+    max_surge       = { count = 0 }
     max_unavailable = { count = 0 }
     drain_timeout   = "30m"
   }

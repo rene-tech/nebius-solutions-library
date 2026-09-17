@@ -130,6 +130,12 @@ def contract(generation: str) -> dict[str, object]:
         }
         if role in NODE_AGENT_ROLES:
             observer["maintenance_audit_sha256"] = f"{index:x}" * 64
+            observer["snapshot_generation"] = (
+                f"s20260917000000-{ADMISSION.digest(spec)[:12]}"
+            )
+            observer["snapshot_sha256"] = ADMISSION.digest(
+                {"namespace": observer["namespace"], "name": observer["name"], "spec": spec}
+            )
         observers[role] = observer
     scheduling_key = f"workload.fs2.nebius/customer-storage-egress-{suffix}"
     protected_node_names = ["computeinstance-protected"]
@@ -162,7 +168,7 @@ def contract(generation: str) -> dict[str, object]:
         }
     }
     result = {
-        "schema": "fs2-serve.nebius.ai/protected-lane-admission/v5",
+        "schema": "fs2-serve.nebius.ai/protected-lane-admission/v6",
         "generation": generation,
         "lane_id": lane_id,
         "selector_key": scheduling_key,
@@ -193,6 +199,9 @@ def contract(generation: str) -> dict[str, object]:
         },
         "daemonset_inventory_sha256": "c" * 64,
         "daemonset_list_resource_version": "99123",
+        "daemonset_admission_fence_receipt_sha256": "d" * 64,
+        "daemonset_snapshot_ledger_head_sha256": "e" * 64,
+        "node_lifecycle_mode": "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR",
         "observers": observers,
         "observer_inventory_sha256": ADMISSION.digest(observers),
     }
@@ -235,6 +244,18 @@ def observer_pod_request(value: dict[str, object], role: str) -> dict[str, objec
             "metadata": {
                 "name": observer["name"] + "-protected",
                 "labels": labels,
+                "annotations": (
+                    {
+                        "security.fs2.nebius.ai/daemonset-snapshot-generation": observer[
+                            "snapshot_generation"
+                        ],
+                        "security.fs2.nebius.ai/daemonset-snapshot-sha256": observer[
+                            "snapshot_sha256"
+                        ],
+                    }
+                    if role in NODE_AGENT_ROLES
+                    else {}
+                ),
                 "ownerReferences": [
                     {
                         "apiVersion": "apps/v1",
@@ -387,7 +408,11 @@ def test_fresh_install_denies_lane_targeting_daemonset_but_allows_exact_update()
 
     observer = successor["observers"]["otel-node"]
     exact_object = {
-        "metadata": {"name": observer["name"], "uid": observer["uid"]},
+        "metadata": {
+            "name": observer["name"],
+            "uid": observer["uid"],
+            "annotations": {},
+        },
         "spec": copy.deepcopy(observer["daemonset_spec"]),
     }
     exact = {
@@ -401,6 +426,53 @@ def test_fresh_install_denies_lane_targeting_daemonset_but_allows_exact_update()
         "old_object": copy.deepcopy(exact_object),
     }
     assert ADMISSION.successor_allows(exact, successor)
+
+
+def test_fence_aware_retained_policies_defer_exact_upgrade_to_external_guard() -> None:
+    predecessor = contract("g20260917010000-111111111111")
+    successor = contract("g20260917020000-222222222222")
+    role = "filesystem-csi"
+    observer = predecessor["observers"][role]
+    old_object = {
+        "metadata": {
+            "name": observer["name"],
+            "uid": observer["uid"],
+            "annotations": {
+                "security.fs2.nebius.ai/daemonset-snapshot-generation": observer[
+                    "snapshot_generation"
+                ],
+                "security.fs2.nebius.ai/daemonset-snapshot-sha256": observer[
+                    "snapshot_sha256"
+                ],
+            },
+        },
+        "spec": copy.deepcopy(observer["daemonset_spec"]),
+    }
+    new_object = copy.deepcopy(old_object)
+    new_object["metadata"]["annotations"] = {
+        "security.fs2.nebius.ai/daemonset-snapshot-generation": "s20260917120000-abcdefabcdef",
+        "security.fs2.nebius.ai/daemonset-snapshot-sha256": "f" * 64,
+    }
+    new_object["spec"]["template"]["spec"]["containers"][0]["image"] = (
+        "example.invalid/image@sha256:" + "b" * 64
+    )
+    request = {
+        "resource": "daemonsets",
+        "operation": "UPDATE",
+        "namespace": observer["namespace"],
+        "username": observer["owner_identity"]["username"],
+        "uid": observer["owner_identity"]["uid"],
+        "groups": observer["owner_identity"]["groups"],
+        "object": new_object,
+        "old_object": old_object,
+    }
+
+    assert ADMISSION.successor_allows(request, predecessor)
+    assert ADMISSION.conjunction_allows(
+        request, retained=[predecessor], successor=successor
+    )
+    del new_object["metadata"]["annotations"]
+    assert not ADMISSION.successor_allows(request, predecessor)
 
 
 def test_update_matches_old_or_new_lane_path_using_lane_id_not_generation() -> None:

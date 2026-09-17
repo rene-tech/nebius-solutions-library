@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the complete live DaemonSet snapshot before and after admission."""
+"""Verify one of two complete live DaemonSet snapshots before admission."""
 
 from __future__ import annotations
 

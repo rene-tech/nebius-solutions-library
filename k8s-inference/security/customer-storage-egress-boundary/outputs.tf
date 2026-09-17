@@ -1,7 +1,7 @@
 output "current_handoff" {
   description = "Value-free, exact handoff consumed by the ordinary workloads root."
   value = {
-    schema                              = "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v11"
+    schema                              = "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v12"
     generation                          = var.current_generation
     contract_sha256                     = data.external.current_contract.result.contract_sha256
     contract_config_map_name            = local.successor_contract_names[var.current_generation]
@@ -18,8 +18,10 @@ output "current_handoff" {
     protected_observer_inventory_sha256 = var.provider_authority.protected_observer_inventory_sha256
     protected_observer_live_sha256 = sha256(jsonencode({
       for role, observer in data.kubernetes_resource.protected_observer : role => {
-        uid         = observer.object.metadata.uid
-        spec_sha256 = sha256(jsonencode(observer.object.spec))
+        uid                 = observer.object.metadata.uid
+        spec_sha256         = sha256(jsonencode(observer.object.spec))
+        snapshot_generation = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-generation"], "")
+        snapshot_sha256     = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-sha256"], "")
       }
     }))
     provider_authority = var.provider_authority

@@ -10,7 +10,7 @@ data "external" "protected_lane_admission" {
   ]
   query = {
     contract_json = jsonencode({
-      schema                                    = "fs2-serve.nebius.ai/protected-lane-admission/v5"
+      schema                                    = "fs2-serve.nebius.ai/protected-lane-admission/v6"
       generation                                = var.provider_authority.generation
       lane_id                                   = var.provider_authority.lane_id
       selector_key                              = var.provider_authority.node_selector_key
@@ -29,6 +29,9 @@ data "external" "protected_lane_admission" {
       node_health_mutation                      = var.provider_authority.node_health_mutation
       daemonset_inventory_sha256                = var.provider_authority.daemonset_inventory_sha256
       daemonset_list_resource_version           = var.provider_authority.daemonset_list_resource_version
+      daemonset_admission_fence_receipt_sha256  = var.provider_authority.daemonset_admission_fence_receipt_sha256
+      daemonset_snapshot_ledger_head_sha256     = var.provider_authority.daemonset_snapshot_ledger_head_sha256
+      node_lifecycle_mode                       = var.provider_authority.node_lifecycle_mode
       observers                                 = var.provider_authority.protected_observers
       observer_inventory_sha256                 = var.provider_authority.protected_observer_inventory_sha256
     })
@@ -60,6 +63,8 @@ locals {
       namespace                = observer.namespace
       name                     = observer.name
       uid                      = observer.uid
+      snapshot_generation      = observer.snapshot_generation
+      snapshot_sha256          = observer.snapshot_sha256
       daemonset_spec           = observer.daemonset_spec
       daemonset_spec_sha256    = observer.daemonset_spec_sha256
       maintenance_identity     = observer.owner_identity
@@ -572,7 +577,7 @@ locals {
         {
           apiGroups   = [""]
           apiVersions = ["v1"]
-          operations  = ["UPDATE", "DELETE"]
+          operations  = ["CREATE", "UPDATE", "DELETE"]
           resources   = ["nodes"]
           scope       = "Cluster"
         },
@@ -588,7 +593,10 @@ locals {
         "(has(oldObject.metadata.labels) && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}')) :",
         "(has(object.metadata.labels) && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}'))))) ||",
         "(request.resource.resource == 'pods' && request.subResource == 'binding') ||",
-        "(request.resource.resource == 'nodes' && (request.name == '${var.provider_authority.protected_node_names[0]}' || oldObject.metadata.name == '${var.provider_authority.protected_node_names[0]}')) ||",
+        "(request.resource.resource == 'nodes' && (request.name == '${var.provider_authority.protected_node_names[0]}' ||",
+        "(request.operation != 'CREATE' && oldObject.metadata.name == '${var.provider_authority.protected_node_names[0]}') ||",
+        "(has(object.metadata.labels) && '${var.provider_authority.node_selector_key}' in object.metadata.labels) ||",
+        "(has(object.spec.taints) && object.spec.taints.exists(taint, taint.key == '${var.provider_authority.taint_key}')))) ||",
         "(${local.protected_node_target_cel})",
       ])
     }]
@@ -673,8 +681,8 @@ locals {
         reason  = "Forbidden"
       },
       {
-        expression = "request.resource.resource != 'nodes' || request.operation != 'DELETE'"
-        message    = "The attested protected-lane Node cannot be deleted through the Kubernetes API."
+        expression = "request.resource.resource != 'nodes' || request.operation == 'UPDATE'"
+        message    = "The pinned protected-lane Node cannot be created, replaced or deleted through the Kubernetes API while no-delete custody is active."
         reason     = "Forbidden"
       },
       {
@@ -1012,6 +1020,44 @@ data "external" "live_daemonsets_pre_guard" {
   }
 }
 
+data "external" "daemonset_admission_fence" {
+  program = [
+    "uv", "run", "--frozen", "--project",
+    "${path.module}/../../components/control-plane", "python",
+    "${path.module}/verify_live_daemonset_admission_fence.py",
+  ]
+  query = {
+    cluster_id                                  = var.provider_authority.cluster_id
+    expected_inventory_sha256                   = var.provider_authority.daemonset_inventory_sha256
+    expected_list_resource_version              = var.provider_authority.daemonset_list_resource_version
+    expected_receipt_sha256                     = var.provider_authority.daemonset_admission_fence_receipt_sha256
+    expected_snapshot_ledger_head_sha256        = var.provider_authority.daemonset_snapshot_ledger_head_sha256
+    expected_agents_json                        = jsonencode(local.signed_blanket_agents)
+  }
+}
+
+resource "terraform_data" "daemonset_admission_fence" {
+  input = {
+    receipt_sha256             = data.external.daemonset_admission_fence.result.receipt_sha256
+    fence_generation           = data.external.daemonset_admission_fence.result.fence_generation
+    snapshot_ledger_head_sha256 = data.external.daemonset_admission_fence.result.snapshot_ledger_head_sha256
+  }
+  lifecycle {
+    prevent_destroy = true
+    precondition {
+      condition = (
+        data.external.daemonset_admission_fence.result.authorized == "true" &&
+        data.external.daemonset_admission_fence.result.receipt_sha256 == var.provider_authority.daemonset_admission_fence_receipt_sha256 &&
+        data.external.daemonset_admission_fence.result.snapshot_ledger_head_sha256 == var.provider_authority.daemonset_snapshot_ledger_head_sha256
+      )
+      error_message = "The separately owned continuous DaemonSet admission fence is absent or stale."
+    }
+  }
+}
+
+# Historical address retained, but this is now a second pre-activation read.
+# The ordinary Deny binding is downstream of its exact equality gate. No
+# post-create check can strand a newly active binding on a failed apply.
 data "external" "live_daemonsets_post_guard" {
   program = [
     "uv", "run", "--frozen", "--project",
@@ -1024,7 +1070,7 @@ data "external" "live_daemonsets_post_guard" {
     expected_agents_json     = jsonencode(local.signed_blanket_agents)
     expected_inventory_sha256 = var.provider_authority.daemonset_inventory_sha256
   }
-  depends_on = [kubernetes_manifest.workload_binding_v3]
+  depends_on = [terraform_data.daemonset_admission_fence]
 }
 
 # Re-read every legacy and v3 enforcement generation retained by the separately signed
@@ -1112,10 +1158,14 @@ resource "terraform_data" "separate_security_owner" {
     controller_audit_receipt            = var.provider_authority.controller_audit_receipt_sha256
     daemonset_inventory                 = var.provider_authority.daemonset_inventory_sha256
     daemonset_list_resource_version     = var.provider_authority.daemonset_list_resource_version
+    daemonset_admission_fence            = var.provider_authority.daemonset_admission_fence_receipt_sha256
+    daemonset_snapshot_ledger            = var.provider_authority.daemonset_snapshot_ledger_head_sha256
     protected_observer_live = sha256(jsonencode({
       for role, observer in data.kubernetes_resource.protected_observer : role => {
-        uid         = observer.object.metadata.uid
-        spec_sha256 = sha256(jsonencode(observer.object.spec))
+        uid                 = observer.object.metadata.uid
+        spec_sha256         = sha256(jsonencode(observer.object.spec))
+        snapshot_generation = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-generation"], "")
+        snapshot_sha256     = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-sha256"], "")
       }
     }))
     predecessor_network_policy_uid = data.kubernetes_resource.predecessor_network_policy.object.metadata.uid
@@ -1157,6 +1207,10 @@ resource "terraform_data" "separate_security_owner" {
         try(data.kubernetes_resource.protected_observer[role].object.metadata.uid, "") == expected.uid &&
         try(data.kubernetes_resource.protected_observer[role].object.spec, null) == expected.daemonset_spec &&
         sha256(jsonencode(try(data.kubernetes_resource.protected_observer[role].object.spec, null))) == expected.daemonset_spec_sha256 &&
+        (expected.class != "critical-blanket-agent" || (
+          try(data.kubernetes_resource.protected_observer[role].object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-generation"], "") == expected.snapshot_generation &&
+          try(data.kubernetes_resource.protected_observer[role].object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-sha256"], "") == expected.snapshot_sha256
+        )) &&
         length([
           for identity in var.kubernetes_service_account_inventory : identity.name
           if "system:serviceaccount:${identity.namespace}:${identity.name}" == expected.owner_identity.username &&
@@ -1353,8 +1407,10 @@ resource "terraform_data" "security_generation_v4" {
     protected_node_scheduling_labels_sha256    = var.provider_authority.protected_node_scheduling_labels_sha256
     protected_observer_live_sha256 = sha256(jsonencode({
       for role, observer in data.kubernetes_resource.protected_observer : role => {
-        uid         = observer.object.metadata.uid
-        spec_sha256 = sha256(jsonencode(observer.object.spec))
+        uid                 = observer.object.metadata.uid
+        spec_sha256         = sha256(jsonencode(observer.object.spec))
+        snapshot_generation = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-generation"], "")
+        snapshot_sha256     = try(observer.object.metadata.annotations["security.fs2.nebius.ai/daemonset-snapshot-sha256"], "")
       }
     }))
     boundary_backend_config_sha256          = data.external.backend_custody.result.backend_config_sha256
@@ -1573,7 +1629,15 @@ resource "kubernetes_manifest" "boundary_binding_v3" {
     prevent_destroy = true
     ignore_changes  = all
   }
-  depends_on = [kubernetes_manifest.boundary_policy_v3]
+  # Activate only after every fallible inventory/fence/Node equality gate has
+  # succeeded. A failed precondition therefore cannot strand a newly active
+  # fail-closed binding that the no-delete program is forbidden to remove.
+  depends_on = [
+    kubernetes_manifest.boundary_policy_v3,
+    terraform_data.daemonset_admission_fence,
+    terraform_data.daemonset_inventory_post_guard,
+    terraform_data.protected_node_post_guard_attestation,
+  ]
 }
 
 resource "kubernetes_manifest" "workload_policy_v3" {
@@ -1633,9 +1697,21 @@ resource "kubernetes_manifest" "workload_binding_v3" {
     prevent_destroy = true
     ignore_changes  = all
   }
-  depends_on = [kubernetes_manifest.workload_policy_v3]
+  depends_on = [
+    kubernetes_manifest.workload_policy_v3,
+    terraform_data.daemonset_admission_fence,
+    terraform_data.daemonset_inventory_post_guard,
+    terraform_data.protected_node_post_guard_attestation,
+    kubernetes_config_map_v1.trust_v3,
+    kubernetes_config_map_v1.contract_v3,
+    kubernetes_network_policy_v1.contract_v3,
+    kubernetes_role_binding_v1.reconciler_inventory_v3,
+  ]
 }
 
+# Historical Terraform address retained. Both reads occur before binding
+# activation; the separately owned continuous fence closes the interval after
+# this equality check without relying on a post-activation rollback.
 resource "terraform_data" "daemonset_inventory_post_guard" {
   input = {
     signed_inventory_sha256 = var.provider_authority.daemonset_inventory_sha256
@@ -1650,12 +1726,14 @@ resource "terraform_data" "daemonset_inventory_post_guard" {
         data.external.live_daemonsets_post_guard.result.inventory_sha256 == var.provider_authority.daemonset_inventory_sha256 &&
         data.external.live_daemonsets_pre_guard.result.inventory_sha256 == data.external.live_daemonsets_post_guard.result.inventory_sha256
       )
-      error_message = "A blanket-tolerating or omitted DaemonSet changed across admission installation."
+      error_message = "A blanket-tolerating or omitted DaemonSet changed across the two pre-activation reads."
     }
   }
-  depends_on = [kubernetes_manifest.workload_binding_v3]
+  depends_on = [terraform_data.daemonset_admission_fence]
 }
 
+# Historical address retained. This is the final pre-activation Node read; it
+# no longer runs after either successor Deny binding is active.
 data "kubernetes_resource" "protected_node_post_guard" {
   api_version = "v1"
   kind        = "Node"
@@ -1692,7 +1770,7 @@ resource "terraform_data" "protected_node_post_guard_attestation" {
           effect = var.provider_authority.taint_effect
         })
       )
-      error_message = "The post-guard live Node UID/providerID is not the signed NodeGroup member or its immutable lane label/taint differs."
+      error_message = "The final pre-activation live Node UID/providerID is not the signed NodeGroup member or its immutable lane label/taint differs."
     }
   }
 
@@ -1879,7 +1957,7 @@ resource "kubernetes_config_map_v1" "trust_v3" {
   immutable = true
   data      = { "public-key.pem" = each.value.public_key_pem }
   lifecycle { prevent_destroy = true }
-  depends_on = [kubernetes_manifest.workload_binding_v3]
+  depends_on = [kubernetes_manifest.boundary_binding_v3, terraform_data.protected_node_post_guard_attestation]
 }
 
 resource "kubernetes_config_map_v1" "contract_v3" {
@@ -1906,7 +1984,7 @@ resource "kubernetes_config_map_v1" "contract_v3" {
     "kubernetes-api-cidrs.json" = jsonencode(sort(tolist(each.value.kubernetes_api_cidrs)))
   }
   lifecycle { prevent_destroy = true }
-  depends_on = [kubernetes_manifest.workload_binding_v3, kubernetes_config_map_v1.trust_v3]
+  depends_on = [kubernetes_manifest.boundary_binding_v3, kubernetes_config_map_v1.trust_v3]
 }
 
 resource "kubernetes_network_policy_v1" "contract_v3" {

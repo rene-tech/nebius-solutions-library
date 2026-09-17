@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 REGISTRY = Path("/etc/fs2-security-ro/authority/customer-storage-lane-provisioning.json")
 MAX_BYTES = 1024 * 1024
-SCHEMA = "fs2-serve.nebius.ai/protected-lane-provisioning/v2"
+SCHEMA = "fs2-serve.nebius.ai/protected-lane-provisioning/v3"
 FIELDS = {
     "provisioning_generation",
     "lane_id",
@@ -40,6 +40,7 @@ FIELDS = {
     "boot_disk_gib",
     "min_node_count",
     "max_node_count",
+    "node_lifecycle_mode",
 }
 
 
@@ -146,10 +147,16 @@ def main() -> None:
         "manifest_public_key_pem",
         "checkpoint_public_key_pem",
         "custody_adapter_sha256",
-    } or registry.get("schema") != "fs2-serve.nebius.ai/protected-lane-provisioning-registry/v2":
+        "daemonset_admission_fence_receipt_sha256",
+    } or registry.get("schema") != "fs2-serve.nebius.ai/protected-lane-provisioning-registry/v3":
         raise ValueError("provisioning registry differs")
     if not re.fullmatch(r"[a-f0-9]{64}", str(registry["custody_adapter_sha256"])):
         raise ValueError("provisioning custody adapter digest is invalid")
+    if not re.fullmatch(
+        r"[a-f0-9]{64}",
+        str(registry["daemonset_admission_fence_receipt_sha256"]),
+    ):
+        raise ValueError("continuous DaemonSet fence receipt digest is invalid")
     manifest = strict_json(str(query["manifest_json"]))
     if set(manifest) != {
         "schema",
@@ -192,6 +199,8 @@ def main() -> None:
             # phase that cannot authorize the NodeGroup which creates it.
             or generation.get("min_node_count") != 1
             or generation.get("max_node_count") != 1
+            or generation.get("node_lifecycle_mode")
+            != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
             or any(
                 not isinstance(generation.get(field), str) or not generation[field]
                 for field in (
@@ -229,6 +238,9 @@ def main() -> None:
                 "manifest_sha256": manifest_sha256,
                 "generations_json": json.dumps(normalized, sort_keys=True, separators=(",", ":")),
                 "current_generation": str(manifest["current_generation"]),
+                "daemonset_admission_fence_receipt_sha256": str(
+                    registry["daemonset_admission_fence_receipt_sha256"]
+                ),
             },
             sort_keys=True,
             separators=(",", ":"),

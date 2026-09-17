@@ -221,8 +221,25 @@ def _blanket_tolerating_agents(
         namespace = metadata.get("namespace")
         name = metadata.get("name")
         uid = metadata.get("uid")
+        annotations = metadata.get("annotations", {})
+        snapshot_generation = (
+            annotations.get("security.fs2.nebius.ai/daemonset-snapshot-generation")
+            if isinstance(annotations, dict)
+            else None
+        )
+        snapshot_sha256 = (
+            annotations.get("security.fs2.nebius.ai/daemonset-snapshot-sha256")
+            if isinstance(annotations, dict)
+            else None
+        )
         if not all(isinstance(value, str) and value for value in (namespace, name, uid)):
             raise ValueError("blanket-tolerating DaemonSet identity is incomplete")
+        if not re.fullmatch(
+            r"s[0-9]{14}-[a-f0-9]{12}", str(snapshot_generation)
+        ) or not re.fullmatch(r"[a-f0-9]{64}", str(snapshot_sha256)):
+            raise ValueError(
+                "blanket-tolerating DaemonSet is absent from the signed snapshot ledger"
+            )
         key = f"{namespace}/{name}"
         maintainer = maintainers.get(key)
         if not isinstance(maintainer, dict):
@@ -231,6 +248,8 @@ def _blanket_tolerating_agents(
             "namespace": namespace,
             "name": name,
             "uid": uid,
+            "snapshot_generation": snapshot_generation,
+            "snapshot_sha256": snapshot_sha256,
             "daemonset_spec": spec,
             "daemonset_spec_sha256": hashlib.sha256(_canonical(spec)).hexdigest(),
             "maintenance_identity": maintainer["identity"],
@@ -259,7 +278,7 @@ def main() -> int:
         _daemonset_snapshot(args.kubeconfig, args.context)
     )
     receipt = {
-        "schema": "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v5",
+        "schema": "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v6",
         "cluster_id": args.cluster_id,
         "inventory_sha256": inventory_sha256,
         "subjects": subjects,

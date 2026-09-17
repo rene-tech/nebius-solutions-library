@@ -64,12 +64,15 @@ def validate_contract(value: object) -> dict[str, Any]:
         "node_health_mutation",
         "daemonset_inventory_sha256",
         "daemonset_list_resource_version",
+        "daemonset_admission_fence_receipt_sha256",
+        "daemonset_snapshot_ledger_head_sha256",
+        "node_lifecycle_mode",
         "observers",
         "observer_inventory_sha256",
     }
     if set(value) != expected:
         raise ValueError("protected-lane contract fields differ")
-    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v5":
+    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v6":
         raise ValueError("protected-lane contract schema differs")
     generation = _string(value.get("generation"), "generation")
     if not re.fullmatch(r"g[0-9]{14}-[a-f0-9]{12}", generation):
@@ -167,12 +170,23 @@ def validate_contract(value: object) -> dict[str, Any]:
         r"[a-f0-9]{64}", str(value.get("controller_audit_receipt_sha256", ""))
     ) or not re.fullmatch(
         r"[a-f0-9]{64}", str(value.get("daemonset_inventory_sha256", ""))
+    ) or not re.fullmatch(
+        r"[a-f0-9]{64}",
+        str(value.get("daemonset_admission_fence_receipt_sha256", "")),
+    ) or not re.fullmatch(
+        r"[a-f0-9]{64}",
+        str(value.get("daemonset_snapshot_ledger_head_sha256", "")),
     ):
-        raise ValueError("controller audit or complete DaemonSet inventory digest is absent")
+        raise ValueError("controller, DaemonSet inventory, or continuous fence digest is absent")
     if not isinstance(value.get("daemonset_list_resource_version"), str) or not value[
         "daemonset_list_resource_version"
     ]:
         raise ValueError("DaemonSet list resourceVersion is absent")
+    if (
+        value.get("node_lifecycle_mode")
+        != "GENERATIONAL_SINGLETON_RETAIN_PREDECESSOR"
+    ):
+        raise ValueError("protected lane is not a retained generational singleton")
     node_health = value.get("node_health_mutation")
     if (
         not isinstance(node_health, dict)
@@ -257,9 +271,14 @@ def validate_contract(value: object) -> dict[str, Any]:
             "daemonset_spec",
             "daemonset_spec_sha256",
         }
+        critical_observer_fields = observer_fields | {
+            "maintenance_audit_sha256",
+            "snapshot_generation",
+            "snapshot_sha256",
+        }
         if not isinstance(observer, dict) or set(observer) not in (
             observer_fields,
-            observer_fields | {"maintenance_audit_sha256"},
+            critical_observer_fields,
         ):
             raise ValueError(f"{role} observer fields differ")
         observer_class = observer.get("class")
@@ -297,9 +316,19 @@ def validate_contract(value: object) -> dict[str, Any]:
             r"[a-f0-9]{64}", str(observer.get("maintenance_audit_sha256", ""))
         ):
             raise ValueError(f"{role} maintainer lacks authenticated audit evidence")
+        if observer_class == "critical-blanket-agent" and (
+            not re.fullmatch(
+                r"s[0-9]{14}-[a-f0-9]{12}",
+                str(observer.get("snapshot_generation", "")),
+            )
+            or not re.fullmatch(
+                r"[a-f0-9]{64}", str(observer.get("snapshot_sha256", ""))
+            )
+        ):
+            raise ValueError(f"{role} is absent from the external snapshot ledger")
         if (
             observer_class != "critical-blanket-agent"
-            and "maintenance_audit_sha256" in observer
+            and set(observer) != observer_fields
         ):
             raise ValueError(f"{role} has an inapplicable maintenance audit binding")
         if (namespace, name) in seen or uid in seen:
@@ -444,9 +473,37 @@ def _identity_cel(identity: dict[str, Any]) -> str:
     )
 
 
+def _snapshot_metadata_cel(path: str) -> str:
+    generation = "security.fs2.nebius.ai/daemonset-snapshot-generation"
+    snapshot = "security.fs2.nebius.ai/daemonset-snapshot-sha256"
+    return " ".join(
+        [
+            f"has({path}.annotations) &&",
+            f"{_q(generation)} in {path}.annotations &&",
+            f"{path}.annotations[{_q(generation)}].matches('^s[0-9]{{14}}-[a-f0-9]{{12}}$') &&",
+            f"{_q(snapshot)} in {path}.annotations &&",
+            f"{path}.annotations[{_q(snapshot)}].matches('^[a-f0-9]{{64}}$')",
+        ]
+    )
+
+
 def _observer_daemonset_cel(contract: dict[str, Any]) -> str:
     choices: list[str] = []
     for observer in contract["observers"].values():
+        if observer["class"] == "critical-blanket-agent":
+            snapshot_transition = " ".join(
+                [
+                    f"({_snapshot_metadata_cel('object.metadata')}) &&",
+                    f"({_snapshot_metadata_cel('oldObject.metadata')})",
+                ]
+            )
+        else:
+            snapshot_transition = " ".join(
+                [
+                    f"object.spec == {json.dumps(observer['daemonset_spec'], sort_keys=True, separators=(',', ':'))} &&",
+                    f"oldObject.spec == {json.dumps(observer['daemonset_spec'], sort_keys=True, separators=(',', ':'))}",
+                ]
+            )
         choices.append(
             " ".join(
                 [
@@ -455,8 +512,7 @@ def _observer_daemonset_cel(contract: dict[str, Any]) -> str:
                     f"({_identity_cel(observer['owner_identity'])}) &&",
                     "request.operation == 'UPDATE' &&",
                     f"object.metadata.uid == {_q(observer['uid'])} && oldObject.metadata.uid == {_q(observer['uid'])} &&",
-                    f"object.spec == {json.dumps(observer['daemonset_spec'], sort_keys=True, separators=(',', ':'))} &&",
-                    f"oldObject.spec == {json.dumps(observer['daemonset_spec'], sort_keys=True, separators=(',', ':'))})",
+                    f"{snapshot_transition})",
                 ]
             )
         )
@@ -467,6 +523,22 @@ def _observer_pod_cel(contract: dict[str, Any]) -> str:
     choices: list[str] = []
     controller = _identity_cel(contract["controller_identities"]["daemonset"])
     for observer in contract["observers"].values():
+        if observer["class"] == "critical-blanket-agent":
+            choices.append(
+                " ".join(
+                    [
+                        f"(request.namespace == {_q(observer['namespace'])} && ({controller}) &&",
+                        "request.operation == 'CREATE' && size(object.metadata.ownerReferences) == 1 &&",
+                        "object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'DaemonSet' &&",
+                        f"object.metadata.ownerReferences[0].name == {_q(observer['name'])} && object.metadata.ownerReferences[0].uid == {_q(observer['uid'])} &&",
+                        "object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
+                        f"({_snapshot_metadata_cel('object.metadata')}) &&",
+                        "(!has(object.spec.nodeName) || object.spec.nodeName == '') &&",
+                        "(!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0))",
+                    ]
+                )
+            )
+            continue
         labels = observer["daemonset_spec"]["template"]["metadata"]["labels"]
         pod_spec = observer["daemonset_spec"]["template"]["spec"]
         labels_json = json.dumps(labels, sort_keys=True, separators=(",", ":"))
@@ -704,6 +776,32 @@ def _observer_for_request(
     return None
 
 
+def _snapshot_metadata_valid(metadata: object) -> bool:
+    if not isinstance(metadata, dict):
+        return False
+    annotations = metadata.get("annotations")
+    if not isinstance(annotations, dict):
+        return False
+    return bool(
+        re.fullmatch(
+            r"s[0-9]{14}-[a-f0-9]{12}",
+            str(
+                annotations.get(
+                    "security.fs2.nebius.ai/daemonset-snapshot-generation", ""
+                )
+            ),
+        )
+        and re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(
+                annotations.get(
+                    "security.fs2.nebius.ai/daemonset-snapshot-sha256", ""
+                )
+            ),
+        )
+    )
+
+
 def successor_allows(request: dict[str, Any], contract: object) -> bool:
     value = validate_contract(contract)
     if not request_targets_lane(request, value):
@@ -721,6 +819,15 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
     metadata = obj.get("metadata") or {}
     if request.get("resource") == "daemonsets" and observer is not None:
         old = request.get("old_object") or {}
+        if observer["class"] == "critical-blanket-agent":
+            return bool(
+                request.get("operation") == "UPDATE"
+                and _request_identity_matches(request, observer["owner_identity"])
+                and metadata.get("uid") == observer["uid"]
+                and (old.get("metadata") or {}).get("uid") == observer["uid"]
+                and _snapshot_metadata_valid(metadata)
+                and _snapshot_metadata_valid(old.get("metadata"))
+            )
         return (
             request.get("operation") == "UPDATE"
             and _request_identity_matches(request, observer["owner_identity"])
@@ -751,6 +858,13 @@ def successor_allows(request: dict[str, Any], contract: object) -> bool:
                     "blockOwnerDeletion": True,
                 }
             ):
+                if candidate["class"] == "critical-blanket-agent":
+                    actual_spec = obj.get("spec") or {}
+                    return bool(
+                        _snapshot_metadata_valid(metadata)
+                        and actual_spec.get("nodeName") in {None, ""}
+                        and actual_spec.get("ephemeralContainers") in (None, [], ())
+                    )
                 required = candidate["daemonset_spec"]["template"]["metadata"]["labels"]
                 observed = metadata.get("labels")
                 if not isinstance(observed, dict):
