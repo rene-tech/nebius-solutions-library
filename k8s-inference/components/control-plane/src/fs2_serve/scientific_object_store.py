@@ -59,6 +59,7 @@ class ObjectStoreConfig:
     region: str
     access_key: str = field(repr=False)
     secret_key: str = field(repr=False)
+    session_token: str | None = field(default=None, repr=False)
     addressing_style: Literal["path", "virtual", "auto"] = "path"
     verify_tls: bool = True
     connect_timeout_seconds: float = 5.0
@@ -76,6 +77,8 @@ class ObjectStoreConfig:
             raise ValueError("artifact store bucket and region are required")
         if not self.access_key or not self.secret_key:
             raise ValueError("artifact store credentials are required")
+        if self.session_token is not None and not self.session_token:
+            raise ValueError("artifact store session token must be non-empty when supplied")
         if not 1 <= self.chunk_bytes <= 64 * 1024 * 1024:
             raise ValueError("artifact stream chunk size is outside the supported range")
         if not 1 <= self.max_stream_bytes <= MAX_ARTIFACT_BYTES:
@@ -100,6 +103,7 @@ class S3ArtifactObjectStore:
             region_name=config.region,
             aws_access_key_id=config.access_key,
             aws_secret_access_key=config.secret_key,
+            aws_session_token=config.session_token,
             use_ssl=config.endpoint_url.startswith("https://"),
             verify=config.verify_tls,
             config=BotoConfig(
@@ -150,8 +154,9 @@ class S3ArtifactObjectStore:
             "Bucket": self._config.bucket,
             "Key": storage_key,
             "ContentType": media_type,
+            "IfNoneMatch": "*",
         }
-        headers = {"content-type": media_type}
+        headers = {"content-type": media_type, "if-none-match": "*"}
         if compression is not None:
             params["ContentEncoding"] = compression.value
             headers["content-encoding"] = compression.value
@@ -182,6 +187,7 @@ class S3ArtifactObjectStore:
             "Key": storage_key,
             "Body": payload,
             "ContentType": media_type,
+            "IfNoneMatch": "*",
         }
         if compression is not None:
             params["ContentEncoding"] = compression.value

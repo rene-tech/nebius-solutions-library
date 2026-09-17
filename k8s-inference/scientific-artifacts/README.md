@@ -74,6 +74,13 @@ the workloads stage now requires.
 Workers never mount that Secret. The control plane is its only consumer and
 hands workers short-lived signed handles bounded by `handle_ttl_seconds`.
 
+The SAI-19 source successor adds a fail-closed tenant-identity directory and
+separate two-minute upload/download handle defaults in the control plane. The
+current Terraform contract in this directory remains the historical shared-key
+producer and is therefore not promotion evidence for that successor. See
+`../components/control-plane/docs/artifact-store-credential-rotation.md` for the
+mandatory tenant-policy, rotation, object-lock, integration, and rollback gate.
+
 `egress_cidrs` accepts only exact host addresses, `/32` or `/128`. The control
 plane needs to reach the object-storage endpoint itself, not a subnet, and a
 wider entry would open the default-deny egress policy further than the store

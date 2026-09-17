@@ -313,6 +313,10 @@ secrets:
   artifactStore:
     name: fs2-serve-artifact-store
     key: credentials.json
+  # One JSON document per tenant, keyed as <tenant-id>.json. Each document must
+  # carry a distinct S3 identity and may select a tenant-specific bucket.
+  artifactStoreTenants:
+    name: fs2-serve-artifact-store-tenants
 
 config:
   # Required public HTTPS origins; empty defaults fail validation.
@@ -713,7 +717,12 @@ scientificArtifacts:
   region: eu-north1
   addressingStyle: path
   verifyTls: true
+  # Break-glass rollback only. Production uses artifactStoreTenants and refuses
+  # to start if the tenant credential set is absent or reuses an access key.
+  allowLegacySharedCredentials: false
   handleTtlSeconds: 600
+  uploadHandleTtlSeconds: 120
+  downloadHandleTtlSeconds: 120
   maxBytes: 1099511627776
   # Ceiling for artifact bytes carried through the public gateway itself, so a
   # customer that can reach only the API can still complete an upload. Must not

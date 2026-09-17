@@ -127,10 +127,20 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.scientificArtifacts.addressingStyle | quote }}
 - name: FS2_ARTIFACT_STORE_VERIFY_TLS
   value: {{ .Values.scientificArtifacts.verifyTls | quote }}
+{{- if .Values.scientificArtifacts.allowLegacySharedCredentials }}
 - name: FS2_ARTIFACT_STORE_CREDENTIALS_FILE
   value: /var/run/secrets/fs2-serve/artifact-store/credentials.json
+{{- end }}
+- name: FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR
+  value: /var/run/secrets/fs2-serve/artifact-store-tenants
+- name: FS2_ARTIFACT_STORE_ALLOW_LEGACY_SHARED_CREDENTIALS
+  value: {{ .Values.scientificArtifacts.allowLegacySharedCredentials | quote }}
 - name: FS2_ARTIFACT_HANDLE_TTL_SECONDS
   value: {{ .Values.scientificArtifacts.handleTtlSeconds | int64 | quote }}
+- name: FS2_ARTIFACT_UPLOAD_HANDLE_TTL_SECONDS
+  value: {{ .Values.scientificArtifacts.uploadHandleTtlSeconds | int64 | quote }}
+- name: FS2_ARTIFACT_DOWNLOAD_HANDLE_TTL_SECONDS
+  value: {{ .Values.scientificArtifacts.downloadHandleTtlSeconds | int64 | quote }}
 - name: FS2_ARTIFACT_MAX_BYTES
   value: {{ .Values.scientificArtifacts.maxBytes | int64 | quote }}
 - name: FS2_ARTIFACT_INLINE_CONTENT_MAX_BYTES
@@ -144,6 +154,7 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.scientificArtifactsVolumes" -}}
 {{- if .Values.scientificArtifacts.enabled }}
+{{- if .Values.scientificArtifacts.allowLegacySharedCredentials }}
 - name: artifact-store
   secret:
     secretName: {{ .Values.secrets.artifactStore.name }}
@@ -151,14 +162,26 @@ app.kubernetes.io/component: model-controller
     items:
       - key: {{ .Values.secrets.artifactStore.key }}
         path: credentials.json
+{{- else }}
+- name: artifact-store-tenants
+  secret:
+    secretName: {{ .Values.secrets.artifactStoreTenants.name }}
+    defaultMode: 0400
+{{- end }}
 {{- end }}
 {{- end -}}
 
 {{- define "fs2-serve.scientificArtifactsVolumeMounts" -}}
 {{- if .Values.scientificArtifacts.enabled }}
+{{- if .Values.scientificArtifacts.allowLegacySharedCredentials }}
 - name: artifact-store
   mountPath: /var/run/secrets/fs2-serve/artifact-store
   readOnly: true
+{{- else }}
+- name: artifact-store-tenants
+  mountPath: /var/run/secrets/fs2-serve/artifact-store-tenants
+  readOnly: true
+{{- end }}
 {{- end }}
 {{- end -}}
 

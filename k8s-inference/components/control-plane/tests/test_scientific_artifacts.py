@@ -28,6 +28,8 @@ from pydantic import ValidationError
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
 from fs2_serve.postgres import PostgresStore
 from fs2_serve.scientific_artifacts import (
+    DEFAULT_DOWNLOAD_HANDLE_TTL,
+    DEFAULT_UPLOAD_HANDLE_TTL,
     HANDLE_CLOCK_SKEW,
     MAX_HANDLE_TTL,
     NO_SHARD,
@@ -115,9 +117,18 @@ class FakeObjectStore:
         self.objects[storage_key] = (value, media_type, compression)
 
     def _handle(self, method: str, storage_key: str, ttl: timedelta, headers: dict[str, str]) -> EphemeralHandle:
+        signed_headers = ";".join(sorted({"host", *headers}))
+        query = (
+            "X-Amz-Algorithm=AWS4-HMAC-SHA256"
+            "&X-Amz-Credential=test%2F20260902%2Ftest-1%2Fs3%2Faws4_request"
+            "&X-Amz-Date=20260902T200000Z"
+            f"&X-Amz-Expires={int(ttl.total_seconds())}"
+            f"&X-Amz-SignedHeaders={signed_headers}"
+            f"&X-Amz-Signature={'a' * 64}"
+        )
         handle = EphemeralHandle(
             method=method,  # type: ignore[arg-type]
-            url=f"https://store.invalid/bucket/{storage_key}?X-Amz-Signature={'a' * 64}",
+            url=f"https://store.invalid/bucket/{storage_key}?{query}",
             expires_at=self._clock() + ttl,
             write_once=method == "PUT",
             headers=headers,
@@ -133,7 +144,7 @@ class FakeObjectStore:
         compression: ArtifactCompression | None,
         ttl: timedelta,
     ) -> EphemeralHandle:
-        headers = {"content-type": media_type}
+        headers = {"content-type": media_type, "if-none-match": "*"}
         if compression is not None:
             headers["content-encoding"] = compression.value
         return self._handle("PUT", storage_key, ttl, headers)
@@ -971,6 +982,8 @@ async def test_handles_are_short_lived_write_once_and_never_persisted() -> None:
         )
     )
     assert begun.handle.write_once is True
+    assert begun.handle.headers["if-none-match"] == "*"
+    assert begun.handle.expires_at == NOW + DEFAULT_UPLOAD_HANDLE_TTL
     assert begun.handle.expires_at <= NOW + MAX_HANDLE_TTL + HANDLE_CLOCK_SKEW
     assert "X-Amz-Signature" not in repr(begun.handle)
     assert begun.handle.url not in begun.upload.model_dump_json()
@@ -1005,6 +1018,7 @@ async def test_no_durable_record_or_log_line_carries_bearer_material(
         attempt_id = await open_attempt(service, operation_id=operation_id)
         record = await upload(service, store, operation_id=operation_id, attempt_id=attempt_id, value=b"ATOM  CA")
         download = await service.download(record.artifact_id, tenant_id=TENANT)
+    assert download.handle.expires_at == NOW + DEFAULT_DOWNLOAD_HANDLE_TTL
     serialized = json.dumps(
         {
             "artifact": record.model_dump(mode="json"),

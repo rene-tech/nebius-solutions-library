@@ -83,9 +83,12 @@ Handles are presigned by the AWS SDK, so they carry a real SigV4 signature that
 an unmodified S3-compatible gateway accepts. The upload signature binds the
 object key **and** the declared content type, so a client that uploads different
 bytes under a different media type is rejected by the gateway rather than only
-by finalize.
+by finalize. It also binds `If-None-Match: *`, so a replay cannot replace an
+object that already occupies the content address.
 
-Handles live at most fifteen minutes, default to ten, and are never persisted.
+New upload and download handles default to two minutes, are capped at five
+minutes, and are never persisted. The former ten-minute setting remains only as
+an explicitly enabled shared-credential rollback compatibility value.
 The deadline is stamped from the same wall clock the SDK signs with, because
 `generate_presigned_url` accepts a duration rather than a deadline; anchoring it
 anywhere else would advertise an expiry the gateway does not enforce.
@@ -155,15 +158,21 @@ absent credentials.
 | `scientificArtifacts.bucket` | `FS2_ARTIFACT_STORE_BUCKET` | Same region as the cluster |
 | `scientificArtifacts.region` | `FS2_ARTIFACT_STORE_REGION` | |
 | `scientificArtifacts.addressingStyle` | `FS2_ARTIFACT_STORE_ADDRESSING_STYLE` | `path` or `virtual` |
-| `scientificArtifacts.handleTtlSeconds` | `FS2_ARTIFACT_HANDLE_TTL_SECONDS` | 30 to 900 |
+| `scientificArtifacts.uploadHandleTtlSeconds` | `FS2_ARTIFACT_UPLOAD_HANDLE_TTL_SECONDS` | 30 to 300; default 120 |
+| `scientificArtifacts.downloadHandleTtlSeconds` | `FS2_ARTIFACT_DOWNLOAD_HANDLE_TTL_SECONDS` | 30 to 300; default 120 |
 | `scientificArtifacts.maxBytes` | `FS2_ARTIFACT_MAX_BYTES` | |
 | `scientificArtifacts.inlineContentMaxBytes` | `FS2_ARTIFACT_INLINE_CONTENT_MAX_BYTES` | Gateway byte ceiling; at most `max_request_bytes` |
 | `scientificArtifacts.retentionSeconds` | `FS2_ARTIFACT_RETENTION_SECONDS` | |
 | `scientificArtifacts.mediaTypes` | `FS2_ARTIFACT_MEDIA_TYPES` | Exact allowlist |
-| `secrets.artifactStore` | `FS2_ARTIFACT_STORE_CREDENTIALS_FILE` | Mounted `0400`, never an env value |
+| `secrets.artifactStoreTenants` | `FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR` | One mounted `0400` JSON file per tenant |
 
-Credentials are a JSON object with `access_key_id` and `secret_access_key`,
-projected read-only into the pod. They are never passed as environment values.
+Each tenant credential document contains `tenant_id`, a distinct
+`access_key_id`/`secret_access_key`, and optionally a short-lived
+`session_token` plus tenant-specific connection fields. They are projected
+read-only into the pod and never passed as environment values. See
+`artifact-store-credential-rotation.md` for the provider-policy gate, object-lock
+decision, no-downtime rotation, and rollback procedure. The legacy shared key is
+accepted only when `scientificArtifacts.allowLegacySharedCredentials=true`.
 
 `scientificArtifacts.egressCidrs` opens TCP 443 to object storage in the
 default-deny NetworkPolicy. Leave it empty and finalize cannot reach the

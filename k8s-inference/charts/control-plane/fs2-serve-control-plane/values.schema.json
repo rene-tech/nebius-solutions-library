@@ -1150,7 +1150,8 @@
         "tokenPepper",
         "routeAttestors",
         "admin",
-        "artifactStore"
+        "artifactStore",
+        "artifactStoreTenants"
       ],
       "properties": {
         "database": {
@@ -1191,6 +1192,20 @@
               "maxLength": 253
             },
             "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 253
+            }
+          }
+        },
+        "artifactStoreTenants": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
               "type": "string",
               "minLength": 1,
               "maxLength": 253
@@ -2439,7 +2454,10 @@
         "region",
         "addressingStyle",
         "verifyTls",
+        "allowLegacySharedCredentials",
         "handleTtlSeconds",
+        "uploadHandleTtlSeconds",
+        "downloadHandleTtlSeconds",
         "maxBytes",
         "inlineContentMaxBytes",
         "retentionSeconds",
@@ -2473,10 +2491,23 @@
         "verifyTls": {
           "type": "boolean"
         },
+        "allowLegacySharedCredentials": {
+          "type": "boolean"
+        },
         "handleTtlSeconds": {
           "type": "integer",
           "minimum": 30,
           "maximum": 900
+        },
+        "uploadHandleTtlSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 300
+        },
+        "downloadHandleTtlSeconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 300
         },
         "maxBytes": {
           "type": "integer",

@@ -3401,8 +3401,10 @@ def test_scientific_artifact_routes_are_absent_until_object_storage_is_configure
     assert "FS2_SCIENTIFIC_ARTIFACTS_ENABLED" not in names
     mounts = {item["name"] for item in container["volumeMounts"]}
     assert "artifact-store" not in mounts
+    assert "artifact-store-tenants" not in mounts
     volumes = {item["name"] for item in deployment["spec"]["template"]["spec"]["volumes"]}
     assert "artifact-store" not in volumes
+    assert "artifact-store-tenants" not in volumes
 
 
 def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> None:
@@ -3421,19 +3423,23 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
     assert environment["FS2_ARTIFACT_MAX_BYTES"] == "1099511627776"
     assert environment["FS2_ARTIFACT_RETENTION_SECONDS"] == "7776000"
     assert environment["FS2_ARTIFACT_HANDLE_TTL_SECONDS"] == "600"
+    assert environment["FS2_ARTIFACT_UPLOAD_HANDLE_TTL_SECONDS"] == "120"
+    assert environment["FS2_ARTIFACT_DOWNLOAD_HANDLE_TTL_SECONDS"] == "120"
     assert "e+" not in "".join(value or "" for value in environment.values())
 
     # Credentials arrive as a read-only projected file, never as an env value.
     assert "FS2_ARTIFACT_STORE_ACCESS_KEY" not in environment
     assert "FS2_ARTIFACT_STORE_SECRET_KEY" not in environment
-    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"] == (
-        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    assert environment["FS2_ARTIFACT_STORE_ALLOW_LEGACY_SHARED_CREDENTIALS"] == "false"
+    assert "FS2_ARTIFACT_STORE_CREDENTIALS_FILE" not in environment
+    assert environment["FS2_ARTIFACT_STORE_TENANT_CREDENTIALS_DIR"] == (
+        "/var/run/secrets/fs2-serve/artifact-store-tenants"
     )
-    volume = next(item for item in pod["volumes"] if item["name"] == "artifact-store")
+    volume = next(item for item in pod["volumes"] if item["name"] == "artifact-store-tenants")
     assert volume["secret"]["defaultMode"] == 0o400
-    mount = next(item for item in container["volumeMounts"] if item["name"] == "artifact-store")
+    mount = next(item for item in container["volumeMounts"] if item["name"] == "artifact-store-tenants")
     assert mount["readOnly"] is True
-    assert mount["mountPath"] == "/var/run/secrets/fs2-serve/artifact-store"
+    assert mount["mountPath"] == "/var/run/secrets/fs2-serve/artifact-store-tenants"
 
     # The rendered environment must construct the real Settings object.
     from fs2_serve.settings import Settings
@@ -3453,6 +3459,27 @@ def test_enabled_scientific_artifacts_render_settings_the_runtime_accepts() -> N
         "chemical/x-mmcif",
         "text/csv",
     }.issubset(settings.artifact_media_types_set())
+
+
+def test_legacy_shared_artifact_key_requires_an_explicit_break_glass_value() -> None:
+    deployment = _deployment(
+        render(
+            "--set",
+            "scientificArtifacts.enabled=true",
+            "--set",
+            "scientificArtifacts.allowLegacySharedCredentials=true",
+        )
+    )
+    pod = deployment["spec"]["template"]["spec"]
+    container = pod["containers"][0]
+    environment = {item["name"]: item.get("value") for item in container["env"]}
+
+    assert environment["FS2_ARTIFACT_STORE_ALLOW_LEGACY_SHARED_CREDENTIALS"] == "true"
+    assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"] == (
+        "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
+    )
+    assert "artifact-store" in {item["name"] for item in pod["volumes"]}
+    assert "artifact-store-tenants" not in {item["name"] for item in pod["volumes"]}
 
 
 def test_object_storage_egress_is_opt_in_and_scoped_to_tls() -> None:

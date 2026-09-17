@@ -5,6 +5,10 @@ the request. Writes require ``artifacts.write``; reads require
 ``operations.result``. Only the two handle-issuing routes return bearer
 material, and no route ever serializes a storage key, a tenant identity, or a
 persistence record.
+
+The URL inside a handle is opaque bearer material for this invariant: SigV4
+necessarily embeds its endpoint, bucket, canonical key, and signing metadata.
+Those properties are disclosed only to the already-authorized handle recipient.
 """
 
 from collections.abc import Awaitable, Callable

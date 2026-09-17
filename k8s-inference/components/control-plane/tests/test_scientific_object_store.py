@@ -84,6 +84,7 @@ async def test_presigned_upload_carries_a_real_signature_and_no_secret(object_st
     assert os.environ["FS2_TEST_S3_SECRET_KEY"] not in handle.url
     assert handle.write_once is True
     assert handle.headers["content-type"] == "chemical/x-pdb"
+    assert handle.headers["if-none-match"] == "*"
 
     async with httpx.AsyncClient(timeout=30) as client:
         accepted = await client.put(handle.url, content=payload, headers=dict(handle.headers))
@@ -94,6 +95,25 @@ async def test_presigned_upload_carries_a_real_signature_and_no_secret(object_st
     assert verified.size_bytes == len(payload)
     assert verified.media_type == "chemical/x-pdb"
     assert verified.storage_key == key
+    await object_store.delete(key)
+
+
+async def test_presigned_upload_replay_cannot_replace_an_existing_content_address(object_store) -> None:
+    payload = b"ATOM  CA"
+    replacement = b"ATOM  XX"
+    digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+    key = key_for(digest)
+    handle = await object_store.presign_upload(
+        storage_key=key, media_type="chemical/x-pdb", compression=None, ttl=timedelta(minutes=2)
+    )
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        accepted = await client.put(handle.url, content=payload, headers=dict(handle.headers))
+        replayed = await client.put(handle.url, content=replacement, headers=dict(handle.headers))
+
+    assert accepted.status_code == 200
+    assert replayed.status_code == 412
+    assert (await object_store.inspect(key)).digest == digest
     await object_store.delete(key)
 
 
@@ -332,6 +352,7 @@ async def test_the_production_wiring_runs_the_whole_lifecycle_on_real_infrastruc
         artifact_store_region=os.environ.get("FS2_TEST_S3_REGION", "eu-north1"),
         artifact_store_verify_tls=endpoint.startswith("https://"),
         artifact_store_credentials_file=credentials,
+        artifact_store_allow_legacy_shared_credentials=True,
         allow_non_cluster_urls=not endpoint.startswith("https://"),
     )
 
@@ -352,7 +373,7 @@ async def test_the_production_wiring_runs_the_whole_lifecycle_on_real_infrastruc
     service = _artifact_service(settings, PostgresArtifactRepository(store.pool))
     assert service is not None
     try:
-        await asyncio.to_thread(service._store._client.create_bucket, Bucket=BUCKET)
+        await asyncio.to_thread(service._store._store._client.create_bucket, Bucket=BUCKET)
     except ClientError as error:
         if str((error.response.get("Error") or {}).get("Code", "")) not in {
             "BucketAlreadyOwnedByYou",
@@ -488,7 +509,7 @@ async def test_the_production_wiring_runs_the_whole_lifecycle_on_real_infrastruc
             lambda: [
                 item["Key"]
                 for item in (
-                    service._store._client.list_objects_v2(
+                    service._store._store._client.list_objects_v2(
                         Bucket=BUCKET, Prefix=f"scientific/v1/tenants/{tenant}/operations/{operation_id}"
                     ).get("Contents")
                     or []
@@ -496,5 +517,5 @@ async def test_the_production_wiring_runs_the_whole_lifecycle_on_real_infrastruc
             ]
         ):
             await service._store.delete(key)
-        await service._store.close()
+        await service._store._store.close()
     assert isinstance(store.pool, asyncpg.Pool)

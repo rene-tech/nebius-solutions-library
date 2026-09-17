@@ -34,7 +34,7 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Any, Final, Literal, Protocol
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 from uuid import UUID, uuid4
 
 import asyncpg
@@ -68,6 +68,10 @@ DEFAULT_INLINE_CONTENT_BYTES = 16 * 1024 * 1024
 MAX_HANDLE_TTL = timedelta(minutes=15)
 HANDLE_CLOCK_SKEW = timedelta(minutes=1)
 DEFAULT_HANDLE_TTL = timedelta(minutes=10)
+MAX_UPLOAD_HANDLE_TTL = timedelta(minutes=5)
+MAX_DOWNLOAD_HANDLE_TTL = timedelta(minutes=5)
+DEFAULT_UPLOAD_HANDLE_TTL = timedelta(minutes=2)
+DEFAULT_DOWNLOAD_HANDLE_TTL = timedelta(minutes=2)
 DEFAULT_RETENTION = timedelta(days=90)
 MAX_RETENTION = timedelta(days=3650)
 NO_SHARD = "-"
@@ -702,15 +706,42 @@ def _validate_handle(
     deadline = now + ttl + HANDLE_CLOCK_SKEW
     parsed = urlsplit(handle.url)
     allowed_schemes = ("https",) if require_tls else ("https", "http")
+    try:
+        query_pairs = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+        query = dict(query_pairs)
+        signed_headers = frozenset(query["X-Amz-SignedHeaders"].split(";"))
+        query_ttl = int(query["X-Amz-Expires"])
+    except (KeyError, ValueError):
+        raise ArtifactPolicyError("artifact handle violates the short-lived bearer policy") from None
+    required_query = {
+        "X-Amz-Algorithm",
+        "X-Amz-Credential",
+        "X-Amz-Date",
+        "X-Amz-Expires",
+        "X-Amz-SignedHeaders",
+        "X-Amz-Signature",
+    }
     if (
         handle.method != method
         or (method == "PUT") != handle.write_once
+        or (method == "PUT" and handle.headers.get("if-none-match") != "*")
         or handle.expires_at.tzinfo is None
         or not now < handle.expires_at <= deadline
         or parsed.scheme not in allowed_schemes
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
+        or parsed.fragment
+        or len(query) != len(query_pairs)
+        or not required_query.issubset(query)
+        or query["X-Amz-Algorithm"] != "AWS4-HMAC-SHA256"
+        or not query["X-Amz-Credential"].endswith("/s3/aws4_request")
+        or re.fullmatch(r"[0-9]{8}T[0-9]{6}Z", query["X-Amz-Date"]) is None
+        or query_ttl != int(ttl.total_seconds())
+        or re.fullmatch(r"[a-fA-F0-9]{64}", query["X-Amz-Signature"]) is None
+        or "host" not in signed_headers
+        or (method == "PUT" and not {"content-type", "if-none-match"}.issubset(signed_headers))
+        or not frozenset(handle.headers).issubset(signed_headers)
         or any(
             not isinstance(key, str) or not key or not isinstance(value, str) for key, value in handle.headers.items()
         )
@@ -749,6 +780,21 @@ def _verify_object(intent: UploadIntent, verified: VerifiedStoredObject) -> None
         raise ArtifactVerificationError("stored object compression differs from the upload intent")
 
 
+def _verify_artifact_record(record: ArtifactRecord, verified: VerifiedStoredObject) -> None:
+    """Reject a post-finalization object that differs from immutable metadata."""
+
+    if verified.storage_key != record.storage_key:
+        raise ArtifactVerificationError("stored object key differs from finalized metadata")
+    if verified.digest != record.digest:
+        raise ArtifactVerificationError("stored object digest differs from finalized metadata")
+    if verified.size_bytes != record.size_bytes:
+        raise ArtifactVerificationError("stored object size differs from finalized metadata")
+    if verified.media_type != record.media_type:
+        raise ArtifactVerificationError("stored object media type differs from finalized metadata")
+    if verified.compression != record.compression:
+        raise ArtifactVerificationError("stored object compression differs from finalized metadata")
+
+
 class ArtifactObjectStorePort(Protocol):
     """Trusted adapter that owns bytes, signatures and independent measurement."""
 
@@ -777,6 +823,82 @@ class ArtifactObjectStorePort(Protocol):
     async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject: ...
 
     async def delete(self, storage_key: str) -> None: ...
+
+
+class DigestVerifyingArtifactObjectStore:
+    """Verify every streamed content address before a consumer accepts EOF.
+
+    The canonical object key ends in its SHA-256.  This wrapper keeps the
+    storage adapter interface unchanged while making that content address an
+    enforced read invariant for public streaming and internal materialization.
+    """
+
+    def __init__(self, store: ArtifactObjectStorePort) -> None:
+        self._store = store
+
+    @staticmethod
+    def _expected_digest(storage_key: str) -> str:
+        prefix, separator, digest = storage_key.rpartition("/sha256/")
+        if (
+            not separator
+            or not prefix.startswith("scientific/v1/tenants/")
+            or re.fullmatch(r"[a-f0-9]{64}", digest) is None
+        ):
+            raise ArtifactVerificationError("stored object key has no canonical content address")
+        return digest
+
+    async def presign_upload(
+        self,
+        *,
+        storage_key: str,
+        media_type: str,
+        compression: ArtifactCompression | None,
+        ttl: timedelta,
+    ) -> EphemeralHandle:
+        return await self._store.presign_upload(
+            storage_key=storage_key,
+            media_type=media_type,
+            compression=compression,
+            ttl=ttl,
+        )
+
+    async def presign_download(self, *, storage_key: str, ttl: timedelta) -> EphemeralHandle:
+        return await self._store.presign_download(storage_key=storage_key, ttl=ttl)
+
+    async def put_object(
+        self,
+        *,
+        storage_key: str,
+        payload: bytes,
+        media_type: str,
+        compression: ArtifactCompression | None,
+    ) -> VerifiedStoredObject:
+        return await self._store.put_object(
+            storage_key=storage_key,
+            payload=payload,
+            media_type=media_type,
+            compression=compression,
+        )
+
+    def stream_object(self, storage_key: str, *, max_bytes: int | None = None) -> AsyncIterator[bytes]:
+        expected_digest = self._expected_digest(storage_key)
+        source = self._store.stream_object(storage_key, max_bytes=max_bytes)
+
+        async def verified_chunks() -> AsyncIterator[bytes]:
+            measured = hashlib.sha256()
+            async for chunk in source:
+                measured.update(chunk)
+                yield chunk
+            if measured.hexdigest() != expected_digest:
+                raise ArtifactVerificationError("stored object digest differs from its content address")
+
+        return verified_chunks()
+
+    async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject:
+        return await self._store.inspect(storage_key, max_bytes=max_bytes)
+
+    async def delete(self, storage_key: str) -> None:
+        await self._store.delete(storage_key)
 
 
 class ArtifactRepository(Protocol):
@@ -942,7 +1064,10 @@ class ScientificArtifactService:
         max_artifact_bytes: int = MAX_ARTIFACT_BYTES,
         max_inline_content_bytes: int = DEFAULT_INLINE_CONTENT_BYTES,
         max_handle_ttl: timedelta = MAX_HANDLE_TTL,
-        default_handle_ttl: timedelta = DEFAULT_HANDLE_TTL,
+        default_handle_ttl: timedelta = DEFAULT_UPLOAD_HANDLE_TTL,
+        max_upload_handle_ttl: timedelta = MAX_UPLOAD_HANDLE_TTL,
+        max_download_handle_ttl: timedelta = MAX_DOWNLOAD_HANDLE_TTL,
+        default_download_handle_ttl: timedelta = DEFAULT_DOWNLOAD_HANDLE_TTL,
         retention: timedelta = DEFAULT_RETENTION,
         require_tls_handles: bool = True,
         clock: Callable[[], datetime] = _utc_now,
@@ -958,15 +1083,26 @@ class ScientificArtifactService:
             raise ValueError("handle lifetime must be positive and at most fifteen minutes")
         if not timedelta(0) < default_handle_ttl <= max_handle_ttl:
             raise ValueError("the default handle lifetime must not exceed the maximum")
+        if not timedelta(0) < max_upload_handle_ttl <= max_handle_ttl:
+            raise ValueError("the upload handle maximum must not exceed the global maximum")
+        if not timedelta(0) < max_download_handle_ttl <= max_handle_ttl:
+            raise ValueError("the download handle maximum must not exceed the global maximum")
+        if default_handle_ttl > max_upload_handle_ttl:
+            raise ValueError("the default upload handle lifetime must not exceed its maximum")
+        if not timedelta(0) < default_download_handle_ttl <= max_download_handle_ttl:
+            raise ValueError("the default download handle lifetime must not exceed its maximum")
         if not timedelta(0) < retention <= MAX_RETENTION:
             raise ValueError("artifact retention is outside the supported range")
         self._repository = repository
-        self._store = object_store
+        self._store = DigestVerifyingArtifactObjectStore(object_store)
         self._allowed_media_types = allowed
         self._max_artifact_bytes = max_artifact_bytes
         self._max_inline_content_bytes = min(max_inline_content_bytes, max_artifact_bytes)
         self._max_handle_ttl = max_handle_ttl
         self._default_handle_ttl = default_handle_ttl
+        self._max_upload_handle_ttl = max_upload_handle_ttl
+        self._max_download_handle_ttl = max_download_handle_ttl
+        self._default_download_handle_ttl = default_download_handle_ttl
         self._retention = retention
         self._require_tls = require_tls_handles
         self._clock = clock
@@ -991,6 +1127,18 @@ class ScientificArtifactService:
         requested = ttl or self._default_handle_ttl
         if requested <= timedelta(0) or requested > self._max_handle_ttl:
             raise ArtifactPolicyError("requested handle lifetime is outside the accepted range")
+        return requested
+
+    def _upload_ttl(self, ttl: timedelta | None) -> timedelta:
+        requested = ttl or self._default_handle_ttl
+        if requested <= timedelta(0) or requested > self._max_upload_handle_ttl:
+            raise ArtifactPolicyError("requested upload handle lifetime is outside the accepted range")
+        return requested
+
+    def _download_ttl(self, ttl: timedelta | None) -> timedelta:
+        requested = ttl or self._default_download_handle_ttl
+        if requested <= timedelta(0) or requested > self._max_download_handle_ttl:
+            raise ArtifactPolicyError("requested download handle lifetime is outside the accepted range")
         return requested
 
     async def open_attempt(self, request: OpenStageAttempt) -> StageAttemptRecord:
@@ -1019,7 +1167,7 @@ class ScientificArtifactService:
             direction=request.direction,
             digest=request.expected_digest,
         )
-        lifetime = self._ttl(handle_ttl)
+        lifetime = self._upload_ttl(handle_ttl)
         intent = await self._repository.begin_upload(request, storage_key, retention=self._retention)
         if not _same_upload_request(intent, request, storage_key):
             raise ArtifactConflictError("upload identity is already bound to different content")
@@ -1128,6 +1276,8 @@ class ScientificArtifactService:
         """
 
         record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
+        verified = await self._store.inspect(record.storage_key, max_bytes=record.size_bytes)
+        _verify_artifact_record(record, verified)
         return ArtifactContentStream(
             artifact=record,
             chunks=self._store.stream_object(record.storage_key, max_bytes=record.size_bytes),
@@ -1150,7 +1300,9 @@ class ScientificArtifactService:
         self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
     ) -> ArtifactDownload:
         record = await self._repository.get_artifact(artifact_id, tenant_id=tenant_id)
-        lifetime = self._ttl(handle_ttl)
+        verified = await self._store.inspect(record.storage_key, max_bytes=record.size_bytes)
+        _verify_artifact_record(record, verified)
+        lifetime = self._download_ttl(handle_ttl)
         handle = await self._store.presign_download(storage_key=record.storage_key, ttl=lifetime)
         _validate_handle(handle, method="GET", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
         return ArtifactDownload(artifact=record, handle=handle)

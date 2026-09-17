@@ -104,6 +104,27 @@ async def test_materializes_caller_owned_pdb_reference_at_runtime_boundary(regis
 
 
 @pytest.mark.asyncio
+async def test_materializer_rejects_same_size_digest_substitution(registry):
+    original = b"HEADER    ORIGINAL\nEND\n"
+    substituted = b"HEADER    MODIFIED\nEND\n"
+    assert len(substituted) == len(original)
+    reference = _reference(original)
+    artifacts = _Artifacts(substituted, reference)
+    request = {
+        "protein": reference.model_dump(mode="json"),
+        "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+    }
+
+    with pytest.raises(ArtifactInputError, match="digest"):
+        await ArtifactInputMaterializer(artifacts).materialize(  # type: ignore[arg-type]
+            _portable_model(registry, "diffdock"),
+            "native",
+            tenant_id="tenant-a",
+            request_body=json.dumps(request).encode(),
+        )
+
+
+@pytest.mark.asyncio
 async def test_materializes_pinned_fixture_without_artifact_or_llm_bytes(registry):
     reference = _reference(b"unused")
     artifacts = _Artifacts(b"unused", reference)

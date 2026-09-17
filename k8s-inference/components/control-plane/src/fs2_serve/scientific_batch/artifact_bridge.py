@@ -119,6 +119,8 @@ class SignedArtifactContentReader:
         payload = bytes(content)
         if len(payload) != download.artifact.size_bytes:
             raise ArtifactNotFoundError("input artifact size differs from verified metadata")
+        if hashlib.sha256(payload).hexdigest() != download.artifact.digest.removeprefix("sha256:"):
+            raise ArtifactNotFoundError("input artifact digest differs from verified metadata")
         return payload
 
 

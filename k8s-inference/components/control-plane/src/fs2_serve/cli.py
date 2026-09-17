@@ -103,6 +103,7 @@ from .scientific_input_uploads import ScientificInputUploadService
 from .scientific_object_store import ObjectStoreConfig, S3ArtifactObjectStore
 from .settings import Settings
 from .store import ConflictError
+from .tenant_object_store import load_tenant_object_store
 from .telemetry import Metrics, configure_tracing
 
 
@@ -265,26 +266,38 @@ def _artifact_service(
 
     if not settings.scientific_artifacts_enabled:
         return None
-    access_key, secret_key = settings.artifact_store_credentials()
-    object_store = S3ArtifactObjectStore(
-        ObjectStoreConfig(
-            endpoint_url=settings.artifact_store_endpoint,
-            bucket=settings.artifact_store_bucket,
-            region=settings.artifact_store_region,
-            access_key=access_key,
-            secret_key=secret_key,
-            addressing_style=settings.artifact_store_addressing_style,
-            verify_tls=settings.artifact_store_verify_tls,
+    if settings.artifact_store_allow_legacy_shared_credentials:
+        access_key, secret_key = settings.artifact_store_credentials()
+        object_store = S3ArtifactObjectStore(
+            ObjectStoreConfig(
+                endpoint_url=settings.artifact_store_endpoint,
+                bucket=settings.artifact_store_bucket,
+                region=settings.artifact_store_region,
+                access_key=access_key,
+                secret_key=secret_key,
+                addressing_style=settings.artifact_store_addressing_style,
+                verify_tls=settings.artifact_store_verify_tls,
+                max_stream_bytes=settings.artifact_max_bytes,
+            )
+        )
+    else:
+        object_store = load_tenant_object_store(
+            settings.artifact_store_tenant_credentials_dir,
+            default_endpoint_url=settings.artifact_store_endpoint,
+            default_bucket=settings.artifact_store_bucket,
+            default_region=settings.artifact_store_region,
+            default_addressing_style=settings.artifact_store_addressing_style,
+            default_verify_tls=settings.artifact_store_verify_tls,
             max_stream_bytes=settings.artifact_max_bytes,
         )
-    )
     return ScientificArtifactService(
         repository=repository,
         object_store=object_store,
         allowed_media_types=settings.artifact_media_types_set(),
         max_artifact_bytes=settings.artifact_max_bytes,
         max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
-        default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
+        default_handle_ttl=timedelta(seconds=settings.artifact_upload_handle_ttl_seconds),
+        default_download_handle_ttl=timedelta(seconds=settings.artifact_download_handle_ttl_seconds),
         retention=timedelta(seconds=settings.artifact_retention_seconds),
         require_tls_handles=settings.artifact_store_verify_tls,
     )

@@ -267,7 +267,11 @@ class Settings(BaseSettings):
     artifact_store_addressing_style: Literal["path", "virtual"] = "path"
     artifact_store_verify_tls: bool = True
     artifact_store_credentials_file: Path = Path("/var/run/secrets/fs2-serve/artifact-store/credentials.json")
+    artifact_store_tenant_credentials_dir: Path = Path("/var/run/secrets/fs2-serve/artifact-store-tenants")
+    artifact_store_allow_legacy_shared_credentials: bool = False
     artifact_handle_ttl_seconds: int = Field(default=600, ge=30, le=900)
+    artifact_upload_handle_ttl_seconds: int = Field(default=120, ge=30, le=300)
+    artifact_download_handle_ttl_seconds: int = Field(default=120, ge=30, le=300)
     artifact_max_bytes: int = Field(default=1 << 40, ge=1024, le=1 << 40)
     # The exact ceiling for artifact bytes carried through the public gateway
     # itself. A larger object remains reachable only through a presigned

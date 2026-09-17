@@ -4317,16 +4317,30 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
             del compression
             return EphemeralHandle(
                 method="PUT",
-                url=f"https://objects.test/{storage_key}",
+                url=(
+                    f"https://objects.test/{storage_key}?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+                    "&X-Amz-Credential=test%2F20260902%2Ftest-1%2Fs3%2Faws4_request"
+                    "&X-Amz-Date=20260902T200000Z"
+                    f"&X-Amz-Expires={int(ttl.total_seconds())}"
+                    "&X-Amz-SignedHeaders=content-type%3Bhost%3Bif-none-match"
+                    f"&X-Amz-Signature={'a' * 64}"
+                ),
                 expires_at=now + ttl,
                 write_once=True,
-                headers={"content-type": media_type},
+                headers={"content-type": media_type, "if-none-match": "*"},
             )
 
         async def presign_download(self, *, storage_key, ttl):
             return EphemeralHandle(
                 method="GET",
-                url=f"https://objects.test/{storage_key}",
+                url=(
+                    f"https://objects.test/{storage_key}?X-Amz-Algorithm=AWS4-HMAC-SHA256"
+                    "&X-Amz-Credential=test%2F20260902%2Ftest-1%2Fs3%2Faws4_request"
+                    "&X-Amz-Date=20260902T200000Z"
+                    f"&X-Amz-Expires={int(ttl.total_seconds())}"
+                    "&X-Amz-SignedHeaders=host"
+                    f"&X-Amz-Signature={'b' * 64}"
+                ),
                 expires_at=now + ttl,
             )
 
