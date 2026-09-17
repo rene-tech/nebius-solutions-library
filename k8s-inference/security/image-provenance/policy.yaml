@@ -70,7 +70,13 @@
 #
 # Governed debugging (kubectl debug keeps working, with pinned images; this
 # exact command shape is proven verbatim on an isolated kind cluster by
-# tests/test_admission_kind.py):
+# tests/test_admission_kind.py). The AUTHORIZED CALLER is the
+# owner-designated DEBUG identity (scope.debug_principals; iam-boundary.yaml
+# defines fs2-debugger with exactly pods get/list +
+# pods/ephemeralcontainers get/update/patch): exec/attach/portforward stay
+# forbidden for every identity, while ephemeral-container injection — which
+# admission FULLY evaluates, unlike exec — is the sanctioned, image-pinned
+# debug path:
 #   kubectl -n fs2-system debug <pod> --container debugger \
 #     --image <allow-listed-registry>/fs2-tools/debug@sha256:<digest> -- sleep 3600
 #   (add -it to attach interactively once the ephemeral container is admitted)
@@ -200,6 +206,11 @@ spec:
         ('workload-csi-drivers' in params.data
          ? params.data['workload-csi-drivers'] : '')
         .split("\n").filter(d, d != '')
+    - name: workloadPvcPrefixes
+      expression: >-
+        ('workload-pvc-prefixes' in params.data
+         ? params.data['workload-pvc-prefixes'] : '')
+        .split("\n").filter(p, p != '')
     - name: usesProjectedSecretSource
       expression: >-
         has(variables.podSpec.volumes) &&
@@ -389,15 +400,20 @@ spec:
           (!has(variables.podSpec.volumes) ||
            variables.podSpec.volumes.all(v,
              has(v.projected) || has(v.configMap) || has(v.emptyDir) ||
-             has(v.downwardAPI) || has(v.persistentVolumeClaim) ||
+             has(v.downwardAPI) ||
+             (has(v.persistentVolumeClaim) &&
+              variables.workloadPvcPrefixes.exists(p,
+                v.persistentVolumeClaim.claimName.startsWith(p))) ||
              (has(v.csi) && variables.workloadCsiDrivers.exists(
-               d, d == v.csi.driver)))))
+                d, d == v.csi.driver) &&
+              has(v.csi.readOnly) && v.csi.readOnly == true))))
       message: >-
         workloads written by an automation identity must run as an
         owner-enumerated ServiceAccount, set allowPrivilegeEscalation false
-        on every container, and may mount only
-        projected(no Secret sources)/configMap/emptyDir/downwardAPI/PVC
-        volumes plus owner-listed CSI drivers — never hostPath, privileged
+        on every container, and may mount only projected(no Secret
+        sources)/configMap/emptyDir/downwardAPI volumes, PVCs whose claim
+        names carry an owner-enumerated prefix, and read-only owner-listed
+        CSI drivers — never hostPath, privileged
         containers, host network/PID/IPC namespaces, added capabilities,
         direct nodeName scheduling, Secret volumes/env, or token projections
         outside the bounded automation audience; workload-create rights
@@ -553,12 +569,26 @@ spec:
         operations: ["CREATE", "UPDATE", "DELETE"]
         resources: ["configmaps"]
         scope: Namespaced
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["services"]
+        scope: Namespaced
   variables:
     - name: securityPrincipals
       expression: >-
         ('security-principals' in params.data
          ? params.data['security-principals'] : '')
         .split("\n").filter(p, p != '')
+    - name: guardAutomationAccounts
+      expression: >-
+        ('automation-service-accounts' in params.data
+         ? params.data['automation-service-accounts'] : '')
+        .split("\n").filter(a, a != '')
+    - name: guardWriterIsAutomation
+      expression: >-
+        variables.guardAutomationAccounts.exists(a,
+          'system:serviceaccount:' + a == request.userInfo.username)
     - name: subject
       expression: >-
         object != null ? object : oldObject
@@ -575,6 +605,21 @@ spec:
         the allow-list and guard parameter ConfigMaps may only be changed by
         the security automation identity; the release identity and humans
         write nothing here (SAI-09)
+      reason: Forbidden
+    - expression: >-
+        variables.subject.kind != 'Service' ||
+        !variables.guardWriterIsAutomation || (
+          (!has(variables.subject.spec.type) ||
+           (variables.subject.spec.type != 'NodePort' &&
+            variables.subject.spec.type != 'LoadBalancer' &&
+            variables.subject.spec.type != 'ExternalName')) &&
+          !has(variables.subject.spec.externalIPs) &&
+          !has(variables.subject.spec.externalName))
+      message: >-
+        Services written by an automation identity must stay ClusterIP-only:
+        NodePort/LoadBalancer/ExternalName types, externalIPs, and
+        externalName redirects turn a deploy grant into external exposure or
+        traffic diversion (SAI-09)
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

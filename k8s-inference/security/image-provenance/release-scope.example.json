@@ -1,5 +1,5 @@
 {
-  "schema": "fs2-serve.nebius.ai/release-scope/v12",
+  "schema": "fs2-serve.nebius.ai/release-scope/v13",
   "scope": {
     "cluster": "<kube-system-namespace-uid>",
     "namespaces": [
@@ -70,6 +70,13 @@
     "verification_key_sha256": "<sha256 of cosign.pub>",
     "attestation_key_sha256": "<the OWNER-ORIGINATED attestor public key sha256; the committed 78090e41... fingerprint is a bootstrap placeholder that never verifies (ATTESTATION_KEY_PROVENANCE gate)>",
     "policy_sha256": "<sha256 of policy.yaml>",
-    "iam_boundary_sha256": "<sha256 of iam-boundary.yaml>"
+    "iam_boundary_sha256": "<sha256 of iam-boundary.yaml>",
+    "debug_principals": [
+      "system:serviceaccount:fs2-security:fs2-debugger"
+    ],
+    "workload_pvc_prefixes": [
+      "fs2-models-",
+      "fs2-cache-"
+    ]
   }
 }

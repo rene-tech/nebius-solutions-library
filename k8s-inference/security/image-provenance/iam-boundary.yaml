@@ -6,15 +6,18 @@
 # The contract this defines, verified live at every render by
 # provenance.py's identity audit (verify path: _assert_iam_boundary +
 # _assert_identity_hygiene):
-#   * Exactly two automation identities exist for the release system, both
+#   * Exactly three automation identities exist for the release system, all
 #     ServiceAccounts with automountServiceAccountToken: false (tokens only
 #     via bounded, audience-bound TokenRequest projections):
-#       - RELEASE identity (deploy principal): writes Helm release Secrets
-#         through the gated wrapper path; may NOT touch admission
-#         configuration, parameter ConfigMaps, RBAC, tokens, or secrets.
+#       - RELEASE identity (deploy principal): applies workloads through the
+#         gated wrapper path (Helm state on the SQL driver); may NOT touch
+#         admission configuration, parameter ConfigMaps, RBAC, tokens, or
+#         secrets.
 #       - SECURITY identity: sole writer of the two parameter ConfigMaps and
 #         sole executor of reconcile-boundary under an owner-signed,
 #         plan-bound, single-use authorization.
+#       - DEBUG identity: sole holder of pods/ephemeralcontainers writes —
+#         the documented kubectl-debug path, admission-image-pinned.
 #   * NO human and NO release identity holds, directly or transitively:
 #     admissionregistration writes (any current or future kind), RBAC
 #     role/binding mutation,
@@ -22,8 +25,10 @@
 #     userextras/*), ServiceAccount token minting (serviceaccounts/token or
 #     legacy token-Secret writes), RBAC bind/escalate, CSR
 #     create/approve/sign, secrets read/write in the protected namespaces,
-#     pods/exec|attach|ephemeralcontainers in the protected namespaces, or
-#     workload/ServiceAccount writes in fs2-security.
+#     pods/exec|attach|portforward in the protected namespaces (NOBODY holds
+#     these), pods/ephemeralcontainers outside the designated DEBUG identity
+#     (the documented kubectl-debug path stays capable, admission-pinned,
+#     least-privilege), or workload/ServiceAccount writes in fs2-security.
 #   * PROVIDER attestations (outside the RBAC surface): system:masters
 #     client-certificate issuance, apiserver flags/etcd/node access are
 #     provider-held facts that enter ONLY as the ATTESTOR-SIGNED provider
@@ -164,6 +169,54 @@ subjects:
   - kind: ServiceAccount
     namespace: fs2-security
     name: fs2-admission-guard
+---
+# DEBUG identity: the DOCUMENTED customer kubectl-debug path stays
+# technically capable with least privilege. Only this identity may write
+# pods/ephemeralcontainers (exec/attach/portforward remain forbidden for
+# everyone), every injected image is admission-governed (digest-pinned,
+# allow-listed registry), and the identity is a token-hardened automation
+# ServiceAccount audited like the other two (scope.debug_principals;
+# grant-shape-bound in the IAM table). Replicate the Role/RoleBinding per
+# debugged namespace (fs2-models alike).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: fs2-debugger
+  namespace: fs2-security
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: fs2-debug-ephemeral
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods/ephemeralcontainers"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-debug-ephemeral
+  namespace: fs2-system
+  labels:
+    security.fs2.nebius.ai/finding: sai-09
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: fs2-debug-ephemeral
+subjects:
+  - kind: ServiceAccount
+    namespace: fs2-security
+    name: fs2-debugger
 ---
 # RELEASE identity: workload apply ONLY. It holds NO forbidden verb — in
 # particular NO Secret verbs at all: Helm release state moves out of Secrets

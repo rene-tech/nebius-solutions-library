@@ -553,8 +553,11 @@ policies; only new admissions are.
   strict PREFIX, so history rewritten beneath new growth is refused, not
   just counted past. kubectl, helm, and the provider CLI are
   OWNER-PINNED in the signed scope (`tooling`) by absolute path AND binary
-  digest — the tool's bytes are hash-verified before first use, so a
-  repointed or overwritten binary never runs — and executed with a
+  digest — each tool is opened ONCE, fstat-checked and digest-verified on
+  that open descriptor, and every invocation executes a PRIVATE 0500 COPY
+  of exactly those verified bytes, so no second pathname resolution exists
+  to race and an owner-writable original cannot swap under a cached
+  check — and executed with a
   from-scratch environment: HOME is /nonexistent, private fresh XDG/Helm
   state directories, KUBECONFIG must be EXPLICIT (the authenticated
   identity is then proven via whoami), and the Helm SQL DSN must parse
@@ -615,22 +618,37 @@ policies; only new admissions are.
   the ancestry is DERIVED live (cluster -> folder -> cloud) and must equal
   the owner enumeration; every level's access bindings are fetched fully
   paginated and enumerated TWICE (instability refuses); role semantics are
-  FAIL-CLOSED — a role must be owner-listed read-only or its subject
-  attestation-enumerated, and unknown roles are admin-class. WORM is proven
+  FAIL-CLOSED and PERMISSION-BASED — role names prove nothing: a role
+  counts as read-only only when the owner lists it AND every permission
+  the provider reports for it is read-shaped, unknown roles are
+  admin-class, and the canonical digest of the recomputed live enumeration
+  must EQUAL the attestor-witnessed evidence.iam_snapshot_sha256, so the
+  provider state is authoritative and recomputable, self-asserted by no
+  one. WORM is proven
   by exact normalized fields (bucket name equality, ancestry membership,
   versioning enabled, lock status exactly enabled, mode exactly COMPLIANCE
   — governance refused — retention >= the minimum) and then by the OBJECT:
   the attestation pins the exact anchor object (key + version id + sha256),
-  that exact version is DOWNLOADED from the bucket, its bytes must hash to
-  the pin and equal the embedded anchored-heads snapshot. Anchors are
-  ANTI-REPLAY monotonic: a run-root checkpoint records the best verified
-  anchor; older, zero, or forked anchors never verify again, and
-  checkpoint-less legacy ledgers adopt ONLY on EXACT anchored content
-  (equal length — an unanchored suffix refuses; zero-count anchors adopt
-  nothing). The attestation's worm_store must equal the owner scope's
+  that exact VERSION's metadata must show an unexpired COMPLIANCE retention
+  (bucket defaults are not per-version proof), and the version is
+  DOWNLOADED with its bytes hash-matched to the pin and equal to the
+  embedded anchored-heads snapshot. Anchors are
+  ANTI-REPLAY monotonic and DOUBLE-KEPT: a run-root checkpoint records the
+  best verified anchor AND every genuine advance is appended to a
+  hash-chained, itself-anchored advance ledger, so deleting or rewinding
+  the checkpoint file fails closed instead of resetting anti-replay;
+  older, zero, or forked anchors never verify again; checkpoint-less
+  legacy ledgers adopt ONLY on EXACT anchored content (equal length — an
+  unanchored suffix refuses; zero-count anchors adopt nothing); and the
+  very first append's crash window rolls FORWARD (one genesis-chained
+  record with no checkpoint repairs instead of wedging). The attestation's worm_store must equal the owner scope's
   `worm_store_uri`. The shipped release-scope remains `scope: null`
   (fail-closed) until the owner ratifies the production values — that
-  population is an owner act this tree does not perform. Identity hygiene is verified for BOTH
+  population is an owner act this tree does not perform — but it is
+  MECHANICAL: `provenance.py scope-template` emits a fully computed
+  draft (policy/iam-boundary/key/tool digests filled from the
+  committed tree and local binaries) for the owner to complete,
+  review, and sign. Identity hygiene is verified for BOTH
   automation identities (security and deploy): existence, automount
   disabled on the ServiceAccount AND explicitly on every pod running as
   it, no legacy token Secret, at least one REQUIRED pod-bound projection
@@ -679,7 +697,17 @@ policies; only new admissions are.
   workload writes in the scope namespaces are permitted ONLY to the deploy
   identity itself (anyone else creating a pod there could mount the release
   ServiceAccount), and impersonation matching covers named userextras
-  subresources. Remote verification is pinned END TO END, allowlist-style: the
+  subresources. The DOCUMENTED customer kubectl-debug path keeps an
+  authorized caller with least privilege: exec/attach/portforward stay
+  forbidden for EVERY identity, while pods/ephemeralcontainers — the one
+  runtime-entry path admission fully evaluates (digest-pinned images) — is
+  permitted solely to the owner-designated, token-hardened DEBUG identity
+  (scope `debug_principals`; iam-boundary.yaml defines fs2-debugger), in a
+  grant-shape-bound form. Automation-written workloads may mount PVCs only
+  under owner-enumerated claim-name prefixes and inline CSI only read-only;
+  automation-written Services are fenced ClusterIP-only (no NodePort/
+  LoadBalancer/ExternalName/externalIPs) by the guard policy, whose params
+  now also carry the automation account rows. Remote verification is pinned END TO END, allowlist-style: the
   SOURCE-PINNED git binary (`/usr/bin/git`, never a PATH lookup) runs
   outside any repository with an environment built FROM SCRATCH (fixed
   system PATH; every git config source disabled; proxy/CA only from pinned

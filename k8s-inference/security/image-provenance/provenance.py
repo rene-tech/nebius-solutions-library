@@ -87,6 +87,7 @@ def render_allowlist(
     deploy_credential_csi_driver: str = "",
     deploy_credential_spc: str = "",
     workload_csi_drivers: Sequence[str] = (),
+    workload_pvc_prefixes: Sequence[str] = (),
 ) -> dict:
     """Render the admission allow-list ConfigMap consumed by policy.yaml.
 
@@ -195,11 +196,17 @@ def render_allowlist(
             "workload-csi-drivers": "\n".join(
                 sorted(set(map(str, workload_csi_drivers)))
             ),
+            "workload-pvc-prefixes": "\n".join(
+                sorted(set(map(str, workload_pvc_prefixes)))
+            ),
         },
     }
 
 
-def render_guard_params(security_principals: Sequence[str]) -> dict:
+def render_guard_params(
+    security_principals: Sequence[str],
+    automation_service_accounts: Sequence[str] = (),
+) -> dict:
     """Render the security-owned guard parameter ConfigMap.
 
     This is a SEPARATE artifact from the release allow-list: the guard
@@ -226,6 +233,9 @@ def render_guard_params(security_principals: Sequence[str]) -> dict:
         },
         "data": {
             "security-principals": "\n".join(sorted(set(security_principals))),
+            "automation-service-accounts": "\n".join(
+                sorted(set(map(str, automation_service_accounts)))
+            ),
         },
     }
 
@@ -541,29 +551,60 @@ def _run_capture(command: Sequence[str], input_text: str | None = None) -> str:
     return result.stdout
 
 
-def _verified_tool_bytes(name: str, spec: dict) -> None:
-    """The tool binary's CONTENT is the trust root, not its path.
+def _pinned_tool_copy(name: str, spec: dict, holder_directory: str) -> str:
+    """Verify and BIND the tool in one identity: open once, hash the opened
+    descriptor's bytes, and execute a PRIVATE COPY of exactly those bytes.
 
-    The file at the owner-pinned absolute path must be a regular,
-    non-symlink, non-world/group-writable file whose exact bytes hash to the
-    owner-pinned digest — a repointed or overwritten binary never runs.
+    Hashing a pathname and then executing the pathname again is a TOCTOU:
+    the file can be swapped between the two resolutions, and an
+    owner-writable binary can change after a cached one-time check. Here the
+    binary is opened ONCE (O_NOFOLLOW), fstat'd on the open descriptor
+    (regular file, not group/world-writable), its bytes are read from THAT
+    descriptor and digest-verified against the owner pin, and the verified
+    bytes are written to a private 0o500 copy inside the runner's private
+    directory — every subsequent invocation executes the copy, so no second
+    resolution of the original pathname ever happens.
     """
-    path = Path(str(spec["path"]))
-    if path.is_symlink() or not path.is_file():
-        raise ProvenanceError(
-            f"pinned tool {name} at {path} is not a regular file; refusing"
-        )
-    status = os.stat(path, follow_symlinks=False)
-    if status.st_mode & 0o022:
-        raise ProvenanceError(
-            f"pinned tool {name} at {path} is group/world-writable; refusing"
-        )
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    source = str(spec["path"])
+    descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        status = os.fstat(descriptor)
+        if not stat_module.S_ISREG(status.st_mode):
+            raise ProvenanceError(
+                f"pinned tool {name} at {source} is not a regular file; "
+                "refusing"
+            )
+        if status.st_mode & 0o022:
+            raise ProvenanceError(
+                f"pinned tool {name} at {source} is group/world-writable; "
+                "refusing"
+            )
+        chunks: list[bytes] = []
+        while True:
+            chunk = os.read(descriptor, 1 << 20)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    finally:
+        os.close(descriptor)
+    payload = b"".join(chunks)
+    digest = hashlib.sha256(payload).hexdigest()
     if digest != str(spec["sha256"]):
         raise ProvenanceError(
-            f"pinned tool {name} at {path} hashes to {digest}, not the "
+            f"pinned tool {name} at {source} hashes to {digest}, not the "
             f"owner-pinned {spec['sha256']}; a substituted binary never runs"
         )
+    copy_path = os.path.join(holder_directory, name)
+    copy_descriptor = os.open(
+        copy_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o700
+    )
+    try:
+        _write_all(copy_descriptor, payload)
+        os.fchmod(copy_descriptor, 0o500)
+        os.fsync(copy_descriptor)
+    finally:
+        os.close(copy_descriptor)
+    return copy_path
 
 
 def _pinned_live_runner(owner_scope: dict):
@@ -644,16 +685,21 @@ def _pinned_live_runner(owner_scope: dict):
         )
     environment["HELM_DRIVER"] = "sql"
     environment["HELM_DRIVER_SQL_CONNECTION_STRING"] = dsn
-    verified_tools: set[str] = set()
+    tool_copies: dict[str, str] = {}
+    tool_holder = os.path.join(private_state, "tools")
+    os.mkdir(tool_holder, 0o700)
 
     def runner(command: Sequence[str], input_text: str | None = None) -> str:
         argv = list(command)
         if argv and argv[0] in ("kubectl", "helm", "nebius"):
             name = argv[0]
-            if name not in verified_tools:
-                _verified_tool_bytes(name, tooling[name])
-                verified_tools.add(name)
-            argv[0] = str(tooling[name]["path"])
+            if name not in tool_copies:
+                tool_copies[name] = _pinned_tool_copy(
+                    name, tooling[name], tool_holder
+                )
+            # Every invocation executes the PRIVATE VERIFIED COPY — the
+            # original pathname is never re-resolved after verification.
+            argv[0] = tool_copies[name]
         result = subprocess.run(
             argv,
             check=True,
@@ -1984,9 +2030,15 @@ def load_bound_receipt(
 INVENTORY_SCHEMA = "fs2-serve.nebius.ai/release-inventory/v7"
 COLLECTOR_METHOD = "fs2-live-enumeration/v1"
 INVENTORY_CHECKPOINT_SCHEMA = "fs2-serve.nebius.ai/inventory-checkpoint/v1"
-SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v12"
+SCOPE_SCHEMA = "fs2-serve.nebius.ai/release-scope/v13"
 ROLLOUT_AUTHORIZATION_SCHEMA = "fs2-serve.nebius.ai/rollout-authorization/v3"
-PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v3"
+PROVIDER_ATTESTATION_SCHEMA = "fs2-serve.nebius.ai/provider-attestation/v4"
+# A provider PERMISSION is read-only when it matches this shape; a role is
+# treated as read-only ONLY when the owner lists it AND every permission
+# fetched from the provider matches — role NAMES prove nothing.
+PROVIDER_READ_PERMISSION_PATTERN = re.compile(
+    r"\.(get|list|read|view|watch)[A-Za-z0-9]*$", re.IGNORECASE
+)
 # Provider roles that amount to control over the managed cluster or its IAM.
 # Any live provider access binding matching this pattern must name a subject
 # the SIGNED attestation explicitly enumerates — an unenumerated admin is a
@@ -2053,6 +2105,8 @@ SCOPE_FIELDS = (
     "stage_binding_authority",
     "tooling",
     "run_root",
+    "debug_principals",
+    "workload_pvc_prefixes",
     "provider_endpoint",
     "provider_principal",
     "provider_cluster_id",
@@ -2077,6 +2131,12 @@ REQUIRED_ANCHOR_CHAINS = (
     "publication-journal",
     "reconcile-journal",
 )
+# The anchor-advances META-chain protects the monotonic checkpoint itself;
+# it is exported and off-host-anchored like the others but is NOT a required
+# attestation chain and never enters the monotonic floor — otherwise every
+# checkpoint advance would immediately invalidate the attestation that
+# produced it.
+ANCHOR_META_CHAIN = "anchor-advances"
 RECOVERY_ANNOTATION = "security.fs2.nebius.ai/recovery-authorization"
 TOKEN_AUDIENCE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9:/._-]{1,127}$")
 BINARY_PATH_PATTERN = re.compile(r"^/[A-Za-z0-9/._-]{1,255}$")
@@ -2188,19 +2248,33 @@ FORBIDDEN_IDENTITY_RULES: tuple[dict[str, "set[str] | str | bool | dict"], ...] 
         "why": "stored-credential access/minting in protected namespaces",
         "namespaced_to_scope": True,
     },
-    # Runtime credential theft: exec/attach/port-forward into a pod (or
-    # injecting an ephemeral container) reaches its mounted credentials.
+    # Runtime credential theft: exec/attach/port-forward into a pod reaches
+    # its mounted credentials directly and invisibly. NOBODY is permitted —
+    # governed debugging goes through ephemeral containers below, which
+    # admission fully evaluates (digest-pinned images).
     {
         "apiGroups": {""},
-        "resources": {
-            "pods/exec",
-            "pods/attach",
-            "pods/ephemeralcontainers",
-            "pods/portforward",
-        },
+        "resources": {"pods/exec", "pods/attach", "pods/portforward"},
         "verbs": {"create", "update", "patch"},
-        "why": "runtime credential theft via exec/attach/ephemeral/portforward",
+        "why": "runtime credential theft via exec/attach/portforward",
         "namespaced_to_scope": True,
+    },
+    # Ephemeral-container injection is the DOCUMENTED customer debug path
+    # (kubectl debug) — it stays technically capable, but only for the
+    # owner-designated DEBUG identity, in a grant-shape-bound form, and
+    # every injected image is admission-governed (digest-pinned,
+    # allow-listed registry). Anyone else holding it is a violation.
+    {
+        "apiGroups": {""},
+        "resources": {"pods/ephemeralcontainers"},
+        "verbs": {"create", "update", "patch"},
+        "why": "ephemeral-container injection outside the debug identity",
+        "namespaced_to_scope": True,
+        "permitted_role": "debug",
+        "permitted_grant": {
+            "verbs": {"get", "list", "watch", "create", "update", "patch"},
+            "resources": {"pods/ephemeralcontainers"},
+        },
     },
     # Proxy paths reach kubelets and pod endpoints BEHIND admission and
     # audit: nodes/proxy is kubelet API access (exec on every pod of the
@@ -2530,6 +2604,43 @@ def _validated_scope(value, context: str) -> dict:
         raise ProvenanceError(
             f"{context} needs provider_cluster_id: the managed-cluster "
             "resource id the ancestry derivation starts from"
+        )
+    debug = value.get("debug_principals")
+    if (
+        not isinstance(debug, list)
+        or len(set(debug)) != len(debug)
+        or not all(
+            isinstance(item, str) and AUTOMATION_PRINCIPAL_PATTERN.match(item)
+            for item in debug
+        )
+    ):
+        raise ProvenanceError(
+            f"{context} needs debug_principals: the (possibly EMPTY) "
+            "AUTOMATION identities allowed the governed kubectl-debug path "
+            "(pods/ephemeralcontainers writes, admission-pinned images); an "
+            "empty list disables debugging rather than leaving it to "
+            "unaudited identities"
+        )
+    if set(debug) & (set(value.get("security_principals") or [])) or set(
+        debug
+    ) & set(principals if isinstance(principals, list) else []):
+        raise ProvenanceError(
+            f"{context} debug_principals must be DISJOINT from the security "
+            "and deploy principals: the debugging identity is a separate, "
+            "individually auditable automation identity"
+        )
+    pvc_prefixes = value.get("workload_pvc_prefixes")
+    if not isinstance(pvc_prefixes, list) or not all(
+        isinstance(item, str)
+        and re.match(r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?-?$", item)
+        for item in pvc_prefixes
+    ) or len(set(pvc_prefixes)) != len(pvc_prefixes):
+        raise ProvenanceError(
+            f"{context} needs workload_pvc_prefixes: the (possibly empty) "
+            "owner-enumerated PersistentVolumeClaim name prefixes "
+            "automation-written workloads may mount; an empty list means no "
+            "PVC mounts, and an arbitrary claim can never be grafted onto a "
+            "deployed pod"
         )
     readonly_roles = value.get("provider_readonly_roles")
     if not isinstance(readonly_roles, list) or not all(
@@ -3271,7 +3382,18 @@ def _assert_policy_matches_scope(
         )
     # The guard-params ConfigMap is DERIVED STATE, never authority: its live
     # content must equal what the owner-signed scope renders.
-    expected_params = render_guard_params(owner_scope["security_principals"])
+    expected_params = render_guard_params(
+        owner_scope["security_principals"],
+        sorted(
+        principal[len("system:serviceaccount:"):]
+        for principal in (
+            list(owner_scope["deploy_principals"])
+            + list(owner_scope["security_principals"])
+            + list(owner_scope["debug_principals"])
+        )
+        if principal.startswith("system:serviceaccount:")
+    ),
+    )
     if (live_guard_params.get("data") or {}) != expected_params["data"]:
         raise ProvenanceError(
             f"the LIVE {GUARD_PARAMS_NAME} ConfigMap does not equal the "
@@ -3413,6 +3535,17 @@ def _read_chained_records(path: Path, adopt_legacy: bool = False) -> list[dict]:
         _fsync_dir(path.parent)
 
     if not checkpoint_path.exists():
+        if (
+            scan["count"] == 1
+            and not scan["torn_tail"]
+            and len(scan["segments"]) == 1
+        ):
+            # GENESIS ROLL-FORWARD: the very first append fsyncs the record
+            # before its checkpoint exists; a crash in between leaves exactly
+            # ONE genesis-chained record — recognized and repaired forward
+            # (bounded like the one-step roll-forward), never a wedge.
+            write_checkpoint_forward()
+            return scan["records"]
         if scan["count"] or scan["torn_tail"]:
             if not adopt_legacy or scan["torn_tail"] or len(scan["segments"]) > 1:
                 raise ProvenanceError(
@@ -3784,14 +3917,19 @@ def load_provider_attestation(
             isinstance(item, str) and PRINCIPAL_PATTERN.match(item)
             for item in admin_subjects
         )
+        or not SHA256_PATTERN.match(
+            str(evidence.get("iam_snapshot_sha256", ""))
+        )
     ):
         raise ProvenanceError(
             f"{attestation_path} must bind concrete provider evidence: "
-            "evidence.reference (a tracking identifier) and "
+            "evidence.reference (a tracking identifier), "
             "evidence.provider_admin_subjects (the non-empty enumerated "
-            "subjects allowed to hold provider admin-class roles, which the "
-            "LIVE provider enumeration is compared against); bare "
-            "provider-held strings are assertions, not evidence"
+            "subjects allowed to hold provider privileged roles), and "
+            "evidence.iam_snapshot_sha256 (the canonical digest of the "
+            "provider IAM enumeration the ATTESTOR witnessed, which the "
+            "LIVE recomputed enumeration must equal); bare provider-held "
+            "strings are assertions, not evidence"
         )
     anchor_object = document.get("anchor_object")
     if (
@@ -4068,15 +4206,69 @@ def _assert_provider_boundary(
                 "passes; an unstable answer is never a boundary proof — "
                 "fails closed"
             )
+        # ATTESTOR-WITNESSED == LIVE: the canonical digest of the recomputed
+        # enumeration must equal the snapshot digest the SIGNED attestation
+        # binds — the provider state the attestor saw is the state that
+        # holds now, recomputable by anyone, self-asserted by no one.
+        snapshot_digest = hashlib.sha256(
+            json.dumps(
+                {
+                    parent_id: [list(pair) for pair in bindings]
+                    for parent_id, bindings in passes[0].items()
+                },
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        attested_digest = str(
+            (attestation.get("evidence") or {}).get("iam_snapshot_sha256", "")
+        )
+        if snapshot_digest != attested_digest:
+            raise ProvenanceError(
+                f"the LIVE provider IAM enumeration digests to "
+                f"{snapshot_digest}, not the attestor-witnessed "
+                f"{attested_digest}; provider IAM changed since attestation "
+                "— the attestor must re-witness and re-sign, fails closed"
+            )
+        # Role NAMES prove nothing: a role counts as read-only ONLY when the
+        # owner lists it AND every PERMISSION the provider reports for it is
+        # read-shaped. Unknown, unlisted, unfetchable, or write-permission
+        # roles are privileged-class and their subjects must be attested.
+        role_readonly: dict[str, bool] = {}
+
+        def role_is_readonly(role: str) -> bool:
+            if role not in role_readonly:
+                if (
+                    role not in readonly_roles
+                    or PROVIDER_ADMIN_ROLE_PATTERN.search(role)
+                ):
+                    role_readonly[role] = False
+                else:
+                    definition = json.loads(
+                        _provider_cli(
+                            owner_scope, runner, "iam", "role", "get",
+                            "--id", role,
+                        )
+                    )
+                    permissions = _provider_field(
+                        definition, ("permissions", "permission_ids")
+                    )
+                    role_readonly[role] = (
+                        isinstance(permissions, list)
+                        and bool(permissions)
+                        and all(
+                            isinstance(item, str)
+                            and PROVIDER_READ_PERMISSION_PATTERN.search(item)
+                            for item in permissions
+                        )
+                    )
+            return role_readonly[role]
+
         rogue = sorted(
             {
                 f"{subject} holds {role} on {parent_id}"
                 for parent_id, bindings in passes[0].items()
                 for subject, role in bindings
-                if not (
-                    role in readonly_roles
-                    and not PROVIDER_ADMIN_ROLE_PATTERN.search(role)
-                )
+                if not role_is_readonly(role)
                 and subject not in allowed_admins
             }
         )
@@ -4186,6 +4378,51 @@ def _assert_worm_anchor_object(
     """
     anchor_object = attestation.get("anchor_object") or {}
     try:
+        # The EXACT OBJECT VERSION must itself be locked: bucket DEFAULTS
+        # prove nothing about this version. Its metadata must show
+        # COMPLIANCE retention extending beyond now — that is the delete/
+        # overwrite-proof for the one object the boundary depends on.
+        metadata = json.loads(
+            _provider_cli(
+                owner_scope,
+                runner,
+                "storage",
+                "object",
+                "get",
+                "--bucket",
+                str(owner_scope["worm_bucket"]),
+                "--key",
+                str(anchor_object.get("key", "")),
+                "--version-id",
+                str(anchor_object.get("version_id", "")),
+            )
+        )
+        object_mode = str(
+            _provider_field(metadata, ("object_lock_mode", "lock_mode", "mode"))
+            or ""
+        ).lower()
+        if object_mode != "compliance":
+            raise ProvenanceError(
+                "the attested anchor object VERSION is not under COMPLIANCE "
+                "lock (bucket defaults are not per-version proof); fails "
+                "closed"
+            )
+        retain_until = _parse_rfc3339(
+            str(
+                _provider_field(
+                    metadata,
+                    ("retain_until_date", "retain_until", "retention_until"),
+                )
+                or ""
+            ),
+            "anchor object retain-until",
+        )
+        if retain_until <= datetime.now(UTC):
+            raise ProvenanceError(
+                "the attested anchor object's COMPLIANCE retention has "
+                "already lapsed; an expired lock protects nothing — fails "
+                "closed"
+            )
         payload = _provider_cli(
             owner_scope,
             runner,
@@ -4199,10 +4436,11 @@ def _assert_worm_anchor_object(
             "--version-id",
             str(anchor_object.get("version_id", "")),
         )
-    except (subprocess.CalledProcessError, OSError) as error:
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as error:
         raise ProvenanceError(
-            "the attested WORM anchor object cannot be downloaded; the "
-            "anchor is unverifiable — fails closed"
+            "the attested WORM anchor object cannot be downloaded or its "
+            "version lock cannot be read; the anchor is unverifiable — "
+            "fails closed"
         ) from error
     payload_bytes = payload.encode("utf-8")
     digest = hashlib.sha256(payload_bytes).hexdigest()
@@ -4253,6 +4491,7 @@ def _local_chain_element_hash(run_root: Path, name: str, position: int) -> str:
         "consumed": _consume_ledger_path(run_root),
         "publication-journal": _publication_journal_path(run_root),
         "reconcile-journal": run_root / "release-reconcile-journal.jsonl",
+        "anchor-advances": _anchor_advance_ledger_path(run_root),
     }.get(name)
     if ledger is None:
         raise ProvenanceError(f"unknown anchored chain {name!r}")
@@ -4268,25 +4507,81 @@ def _anchor_checkpoint_path(run_root: Path) -> Path:
     return run_root / "anchored-heads-checkpoint.json"
 
 
+def _anchor_advance_ledger_path(run_root: Path) -> Path:
+    return run_root / "anchor-advances.jsonl"
+
+
+def _ledger_recorded_anchor(run_root: Path) -> dict | None:
+    """The best anchor per the TAMPER-EVIDENT advance ledger (last record)."""
+    records = _read_chained_records(_anchor_advance_ledger_path(run_root))
+    for record in reversed(records):
+        if record.get("kind") == "anchor-advance" and isinstance(
+            record.get("chains"), dict
+        ):
+            return record["chains"]
+    return None
+
+
 def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
-    """Presented anchors may never regress behind the best anchor seen."""
+    """Presented anchors may never regress behind the best anchor seen.
+
+    The memory is DOUBLE-KEPT: a fast checkpoint file AND a hash-chained,
+    checkpointed, itself-anchored advance LEDGER. Deleting or rewinding the
+    plain file cannot reset monotonicity: the file must exist and agree
+    whenever the ledger carries advances, and the higher of the two is
+    enforced — so replaying an older/zero anchor after a newer one was
+    verified fails closed even against file tampering.
+    """
     checkpoint_path = _anchor_checkpoint_path(run_root)
-    if not checkpoint_path.exists():
-        return
-    try:
-        recorded = json.loads(_read_evidence_bytes(checkpoint_path))
-    except json.JSONDecodeError as error:
+    file_chains: dict = {}
+    if checkpoint_path.exists():
+        try:
+            recorded = json.loads(_read_evidence_bytes(checkpoint_path))
+        except json.JSONDecodeError as error:
+            raise ProvenanceError(
+                f"the anchor checkpoint {checkpoint_path} is malformed; "
+                "fails closed"
+            ) from error
+        file_chains = recorded.get("chains") or {}
+    ledger_chains = _ledger_recorded_anchor(run_root)
+    if ledger_chains is not None and not checkpoint_path.exists():
         raise ProvenanceError(
-            f"the anchor checkpoint {checkpoint_path} is malformed; fails "
+            "the anchor advance ledger records verified anchors but the "
+            "anchor checkpoint file is missing; a deleted checkpoint never "
+            "resets monotonicity — fails closed"
+        )
+    best: dict[str, dict] = {}
+    for source in (file_chains, ledger_chains or {}):
+        for name, state in source.items():
+            if not isinstance(state, dict):
+                continue
+            current = best.get(name)
+            if current is None or int(state.get("count", 0)) > int(
+                current.get("count", 0)
+            ):
+                best[name] = state
+    if (
+        ledger_chains is not None
+        and file_chains
+        and any(
+            int((file_chains.get(name) or {}).get("count", -1))
+            < int(state.get("count", 0))
+            for name, state in (ledger_chains or {}).items()
+            if isinstance(state, dict)
+        )
+    ):
+        raise ProvenanceError(
+            "the anchor checkpoint file is BEHIND the tamper-evident advance "
+            "ledger; a rewound checkpoint never resets monotonicity — fails "
             "closed"
-        ) from error
+        )
     presented = anchored.get("chains") or {}
-    for name, best in (recorded.get("chains") or {}).items():
+    for name, best_state in best.items():
         state = presented.get(name)
         presented_count = (
             int(state.get("count", -1)) if isinstance(state, dict) else -1
         )
-        best_count = int(best.get("count", 0)) if isinstance(best, dict) else 0
+        best_count = int(best_state.get("count", 0))
         if presented_count < best_count:
             raise ProvenanceError(
                 f"the presented anchor records count {presented_count} for "
@@ -4296,7 +4591,7 @@ def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
             )
         if presented_count == best_count and isinstance(state, dict) and str(
             state.get("head", "")
-        ) != str(best.get("head", "")):
+        ) != str(best_state.get("head", "")):
             raise ProvenanceError(
                 f"the presented anchor for {name} carries a DIFFERENT head "
                 "at the same count as the best previously verified anchor; "
@@ -4305,22 +4600,67 @@ def _assert_anchor_monotonic(run_root: Path, anchored: dict) -> None:
 
 
 def _advance_anchor_checkpoint(run_root: Path, anchored: dict) -> None:
-    """Forward-only record of the best verified anchor (atomic replace)."""
-    checkpoint_path = _anchor_checkpoint_path(run_root)
-    payload = json.dumps(
-        {"chains": anchored.get("chains") or {}}, sort_keys=True
-    ).encode("utf-8")
-    descriptor, temp_name = tempfile.mkstemp(
-        dir=run_root, prefix="." + checkpoint_path.name + "-"
-    )
-    try:
-        os.write(descriptor, payload)
-        os.fchmod(descriptor, 0o600)
-        os.fsync(descriptor)
-    finally:
-        os.close(descriptor)
-    os.replace(temp_name, checkpoint_path)
-    _fsync_dir(run_root)
+    """Forward-only, tamper-evident record of the best verified anchor.
+
+    The plain checkpoint file is replaced atomically (full-write loop), and
+    every GENUINE advance (any chain count increased) is ALSO appended to
+    the hash-chained anchor-advances ledger under its own lock — the ledger
+    is itself one of the anchored chains, so rewinding the fast file is
+    detectable and resetting monotonicity requires defeating the anchored
+    chain, not deleting one file.
+    """
+    presented = anchored.get("chains") or {}
+    with _exclusive_lock(run_root, "anchor-advance.lock"):
+        checkpoint_path = _anchor_checkpoint_path(run_root)
+        existing: dict = {}
+        if checkpoint_path.exists():
+            try:
+                existing = (
+                    json.loads(_read_evidence_bytes(checkpoint_path)).get(
+                        "chains"
+                    )
+                    or {}
+                )
+            except json.JSONDecodeError:
+                existing = {}
+        merged: dict[str, dict] = dict(existing)
+        advanced = False
+        for name, state in presented.items():
+            if not isinstance(state, dict) or name == ANCHOR_META_CHAIN:
+                continue
+            current = merged.get(name)
+            if current is None or int(state.get("count", 0)) > int(
+                current.get("count", -1)
+            ):
+                merged[name] = {
+                    "count": int(state.get("count", 0)),
+                    "head": str(state.get("head", "")),
+                }
+                if current is not None or int(state.get("count", 0)) > 0:
+                    advanced = True
+        payload = json.dumps({"chains": merged}, sort_keys=True).encode(
+            "utf-8"
+        )
+        descriptor, temp_name = tempfile.mkstemp(
+            dir=run_root, prefix="." + checkpoint_path.name + "-"
+        )
+        try:
+            _write_all(descriptor, payload)
+            os.fchmod(descriptor, 0o600)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(temp_name, checkpoint_path)
+        _fsync_dir(run_root)
+        if advanced and merged != existing:
+            _append_chained_record(
+                _anchor_advance_ledger_path(run_root),
+                {
+                    "kind": "anchor-advance",
+                    "chains": merged,
+                    "advanced_at": datetime.now(UTC).isoformat(),
+                },
+            )
 
 
 def _adopt_anchored_legacy(run_root: Path, anchored: dict) -> None:
@@ -4340,6 +4680,7 @@ def _adopt_anchored_legacy(run_root: Path, anchored: dict) -> None:
         ("consumed", _consume_ledger_path(run_root)),
         ("publication-journal", _publication_journal_path(run_root)),
         ("reconcile-journal", run_root / "release-reconcile-journal.jsonl"),
+        ("anchor-advances", _anchor_advance_ledger_path(run_root)),
     ):
         if not ledger.exists() or _ledger_checkpoint_path(ledger).exists():
             continue
@@ -5764,6 +6105,7 @@ def _assert_iam_boundary(owner_scope: dict, live_runner, attestation: dict | Non
     role_subjects = {
         "deploy": principal_subjects(owner_scope["deploy_principals"]),
         "security": principal_subjects(owner_scope["security_principals"]),
+        "debug": principal_subjects(owner_scope["debug_principals"]),
     }
 
     def is_attested_bootstrap_masters(binding: dict) -> bool:
@@ -6032,8 +6374,10 @@ def _assert_identity_hygiene(owner_scope: dict, live_runner) -> None:
     IAM table — so "short-lived, audience-bound, pod-bound" is verified
     against the cluster, not asserted. Failures refuse rendering.
     """
-    principals = list(owner_scope["security_principals"]) + list(
-        owner_scope["deploy_principals"]
+    principals = (
+        list(owner_scope["security_principals"])
+        + list(owner_scope["deploy_principals"])
+        + list(owner_scope["debug_principals"])
     )
     try:
         for principal in principals:
@@ -6210,6 +6554,7 @@ def _anchor_snapshot(run_root: Path) -> dict:
         ("consumed", _consume_ledger_path(run_root)),
         ("publication-journal", _publication_journal_path(run_root)),
         ("reconcile-journal", run_root / "release-reconcile-journal.jsonl"),
+        ("anchor-advances", _anchor_advance_ledger_path(run_root)),
     ):
         records = _read_chained_records(ledger)
         terminal = GENESIS_HASH
@@ -6788,6 +7133,7 @@ def verified_allowlist(
             for principal in (
                 list(owner_scope["deploy_principals"])
                 + list(owner_scope["security_principals"])
+                + list(owner_scope["debug_principals"])
             )
             if principal.startswith("system:serviceaccount:")
         )
@@ -6803,6 +7149,7 @@ def verified_allowlist(
             owner_scope["deploy_credential_csi_driver"],
             owner_scope["deploy_credential_spc"],
             owner_scope["workload_csi_drivers"],
+            owner_scope["workload_pvc_prefixes"],
         )
         annotations = manifest["metadata"].setdefault("annotations", {})
         annotations["security.fs2.nebius.ai/verified-with-key-sha256"] = (
@@ -7827,6 +8174,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
     )
 
+    template = subcommands.add_parser(
+        "scope-template",
+        help=(
+            "emit a fully computed release-scope DRAFT for OWNER review and "
+            "signing (policy/iam-boundary/tool digests computed from the "
+            "committed tree and local binaries; read-only; ratification "
+            "stays an owner act — this only makes it mechanical)"
+        ),
+    )
+    template.add_argument(
+        "--kubectl", default="/usr/bin/kubectl",
+        help="absolute kubectl path to digest",
+    )
+    template.add_argument(
+        "--helm", default="/usr/bin/helm",
+        help="absolute helm path to digest",
+    )
+    template.add_argument(
+        "--nebius", default="/usr/bin/nebius",
+        help="absolute provider CLI path to digest",
+    )
+
     export_heads = subcommands.add_parser(
         "export-anchored-heads",
         help=(
@@ -7905,7 +8274,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             owner_scope = load_owner_scope(args.scope, pinned.path)
         print(
             json.dumps(
-                render_guard_params(owner_scope["security_principals"]),
+                render_guard_params(
+                    owner_scope["security_principals"],
+                    sorted(
+        principal[len("system:serviceaccount:"):]
+        for principal in (
+            list(owner_scope["deploy_principals"])
+            + list(owner_scope["security_principals"])
+            + list(owner_scope["debug_principals"])
+        )
+        if principal.startswith("system:serviceaccount:")
+    ),
+                ),
                 indent=2,
                 sort_keys=True,
             )
@@ -7921,6 +8301,47 @@ def main(argv: Sequence[str] | None = None) -> int:
             authorization_path=args.authorization,
             execute=args.execute,
             resume=args.resume,
+        )
+    elif args.command == "scope-template":
+        here = Path(__file__).resolve().parent
+        example = json.loads((here / "release-scope.example.json").read_bytes())
+        draft = example["scope"]
+        draft["policy_sha256"] = hashlib.sha256(
+            (here / "policy.yaml").read_bytes()
+        ).hexdigest()
+        draft["iam_boundary_sha256"] = hashlib.sha256(
+            (here / "iam-boundary.yaml").read_bytes()
+        ).hexdigest()
+        draft["verification_key_sha256"] = hashlib.sha256(
+            (here / "cosign.pub").read_bytes()
+        ).hexdigest()
+        for name, binary in (
+            ("kubectl", args.kubectl),
+            ("helm", args.helm),
+            ("nebius", args.nebius),
+        ):
+            binary_path = Path(binary)
+            draft["tooling"][name] = {
+                "path": str(binary_path),
+                "sha256": (
+                    hashlib.sha256(binary_path.read_bytes()).hexdigest()
+                    if binary_path.is_file()
+                    else f"<sha256 of the {name} binary bytes>"
+                ),
+            }
+        print(
+            json.dumps(
+                {"schema": SCOPE_SCHEMA, "scope": draft},
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        print(
+            "# OWNER ACTIONS REMAINING: fill cluster/provider/WORM values, "
+            "replace the attestor fingerprint with the OWNER-ORIGINATED "
+            "key's (and flip ATTESTATION_KEY_PROVENANCE in the same reviewed "
+            "commit), review, and sign with the release key.",
+            file=sys.stderr,
         )
     elif args.command == "export-anchored-heads":
         print(json.dumps(_anchor_snapshot(args.run_root), indent=2, sort_keys=True))
