@@ -8,48 +8,84 @@ locals {
     for generation, contract in var.contract_generations :
     generation => sha256(jsonencode(jsondecode(contract.contract_json)))
   }
+  legacy_contracts = {
+    for generation, contract in var.contract_generations : generation => contract
+    if contains(var.legacy_contract_generations, generation)
+  }
+  successor_contracts = {
+    for generation, contract in var.contract_generations : generation => contract
+    if !contains(var.legacy_contract_generations, generation)
+  }
+  legacy_trusts = {
+    for generation, trust in var.trust_generations : generation => trust
+    if contains(var.legacy_trust_generations, generation)
+  }
+  successor_trusts = {
+    for generation, trust in var.trust_generations : generation => trust
+    if !contains(var.legacy_trust_generations, generation)
+  }
   contract_names = {
-    for generation in keys(var.contract_generations) :
+    for generation in keys(local.legacy_contracts) :
     generation => "fs2-customer-storage-egress-contract-${generation}"
   }
+  successor_contract_names = {
+    for generation in keys(local.successor_contracts) :
+    generation => "fs2-storage-v3-contract-${generation}"
+  }
   trust_names = {
-    for generation in keys(var.trust_generations) :
+    for generation in keys(local.legacy_trusts) :
     generation => "fs2-customer-storage-egress-trust-${generation}"
   }
+  successor_trust_names = {
+    for generation in keys(local.successor_trusts) :
+    generation => "fs2-storage-v3-trust-${generation}"
+  }
   network_policy_names = {
-    for generation in keys(var.contract_generations) :
+    for generation in keys(local.legacy_contracts) :
     generation => "fs2-customer-storage-egress-${generation}"
   }
+  successor_network_policy_names = {
+    for generation in keys(local.successor_contracts) :
+    generation => "fs2-storage-v3-network-policy-${generation}"
+  }
   boundary_policy_names = {
-    for generation in var.boundary_generations :
+    for generation in var.legacy_boundary_generations :
     generation => "fs2-customer-storage-egress-boundary-${generation}"
   }
+  successor_boundary_policy_names = {
+    for generation in keys(var.successor_boundary_generations) :
+    generation => "fs2-storage-v3-boundary-${generation}"
+  }
   workload_policy_names = {
-    for generation in var.workload_policy_generations :
+    for generation in var.legacy_workload_policy_generations :
     generation => "fs2-customer-storage-egress-boundary-workload-${generation}"
   }
-  v2_pod_labels = {
+  successor_workload_policy_names = {
+    for generation in keys(var.successor_workload_policy_generations) :
+    generation => "fs2-storage-v3-workload-${generation}"
+  }
+  v3_pod_labels = {
     "app.kubernetes.io/name"                   = "fs2-serve-control-plane"
     "app.kubernetes.io/instance"               = "fs2-serve-control-plane"
-    "app.kubernetes.io/component"              = "storage-reconciler-v2"
+    "app.kubernetes.io/component"              = "storage-reconciler-v3"
     "fs2.nebius.ai/storage-egress-generation"  = var.current_generation
     "fs2.nebius.ai/storage-rollout-generation" = var.current_release_generation
   }
-  v2_pod_labels_cel        = jsonencode(local.v2_pod_labels)
-  v2_runtime_label_key_cel = "pod-template-hash"
-  v2_selector_matches_object_cel = join(" ", [
+  v3_pod_labels_cel        = jsonencode(local.v3_pod_labels)
+  v3_runtime_label_key_cel = "pod-template-hash"
+  v3_selector_matches_object_cel = join(" ", [
     "(!has(object.spec.podSelector.matchLabels) ||",
     "object.spec.podSelector.matchLabels.all(key, value,",
-    "(key in ${local.v2_pod_labels_cel} && ${local.v2_pod_labels_cel}[key] == value) || key == '${local.v2_runtime_label_key_cel}')) &&",
+    "(key in ${local.v3_pod_labels_cel} && ${local.v3_pod_labels_cel}[key] == value) || key == '${local.v3_runtime_label_key_cel}')) &&",
     "(!has(object.spec.podSelector.matchExpressions) ||",
     "object.spec.podSelector.matchExpressions.all(term,",
-    "(term.operator == 'In' && ((term.key in ${local.v2_pod_labels_cel} && term.values.exists(value, ${local.v2_pod_labels_cel}[term.key] == value)) || (term.key == '${local.v2_runtime_label_key_cel}' && size(term.values) > 0))) ||",
-    "(term.operator == 'NotIn' && (term.key == '${local.v2_runtime_label_key_cel}' || !(term.key in ${local.v2_pod_labels_cel}) || !term.values.exists(value, ${local.v2_pod_labels_cel}[term.key] == value))) ||",
-    "(term.operator == 'Exists' && (term.key in ${local.v2_pod_labels_cel} || term.key == '${local.v2_runtime_label_key_cel}')) ||",
-    "(term.operator == 'DoesNotExist' && !(term.key in ${local.v2_pod_labels_cel}) && term.key != '${local.v2_runtime_label_key_cel}'))) ",
+    "(term.operator == 'In' && ((term.key in ${local.v3_pod_labels_cel} && term.values.exists(value, ${local.v3_pod_labels_cel}[term.key] == value)) || (term.key == '${local.v3_runtime_label_key_cel}' && size(term.values) > 0))) ||",
+    "(term.operator == 'NotIn' && (term.key == '${local.v3_runtime_label_key_cel}' || !(term.key in ${local.v3_pod_labels_cel}) || !term.values.exists(value, ${local.v3_pod_labels_cel}[term.key] == value))) ||",
+    "(term.operator == 'Exists' && (term.key in ${local.v3_pod_labels_cel} || term.key == '${local.v3_runtime_label_key_cel}')) ||",
+    "(term.operator == 'DoesNotExist' && !(term.key in ${local.v3_pod_labels_cel}) && term.key != '${local.v3_runtime_label_key_cel}'))) ",
   ])
-  v2_selector_matches_old_object_cel = replace(
-    local.v2_selector_matches_object_cel,
+  v3_selector_matches_old_object_cel = replace(
+    local.v3_selector_matches_object_cel,
     "object.spec.podSelector",
     "oldObject.spec.podSelector",
   )
@@ -57,7 +93,7 @@ locals {
     podSelector = { matchLabels = {
       "app.kubernetes.io/name"                  = "fs2-serve-control-plane"
       "app.kubernetes.io/instance"              = "fs2-serve-control-plane"
-      "app.kubernetes.io/component"             = "storage-reconciler-v2"
+      "app.kubernetes.io/component"             = "storage-reconciler-v3"
       "fs2.nebius.ai/storage-egress-generation" = var.current_generation
     } }
     policyTypes = ["Ingress", "Egress"]
@@ -93,6 +129,7 @@ locals {
   }
   boundary_policy_spec = {
     failurePolicy = "Fail"
+    matchPolicy   = "Equivalent"
     matchConstraints = {
       resourceRules = [
         {
@@ -136,30 +173,23 @@ locals {
       name = "customer-storage-security-boundary"
       expression = join(" ", [
         "(request.resource.group == 'admissionregistration.k8s.io' &&",
-        "request.name.startsWith('fs2-customer-storage-egress-boundary-')) ||",
+        "request.name in ['${local.successor_boundary_policy_names[var.current_boundary_generation]}','${local.successor_workload_policy_names[var.current_workload_policy_generation]}']) ||",
         "(request.resource.group == 'rbac.authorization.k8s.io' && request.namespace == '${local.namespace}' &&",
-        "request.name.startsWith('fs2-storage-v2-')) ||",
-        "(request.resource.group == 'apps' && request.namespace == '${local.namespace}' &&",
-        "request.name == 'fs2-serve-control-plane-storage-reconciler') ||",
+        "request.name == '${local.current_release_name}') ||",
         "(request.namespace == '${local.namespace}' &&",
-        "request.name.startsWith('fs2-customer-storage-egress-')) ||",
+        "request.name in ['${local.successor_contract_names[var.current_generation]}','${local.successor_trust_names[local.current_contract.trust_generation]}']) ||",
         "(request.resource.group == 'networking.k8s.io' && request.namespace == '${local.namespace}' &&",
         "(request.operation == 'DELETE' ?",
-        "(oldObject.metadata.name.startsWith('fs2-customer-storage-egress-g') || (${local.v2_selector_matches_old_object_cel})) :",
-        "(object.metadata.name.startsWith('fs2-customer-storage-egress-g') || (${local.v2_selector_matches_object_cel}))))",
+        "(oldObject.metadata.name == '${local.successor_network_policy_names[var.current_generation]}' || (${local.v3_selector_matches_old_object_cel})) :",
+        "(object.metadata.name == '${local.successor_network_policy_names[var.current_generation]}' || (${local.v3_selector_matches_object_cel}))))",
       ])
     }]
     validations = [
       {
-        expression = "request.resource.group != 'apps'"
-        message    = "The receipted predecessor Deployment is frozen before the successor workload is admitted."
-        reason     = "Forbidden"
-      },
-      {
         expression = join(" ", [
           "request.resource.group != 'networking.k8s.io' ||",
           "(request.operation == 'CREATE' &&",
-          "object.metadata.name == '${local.network_policy_names[var.current_generation]}' &&",
+          "object.metadata.name == '${local.successor_network_policy_names[var.current_generation]}' &&",
           "has(object.metadata.annotations) &&",
           "object.metadata.annotations['fs2.nebius.ai/storage-egress-contract-sha256'] == '${local.contract_digests[var.current_generation]}' &&",
           "object.spec == ${jsonencode(local.current_network_policy_spec)})",
@@ -168,21 +198,33 @@ locals {
         reason  = "Forbidden"
       },
       {
-        expression = "request.resource.group == 'networking.k8s.io' || request.resource.group == 'apps' || request.operation == 'CREATE'"
+        expression = "request.resource.group == 'networking.k8s.io' || request.operation == 'CREATE'"
         message    = "Customer-storage egress security generations are create-only and cannot be updated or deleted."
         reason     = "Forbidden"
       },
       {
-        expression = "request.resource.group == 'apps' || request.userInfo.groups.exists(group, group == '${var.security_owner_group}')"
+        expression = "request.userInfo.groups.exists(group, group == '${var.security_owner_group}')"
         message    = "Only the separately authenticated customer-storage security owner may change this boundary."
         reason     = "Forbidden"
       },
     ]
   }
   boundary_policy_sha256 = sha256(jsonencode(local.boundary_policy_spec))
-  release_names = {
-    for generation in keys(var.release_generations) :
+  legacy_releases = {
+    for generation, release in var.release_generations : generation => release
+    if contains(var.legacy_release_generations, generation)
+  }
+  successor_releases = {
+    for generation, release in var.release_generations : generation => release
+    if !contains(var.legacy_release_generations, generation)
+  }
+  legacy_release_names = {
+    for generation in keys(local.legacy_releases) :
     generation => "fs2-storage-v2-${element(reverse(split("-", var.current_generation)), 0)}-${element(reverse(split("-", generation)), 0)}"
+  }
+  release_names = {
+    for generation in keys(local.successor_releases) :
+    generation => "fs2-storage-v3-${element(reverse(split("-", var.current_generation)), 0)}-${element(reverse(split("-", generation)), 0)}"
   }
   release_payloads = {
     for generation, release in var.release_generations : generation => {
@@ -239,15 +281,27 @@ locals {
     "--kubernetes-network-policy-set", local.namespace,
     "--pod-label", "app.kubernetes.io/name=fs2-serve-control-plane",
     "--pod-label", "app.kubernetes.io/instance=fs2-serve-control-plane",
-    "--pod-label", "app.kubernetes.io/component=storage-reconciler-v2",
+    "--pod-label", "app.kubernetes.io/component=storage-reconciler-v3",
     "--pod-label", "fs2.nebius.ai/storage-egress-generation=${var.current_generation}",
     "--pod-label", "fs2.nebius.ai/storage-rollout-generation=${var.current_release_generation}",
+    "--pod-label-from-env", "pod-template-hash=FS2_POD_TEMPLATE_HASH",
   ])
   expected_container_mounts_cel = jsonencode([
     { name = "customer-storage-crypto", mountPath = "/var/run/secrets/fs2-serve/customer-storage-crypto", readOnly = true },
     { name = "database-ca", mountPath = "/tls", readOnly = true },
     { name = "customer-storage-resource", mountPath = "/var/run/secrets/fs2-serve/customer-storage/resource", readOnly = true },
     { name = "customer-storage-iam", mountPath = "/var/run/secrets/fs2-serve/customer-storage/iam", readOnly = true },
+  ])
+  expected_init_env_cel = jsonencode([
+    {
+      name = "FS2_POD_TEMPLATE_HASH"
+      valueFrom = {
+        fieldRef = {
+          apiVersion = "v1"
+          fieldPath  = "metadata.labels['pod-template-hash']"
+        }
+      }
+    },
   ])
   expected_init_mounts_cel = jsonencode([
     { name = "egress-contract", mountPath = "/verify/contract.json", subPath = "contract.json", readOnly = true },
@@ -260,6 +314,7 @@ locals {
     "has(POD.automountServiceAccountToken) && POD.automountServiceAccountToken == false &&",
     "has(POD.enableServiceLinks) && POD.enableServiceLinks == false &&",
     "POD.nodeSelector == {'${var.provider_authority.node_selector_key}':'${var.provider_authority.node_selector_value}'} &&",
+    "(!has(POD.nodeName) || POD.nodeName == '') &&",
     "size(POD.tolerations) == 1 && POD.tolerations[0].key == '${var.provider_authority.taint_key}' &&",
     "POD.tolerations[0].operator == 'Equal' && POD.tolerations[0].value == '${var.provider_authority.taint_value}' &&",
     "POD.tolerations[0].effect == '${var.provider_authority.taint_effect}' &&",
@@ -277,7 +332,7 @@ locals {
     "POD.containers[0].env == ${local.expected_container_env_cel} &&",
     "POD.containers[0].volumeMounts == ${local.expected_container_mounts_cel} && POD.initContainers[0].volumeMounts == ${local.expected_init_mounts_cel} &&",
     "(!has(POD.containers[0].envFrom) || size(POD.containers[0].envFrom) == 0) &&",
-    "(!has(POD.initContainers[0].env) || size(POD.initContainers[0].env) == 0) &&",
+    "POD.initContainers[0].env == ${local.expected_init_env_cel} &&",
     "(!has(POD.initContainers[0].envFrom) || size(POD.initContainers[0].envFrom) == 0) &&",
     "has(POD.securityContext) && POD.securityContext.runAsNonRoot == true && POD.securityContext.runAsUser == 65532 && POD.securityContext.runAsGroup == 65532 && POD.securityContext.fsGroup == 65532 && POD.securityContext.seccompProfile.type == 'RuntimeDefault' &&",
     "[POD.containers[0], POD.initContainers[0]].all(container, has(container.securityContext) && container.securityContext.allowPrivilegeEscalation == false && container.securityContext.readOnlyRootFilesystem == true && container.securityContext.capabilities.drop == ['ALL'] && (!has(container.securityContext.privileged) || container.securityContext.privileged == false)) &&",
@@ -291,8 +346,8 @@ locals {
     "POD.volumes.exists(volume, volume.name == 'database-ca' && has(volume.secret) && volume.secret.secretName == '${local.current_release.database_secret_name}') &&",
     "POD.volumes.exists(volume, volume.name == 'customer-storage-resource' && has(volume.secret) && volume.secret.secretName == '${local.current_release.resource_credentials_secret_name}') &&",
     "POD.volumes.exists(volume, volume.name == 'customer-storage-iam' && has(volume.secret) && volume.secret.secretName == '${local.current_release.iam_credentials_secret_name}') &&",
-    "POD.volumes.exists(volume, volume.name == 'egress-contract' && has(volume.configMap) && volume.configMap.name == '${local.contract_names[var.current_generation]}') &&",
-    "POD.volumes.exists(volume, volume.name == 'egress-trust' && has(volume.configMap) && volume.configMap.name == '${local.trust_names[local.current_contract.trust_generation]}') &&",
+    "POD.volumes.exists(volume, volume.name == 'egress-contract' && has(volume.configMap) && volume.configMap.name == '${local.successor_contract_names[var.current_generation]}') &&",
+    "POD.volumes.exists(volume, volume.name == 'egress-trust' && has(volume.configMap) && volume.configMap.name == '${local.successor_trust_names[local.current_contract.trust_generation]}') &&",
     "POD.volumes.filter(volume, has(volume.projected)).all(volume,",
     "volume.name == 'kubernetes-api' && size(volume.projected.sources) == 2 &&",
     "volume.projected.sources.exists(source, has(source.serviceAccountToken) && source.serviceAccountToken.audience == 'kubernetes.default.svc' && source.serviceAccountToken.expirationSeconds == 600 && source.serviceAccountToken.path == 'token') &&",
@@ -312,6 +367,7 @@ locals {
   )
   workload_policy_spec = {
     failurePolicy = "Fail"
+    matchPolicy   = "Equivalent"
     matchConstraints = {
       resourceRules = [
         {
@@ -342,21 +398,21 @@ locals {
       expression = join(" ", [
         "request.namespace == '${local.namespace}' &&",
         "(request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}' ||",
-        "request.name.startsWith('fs2-storage-v2-') ||",
+        "request.name == '${local.current_release_name}' ||",
         "(request.operation == 'UPDATE' ?",
-        "(has(oldObject.metadata.labels) && 'app.kubernetes.io/component' in oldObject.metadata.labels && oldObject.metadata.labels['app.kubernetes.io/component'] == 'storage-reconciler-v2') :",
-        "(has(object.metadata.labels) && 'app.kubernetes.io/component' in object.metadata.labels && object.metadata.labels['app.kubernetes.io/component'] == 'storage-reconciler-v2')))",
+        "(has(oldObject.metadata.labels) && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}')) :",
+        "(has(object.metadata.labels) && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}'))))",
       ])
     }]
     validations = [
       {
-        expression = "request.resource.resource in ['pods', 'serviceaccounts', 'deployments']"
-        message    = "Customer-storage release authority cannot create Job, CronJob, DaemonSet, StatefulSet or ReplicaSet workloads."
+        expression = "request.resource.resource in ['pods', 'serviceaccounts', 'deployments', 'replicasets']"
+        message    = "Customer-storage release authority cannot create Job, CronJob, DaemonSet or StatefulSet workloads."
         reason     = "Forbidden"
       },
       {
         expression = join(" ", [
-          "request.resource.resource == 'pods' ||",
+          "request.resource.resource in ['pods', 'replicasets'] ||",
           "(request.operation == 'CREATE' && request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}')",
         ])
         message = "Only the exact release identity may create the generation-named ServiceAccount or Deployment."
@@ -377,9 +433,9 @@ locals {
         expression = join(" ", [
           "request.resource.resource != 'deployments' ||",
           "(request.operation == 'CREATE' && object.metadata.name == '${local.current_release_name}' &&",
-          "object.metadata.labels == ${local.v2_pod_labels_cel} &&",
-          "object.spec.replicas == 1 && object.spec.selector.matchLabels == ${local.v2_pod_labels_cel} &&",
-          "object.spec.template.metadata.labels == ${local.v2_pod_labels_cel} &&",
+          "object.metadata.labels == ${local.v3_pod_labels_cel} &&",
+          "object.spec.replicas == 1 && object.spec.selector.matchLabels == ${local.v3_pod_labels_cel} &&",
+          "object.spec.template.metadata.labels == ${local.v3_pod_labels_cel} &&",
           "(${local.deployment_pod_spec_cel}))",
         ])
         message = "The release Deployment differs from the signed generation, Secret allowlist, or protected scheduling contract."
@@ -388,11 +444,31 @@ locals {
       {
         expression = join(" ", [
           "request.resource.resource != 'pods' ||",
-          "(object.metadata.labels.all(key, value, (key in ${local.v2_pod_labels_cel} && ${local.v2_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
-          "${local.v2_pod_labels_cel}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
+          "(request.userInfo.username == '${var.replicaset_controller_username}' &&",
+          "size(object.metadata.ownerReferences) == 1 && object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'ReplicaSet' &&",
+          "object.metadata.ownerReferences[0].name.startsWith('${local.current_release_name}-') && object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
+          "object.metadata.labels.all(key, value, (key in ${local.v3_pod_labels_cel} && ${local.v3_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
+          "'pod-template-hash' in object.metadata.labels && object.metadata.labels['pod-template-hash'] != '' &&",
+          "${local.v3_pod_labels_cel}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
           "(${local.pod_spec_cel}))",
         ])
         message = "A successor Pod differs from the signed generation, Secret allowlist, or protected scheduling contract."
+        reason  = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.resource != 'replicasets' ||",
+          "(request.userInfo.username == '${var.deployment_controller_username}' &&",
+          "request.operation == 'CREATE' && object.metadata.name.startsWith('${local.current_release_name}-') &&",
+          "size(object.metadata.ownerReferences) == 1 && object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'Deployment' &&",
+          "object.metadata.ownerReferences[0].name == '${local.current_release_name}' && object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
+          "object.metadata.labels.all(key, value, (key in ${local.v3_pod_labels_cel} && ${local.v3_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
+          "'pod-template-hash' in object.metadata.labels && object.metadata.labels['pod-template-hash'] != '' &&",
+          "${local.v3_pod_labels_cel}.all(key, value, key in object.metadata.labels && object.metadata.labels[key] == value) &&",
+          "object.spec.replicas == 1 && object.spec.selector.matchLabels == object.metadata.labels &&",
+          "object.spec.template.metadata.labels == object.metadata.labels && (${local.deployment_pod_spec_cel}))",
+        ])
+        message = "Only the approved Deployment controller may create the exact successor ReplicaSet child."
         reason  = "Forbidden"
       },
     ]
@@ -429,9 +505,9 @@ locals {
       contract = {
         generation         = var.current_generation
         sha256             = data.external.current_contract.result.contract_sha256
-        configMapName      = local.contract_names[var.current_generation]
-        trustConfigMapName = local.trust_names[local.current_contract.trust_generation]
-        networkPolicyName  = local.network_policy_names[var.current_generation]
+        configMapName      = local.successor_contract_names[var.current_generation]
+        trustConfigMapName = local.successor_trust_names[local.current_contract.trust_generation]
+        networkPolicyName  = local.successor_network_policy_names[var.current_generation]
         kubernetesApiCidrs = sort(tolist(local.current_contract.kubernetes_api_cidrs))
       }
       rollout = { generation = generation }
@@ -569,14 +645,17 @@ data "external" "identity_separation" {
     service_account_inventory_json = jsonencode(var.kubernetes_service_account_inventory)
     system_subject_inventory_json  = jsonencode(var.kubernetes_system_subject_inventory)
     protected_names_json = jsonencode({
-      boundary_policy = local.boundary_policy_names[var.current_boundary_generation]
-      contract        = local.contract_names[var.current_generation]
-      trust           = local.trust_names[local.current_contract.trust_generation]
-      network_policy  = local.network_policy_names[var.current_generation]
-      release_role    = local.release_names[var.current_release_generation]
-      namespace       = local.namespace
+      boundary_policy  = local.successor_boundary_policy_names[var.current_boundary_generation]
+      workload_policy  = local.successor_workload_policy_names[var.current_workload_policy_generation]
+      contract         = local.successor_contract_names[var.current_generation]
+      trust            = local.successor_trust_names[local.current_contract.trust_generation]
+      network_policy   = local.successor_network_policy_names[var.current_generation]
+      release_role     = local.release_names[var.current_release_generation]
+      release_workload = local.release_names[var.current_release_generation]
+      namespace        = local.namespace
     })
-    expected_rbac_inventory_sha256 = var.provider_authority.kubernetes_rbac_inventory_sha256
+    expected_rbac_inventory_sha256      = var.provider_authority.kubernetes_rbac_inventory_sha256
+    expected_effective_authority_sha256 = var.provider_authority.kubernetes_rbac_effective_authority_sha256
   }
 }
 
@@ -600,9 +679,11 @@ data "external" "integration_dependencies" {
       provider_authority_prior_head_receipt_sha256      = var.provider_authority.prior_head_receipt_sha256
       provider_project_iam_inventory_receipt_sha256     = var.provider_authority.provider_project_iam_inventory_receipt_sha256
       provider_effective_authority_graph_receipt_sha256 = var.provider_authority.provider_effective_authority_graph_receipt_sha256
+      provider_authority_adapter_sha256                 = var.provider_authority.provider_authority_adapter_sha256
       provider_state_custody_sha256                     = var.provider_authority.provider_state_custody_sha256
       boundary_state_custody_sha256                     = var.provider_authority.boundary_state_custody_sha256
       kubernetes_rbac_inventory_receipt_sha256          = var.provider_authority.kubernetes_rbac_inventory_receipt_sha256
+      kubernetes_rbac_effective_authority_sha256        = var.provider_authority.kubernetes_rbac_effective_authority_sha256
       kubernetes_service_account_inventory_sha256       = var.provider_authority.kubernetes_service_account_inventory_sha256
       kubernetes_system_subject_inventory_sha256        = var.provider_authority.kubernetes_system_subject_inventory_sha256
       workload_policy_sha256                            = var.provider_authority.workload_policy_sha256
@@ -698,6 +779,8 @@ resource "terraform_data" "separate_security_owner" {
   }
 
   lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
     precondition {
       condition     = data.external.identity_separation.result.authorized == "true"
       error_message = "Live identity preflight did not prove an external owner and non-mutating workloads authority."
@@ -716,33 +799,53 @@ resource "terraform_data" "separate_security_owner" {
         sha256(jsonencode(var.kubernetes_service_account_inventory)) == var.provider_authority.kubernetes_service_account_inventory_sha256 &&
         sha256(jsonencode(var.kubernetes_system_subject_inventory)) == var.provider_authority.kubernetes_system_subject_inventory_sha256 &&
         data.external.identity_separation.result.rbac_inventory_sha256 == var.provider_authority.kubernetes_rbac_inventory_sha256 &&
+        data.external.identity_separation.result.rbac_effective_authority_sha256 == var.provider_authority.kubernetes_rbac_effective_authority_sha256 &&
         sha256(var.security_owner_provider_principal_id) == var.provider_authority.authority_service_account_sha256 &&
         sha256(var.workloads_provider_principal_id) == var.provider_authority.workloads_service_account_sha256
       )
       error_message = "Kubernetes owner, workloads, release, human, break-glass or other identity inventory differs from the root-owned provider registry."
     }
     precondition {
+      condition = alltrue([
+        for controller in [var.deployment_controller_username, var.replicaset_controller_username] :
+        contains([
+          for subject in var.kubernetes_system_subject_inventory : subject.name
+          if subject.kind == "User"
+        ], controller)
+      ])
+      error_message = "Deployment and ReplicaSet controller usernames must be exact signed effective-authority subjects."
+    }
+    precondition {
       condition     = contains(keys(var.contract_generations), var.current_generation)
       error_message = "current_generation must be retained in contract_generations."
     }
     precondition {
-      condition     = contains(var.boundary_generations, var.current_boundary_generation)
+      condition     = contains(keys(var.successor_boundary_generations), var.current_boundary_generation)
       error_message = "current_boundary_generation must be retained in boundary_generations."
     }
     precondition {
       condition = (
         local.boundary_policy_sha256 == var.provider_authority.boundary_policy_sha256 &&
+        var.successor_boundary_generations[var.current_boundary_generation].contract_generation == var.current_generation &&
+        jsondecode(var.successor_boundary_generations[var.current_boundary_generation].policy_spec_json) == local.boundary_policy_spec &&
+        var.successor_boundary_generations[var.current_boundary_generation].policy_sha256 == local.boundary_policy_sha256 &&
         endswith(var.current_boundary_generation, substr(local.boundary_policy_sha256, 0, 12))
       )
       error_message = "The current admission generation is not content-bound to the externally signed policy spec."
     }
     precondition {
-      condition     = local.workload_policy_sha256 == var.provider_authority.workload_policy_sha256
+      condition = (
+        local.workload_policy_sha256 == var.provider_authority.workload_policy_sha256 &&
+        var.successor_workload_policy_generations[var.current_workload_policy_generation].contract_generation == var.current_generation &&
+        var.successor_workload_policy_generations[var.current_workload_policy_generation].release_generation == var.current_release_generation &&
+        jsondecode(var.successor_workload_policy_generations[var.current_workload_policy_generation].policy_spec_json) == local.workload_policy_spec &&
+        var.successor_workload_policy_generations[var.current_workload_policy_generation].policy_sha256 == local.workload_policy_sha256
+      )
       error_message = "The exhaustive workload admission contract differs from the externally signed provider generation."
     }
     precondition {
       condition = (
-        contains(var.workload_policy_generations, var.current_workload_policy_generation) &&
+        contains(keys(var.successor_workload_policy_generations), var.current_workload_policy_generation) &&
         endswith(var.current_workload_policy_generation, substr(local.workload_policy_sha256, 0, 12))
       )
       error_message = "The current workload admission generation is not append-only and content-bound."
@@ -792,6 +895,42 @@ resource "terraform_data" "separate_security_owner" {
       error_message = "The separately anchored workloads state lineage does not custody these exact predecessor UIDs/specs."
     }
   }
+}
+
+# Freeze the predecessor singleton and add one retained custody address per v3
+# policy generation. A new contract therefore adds a gate instead of updating
+# the state object that authorized an earlier generation.
+resource "terraform_data" "security_generation_v4" {
+  for_each = var.successor_boundary_generations
+
+  input = {
+    generation                                 = each.key
+    contract_generation                        = each.value.contract_generation
+    boundary_policy_sha256                     = each.value.policy_sha256
+    boundary_policy_spec_sha256                = sha256(jsonencode(jsondecode(each.value.policy_spec_json)))
+    authority_manifest_sha256                  = var.provider_authority.authority_manifest_sha256
+    prior_head_receipt_sha256                  = var.provider_authority.prior_head_receipt_sha256
+    integration_dependency_record_sha256       = data.external.integration_dependencies.result.dependency_record_sha256
+    identity_inventory_sha256                  = data.external.identity_separation.result.identity_inventory_sha256
+    kubernetes_rbac_inventory_sha256           = data.external.identity_separation.result.rbac_inventory_sha256
+    kubernetes_rbac_effective_authority_sha256 = data.external.identity_separation.result.rbac_effective_authority_sha256
+    provider_authority_adapter_sha256          = var.provider_authority.provider_authority_adapter_sha256
+    predecessor_compatibility_sha256           = local.predecessor_compatibility_sha256
+    boundary_backend_config_sha256             = data.external.backend_custody.result.backend_config_sha256
+    boundary_backend_lineage                   = data.external.backend_custody.result.backend_lineage
+    boundary_state_lineage                     = data.external.backend_custody.result.state_lineage
+    boundary_state_serial                      = data.external.backend_custody.result.state_serial
+    boundary_state_version_id                  = data.external.backend_custody.result.state_version_id
+    boundary_state_snapshot_sha256             = data.external.backend_custody.result.state_snapshot_sha256
+    boundary_state_managed_addresses_sha256    = data.external.backend_custody.result.managed_addresses_sha256
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.separate_security_owner]
 }
 
 # The policies are themselves append-only. Every installed generation denies
@@ -934,8 +1073,136 @@ resource "kubernetes_manifest" "workload_binding" {
   depends_on = [kubernetes_manifest.workload_policy]
 }
 
+# Compatibility-v3 objects deliberately use a disjoint name and selector
+# space. Each retained policy contains the exact spec for only its own signed
+# generation, so it protects broad selectors that include that generation but
+# cannot reject a later exact generation during additive overlap.
+resource "kubernetes_manifest" "boundary_policy_v3" {
+  for_each = var.successor_boundary_generations
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name = local.successor_boundary_policy_names[each.key]
+      labels = {
+        "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+        "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+        "fs2.nebius.ai/security-generation" = each.key
+        "fs2.nebius.ai/compatibility-epoch" = "v3"
+      }
+      annotations = {
+        "fs2.nebius.ai/boundary-policy-sha256"        = each.value.policy_sha256
+        "fs2.nebius.ai/security-owner-subject-sha256" = data.external.identity_separation.result.security_owner_subject_sha256
+        "fs2.nebius.ai/workloads-subject-sha256"      = data.external.identity_separation.result.workloads_subject_sha256
+      }
+    }
+    spec = jsondecode(each.value.policy_spec_json)
+  }
+
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-customer-storage-security-owner-v3"
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+  depends_on = [terraform_data.security_generation_v4]
+}
+
+resource "kubernetes_manifest" "boundary_binding_v3" {
+  for_each = var.successor_boundary_generations
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name = local.successor_boundary_policy_names[each.key]
+      labels = {
+        "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+        "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+        "fs2.nebius.ai/security-generation" = each.key
+        "fs2.nebius.ai/compatibility-epoch" = "v3"
+      }
+    }
+    spec = {
+      policyName        = local.successor_boundary_policy_names[each.key]
+      validationActions = ["Deny"]
+    }
+  }
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-customer-storage-security-owner-v3"
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+  depends_on = [kubernetes_manifest.boundary_policy_v3]
+}
+
+resource "kubernetes_manifest" "workload_policy_v3" {
+  for_each = var.successor_workload_policy_generations
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name = local.successor_workload_policy_names[each.key]
+      labels = {
+        "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+        "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+        "fs2.nebius.ai/security-generation" = each.key
+        "fs2.nebius.ai/compatibility-epoch" = "v3"
+      }
+      annotations = {
+        "fs2.nebius.ai/workload-policy-sha256" = each.value.policy_sha256
+      }
+    }
+    spec = jsondecode(each.value.policy_spec_json)
+  }
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-customer-storage-security-owner-v3"
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+  depends_on = [kubernetes_manifest.boundary_binding_v3]
+}
+
+resource "kubernetes_manifest" "workload_binding_v3" {
+  for_each = var.successor_workload_policy_generations
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name = local.successor_workload_policy_names[each.key]
+      labels = {
+        "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+        "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+        "fs2.nebius.ai/security-generation" = each.key
+        "fs2.nebius.ai/compatibility-epoch" = "v3"
+      }
+    }
+    spec = {
+      policyName        = local.successor_workload_policy_names[each.key]
+      validationActions = ["Deny"]
+    }
+  }
+  field_manager {
+    force_conflicts = false
+    name            = "fs2-customer-storage-security-owner-v3"
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+  depends_on = [kubernetes_manifest.workload_policy_v3]
+}
+
 resource "kubernetes_config_map_v1" "trust" {
-  for_each = var.trust_generations
+  for_each = local.legacy_trusts
 
   metadata {
     name      = local.trust_names[each.key]
@@ -962,7 +1229,7 @@ resource "kubernetes_config_map_v1" "trust" {
 }
 
 resource "kubernetes_config_map_v1" "contract" {
-  for_each = var.contract_generations
+  for_each = local.legacy_contracts
 
   metadata {
     name      = local.contract_names[each.key]
@@ -996,7 +1263,7 @@ resource "kubernetes_config_map_v1" "contract" {
 }
 
 resource "kubernetes_network_policy_v1" "contract" {
-  for_each = var.contract_generations
+  for_each = local.legacy_contracts
 
   metadata {
     name      = local.network_policy_names[each.key]
@@ -1098,15 +1365,146 @@ resource "kubernetes_network_policy_v1" "contract" {
   ]
 }
 
+resource "kubernetes_config_map_v1" "trust_v3" {
+  for_each = local.successor_trusts
+  metadata {
+    name      = local.successor_trust_names[each.key]
+    namespace = local.namespace
+    labels = {
+      "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+      "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+      "fs2.nebius.ai/security-generation" = each.key
+      "fs2.nebius.ai/compatibility-epoch" = "v3"
+    }
+    annotations = { "fs2.nebius.ai/public-key-sha256" = sha256(each.value.public_key_pem) }
+  }
+  immutable = true
+  data      = { "public-key.pem" = each.value.public_key_pem }
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_manifest.workload_binding_v3]
+}
+
+resource "kubernetes_config_map_v1" "contract_v3" {
+  for_each = local.successor_contracts
+  metadata {
+    name      = local.successor_contract_names[each.key]
+    namespace = local.namespace
+    labels = {
+      "app.kubernetes.io/managed-by"            = "fs2-security-owner"
+      "fs2.nebius.ai/security-owner"            = "customer-storage-egress"
+      "fs2.nebius.ai/security-generation"       = each.key
+      "fs2.nebius.ai/storage-egress-generation" = each.key
+      "fs2.nebius.ai/compatibility-epoch"       = "v3"
+    }
+    annotations = {
+      "fs2.nebius.ai/storage-egress-contract-sha256"  = local.contract_digests[each.key]
+      "fs2.nebius.ai/storage-egress-valid-until"      = jsondecode(each.value.contract_json).valid_until
+      "fs2.nebius.ai/storage-egress-trust-generation" = each.value.trust_generation
+    }
+  }
+  immutable = true
+  data = {
+    "contract.json"             = each.value.contract_json
+    "kubernetes-api-cidrs.json" = jsonencode(sort(tolist(each.value.kubernetes_api_cidrs)))
+  }
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_manifest.workload_binding_v3, kubernetes_config_map_v1.trust_v3]
+}
+
+resource "kubernetes_network_policy_v1" "contract_v3" {
+  for_each = local.successor_contracts
+  metadata {
+    name      = local.successor_network_policy_names[each.key]
+    namespace = local.namespace
+    labels = {
+      "app.kubernetes.io/managed-by"            = "fs2-security-owner"
+      "fs2.nebius.ai/security-owner"            = "customer-storage-egress"
+      "fs2.nebius.ai/security-generation"       = each.key
+      "fs2.nebius.ai/storage-egress-generation" = each.key
+      "fs2.nebius.ai/compatibility-epoch"       = "v3"
+    }
+    annotations = {
+      "fs2.nebius.ai/storage-egress-contract-sha256" = local.contract_digests[each.key]
+    }
+  }
+  spec {
+    pod_selector {
+      match_labels = {
+        "app.kubernetes.io/name"                  = "fs2-serve-control-plane"
+        "app.kubernetes.io/instance"              = "fs2-serve-control-plane"
+        "app.kubernetes.io/component"             = "storage-reconciler-v3"
+        "fs2.nebius.ai/storage-egress-generation" = each.key
+      }
+    }
+    policy_types = ["Ingress", "Egress"]
+    egress {
+      to {
+        namespace_selector { match_labels = { "kubernetes.io/metadata.name" = "kube-system" } }
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/instance" = "coredns"
+            "app.kubernetes.io/name"     = "coredns"
+            "k8s-app"                    = "coredns"
+          }
+        }
+      }
+      ports {
+        port     = "53"
+        protocol = "UDP"
+      }
+      ports {
+        port     = "53"
+        protocol = "TCP"
+      }
+    }
+    egress {
+      to {
+        namespace_selector { match_labels = { "kubernetes.io/metadata.name" = "fs2-data" } }
+        pod_selector { match_labels = { "cnpg.io/cluster" = "fs2-control-db" } }
+      }
+      ports {
+        port     = "5432"
+        protocol = "TCP"
+      }
+    }
+    egress {
+      dynamic "to" {
+        for_each = toset(jsondecode(each.value.contract_json).cidrs)
+        content {
+          ip_block { cidr = to.value }
+        }
+      }
+      ports {
+        port     = "443"
+        protocol = "TCP"
+      }
+    }
+    egress {
+      dynamic "to" {
+        for_each = each.value.kubernetes_api_cidrs
+        content {
+          ip_block { cidr = to.value }
+        }
+      }
+      ports {
+        port     = "443"
+        protocol = "TCP"
+      }
+    }
+  }
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_manifest.boundary_binding_v3, kubernetes_config_map_v1.contract_v3]
+}
+
 # The external security owner creates the immutable, generation-named
 # inventory permission before the release identity creates the ServiceAccount
 # and Deployment. The release identity therefore needs neither bind nor
 # escalate authority and cannot manufacture a more privileged RoleBinding.
 resource "kubernetes_role_v1" "reconciler_inventory" {
-  for_each = var.release_generations
+  for_each = local.legacy_releases
 
   metadata {
-    name      = local.release_names[each.key]
+    name      = local.legacy_release_names[each.key]
     namespace = local.namespace
     labels = {
       "app.kubernetes.io/managed-by"     = "fs2-security-owner"
@@ -1126,10 +1524,10 @@ resource "kubernetes_role_v1" "reconciler_inventory" {
 }
 
 resource "kubernetes_role_binding_v1" "reconciler_inventory" {
-  for_each = var.release_generations
+  for_each = local.legacy_releases
 
   metadata {
-    name      = local.release_names[each.key]
+    name      = local.legacy_release_names[each.key]
     namespace = local.namespace
     labels = {
       "app.kubernetes.io/managed-by"     = "fs2-security-owner"
@@ -1140,7 +1538,7 @@ resource "kubernetes_role_binding_v1" "reconciler_inventory" {
 
   subject {
     kind      = "ServiceAccount"
-    name      = local.release_names[each.key]
+    name      = local.legacy_release_names[each.key]
     namespace = local.namespace
   }
   role_ref {
@@ -1153,34 +1551,74 @@ resource "kubernetes_role_binding_v1" "reconciler_inventory" {
   depends_on = [kubernetes_role_v1.reconciler_inventory]
 }
 
-# The chart is part of the canonical additive release path rather than an
-# operator-side command. Each map key creates one content-named Helm release;
-# retained entries are never upgraded, rolled back, uninstalled, or removed.
-# HELM_DRIVER=configmap is mandatory for this root so the narrow release
-# identity has no Secret read/write permission.
-resource "helm_release" "storage_reconciler_v2" {
+resource "kubernetes_role_v1" "reconciler_inventory_v3" {
+  for_each = local.successor_releases
+  metadata {
+    name      = local.release_names[each.key]
+    namespace = local.namespace
+    labels = {
+      "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+      "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+      "fs2.nebius.ai/release-generation"  = each.key
+      "fs2.nebius.ai/compatibility-epoch" = "v3"
+    }
+  }
+  rule {
+    api_groups = ["networking.k8s.io"]
+    resources  = ["networkpolicies"]
+    verbs      = ["get", "list"]
+  }
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_manifest.boundary_binding_v3]
+}
+
+resource "kubernetes_role_binding_v1" "reconciler_inventory_v3" {
+  for_each = local.successor_releases
+  metadata {
+    name      = local.release_names[each.key]
+    namespace = local.namespace
+    labels = {
+      "app.kubernetes.io/managed-by"      = "fs2-security-owner"
+      "fs2.nebius.ai/security-owner"      = "customer-storage-egress"
+      "fs2.nebius.ai/release-generation"  = each.key
+      "fs2.nebius.ai/compatibility-epoch" = "v3"
+    }
+  }
+  subject {
+    kind      = "ServiceAccount"
+    name      = local.release_names[each.key]
+    namespace = local.namespace
+  }
+  role_ref {
+    api_group = "rbac.authorization.k8s.io"
+    kind      = "Role"
+    name      = kubernetes_role_v1.reconciler_inventory_v3[each.key].metadata[0].name
+  }
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_role_v1.reconciler_inventory_v3]
+}
+
+resource "helm_release" "storage_reconciler_v3" {
   provider = helm.storage_release
-  for_each = var.release_generations
+  for_each = local.successor_releases
 
   name             = local.release_names[each.key]
   namespace        = local.namespace
   create_namespace = false
   chart            = "${path.module}/../../charts/security/customer-storage-reconciler-v2"
   values           = [yamlencode(local.release_values[each.key])]
-
-  atomic          = false
-  cleanup_on_fail = false
-  force_update    = false
-  replace         = false
-  reset_values    = true
-  reuse_values    = false
-  wait            = true
-  wait_for_jobs   = false
+  atomic           = false
+  cleanup_on_fail  = false
+  force_update     = false
+  replace          = false
+  reset_values     = true
+  reuse_values     = false
+  wait             = true
+  wait_for_jobs    = false
 
   lifecycle {
     prevent_destroy = true
     ignore_changes  = all
-
     precondition {
       condition = (
         var.non_owner_identities[var.release_identity_name].category == "release" &&
@@ -1198,8 +1636,46 @@ resource "helm_release" "storage_reconciler_v2" {
           })), 0, 12),
         )
       )
-      error_message = "The v2 release identity or content-bound rollout generation differs from the signed authority."
+      error_message = "The v3 release identity or content-bound rollout generation differs from the signed authority."
     }
+  }
+  depends_on = [
+    kubernetes_manifest.boundary_binding_v3,
+    kubernetes_manifest.workload_binding_v3,
+    kubernetes_config_map_v1.trust_v3,
+    kubernetes_config_map_v1.contract_v3,
+    kubernetes_network_policy_v1.contract_v3,
+    kubernetes_role_binding_v1.reconciler_inventory_v3,
+  ]
+}
+
+# The chart is part of the canonical additive release path rather than an
+# operator-side command. Each map key creates one content-named Helm release;
+# retained entries are never upgraded, rolled back, uninstalled, or removed.
+# HELM_DRIVER=configmap is mandatory for this root so the narrow release
+# identity has no Secret read/write permission.
+resource "helm_release" "storage_reconciler_v2" {
+  provider = helm.storage_release
+  for_each = local.legacy_releases
+
+  name             = local.legacy_release_names[each.key]
+  namespace        = local.namespace
+  create_namespace = false
+  chart            = "${path.module}/../../charts/security/customer-storage-reconciler-v2"
+  values           = [yamlencode(local.release_values[each.key])]
+
+  atomic          = false
+  cleanup_on_fail = false
+  force_update    = false
+  replace         = false
+  reset_values    = true
+  reuse_values    = false
+  wait            = true
+  wait_for_jobs   = false
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
   }
 
   depends_on = [

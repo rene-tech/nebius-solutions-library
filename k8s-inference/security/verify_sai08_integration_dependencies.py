@@ -13,13 +13,31 @@ from pathlib import Path
 from typing import Any
 
 MAX_BYTES = 64 * 1024
-SCHEMA = "fs2-serve.nebius.ai/sai-08-integration-dependencies/v3"
+SCHEMA = "fs2-serve.nebius.ai/sai-08-integration-dependencies/v4"
 REJECTED_SAI10 = "1ae009b858924138de70932ac84b8e595a2656a1"
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _read(path: Path) -> bytes:
-    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    parts = absolute.parts[1:]
+    if not parts or any(part in {"", ".", ".."} for part in parts):
+        raise ValueError("dependency record path is invalid")
+    directory_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in parts[:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        descriptor = os.open(
+            parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd
+        )
+    finally:
+        os.close(directory_fd)
     try:
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= MAX_BYTES:
@@ -111,9 +129,11 @@ def verify(record: dict[str, Any], expected: dict[str, str]) -> dict[str, str]:
         "provider_authority_prior_head_receipt_sha256",
         "provider_project_iam_inventory_receipt_sha256",
         "provider_effective_authority_graph_receipt_sha256",
+        "provider_authority_adapter_sha256",
         "provider_state_custody_sha256",
         "boundary_state_custody_sha256",
         "kubernetes_rbac_inventory_receipt_sha256",
+        "kubernetes_rbac_effective_authority_sha256",
         "kubernetes_service_account_inventory_sha256",
         "kubernetes_system_subject_inventory_sha256",
         "workload_policy_sha256",

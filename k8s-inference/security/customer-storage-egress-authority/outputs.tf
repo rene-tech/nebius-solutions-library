@@ -1,7 +1,7 @@
 output "current_handoff" {
-  description = "Non-secret provider-enforced egress handoff for the additive v2 reconciler."
+  description = "Non-secret provider-enforced egress handoff for the additive compatibility-v3 reconciler."
   value = {
-    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v2"
+    schema                                            = "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v3"
     generation                                        = local.authority.current_generation
     authority_manifest_sha256                         = data.external.authority.result.manifest_sha256
     prior_head_receipt_sha256                         = data.external.authority.result.prior_head_receipt_sha256
@@ -27,10 +27,12 @@ output "current_handoff" {
     kubernetes_service_account_inventory_sha256       = data.external.authority.result.kubernetes_service_account_inventory_sha256
     kubernetes_system_subject_inventory_sha256        = data.external.authority.result.kubernetes_system_subject_inventory_sha256
     kubernetes_rbac_inventory_sha256                  = data.external.authority.result.kubernetes_rbac_inventory_sha256
+    kubernetes_rbac_effective_authority_sha256        = data.external.authority.result.kubernetes_rbac_effective_authority_sha256
     kubernetes_rbac_inventory_receipt_sha256          = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
     provider_identity_sha256                          = data.external.provider_identity.result.provider_identity_sha256
     provider_project_iam_inventory_receipt_sha256     = data.external.authority.result.provider_project_iam_inventory_receipt_sha256
     provider_effective_authority_graph_receipt_sha256 = data.external.authority.result.provider_effective_authority_graph_receipt_sha256
+    provider_authority_adapter_sha256                 = data.external.authority.result.provider_authority_adapter_sha256
     provider_state_custody_sha256                     = data.external.authority.result.provider_state_custody_sha256
     boundary_state_custody_sha256                     = data.external.authority.result.boundary_state_custody_sha256
     accepted_sai10_commit                             = data.external.authority.result.accepted_sai10_commit

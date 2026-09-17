@@ -134,8 +134,10 @@ def _can_i(path: Path, context: str, *arguments: str) -> bool:
     return _kubectl(path, context, "auth", "can-i", *arguments) == "yes"
 
 
-def _rbac_inventory(path: Path, context: str) -> tuple[str, list[dict[str, str]]]:
-    """Hash every RBAC object and return its exact deduplicated subject closure."""
+def _rbac_inventory(
+    path: Path, context: str
+) -> tuple[str, list[dict[str, str]], list[dict[str, Any]]]:
+    """Hash RBAC and derive the exact binding-to-rule authority graph."""
 
     inventory: list[dict[str, Any]] = []
     subjects: set[tuple[str, str, str]] = set()
@@ -206,49 +208,107 @@ def _rbac_inventory(path: Path, context: str) -> tuple[str, list[dict[str, str]]
     inventory_sha256 = hashlib.sha256(
         json.dumps(inventory, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
-    return inventory_sha256, [
+    subject_rows = [
         {"kind": kind, "namespace": namespace, "name": name}
         for kind, namespace, name in sorted(subjects)
     ]
+    role_rules: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for item in inventory:
+        if item["kind"] not in {"Role", "ClusterRole"}:
+            continue
+        metadata = item["metadata"]
+        role_rules[(item["kind"], metadata["namespace"], metadata["name"])] = item.get(
+            "rules", []
+        )
+    authority: list[dict[str, Any]] = []
+    for item in inventory:
+        if item["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:
+            continue
+        metadata = item["metadata"]
+        role_ref = item.get("roleRef", {})
+        role_kind = role_ref.get("kind")
+        role_name = role_ref.get("name")
+        role_namespace = metadata["namespace"] if role_kind == "Role" else ""
+        key = (str(role_kind), role_namespace, str(role_name))
+        if key not in role_rules:
+            raise ValueError("Kubernetes RBAC binding references an absent role")
+        binding_subjects = item.get("subjects", [])
+        for subject in binding_subjects:
+            subject_namespace = subject.get("namespace", "")
+            if subject.get("kind") == "ServiceAccount" and not subject_namespace:
+                subject_namespace = metadata["namespace"]
+            authority.append(
+                {
+                    "subject": {
+                        "kind": subject.get("kind"),
+                        "namespace": subject_namespace,
+                        "name": subject.get("name"),
+                    },
+                    "scope": metadata["namespace"] if item["kind"] == "RoleBinding" else "*",
+                    "binding": {
+                        "kind": item["kind"],
+                        "namespace": metadata["namespace"],
+                        "name": metadata["name"],
+                        "uid": metadata["uid"],
+                    },
+                    "roleRef": {
+                        "kind": role_kind,
+                        "namespace": role_namespace,
+                        "name": role_name,
+                    },
+                    "rules": role_rules[key],
+                }
+            )
+    authority.sort(
+        key=lambda item: (
+            item["subject"]["kind"],
+            item["subject"]["namespace"],
+            item["subject"]["name"],
+            item["binding"]["kind"],
+            item["binding"]["namespace"],
+            item["binding"]["name"],
+        )
+    )
+    return inventory_sha256, subject_rows, authority
 
 
 def _rbac_inventory_sha256(path: Path, context: str) -> str:
     return _rbac_inventory(path, context)[0]
 
 
-def _dangerous_permissions(path: Path, context: str) -> list[str]:
+def _namespaces(path: Path, context: str) -> list[str]:
+    try:
+        response = json.loads(_kubectl(path, context, "get", "namespaces", "-o", "json"))
+        values = sorted(
+            item["metadata"]["name"] for item in response["items"]
+        )
+    except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("Kubernetes namespace inventory is invalid") from exc
+    if not values or values != sorted(set(values)) or any(not value for value in values):
+        raise ValueError("Kubernetes namespace inventory is incomplete")
+    return values
+
+
+def _dangerous_permissions(
+    path: Path, context: str, namespaces: list[str]
+) -> list[str]:
     probes: dict[str, tuple[str, ...]] = {
-        "impersonate-users": ("impersonate", "users.authentication.k8s.io"),
-        "impersonate-groups": ("impersonate", "groups.authentication.k8s.io"),
-        "impersonate-serviceaccounts": (
-            "impersonate",
-            "serviceaccounts.authentication.k8s.io",
-        ),
+        "impersonate-users": ("impersonate", "users"),
+        "impersonate-groups": ("impersonate", "groups"),
+        "impersonate-serviceaccounts": ("impersonate", "serviceaccounts"),
         "impersonate-uids": ("impersonate", "uids.authentication.k8s.io"),
         "impersonate-userextras": (
             "impersonate",
             "userextras.authentication.k8s.io",
         ),
-        "serviceaccount-tokenrequest": ("create", "serviceaccounts/token"),
         "bind-clusterroles": ("bind", "clusterroles.rbac.authorization.k8s.io"),
         "escalate-clusterroles": (
             "escalate",
             "clusterroles.rbac.authorization.k8s.io",
         ),
-        "bind-roles": ("bind", "roles.rbac.authorization.k8s.io", "--all-namespaces"),
-        "escalate-roles": (
-            "escalate",
-            "roles.rbac.authorization.k8s.io",
-            "--all-namespaces",
-        ),
         "create-clusterrolebindings": (
             "create",
             "clusterrolebindings.rbac.authorization.k8s.io",
-        ),
-        "create-rolebindings": (
-            "create",
-            "rolebindings.rbac.authorization.k8s.io",
-            "--all-namespaces",
         ),
     }
     resource_verbs = {
@@ -266,7 +326,14 @@ def _dangerous_permissions(path: Path, context: str) -> list[str]:
         "pods/attach": ("create",),
         "pods/portforward": ("create",),
         "pods/ephemeralcontainers": ("update", "patch"),
+        "pods/binding": ("create",),
+        "pods/eviction.policy": ("create",),
+        "namespaces": ("create", "update", "patch", "delete"),
+        "nodes": ("get", "list", "watch", "update", "patch", "delete"),
+        "nodes/proxy": ("get", "create"),
+        "nodes/status": ("update", "patch"),
         "serviceaccounts": ("create", "update", "patch", "delete", "deletecollection"),
+        "serviceaccounts/token": ("create",),
         "pods": ("create", "update", "patch", "delete", "deletecollection"),
         "deployments.apps": ("create", "update", "patch", "delete", "deletecollection"),
         "replicasets.apps": ("create", "update", "patch", "delete", "deletecollection"),
@@ -346,15 +413,46 @@ def _dangerous_permissions(path: Path, context: str) -> list[str]:
         ),
     }
     for resource, verbs in resource_verbs.items():
-        scope = (
-            ()
-            if resource.startswith(
-                ("cluster", "validating", "mutating", "certificate")
-            )
-            else ("--all-namespaces",)
-        )
         for verb in verbs:
-            probes[f"{verb}-{resource}"] = (verb, resource, *scope)
+            cluster_scoped = resource.startswith(
+                (
+                    "cluster",
+                    "validating",
+                    "mutating",
+                    "certificate",
+                    "namespaces",
+                    "nodes",
+                )
+            )
+            if cluster_scoped:
+                probes[f"{verb}-{resource}"] = (verb, resource)
+            else:
+                for namespace in namespaces:
+                    probes[f"{verb}-{resource}:{namespace}"] = (
+                        verb,
+                        resource,
+                        "--namespace",
+                        namespace,
+                    )
+    for namespace in namespaces:
+        probes[f"bind-roles:{namespace}"] = (
+            "bind",
+            "roles.rbac.authorization.k8s.io",
+            "--namespace",
+            namespace,
+        )
+        probes[f"escalate-roles:{namespace}"] = (
+            "escalate",
+            "roles.rbac.authorization.k8s.io",
+            "--namespace",
+            namespace,
+        )
+        probes[f"create-rolebindings:{namespace}"] = (
+            "create",
+            "rolebindings.rbac.authorization.k8s.io",
+            "--namespace",
+            namespace,
+        )
     probes.update(
         {
             "approve-certificate-signing-requests": (
@@ -385,6 +483,16 @@ def _protected_permissions(
             names["boundary_policy"],
             None,
         ),
+        "workload-policy": (
+            "validatingadmissionpolicies.admissionregistration.k8s.io",
+            names["workload_policy"],
+            None,
+        ),
+        "workload-binding": (
+            "validatingadmissionpolicybindings.admissionregistration.k8s.io",
+            names["workload_policy"],
+            None,
+        ),
         "contract": ("configmaps", names["contract"], namespace),
         "trust": ("configmaps", names["trust"], namespace),
         "network-policy": (
@@ -400,6 +508,16 @@ def _protected_permissions(
         "release-binding": (
             "rolebindings.rbac.authorization.k8s.io",
             names["release_role"],
+            namespace,
+        ),
+        "release-serviceaccount": (
+            "serviceaccounts",
+            names["release_workload"],
+            namespace,
+        ),
+        "release-deployment": (
+            "deployments.apps",
+            names["release_workload"],
             namespace,
         ),
     }
@@ -428,6 +546,18 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         or not isinstance(declared_system_subjects, list)
     ):
         raise ValueError("identity inventory or protected names are invalid")
+    owner_declarations = [
+        item
+        for item in declared_identities.values()
+        if isinstance(item, dict) and item.get("category") == "owner"
+    ]
+    if len(owner_declarations) != 1:
+        raise ValueError("identity inventory must declare exactly one owner")
+    owner_declaration = owner_declarations[0]
+    namespaces = _namespaces(
+        Path(owner_declaration["kubeconfig_path"]),
+        owner_declaration["kube_context"],
+    )
     checked: list[dict[str, str]] = []
     categories: list[str] = []
     for name, item in declared_identities.items():
@@ -472,12 +602,17 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         if sorted(identity["groups"]) != item["groups"]:
             raise ValueError(f"{name} authenticated groups differ from the signed inventory")
         protected = _protected_permissions(path, context, names)
-        dangerous = _dangerous_permissions(path, context)
+        dangerous = _dangerous_permissions(path, context, namespaces)
         if item["category"] == "owner":
             if owner_group not in identity["groups"]:
                 raise ValueError("security-owner credential lacks the dedicated owner group")
+            owner_create_labels = {
+                "policy", "binding", "workload-policy", "workload-binding",
+                "contract", "trust", "network-policy", "release-role",
+                "release-binding",
+            }
             if not all(
-                value for key, value in protected.items() if key.startswith("create:")
+                protected[f"create:{label}"] for label in owner_create_labels
             ):
                 raise ValueError("security-owner credential cannot add every protected object")
             if any(
@@ -502,6 +637,8 @@ def verify(query: dict[str, str]) -> dict[str, str]:
                 # either immutable public contract generation.
                 admission_mediated.update(
                     {
+                        "create:release-serviceaccount",
+                        "create:release-deployment",
                         "update:contract",
                         "patch:contract",
                         "update:trust",
@@ -516,23 +653,30 @@ def verify(query: dict[str, str]) -> dict[str, str]:
             if any(forbidden.values()):
                 raise ValueError(f"{name} identity can mutate a protected generation")
         if item["category"] == "owner":
-            owner_create_or_apply = {
-                "create-rolebindings",
-                "create-configmaps",
-                "create-roles.rbac.authorization.k8s.io",
-                "create-rolebindings.rbac.authorization.k8s.io",
+            owner_cluster_create_or_apply = {
                 "create-validatingadmissionpolicies.admissionregistration.k8s.io",
                 "patch-validatingadmissionpolicies.admissionregistration.k8s.io",
                 "create-validatingadmissionpolicybindings.admissionregistration.k8s.io",
                 "patch-validatingadmissionpolicybindings.admissionregistration.k8s.io",
             }
+            owner_namespace_create_or_apply = {
+                "create-configmaps",
+                "create-roles.rbac.authorization.k8s.io",
+                "create-rolebindings.rbac.authorization.k8s.io",
+                "create-rolebindings",
+            }
             dangerous = [
                 permission
                 for permission in dangerous
-                if permission not in owner_create_or_apply
+                if permission not in owner_cluster_create_or_apply
+                and not (
+                    permission.rsplit(":", 1)[-1] == names["namespace"]
+                    and permission.rsplit(":", 1)[0]
+                    in owner_namespace_create_or_apply
+                )
             ]
         elif item["category"] == "release":
-            release_read_create = {
+            release_namespace_create = {
                 "create-serviceaccounts",
                 "create-deployments.apps",
                 "create-configmaps",
@@ -542,7 +686,11 @@ def verify(query: dict[str, str]) -> dict[str, str]:
             dangerous = [
                 permission
                 for permission in dangerous
-                if permission not in release_read_create
+                if not (
+                    permission.rsplit(":", 1)[-1] == names["namespace"]
+                    and permission.rsplit(":", 1)[0]
+                    in release_namespace_create
+                )
             ]
         if dangerous:
             raise ValueError(f"{name} identity has dangerous authority: {dangerous[0]}")
@@ -572,17 +720,17 @@ def verify(query: dict[str, str]) -> dict[str, str]:
     checked.sort(key=lambda item: item["name"])
     owner = next(item for item in checked if item["category"] == "owner")
     workloads = next(item for item in checked if item["category"] == "workloads")
-    owner_declaration = next(
-        item
-        for item in declared_identities.values()
-        if item["category"] == "owner"
-    )
-    rbac_inventory_sha256, rbac_subjects = _rbac_inventory(
+    rbac_inventory_sha256, rbac_subjects, effective_authority = _rbac_inventory(
         Path(owner_declaration["kubeconfig_path"]),
         owner_declaration["kube_context"],
     )
     if rbac_inventory_sha256 != query["expected_rbac_inventory_sha256"]:
         raise ValueError("live cluster RBAC inventory differs from the signed receipt")
+    effective_authority_sha256 = hashlib.sha256(
+        json.dumps(effective_authority, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if effective_authority_sha256 != query["expected_effective_authority_sha256"]:
+        raise ValueError("live RBAC effective authority differs from the signed receipt")
 
     authorized_users = {item["username"] for item in checked}
     authorized_groups = {group for item in checked for group in item["groups"]}
@@ -649,6 +797,7 @@ def verify(query: dict[str, str]) -> dict[str, str]:
         "rbac_subjects_sha256": hashlib.sha256(
             json.dumps(rbac_subjects, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest(),
+        "rbac_effective_authority_sha256": effective_authority_sha256,
     }
 
 

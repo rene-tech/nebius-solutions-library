@@ -9,6 +9,7 @@ import ipaddress
 import json
 import os
 import stat
+import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -22,11 +23,13 @@ REGISTRY_PATH = Path("/etc/fs2-security-ro/authority/customer-storage-egress-aut
 PRIOR_HEAD_PATH = Path(
     "/var/lib/fs2-security-checkpoints-ro/customer-storage-egress-prior-head.json"
 )
-REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v3"
-PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v2"
+REGISTRY_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-registry/v4"
+PRIOR_HEAD_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-prior-head/v3"
 MANIFEST_SCHEMA = "fs2-serve.nebius.ai/customer-storage-egress-authority-ledger/v3"
 MAX_BYTES = 1024 * 1024
 NEBIUS_TERRAFORM_PROVIDER_VERSION = "0.5.232"
+REJECTED_SAI10_COMMIT = "1ae009b858924138de70932ac84b8e595a2656a1"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 
 def canonical(value: object) -> bytes:
@@ -161,6 +164,19 @@ def require_fresh_timestamp(value: object, label: str) -> None:
         raise ValueError(f"{label} receipt is future-dated or stale")
 
 
+def rejected_sai10_is_ancestor(descendant: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", REJECTED_SAI10_COMMIT, descendant],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        timeout=10,
+    )
+    if result.returncode not in {0, 1}:
+        raise ValueError("accepted SAI-10 ancestry could not be verified")
+    return result.returncode == 0
+
+
 def verify_signed_object(
     value: dict[str, Any],
     *,
@@ -204,6 +220,7 @@ def verify(manifest_json: str) -> dict[str, str]:
         "kubernetes_rbac_inventory_receipt",
         "provider_project_iam_inventory_receipt",
         "provider_effective_authority_graph_receipt",
+        "provider_authority_adapter_sha256",
         "accepted_custody",
         "approved_manifest_sha256",
         "manifest_public_key_pem",
@@ -219,10 +236,12 @@ def verify(manifest_json: str) -> dict[str, str]:
         "approved_manifest_sha256",
         "manifest_public_key_pem",
         "checkpoint_public_key_pem",
+        "provider_authority_adapter_sha256",
     ):
         if not isinstance(registry[field], str) or not registry[field]:
             raise ValueError("authority registry identity is incomplete")
     digest(registry["approved_manifest_sha256"], "approved manifest digest")
+    digest(registry["provider_authority_adapter_sha256"], "provider authority adapter")
     for field, expected_fields in (
         ("authority_access_permits", {"id", "role", "resource_id"}),
         ("authority_auth_public_keys", {"id", "expires_at"}),
@@ -468,11 +487,12 @@ def verify(manifest_json: str) -> dict[str, str]:
         "cluster_id",
         "inventory_sha256",
         "subjects",
+        "effective_authority",
         "observed_at",
         "payload_sha256",
         "signature",
     } or rbac_receipt.get("schema") != (
-        "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v2"
+        "fs2-serve.nebius.ai/kubernetes-rbac-inventory/v3"
     ):
         raise ValueError("Kubernetes RBAC inventory receipt fields or schema differ")
     digest(rbac_receipt.get("inventory_sha256"), "Kubernetes RBAC inventory")
@@ -500,6 +520,38 @@ def verify(manifest_json: str) -> dict[str, str]:
         != len(rbac_subjects)
     ):
         raise ValueError("Kubernetes RBAC subject inventory is malformed")
+    effective_authority = rbac_receipt.get("effective_authority")
+    if (
+        not isinstance(effective_authority, list)
+        or not effective_authority
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"subject", "scope", "binding", "roleRef", "rules"}
+            or item.get("subject") not in rbac_subjects
+            or not isinstance(item.get("scope"), str)
+            or not item["scope"]
+            or not isinstance(item.get("binding"), dict)
+            or not isinstance(item.get("roleRef"), dict)
+            or not isinstance(item.get("rules"), list)
+            for item in effective_authority
+        )
+        or effective_authority
+        != sorted(
+            effective_authority,
+            key=lambda item: (
+                item["subject"]["kind"],
+                item["subject"]["namespace"],
+                item["subject"]["name"],
+                item["binding"]["kind"],
+                item["binding"]["namespace"],
+                item["binding"]["name"],
+            ),
+        )
+    ):
+        raise ValueError("Kubernetes RBAC effective-authority graph is malformed")
+    rbac_effective_authority_sha256 = hashlib.sha256(
+        canonical(effective_authority)
+    ).hexdigest()
     authorized_users = {item["username"] for item in kubernetes_subjects}
     authorized_groups = {
         group for item in kubernetes_subjects for group in item["groups"]
@@ -542,8 +594,8 @@ def verify(manifest_json: str) -> dict[str, str]:
         custody["independent_review_receipt_sha256"],
         "accepted SAI-10 review receipt",
     )
-    if custody["sai10_commit"].startswith("1ae009b85"):
-        raise ValueError("rejected SAI-10 candidate cannot authorize customer storage")
+    if rejected_sai10_is_ancestor(custody["sai10_commit"]) or rejected_sai10_is_ancestor("HEAD"):
+        raise ValueError("rejected SAI-10 ancestry cannot authorize customer storage")
 
     expected_prior_fields = {
         "schema",
@@ -579,8 +631,11 @@ def verify(manifest_json: str) -> dict[str, str]:
         "state_lineage",
         "state_serial",
         "state_version_id",
+        "state_version_adapter_sha256",
         "state_snapshot_sha256",
-        "generations",
+        "generation_chain_anchor_sha256",
+        "generation_chain",
+        "authority_gate_generations",
         "managed_addresses",
     }
     provider_address_prefixes = (
@@ -615,18 +670,59 @@ def verify(manifest_json: str) -> dict[str, str]:
             or not address.startswith(provider_address_prefixes)
             for address in provider_state_custody["managed_addresses"]
         )
-        or not isinstance(provider_state_custody.get("generations"), list)
-        or provider_state_custody["generations"]
-        != sorted(set(provider_state_custody["generations"]))
+        or not isinstance(provider_state_custody.get("generation_chain"), list)
+        or not provider_state_custody["generation_chain"]
+        or not isinstance(provider_state_custody.get("authority_gate_generations"), list)
+        or provider_state_custody["authority_gate_generations"]
+        != sorted(set(provider_state_custody["authority_gate_generations"]))
         or any(
             not isinstance(generation, str)
             or len(generation) != 28
             or not generation.startswith("g")
-            for generation in provider_state_custody["generations"]
+            for generation in provider_state_custody["authority_gate_generations"]
         )
     ):
         raise ValueError("provider state custody is not canonical and complete")
-    for field in ("backend_config_sha256", "state_snapshot_sha256"):
+    installed_generation_names: list[str] = []
+    installed_predecessor: str | None = None
+    for index, installed in enumerate(provider_state_custody["generation_chain"]):
+        if (
+            not isinstance(installed, dict)
+            or set(installed) != {"generation", "predecessor_sha256", "content_sha256"}
+        ):
+            raise ValueError("provider installed-generation chain fields differ")
+        generation = installed.get("generation")
+        predecessor_sha256 = installed.get("predecessor_sha256")
+        content_sha256 = installed.get("content_sha256")
+        if (
+            not isinstance(generation, str)
+            or len(generation) != 28
+            or not generation.startswith("g")
+            or generation in installed_generation_names
+        ):
+            raise ValueError("provider installed-generation identity is invalid")
+        digest(predecessor_sha256, "provider installed-generation predecessor")
+        digest(content_sha256, "provider installed-generation content")
+        if generation[-12:] != content_sha256[:12]:
+            raise ValueError("provider installed generation is not content-bound")
+        expected_predecessor = (
+            provider_state_custody["generation_chain_anchor_sha256"]
+            if index == 0
+            else installed_predecessor
+        )
+        if predecessor_sha256 != expected_predecessor:
+            raise ValueError("provider installed-generation chain is discontinuous")
+        installed_generation_names.append(generation)
+        installed_predecessor = content_sha256
+    if installed_predecessor != prior_head["head_generation_sha256"]:
+        raise ValueError("provider installed-generation chain does not end at prior head")
+    for field in (
+        "backend_config_sha256",
+        "backend_lineage",
+        "state_snapshot_sha256",
+        "state_version_adapter_sha256",
+        "generation_chain_anchor_sha256",
+    ):
         digest(provider_state_custody[field], f"provider {field}")
     if (
         hashlib.sha256(canonical(provider_state_custody)).hexdigest()
@@ -640,21 +736,33 @@ def verify(manifest_json: str) -> dict[str, str]:
         "state_lineage",
         "state_serial",
         "state_version_id",
+        "state_version_adapter_sha256",
         "state_snapshot_sha256",
         "managed_addresses",
     }
     boundary_address_prefixes = (
         "terraform_data.separate_security_owner",
+        "terraform_data.security_generation_v4[",
         "kubernetes_manifest.boundary_policy[",
         "kubernetes_manifest.boundary_binding[",
         "kubernetes_manifest.workload_policy[",
         "kubernetes_manifest.workload_binding[",
+        "kubernetes_manifest.boundary_policy_v3[",
+        "kubernetes_manifest.boundary_binding_v3[",
+        "kubernetes_manifest.workload_policy_v3[",
+        "kubernetes_manifest.workload_binding_v3[",
         "kubernetes_config_map_v1.trust[",
         "kubernetes_config_map_v1.contract[",
         "kubernetes_network_policy_v1.contract[",
+        "kubernetes_config_map_v1.trust_v3[",
+        "kubernetes_config_map_v1.contract_v3[",
+        "kubernetes_network_policy_v1.contract_v3[",
         "kubernetes_role_v1.reconciler_inventory[",
         "kubernetes_role_binding_v1.reconciler_inventory[",
+        "kubernetes_role_v1.reconciler_inventory_v3[",
+        "kubernetes_role_binding_v1.reconciler_inventory_v3[",
         "helm_release.storage_reconciler_v2[",
+        "helm_release.storage_reconciler_v3[",
     )
     if (
         not isinstance(boundary_state_custody, dict)
@@ -669,8 +777,9 @@ def verify(manifest_json: str) -> dict[str, str]:
             )
         )
         or not isinstance(boundary_state_custody.get("state_serial"), int)
-        or boundary_state_custody["state_serial"] < 0
+        or boundary_state_custody["state_serial"] < 1
         or not isinstance(boundary_state_custody.get("managed_addresses"), list)
+        or not boundary_state_custody["managed_addresses"]
         or boundary_state_custody["managed_addresses"]
         != sorted(set(boundary_state_custody["managed_addresses"]))
         or any(
@@ -680,7 +789,12 @@ def verify(manifest_json: str) -> dict[str, str]:
         )
     ):
         raise ValueError("boundary state custody is not canonical and complete")
-    for field in ("backend_config_sha256", "state_snapshot_sha256"):
+    for field in (
+        "backend_config_sha256",
+        "backend_lineage",
+        "state_snapshot_sha256",
+        "state_version_adapter_sha256",
+    ):
         digest(boundary_state_custody[field], f"boundary {field}")
     if (
         hashlib.sha256(canonical(boundary_state_custody)).hexdigest()
@@ -942,12 +1056,18 @@ def verify(manifest_json: str) -> dict[str, str]:
     if manifest.get("current_generation") != list(normalized)[-1]:
         raise ValueError("current authority generation must be the final signed generation")
     expected_provider_addresses = ["terraform_data.external_authority"]
+    expected_provider_addresses.extend(
+        f"terraform_data.external_authority_v4[{json.dumps(generation)}]"
+        for generation in provider_state_custody["authority_gate_generations"]
+    )
     manifest_generation_order = list(normalized)
-    if provider_state_custody["generations"] != manifest_generation_order[
-        : len(provider_state_custody["generations"])
-    ]:
-        raise ValueError("provider state generations are not a canonical ledger prefix")
-    for generation in provider_state_custody["generations"]:
+    # The signed prior-state chain contains only installed generations and
+    # terminates at prior_head.head_generation_sha256. The successor-only
+    # manifest begins from that exact hash (checked above); names need only be
+    # disjoint because their suffixes bind content, not chronological order.
+    if set(installed_generation_names) & set(manifest_generation_order):
+        raise ValueError("provider successor generations overlap prior custody")
+    for generation in installed_generation_names:
         quoted = json.dumps(generation)
         expected_provider_addresses.extend(
             [
@@ -959,10 +1079,24 @@ def verify(manifest_json: str) -> dict[str, str]:
                 f"nebius_vpc_v1_security_rule.provider_egress[{quoted}]",
             ]
         )
-    if provider_state_custody["managed_addresses"] != sorted(
-        expected_provider_addresses
-    ):
-        raise ValueError("provider state custody omits or adds a managed address")
+    required_provider_addresses = set(expected_provider_addresses)
+    observed_provider_addresses = set(provider_state_custody["managed_addresses"])
+    if not required_provider_addresses <= observed_provider_addresses:
+        raise ValueError("provider state custody omits a required managed address")
+    for address in sorted(observed_provider_addresses - required_provider_addresses):
+        if not address.endswith("]") or "[" not in address:
+            raise ValueError("provider state custody contains an unbound address")
+        try:
+            pending_generation = json.loads(address.rsplit("[", 1)[1][:-1])
+        except json.JSONDecodeError as exc:
+            raise ValueError("provider pending address generation is malformed") from exc
+        if (
+            not isinstance(pending_generation, str)
+            or pending_generation not in provider_state_custody["authority_gate_generations"]
+            or pending_generation in installed_generation_names
+            or not address.startswith(provider_address_prefixes[1:])
+        ):
+            raise ValueError("provider pending address is not bound to a retained gate")
 
     return {
         "authorized": "true",
@@ -989,10 +1123,17 @@ def verify(manifest_json: str) -> dict[str, str]:
         ).hexdigest(),
         "provider_project_iam_inventory_receipt_sha256": iam_receipt_sha256,
         "provider_effective_authority_graph_receipt_sha256": authority_graph_sha256,
+        "provider_authority_adapter_sha256": registry["provider_authority_adapter_sha256"],
         "provider_state_custody_sha256": prior_head["provider_state_custody_sha256"],
+        "prior_authority_gate_generations_json": json.dumps(
+            provider_state_custody["authority_gate_generations"],
+            sort_keys=True,
+            separators=(",", ":"),
+        ),
         "boundary_state_custody_sha256": prior_head["boundary_state_custody_sha256"],
         "kubernetes_rbac_inventory_receipt_sha256": rbac_receipt_sha256,
         "kubernetes_rbac_inventory_sha256": rbac_receipt["inventory_sha256"],
+        "kubernetes_rbac_effective_authority_sha256": rbac_effective_authority_sha256,
         "accepted_sai10_commit": custody["sai10_commit"],
         "accepted_sai10_tree": custody["sai10_tree"],
         "sai10_independent_review_receipt_sha256": custody[

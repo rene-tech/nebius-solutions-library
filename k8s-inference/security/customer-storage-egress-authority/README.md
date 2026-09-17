@@ -13,18 +13,24 @@ root-owned, `O_NOFOLLOW` files on distinct read-only filesystems. Independent
 keys sign the manifest and checkpoint. The new manifest must extend the
 checkpoint's prior manifest and generation heads plus exact live/provider-state
 custody digests. The first generation therefore cannot restart its predecessor
-at `null`. The root also descriptor-reads the initialized backend metadata and
-requires its complete S3 configuration digest, lock setting, backend lineage,
-state lineage/serial/version, snapshot digest and exact managed-address set to
-match the separately anchored receipt; an alternate local state cannot start
-another history.
+at `null`. The signed prior state carries an explicit installed-generation
+hash chain whose final content digest must equal the separately anchored prior
+generation head. A successor-only manifest begins from that exact digest; no
+lexical ordering of content-derived names is treated as chronology. The root
+also descriptor-reads the initialized backend metadata and requires its
+complete S3 configuration digest, lock setting, actual remote lineage,
+serial/snapshot bytes, exact non-empty managed-address set, and remote object
+version to match the separately anchored receipt. The object version comes
+from a fixed root-owned, read-only, digest-bound adapter, so an alternate local
+state cannot start another history.
 
 The signed manifest fixes provider version `0.5.232`, the exact target cluster,
 complete image/storage release values, content-bound NetworkPolicy and
 workload admission specs, accepted SAI-10 commit/tree/review custody, exact
 project IAM inventory, a provider-native effective-authority graph covering
 inherited/federated/external principals, the fresh signed target-cluster RBAC
-inventory and its complete subject closure, and every content-named
+inventory, its complete subject closure and its derived binding-to-rule
+effective-authority graph, and every content-named
 route/node generation. Canonical state uses a locked,
 versioned remote backend; local or omitted state is never an authority source.
 
@@ -36,8 +42,10 @@ unexpired and bounded to 90 days. It also inventories every project group,
 membership, service account, public key and principal access permit and
 requires exact equality with the independently signed project receipt. The
 separate provider-native authority-graph receipt, rather than candidate
-declarations, must derive the exact cluster-access and mutating principal sets;
-the singleton authority group must be the only mutator.
+declarations, must derive the exact cluster-access and mutating principal sets.
+A fixed root-owned, read-only, digest-bound provider adapter independently
+re-derives that graph at evaluation time, including inherited, federated and
+external principals; the singleton authority group must be the only mutator.
 `capture_provider_iam_inventory.py` emits the canonical unsigned receipt body
 using only paginated read-only API calls; the separate checkpoint owner signs
 and installs that body on the read-only authority anchor.
@@ -50,6 +58,10 @@ The first apply also requires independent approval of the external registry and
 a provider-native read-only proof that the owner is the only identity able to
 mutate the security project.
 
-A future owner-approved plan must be exported to JSON and accepted by
+A future owner-approved saved plan must be exported to JSON and pass
 `security/verify_additive_plan.py`; only `create`, `read`, and `no-op` actions
-are valid. No state-forget exception exists.
+are valid. Execution must then use `security/apply_custodied_additive_plan.py`,
+which verifies externally signed exact plan bytes, clean source commit/tree,
+predecessor remote state and the successor address contract before applying
+the same open descriptor. It verifies the actual post-apply state and has no
+plan, destroy, replace, state-forget, or cleanup mode.

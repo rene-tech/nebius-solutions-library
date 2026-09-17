@@ -196,8 +196,26 @@ variable "kubernetes_system_subject_inventory" {
   }
 }
 
+variable "deployment_controller_username" {
+  description = "Exact live authenticated username that creates Deployment ReplicaSets, present in the signed system-subject inventory."
+  type        = string
+  validation {
+    condition     = startswith(var.deployment_controller_username, "system:")
+    error_message = "deployment_controller_username must be an exact Kubernetes system identity."
+  }
+}
+
+variable "replicaset_controller_username" {
+  description = "Exact live authenticated username that creates ReplicaSet Pods, present in the signed system-subject inventory."
+  type        = string
+  validation {
+    condition     = startswith(var.replicaset_controller_username, "system:")
+    error_message = "replicaset_controller_username must be an exact Kubernetes system identity."
+  }
+}
+
 variable "release_identity_name" {
-  description = "Exact signed-inventory release identity used only for the additive v2 Helm install."
+  description = "Exact signed-inventory release identity used only for the additive compatibility-v3 Helm install."
   type        = string
   validation {
     condition     = var.release_identity_name != "" && var.release_identity_name != "workloads"
@@ -206,7 +224,7 @@ variable "release_identity_name" {
 }
 
 variable "release_generations" {
-  description = "Append-only v2 release payloads; custody identities come only from provider_authority."
+  description = "Append-only release payloads; custody identities come only from provider_authority."
   type = map(object({
     rollout_generation               = string
     image_repository                 = string
@@ -246,7 +264,18 @@ variable "release_generations" {
       release.rotation_window_days < release.key_ttl_days &&
       release.action_timeout_seconds >= 1 && release.action_timeout_seconds <= 120
     ])
-    error_message = "Every release generation must be an exact bounded additive v2 payload."
+    error_message = "Every release generation must be an exact bounded additive payload."
+  }
+}
+
+variable "legacy_release_generations" {
+  description = "Exact retained v2 Helm release generation keys; these instances remain state-owned and are never reused for v3."
+  type        = set(string)
+  validation {
+    condition = alltrue([
+      for generation in var.legacy_release_generations : contains(keys(var.release_generations), generation)
+    ])
+    error_message = "legacy_release_generations must be a subset of retained release_generations."
   }
 }
 
@@ -256,7 +285,9 @@ variable "current_release_generation" {
   validation {
     condition = (
       can(regex("^r[0-9]{14}-[a-f0-9]{12}$", var.current_release_generation)) &&
-      contains(keys(var.release_generations), var.current_release_generation)
+      contains(keys(var.release_generations), var.current_release_generation) &&
+      !contains(var.legacy_release_generations, var.current_release_generation) &&
+      try(var.non_owner_identities[var.release_identity_name].username, "") == "fs2:customer-storage-release:${var.current_release_generation}"
     )
     error_message = "current_release_generation must name a retained release generation."
   }
@@ -291,9 +322,11 @@ variable "provider_authority" {
     kubernetes_service_account_inventory_sha256       = string
     kubernetes_system_subject_inventory_sha256        = string
     kubernetes_rbac_inventory_sha256                  = string
+    kubernetes_rbac_effective_authority_sha256        = string
     kubernetes_rbac_inventory_receipt_sha256          = string
     provider_project_iam_inventory_receipt_sha256     = string
     provider_effective_authority_graph_receipt_sha256 = string
+    provider_authority_adapter_sha256                 = string
     provider_state_custody_sha256                     = string
     boundary_state_custody_sha256                     = string
     workloads_service_account_sha256                  = string
@@ -304,7 +337,7 @@ variable "provider_authority" {
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v2" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v3" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.authority_manifest_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.prior_head_receipt_sha256)) &&
@@ -336,9 +369,11 @@ variable "provider_authority" {
           var.provider_authority.kubernetes_service_account_inventory_sha256,
           var.provider_authority.kubernetes_system_subject_inventory_sha256,
           var.provider_authority.kubernetes_rbac_inventory_sha256,
+          var.provider_authority.kubernetes_rbac_effective_authority_sha256,
           var.provider_authority.kubernetes_rbac_inventory_receipt_sha256,
           var.provider_authority.provider_project_iam_inventory_receipt_sha256,
           var.provider_authority.provider_effective_authority_graph_receipt_sha256,
+          var.provider_authority.provider_authority_adapter_sha256,
           var.provider_authority.provider_state_custody_sha256,
           var.provider_authority.boundary_state_custody_sha256,
           var.provider_authority.workloads_service_account_sha256,
@@ -379,6 +414,17 @@ variable "contract_generations" {
   }
 }
 
+variable "legacy_contract_generations" {
+  description = "Exact retained v2 contract/NetworkPolicy keys. Successors use disjoint v3 names and selectors."
+  type        = set(string)
+  validation {
+    condition = alltrue([
+      for generation in var.legacy_contract_generations : contains(keys(var.contract_generations), generation)
+    ])
+    error_message = "legacy_contract_generations must be a subset of contract_generations."
+  }
+}
+
 variable "trust_generations" {
   description = "Append-only public Ed25519 trust generations. Existing keys must never be removed or changed."
   type = map(object({
@@ -396,6 +442,17 @@ variable "trust_generations" {
   }
 }
 
+variable "legacy_trust_generations" {
+  description = "Exact retained v2 trust generation keys."
+  type        = set(string)
+  validation {
+    condition = alltrue([
+      for generation in var.legacy_trust_generations : contains(keys(var.trust_generations), generation)
+    ])
+    error_message = "legacy_trust_generations must be a subset of trust_generations."
+  }
+}
+
 variable "boundary_generations" {
   description = "Append-only admission-boundary generations. Removing an installed generation is forbidden."
   type        = set(string)
@@ -405,6 +462,38 @@ variable "boundary_generations" {
       for generation in var.boundary_generations : can(regex("^g[0-9]{14}-[a-f0-9]{12}$", generation))
     ])
     error_message = "At least one versioned admission-boundary generation is required."
+  }
+}
+
+variable "legacy_boundary_generations" {
+  description = "Retained overmatching v2 boundary generations; their objects and state addresses remain immutable."
+  type        = set(string)
+  validation {
+    condition = alltrue([
+      for generation in var.legacy_boundary_generations : contains(var.boundary_generations, generation)
+    ])
+    error_message = "legacy_boundary_generations must be a subset of boundary_generations."
+  }
+}
+
+variable "successor_boundary_generations" {
+  description = "Append-only v3 boundary generations mapped to their exact contract generation."
+  type = map(object({
+    contract_generation = string
+    policy_spec_json    = string
+    policy_sha256       = string
+  }))
+  validation {
+    condition = length(var.successor_boundary_generations) > 0 && alltrue([
+      for generation, value in var.successor_boundary_generations :
+      can(regex("^g[0-9]{14}-[a-f0-9]{12}$", generation)) &&
+      contains(keys(var.contract_generations), value.contract_generation) &&
+      !contains(var.legacy_contract_generations, value.contract_generation) &&
+      can(jsondecode(value.policy_spec_json)) &&
+      value.policy_sha256 == sha256(jsonencode(jsondecode(value.policy_spec_json))) &&
+      endswith(generation, substr(value.policy_sha256, 0, 12))
+    ])
+    error_message = "Every v3 boundary generation must bind a non-legacy contract generation."
   }
 }
 
@@ -420,13 +509,48 @@ variable "workload_policy_generations" {
   }
 }
 
+variable "legacy_workload_policy_generations" {
+  description = "Retained v2 workload-policy generation keys."
+  type        = set(string)
+  validation {
+    condition = alltrue([
+      for generation in var.legacy_workload_policy_generations : contains(var.workload_policy_generations, generation)
+    ])
+    error_message = "legacy_workload_policy_generations must be a subset of workload_policy_generations."
+  }
+}
+
+variable "successor_workload_policy_generations" {
+  description = "Append-only v3 workload policies mapped to exact contract and release generations."
+  type = map(object({
+    contract_generation = string
+    release_generation  = string
+    policy_spec_json    = string
+    policy_sha256       = string
+  }))
+  validation {
+    condition = length(var.successor_workload_policy_generations) > 0 && alltrue([
+      for generation, value in var.successor_workload_policy_generations :
+      can(regex("^g[0-9]{14}-[a-f0-9]{12}$", generation)) &&
+      contains(keys(var.contract_generations), value.contract_generation) &&
+      !contains(var.legacy_contract_generations, value.contract_generation) &&
+      contains(keys(var.release_generations), value.release_generation) &&
+      !contains(var.legacy_release_generations, value.release_generation) &&
+      can(jsondecode(value.policy_spec_json)) &&
+      value.policy_sha256 == sha256(jsonencode(jsondecode(value.policy_spec_json))) &&
+      endswith(generation, substr(value.policy_sha256, 0, 12))
+    ])
+    error_message = "Every v3 workload policy must bind non-legacy contract and release generations."
+  }
+}
+
 variable "current_workload_policy_generation" {
   description = "Content-bound workload admission generation selected for this release."
   type        = string
   validation {
     condition = (
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.current_workload_policy_generation)) &&
-      contains(var.workload_policy_generations, var.current_workload_policy_generation)
+      contains(keys(var.successor_workload_policy_generations), var.current_workload_policy_generation)
     )
     error_message = "current_workload_policy_generation must name a retained generation."
   }
@@ -439,7 +563,8 @@ variable "current_generation" {
   validation {
     condition = (
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.current_generation)) &&
-      contains(keys(var.contract_generations), var.current_generation)
+      contains(keys(var.contract_generations), var.current_generation) &&
+      !contains(var.legacy_contract_generations, var.current_generation)
     )
     error_message = "current_generation must identify a retained contract generation."
   }
@@ -452,7 +577,7 @@ variable "current_boundary_generation" {
   validation {
     condition = (
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.current_boundary_generation)) &&
-      contains(var.boundary_generations, var.current_boundary_generation)
+      contains(keys(var.successor_boundary_generations), var.current_boundary_generation)
     )
     error_message = "current_boundary_generation must identify a retained admission boundary."
   }

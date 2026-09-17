@@ -5,15 +5,48 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from pathlib import Path
 
 from verify_authority_ledger import REGISTRY_PATH, canonical, safe_root_read, strict_json
 
 MAX_OUTPUT_BYTES = 1024 * 1024
 MAX_KEY_LIFETIME = timedelta(days=90)
+AUTHORITY_GRAPH_ADAPTER = Path(
+    "/usr/libexec/fs2-security/provider-effective-authority"
+)
+REJECTED_SAI10_COMMIT = "1ae009b858924138de70932ac84b8e595a2656a1"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _open_fixed_adapter(path: Path) -> int:
+    parts = path.parts[1:]
+    if (
+        not path.is_absolute()
+        or not parts
+        or any(part in {"", ".", ".."} for part in parts)
+    ):
+        raise ValueError("provider authority adapter path is invalid")
+    directory_fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for component in parts[:-1]:
+            next_fd = os.open(
+                component,
+                os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                dir_fd=directory_fd,
+            )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        return os.open(
+            parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory_fd
+        )
+    finally:
+        os.close(directory_fd)
 
 
 def _cli(profile: str, *arguments: str) -> dict[str, Any]:
@@ -81,6 +114,76 @@ def _timestamp(value: str) -> datetime:
     if parsed.tzinfo is None:
         raise ValueError("authority public-key expiry lacks a timezone")
     return parsed.astimezone(UTC)
+
+
+def _provider_authority_graph(
+    profile: str, project_id: str, cluster_id: str, expected_sha256: str
+) -> dict[str, Any]:
+    """Run the separately custodied provider-native effective-authority adapter."""
+
+    descriptor = _open_fixed_adapter(AUTHORITY_GRAPH_ADAPTER)
+    try:
+        metadata = os.fstat(descriptor)
+        filesystem = os.fstatvfs(descriptor)
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_uid != 0
+            or metadata.st_mode & 0o022
+            or not metadata.st_mode & 0o111
+            or metadata.st_size <= 0
+            or metadata.st_size > MAX_OUTPUT_BYTES
+            or not filesystem.f_flag & getattr(os, "ST_RDONLY", 1)
+        ):
+            raise ValueError("provider authority adapter custody differs")
+        payload = os.read(descriptor, metadata.st_size + 1)
+        if (
+            len(payload) != metadata.st_size
+            or hashlib.sha256(payload).hexdigest() != expected_sha256
+        ):
+            raise ValueError("provider authority adapter custody differs")
+        result = subprocess.run(  # noqa: S603 - descriptor-bound approved adapter.
+            [
+                f"/proc/self/fd/{descriptor}",
+                "--profile",
+                profile,
+                "--project-id",
+                project_id,
+                "--cluster-id",
+                cluster_id,
+                "--format",
+                "json",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            pass_fds=(descriptor,),
+        )
+        after = os.fstat(descriptor)
+        if (
+            (metadata.st_dev, metadata.st_ino, metadata.st_size, metadata.st_mtime_ns)
+            != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+            or result.returncode != 0
+            or len(result.stdout.encode()) > MAX_OUTPUT_BYTES
+        ):
+            raise ValueError("provider authority adapter failed or changed during use")
+        value = strict_json(result.stdout.encode(), "provider authority adapter response")
+        return value
+    finally:
+        os.close(descriptor)
+
+
+def _is_ancestor(ancestor: str, descendant: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", ancestor, descendant],
+        cwd=REPOSITORY_ROOT,
+        check=False,
+        capture_output=True,
+        timeout=10,
+    )
+    if result.returncode not in {0, 1}:
+        raise ValueError("Git ancestry verification failed")
+    return result.returncode == 0
 
 
 def _metadata_projection(item: dict[str, Any]) -> dict[str, str]:
@@ -196,6 +299,14 @@ def verify(profile: str) -> dict[str, str]:
     if not profile or profile in {"default", "sandbox"}:
         raise ValueError("a dedicated named provider-security profile is required")
     registry = strict_json(safe_root_read(REGISTRY_PATH), "authority registry")
+    accepted_commit = registry.get("accepted_custody", {}).get("sai10_commit", "")
+    if (
+        not isinstance(accepted_commit, str)
+        or len(accepted_commit) != 40
+        or _is_ancestor(REJECTED_SAI10_COMMIT, accepted_commit)
+        or _is_ancestor(REJECTED_SAI10_COMMIT, "HEAD")
+    ):
+        raise ValueError("provider authority requires clean accepted SAI-10 ancestry")
     identity_inventory = registry.get("kubernetes_identity_inventory")
     if not isinstance(identity_inventory, list):
         raise ValueError("provider-bound Kubernetes identity inventory is absent")
@@ -295,6 +406,22 @@ def verify(profile: str) -> dict[str, str]:
     )
     if not isinstance(graph_principals, list) or not graph_principals:
         raise ValueError("provider-native effective authority graph is absent")
+    live_authority_graph = _provider_authority_graph(
+        profile,
+        registry["authority_project_id"],
+        authority_graph["cluster_id"],
+        registry["provider_authority_adapter_sha256"],
+    )
+    signed_graph_body = {
+        key: value
+        for key, value in authority_graph.items()
+        if key not in {"payload_sha256", "signature", "observed_at"}
+    }
+    live_graph_body = {
+        key: value for key, value in live_authority_graph.items() if key != "observed_at"
+    }
+    if live_graph_body != signed_graph_body:
+        raise ValueError("live provider-native authority graph differs from signed custody")
     provider_principal_ids = {
         str(item.get("id"))
         for item in graph_principals
@@ -317,6 +444,9 @@ def verify(profile: str) -> dict[str, str]:
         "public_keys": observed_keys,
         "project_inventory_sha256": hashlib.sha256(
             canonical(observed_project_inventory)
+        ).hexdigest(),
+        "provider_authority_graph_sha256": hashlib.sha256(
+            canonical(live_graph_body)
         ).hexdigest(),
     }
     return {

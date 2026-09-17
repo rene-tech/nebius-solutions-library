@@ -128,7 +128,7 @@ def test_workloads_root_only_reads_the_external_versioned_boundary() -> None:
         'data.kubernetes_config_map_v1.customer_storage_egress_trust[0].data["public-key.pem"]'
         in source
     )
-    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v3" in source
+    assert "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v4" in source
     assert '"uv"' in source and '"--frozen"' in source
     assert "egress_contract_public_key_pem" not in source
 
@@ -181,8 +181,10 @@ def test_separate_security_owner_is_append_only_and_credential_isolated() -> Non
         assert probe in identity
     assert "security-owner credential can update or delete" in identity
     assert source.count("prevent_destroy = true") >= 6
-    assert "for_each = var.contract_generations" in source
-    assert "for_each = var.trust_generations" in source
+    assert "for_each = local.legacy_contracts" in source
+    assert "for_each = local.successor_contracts" in source
+    assert "for_each = local.legacy_trusts" in source
+    assert "for_each = local.successor_trusts" in source
     assert "for_each = local.boundary_policy_names" in source
     assert "customer_storage_external_egress_boundary" in control_plane
 
@@ -202,6 +204,7 @@ def test_provider_authority_is_external_content_bound_and_non_destructive() -> N
 
     assert 'resource "nebius_vpc_v1_security_group" "generation"' in source
     assert 'resource "nebius_mk8s_v1_node_group" "generation"' in source
+    assert 'resource "terraform_data" "external_authority_v4"' in source
     assert 'destination_ports = [443]' in source
     assert 'destination_ports = [53]' in source
     assert 'destination_ports = [5432]' in source
@@ -223,6 +226,10 @@ def test_provider_authority_is_external_content_bound_and_non_destructive() -> N
     assert "graph_mutating_ids != [registry[\"authority_group_id\"]]" in verifier
     assert "head_generation_sha256" in verifier
     assert "provider_state_custody" in verifier
+    assert '"generation_chain"' in verifier
+    assert '"generation_chain_anchor_sha256"' in verifier
+    assert 'installed_predecessor != prior_head["head_generation_sha256"]' in verifier
+    assert '"authority_gate_generations"' in verifier
     assert "boundary_policy_sha256" in verifier
     assert "nebius_terraform_provider_version" in verifier
     assert "predecessor_sha256" in verifier
@@ -287,7 +294,7 @@ def test_v2_chart_is_additive_selector_safe_and_effective_policy_gated() -> None
         / "charts/control-plane/fs2-serve-control-plane/templates/_helpers.tpl"
     ).read_text(encoding="utf-8")
 
-    assert "app.kubernetes.io/component: storage-reconciler-v2" in template
+    assert "app.kubernetes.io/component: storage-reconciler-v3" in template
     assert "--kubernetes-network-policy-set" in template
     assert 'verbs: ["get", "list"]' in template
     assert "helm.sh/resource-policy: keep" in template
@@ -326,7 +333,10 @@ def test_security_owner_contract_rotation_is_versioned_and_overlapping() -> None
         "fs2-customer-storage-egress-contract-${generation}",
         "fs2-customer-storage-egress-trust-${generation}",
         "fs2-customer-storage-egress-${generation}",
-        "fs2-customer-storage-egress-boundary-${generation}",
+        "fs2-storage-v3-contract-${generation}",
+        "fs2-storage-v3-trust-${generation}",
+        "fs2-storage-v3-network-policy-${generation}",
+        "fs2-storage-v3-boundary-${generation}",
     ):
         assert prefix in source
     assert '"fs2.nebius.ai/storage-egress-generation" = each.key' in source
@@ -368,6 +378,8 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "graph_cluster_access_ids" in authority
     assert "graph_mutating_ids" in authority
     assert "effective_principal_ids" in provider_identity
+    assert "AUTHORITY_GRAPH_ADAPTER" in provider_identity
+    assert "provider authority adapter custody differs" in provider_identity
     assert "provider_principal_ids" not in (
         PROVIDER_AUTHORITY_ROOT / "capture_provider_iam_inventory.py"
     ).read_text(encoding="utf-8")
@@ -377,6 +389,9 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
         assert "O_NOFOLLOW" in verifier
         assert 'backend.get("type") != "s3"' in verifier
         assert 'config.get("use_lockfile") is not True' in verifier
+        assert '"state", "pull"' in verifier
+        assert '"state", "list"' in verifier
+        assert "state_version_adapter_sha256" in verifier
 
     for resource in (
         '"pods"',
@@ -392,15 +407,38 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "secretKeyRef" in boundary
     assert "allowed_secret_names_cel" in boundary
     assert "provider_authority.node_selector_value" in boundary
+    assert "(!has(POD.nodeName) || POD.nodeName == '')" in boundary
+    assert "deployment_controller_username" in boundary
+    assert "replicaset_controller_username" in boundary
+    assert "pod-template-hash=FS2_POD_TEMPLATE_HASH" in boundary
+    assert 'matchPolicy   = "Equivalent"' in boundary
     assert "object.spec == ${jsonencode(local.current_network_policy_spec)}" in boundary
-    assert 'resource "kubernetes_manifest" "workload_policy"' in boundary
-    assert 'resource "kubernetes_manifest" "workload_binding"' in boundary
+    assert 'resource "kubernetes_manifest" "workload_policy_v3"' in boundary
+    assert 'resource "kubernetes_manifest" "workload_binding_v3"' in boundary
+    assert 'resource "kubernetes_manifest" "boundary_policy_v3"' in boundary
+    assert 'resource "terraform_data" "security_generation_v4"' in boundary
+    assert "successor_workload_policy_generations" in boundary
     assert "rbac_subjects" in owner
     assert "undeclared ServiceAccount subject" in owner
+    assert '"pods/binding"' in owner
+    assert '"nodes/proxy"' in owner
+    assert '"impersonate-users": ("impersonate", "users")' in owner
+    assert "effective_authority_sha256" in owner
+    assert '"state", "pull"' in provider_backend
+    assert '"state", "pull"' in boundary_backend
+    workloads = TERRAFORM.read_text(encoding="utf-8")
+    assert "customer_storage_reconciler_pods" in workloads
+    assert "pod_label_sets_json" in workloads
+    assert "boundary_policy_sha256" in workloads
     assert 'resource "helm_release" "control_plane"' in control_plane
     assert "prevent_destroy = true" in control_plane
     assert "atomic           = false" in control_plane
     assert "cleanup_on_fail  = false" in control_plane
+    apply_wrapper = (Path(__file__).parents[1] / "security/apply_custodied_additive_plan.py").read_text(encoding="utf-8")
+    assert 'SAFE_ACTIONS = {(), ("no-op",), ("read",), ("create",)}' in apply_wrapper
+    assert '"apply", "-input=false"' in apply_wrapper
+    assert "source_commit" in apply_wrapper and "successor_state_contract" in apply_wrapper
+    assert "version_before != version_after" in apply_wrapper
 
 
 def test_predecessor_vap_compatibility_is_signed_and_selector_disjoint() -> None:
@@ -419,7 +457,7 @@ def test_predecessor_vap_compatibility_is_signed_and_selector_disjoint() -> None
     assert "var.provider_authority.predecessor_compatibility_sha256" in boundary
     assert "predecessor_compatibility_sha256" in authority
     assert "receipt_sha256" in output
-    assert "v2_selector_matches_old_object_cel" in boundary
+    assert "v3_selector_matches_old_object_cel" in boundary
     assert "term.operator == 'NotIn'" in boundary
     assert "request.operation == 'CREATE'" in boundary
     assert "!has(oldObject.spec.podSelector.matchLabels)" not in boundary
@@ -584,9 +622,10 @@ def test_effective_union_rejects_any_broad_selecting_policy(signed_contract):
     labels = {
         "app.kubernetes.io/name": "fs2-serve-control-plane",
         "app.kubernetes.io/instance": "fs2-serve-control-plane",
-        "app.kubernetes.io/component": "storage-reconciler-v2",
+        "app.kubernetes.io/component": "storage-reconciler-v3",
         "fs2.nebius.ai/storage-egress-generation": "g20260916180000-aaaaaaaaaaaa",
         "fs2.nebius.ai/storage-rollout-generation": "r20260916180000-bbbbbbbbbbbb",
+        "pod-template-hash": "6f9f7b8d7c",
     }
     canonical_rules = contract_module._canonical_egress_rules(
         contract["cidrs"], ["192.0.2.1/32"]
@@ -598,7 +637,11 @@ def test_effective_union_rejects_any_broad_selecting_policy(signed_contract):
                 "matchLabels": {
                     key: value
                     for key, value in labels.items()
-                    if key != "fs2.nebius.ai/storage-rollout-generation"
+                    if key
+                    not in {
+                        "fs2.nebius.ai/storage-rollout-generation",
+                        "pod-template-hash",
+                    }
                 }
             },
             "policyTypes": ["Ingress", "Egress"],
@@ -637,15 +680,16 @@ def test_effective_union_requires_one_exact_generation_selector(signed_contract)
     labels = {
         "app.kubernetes.io/name": "fs2-serve-control-plane",
         "app.kubernetes.io/instance": "fs2-serve-control-plane",
-        "app.kubernetes.io/component": "storage-reconciler-v2",
+        "app.kubernetes.io/component": "storage-reconciler-v3",
         "fs2.nebius.ai/storage-egress-generation": "g20260916180000-aaaaaaaaaaaa",
         "fs2.nebius.ai/storage-rollout-generation": "r20260916180000-bbbbbbbbbbbb",
+        "pod-template-hash": "6f9f7b8d7c",
     }
     rules = contract_module._canonical_egress_rules(contract["cidrs"], ["192.0.2.1/32"])
     overmatching = {
         "spec": {
             "podSelector": {
-                "matchLabels": {"app.kubernetes.io/component": "storage-reconciler-v2"}
+                "matchLabels": {"app.kubernetes.io/component": "storage-reconciler-v3"}
             },
             "policyTypes": ["Egress"],
             "egress": rules,
@@ -657,6 +701,64 @@ def test_effective_union_requires_one_exact_generation_selector(signed_contract)
         )
 
 
+@pytest.mark.parametrize("operator,values", [("Exists", []), ("In", ["6f9f7b8d7c"])])
+def test_runtime_hash_selector_cannot_hide_widening_policy(
+    signed_contract, operator, values
+):
+    _, contract = signed_contract
+    labels = {
+        "app.kubernetes.io/name": "fs2-serve-control-plane",
+        "app.kubernetes.io/instance": "fs2-serve-control-plane",
+        "app.kubernetes.io/component": "storage-reconciler-v3",
+        "fs2.nebius.ai/storage-egress-generation": "g20260916180000-aaaaaaaaaaaa",
+        "fs2.nebius.ai/storage-rollout-generation": "r20260916180000-bbbbbbbbbbbb",
+        "pod-template-hash": "6f9f7b8d7c",
+    }
+    exact = {
+        "spec": {
+            "podSelector": {
+                "matchLabels": {
+                    key: value
+                    for key, value in labels.items()
+                    if key
+                    not in {
+                        "fs2.nebius.ai/storage-rollout-generation",
+                        "pod-template-hash",
+                    }
+                }
+            },
+            "policyTypes": ["Ingress", "Egress"],
+            "egress": contract_module._canonical_egress_rules(
+                contract["cidrs"], ["192.0.2.1/32"]
+            ),
+        }
+    }
+    widening = {
+        "spec": {
+            "podSelector": {
+                "matchExpressions": [
+                    {
+                        "key": "pod-template-hash",
+                        "operator": operator,
+                        "values": values,
+                    }
+                ]
+            },
+            "policyTypes": ["Egress"],
+            "egress": [
+                {
+                    "to": [{"ipBlock": {"cidr": "0.0.0.0/1"}}],
+                    "ports": [{"port": 443, "protocol": "TCP"}],
+                }
+            ],
+        }
+    }
+    with pytest.raises(ValueError, match="widens"):
+        contract_module.verify_effective_network_policies(
+            [exact, widening], labels, contract["cidrs"], ["192.0.2.1/32"]
+        )
+
+
 def test_notin_selector_matches_missing_key_and_cannot_hide_broad_egress(
     signed_contract,
 ):
@@ -664,9 +766,10 @@ def test_notin_selector_matches_missing_key_and_cannot_hide_broad_egress(
     labels = {
         "app.kubernetes.io/name": "fs2-serve-control-plane",
         "app.kubernetes.io/instance": "fs2-serve-control-plane",
-        "app.kubernetes.io/component": "storage-reconciler-v2",
+        "app.kubernetes.io/component": "storage-reconciler-v3",
         "fs2.nebius.ai/storage-egress-generation": "g20260916180000-aaaaaaaaaaaa",
         "fs2.nebius.ai/storage-rollout-generation": "r20260916180000-bbbbbbbbbbbb",
+        "pod-template-hash": "6f9f7b8d7c",
     }
     rules = contract_module._canonical_egress_rules(contract["cidrs"], ["192.0.2.1/32"])
     exact = {
@@ -675,7 +778,11 @@ def test_notin_selector_matches_missing_key_and_cannot_hide_broad_egress(
                 "matchLabels": {
                     key: value
                     for key, value in labels.items()
-                    if key != "fs2.nebius.ai/storage-rollout-generation"
+                    if key
+                    not in {
+                        "fs2.nebius.ai/storage-rollout-generation",
+                        "pod-template-hash",
+                    }
                 }
             },
             "policyTypes": ["Ingress", "Egress"],
@@ -712,7 +819,7 @@ def test_notin_selector_matches_missing_key_and_cannot_hide_broad_egress(
             {
                 "key": "app.kubernetes.io/component",
                 "operator": "NotIn",
-                "values": ["storage-reconciler-v2"],
+                "values": ["storage-reconciler-v3"],
             }
         ]
     }
