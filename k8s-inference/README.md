@@ -541,7 +541,7 @@ dynamic_models = {
   bootstrap_assertion_secret_name = "fs2-release-model-bootstrap-release-20260917-01"
   bootstrap_assertion_generation  = "release-20260917-01"
   bootstrap_authority = {
-    username      = "system:serviceaccount:fs2-system:fs2-release-identity-release-20260917-01"
+    username      = "system:serviceaccount:fs2-system:fs2-release-identity-epoch-${substr(sha256("release-20260917-01"), 0, 20)}"
     uid           = "11111111-2222-4333-8444-555555555555"
     credential_id = "JTI=replace-with-bound-token-credential-id"
   }

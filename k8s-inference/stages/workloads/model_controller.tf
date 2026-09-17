@@ -1357,12 +1357,24 @@ locals {
     var.release_identity_model_bootstrap_authority.uid != "" &&
     var.release_identity_model_bootstrap_authority.credential_id != ""
   )
-  model_controller_bootstrap_authority_epochs = merge(
+  model_controller_bootstrap_authorities_by_generation = merge(
     var.release_identity_model_bootstrap_retained_authorities,
     local.model_controller_bootstrap_authority_bound &&
     var.release_identity_model_bootstrap_assertion_generation != "" ? {
       (var.release_identity_model_bootstrap_assertion_generation) = var.release_identity_model_bootstrap_authority
     } : {},
+  )
+  model_controller_bootstrap_authority_generations_by_epoch = {
+    for generation, authority in local.model_controller_bootstrap_authorities_by_generation :
+    "epoch-${substr(sha256(generation), 0, 20)}" => generation
+  }
+  model_controller_bootstrap_authority_epochs = {
+    for generation, authority in local.model_controller_bootstrap_authorities_by_generation :
+    "epoch-${substr(sha256(generation), 0, 20)}" => authority
+  }
+  model_controller_bootstrap_current_authority_epoch = (
+    var.release_identity_model_bootstrap_assertion_generation == "" ? "" :
+    "epoch-${substr(sha256(var.release_identity_model_bootstrap_assertion_generation), 0, 20)}"
   )
   model_controller_bootstrap_current_authority_consistent = (
     !contains(
@@ -1376,8 +1388,8 @@ locals {
     )
   )
   model_controller_bootstrap_authority_epoch_names_consistent = alltrue([
-    for generation, authority in local.model_controller_bootstrap_authority_epochs :
-    authority.username == "system:serviceaccount:fs2-system:fs2-release-identity-${generation}"
+    for authority_epoch, authority in local.model_controller_bootstrap_authority_epochs :
+    authority.username == "system:serviceaccount:fs2-system:fs2-release-identity-${authority_epoch}"
   ])
   model_controller_bootstrap_authority_cel = {
     for generation, authority in local.model_controller_bootstrap_authority_epochs : generation => join(" && ", [
@@ -1391,27 +1403,26 @@ locals {
   }
   model_controller_bootstrap_rotatable_authority_cel = join(" && ", [
     "has(object.metadata.labels)",
-    "((object.kind == 'Secret' && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels) || (object.kind != 'Secret' && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels))",
-    "(object.kind == 'Secret' ? object.metadata.labels['fs2.nebius.ai/assertion-generation'] : object.metadata.labels['fs2.nebius.ai/authority-epoch']).matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$')",
-    "request.userInfo.username == 'system:serviceaccount:fs2-system:fs2-release-identity-' + (object.kind == 'Secret' ? object.metadata.labels['fs2.nebius.ai/assertion-generation'] : object.metadata.labels['fs2.nebius.ai/authority-epoch'])",
+    "'fs2.nebius.ai/authority-epoch' in object.metadata.labels",
+    "object.metadata.labels['fs2.nebius.ai/authority-epoch'].matches('^epoch-[a-f0-9]{20}$')",
+    "request.userInfo.username == 'system:serviceaccount:fs2-system:fs2-release-identity-' + object.metadata.labels['fs2.nebius.ai/authority-epoch']",
     "request.userInfo.uid.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')",
     "has(request.userInfo.extra)",
     "'authentication.kubernetes.io/credential-id' in request.userInfo.extra",
     "request.userInfo.extra['authentication.kubernetes.io/credential-id'].size() == 1",
     "request.userInfo.extra['authentication.kubernetes.io/credential-id'][0].size() >= 8",
   ])
-  # The two stable routers are created exactly once, before a per-epoch policy
-  # exists to protect its own creation. Their lifecycle rule makes their fixed
-  # names immutable. Every later generation-scoped object uses the stricter
-  # label-to-ServiceAccount equality above, so an old still-valid credential
-  # can address only its already occupied append-only epoch names.
+  # These four fixed router objects and the two schema-compatibility objects,
+  # plus the external security webhook, are bound by one signed bundle. Unlike the
+  # generation router, their one-time CREATE authority is the exact
+  # independently custodied token tuple captured by that bundle.
   model_controller_bootstrap_initial_router_authority_cel = join(" && ", [
-    "request.userInfo.username.matches('^system:serviceaccount:fs2-system:fs2-release-identity-[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$')",
-    "request.userInfo.uid.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')",
+    "request.userInfo.username == ${jsonencode(var.release_identity_admission_authority.username)}",
+    "request.userInfo.uid == ${jsonencode(var.release_identity_admission_authority.uid)}",
     "has(request.userInfo.extra)",
     "'authentication.kubernetes.io/credential-id' in request.userInfo.extra",
     "request.userInfo.extra['authentication.kubernetes.io/credential-id'].size() == 1",
-    "request.userInfo.extra['authentication.kubernetes.io/credential-id'][0].size() >= 8",
+    "request.userInfo.extra['authentication.kubernetes.io/credential-id'][0] == ${jsonencode(var.release_identity_admission_authority.credential_id)}",
   ])
   model_controller_bootstrap_router_policy_names = {
     lifecycle = "fs2-bootstrap-epoch-router-lifecycle"
@@ -1423,14 +1434,71 @@ locals {
       "validatingadmissionpolicybinding/${name}",
     ]
   ]))
+  release_identity_admission_preexisting = merge(
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_policies.objects :
+      "validatingadmissionpolicy/${try(item.metadata.name, "")}" => {
+        uid           = try(item.metadata.uid, "")
+        object_sha256 = sha256(jsonencode(item))
+      }
+      if startswith(try(item.metadata.name, ""), "fs2-bootstrap-") ||
+      try(item.metadata.name, "") == "fs2-control-plane-schema-compatibility"
+    },
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_bindings.objects :
+      "validatingadmissionpolicybinding/${try(item.metadata.name, "")}" => {
+        uid           = try(item.metadata.uid, "")
+        object_sha256 = sha256(jsonencode(item))
+      }
+      if startswith(try(item.metadata.name, ""), "fs2-bootstrap-") ||
+      try(item.metadata.name, "") == "fs2-control-plane-schema-compatibility"
+    },
+  )
+  release_identity_admission_adoption_authorized = (
+    length(local.release_identity_admission_preexisting) == 0 || try(
+      (
+        toset(keys(var.release_identity_admission_authority.adopted_objects)) ==
+        toset(keys(local.release_identity_admission_preexisting)) &&
+        alltrue([
+          for object_key, observed in local.release_identity_admission_preexisting :
+          var.release_identity_admission_authority.adopted_objects[object_key].uid == observed.uid &&
+          var.release_identity_admission_authority.adopted_objects[object_key].object_sha256 == observed.object_sha256
+        ])
+      ) || (
+        var.release_identity_admission_bundle.enabled &&
+        var.release_identity_admission_bundle.receipt_sha256 == var.release_identity_admission_authority.approved_receipt_sha256 &&
+        var.release_identity_admission_bundle.receipt_jws_sha256 == var.release_identity_admission_authority.approved_receipt_jws_sha256 &&
+        var.release_identity_admission_bundle.signer_key_sha256 == var.release_identity_admission_authority.signer_key_sha256 &&
+        alltrue([
+          for object_key, observed in local.release_identity_admission_preexisting :
+          contains(keys(var.release_identity_admission_bundle.objects), object_key) &&
+          var.release_identity_admission_bundle.objects[object_key].uid == observed.uid &&
+          var.release_identity_admission_bundle.objects[object_key].object_sha256 == observed.object_sha256
+        ])
+      ),
+      false,
+    )
+  )
+  release_identity_external_boundary_objects = [
+    for item in data.kubernetes_resources.release_identity_security_webhooks.objects : item
+    if try(item.metadata.name == "fs2-security-release-admission", false)
+  ]
+  release_identity_external_boundary_valid = try(
+    length(local.release_identity_external_boundary_objects) == 1 &&
+    one(local.release_identity_external_boundary_objects).metadata.uid ==
+    var.release_identity_admission_authority.external_boundary_uid &&
+    sha256(jsonencode(one(local.release_identity_external_boundary_objects))) ==
+    var.release_identity_admission_authority.external_boundary_object_sha256,
+    false,
+  )
   model_controller_bootstrap_policy_names = {
-    for generation, authority in local.model_controller_bootstrap_authority_epochs : generation => {
-      lifecycle = "fs2-bootstrap-policy-${generation}"
-      history   = "fs2-bootstrap-history-${generation}"
-      receipts  = "fs2-bootstrap-receipts-${generation}"
-      trust     = "fs2-bootstrap-trust-${generation}"
-      secrets   = "fs2-bootstrap-secrets-${generation}"
-      verify    = "fs2-bootstrap-verify-${generation}"
+    for authority_epoch, authority in local.model_controller_bootstrap_authority_epochs : authority_epoch => {
+      lifecycle = "fs2-bootstrap-policy-${authority_epoch}"
+      history   = "fs2-bootstrap-history-${authority_epoch}"
+      receipts  = "fs2-bootstrap-receipts-${authority_epoch}"
+      trust     = "fs2-bootstrap-trust-${authority_epoch}"
+      secrets   = "fs2-bootstrap-secrets-${authority_epoch}"
+      verify    = "fs2-bootstrap-verify-${authority_epoch}"
     }
   }
   model_controller_bootstrap_admission_keys_by_epoch = {
@@ -1446,6 +1514,42 @@ locals {
     toset(flatten([
       for names in values(local.model_controller_bootstrap_policy_names) : values(names)
     ])),
+  )
+  release_identity_admission_expected_manifests = merge(
+    {
+      "validatingadmissionpolicy/fs2-control-plane-schema-compatibility" = kubernetes_manifest.control_plane_schema_compatibility_policy.manifest
+      "validatingadmissionpolicybinding/fs2-control-plane-schema-compatibility" = kubernetes_manifest.control_plane_schema_compatibility_policy_binding.manifest
+      "validatingadmissionpolicy/${local.model_controller_bootstrap_router_policy_names.lifecycle}" = kubernetes_manifest.model_controller_bootstrap_epoch_router_lifecycle[0].manifest
+      "validatingadmissionpolicybinding/${local.model_controller_bootstrap_router_policy_names.lifecycle}" = kubernetes_manifest.model_controller_bootstrap_epoch_router_lifecycle_binding[0].manifest
+      "validatingadmissionpolicy/${local.model_controller_bootstrap_router_policy_names.router}" = kubernetes_manifest.model_controller_bootstrap_epoch_router[0].manifest
+      "validatingadmissionpolicybinding/${local.model_controller_bootstrap_router_policy_names.router}" = kubernetes_manifest.model_controller_bootstrap_epoch_router_binding[0].manifest
+    },
+    local.model_controller_bootstrap_security_enabled ?
+      merge([
+        for authority_epoch, names in local.model_controller_bootstrap_policy_names : {
+          "validatingadmissionpolicy/${names.lifecycle}" = kubernetes_manifest.model_controller_bootstrap_policy_lifecycle[authority_epoch].manifest
+          "validatingadmissionpolicybinding/${names.lifecycle}" = kubernetes_manifest.model_controller_bootstrap_policy_lifecycle_binding[authority_epoch].manifest
+          "validatingadmissionpolicy/${names.history}" = kubernetes_manifest.model_controller_bootstrap_history_policy[authority_epoch].manifest
+          "validatingadmissionpolicybinding/${names.history}" = kubernetes_manifest.model_controller_bootstrap_history_policy_binding[authority_epoch].manifest
+          "validatingadmissionpolicy/${names.receipts}" = kubernetes_manifest.model_controller_bootstrap_receipt_policy[authority_epoch].manifest
+          "validatingadmissionpolicybinding/${names.receipts}" = kubernetes_manifest.model_controller_bootstrap_receipt_policy_binding[authority_epoch].manifest
+          "validatingadmissionpolicy/${names.trust}" = kubernetes_manifest.model_controller_bootstrap_trust_policy[authority_epoch].manifest
+          "validatingadmissionpolicybinding/${names.trust}" = kubernetes_manifest.model_controller_bootstrap_trust_policy_binding[authority_epoch].manifest
+          "validatingadmissionpolicy/${names.secrets}" = kubernetes_manifest.model_controller_bootstrap_secret_policy[authority_epoch].manifest
+          "validatingadmissionpolicybinding/${names.secrets}" = kubernetes_manifest.model_controller_bootstrap_secret_policy_binding[authority_epoch].manifest
+          "validatingadmissionpolicy/${names.verify}" = kubernetes_manifest.model_controller_bootstrap_verification_policy[authority_epoch].manifest
+          "validatingadmissionpolicybinding/${names.verify}" = kubernetes_manifest.model_controller_bootstrap_verification_policy_binding[authority_epoch].manifest
+        }
+      ]...) : {},
+  )
+  release_identity_admission_expected_manifest_sha256s = merge(
+    {
+      for object_key, manifest in local.release_identity_admission_expected_manifests :
+      object_key => sha256(jsonencode(manifest))
+    },
+    {
+      "validatingwebhookconfiguration/fs2-security-release-admission" = var.release_identity_admission_authority.external_boundary_manifest_sha256
+    },
   )
   model_controller_bootstrap_bound_authority_epochs = toset([
     for generation, expected_keys in local.model_controller_bootstrap_admission_keys_by_epoch : generation
@@ -1549,7 +1653,7 @@ locals {
     bootstrap_mount_path        = "/bootstrap"
     assertion_mount_path        = "/var/run/fs2-release"
     base_labels = merge(local.common_labels, {
-      "fs2.nebius.ai/authority-epoch" = var.release_identity_model_bootstrap_assertion_generation
+      "fs2.nebius.ai/authority-epoch" = local.model_controller_bootstrap_current_authority_epoch
     })
   }
   model_controller_bootstrap_current_spec = {
@@ -1593,6 +1697,7 @@ locals {
     for item in local.model_controller_bootstrap_inventory_configmaps :
     trimprefix(item.metadata.name, "fs2-model-bootstrap-") => {
       assertion_generation = try(jsondecode(item.data["bootstrap-identity.json"]).assertion_generation, "")
+      authority_epoch      = try(jsondecode(item.data["bootstrap-identity.json"]).job_contract.base_labels["fs2.nebius.ai/authority-epoch"], "")
       secret_name          = try(jsondecode(item.data["bootstrap-identity.json"]).assertion_secret_name, "")
       payload_json         = try(item.data["bootstrap.json"], "")
       bootstrap_script     = try(item.data["bootstrap.py"], "")
@@ -1703,6 +1808,75 @@ locals {
       "validatingadmissionpolicybinding/${try(item.metadata.name, "")}" => try(item.metadata.uid, "")
       if contains(local.model_controller_bootstrap_all_policy_names, try(item.metadata.name, ""))
     },
+  )
+  release_identity_admission_observed_uids = merge(
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_policies.objects :
+      "validatingadmissionpolicy/${try(item.metadata.name, "")}" => try(item.metadata.uid, "")
+      if contains(
+        keys(local.release_identity_admission_expected_manifests),
+        "validatingadmissionpolicy/${try(item.metadata.name, "")}",
+      )
+    },
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_bindings.objects :
+      "validatingadmissionpolicybinding/${try(item.metadata.name, "")}" => try(item.metadata.uid, "")
+      if contains(
+        keys(local.release_identity_admission_expected_manifests),
+        "validatingadmissionpolicybinding/${try(item.metadata.name, "")}",
+      )
+    },
+    {
+      "validatingwebhookconfiguration/fs2-security-release-admission" = try(
+        one(local.release_identity_external_boundary_objects).metadata.uid,
+        "",
+      )
+    },
+  )
+  release_identity_admission_observed_object_sha256s = merge(
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_policies.objects :
+      "validatingadmissionpolicy/${try(item.metadata.name, "")}" => sha256(jsonencode(item))
+      if contains(
+        keys(local.release_identity_admission_expected_manifests),
+        "validatingadmissionpolicy/${try(item.metadata.name, "")}",
+      )
+    },
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_bindings.objects :
+      "validatingadmissionpolicybinding/${try(item.metadata.name, "")}" => sha256(jsonencode(item))
+      if contains(
+        keys(local.release_identity_admission_expected_manifests),
+        "validatingadmissionpolicybinding/${try(item.metadata.name, "")}",
+      )
+    },
+    {
+      "validatingwebhookconfiguration/fs2-security-release-admission" = try(
+        sha256(jsonencode(one(local.release_identity_external_boundary_objects))),
+        "",
+      )
+    },
+  )
+  release_identity_admission_bundle_valid = try(
+    var.release_identity_admission_bundle.enabled &&
+    local.release_identity_external_boundary_valid &&
+    var.release_identity_admission_bundle.authority.username == var.release_identity_admission_authority.username &&
+    var.release_identity_admission_bundle.authority.uid == var.release_identity_admission_authority.uid &&
+    var.release_identity_admission_bundle.authority.credential_id == var.release_identity_admission_authority.credential_id &&
+    var.release_identity_admission_bundle.signer_key_sha256 == var.release_identity_admission_authority.signer_key_sha256 &&
+    var.release_identity_admission_bundle.receipt_sha256 == var.release_identity_admission_authority.approved_receipt_sha256 &&
+    var.release_identity_admission_bundle.receipt_jws_sha256 == var.release_identity_admission_authority.approved_receipt_jws_sha256 &&
+    toset(keys(var.release_identity_admission_bundle.objects)) ==
+    toset(keys(local.release_identity_admission_expected_manifest_sha256s)) &&
+    toset(keys(local.release_identity_admission_observed_uids)) ==
+    toset(keys(local.release_identity_admission_expected_manifest_sha256s)) &&
+    alltrue([
+      for object_key, expected_manifest_sha256 in local.release_identity_admission_expected_manifest_sha256s :
+      var.release_identity_admission_bundle.objects[object_key].manifest_sha256 == expected_manifest_sha256 &&
+      var.release_identity_admission_bundle.objects[object_key].uid == local.release_identity_admission_observed_uids[object_key] &&
+      var.release_identity_admission_bundle.objects[object_key].object_sha256 == local.release_identity_admission_observed_object_sha256s[object_key]
+    ]),
+    false,
   )
   model_controller_bootstrap_unexpected_admission_names = setunion(
     toset([
@@ -1824,7 +1998,7 @@ locals {
       receipt_uid             = receipt.observed_uid
       receipt_object_sha256   = receipt.observed_object_sha256
       identity_sha256         = sha256(jsonencode(local.model_controller_bootstrap_discovered_specs[receipt.generation].identity))
-      authority_epoch         = local.model_controller_bootstrap_discovered_specs[receipt.generation].assertion_generation
+      authority_epoch         = local.model_controller_bootstrap_discovered_specs[receipt.generation].authority_epoch
       config_map_uid          = local.model_controller_bootstrap_discovered_specs[receipt.generation].observed_uid
       config_map_object_sha256 = local.model_controller_bootstrap_discovered_specs[receipt.generation].observed_object_sha256
       job_uid = receipt.phase == "terminal" ? (
@@ -1843,7 +2017,7 @@ locals {
     contains(local.model_controller_bootstrap_inventory_keys, receipt.generation) &&
     contains(
       local.model_controller_bootstrap_bound_authority_epochs,
-      local.model_controller_bootstrap_discovered_specs[receipt.generation].assertion_generation,
+      local.model_controller_bootstrap_discovered_specs[receipt.generation].authority_epoch,
     ) && (
       receipt.phase == "configmap" || (
         receipt.phase == "terminal" &&
@@ -1995,13 +2169,13 @@ locals {
         receipt.observed_name == "fs2-model-bootstrap-receipt-${receipt.generation}-${receipt.phase}" &&
         receipt.observed_namespace == "fs2-system" &&
         receipt.observed_created_at >= local.model_controller_bootstrap_observed_admission_created_at[
-          "validatingadmissionpolicybinding/${local.model_controller_bootstrap_policy_names[local.model_controller_bootstrap_discovered_specs[receipt.generation].assertion_generation].receipts}"
+          "validatingadmissionpolicybinding/${local.model_controller_bootstrap_policy_names[local.model_controller_bootstrap_discovered_specs[receipt.generation].authority_epoch].receipts}"
         ] &&
         receipt.observed_immutable == true &&
         length(receipt.observed_uid) > 0 &&
         receipt.observed_labels == merge(local.common_labels, {
           "app.kubernetes.io/component" = "model-bootstrap-retention-receipt"
-          "fs2.nebius.ai/authority-epoch" = local.model_controller_bootstrap_discovered_specs[receipt.generation].assertion_generation
+          "fs2.nebius.ai/authority-epoch" = local.model_controller_bootstrap_discovered_specs[receipt.generation].authority_epoch
           "fs2.nebius.ai/generation"     = receipt.generation
           "fs2.nebius.ai/receipt-phase"  = receipt.phase
         }) &&
@@ -2065,7 +2239,7 @@ locals {
         spec.observed_immutable == true &&
         length(spec.observed_uid) > 0 &&
         spec.observed_created_at >= local.model_controller_bootstrap_observed_admission_created_at[
-          "validatingadmissionpolicybinding/${local.model_controller_bootstrap_policy_names[spec.assertion_generation].history}"
+          "validatingadmissionpolicybinding/${local.model_controller_bootstrap_policy_names[spec.authority_epoch].history}"
         ] &&
         spec.identity.schema == "fs2-serve.nebius.ai/model-bootstrap-identity/v2" &&
         spec.identity == {
@@ -2082,9 +2256,9 @@ locals {
         jsondecode(spec.payload_json).schema == "fs2-serve.nebius.ai/model-bootstrap/v1" &&
         jsondecode(spec.payload_json).generation == spec.assertion_generation &&
         spec.secret_name == "fs2-release-model-bootstrap-${spec.assertion_generation}" &&
-        contains(local.model_controller_bootstrap_bound_authority_epochs, spec.assertion_generation) &&
+        contains(local.model_controller_bootstrap_bound_authority_epochs, spec.authority_epoch) &&
         spec.identity.job_contract.base_labels == merge(local.common_labels, {
-          "fs2.nebius.ai/authority-epoch" = spec.assertion_generation
+          "fs2.nebius.ai/authority-epoch" = spec.authority_epoch
         }) &&
         spec.identity.job_contract.schema == "fs2-serve.nebius.ai/model-bootstrap-job/v1" &&
         spec.identity.job_contract.backoff_limit == 0 &&
@@ -2116,7 +2290,7 @@ locals {
             length(local.model_controller_bootstrap_observed_jobs[generation_key].observed_uid) > 0 &&
             local.model_controller_bootstrap_observed_jobs[generation_key].observed_created_at >=
             local.model_controller_bootstrap_observed_admission_created_at[
-              "validatingadmissionpolicybinding/${local.model_controller_bootstrap_policy_names[spec.assertion_generation].history}"
+              "validatingadmissionpolicybinding/${local.model_controller_bootstrap_policy_names[spec.authority_epoch].history}"
             ] &&
             local.model_controller_bootstrap_observed_jobs[generation_key].active == 0 &&
             (
@@ -2207,13 +2381,31 @@ resource "terraform_data" "model_controller_contract" {
   lifecycle {
     precondition {
       condition = !local.model_controller_bootstrap_security_enabled || (
+        var.release_identity_kubeconfig_path != "" &&
+        var.release_identity_kube_context != "" &&
+        abspath(var.release_identity_kubeconfig_path) != abspath(var.kubeconfig_path) &&
+        var.release_identity_kube_context != var.kube_context
+      )
+      error_message = "Model-bootstrap admission and protected writes require a separately custodied release-identity kubeconfig and context; the general run provider is refused."
+    }
+
+    precondition {
+      condition = !local.model_controller_bootstrap_enabled || (
+        local.release_identity_admission_bundle_valid
+      )
+      error_message = "Bootstrap execution is refused until the external security-owned admission receipt pins the canonical manifest, provider UID, and full observed object for every fixed and generation-scoped policy/binding."
+    }
+
+    precondition {
+      condition = !local.model_controller_bootstrap_security_enabled || (
         length(local.model_controller_bootstrap_authority_epochs) > 0 &&
+        length(local.model_controller_bootstrap_authority_epochs) == length(local.model_controller_bootstrap_authorities_by_generation) &&
         local.model_controller_bootstrap_current_authority_consistent &&
         local.model_controller_bootstrap_authority_epoch_names_consistent &&
         length(local.model_controller_bootstrap_all_policy_names) ==
         2 + 6 * length(local.model_controller_bootstrap_authority_epochs)
       )
-      error_message = "Model-bootstrap security resources require at least one exact generation-scoped release ServiceAccount whose username suffix equals its authority epoch, plus its UID and bound-token credential ID; retained epochs are append-only, a current epoch cannot redefine its authority, and literal epoch policy names must remain collision-free."
+      error_message = "Model-bootstrap security resources require at least one exact digest-derived generation-scoped release ServiceAccount whose username suffix equals its authority epoch, plus its UID and bound-token credential ID; retained epochs are append-only, a current epoch cannot redefine its authority, and digest-derived epoch or policy-name collisions fail closed."
     }
 
     precondition {
@@ -2221,7 +2413,7 @@ resource "terraform_data" "model_controller_contract" {
         local.model_controller_bootstrap_authority_bound &&
         contains(
           local.model_controller_bootstrap_bound_authority_epochs,
-          var.release_identity_model_bootstrap_assertion_generation,
+          local.model_controller_bootstrap_current_authority_epoch,
         )
       )
       error_message = "A bootstrap execution requires a complete integration-pinned admission-policy set for the exact current assertion generation; an expired retained epoch cannot authorize a later generation."
@@ -2287,7 +2479,7 @@ resource "terraform_data" "model_controller_contract" {
 
     precondition {
       condition = !local.model_controller_bootstrap_enabled || (
-        can(regex("^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$", var.release_identity_model_bootstrap_assertion_generation)) &&
+        can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", var.release_identity_model_bootstrap_assertion_generation)) &&
         var.release_identity_model_bootstrap_assertion_secret_name == "fs2-release-model-bootstrap-${var.release_identity_model_bootstrap_assertion_generation}" &&
         (
           !contains(
@@ -2356,6 +2548,7 @@ resource "kubernetes_config_map_v1" "model_controller_bundles" {
 }
 
 resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_assertions
 
   metadata {
@@ -2389,7 +2582,8 @@ resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
 # bound token for an automation-only, generation-named release ServiceAccount.
 # Once created, this guard protects itself and the data router from mutation.
 resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_lifecycle" {
-  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+  provider = kubernetes.release_identity
+  count    = 1
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2411,7 +2605,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_lifecycl
       }
       matchConditions = [{
         name       = "model-bootstrap-epoch-router-lifecycle"
-        expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}] || request.name.startsWith('fs2-bootstrap-')"
+        expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)},'fs2-control-plane-schema-compatibility'] || request.name.startsWith('fs2-bootstrap-')"
       }]
       validations = [
         {
@@ -2419,16 +2613,16 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_lifecycl
           message    = "model-bootstrap epoch router policy and binding are append-only"
         },
         {
-          expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}] || (has(object.metadata.labels) && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'].matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$') && request.name in ['fs2-bootstrap-policy-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-history-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-receipts-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-trust-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-secrets-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-verify-' + object.metadata.labels['fs2.nebius.ai/authority-epoch']])"
+          expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)},'fs2-control-plane-schema-compatibility'] || (has(object.metadata.labels) && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'].matches('^epoch-[a-f0-9]{20}$') && request.name in ['fs2-bootstrap-policy-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-history-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-receipts-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-trust-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-secrets-' + object.metadata.labels['fs2.nebius.ai/authority-epoch'],'fs2-bootstrap-verify-' + object.metadata.labels['fs2.nebius.ai/authority-epoch']])"
           message    = "generation policy and binding names must contain the exact authority epoch label"
         },
         {
-          expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}] || (${local.model_controller_bootstrap_rotatable_authority_cel})"
+          expression = "request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)},'fs2-control-plane-schema-compatibility'] || (${local.model_controller_bootstrap_rotatable_authority_cel})"
           message    = "generation policy creation requires a bound token whose ServiceAccount name exactly matches the authority epoch label"
         },
         {
-          expression = "!(request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)}]) || (${local.model_controller_bootstrap_initial_router_authority_cel})"
-          message    = "only a generation-named bound-token automation identity may create the one-time stable epoch routers"
+          expression = "!(request.name in [${jsonencode(local.model_controller_bootstrap_router_policy_names.lifecycle)},${jsonencode(local.model_controller_bootstrap_router_policy_names.router)},'fs2-control-plane-schema-compatibility']) || (${local.model_controller_bootstrap_initial_router_authority_cel})"
+          message    = "only the exact externally custodied release credential may create the fixed router and schema-compatibility boundary; the later signed bundle must bind their resulting UIDs and objects"
         },
         {
           expression = "object.kind != 'ValidatingAdmissionPolicyBinding' || (object.spec.policyName == object.metadata.name && object.spec.validationActions == ['Deny'])"
@@ -2442,12 +2636,39 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_lifecycl
     }
   }
 
-  lifecycle { prevent_destroy = true }
+  lifecycle {
+    prevent_destroy = true
+
+    precondition {
+      condition = (
+        var.release_identity_kubeconfig_path != "" &&
+        var.release_identity_kube_context != "" &&
+        abspath(var.release_identity_kubeconfig_path) != abspath(var.kubeconfig_path) &&
+        var.release_identity_kube_context != var.kube_context &&
+        var.release_identity_admission_authority.username != "" &&
+        var.release_identity_admission_authority.uid != "" &&
+        var.release_identity_admission_authority.credential_id != "" &&
+        var.release_identity_admission_authority.signer_key_sha256 != ""
+      )
+      error_message = "The fixed admission boundary can be established only through the distinct security-custodied provider with its exact short-lived identity and independently pinned receipt signer."
+    }
+
+    precondition {
+      condition     = local.release_identity_external_boundary_valid
+      error_message = "The external Platform Security webhook must already exist with the independently pinned UID/full-object identity before Terraform may create or adopt any reserved admission object."
+    }
+
+    precondition {
+      condition     = local.release_identity_admission_adoption_authorized
+      error_message = "A pre-existing reserved admission object is refused before Terraform adoption unless the independently custodied partial record or approved receipt pins every observed UID and full provider object."
+    }
+  }
   depends_on = [terraform_data.cluster_contract]
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_lifecycle_binding" {
-  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+  provider = kubernetes.release_identity
+  count    = 1
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2467,7 +2688,8 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_lifecycl
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router" {
-  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+  provider = kubernetes.release_identity
+  count    = 1
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2510,14 +2732,21 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router" {
           message    = "only a bound-token automation release identity whose ServiceAccount name equals the object authority epoch may create routed bootstrap objects"
         },
         {
-          expression = "has(object.metadata.labels) && ((object.kind == 'Secret' && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']) || (object.kind != 'Secret' && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'].matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$')))"
-          message    = "model-bootstrap routed objects require an 8-32 character authority epoch which is also the release ServiceAccount suffix"
+          expression = "has(object.metadata.labels) && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'].matches('^epoch-[a-f0-9]{20}$') && (object.kind != 'Secret' || ('fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']))"
+          message    = "model-bootstrap routed objects require the digest-derived authority epoch; assertion Secrets additionally retain the public v1 generation in their name and label"
         },
       ]
     }
   }
 
-  lifecycle { prevent_destroy = true }
+  lifecycle {
+    prevent_destroy = true
+
+    precondition {
+      condition     = local.release_identity_admission_adoption_authorized
+      error_message = "Router creation refuses any unapproved pre-existing reserved admission object; Platform Security must pin the exact UID/full-object set before a partial-apply retry."
+    }
+  }
   depends_on = [
     terraform_data.cluster_contract,
     kubernetes_manifest.model_controller_bootstrap_epoch_router_lifecycle_binding,
@@ -2525,7 +2754,8 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router" {
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_binding" {
-  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+  provider = kubernetes.release_identity
+  count    = 1
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2548,6 +2778,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_epoch_router_binding"
 # admitted for recovery. Later changes use new additive policy names: these
 # exact policies and bindings cannot be updated or deleted in place.
 resource "kubernetes_manifest" "model_controller_bootstrap_policy_lifecycle" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2591,7 +2822,14 @@ resource "kubernetes_manifest" "model_controller_bootstrap_policy_lifecycle" {
     }
   }
 
-  lifecycle { prevent_destroy = true }
+  lifecycle {
+    prevent_destroy = true
+
+    precondition {
+      condition     = local.release_identity_admission_adoption_authorized
+      error_message = "Generation policy creation refuses any unapproved pre-existing reserved admission object; Platform Security must pin the exact UID/full-object set before a partial-apply retry."
+    }
+  }
   depends_on = [
     terraform_data.cluster_contract,
     kubernetes_manifest.model_controller_bootstrap_epoch_router_binding,
@@ -2599,6 +2837,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_policy_lifecycle" {
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_policy_lifecycle_binding" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2625,6 +2864,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_policy_lifecycle_bind
 # UID-bound receipt admitted for the exact automation identity can make it an
 # import candidate on a later plan.
 resource "kubernetes_manifest" "model_controller_bootstrap_history_policy" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2694,6 +2934,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_history_policy" {
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_history_policy_binding" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2716,6 +2957,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_history_policy_bindin
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2772,6 +3014,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy" {
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy_binding" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2798,6 +3041,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy_bindin
 # root; only the same automation-only release identity may create it while the
 # policy is active.
 resource "kubernetes_manifest" "model_controller_bootstrap_trust_policy" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2849,6 +3093,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_trust_policy" {
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_trust_policy_binding" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2904,6 +3149,7 @@ resource "kubernetes_network_policy_v1" "model_controller_bootstrap" {
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2928,7 +3174,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
       }
       matchConditions = [{
         name       = "model-bootstrap-assertion-secret"
-        expression = "request.namespace == 'fs2-system' && request.name.startsWith('fs2-release-model-bootstrap-') && ((request.operation == 'DELETE' && has(oldObject.metadata.labels) && 'fs2.nebius.ai/assertion-generation' in oldObject.metadata.labels && oldObject.metadata.labels['fs2.nebius.ai/assertion-generation'] == ${jsonencode(each.key)}) || (request.operation != 'DELETE' && has(object.metadata.labels) && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'] == ${jsonencode(each.key)}))"
+        expression = "request.namespace == 'fs2-system' && request.name.startsWith('fs2-release-model-bootstrap-') && ((request.operation == 'DELETE' && has(oldObject.metadata.labels) && 'fs2.nebius.ai/authority-epoch' in oldObject.metadata.labels && oldObject.metadata.labels['fs2.nebius.ai/authority-epoch'] == ${jsonencode(each.key)}) || (request.operation != 'DELETE' && has(object.metadata.labels) && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'] == ${jsonencode(each.key)}))"
       }]
       validations = [
         {
@@ -2944,7 +3190,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
           message    = "model-bootstrap assertion Secrets must be immutable"
         },
         {
-          expression = "has(object.metadata.labels) && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']"
+          expression = "has(object.metadata.labels) && 'fs2.nebius.ai/authority-epoch' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/authority-epoch'] == ${jsonencode(each.key)} && 'fs2.nebius.ai/assertion-generation' in object.metadata.labels && object.metadata.labels['fs2.nebius.ai/assertion-generation'] == ${jsonencode(local.model_controller_bootstrap_authority_generations_by_epoch[each.key])} && object.metadata.labels['fs2.nebius.ai/assertion-generation'].matches('^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$') && object.metadata.name == 'fs2-release-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/assertion-generation']"
           message    = "model-bootstrap assertion Secret name and generation label must be identical"
         },
         {
@@ -2963,6 +3209,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy_binding" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -2985,6 +3232,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy_binding
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_verification_policy" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -3040,6 +3288,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_verification_policy" 
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_verification_policy_binding" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_security_enabled ? local.model_controller_bootstrap_authority_epochs : {}
 
   manifest = {
@@ -3155,6 +3404,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_verifier_role_binding
 # tuple from the API. Only a later plan may treat its terminal success as
 # authority for declarative import.
 resource "kubernetes_job_v1" "model_controller_bootstrap_receipt_verification" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_verification_queries
 
   metadata {
@@ -3227,6 +3477,7 @@ resource "kubernetes_job_v1" "model_controller_bootstrap_receipt_verification" {
 }
 
 resource "kubernetes_job_v1" "model_controller_bootstrap" {
+  provider = kubernetes.release_identity
   for_each = local.model_controller_bootstrap_assertions
 
   metadata {

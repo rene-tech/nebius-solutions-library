@@ -239,11 +239,17 @@ output "dynamic_model_contract" {
     bootstrap_current_retention_spec = (
       null
     )
-    bootstrap_inventory_authority   = "policy-first-apply-time-verified-kubernetes-inventory-v3"
+    bootstrap_inventory_authority   = "security-receipt-bound-apply-time-verified-kubernetes-inventory-v4"
     bootstrap_authority_epochs      = sort(keys(local.model_controller_bootstrap_authority_epochs))
     bootstrap_bound_authority_epochs = sort(tolist(local.model_controller_bootstrap_bound_authority_epochs))
     bootstrap_admission_policy_names = local.model_controller_bootstrap_policy_names
     bootstrap_epoch_router_policy_names = local.model_controller_bootstrap_router_policy_names
+    bootstrap_security_admission_bundle = var.release_identity_admission_bundle.enabled ? {
+      receipt_sha256     = var.release_identity_admission_bundle.receipt_sha256
+      signer_key_sha256  = var.release_identity_admission_bundle.signer_key_sha256
+      receipt_jws_sha256 = var.release_identity_admission_bundle.receipt_jws_sha256
+      object_keys        = sort(keys(var.release_identity_admission_bundle.objects))
+    } : null
     bootstrap_trust_binding = var.release_identity_model_bootstrap_trust_binding.enabled ? {
       config_map_uid           = var.release_identity_model_bootstrap_trust_binding.config_map_uid
       config_map_object_sha256 = var.release_identity_model_bootstrap_trust_binding.config_map_object_sha256

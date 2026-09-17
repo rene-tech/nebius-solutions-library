@@ -1812,7 +1812,8 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_authority": {
                     "username": (
                         "system:serviceaccount:fs2-system:"
-                        "fs2-release-identity-release-test-02"
+                        "fs2-release-identity-epoch-"
+                        + hashlib.sha256(b"release-test-02").hexdigest()[:20]
                     ),
                     "uid": "12345678-1234-4234-8234-123456789abc",
                     "credential_id": "JTI=release-test-02-bound-token",

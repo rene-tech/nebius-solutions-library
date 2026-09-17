@@ -477,6 +477,154 @@ variable "kube_context" {
   nullable    = false
 }
 
+variable "release_identity_kubeconfig_path" {
+  description = "Separately custodied kubeconfig used only for short-lived release-identity writes. It must not be the general run kubeconfig and is never emitted in outputs."
+  type        = string
+  default     = ""
+
+  validation {
+    condition = (
+      var.release_identity_kubeconfig_path == "" ||
+      (startswith(var.release_identity_kubeconfig_path, "/run/fs2-security/") && !strcontains(var.release_identity_kubeconfig_path, ".."))
+    )
+    error_message = "release_identity_kubeconfig_path must be empty or an external-custodian path below /run/fs2-security without parent traversal."
+  }
+}
+
+variable "release_identity_kube_context" {
+  description = "Exact context in the separately custodied release-identity kubeconfig."
+  type        = string
+  default     = ""
+}
+
+variable "release_identity_admission_bundle" {
+  description = "Externally reviewed, security-custodied exact admission bundle. The facade accepts it only from a root-custodied file below /run/fs2-security outside deployment configuration; it binds every policy/binding UID, full provider object and canonical source manifest before Helm or bootstrap adoption."
+  type = object({
+    enabled                 = bool
+    receipt_sha256          = string
+    signer_key_sha256       = string
+    receipt_jws_sha256      = string
+    authority = object({
+      username      = string
+      uid           = string
+      credential_id = string
+    })
+    objects = map(object({
+      uid             = string
+      object_sha256   = string
+      manifest_sha256 = string
+    }))
+  })
+  default = {
+    enabled            = false
+    receipt_sha256     = ""
+    signer_key_sha256  = ""
+    receipt_jws_sha256 = ""
+    authority = {
+      username      = ""
+      uid           = ""
+      credential_id = ""
+    }
+    objects            = {}
+  }
+
+  validation {
+    condition = !var.release_identity_admission_bundle.enabled || (
+      alltrue([
+        for digest in [
+          var.release_identity_admission_bundle.receipt_sha256,
+          var.release_identity_admission_bundle.signer_key_sha256,
+          var.release_identity_admission_bundle.receipt_jws_sha256,
+        ] : can(regex("^[a-f0-9]{64}$", digest))
+      ]) &&
+      length(var.release_identity_admission_bundle.objects) >= 7 &&
+      can(regex("^system:serviceaccount:fs2-system:fs2-release-identity-epoch-[a-f0-9]{20}$", var.release_identity_admission_bundle.authority.username)) &&
+      can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", var.release_identity_admission_bundle.authority.uid)) &&
+      can(regex("^[A-Za-z0-9][A-Za-z0-9._:/=-]{7,255}$", var.release_identity_admission_bundle.authority.credential_id)) &&
+      alltrue([
+        for object_key, object in var.release_identity_admission_bundle.objects :
+        (can(regex("^validatingadmissionpolicy(?:binding)?/[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])$", object_key)) || object_key == "validatingwebhookconfiguration/fs2-security-release-admission") &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", object.uid)) &&
+        can(regex("^[a-f0-9]{64}$", object.object_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", object.manifest_sha256))
+      ])
+    )
+    error_message = "An enabled release_identity_admission_bundle must carry exact receipt/signing hashes and canonical UID/full-object/source-manifest hashes for every admission object."
+  }
+}
+
+variable "release_identity_admission_authority" {
+  description = "Exact short-lived security-custodian identity used only to establish the fixed admission boundary. Its independently custodied file pins the external live webhook, signer, partial-adoption set and, after approval, exact raw receipt/JWS digests; it is never deployment configuration."
+  type = object({
+    username      = string
+    uid           = string
+    credential_id = string
+    signer_key_sha256 = string
+    approved_receipt_sha256     = string
+    approved_receipt_jws_sha256 = string
+    external_boundary_uid             = string
+    external_boundary_object_sha256   = string
+    external_boundary_manifest_sha256 = string
+    adopted_objects = map(object({
+      uid           = string
+      object_sha256 = string
+    }))
+  })
+  default = {
+    username      = ""
+    uid           = ""
+    credential_id = ""
+    signer_key_sha256 = ""
+    approved_receipt_sha256     = ""
+    approved_receipt_jws_sha256 = ""
+    external_boundary_uid             = ""
+    external_boundary_object_sha256   = ""
+    external_boundary_manifest_sha256 = ""
+    adopted_objects             = {}
+  }
+
+  validation {
+    condition = (
+      (
+        var.release_identity_admission_authority.username == "" &&
+        var.release_identity_admission_authority.uid == "" &&
+        var.release_identity_admission_authority.credential_id == "" &&
+        var.release_identity_admission_authority.signer_key_sha256 == "" &&
+        var.release_identity_admission_authority.approved_receipt_sha256 == "" &&
+        var.release_identity_admission_authority.approved_receipt_jws_sha256 == "" &&
+        var.release_identity_admission_authority.external_boundary_uid == "" &&
+        var.release_identity_admission_authority.external_boundary_object_sha256 == "" &&
+        var.release_identity_admission_authority.external_boundary_manifest_sha256 == "" &&
+        length(var.release_identity_admission_authority.adopted_objects) == 0
+      ) || (
+        can(regex("^system:serviceaccount:fs2-system:fs2-release-identity-epoch-[a-f0-9]{20}$", var.release_identity_admission_authority.username)) &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", var.release_identity_admission_authority.uid)) &&
+        can(regex("^[A-Za-z0-9][A-Za-z0-9._:/=-]{7,255}$", var.release_identity_admission_authority.credential_id)) &&
+        can(regex("^[a-f0-9]{64}$", var.release_identity_admission_authority.signer_key_sha256)) &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", var.release_identity_admission_authority.external_boundary_uid)) &&
+        can(regex("^[a-f0-9]{64}$", var.release_identity_admission_authority.external_boundary_object_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.release_identity_admission_authority.external_boundary_manifest_sha256)) &&
+        (
+          (
+            var.release_identity_admission_authority.approved_receipt_sha256 == "" &&
+            var.release_identity_admission_authority.approved_receipt_jws_sha256 == ""
+          ) || (
+            can(regex("^[a-f0-9]{64}$", var.release_identity_admission_authority.approved_receipt_sha256)) &&
+            can(regex("^[a-f0-9]{64}$", var.release_identity_admission_authority.approved_receipt_jws_sha256))
+          )
+        ) &&
+        alltrue([
+          for object_key, object in var.release_identity_admission_authority.adopted_objects :
+          can(regex("^validatingadmissionpolicy(?:binding)?/(?:fs2-bootstrap-(?:epoch-router(?:-lifecycle)?|(?:policy|history|receipts|trust|secrets|verify)-epoch-[a-f0-9]{20})|fs2-control-plane-schema-compatibility)$", object_key)) &&
+          can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", object.uid)) &&
+          can(regex("^[a-f0-9]{64}$", object.object_sha256))
+        ])
+      )
+    )
+    error_message = "release_identity_admission_authority must be wholly empty or bind the exact generation-derived ServiceAccount username/UID/bound-token credential ID, signer key, external webhook identity, bounded partial-adoption map, and an all-empty or all-pinned approved receipt digest pair supplied by the external security custodian."
+  }
+}
+
 variable "kube_system_uid" {
   description = "Exact kube-system namespace UID captured after infrastructure creation."
   type        = string
@@ -1057,11 +1205,11 @@ variable "release_identity_model_bootstrap_assertion_generation" {
     condition = (
       var.release_identity_model_bootstrap_assertion_generation == "" ||
       can(regex(
-        "^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$",
+        "^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$",
         var.release_identity_model_bootstrap_assertion_generation,
       ))
     )
-    error_message = "release_identity_model_bootstrap_assertion_generation must be empty or an 8-32 character lowercase DNS label; the same value is embedded in the generation-specific release ServiceAccount and admission-policy names."
+    error_message = "release_identity_model_bootstrap_assertion_generation must be empty or the public v1 8-63 character lowercase generation. DNS-scoped authority names are derived separately from its SHA-256 digest."
   }
 }
 
@@ -1126,12 +1274,12 @@ variable "release_identity_model_bootstrap_retained_authorities" {
   validation {
     condition = alltrue([
       for generation, authority in var.release_identity_model_bootstrap_retained_authorities :
-      can(regex("^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$", generation)) &&
-      authority.username == "system:serviceaccount:fs2-system:fs2-release-identity-${generation}" &&
+      can(regex("^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$", generation)) &&
+      authority.username == "system:serviceaccount:fs2-system:fs2-release-identity-epoch-${substr(sha256(generation), 0, 20)}" &&
       can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", authority.uid)) &&
       can(regex("^[A-Za-z0-9][A-Za-z0-9._:/=-]{7,255}$", authority.credential_id))
     ])
-    error_message = "release_identity_model_bootstrap_retained_authorities must map each 8-32 character assertion generation to the exactly matching fs2-release-identity-<generation> ServiceAccount username, UID, and bound-token credential ID tuple."
+    error_message = "release_identity_model_bootstrap_retained_authorities must map each public v1 assertion generation to the exact digest-derived fs2-release-identity-epoch-<sha256-prefix> ServiceAccount username, UID, and bound-token credential ID tuple."
   }
 }
 

@@ -68,12 +68,22 @@ def test_release_assertion_is_short_lived_audience_and_capability_bound() -> Non
     ).assertion
     assert verified_resource.resource_sha256 == "2" * 64
     assert verified_resource.resource_generation == "release-test-01"
+    dotted_generation = authority.verifier.verify(
+        authority.bearer(
+            ReleaseIdentityCapability.MODELS_BOOTSTRAP,
+            resource_sha256="2" * 64,
+            resource_generation="release.test-01",
+        ),
+        capability=ReleaseIdentityCapability.MODELS_BOOTSTRAP,
+        purpose=ReleaseIdentityPurpose.ADMIN_AUTOMATION,
+    ).assertion
+    assert dotted_generation.resource_generation == "release.test-01"
     with pytest.raises(ReleaseIdentityError):
         authority.verifier.verify(
             authority.bearer(
                 ReleaseIdentityCapability.MODELS_BOOTSTRAP,
                 resource_sha256="2" * 64,
-                resource_generation="release.test-01",
+                resource_generation="release_test_01",
             ),
             capability=ReleaseIdentityCapability.MODELS_BOOTSTRAP,
             purpose=ReleaseIdentityPurpose.ADMIN_AUTOMATION,
@@ -156,7 +166,8 @@ def test_model_bootstrap_recovery_is_generation_keyed_and_retains_job_history() 
     assert "length(var.release_identity_model_bootstrap_retained_assertions) == 0" in variables
     assert "bootstrap_managed_generations" in outputs
     assert "bootstrap_retained_generations" in outputs
-    assert 'bootstrap_inventory_authority   = "policy-first-apply-time-verified-kubernetes-inventory-v3"' in outputs
+    assert 'bootstrap_inventory_authority   = "security-receipt-bound-apply-time-verified-kubernetes-inventory-v4"' in outputs
+    assert "bootstrap_security_admission_bundle" in outputs
     assert "bootstrap_epoch_router_policy_names" in outputs
 
 
@@ -302,7 +313,7 @@ def test_model_bootstrap_assertion_secret_is_append_only_and_credential_bound() 
         in bootstrap
     )
     assert '"fs2.nebius.ai/authority-epoch" = each.key' in bootstrap
-    assert 'lifecycle = "fs2-bootstrap-policy-${generation}"' in bootstrap
+    assert 'lifecycle = "fs2-bootstrap-policy-${authority_epoch}"' in bootstrap
     assert "generation policy and binding names must contain the exact authority epoch label" in bootstrap
     assert "object.spec.policyName == object.metadata.name" in bootstrap
     assert "object.spec.validationActions == ['Deny']" in bootstrap
@@ -311,6 +322,51 @@ def test_model_bootstrap_assertion_secret_is_append_only_and_credential_bound() 
     assert "request.namespace == 'fs2-system' && request.name.startsWith('fs2-release-model-bootstrap-')" in bootstrap
     assert "request.operation == 'DELETE' && has(oldObject.metadata.labels)" in bootstrap
     assert "object.metadata.namespace == 'fs2-system'" not in bootstrap
+
+
+def test_admission_boundary_uses_external_exact_identity_and_receipt_before_helm() -> None:
+    bootstrap = (REPOSITORY_ROOT / "stages/workloads/model_controller.tf").read_text(
+        encoding="utf-8"
+    )
+    control_plane = (REPOSITORY_ROOT / "stages/workloads/control_plane.tf").read_text(
+        encoding="utf-8"
+    )
+    providers = (REPOSITORY_ROOT / "stages/workloads/providers.tf").read_text(
+        encoding="utf-8"
+    )
+    wrapper = (REPOSITORY_ROOT / "inference-stack").read_text(encoding="utf-8")
+    access_models = (
+        REPOSITORY_ROOT / "components/control-plane/src/fs2_serve/access_models.py"
+    ).read_text(encoding="utf-8")
+    api = (REPOSITORY_ROOT / "components/control-plane/src/fs2_serve/api.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'alias          = "release_identity"' in providers
+    assert "provider = kubernetes.release_identity" in bootstrap
+    assert "provider = kubernetes.release_identity" in control_plane
+    assert "release_identity_admission_expected_manifest_sha256s" in bootstrap
+    assert "release_identity_admission_observed_object_sha256s" in bootstrap
+    assert 'data "kubernetes_resources" "release_identity_security_webhooks"' in (
+        REPOSITORY_ROOT / "stages/workloads/model_bootstrap_inventory.tf"
+    ).read_text(encoding="utf-8")
+    assert "release_identity_external_boundary_valid" in bootstrap
+    assert "external_boundary_manifest_sha256" in bootstrap
+    assert 'resource "kubernetes_manifest" "release_identity_security_webhook"' not in bootstrap
+    assert "release_identity_admission_adoption_authorized" in bootstrap
+    assert "local.release_identity_admission_bundle_valid" in control_plane
+    assert "FS2_SECURITY_ADMISSION_AUTHORITY" in wrapper
+    assert "FS2_SECURITY_ADMISSION_BUNDLE" in wrapper
+    assert "FS2_RELEASE_IDENTITY_KUBECONFIG" in wrapper
+    assert "var.release_identity_admission_authority.credential_id" in bootstrap
+    assert "approved_receipt_sha256" in bootstrap
+    assert "approved_receipt_jws_sha256" in bootstrap
+    assert "signer_key_sha256" in bootstrap
+    assert '"epoch-${substr(sha256(generation), 0, 20)}"' in bootstrap
+    assert "max_length=63" in access_models
+    assert "max_length=63" in api
+    assert "[a-z0-9.-]{6,61}" in access_models
+    assert "[a-z0-9.-]{6,61}" in api
 
 
 def test_trusted_proxy_source_is_canonical_and_untrusted_forwarding_is_ignored() -> None:

@@ -1968,6 +1968,205 @@ def write_downstream_variables(
             raise DeploymentError(
                 "scientific batch Kubernetes writes require the batch controller gate"
             )
+    release_kubeconfig_raw = os.environ.get("FS2_RELEASE_IDENTITY_KUBECONFIG", "")
+    release_kube_context = os.environ.get("FS2_RELEASE_IDENTITY_KUBE_CONTEXT", "")
+    if bool(release_kubeconfig_raw) != bool(release_kube_context):
+        raise DeploymentError(
+            "FS2_RELEASE_IDENTITY_KUBECONFIG and FS2_RELEASE_IDENTITY_KUBE_CONTEXT "
+            "must be supplied together by the external security custodian"
+        )
+    if release_kubeconfig_raw:
+        release_kubeconfig = Path(release_kubeconfig_raw)
+        try:
+            release_stat = release_kubeconfig.lstat()
+        except OSError as exc:
+            raise DeploymentError("the release-identity kubeconfig is not readable") from exc
+        if (
+            not release_kubeconfig.is_absolute()
+            or release_kubeconfig.is_symlink()
+            or not release_kubeconfig.is_file()
+            or release_stat.st_uid != 0
+            or release_stat.st_mode & 0o027
+            or not release_kubeconfig.resolve().is_relative_to(
+                Path("/run/fs2-security")
+            )
+            or release_kubeconfig.resolve() == Path(dynamic["kubeconfig_path"]).resolve()
+            or release_kube_context == dynamic["kube_context"]
+        ):
+            raise DeploymentError(
+                "the release-identity kubeconfig must be a distinct root-owned, "
+                "non-group-writable regular file below /run/fs2-security with a "
+                "distinct context"
+            )
+        workloads["release_identity_kubeconfig_path"] = str(
+            release_kubeconfig.resolve()
+        )
+        workloads["release_identity_kube_context"] = release_kube_context
+    else:
+        workloads["release_identity_kubeconfig_path"] = ""
+        workloads["release_identity_kube_context"] = ""
+
+    admission_authority_raw = os.environ.get(
+        "FS2_SECURITY_ADMISSION_AUTHORITY", ""
+    )
+    if not admission_authority_raw:
+        workloads["release_identity_admission_authority"] = {
+            "username": "",
+            "uid": "",
+            "credential_id": "",
+            "signer_key_sha256": "",
+            "approved_receipt_sha256": "",
+            "approved_receipt_jws_sha256": "",
+            "external_boundary_uid": "",
+            "external_boundary_object_sha256": "",
+            "external_boundary_manifest_sha256": "",
+            "adopted_objects": {},
+        }
+    else:
+        admission_authority_path = Path(admission_authority_raw)
+        try:
+            admission_authority_stat = admission_authority_path.lstat()
+            admission_authority_bytes = admission_authority_path.read_bytes()
+            admission_authority = json.loads(admission_authority_bytes)
+        except (OSError, ValueError) as exc:
+            raise DeploymentError(
+                "the external security admission authority is unreadable or invalid JSON"
+            ) from exc
+        if (
+            not admission_authority_path.is_absolute()
+            or admission_authority_path.is_symlink()
+            or not admission_authority_path.is_file()
+            or admission_authority_stat.st_uid != 0
+            or admission_authority_stat.st_mode & 0o027
+            or not admission_authority_path.resolve().is_relative_to(
+                Path("/run/fs2-security")
+            )
+            or len(admission_authority_bytes) > 16_384
+            or not isinstance(admission_authority, Mapping)
+            or set(admission_authority)
+            != {
+                "username",
+                "uid",
+                "credential_id",
+                "signer_key_sha256",
+                "approved_receipt_sha256",
+                "approved_receipt_jws_sha256",
+                "external_boundary_uid",
+                "external_boundary_object_sha256",
+                "external_boundary_manifest_sha256",
+                "adopted_objects",
+            }
+            or not all(
+                isinstance(admission_authority[key], str)
+                for key in {
+                    "username",
+                    "uid",
+                    "credential_id",
+                    "signer_key_sha256",
+                    "approved_receipt_sha256",
+                    "approved_receipt_jws_sha256",
+                    "external_boundary_uid",
+                    "external_boundary_object_sha256",
+                    "external_boundary_manifest_sha256",
+                }
+            )
+            or not isinstance(admission_authority.get("adopted_objects"), Mapping)
+            or any(
+                not isinstance(object_key, str)
+                or not isinstance(object_value, Mapping)
+                or set(object_value) != {"uid", "object_sha256"}
+                or not all(isinstance(value, str) for value in object_value.values())
+                for object_key, object_value in admission_authority.get(
+                    "adopted_objects", {}
+                ).items()
+            )
+        ):
+            raise DeploymentError(
+                "the external security admission authority is not the exact bounded, "
+                "root-custodied /run/fs2-security contract"
+            )
+        workloads["release_identity_admission_authority"] = admission_authority
+
+    admission_bundle_raw = os.environ.get("FS2_SECURITY_ADMISSION_BUNDLE", "")
+    if not admission_bundle_raw:
+        workloads["release_identity_admission_bundle"] = {
+            "enabled": False,
+            "receipt_sha256": "",
+            "signer_key_sha256": "",
+            "receipt_jws_sha256": "",
+            "authority": {"username": "", "uid": "", "credential_id": ""},
+            "objects": {},
+        }
+    else:
+        admission_bundle_path = Path(admission_bundle_raw)
+        try:
+            admission_bundle_stat = admission_bundle_path.lstat()
+            admission_bundle_bytes = admission_bundle_path.read_bytes()
+            admission_bundle = json.loads(admission_bundle_bytes)
+        except (OSError, ValueError) as exc:
+            raise DeploymentError(
+                "the external security admission receipt is unreadable or invalid JSON"
+            ) from exc
+        if (
+            not admission_bundle_path.is_absolute()
+            or admission_bundle_path.is_symlink()
+            or not admission_bundle_path.is_file()
+            or admission_bundle_stat.st_uid != 0
+            or admission_bundle_stat.st_mode & 0o027
+            or not admission_bundle_path.resolve().is_relative_to(
+                Path("/run/fs2-security")
+            )
+            or len(admission_bundle_bytes) > 1_000_000
+            or not isinstance(admission_bundle, Mapping)
+            or set(admission_bundle) != {
+                "schema",
+                "signer_key_sha256",
+                "receipt_jws",
+                "authority",
+                "objects",
+            }
+            or admission_bundle.get("schema")
+            != "fs2-serve.nebius.ai/security-admission-bundle/v1"
+            or not isinstance(admission_bundle.get("signer_key_sha256"), str)
+            or not re.fullmatch(
+                r"[a-f0-9]{64}", admission_bundle.get("signer_key_sha256", "")
+            )
+            or not isinstance(admission_bundle.get("receipt_jws"), str)
+            or not admission_bundle.get("receipt_jws")
+            or len(admission_bundle["receipt_jws"]) > 65_536
+            or not isinstance(admission_bundle.get("authority"), Mapping)
+            or set(admission_bundle.get("authority", {}))
+            != {"username", "uid", "credential_id"}
+            or not all(
+                isinstance(value, str)
+                for value in admission_bundle.get("authority", {}).values()
+            )
+            or not isinstance(admission_bundle.get("objects"), Mapping)
+            or any(
+                not isinstance(object_key, str)
+                or not isinstance(object_value, Mapping)
+                or set(object_value)
+                != {"uid", "object_sha256", "manifest_sha256"}
+                or not all(isinstance(value, str) for value in object_value.values())
+                for object_key, object_value in admission_bundle.get(
+                    "objects", {}
+                ).items()
+            )
+        ):
+            raise DeploymentError(
+                "the external security admission receipt is not the exact bounded, "
+                "root-custodied /run/fs2-security v1 contract"
+            )
+        workloads["release_identity_admission_bundle"] = {
+            "enabled": True,
+            "receipt_sha256": hashlib.sha256(admission_bundle_bytes).hexdigest(),
+            "signer_key_sha256": admission_bundle["signer_key_sha256"],
+            "receipt_jws_sha256": hashlib.sha256(
+                admission_bundle["receipt_jws"].encode("utf-8")
+            ).hexdigest(),
+            "authority": admission_bundle["authority"],
+            "objects": admission_bundle["objects"],
+        }
     admin_contract = contract.get("admin_configuration", {})
     if isinstance(admin_contract, Mapping) and admin_contract.get("enabled") is True:
         configuration, configuration_sha256, scaling = derived_admin_configuration(

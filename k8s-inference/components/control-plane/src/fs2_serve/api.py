@@ -210,7 +210,7 @@ class StrictModel(BaseModel):
 
 class ReleaseModelBootstrapRequest(StrictModel):
     schema: Literal["fs2-serve.nebius.ai/model-bootstrap/v1"]
-    generation: str = Field(min_length=8, max_length=32, pattern=r"^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$")
+    generation: str = Field(min_length=8, max_length=63, pattern=r"^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$")
     proposals: list[ModelDeploymentPreviewProposal] = Field(min_length=1, max_length=200)
 
     def sha256(self) -> str:

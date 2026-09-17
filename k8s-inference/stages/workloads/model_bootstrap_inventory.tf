@@ -27,6 +27,15 @@ data "kubernetes_resources" "model_controller_bootstrap_admission_bindings" {
   kind        = "ValidatingAdmissionPolicyBinding"
 }
 
+# This boundary is provisioned and rotated by Platform Security, not by this
+# Terraform state. It performs the live current-epoch/JTI decision which a
+# static CEL router cannot safely rotate. Source consumes only its externally
+# pinned UID/full-object/manifest identity and refuses to create or adopt it.
+data "kubernetes_resources" "release_identity_security_webhooks" {
+  api_version = "admissionregistration.k8s.io/v1"
+  kind        = "ValidatingWebhookConfiguration"
+}
+
 # Declarative imports make a retained Kubernetes generation sufficient to
 # recover lost Terraform state. The inventory-derived spec is validated before
 # either imported object can be planned as managed state.

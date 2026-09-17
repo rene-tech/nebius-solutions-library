@@ -3,16 +3,16 @@
 This document describes a static source candidate. It is not integration,
 deployment, live verification, or security acceptance evidence.
 
-The exact parent `dfb996a070a85381bc9a5619e21196fcdf010374` / tree
-`bfcc1b782f33241a561228dff8a388fe55ef0d5d` is preserved as
-SOURCE/INTEGRATION/LIVE NO-GO. Its stable routers let any prior still-valid
-release ServiceAccount operate under an arbitrary epoch label and preoccupy a
-future reserved policy name; its compatibility-image check lived only in the
-chart being rolled back; and its bridge unnecessarily fenced a normal upgrade
-whose pre-existing schema had never served `0032`. The rejected direct parent
-`74aac745affe1cdbbf80b64c9f9c35a9b99c6ce1` and every earlier rejected commit
-also remain provenance. This successor corrects only those three findings
-additively.
+The exact parent `86de0ced25e498d0ca4d0c2f55d463d1cf982577` / tree
+`601f5473a146ab875b5409f0188a3c5a47b551fd` is preserved as
+SOURCE/INTEGRATION/LIVE NO-GO. Its fixed router bootstrap remained
+preoccupiable and used only the general provider; its schema-compatibility
+policy/binding had no cluster-enforced custody; and it narrowed the public
+signed v1 assertion generation from the accepted 8–63 lowercase/dot contract
+to a 32-character DNS label. The rejected parent
+`dfb996a070a85381bc9a5619e21196fcdf010374` and every earlier rejected commit
+also remain provenance. This successor addresses only those three findings
+and is still an unreviewed static-source candidate.
 
 ## Session-exchange admission
 
@@ -63,7 +63,7 @@ migration/schema-wait image while selecting the prior application image; it
 never reverses schema or discards limiter state. The current chart independently
 requires the compatibility repository and digest for every Helm upgrade; only
 a fresh install retains the application-image fallback. Because rollback
-renders the stored older chart, Terraform now owns the durable
+renders the stored older chart, the separately custodied release provider owns the durable
 `fs2-control-plane-schema-compatibility` ValidatingAdmissionPolicy and Deny
 binding outside Helm and orders the release after it. The guard matches the
 exact migration Job and gateway Deployment and admits only the Terraform-pinned
@@ -106,13 +106,26 @@ Job object. It also binds the already consumed release
 assertion receipt. A ConfigMap-only partial-apply receipt is permitted before
 assertion consumption, but cannot attest a Job.
 
-Recovery now requires a policy-first apply. A four-object stable epoch-router
+Recovery now requires a security-custodied policy-first apply. The general run
+provider cannot write admission or protected bootstrap objects. A root-owned,
+non-group-writable, non-symlink kubeconfig below `/run/fs2-security` and a
+distinct context configure the `kubernetes.release_identity` provider, while a
+second root-custodied file binds
+the exact short-lived ServiceAccount username, UID, bound-token credential ID,
+an independently selected receipt-signing-key digest, and the exact
+manifest/UID/full-object identity of Platform Security's externally operated
+`fs2-security-release-admission` webhook. Terraform does not create, mutate,
+delete, or adopt that webhook. It performs the live rotatable current-epoch
+and exact-JTI authorization which a retained static CEL router cannot. A four-object stable epoch-router
 lifecycle/policy boundary first rejects unlabeled protected names, denies
 protected mutation/deletion, and admits new epochs only from bound-token
 automation release ServiceAccounts. Every assertion generation then gets six
-literal `fs2-bootstrap-<purpose>-<generation>`
+literal `fs2-bootstrap-<purpose>-<epoch>`
 lifecycle/history/trust/receipt/assertion/verification policy and binding
-pairs. Generations are 8–32-character DNS labels. The router requires the
+pairs. The public signed generation retains the v1 8–63 lowercase/dot wire
+contract. A separate DNS-safe epoch is deterministically derived as
+`epoch-<first-20-hex-of-sha256(public-generation)>`; no public assertion or
+retained payload is rewritten. The router requires the
 object epoch label, reserved policy-name suffix, and caller username suffix to
 be identical, while each immutable exact Deny rule additionally binds the
 canonical ServiceAccount UID and exact Kubernetes bound-token credential ID.
@@ -120,11 +133,27 @@ A prior still-valid credential can therefore address only its own already
 occupied append-only names and cannot preoccupy or attach an arbitrary policy
 to a future epoch. A retained old policy cannot match or deny a later
 generation, and a reusable username alone is insufficient. Rotation retains
-all prior authority tuples, appends the next epoch's policies, and then extends
-the UID
-pin containing the four shared router objects with that complete 12-object set
-before bootstrap can run. Partial epoch
-pins fail closed. The trust binding separately
+all prior authority tuples and appends the next epoch's policies.
+
+A partial admission apply is recoverable without broad adoption: Platform
+Security adds exactly the complete observed reserved-policy/binding
+UID/full-object set to the authority file's `adopted_objects` map. An unlisted
+pre-existing fixed or epoch name blocks before server-side apply; the final
+receipt replaces that partial custody record only after the complete intended
+object set exists.
+
+Helm and model bootstrap remain blocked after that first phase. Platform
+Security must issue one bounded `security-admission-bundle/v1` receipt whose
+exact object set contains the four fixed router objects, the schema-
+compatibility policy/binding, the external security webhook, and every
+configured 12-object epoch set. The
+receipt binds each canonical source-manifest digest, cluster UID, and full
+provider-object digest; its signer key and exact admission authority must match
+the separately custodied authority file. Terraform re-reads the provider
+inventory and requires exact set equality before Helm or bootstrap. A
+preoccupied name fails the first create, while any later object substitution
+changes the second-phase UID/object digest and fails closed. Partial epoch pins
+fail closed. The trust binding separately
 pins the trust ConfigMap UID, full-object digest, trust JSON digest, canonical
 issuer/key-set digest, and policy/binding UIDs. Provider inventory recomputes
 all pins and requires object creation after the relevant binding.
@@ -143,8 +172,8 @@ legacy caller-copied retention map remains empty.
 ConfigMaps and zero-retry, non-root, tokenless Jobs remain generation-keyed and
 protected with `prevent_destroy` plus cluster admission. A separate fail-closed
 ValidatingAdmissionPolicy, installed before Secret creation, admits only
-immutable, generation-labeled, uniquely named Secrets containing exactly the
-`assertion` key. Its match uses the admission request namespace/name and an
+immutable, uniquely named Secrets containing exactly the `assertion` key and
+both the public generation and digest-derived authority-epoch labels. Its match uses the admission request namespace/name and an
 operation-aware `oldObject` label on DELETE, so unrelated Secret deletions
 cannot fail because the request object is absent. UPDATE and matched DELETE are
 both denied.
@@ -156,10 +185,12 @@ both denied.
   successor, and additive `0034` mixed-version bridge; parent integration must
   retain all exact sibling histories and regenerate the combined immutable
   migration manifest. This branch does not copy or modify SAI-10.
-- Before integration, security-owned release automation must perform the
-  policy-first apply, pin every policy/binding and trust UID/digest/key-set,
-  then run the apply-time verifier stage before any later import plan. This
-  source candidate does not manufacture that external authority.
+- Before integration, security-owned release automation must use the separate
+  provider/authority contract for the policy-first apply, sign the exact
+  canonical-manifest/UID/full-object admission bundle, pin every trust
+  UID/digest/key-set, and run the apply-time verifier stage before any later
+  import plan. This source candidate does not manufacture that external
+  authority or receipt.
 - SAI-01 independently owns request-capture exclusions and the 90-day debug
   expiry/purge contract. This isolated SAI-16 lineage still predates those
   changes, so it must not be integrated alone over accepted SAI-01 work. This
@@ -167,10 +198,7 @@ both denied.
   storage, or retention behavior.
 
 The coordinator's static-only boundary prohibited executing authored tests,
-Terraform, builds, formatters, scanners, package managers, or live probes; none
-were executed. Two stdout-only Python standard-library calculations read the
-prior candidate's edited SQL and committed JSON contract. This successor used
-one read-only `sha256sum` invocation for `0034` and one stdout-only Python
-standard-library calculation for the ordered set and canonical contract
-payload. None imported project code or created, overwrote, or removed an
-artifact.
+Terraform, Helm, builds, formatters, scanners, package managers, or live
+probes; none were executed for this successor. Source inspection used only
+read-only `sed`/`rg` and Git identity commands. No command created, overwrote,
+or removed a generated artifact.

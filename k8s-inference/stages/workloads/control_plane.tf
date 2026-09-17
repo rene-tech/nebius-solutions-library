@@ -240,6 +240,7 @@ locals {
 # migration Job and the gateway Deployment unless their schema-sensitive
 # containers retain the independently pinned compatibility image.
 resource "kubernetes_manifest" "control_plane_schema_compatibility_policy" {
+  provider = kubernetes.release_identity
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicy"
@@ -279,10 +280,14 @@ resource "kubernetes_manifest" "control_plane_schema_compatibility_policy" {
   }
 
   lifecycle { prevent_destroy = true }
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    terraform_data.cluster_contract,
+    kubernetes_manifest.model_controller_bootstrap_epoch_router_lifecycle_binding,
+  ]
 }
 
 resource "kubernetes_manifest" "control_plane_schema_compatibility_policy_binding" {
+  provider = kubernetes.release_identity
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
     kind       = "ValidatingAdmissionPolicyBinding"
@@ -321,6 +326,21 @@ resource "helm_release" "control_plane" {
   ]
 
   lifecycle {
+    precondition {
+      condition = (
+        var.release_identity_kubeconfig_path != "" &&
+        var.release_identity_kube_context != "" &&
+        abspath(var.release_identity_kubeconfig_path) != abspath(var.kubeconfig_path) &&
+        var.release_identity_kube_context != var.kube_context
+      )
+      error_message = "The schema-compatibility admission guard requires the separately custodied release-identity provider; the general run provider is refused."
+    }
+
+    precondition {
+      condition     = local.release_identity_admission_bundle_valid
+      error_message = "Helm is refused until the external security-owned admission receipt pins the exact schema-compatibility guard, stable bootstrap boundary, and every configured generation policy by canonical manifest, UID, and full provider object."
+    }
+
     precondition {
       condition = local.public_edge_enabled ? (
         length(var.admin_session_trusted_proxy_cidrs) > 0

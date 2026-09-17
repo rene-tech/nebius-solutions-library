@@ -188,8 +188,8 @@ class ReleaseIdentityAssertion(StrictModel):
     resource_generation: str | None = Field(
         default=None,
         min_length=8,
-        max_length=32,
-        pattern=r"^[a-z0-9][a-z0-9-]{6,30}[a-z0-9]$",
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]{6,61}[a-z0-9]$",
     )
     operator: ReleaseOperatorTarget | None = None
 

@@ -257,22 +257,49 @@ plane. Absence of that exact trust policy fails release automation closed.
 The complete issuer, enrollment/recovery, model-bootstrap, rollout, and
 rollback contract is in
 [`release-identity-enrollment.md`](release-identity-enrollment.md).
-Model-bootstrap assertion rotation is generation-keyed and append-only. Supply
-a new signed 8–32-character DNS-label assertion generation whose Secret is exactly
+Model-bootstrap assertion rotation is generation-keyed and append-only. The
+public signed v1 generation remains the original 8–63-character lowercase
+contract (including dots); its Secret is exactly
 `fs2-release-model-bootstrap-<generation>`; do not copy prior specs into input.
+Terraform derives the separate DNS-label authority epoch as
+`epoch-<first-20-hex-of-sha256(generation)>`. It never narrows or rewrites the
+public signed generation to make a Kubernetes name.
 The Kubernetes provider inventories retained ConfigMap/Job generations, but
 imports only generations carrying a release-authority-signed receipt bound to
 their exact ConfigMap/Job UIDs and full observed object digests. Install the
 append-only policy-lifecycle, history, receipt, trust, assertion-Secret, and
 verification policies before Secret creation. Creation requires the exact
 generation-specific automation ServiceAccount username
-`fs2-release-identity-<generation>`, with the same generation in the object
-label and reserved admission-policy name, plus the immutable UID and
+`fs2-release-identity-epoch-<sha256-prefix>`, with the derived epoch in the
+object label and reserved admission-policy name, plus the immutable UID and
 bound-token credential ID configured for that release; the reusable
 `fs2-release-identity` username alone is refused. No identity may update or
 delete the policies, trust, receipts, assertions, or their bound history.
 The new immutable Job runs once; prior terminal Jobs remain protected by both
 admission and `prevent_destroy`.
+
+The admission boundary has a separate security-owned bootstrap phase. Platform
+Security mounts root-owned, non-group-writable regular files below
+`/run/fs2-security`; point the wrapper at the kubeconfig/context through
+`FS2_RELEASE_IDENTITY_KUBECONFIG` and `FS2_RELEASE_IDENTITY_KUBE_CONTEXT`, and
+the exact short-lived username/UID/credential-ID plus independently pinned
+receipt-signing key through `FS2_SECURITY_ADMISSION_AUTHORITY`. Those values
+never come from deployment configuration and the provider must differ from the
+general run provider. Platform Security must first provision its independently
+operated `fs2-security-release-admission` validating webhook; the authority
+file pins that webhook's canonical manifest, UID, and full provider-object
+hash. It is the live rotatable current-epoch/JTI decision point and is not
+created or adopted by this Terraform state. The first targeted phase may create only the canonical
+fixed routers, schema-compatibility guard, and generation-scoped admission
+objects; Helm and model bootstrap remain fail-closed. Platform Security then
+signs a bounded `security-admission-bundle/v1` receipt containing every
+canonical manifest hash, cluster UID, and full provider-object hash, including
+that external webhook. Point
+`FS2_SECURITY_ADMISSION_BUNDLE` at that root-custodied receipt for the full plan.
+Terraform re-reads all objects and requires exact set and hash equality before
+Helm or bootstrap. A preoccupied name fails creation, and a substituted object
+or receipt fails the second phase. The fixed lifecycle guard also protects the
+schema-compatibility policy and binding from UPDATE or DELETE.
 
 Sessions have both the configured absolute TTL and a 30-minute default idle
 timeout. No principal may hold more than four active, non-idle sessions by

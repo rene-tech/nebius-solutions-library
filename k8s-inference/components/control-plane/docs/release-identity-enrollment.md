@@ -62,19 +62,29 @@ retries because an ambiguous response must not replay a single-use assertion.
 Existing model identities are preserved; new proposals still pass the ordinary
 preview, qualification, persistence, and projection services.
 
-Bootstrap recovery is append-only, receipt-driven, and staged. First apply the
-admission-policy lifecycle guard and the history, trust, receipt, assertion,
-and verification policies with model bootstrap disabled and root deployment
-`dynamic_models.bootstrap_trust_binding.enabled=false` (forwarded internally as
-`release_identity_model_bootstrap_trust_binding`). The first policy phase also
-creates a four-object stable epoch-router policy/lifecycle boundary. It rejects
+Bootstrap recovery is append-only, receipt-driven, and staged. Platform
+Security first supplies three inputs outside customer deployment
+configuration: a root-owned, non-group-writable short-lived kubeconfig/context
+below `/run/fs2-security`, a separately root-custodied exact
+admission-authority tuple plus pinned receipt-signing-key digest, and
+(after object creation) a signed admission-bundle receipt. The first targeted
+apply uses only `FS2_RELEASE_IDENTITY_KUBECONFIG`,
+`FS2_RELEASE_IDENTITY_KUBE_CONTEXT`, and
+`FS2_SECURITY_ADMISSION_AUTHORITY`; Helm and bootstrap deliberately remain
+blocked while `FS2_SECURITY_ADMISSION_BUNDLE` is absent. That phase creates
+the admission-policy lifecycle guard and the history, trust, receipt,
+assertion, verification and schema-compatibility policies through the
+separately custodied provider, never the general run provider. It also creates
+a four-object stable epoch-router policy/lifecycle boundary. It rejects
 protected names without an authority label, denies every protected update or
 delete using request namespace/name matching, and admits CREATE only from a
-bound-token automation release ServiceAccount. Assertion generations are
-8–32-character DNS labels, and every generation gets six literal
-`fs2-bootstrap-<purpose>-<generation>` policy/binding pairs. The stable router
+bound-token automation release ServiceAccount. Public signed assertion
+generations retain the v1 8–63-character lowercase/dot contract. Kubernetes
+authority names use the separately derived
+`epoch-<first-20-hex-of-sha256(public-generation)>`; every epoch gets six
+literal `fs2-bootstrap-<purpose>-<epoch>` policy/binding pairs. The stable router
 requires the caller username to be exactly
-`system:serviceaccount:fs2-system:fs2-release-identity-<generation>`, where the
+`system:serviceaccount:fs2-system:fs2-release-identity-<epoch>`, where the
 suffix is read from the object authority label. Its lifecycle rule also
 requires each reserved policy name to end in that same label. An older
 still-valid bound token can therefore address only its own already occupied,
@@ -82,13 +92,44 @@ append-only names; it cannot preoccupy a future epoch or install a policy under
 another epoch. The exact generation rules additionally bind the canonical
 ServiceAccount UID and one bound short-lived-token credential ID, and their
 object match conditions select only that same
-`fs2.nebius.ai/authority-epoch` (or assertion-generation) label. An expired old
+`fs2.nebius.ai/authority-epoch` label. Assertion Secrets additionally retain
+the unchanged public generation in `fs2.nebius.ai/assertion-generation`. An expired old
 policy therefore cannot deny a later generation. The old
-reusable `fs2-release-identity` username is refused. These three public current
-identifiers are root `dynamic_models.bootstrap_authority`; no bearer token is a
-Terraform value. The lifecycle policy makes its own generation's policies and
-bindings append-only. Record their provider-observed UIDs only after that
-policy-first apply.
+reusable `fs2-release-identity` username is refused. The public generation and
+exact per-generation tuple remain root `dynamic_models.bootstrap_authority`;
+no bearer token is a Terraform value. The fixed bootstrap authority is
+supplied separately by Platform Security and is never accepted from that root
+object. The lifecycle policy makes its own generation's policies and bindings
+append-only.
+
+Before that targeted apply, Platform Security provisions and operates the
+fixed `fs2-security-release-admission` validating webhook outside this
+Terraform state. The authority file pins its canonical manifest, UID, and full
+provider-object digest. That external boundary validates the current approved
+epoch and exact short-lived credential ID on every reserved CREATE, so the
+repository's stable label router is not the rotatable authority and an older
+still-valid credential cannot reserve a future epoch. Terraform refuses to
+create, update, delete, or adopt the webhook.
+
+If a targeted admission apply stops part way through, Platform Security must
+re-read every existing reserved policy/binding UID and full provider object
+and add exactly that complete set to the authority file's `adopted_objects`
+map before a retry. Terraform refuses any pre-existing fixed or epoch name not
+covered by that separately custodied map (or the final approved receipt); it
+never silently server-side-adopts a self-consistent preoccupied name.
+
+After the policy-first apply, Platform Security signs one
+`fs2-serve.nebius.ai/security-admission-bundle/v1` receipt. It contains the
+exact security-authority tuple, the external security webhook, and every fixed
+and generation-scoped policy/binding canonical-manifest hash,
+provider-observed UID, and full provider-object hash. The independently custodied authority file pins the
+receipt signer key. A second plan supplied with
+`FS2_SECURITY_ADMISSION_BUNDLE` re-reads the cluster and requires exact set,
+identity, object and source-manifest equality before either Helm or bootstrap
+can proceed. A preoccupied name fails the first create; substitution before the
+second plan changes UID/object hash and fails closed. The fixed lifecycle guard
+also protects the schema-compatibility guard used for stored-revision Helm
+rollback.
 
 The same exact release credential may then create the immutable public trust
 ConfigMap labeled with its authority epoch. Integration records its UID, full provider-object SHA-256, trust
@@ -119,8 +160,10 @@ To rotate or recover, retain every applied prior generation/authority tuple in
 `dynamic_models.bootstrap_retained_authorities`, supply a new assertion
 generation and current authority, and first perform a policy-only apply. The
 old trust pin remains valid for the four shared router objects plus complete
-older 12-object epoch sets while the new set is created. Record the new UIDs,
-extend the trust binding with the complete new set, and only then enable the bootstrap execution with its exact
+older 12-object epoch sets while the new set is created. Platform Security must
+sign a replacement admission-bundle receipt whose exact object set includes
+the new epoch. Record the new UIDs, extend the trust binding with the complete
+new set, and only then enable the bootstrap execution with its exact
 `fs2-release-model-bootstrap-<generation>` Secret. Partial epoch pins and
 execution from an unpinned epoch fail closed. Terraform creates a new immutable
 ConfigMap and zero-retry Job while `prevent_destroy` protects prior terminal
@@ -132,7 +175,8 @@ ConfigMap-phase receipt before import and Job creation; it cannot self-attest.
 Fail-closed ValidatingAdmissionPolicies deny ConfigMap/Job/trust/receipt and
 assertion-Secret mutation or deletion, restrict all creation to the exact
 generation-specific release credential, and admit only immutable
-generation-labeled single-`assertion`-key Secrets. The policies must exist
+single-`assertion`-key Secrets labeled with both the public assertion generation
+and its digest-derived authority epoch. The policies must exist
 before trust, receipt, history, assertion, or verification creation.
 This is the supported
 fresh-install and recovery path; a mutable Secret behind a fixed Job name is
