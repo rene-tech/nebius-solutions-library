@@ -356,6 +356,28 @@ def operation_id(value: dict) -> str:
         raise old.AcceptanceError("operation_id_invalid") from None
 
 
+def http_invocation(mode: str, body: dict) -> dict:
+    return {
+        "operation": "generate-media",
+        "payload": body | {"mode": mode, "output_format": "mp4", "output_delivery": "artifact"},
+    }
+
+
+def validate_public_contract(models: dict, schema: dict, tools: dict, uploaded: dict) -> None:
+    rows = [row for row in models["data"] if row["id"] == MODEL]
+    check(len(rows) == 1 and rows[0]["operations"] == ["generate-media"], "published_media_operation_changed")
+    generic = [row for row in schema["contracts"] if row["tool_name"] == "cosmos3_nano_generate_media_native"]
+    check(len(generic) == 1, "native_media_contract_missing")
+    for reference in (SOURCE_URL, uploaded):
+        for mode in ("video-to-video", "transfer-video"):
+            body = payload(mode, reference)
+            Draft202012Validator(generic[0]["input_schema"]).validate(http_invocation(mode, body)["payload"])
+            tool = "cosmos3_nano_" + mode.replace("-", "_")
+            Draft202012Validator(tools[tool]["inputSchema"]).validate(
+                body | {"idempotency_key": PREFIX + "contract-check", "wait_seconds": 0}
+            )
+
+
 async def run_case(args, public, tools, snapshot, token, source, reference, mode, transport, reference_kind):
     name = f"{args.phase}-{transport}-{reference_kind}-{mode}"
     path = args.output / (name + ".json")
@@ -383,10 +405,7 @@ async def run_case(args, public, tools, snapshot, token, source, reference, mode
     async def submit():
         if transport == "mcp":
             return operation_id(await public.call(tool, body | controls))
-        request = {
-            "operation": "generate",
-            "payload": body | {"mode": mode, "output_format": "mp4", "output_delivery": "artifact"},
-        }
+        request = http_invocation(mode, body)
         response = await public.http.post(
             f"/v1/models/{MODEL}:invoke",
             json=request,
@@ -538,6 +557,10 @@ async def execute(args) -> None:
                     MODEL, source_path, "video/mp4", "none", PREFIX + args.phase + "-upload-" + args.token_id
                 )
                 write_private(uploaded_path, uploaded, (token,))
+            models = await public.call("list_models", {})
+            schema = await public.call("get_model_schema", {"model_id": MODEL, "protocol": "native"})
+            validate_public_contract(models, schema, tools, uploaded)
+            record["public_contract_sha256"] = digest({"models": models, "schema": schema})
             for transport in args.transports:
                 for reference_kind in args.reference_kinds:
                     reference = SOURCE_URL if reference_kind == "https" else uploaded

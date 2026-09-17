@@ -9,7 +9,7 @@ import pytest
 import yaml
 from jsonschema import Draft202012Validator
 
-from fs2_serve.model_input_contracts import _cosmos_mode_schema
+from fs2_serve.model_input_contracts import _cosmos, _cosmos_mode_schema
 
 
 def test_rendered_adapter_pin_differs_from_preview_only_by_one_terminal_newline():
@@ -45,6 +45,42 @@ def test_operation_parser_accepts_actual_direct_view_method_string_and_nested_en
 def test_operation_parser_refuses_non_durable_identifiers(value):
     with pytest.raises((ValueError, runner.old.AcceptanceError)):
         runner.operation_id(value)
+
+
+@pytest.mark.parametrize("mode", ["video-to-video", "transfer-video"])
+def test_http_envelope_uses_same_policy_operation_as_actual_mcp_response(mode):
+    body = runner.payload(mode, runner.SOURCE_URL)
+    value = runner.http_invocation(mode, body)
+    assert value["operation"] == "generate-media"
+    assert value["payload"] == body | {"mode": mode, "output_format": "mp4", "output_delivery": "artifact"}
+    assert "operation" not in value["payload"]
+
+
+@pytest.mark.parametrize("operation", ["generate-media", "generate"])
+def test_entire_http_mcp_matrix_preflight_against_published_contract(operation):
+    models = {"data": [{"id": runner.MODEL, "operations": [operation]}]}
+    schema = {"contracts": [{"tool_name": "cosmos3_nano_generate_media_native", "input_schema": _cosmos()}]}
+    tools = {
+        "cosmos3_nano_" + mode.replace("-", "_"): {"inputSchema": _cosmos_mode_schema(mode)}
+        for mode in ("video-to-video", "transfer-video")
+    }
+    for tool in tools.values():
+        tool["inputSchema"]["properties"].update(
+            idempotency_key={"type": ["string", "null"], "minLength": 8, "maxLength": 200},
+            wait_seconds={"type": "number", "minimum": 0, "maximum": 30},
+        )
+    uploaded = {
+        "artifact_id": "00000000-0000-4000-8000-000000000123",
+        "sha256": runner.SOURCE_SHA256,
+        "size_bytes": 25013,
+        "media_type": "video/mp4",
+        "compression": "none",
+    }
+    if operation == "generate-media":
+        runner.validate_public_contract(models, schema, tools, uploaded)
+    else:
+        with pytest.raises(ValueError, match="published_media_operation_changed"):
+            runner.validate_public_contract(models, schema, tools, uploaded)
 
 
 def canary():
