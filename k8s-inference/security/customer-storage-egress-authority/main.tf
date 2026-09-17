@@ -46,6 +46,15 @@ locals {
   generations          = jsondecode(data.external.authority.result.generations_json)
   retained_generations = jsondecode(data.external.authority.result.retained_generations_json)
   all_generations      = merge(local.retained_generations, local.generations)
+  controller_identities = jsondecode(data.external.authority.result.controller_identities_json)
+  legacy_provider_generations = {
+    for generation, value in local.retained_generations : generation => value
+    if !can(value.provisioning_generation)
+  }
+  # Stable lanes are created only by the separately signed provisioning root.
+  # Keep the never-activated in-root blocks below inert so this successor does
+  # not erase source while also preventing an attestation/provisioning cycle.
+  stable_provider_generations = {}
   scheduling_keys = merge(
     {
       for generation in keys(local.retained_generations) :
@@ -91,10 +100,7 @@ resource "terraform_data" "external_authority" {
     kubernetes_identity_inventory = data.external.authority.result.kubernetes_identity_inventory_sha256
     kubernetes_service_accounts   = data.external.authority.result.kubernetes_service_account_inventory_sha256
     kubernetes_system_subjects    = data.external.authority.result.kubernetes_system_subject_inventory_sha256
-    deployment_controller         = data.external.authority.result.deployment_controller_username
-    replicaset_controller         = data.external.authority.result.replicaset_controller_username
-    daemonset_controller          = data.external.authority.result.daemonset_controller_username
-    scheduler                     = data.external.authority.result.scheduler_username
+    controller_identities         = data.external.authority.result.controller_identities_json
     kubernetes_rbac_inventory     = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_receipt       = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
     accepted_sai10_commit         = data.external.authority.result.accepted_sai10_commit
@@ -177,7 +183,7 @@ resource "terraform_data" "external_authority_v4" {
 }
 
 resource "nebius_vpc_v1_security_group" "generation" {
-  for_each = local.all_generations
+  for_each = local.legacy_provider_generations
 
   parent_id  = local.authority.authority_project_id
   network_id = local.authority.network_id
@@ -193,7 +199,7 @@ resource "nebius_vpc_v1_security_group" "generation" {
 }
 
 resource "nebius_vpc_v1_security_rule" "private_ingress" {
-  for_each = local.all_generations
+  for_each = local.legacy_provider_generations
 
   parent_id = nebius_vpc_v1_security_group.generation[each.key].id
   name      = "fs2-storage-private-${each.key}"
@@ -214,7 +220,7 @@ resource "nebius_vpc_v1_security_rule" "private_ingress" {
 }
 
 resource "nebius_vpc_v1_security_rule" "dns_egress" {
-  for_each = local.all_generations
+  for_each = local.legacy_provider_generations
 
   parent_id = nebius_vpc_v1_security_group.generation[each.key].id
   name      = "fs2-storage-dns-${each.key}"
@@ -235,7 +241,7 @@ resource "nebius_vpc_v1_security_rule" "dns_egress" {
 }
 
 resource "nebius_vpc_v1_security_rule" "database_egress" {
-  for_each = local.all_generations
+  for_each = local.legacy_provider_generations
 
   parent_id = nebius_vpc_v1_security_group.generation[each.key].id
   name      = "fs2-storage-db-${each.key}"
@@ -256,7 +262,7 @@ resource "nebius_vpc_v1_security_rule" "database_egress" {
 }
 
 resource "nebius_vpc_v1_security_rule" "provider_egress" {
-  for_each = local.all_generations
+  for_each = local.legacy_provider_generations
 
   parent_id = nebius_vpc_v1_security_group.generation[each.key].id
   name      = "fs2-storage-provider-${each.key}"
@@ -281,7 +287,7 @@ resource "nebius_vpc_v1_security_rule" "provider_egress" {
 }
 
 resource "nebius_mk8s_v1_node_group" "generation" {
-  for_each = local.all_generations
+  for_each = local.legacy_provider_generations
 
   parent_id        = local.authority.cluster_id
   name             = "fs2-storage-egress-${each.key}"
@@ -340,5 +346,175 @@ resource "nebius_mk8s_v1_node_group" "generation" {
     nebius_vpc_v1_security_rule.dns_egress,
     nebius_vpc_v1_security_rule.database_egress,
     nebius_vpc_v1_security_rule.provider_egress,
+  ]
+}
+
+# Stable provider provisioning is deliberately independent from the signed
+# post-creation Node/controller/agent attestation generation.  Retained legacy
+# addresses above remain untouched; every v6+ lane is keyed by the digest of
+# provider inputs only, so refreshing live attestations never replaces a VPC
+# security group or NodeGroup.
+resource "nebius_vpc_v1_security_group" "stable_lane" {
+  for_each = local.stable_provider_generations
+
+  parent_id  = local.authority.authority_project_id
+  network_id = local.authority.network_id
+  name       = "fs2-storage-lane-${each.key}"
+  labels = {
+    "managed-by"              = "fs2-security-owner"
+    "security-boundary"       = "customer-storage-egress"
+    "provisioning-generation" = each.key
+    "lane-id"                 = each.value.lane_id
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+
+  depends_on = [terraform_data.external_authority_v4]
+}
+
+resource "nebius_vpc_v1_security_rule" "stable_private_ingress" {
+  for_each = local.stable_provider_generations
+
+  parent_id = nebius_vpc_v1_security_group.stable_lane[each.key].id
+  name      = "fs2-storage-private-${each.key}"
+  labels    = { "provisioning-generation" = each.key, purpose = "private-ingress" }
+  access    = "ALLOW"
+  protocol  = "ANY"
+  type      = "STATEFUL"
+  priority  = 100
+  ingress = {
+    source_cidrs       = each.value.private_cidrs
+    destination_ports = []
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+}
+
+resource "nebius_vpc_v1_security_rule" "stable_dns_egress" {
+  for_each = local.stable_provider_generations
+
+  parent_id = nebius_vpc_v1_security_group.stable_lane[each.key].id
+  name      = "fs2-storage-dns-${each.key}"
+  labels    = { "provisioning-generation" = each.key, purpose = "dns-egress" }
+  access    = "ALLOW"
+  protocol  = "ANY"
+  type      = "STATEFUL"
+  priority  = 100
+  egress = {
+    destination_cidrs = each.value.private_cidrs
+    destination_ports = [53]
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+}
+
+resource "nebius_vpc_v1_security_rule" "stable_database_egress" {
+  for_each = local.stable_provider_generations
+
+  parent_id = nebius_vpc_v1_security_group.stable_lane[each.key].id
+  name      = "fs2-storage-db-${each.key}"
+  labels    = { "provisioning-generation" = each.key, purpose = "database-egress" }
+  access    = "ALLOW"
+  protocol  = "TCP"
+  type      = "STATEFUL"
+  priority  = 100
+  egress = {
+    destination_cidrs = each.value.private_cidrs
+    destination_ports = [5432]
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+}
+
+resource "nebius_vpc_v1_security_rule" "stable_provider_egress" {
+  for_each = local.stable_provider_generations
+
+  parent_id = nebius_vpc_v1_security_group.stable_lane[each.key].id
+  name      = "fs2-storage-provider-${each.key}"
+  labels    = { "provisioning-generation" = each.key, purpose = "provider-egress" }
+  access    = "ALLOW"
+  protocol  = "TCP"
+  type      = "STATEFUL"
+  priority  = 100
+  egress = {
+    destination_cidrs = sort(distinct(concat(
+      each.value.provider_api_cidrs,
+      each.value.kubernetes_api_cidrs,
+      each.value.bootstrap_https_cidrs,
+    )))
+    destination_ports = [443]
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+}
+
+resource "nebius_mk8s_v1_node_group" "stable_lane" {
+  for_each = local.stable_provider_generations
+
+  parent_id        = local.authority.cluster_id
+  name             = "fs2-storage-lane-${each.key}"
+  labels           = { "provisioning-generation" = each.key, "lane-id" = each.value.lane_id }
+  version          = local.authority.kubernetes_version
+  fixed_node_count = null
+  autoscaling = {
+    min_node_count = each.value.min_node_count
+    max_node_count = each.value.max_node_count
+  }
+  strategy = {
+    max_surge       = { count = 1 }
+    max_unavailable = { count = 0 }
+    drain_timeout   = "30m"
+  }
+  template = {
+    metadata = {
+      labels = {
+        (each.value.scheduling_key)                 = each.value.lane_id
+        "fs2.nebius.ai/provisioning-generation" = each.key
+      }
+    }
+    taints = [{
+      key    = each.value.scheduling_key
+      value  = each.value.lane_id
+      effect = "NO_SCHEDULE"
+    }]
+    boot_disk = {
+      size_gibibytes = each.value.boot_disk_gib
+      type           = each.value.boot_disk_type
+    }
+    network_interfaces = [{
+      subnet_id = local.authority.subnet_id
+      security_groups = [{
+        id = nebius_vpc_v1_security_group.stable_lane[each.key].id
+      }]
+    }]
+    os                 = "ubuntu24.04"
+    reservation_policy = { policy = "FORBID" }
+    resources = {
+      platform = each.value.platform
+      preset   = each.value.preset
+    }
+    service_account_id = local.authority.node_service_account_id
+    underlay_required  = false
+  }
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = all
+  }
+  depends_on = [
+    nebius_vpc_v1_security_rule.stable_private_ingress,
+    nebius_vpc_v1_security_rule.stable_dns_egress,
+    nebius_vpc_v1_security_rule.stable_database_egress,
+    nebius_vpc_v1_security_rule.stable_provider_egress,
   ]
 }

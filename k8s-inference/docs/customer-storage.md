@@ -326,3 +326,19 @@ records are deliberately preserved across rollback.
 References: [Nebius IAM roles](https://docs.nebius.com/iam/authorization/roles),
 [bucket policies](https://docs.nebius.com/object-storage/buckets/bucket-policy),
 and [access keys](https://docs.nebius.com/iam/service-accounts/access-keys).
+
+## Protected-lane handoff (v10, source only)
+
+Provider provisioning and Kubernetes attestation are separate additive phases.
+The lane provisioning root consumes a signed provider-only generation and
+creates the immutable lane key/taint, security group and NodeGroup. After a
+Node exists, a read-only collector records its exact UID, resourceVersion, full
+labels and taints. A separately signed cluster receipt records the actual
+controller ServiceAccount `userInfo` identities and every live DaemonSet with
+a blanket toleration. The admission generation is accepted only when those
+receipts match its exact Node and critical-agent inventory.
+
+This source is not deployable on the current branch: accepted SAI-10 ancestry
+and external dependency receipts remain unresolved. Under the active
+no-delete constraint, no Terraform, Helm, Kubernetes, provider, database,
+credential or cleanup action is authorized.

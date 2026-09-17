@@ -197,12 +197,7 @@ CONTROLLER_ALLOWANCES: dict[str, frozenset[tuple[str, str, str]]] = {
     ),
 }
 
-CONTROLLER_USERNAMES: dict[str, str] = {
-    "deployment": "system:controller:deployment-controller",
-    "replicaset": "system:controller:replicaset-controller",
-    "daemonset": "system:controller:daemon-set-controller",
-    "scheduler": "system:kube-scheduler",
-}
+CONTROLLER_ROLES = frozenset(CONTROLLER_ALLOWANCES)
 
 
 def _controller_capability_allowed(capability: str, role: str) -> bool:
@@ -248,25 +243,79 @@ def verify_subject_inventory(
     system_subjects: list[dict[str, Any]],
     effective_authority: list[dict[str, Any]],
     *,
-    controller_users: dict[str, str] | None = None,
+    controller_identities: dict[str, dict[str, Any]] | None = None,
 ) -> None:
     """Derive groups/rules independently and reject unmediated authority."""
 
-    controllers = controller_users or {}
-    if controller_users is not None and (
-        controllers != CONTROLLER_USERNAMES
-    ):
-        raise ValueError("canonical Kubernetes controller identities are required")
-    controller_role_by_user = {
-        username: role for role, username in controllers.items()
-    }
-    declared_system_users = {
-        subject.get("name")
-        for subject in system_subjects
-        if subject.get("kind") == "User"
-    }
-    if not set(controllers.values()) <= declared_system_users:
-        raise ValueError("controller identity is absent from the system User inventory")
+    controllers = controller_identities or {}
+    if controller_identities is not None and set(controllers) != CONTROLLER_ROLES:
+        raise ValueError("all observed Kubernetes controller identities are required")
+    controller_role_by_subject: dict[tuple[str, str, str], str] = {}
+    for role, identity in controllers.items():
+        if not isinstance(identity, dict) or set(identity) != {
+            "kind",
+            "namespace",
+            "name",
+            "username",
+            "uid",
+            "groups",
+            "audit_evidence_sha256",
+        }:
+            raise ValueError(f"{role} controller identity fields differ")
+        kind = identity.get("kind")
+        namespace = identity.get("namespace")
+        name = identity.get("name")
+        username = identity.get("username")
+        uid = identity.get("uid")
+        groups = identity.get("groups")
+        if kind == "ServiceAccount" and namespace == "kube-system":
+            expected_username = f"system:serviceaccount:{namespace}:{name}"
+            declared = next(
+                (
+                    subject
+                    for subject in service_accounts
+                    if subject.get("namespace") == namespace
+                    and subject.get("name") == name
+                ),
+                None,
+            )
+        elif kind == "User" and namespace == "" and str(name).startswith("system:"):
+            expected_username = name
+            declared = next(
+                (
+                    subject
+                    for subject in system_subjects
+                    if subject.get("kind") == "User" and subject.get("name") == name
+                ),
+                None,
+            )
+        else:
+            raise ValueError(
+                f"{role} controller must be an audited kube-system ServiceAccount or native system User"
+            )
+        if (
+            declared is None
+            or username != expected_username
+            or not isinstance(uid, str)
+            or not uid
+            or declared.get("uid") != uid
+            or groups
+            != deterministic_groups(kind=kind, namespace=namespace, name=name)
+            or declared.get("groups") != groups
+            or not isinstance(identity.get("audit_evidence_sha256"), str)
+            or len(identity["audit_evidence_sha256"]) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in identity["audit_evidence_sha256"]
+            )
+        ):
+            raise ValueError(
+                f"{role} controller identity is not bound to its audited live subject"
+            )
+        subject_key = (kind, namespace, name)
+        if subject_key in controller_role_by_subject:
+            raise ValueError("controller roles cannot alias one authenticated subject")
+        controller_role_by_subject[subject_key] = role
 
     declarations: list[tuple[dict[str, Any], str, str, str]] = []
     for subject in service_accounts:
@@ -302,7 +351,5 @@ def verify_subject_inventory(
             )
         reject_unapproved_dangerous(
             dangerous,
-            controller_role=(
-                controller_role_by_user.get(name) if kind == "User" else None
-            ),
+            controller_role=controller_role_by_subject.get((kind, namespace, name)),
         )

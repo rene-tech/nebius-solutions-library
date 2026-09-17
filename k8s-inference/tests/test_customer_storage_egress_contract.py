@@ -383,6 +383,16 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     control_plane = (TERRAFORM.parent / "control_plane.tf").read_text(
         encoding="utf-8"
     )
+    rbac_capture = (
+        SECURITY_ROOT / "capture_kubernetes_rbac_inventory.py"
+    ).read_text(encoding="utf-8")
+    node_attestation_capture = (
+        SECURITY_ROOT / "capture_protected_lane_attestation.py"
+    ).read_text(encoding="utf-8")
+    lane_provisioning = (
+        Path(__file__).parents[1]
+        / "security/customer-storage-lane-provisioning/main.tf"
+    ).read_text(encoding="utf-8")
 
     assert "_is_ancestor(REJECTED_SAI10, commit)" in dependency
     assert '_is_ancestor(REJECTED_SAI10, "HEAD")' in dependency
@@ -421,8 +431,8 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "allowed_secret_names_cel" in boundary
     assert "provider_authority.node_selector_value" in boundary
     assert "(!has(POD.nodeName) || POD.nodeName == '')" in boundary
-    assert "deployment_controller_username" in boundary
-    assert "replicaset_controller_username" in boundary
+    assert "controller_identity_cel" in boundary
+    assert "controller_identities_json" in boundary
     assert "pod-template-hash=FS2_POD_TEMPLATE_HASH" in boundary
     assert 'matchPolicy   = "Equivalent"' in boundary
     assert "object.spec == ${jsonencode(local.current_network_policy_spec)}" in boundary
@@ -438,9 +448,8 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "old_template_target_cel" in boundary
     assert "observer_daemonset_allow_cel" in boundary
     assert "observer_pod_allow_cel" in boundary
-    assert "LANE_ROLES" in protected_lane
-    assert "NODE_AGENT_ROLES" in protected_lane
-    assert "requirement.operator == 'Exists'" in protected_lane
+    assert "OBSERVER_CLASSES" in protected_lane
+    assert "critical-blanket-agent" in protected_lane
     assert "(!has(toleration.effect) || toleration.effect == ''" in protected_lane
     assert "has({path}.nodeName)" in protected_lane
     assert "nodeName == {node_name}" in protected_lane
@@ -448,11 +457,13 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "protected_node_inventory_sha256" in authority
     assert "protected_node_scheduling_labels_sha256" in protected_lane
     assert "protected_node_scheduling_labels_sha256" in authority
-    assert "metadata.name" in protected_lane
-    assert "_constraints_match" in protected_lane
+    assert "protected_node_attestations" in protected_lane
+    assert "_request_identity_matches" in protected_lane
     assert "_tolerates_protected_taint" in protected_lane
-    assert "term.matchExpressions.all" in protected_lane
-    assert "term.matchFields.all" in protected_lane
+    assert "Any exact-key" in protected_lane
+    assert 'resource "nebius_mk8s_v1_node_group" "stable_lane"' in provider
+    assert "stable_provider_generations" in provider
+    assert "provisioning-generation" in provider
     assert "min_node_count = try(each.value.min_node_count, 0)" in provider
     assert "max_node_count = try(each.value.max_node_count, 1)" in provider
     assert "fixed_node_count = null" in provider
@@ -473,10 +484,17 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
         in boundary
     )
     assert 'resources   = ["pods/binding"]' in boundary
-    assert "scheduler_username" in boundary
-    assert "daemonset_controller_username" in boundary
-    assert "system:controller:daemon-set-controller" in boundary_variables
-    assert "system:kube-scheduler" in boundary_variables
+    assert "controller_identities" in boundary
+    assert "audit-proven live kube-system controller ServiceAccounts" in boundary_variables
+    assert "system:controller:daemon-set-controller" not in boundary_variables
+    assert '"--all-namespaces"' in rbac_capture
+    assert '"blanket_tolerating_agents"' in rbac_capture
+    assert '"controller_identities"' in rbac_capture
+    assert '"resourceVersion"' in node_attestation_capture
+    assert 'resource "nebius_mk8s_v1_node_group" "lane"' in lane_provisioning
+    assert "provisioning_manifest_json" in lane_provisioning
+    assert "stable_provider_generations = {}" in provider
+    assert 'data "kubernetes_resource" "protected_node_post_guard"' in boundary
     assert "protected_node_exempt_namespaces_cel" not in boundary
     assert "request.subResource == 'binding'" in boundary
     assert "request.subResource == ''" in boundary

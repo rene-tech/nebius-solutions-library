@@ -10,7 +10,7 @@ data "external" "protected_lane_admission" {
   ]
   query = {
     contract_json = jsonencode({
-      schema                                    = "fs2-serve.nebius.ai/protected-lane-admission/v3"
+      schema                                    = "fs2-serve.nebius.ai/protected-lane-admission/v4"
       generation                                = var.provider_authority.generation
       lane_id                                   = var.provider_authority.lane_id
       selector_key                              = var.provider_authority.node_selector_key
@@ -22,16 +22,34 @@ data "external" "protected_lane_admission" {
       protected_node_inventory_sha256           = var.provider_authority.protected_node_inventory_sha256
       protected_node_scheduling_labels          = var.provider_authority.protected_node_scheduling_labels
       protected_node_scheduling_labels_sha256   = var.provider_authority.protected_node_scheduling_labels_sha256
-      daemonset_controller_username             = var.daemonset_controller_username
-      scheduler_username                        = var.scheduler_username
+      protected_node_attestations               = var.provider_authority.protected_node_attestations
+      protected_node_attestation_sha256         = var.provider_authority.protected_node_attestation_sha256
+      controller_identities                     = var.controller_identities
       observers                                 = var.provider_authority.protected_observers
       observer_inventory_sha256                 = var.provider_authority.protected_observer_inventory_sha256
     })
   }
 }
 
+data "kubernetes_resource" "protected_node" {
+  api_version = "v1"
+  kind        = "Node"
+  metadata {
+    name = var.provider_authority.protected_node_names[0]
+  }
+}
+
 locals {
   namespace = "fs2-system"
+  controller_identity_cel = {
+    for role, identity in var.controller_identities : role => join(" ", [
+      "request.userInfo.username == '${identity.username}' &&",
+      "has(request.userInfo.uid) && request.userInfo.uid == '${identity.uid}' &&",
+      "size(request.userInfo.groups) == ${length(identity.groups)} &&",
+      "request.userInfo.groups.all(group, group in ${jsonencode(identity.groups)}) &&",
+      "${jsonencode(identity.groups)}.all(group, group in request.userInfo.groups)",
+    ])
+  }
 
   current_contract = var.contract_generations[var.current_generation]
   current_trust    = var.trust_generations[local.current_contract.trust_generation]
@@ -534,6 +552,13 @@ locals {
           resources   = ["jobs", "cronjobs"]
           scope       = "Namespaced"
         },
+        {
+          apiGroups   = [""]
+          apiVersions = ["v1"]
+          operations  = ["UPDATE", "DELETE"]
+          resources   = ["nodes"]
+          scope       = "Cluster"
+        },
       ]
     }
     matchConditions = [{
@@ -546,13 +571,14 @@ locals {
         "(has(oldObject.metadata.labels) && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && oldObject.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}')) :",
         "(has(object.metadata.labels) && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-egress-generation' && value == '${var.current_generation}') && object.metadata.labels.exists(key, value, key == 'fs2.nebius.ai/storage-rollout-generation' && value == '${var.current_release_generation}'))))) ||",
         "(request.resource.resource == 'pods' && request.subResource == 'binding') ||",
+        "(request.resource.resource == 'nodes' && (request.name == '${var.provider_authority.protected_node_names[0]}' || oldObject.metadata.name == '${var.provider_authority.protected_node_names[0]}')) ||",
         "(${local.protected_node_target_cel})",
       ])
     }]
     validations = [
       {
         expression = join(" ", [
-          "request.resource.resource in ['pods', 'serviceaccounts', 'deployments', 'replicasets'] ||",
+          "request.resource.resource == 'nodes' || request.resource.resource in ['pods', 'serviceaccounts', 'deployments', 'replicasets'] ||",
           "(request.resource.resource == 'daemonsets' && (${local.observer_daemonset_allow_cel}))",
         ])
         message = "Customer-storage release authority cannot create Job, CronJob, DaemonSet or StatefulSet workloads."
@@ -560,7 +586,7 @@ locals {
       },
       {
         expression = join(" ", [
-          "request.resource.resource in ['pods', 'replicasets'] ||",
+          "request.resource.resource == 'nodes' || request.resource.resource in ['pods', 'replicasets'] ||",
           "(request.operation == 'CREATE' && request.userInfo.username == '${var.non_owner_identities[var.release_identity_name].username}') ||",
           "(request.resource.resource == 'daemonsets' && (${local.observer_daemonset_allow_cel}))",
         ])
@@ -569,7 +595,7 @@ locals {
       },
       {
         expression = join(" ", [
-          "request.resource.resource != 'serviceaccounts' ||",
+          "request.resource.resource == 'nodes' || request.resource.resource != 'serviceaccounts' ||",
           "(request.operation == 'CREATE' && object.metadata.name == '${local.current_release_name}' &&",
           "has(object.automountServiceAccountToken) && object.automountServiceAccountToken == false &&",
           "(!has(object.secrets) || size(object.secrets) == 0) &&",
@@ -580,7 +606,7 @@ locals {
       },
       {
         expression = join(" ", [
-          "request.resource.resource != 'deployments' ||",
+          "request.resource.resource == 'nodes' || request.resource.resource != 'deployments' ||",
           "(request.operation == 'CREATE' && object.metadata.name == '${local.current_release_name}' &&",
           "object.metadata.labels == ${local.v3_pod_labels_cel} &&",
           "object.spec.replicas == 1 && object.spec.selector.matchLabels == ${local.v3_pod_labels_cel} &&",
@@ -592,8 +618,8 @@ locals {
       },
       {
         expression = join(" ", [
-          "request.resource.resource != 'pods' || request.subResource == 'binding' ||",
-          "(request.userInfo.username == '${var.replicaset_controller_username}' &&",
+          "request.resource.resource == 'nodes' || request.resource.resource != 'pods' || request.subResource == 'binding' ||",
+          "((${local.controller_identity_cel.replicaset}) &&",
           "size(object.metadata.ownerReferences) == 1 && object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'ReplicaSet' &&",
           "object.metadata.ownerReferences[0].name.startsWith('${local.current_release_name}-') && object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
           "object.metadata.labels.all(key, value, (key in ${local.v3_pod_labels_cel} && ${local.v3_pod_labels_cel}[key] == value) || key == 'pod-template-hash') &&",
@@ -607,16 +633,16 @@ locals {
       },
       {
         expression = join(" ", [
-          "request.resource.resource != 'pods' || request.subResource != 'binding' ||",
-          "(request.operation == 'CREATE' && request.userInfo.username == '${var.scheduler_username}')",
+          "request.resource.resource == 'nodes' || request.resource.resource != 'pods' || request.subResource != 'binding' ||",
+          "(request.operation == 'CREATE' && (${local.controller_identity_cel.scheduler}))",
         ])
         message = "Only the provider-bound scheduler may create Pod binding subresources."
         reason  = "Forbidden"
       },
       {
         expression = join(" ", [
-          "request.resource.resource != 'replicasets' ||",
-          "(request.userInfo.username == '${var.deployment_controller_username}' &&",
+          "request.resource.resource == 'nodes' || request.resource.resource != 'replicasets' ||",
+          "((${local.controller_identity_cel.deployment}) &&",
           "request.operation == 'CREATE' && object.metadata.name.startsWith('${local.current_release_name}-') &&",
           "size(object.metadata.ownerReferences) == 1 && object.metadata.ownerReferences[0].apiVersion == 'apps/v1' && object.metadata.ownerReferences[0].kind == 'Deployment' &&",
           "object.metadata.ownerReferences[0].name == '${local.current_release_name}' && object.metadata.ownerReferences[0].controller == true && object.metadata.ownerReferences[0].blockOwnerDeletion == true &&",
@@ -627,6 +653,25 @@ locals {
           "object.spec.template.metadata.labels == object.metadata.labels && (${local.deployment_pod_spec_cel}))",
         ])
         message = "Only the approved Deployment controller may create the exact successor ReplicaSet child."
+        reason  = "Forbidden"
+      },
+      {
+        expression = "request.resource.resource != 'nodes' || request.operation != 'DELETE'"
+        message    = "The attested protected-lane Node cannot be deleted through the Kubernetes API."
+        reason     = "Forbidden"
+      },
+      {
+        expression = join(" ", [
+          "request.resource.resource != 'nodes' ||",
+          "(request.operation == 'UPDATE' && object.metadata.name == '${var.provider_authority.protected_node_names[0]}' &&",
+          "object.metadata.uid == '${var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].uid}' &&",
+          "oldObject.metadata.uid == '${var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].uid}' &&",
+          "object.metadata.labels == ${jsonencode(var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].labels)} &&",
+          "oldObject.metadata.labels == ${jsonencode(var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].labels)} &&",
+          "object.spec.taints == ${jsonencode(var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].taints)} &&",
+          "oldObject.spec.taints == ${jsonencode(var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].taints)})",
+        ])
+        message = "Protected-lane Node UID, full labels and full taints are immutable after signed attestation."
         reason  = "Forbidden"
       },
     ]
@@ -804,10 +849,7 @@ data "external" "identity_separation" {
     ))
     service_account_inventory_json = jsonencode(var.kubernetes_service_account_inventory)
     system_subject_inventory_json  = jsonencode(var.kubernetes_system_subject_inventory)
-    deployment_controller_username = var.deployment_controller_username
-    replicaset_controller_username = var.replicaset_controller_username
-    daemonset_controller_username  = var.daemonset_controller_username
-    scheduler_username             = var.scheduler_username
+    controller_identities_json     = jsonencode(var.controller_identities)
     protected_names_json = jsonencode({
       boundary_policy  = local.successor_boundary_policy_names[var.current_boundary_generation]
       workload_policy  = local.successor_workload_policy_names[var.current_workload_policy_generation]
@@ -1048,11 +1090,12 @@ resource "terraform_data" "separate_security_owner" {
         try(data.kubernetes_resource.protected_observer[role].object.spec, null) == expected.daemonset_spec &&
         sha256(jsonencode(try(data.kubernetes_resource.protected_observer[role].object.spec, null))) == expected.daemonset_spec_sha256 &&
         length([
-          for identity in values(var.non_owner_identities) : identity.username
-          if identity.category == "release" && identity.username == expected.owner_username
+          for identity in var.kubernetes_service_account_inventory : identity.name
+          if "system:serviceaccount:${identity.namespace}:${identity.name}" == expected.owner_identity.username &&
+          identity.uid == expected.owner_identity.uid && identity.groups == expected.owner_identity.groups
         ]) == 1
       ])
-      error_message = "A lane observer or retained critical node agent differs from the signed UID/spec inventory or its independently checked release identity."
+      error_message = "A lane observer or critical blanket-tolerating agent differs from the complete signed UID/spec inventory or its authenticated ServiceAccount owner."
     }
     precondition {
       condition = (
@@ -1093,23 +1136,22 @@ resource "terraform_data" "separate_security_owner" {
     precondition {
       condition = (
         alltrue([
-          for controller in [
-            var.deployment_controller_username,
-            var.replicaset_controller_username,
-            var.daemonset_controller_username,
-            var.scheduler_username,
-          ] :
-          contains([
-            for subject in var.kubernetes_system_subject_inventory : subject.name
-            if subject.kind == "User"
-          ], controller)
+          for controller in values(var.controller_identities) :
+          contains(concat(
+            [
+              for subject in var.kubernetes_service_account_inventory :
+              "ServiceAccount/${subject.namespace}/${subject.name}/${subject.uid}"
+            ],
+            [
+              for subject in var.kubernetes_system_subject_inventory :
+              "${subject.kind}/${subject.namespace}/${subject.name}/${subject.uid}"
+              if subject.kind == "User"
+            ],
+          ), "${controller.kind}/${controller.namespace}/${controller.name}/${controller.uid}")
         ]) &&
-        var.deployment_controller_username == var.provider_authority.deployment_controller_username &&
-        var.replicaset_controller_username == var.provider_authority.replicaset_controller_username &&
-        var.daemonset_controller_username == var.provider_authority.daemonset_controller_username &&
-        var.scheduler_username == var.provider_authority.scheduler_username
+        var.controller_identities == var.provider_authority.controller_identities
       )
-      error_message = "Deployment, ReplicaSet, DaemonSet and scheduler usernames must be exact provider-bound effective-authority subjects."
+      error_message = "Controller identities must be exact audit-proven provider-bound ServiceAccount subjects."
     }
     precondition {
       condition     = contains(keys(var.contract_generations), var.current_generation)
@@ -1524,6 +1566,42 @@ resource "kubernetes_manifest" "workload_binding_v3" {
     ignore_changes  = all
   }
   depends_on = [kubernetes_manifest.workload_policy_v3]
+}
+
+data "kubernetes_resource" "protected_node_post_guard" {
+  api_version = "v1"
+  kind        = "Node"
+  metadata {
+    name = var.provider_authority.protected_node_names[0]
+  }
+  depends_on = [kubernetes_manifest.workload_binding_v3]
+}
+
+resource "terraform_data" "protected_node_post_guard_attestation" {
+  input = {
+    signed_resource_version = var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].resource_version
+    live_resource_version   = data.kubernetes_resource.protected_node_post_guard.object.metadata.resourceVersion
+    node_uid                = data.kubernetes_resource.protected_node_post_guard.object.metadata.uid
+    labels_sha256           = sha256(jsonencode(data.kubernetes_resource.protected_node_post_guard.object.metadata.labels))
+    taints_sha256           = sha256(jsonencode(data.kubernetes_resource.protected_node_post_guard.object.spec.taints))
+  }
+
+  lifecycle {
+    prevent_destroy = true
+    precondition {
+      condition = (
+        data.kubernetes_resource.protected_node_post_guard.object.metadata.name == var.provider_authority.protected_node_names[0] &&
+        data.kubernetes_resource.protected_node_post_guard.object.metadata.uid == var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].uid &&
+        data.kubernetes_resource.protected_node_post_guard.object.metadata.resourceVersion != "" &&
+        var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].resource_version != "" &&
+        data.kubernetes_resource.protected_node_post_guard.object.metadata.labels == var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].labels &&
+        data.kubernetes_resource.protected_node_post_guard.object.spec.taints == var.provider_authority.protected_node_attestations[var.provider_authority.protected_node_names[0]].taints
+      )
+      error_message = "The post-guard live Node UID, full labels or full taints differ from the signed attestation."
+    }
+  }
+
+  depends_on = [kubernetes_manifest.workload_binding_v3]
 }
 
 resource "kubernetes_config_map_v1" "trust" {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import importlib.util
 import hashlib
 import json
@@ -25,26 +26,42 @@ from rbac_authority import (  # noqa: E402
 
 
 CONTROLLERS = {
-    "deployment": "system:controller:deployment-controller",
-    "replicaset": "system:controller:replicaset-controller",
-    "daemonset": "system:controller:daemon-set-controller",
-    "scheduler": "system:kube-scheduler",
+    role: {
+        "kind": "ServiceAccount",
+        "namespace": "kube-system",
+        "name": f"observed-{role}-controller",
+        "username": f"system:serviceaccount:kube-system:observed-{role}-controller",
+        "uid": f"10000000-0000-4000-8000-{index:012d}",
+        "groups": [
+            "system:authenticated",
+            "system:serviceaccounts",
+            "system:serviceaccounts:kube-system",
+        ],
+        "audit_evidence_sha256": f"{index}" * 64,
+    }
+    for index, role in enumerate(
+        ("deployment", "replicaset", "daemonset", "scheduler"), start=1
+    )
 }
 
 
 def system_subject_inventory() -> list[dict[str, object]]:
+    return []
+
+
+def controller_service_accounts() -> list[dict[str, object]]:
     empty_authority = hashlib.sha256(b"[]").hexdigest()
     return [
         {
-            "kind": "User",
-            "namespace": "",
-            "name": username,
+            "namespace": identity["namespace"],
+            "name": identity["name"],
+            "uid": identity["uid"],
             "owner": role,
-            "groups": ["system:authenticated"],
+            "groups": identity["groups"],
             "effective_authority_sha256": empty_authority,
             "dangerous_permissions": [],
         }
-        for role, username in sorted(CONTROLLERS.items())
+        for role, identity in sorted(CONTROLLERS.items())
     ]
 
 
@@ -72,12 +89,9 @@ def query() -> dict[str, str]:
     return {
         "security_owner_group": "fs2:customer-storage-egress-security-owner",
         "identity_inventory_json": json.dumps(inventory()),
-        "service_account_inventory_json": "[]",
+        "service_account_inventory_json": json.dumps(controller_service_accounts()),
         "system_subject_inventory_json": json.dumps(system_subject_inventory()),
-        "deployment_controller_username": CONTROLLERS["deployment"],
-        "replicaset_controller_username": CONTROLLERS["replicaset"],
-        "daemonset_controller_username": CONTROLLERS["daemonset"],
-        "scheduler_username": CONTROLLERS["scheduler"],
+        "controller_identities_json": json.dumps(CONTROLLERS),
         "expected_rbac_inventory_sha256": "a" * 64,
         "expected_effective_authority_sha256": hashlib.sha256(b"[]").hexdigest(),
         "protected_names_json": json.dumps(
@@ -282,6 +296,7 @@ def test_service_account_group_authority_is_semantically_reconciled():
     declaration = {
         "namespace": "fs2-system",
         "name": "storage",
+        "uid": "10000000-0000-4000-8000-000000000099",
         "owner": "storage",
         "groups": deterministic_groups(
             kind="ServiceAccount", namespace="fs2-system", name="storage"
@@ -297,6 +312,7 @@ def test_service_account_group_membership_is_deterministic():
     declaration = {
         "namespace": "fs2-system",
         "name": "storage",
+        "uid": "10000000-0000-4000-8000-000000000098",
         "owner": "storage",
         "groups": ["system:authenticated"],
         "effective_authority_sha256": hashlib.sha256(b"[]").hexdigest(),
@@ -307,18 +323,18 @@ def test_service_account_group_membership_is_deterministic():
 
 
 def test_controller_inventory_accepts_only_canonical_identities_and_authority():
-    subjects = system_subject_inventory()
+    service_accounts = controller_service_accounts()
     owner_module.verify_subject_inventory(
-        [], subjects, [], controller_users=CONTROLLERS
+        service_accounts, [], [], controller_identities=CONTROLLERS
     )
 
-    substituted = dict(CONTROLLERS)
-    substituted["scheduler"] = "system:controller:fake-scheduler"
+    substituted = copy.deepcopy(CONTROLLERS)
+    substituted["scheduler"]["uid"] = "10000000-0000-4000-8000-999999999999"
     with pytest.raises(
-        ValueError, match="canonical Kubernetes controller identities"
+        ValueError, match="not bound to its audited live subject"
     ):
         owner_module.verify_subject_inventory(
-            [], subjects, [], controller_users=substituted
+            service_accounts, [], [], controller_identities=substituted
         )
 
 

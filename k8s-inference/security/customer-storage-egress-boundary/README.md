@@ -185,3 +185,22 @@ only as an exact value, for both accepted custody and integration `HEAD`. This
 task branch deliberately preserves that history, so the parent must transplant
 these additive changes onto a clean accepted lineage before the dependency
 record can become `accepted`; rewriting this branch is not authorized.
+
+## v10 protected-lane correction
+
+The v10 admission contract treats the stable lane taint key as the security
+identity. Any exact-key toleration, keyless blanket `Exists` toleration, or
+direct binding to the attested Node enters the guard regardless of selectors or
+affinity. This conservative rule removes the need to predict satisfiability
+from a future or partial label projection. Availability exceptions are limited
+to the complete signed live DaemonSet inventory: exact namespace/name/UID,
+canonical spec, owner identity and controller-created child Pod spec.
+
+Controller authorization compares the audit-proven kube-system ServiceAccount
+username, UID and complete deterministic group set. The Kubernetes role names
+`system:controller:*` are never used as authenticated identities. The current
+generation also guards the attested Node against deletion or any change to its
+full label and taint maps, then re-reads the live Node after the Deny binding is
+installed. The stable lane is provisioned first by the separate provisioning
+root; post-creation Node/controller/agent facts are signed only in the later
+attestation/admission generation, removing the prior bootstrap cycle.

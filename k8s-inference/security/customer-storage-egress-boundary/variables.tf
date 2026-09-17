@@ -161,6 +161,7 @@ variable "kubernetes_service_account_inventory" {
   type = list(object({
     namespace                  = string
     name                       = string
+    uid                        = string
     owner                      = string
     groups                     = list(string)
     effective_authority_sha256 = string
@@ -172,6 +173,7 @@ variable "kubernetes_service_account_inventory" {
       alltrue([
         for subject in var.kubernetes_service_account_inventory :
         subject.namespace != "" && subject.name != "" && subject.owner != "" &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", subject.uid)) &&
         subject.groups == sort([
           "system:authenticated",
           "system:serviceaccounts",
@@ -190,6 +192,7 @@ variable "kubernetes_system_subject_inventory" {
   type = list(object({
     kind                       = string
     name                       = string
+    uid                        = string
     namespace                  = string
     owner                      = string
     groups                     = list(string)
@@ -201,7 +204,7 @@ variable "kubernetes_system_subject_inventory" {
       for subject in var.kubernetes_system_subject_inventory :
       contains(["User", "Group"], subject.kind) &&
       startswith(subject.name, "system:") &&
-      subject.namespace == "" && subject.owner != "" &&
+      subject.namespace == "" && subject.uid != "" && subject.owner != "" &&
       subject.groups == (
         subject.kind == "Group" ? [] :
         subject.name == "system:anonymous" ? ["system:unauthenticated"] :
@@ -214,39 +217,38 @@ variable "kubernetes_system_subject_inventory" {
   }
 }
 
-variable "deployment_controller_username" {
-  description = "Exact live authenticated username that creates Deployment ReplicaSets, present in the signed system-subject inventory."
-  type        = string
+variable "controller_identities" {
+  description = "Audit-proven live kube-system controller ServiceAccounts, including immutable UID and deterministic authenticated groups."
+  type = map(object({
+    kind                  = string
+    namespace             = string
+    name                  = string
+    username              = string
+    uid                   = string
+    groups                = list(string)
+    audit_evidence_sha256 = string
+  }))
   validation {
-    condition     = var.deployment_controller_username == "system:controller:deployment-controller"
-    error_message = "deployment_controller_username must be the canonical Kubernetes Deployment controller identity."
-  }
-}
-
-variable "replicaset_controller_username" {
-  description = "Exact live authenticated username that creates ReplicaSet Pods, present in the signed system-subject inventory."
-  type        = string
-  validation {
-    condition     = var.replicaset_controller_username == "system:controller:replicaset-controller"
-    error_message = "replicaset_controller_username must be the canonical Kubernetes ReplicaSet controller identity."
-  }
-}
-
-variable "daemonset_controller_username" {
-  description = "Exact live authenticated username that creates kube-system DaemonSet Pods, present in the signed system-subject inventory."
-  type        = string
-  validation {
-    condition     = var.daemonset_controller_username == "system:controller:daemon-set-controller"
-    error_message = "daemonset_controller_username must be the canonical Kubernetes DaemonSet controller identity."
-  }
-}
-
-variable "scheduler_username" {
-  description = "Exact live authenticated scheduler username permitted to create Pod binding subresources."
-  type        = string
-  validation {
-    condition     = var.scheduler_username == "system:kube-scheduler"
-    error_message = "scheduler_username must be the canonical Kubernetes scheduler identity."
+    condition = (
+      toset(keys(var.controller_identities)) == toset(["deployment", "replicaset", "daemonset", "scheduler"]) &&
+      alltrue([
+        for identity in values(var.controller_identities) :
+        (
+          (
+            identity.kind == "ServiceAccount" && identity.namespace == "kube-system" &&
+            identity.username == "system:serviceaccount:kube-system:${identity.name}" &&
+            can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", identity.uid)) &&
+            identity.groups == ["system:authenticated", "system:serviceaccounts", "system:serviceaccounts:kube-system"]
+          ) || (
+            identity.kind == "User" && identity.namespace == "" &&
+            startswith(identity.name, "system:") && identity.username == identity.name &&
+            identity.uid != "" && identity.groups == ["system:authenticated"]
+          )
+        ) &&
+        can(regex("^[a-f0-9]{64}$", identity.audit_evidence_sha256))
+      ])
+    )
+    error_message = "Every controller must be an audit-proven kube-system ServiceAccount or native system User identity, not a controller role label."
   }
 }
 
@@ -334,6 +336,8 @@ variable "provider_authority" {
   type = object({
     schema                                 = string
     generation                             = string
+    provisioning_generation                = string
+    provisioning_receipt_sha256             = string
     lane_id                                = string
     authority_manifest_sha256              = string
     prior_head_receipt_sha256              = string
@@ -354,10 +358,15 @@ variable "provider_authority" {
     min_node_count                         = number
     max_node_count                         = number
     protected_observers = map(object({
+      class                 = string
       namespace             = string
       name                  = string
       uid                   = string
-      owner_username        = string
+      owner_identity = object({
+        username = string
+        uid      = string
+        groups   = list(string)
+      })
       daemonset_spec        = any
       daemonset_spec_sha256 = string
     }))
@@ -366,6 +375,8 @@ variable "provider_authority" {
     protected_node_inventory_sha256                   = string
     protected_node_scheduling_labels                  = map(map(string))
     protected_node_scheduling_labels_sha256           = string
+    protected_node_attestations                       = map(any)
+    protected_node_attestation_sha256                 = string
     provider_api_cidrs                                = list(string)
     kubernetes_api_cidrs                              = list(string)
     authority_service_account_sha256                  = string
@@ -373,10 +384,7 @@ variable "provider_authority" {
     kubernetes_identity_inventory_sha256              = string
     kubernetes_service_account_inventory_sha256       = string
     kubernetes_system_subject_inventory_sha256        = string
-    deployment_controller_username                    = string
-    replicaset_controller_username                    = string
-    daemonset_controller_username                     = string
-    scheduler_username                                = string
+    controller_identities                             = map(any)
     kubernetes_rbac_inventory_sha256                  = string
     kubernetes_rbac_effective_authority_sha256        = string
     kubernetes_rbac_inventory_receipt_sha256          = string
@@ -430,8 +438,10 @@ variable "provider_authority" {
 
   validation {
     condition = (
-      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v9" &&
+      var.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v10" &&
       can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.generation)) &&
+      can(regex("^p[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.provisioning_generation)) &&
+      can(regex("^[a-f0-9]{64}$", var.provider_authority.provisioning_receipt_sha256)) &&
       can(regex("^l[0-9]{14}-[a-f0-9]{12}$", var.provider_authority.lane_id)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.authority_manifest_sha256)) &&
       can(regex("^[a-f0-9]{64}$", var.provider_authority.prior_head_receipt_sha256)) &&
@@ -465,21 +475,38 @@ variable "provider_authority" {
         try(labels[var.provider_authority.node_selector_key], "") == var.provider_authority.lane_id
       ]) &&
       sha256(jsonencode(var.provider_authority.protected_node_scheduling_labels)) == var.provider_authority.protected_node_scheduling_labels_sha256 &&
-      toset(keys(var.provider_authority.protected_observers)) == toset(["otel-node", "gpu-allocation-observer", "filesystem-csi", "prometheus-node-exporter", "retained-otel-node"]) &&
+      toset(keys(var.provider_authority.protected_node_attestations)) == toset(var.provider_authority.protected_node_names) &&
+      alltrue([
+        for node_name, attestation in var.provider_authority.protected_node_attestations :
+        try(attestation.name, "") == node_name &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", try(attestation.uid, ""))) &&
+        try(attestation.resource_version, "") != "" &&
+        try(attestation.labels, {}) == var.provider_authority.protected_node_scheduling_labels[node_name] &&
+        contains(try(attestation.taints, []), {
+          key    = var.provider_authority.taint_key
+          value  = var.provider_authority.taint_value
+          effect = var.provider_authority.taint_effect
+        })
+      ]) &&
+      sha256(jsonencode(var.provider_authority.protected_node_attestations)) == var.provider_authority.protected_node_attestation_sha256 &&
+      length(var.provider_authority.protected_observers) > 0 &&
       alltrue([
         for role, observer in var.provider_authority.protected_observers :
+        contains(["lane", "critical-blanket-agent"], observer.class) &&
         observer.namespace != "" && observer.name != "" &&
-        (contains(["otel-node", "gpu-allocation-observer"], role) ? (
+        (observer.class == "lane" ? (
           observer.namespace == "kube-system" &&
-          observer.name == "fs2-${role}-${substr(var.provider_authority.lane_id, -12, 12)}"
+          try(observer.daemonset_spec.template.metadata.labels["fs2.nebius.ai/protected-lane-id"], "") == var.provider_authority.lane_id
         ) : true) &&
         can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", observer.uid)) &&
-        observer.owner_username != "" && !startswith(observer.owner_username, "system:") &&
+        can(regex("^system:serviceaccount:[^:]+:[^:]+$", observer.owner_identity.username)) &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", observer.owner_identity.uid)) &&
+        observer.owner_identity.groups == ["system:authenticated", "system:serviceaccounts", "system:serviceaccounts:${try(split(":", observer.owner_identity.username)[2], "")}"] &&
         can(regex("^[a-f0-9]{64}$", observer.daemonset_spec_sha256)) &&
         sha256(jsonencode(observer.daemonset_spec)) == observer.daemonset_spec_sha256 &&
         try(observer.daemonset_spec.selector.matchLabels, {}) == try(observer.daemonset_spec.template.metadata.labels, {}) &&
         try(observer.daemonset_spec.template.metadata.labels["app.kubernetes.io/component"], "") != "" &&
-        (contains(["otel-node", "gpu-allocation-observer"], role) ? (
+        (observer.class == "lane" ? (
           try(observer.daemonset_spec.template.metadata.labels["fs2.nebius.ai/protected-lane-id"], "") == var.provider_authority.lane_id &&
           try(observer.daemonset_spec.template.spec.nodeSelector, {}) == { (var.provider_authority.node_selector_key) = var.provider_authority.lane_id } &&
           try(observer.daemonset_spec.template.spec.tolerations, []) == [{
@@ -525,6 +552,8 @@ variable "provider_authority" {
           var.provider_authority.protected_observer_inventory_sha256,
           var.provider_authority.protected_node_inventory_sha256,
           var.provider_authority.protected_node_scheduling_labels_sha256,
+          var.provider_authority.protected_node_attestation_sha256,
+          var.provider_authority.provisioning_receipt_sha256,
           var.provider_authority.retained_admission_custody_sha256,
           var.provider_authority.workloads_service_account_sha256,
           var.provider_authority.sai10_independent_review_receipt_sha256,
@@ -534,10 +563,7 @@ variable "provider_authority" {
       can(regex("^[a-f0-9]{40}$", var.provider_authority.accepted_sai10_tree)) &&
       !startswith(var.provider_authority.accepted_sai10_commit, "1ae009b85") &&
       var.provider_authority.authority_service_account_sha256 != var.provider_authority.workloads_service_account_sha256
-      && var.provider_authority.deployment_controller_username == "system:controller:deployment-controller"
-      && var.provider_authority.replicaset_controller_username == "system:controller:replicaset-controller"
-      && var.provider_authority.daemonset_controller_username == "system:controller:daemon-set-controller"
-      && var.provider_authority.scheduler_username == "system:kube-scheduler"
+      && var.provider_authority.controller_identities == var.controller_identities
       && alltrue([
         for generation, policy in merge(
           var.provider_authority.retained_legacy_boundary_policies,
