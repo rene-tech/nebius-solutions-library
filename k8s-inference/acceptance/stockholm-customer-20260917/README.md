@@ -35,6 +35,15 @@ customer cohorts. Both bounded cohorts must be repeated after release-owner GO
 for the additive release 141 configuration identity. No cold-start, all-App,
 or actual LibreChat qualification is inferred from these results.
 
+The first fresh release-142 attempt passed all 13 protein operations but failed
+its workload-overlap gate: three warm OpenFold2 calls could finish before all
+five shared-session requests were admitted, producing peak four. No batch was
+submitted. This is retained at `cohorts-release142/`, not called a backend error
+or passing cohort. The approved bounded retry uses four existing Boltz2 fixtures
+followed by one OpenFold2 fixture, preserving two models and the exact server-
+timestamp concurrency-five requirement. No threshold or payload validator was
+relaxed; two fresh cohorts are still required on the frozen effective release.
+
 Private evidence is under
 `/home/tux/secure-handoff/stockholm-live-acceptance-20260917/`, mode 0700; files
 are 0600. A new same-policy `stockholm-canary-*` key expires at
@@ -170,6 +179,16 @@ signed URLs/headers. Required download-tool discovery is checked before inferenc
 `--resume` reuses persisted operation/idempotency identities; never discard an
 uncertain submission receipt and resubmit with a new identity. `--stop-file`
 lets the operator block new admissions while already-known operations settle.
+
+`finish_live.py` requires two complete bounded receipts, unchanged CP/config
+identity, fixed target model/runtime identities and released batch resources.
+It uses the installed SELECT-only `fs2_serve.usage_reconciliation` exporter for
+the exact canary/window and checks all canary operations are terminal with zero
+admission reservations. It records operation-bound Pods and GPU observers on
+their nodes; a readback snapshot is not continuous telemetry coverage. Optional
+explicit `--revoke-canary` revokes only the validated disposable token, retains
+the durable response, checks other token metadata is unchanged, and verifies
+the revoked key is refused. It never deletes operations, artifacts or history.
 
 Example after explicit release-owner GO (replace the image/path placeholders):
 

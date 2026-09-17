@@ -38,6 +38,10 @@ from compatibility_fixtures import _validator, portable_payloads  # noqa: E402
 from fs2_serve.live_acceptance import MCP_PROTOCOL_VERSION, _mcp_result  # noqa: E402
 
 MODELS = ("openfold2", "boltz2")
+# Warm OpenFold2 can finish before a shared MCP session admits five requests.
+# Admit the existing longer Boltz2 fixtures first, then the fast model last;
+# still require five real overlapping server lifetimes, never infer from tasks.
+MIXED_MODELS = ("boltz2", "boltz2", "boltz2", "boltz2", "openfold2")
 SCENARIOS = ("named-sdk", "generic-sdk", "legacy-generic-sdk", "public-api")
 TERMINAL = {"succeeded", "failed", "expired", "cancelled", "preempted"}
 
@@ -47,6 +51,7 @@ def offline_plan() -> dict:
         "scope": "partial-stockholm-sdk-http-and-representative-batch",
         "models": list(MODELS), "serving_scenarios": list(SCENARIOS),
         "cohorts": 2, "mixed_parallel_submissions": 5,
+        "mixed_submission_order": list(MIXED_MODELS),
         "serving_operations_per_cohort": 13,
         "batch": "esmfold2 public upload/queue/terminal/artifact acceptance, one per cohort",
         "fixture_sha256": {model: [digest(value) for value in portable_payloads(model)] for model in MODELS},
@@ -375,8 +380,7 @@ async def execute(args) -> int:
                                 identity, token, args.timeout_seconds, args.stop_file)
                             record["calls"].append(row)
                     tasks = []
-                    for index in range(5):
-                        model = MODELS[index % 2]
+                    for index, model in enumerate(MIXED_MODELS):
                         tasks.append(case(client, http, contracts[model], model, "named-sdk",
                             portable_payloads(model)[index % 2],
                             args.output / f"cohort-{cohort}-mixed-{index}-{model}.json",

@@ -24,6 +24,7 @@ def load(name, filename):
 collector = load("collect_live", "collect_live.py")
 runner = load("stockholm_run_live", "run_live.py")
 client_probe = load("stockholm_client_probe", "probe_librechat.py")
+finalizer = load("stockholm_finish_live", "finish_live.py")
 
 
 def team():
@@ -106,6 +107,8 @@ def test_plan_never_claims_customer_readiness():
     plan = runner.offline_plan()
     assert plan["customer_ready"] is False
     assert "actual LibreChat/installed-skill execution" in plan["not_proven"]
+    assert plan["mixed_submission_order"] == ["boltz2"] * 4 + ["openfold2"]
+    assert plan["mixed_parallel_submissions"] == 5
 
 
 def test_scientific_fragment_loads_without_network(tmp_path):
@@ -197,3 +200,21 @@ async def test_batch_reads_advertised_handles_and_verifies_exact_bytes(monkeypat
         assert observed == [manifest["artifact_id"], output["artifact_id"]]
         assert measured == [manifest, output]
         assert "transient" not in json.dumps(measured)
+
+
+@pytest.mark.parametrize("rows,expected", [([], set()),
+    ([{"id": "known", "status": "running"}], {"known"}),
+    ([{"id": "unrelated", "status": "succeeded"}], {"missing"})])
+def test_teardown_refuses_active_empty_or_missing_operations(rows, expected):
+    with pytest.raises(ValueError):
+        finalizer.settled(rows, expected)
+
+
+def test_teardown_retains_failed_attempts_without_requiring_deletion():
+    finalizer.settled([{"id": "current", "status": "succeeded"},
+                       {"id": "earlier", "status": "failed"}], {"current"})
+
+
+def test_teardown_refuses_partial_cohort_receipt():
+    with pytest.raises(ValueError, match="two_completed_bounded_cohorts_required"):
+        finalizer.expected_operations({"outcome": "partial_scope_passed", "cohorts": [{}]})
