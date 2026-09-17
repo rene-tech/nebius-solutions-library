@@ -14,6 +14,38 @@ a cluster or cloud API.
 
 ## Try the example
 
+### Public website metadata is part of model publication
+
+Before exposing a new App on a deployment with a public catalog website, publish
+its category, information URL and explicit NVIDIA/BioNeMo credit (or `null` for
+no reviewed credit) to the website. Then check the **deployed** metadata:
+
+```bash
+python3 k8s-inference/model-onboarding/verify_website_metadata.py \
+  --website-url https://89.169.99.188 \
+  --model-id parakeet-realtime-eou-120m-v1
+```
+
+Run from the repository root. Repeat `--model-id` for a batch, or use
+`--base-ref <commit-before-onboarding>` to discover added IDs across the canonical
+HTTP, native and scientific-batch catalogs. The `Inference website metadata`
+workflow runs this check on catalog pull requests and main pushes when the
+repository variable `SCIENTIFIC_AI_WEBSITE_URL` is set. It checks the website
+actually deployed, not a developer's unshipped edits. Missing metadata fails the
+check with instructions to publish the website first; inference availability is
+never hidden or interrupted by a website outage. Other Solutions Library forks
+can configure their own website or leave the integration disabled.
+Each invocation also checks every App in the fresh live website catalog, so an
+unchanged inventory cannot conceal an earlier manual registration or rollback.
+
+This applies to custom onboarding scripts as well as this compiler. The compiler
+remains deterministic and offline; the publication check is a separate live
+acceptance step. Do not call a model onboarding complete until this check and
+the existing model-specific inference acceptance pass. Direct manual Kubernetes
+changes bypass GitHub CI, so operators must run this command before those changes.
+
+### Compile the model declaration
+
 The checked-in example deliberately uses `.invalid` model/image identities. It
 tests the workflow and output shapes; it is not a deployable model.
 

@@ -1,0 +1,125 @@
+{
+  "case": "de-0563",
+  "language": "de",
+  "audio_seconds": 12.33,
+  "source_sha256": "10c6bdd3219200d4342b9aeb6ccffc5561c73dd5ceb1e93b3976c6d720455d40",
+  "reference": "haben in unseren büroräumen jetzt über 30 grad das ist nicht akzeptabel schicken sie bitte umgehend einen techniker der das in ordnung bringt das muss heute noch erledigt werden bis 17 uhr bin",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 563
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:46:21.512004+00:00",
+  "submit_status": 202,
+  "operation_id": "ba4b42a8-b502-430b-9a68-98be7756838b",
+  "operation": {
+    "id": "ba4b42a8-b502-430b-9a68-98be7756838b",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-a632fab02e074a77b24fc70d2ca9d512",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:46:22.176833Z",
+    "available_at": "2026-09-16T21:46:22.176833Z",
+    "deadline_at": "2026-09-16T23:46:22.170471Z",
+    "activation_started_at": "2026-09-16T21:46:22.192733Z",
+    "ready_at": "2026-09-16T21:46:22.622016Z",
+    "started_at": "2026-09-16T21:46:22.626373Z",
+    "completed_at": "2026-09-16T21:46:23.592905Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:46:22.176833Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": null,
+      "node_uid": null,
+      "gpu_uuids": [],
+      "gpu_count": 0,
+      "preemptible": null
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.445183,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 12.33
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.566016500815749,
+  "text": "Haben in unseren Büroräumen jetzt über dreißig Grad. Das ist nicht akzeptabel. Schicken Sie bitte umgehend einen Techniker, der das in Ordnung bringt. Das muss heute noch erledigt werden. Bis siebzehn Uhr Uhr Uhr",
+  "result_audio_seconds": 12.33,
+  "processing_seconds": 0.7289372989907861,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "875edef6aa9e7455ff26ad50c8dab2114b2430f0106993194e77ded5ea9c7c7d",
+  "quality": {
+    "reference_words": 33,
+    "hypothesis_words": 34,
+    "wer": 0.12121212121212122,
+    "substitutions": 3,
+    "deletions": 0,
+    "insertions": 1,
+    "correct": 30,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 6,
+        "reference": "30",
+        "recognized": "dreißig"
+      },
+      {
+        "type": "insertion",
+        "reference_index": 30,
+        "recognized": "siebzehn"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 30,
+        "reference": "17",
+        "recognized": "uhr"
+      },
+      {
+        "type": "substitution",
+        "reference_index": 32,
+        "reference": "bin",
+        "recognized": "uhr"
+      }
+    ],
+    "reference_characters": 160,
+    "character_errors": 21,
+    "cer": 0.13125
+  },
+  "finished_at": "2026-09-16T21:46:24.079085+00:00"
+}

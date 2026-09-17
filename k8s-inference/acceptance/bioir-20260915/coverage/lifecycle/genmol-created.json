@@ -1,0 +1,6 @@
+{
+  "unix": 1789507838.5907295,
+  "pod": "fs2-bioir-coverage-genmol",
+  "namespace": "fs2-models",
+  "source_deployment": "genmol-b300-hot-h100-reserved-8x"
+}

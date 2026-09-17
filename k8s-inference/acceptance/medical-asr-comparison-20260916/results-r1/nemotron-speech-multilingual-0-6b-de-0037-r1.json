@@ -1,0 +1,110 @@
+{
+  "case": "de-0037",
+  "language": "de",
+  "audio_seconds": 11.37,
+  "source_sha256": "6108f470b693bea52dbc7697b5c4df7b5886989c406c687e8f6b8f4ea8a8a02b",
+  "reference": "Sie sind jetzt im Krankenhaus, Herr Müller … Ich werde Sie jetzt untersuchen und der Herr Fuchs neben mir wird Ihnen den Blutdruck messen … Er hat ja vorhin nur gelallt. Jetzt hat",
+  "reference_provenance": {
+    "dataset": "leduckhai/MultiMed",
+    "revision": "459d0ab6db332904f9d7b76a8baabf3333958fa8",
+    "parquet_sha256": "494a635916ceaed914f6238fb7acf37e38a1e8432c30663a2f6f484dbdec58e0",
+    "row": 37
+  },
+  "media_type": "audio/ogg",
+  "model": "nemotron-speech-multilingual-0-6b",
+  "repetition": 1,
+  "status": "succeeded",
+  "started_at": "2026-09-16T21:45:28.189467+00:00",
+  "submit_status": 202,
+  "operation_id": "72d9e3e2-8a15-47a6-90f7-b6a8880e9657",
+  "operation": {
+    "id": "72d9e3e2-8a15-47a6-90f7-b6a8880e9657",
+    "tenant_id": "rene",
+    "principal_id": "rene",
+    "token_id": "28e90f73-dc7d-4491-bddf-6b4f14c2a6c3",
+    "model_id": "nemotron-speech-multilingual-0-6b",
+    "model_revision": "dynamic:sha256:7de9853b50ecc4ce141c419e5c573105dd1cc74612cd089e898a885879a6148f",
+    "protocol": "native",
+    "operation": "transcribe",
+    "idempotency_key": "medical-asr-94a81f2915fe483e80ae4b910a10a5a3",
+    "status": "succeeded",
+    "accepted_at": "2026-09-16T21:45:28.725019Z",
+    "available_at": "2026-09-16T21:45:28.725019Z",
+    "deadline_at": "2026-09-16T23:45:28.715416Z",
+    "activation_started_at": "2026-09-16T21:45:28.756000Z",
+    "ready_at": "2026-09-16T21:45:28.912452Z",
+    "started_at": "2026-09-16T21:45:28.917097Z",
+    "completed_at": "2026-09-16T21:45:29.956663Z",
+    "outcome": "succeeded",
+    "semantic_outcome": "protocol_valid",
+    "http_status": 200,
+    "response_content_type": "application/json",
+    "result_available": true,
+    "payload_expires_at": "2026-09-17T21:45:28.725019Z",
+    "error_code": null,
+    "error_detail": null,
+    "attempt": 1,
+    "max_attempts": 3,
+    "fencing_token": 1,
+    "runtime": {
+      "pod_uid": "7c7785b2-a403-44cd-b335-aad4ba0c0faf",
+      "node_uid": "5700ea19-0b46-4020-afa5-c8f1a105dcdd",
+      "gpu_uuids": [
+        "GPU-b1a62569-6a84-851e-8340-1a31f1a20de1"
+      ],
+      "gpu_count": 1,
+      "preemptible": false
+    },
+    "estimated_gpu_seconds": 3600.0,
+    "reserved_gpu_seconds": 0.0,
+    "cold_start_seconds": 0.187433,
+    "input_tokens": null,
+    "output_tokens": null,
+    "modality_usage": [
+      {
+        "modality": "audio",
+        "direction": "input",
+        "unit": "seconds",
+        "amount": 11.37
+      }
+    ],
+    "modality_usage_reported": true,
+    "reused": false
+  },
+  "wall_seconds": 2.378518208861351,
+  "text": "Sie sind jetzt im Krankenhaus, Herr Müller. Ich werde Sie jetzt untersuchen und der Herr Fuchs neben mir wird Ihnen den Blutdruck messen. Er hat ja vorhin nur geleilt. Jetzt hat",
+  "result_audio_seconds": 11.37,
+  "processing_seconds": 0.6798740110825747,
+  "result_keys": [
+    "audio_seconds",
+    "language",
+    "model",
+    "model_revision",
+    "processing_seconds",
+    "segments",
+    "text"
+  ],
+  "full_duration": true,
+  "raw_result_sha256": "2ad184de2c67823306b6e0baed3232a854944096db1eb06437d12146f24777a7",
+  "quality": {
+    "reference_words": 31,
+    "hypothesis_words": 31,
+    "wer": 0.03225806451612903,
+    "substitutions": 1,
+    "deletions": 0,
+    "insertions": 0,
+    "correct": 30,
+    "errors": [
+      {
+        "type": "substitution",
+        "reference_index": 28,
+        "reference": "gelallt",
+        "recognized": "geleilt"
+      }
+    ],
+    "reference_characters": 143,
+    "character_errors": 2,
+    "cer": 0.013986013986013986
+  },
+  "finished_at": "2026-09-16T21:45:30.569052+00:00"
+}

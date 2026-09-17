@@ -1,0 +1,7 @@
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/boltz2@sha256:93d5fae96d87dff930206cf331f170b73f2369067f0b32169e0008f0db320a90
+# Evaluation-only derivative: unchanged Boltz source/checkpoint/torch; add
+# optional cuEquivariance dependencies and the compiler needed by Triton.
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && apt-get clean
+RUN python -m pip install --no-cache-dir --no-deps cuequivariance==0.8.1 cuequivariance-torch==0.8.1 cuequivariance-ops-cu13==0.8.1 cuequivariance-ops-torch-cu13==0.8.1 opt-einsum==3.4.0 nvidia-ml-py==13.610.43 && python -m pip freeze > /opt/upstream-tools-pip-freeze.txt
+USER 1000:1000

@@ -1,0 +1,26 @@
+{
+  "recorded_at": "2026-09-17T06:44:49.730223+00:00",
+  "reason": "Original acceptance cleanup used wrong POST route; scoped keys revoked by DELETE. Original negative receipts preserved.",
+  "revocations": [
+    {
+      "cohort": "nemotron-r1",
+      "key_id": "bb698e84-3f6e-4e57-883c-3461b67a013d",
+      "revoked_http": 200
+    },
+    {
+      "cohort": "nemotron-r2",
+      "key_id": "1ca97b61-34c2-4746-95d6-6e15806cda4a",
+      "revoked_http": 200
+    },
+    {
+      "cohort": "qwen235-r1",
+      "key_id": "7f1e8f98-ddeb-475e-9a08-b35e8ebc5cd0",
+      "revoked_http": 200
+    },
+    {
+      "cohort": "live-r1",
+      "key_id": "8bfb3386-bc64-4ee1-92e5-15c51b562012",
+      "revoked_http": 200
+    }
+  ]
+}

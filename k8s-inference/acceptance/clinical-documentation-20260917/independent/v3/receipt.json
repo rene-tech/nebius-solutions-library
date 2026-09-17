@@ -1,0 +1,43 @@
+{
+  "started_at": "2026-09-17T06:50:56.408701+00:00",
+  "clinical_validation": false,
+  "source": "/tmp/clinical-documentation-forward-9bTAMx/transcript-source.txt",
+  "source_sha256": "d811f14710485ff6716f639ba407368633f309cb1b130cbcbbe2e2b9b298d0fd",
+  "expectations": "/tmp/clinical-documentation-forward-9bTAMx/expected-before-output.md",
+  "expectations_sha256": "bf6c50802874b57ae6127f44633ce958e7da79aac809f270d8137fd0f3083f37",
+  "attempts_in_this_workspace": 1,
+  "script_hashes_before": {
+    "clinical_report.py": "51015cd144b5daa69358f51e17b7b413813bf4af7a13434a1964cbf4ec7ee112",
+    "document.py": "9a2bc6785699b734bccd6e0319be0aa4f51c141eed5f3c527db6cda236c3be97"
+  },
+  "key_revoked": true,
+  "temporary_key_id": "22b12d60-2f57-462a-a9ef-32ff1f816714",
+  "command_without_credentials": [
+    "uv",
+    "run",
+    "/home/tux/worktrees/fs2-mindeval-workshop-20260916/k8s-inference/integrations/librechat/skills/clinical-documentation/scripts/clinical_report.py",
+    "--transcript",
+    "/tmp/clinical-documentation-forward-9bTAMx/transcript-source.txt",
+    "--language",
+    "de",
+    "--report-provider",
+    "https://api.tokenfactory.nebius.com/v1",
+    "--report-model",
+    "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    "--output",
+    "/tmp/clinical-documentation-forward-v3-AnhvcV/result",
+    "--timeout",
+    "600"
+  ],
+  "returncode": 0,
+  "wall_seconds": 95.41087665874511,
+  "cli_stdout": "{\"status\": \"completed_draft\", \"output\": \"/tmp/clinical-documentation-forward-v3-AnhvcV/result\", \"facts\": 26, \"review_candidates_excluded\": 2}\n",
+  "cli_stderr": "",
+  "script_hashes_after": {
+    "clinical_report.py": "51015cd144b5daa69358f51e17b7b413813bf4af7a13434a1964cbf4ec7ee112",
+    "document.py": "9a2bc6785699b734bccd6e0319be0aa4f51c141eed5f3c527db6cda236c3be97"
+  },
+  "revocation_status": 200,
+  "revocation_method": "DELETE",
+  "finished_at": "2026-09-17T06:52:33.929315+00:00"
+}

@@ -1,0 +1,26 @@
+{
+  "unix": 1789510522.073464,
+  "deleted": [
+    {
+      "namespace": "fs2-bioir-coverage",
+      "kind": "ConfigMap",
+      "name": "fs2-bioir-coverage-batch",
+      "reproducible_from_manifests": true
+    },
+    {
+      "namespace": "fs2-bioir-coverage",
+      "kind": "ConfigMap",
+      "name": "fs2-bioir-coverage-client",
+      "reproducible_from_manifests": true
+    },
+    {
+      "namespace": "fs2-models",
+      "kind": "ConfigMap",
+      "name": "fs2-bioir-coverage-client",
+      "reproducible_from_manifests": true
+    }
+  ],
+  "remaining_benchmark_pods": 0,
+  "production_resources_changed": false,
+  "namespace": "Empty evaluation namespace retained; no PVC was created by coverage."
+}

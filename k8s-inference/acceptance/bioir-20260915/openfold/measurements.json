@@ -1,0 +1,4901 @@
+{
+  "timing_boundary": "In-pod accepted HTTP through full response, artifact write and basic validation; no gateway, scheduler or offline structural-quality scoring. Server inference_seconds is whole native locked inference, not GPU-forward time.",
+  "sample_warning": "Three warm repeats per case. Report individual values and median/range; not a tail-SLO estimate.",
+  "allocation_warning": "Whole experiment reserved GPU includes image pull, initialization, failures, operator idle, collection and termination. Bounds are not inference compute. No GPU price assumed. No valid result means per-valid cost undefined, not zero.",
+  "resources": [
+    {
+      "resource": "openfold2-baseline-h100",
+      "model": "openfold2",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164"
+      ],
+      "attempts": 15,
+      "valid": 15,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 4.2921397800000705,
+          "min_seconds": 4.286470652000389,
+          "max_seconds": 4.302956189999804,
+          "individual_seconds": [
+            4.2921397800000705,
+            4.302956189999804,
+            4.286470652000389
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 0.9842603399997643,
+          "min_seconds": 0.9662437629999658,
+          "max_seconds": 0.9862170890000925,
+          "individual_seconds": [
+            0.9842603399997643,
+            0.9662437629999658,
+            0.9862170890000925
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 2.2745465739999418,
+          "min_seconds": 2.2640972230001353,
+          "max_seconds": 2.2748538569999255,
+          "individual_seconds": [
+            2.2745465739999418,
+            2.2748538569999255,
+            2.2640972230001353
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold2-baseline-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:20:25.492762+00:00",
+          "input_sha256": "1c39024a5c10f3dc64d1aaf9001a9eb1154b736703fba55e953067c9bb3c60f1",
+          "input_bytes": 166,
+          "http_seconds": 1.5322026379999443,
+          "status": 200,
+          "validation": {
+            "residues": 46,
+            "confidence": 47.81880362137504,
+            "ptm": 0.20111511647701263,
+            "server_seconds": 1.3201598159998866
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 1.5330739480000375
+        },
+        {
+          "request_id": "openfold2-baseline-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:20:29.963298+00:00",
+          "input_sha256": "d0de7895a594c2134db93e300646850b2965b9c727e34276b926012d14b9f85a",
+          "input_bytes": 249,
+          "http_seconds": 2.3320611989997815,
+          "status": 200,
+          "validation": {
+            "residues": 129,
+            "confidence": 40.617662400238274,
+            "ptm": 0.21593165397644043,
+            "server_seconds": 2.320136496000032
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 2.337007870999969
+        },
+        {
+          "request_id": "openfold2-baseline-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:20:39.115104+00:00",
+          "input_sha256": "7d348d01c8c050b2368401aa52a4cda1693565195670f4fd1fba0125d649300b",
+          "input_bytes": 334,
+          "http_seconds": 4.350135239000338,
+          "status": 200,
+          "validation": {
+            "residues": 214,
+            "confidence": 47.26277264033523,
+            "ptm": 0.23061883449554443,
+            "server_seconds": 4.324866457000098
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 4.362518143000216
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:17:59Z",
+        "evidence_collected_utc": "2026-09-15T21:22:04.631187+00:00",
+        "lower_seconds": 245.63118696212769,
+        "upper_seconds": 284.0,
+        "upper_bound_source": "Next exclusive task GPU pod scheduled; exact earlier deletion time unavailable.",
+        "gpu_seconds_per_valid_request_lower": 16.375412464141846,
+        "gpu_seconds_per_valid_request_upper": 18.933333333333334,
+        "valid_per_allocated_gpu_hour_lower": 190.14084507042253,
+        "valid_per_allocated_gpu_hour_upper": 219.8417907263784
+      },
+      "image_pull_events": [
+        "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164\" in 52.843s (52.843s including waiting). Image size: 3910694316 bytes."
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://7ac98f048d334aac4fcbb2a09783ad773c14e96ab4b535ca3072a4a89c9e5ac5",
+          "image": "sha256:1aed8bd5bfc7a1c5a37eb2d4455936804be3c0581795beaa80a54a73995a2c09",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+          "lastState": {},
+          "name": "openfold2",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:18:53Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/dev/shm",
+              "name": "dshm"
+            },
+            {
+              "mountPath": "/runtime-cache",
+              "name": "runtime-cache"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:19:01Z",
+      "mixed": {
+        "seconds": 7.685530255999765,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 0,
+        "expected_400_rejections": 0,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 1.5330739480000375,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 148.02583599090576,
+      "sum_native_locked_inference_seconds": 38.0580493009993,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 4.2495044980000785,
+          "min_seconds": 4.248408200000085,
+          "max_seconds": 4.264908936000211,
+          "individual_seconds": [
+            4.2495044980000785,
+            4.264908936000211,
+            4.248408200000085
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 0.9801497799999197,
+          "min_seconds": 0.9619661329998053,
+          "max_seconds": 0.9825388429999293,
+          "individual_seconds": [
+            0.9801497799999197,
+            0.9619661329998053,
+            0.9825388429999293
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 2.2564137609997488,
+          "min_seconds": 2.2470814260000225,
+          "max_seconds": 2.2565277589997095,
+          "individual_seconds": [
+            2.2565277589997095,
+            2.2564137609997488,
+            2.2470814260000225
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold2-baseline-l40s",
+      "model": "openfold2",
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164"
+      ],
+      "attempts": 15,
+      "valid": 15,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 13.185068056998716,
+          "min_seconds": 13.184534296999118,
+          "max_seconds": 13.198610162000477,
+          "individual_seconds": [
+            13.184534296999118,
+            13.185068056998716,
+            13.198610162000477
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 1.7071870380004839,
+          "min_seconds": 1.7033743430001778,
+          "max_seconds": 1.7090766349992919,
+          "individual_seconds": [
+            1.7090766349992919,
+            1.7071870380004839,
+            1.7033743430001778
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 6.175896218999696,
+          "min_seconds": 6.174630616000286,
+          "max_seconds": 6.180226847000085,
+          "individual_seconds": [
+            6.175896218999696,
+            6.174630616000286,
+            6.180226847000085
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold2-baseline-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:26:52.722587+00:00",
+          "input_sha256": "1c39024a5c10f3dc64d1aaf9001a9eb1154b736703fba55e953067c9bb3c60f1",
+          "input_bytes": 166,
+          "http_seconds": 2.2464204560001235,
+          "status": 200,
+          "validation": {
+            "residues": 46,
+            "confidence": 47.81023141612177,
+            "ptm": 0.20111781358718872,
+            "server_seconds": 2.002767498001049
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 2.247534236001229
+        },
+        {
+          "request_id": "openfold2-baseline-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:27:00.090772+00:00",
+          "input_sha256": "d0de7895a594c2134db93e300646850b2965b9c727e34276b926012d14b9f85a",
+          "input_bytes": 249,
+          "http_seconds": 6.266255627999271,
+          "status": 200,
+          "validation": {
+            "residues": 129,
+            "confidence": 40.62724453534267,
+            "ptm": 0.21569013595581055,
+            "server_seconds": 6.251419131000148
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 6.272552161000931
+        },
+        {
+          "request_id": "openfold2-baseline-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:27:24.895586+00:00",
+          "input_sha256": "7d348d01c8c050b2368401aa52a4cda1693565195670f4fd1fba0125d649300b",
+          "input_bytes": 334,
+          "http_seconds": 13.388344331000553,
+          "status": 200,
+          "validation": {
+            "residues": 214,
+            "confidence": 47.26441462686129,
+            "ptm": 0.23065903782844543,
+            "server_seconds": 13.35584607400051
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 13.404072220000671
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:24:53Z",
+        "evidence_collected_utc": "2026-09-15T21:29:08.689908+00:00",
+        "lower_seconds": 255.68990802764893,
+        "upper_seconds": 290.0,
+        "upper_bound_source": "Next exclusive task GPU pod scheduled; exact earlier deletion time unavailable.",
+        "gpu_seconds_per_valid_request_lower": 17.045993868509928,
+        "gpu_seconds_per_valid_request_upper": 19.333333333333332,
+        "valid_per_allocated_gpu_hour_lower": 186.20689655172413,
+        "valid_per_allocated_gpu_hour_upper": 211.19331778304183
+      },
+      "image_pull_events": [
+        "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164\" in 1m13.892s (1m13.892s including waiting). Image size: 3910694316 bytes."
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://28b510aba2dada25a911e79109befe1fce493db0217bd6d94c3f196f68ca77f5",
+          "image": "sha256:1aed8bd5bfc7a1c5a37eb2d4455936804be3c0581795beaa80a54a73995a2c09",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164",
+          "lastState": {},
+          "name": "openfold2",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "48Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:26:08Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/dev/shm",
+              "name": "dshm"
+            },
+            {
+              "mountPath": "/runtime-cache",
+              "name": "runtime-cache"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:26:20Z",
+      "mixed": {
+        "seconds": 21.394544595999832,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 0,
+        "expected_400_rejections": 0,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 2.247534236001229,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 121.97012138366699,
+      "sum_native_locked_inference_seconds": 105.95145903799857,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 13.135720676998972,
+          "min_seconds": 13.13405848199909,
+          "max_seconds": 13.148186222999357,
+          "individual_seconds": [
+            13.13405848199909,
+            13.135720676998972,
+            13.148186222999357
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 1.7028438270008337,
+          "min_seconds": 1.6991818539991073,
+          "max_seconds": 1.7040926579993538,
+          "individual_seconds": [
+            1.7040926579993538,
+            1.7028438270008337,
+            1.6991818539991073
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 6.156203642998662,
+          "min_seconds": 6.15438668599927,
+          "max_seconds": 6.1603439490008896,
+          "individual_seconds": [
+            6.156203642998662,
+            6.15438668599927,
+            6.1603439490008896
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold2-bir-float32-l40s",
+      "model": "openfold2",
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:1bd717a1b1af007c457b4e9053f0c015b2994d5420078f2a09112fb8a943a255"
+      ],
+      "attempts": 0,
+      "valid": 0,
+      "invalid": 0,
+      "startup_failed_without_requests": true,
+      "warm": {},
+      "first_shape": [],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:29:43Z",
+        "evidence_collected_utc": "2026-09-15T21:32:31.785417+00:00",
+        "lower_seconds": 168.78541707992554,
+        "upper_seconds": 204.0,
+        "upper_bound_source": "Next exclusive task GPU pod scheduled; exact earlier deletion time unavailable."
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164\" already present on machine and can be accessed by the pod",
+        "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:1bd717a1b1af007c457b4e9053f0c015b2994d5420078f2a09112fb8a943a255\" in 1m8.551s (1m8.551s including waiting). Image size: 3503151678 bytes.",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:1bd717a1b1af007c457b4e9053f0c015b2994d5420078f2a09112fb8a943a255\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://6979bc212e254263a9fb8f9fc2711f9340b6dc5fe4f2ba60142a1e6fcd6638a9",
+          "image": "sha256:9312e4f44aec4338e8252ae305f3b5c07974047a7cc50f46cb9159d7559325e2",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:1bd717a1b1af007c457b4e9053f0c015b2994d5420078f2a09112fb8a943a255",
+          "lastState": {},
+          "name": "model",
+          "ready": false,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "48Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:31:15Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:29:43Z",
+      "mixed": null,
+      "negative_contract_probes": {
+        "attempts": 0,
+        "expected_400_rejections": 0,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      }
+    },
+    {
+      "resource": "openfold2-bir-float32-r2-h100",
+      "model": "openfold2",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 15,
+      "valid": 15,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 7.896825447999618,
+          "min_seconds": 7.895493793000242,
+          "max_seconds": 7.899580397000136,
+          "individual_seconds": [
+            7.899580397000136,
+            7.896825447999618,
+            7.895493793000242
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 1.5160789070005194,
+          "min_seconds": 1.5111711989993637,
+          "max_seconds": 1.516856315000041,
+          "individual_seconds": [
+            1.516856315000041,
+            1.5160789070005194,
+            1.5111711989993637
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 4.3517766140003005,
+          "min_seconds": 4.350030343000071,
+          "max_seconds": 4.356959247999839,
+          "individual_seconds": [
+            4.350030343000071,
+            4.3517766140003005,
+            4.356959247999839
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold2-bir-float32-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:10:00.355202+00:00",
+          "input_sha256": "dfa972ca02a513b2a34e463816966a0b2339275a4783427b0ced77997735c39d",
+          "input_bytes": 169,
+          "http_seconds": 3.171645119000459,
+          "status": 200,
+          "validation": {
+            "residues": 46,
+            "confidence": 47.8123368802278,
+            "ptm": 0.20108163356781006,
+            "server_seconds": 2.5322346009998
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 3.1728630420002446
+        },
+        {
+          "request_id": "openfold2-bir-float32-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:10:08.073086+00:00",
+          "input_sha256": "85e7111ef2de62e028c643d849fb3807221a986bcfceb8f1fecc978f5a867c31",
+          "input_bytes": 252,
+          "http_seconds": 4.489111924000099,
+          "status": 200,
+          "validation": {
+            "residues": 129,
+            "confidence": 40.614553880321886,
+            "ptm": 0.21591322124004364,
+            "server_seconds": 4.473092958000052
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 4.495973478999986
+        },
+        {
+          "request_id": "openfold2-bir-float32-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:10:25.629825+00:00",
+          "input_sha256": "e262ce3a016db95f3375a7f0ab911aa8cb8c62174923a1eaa2eb288d6f8bd6ff",
+          "input_bytes": 337,
+          "http_seconds": 7.88576158000069,
+          "status": 200,
+          "validation": {
+            "residues": 214,
+            "confidence": 47.27710513533833,
+            "ptm": 0.2306237369775772,
+            "server_seconds": 7.84737502400003
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 7.903924599000675
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T22:09:17Z",
+        "evidence_collected_utc": "2026-09-15T22:11:20.961483+00:00",
+        "lower_seconds": 144.21062994003296,
+        "upper_seconds": 175.70029711723328,
+        "delete_requested_utc": "2026-09-15T22:11:41.210630+00:00",
+        "deleted_observed_utc": "2026-09-15T22:12:12.700297+00:00",
+        "gpu_seconds_per_valid_request_lower": 9.614041996002197,
+        "gpu_seconds_per_valid_request_upper": 11.713353141148884,
+        "valid_per_allocated_gpu_hour_lower": 307.3415406006362,
+        "valid_per_allocated_gpu_hour_upper": 374.45228567724024
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://11d67ff58de40e9f4daa676b7dea735610c59326ba27165263e7b87da0c862cb",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:09:21Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T22:09:48Z",
+      "mixed": {
+        "seconds": 13.76241099500021,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 6,
+        "expected_400_rejections": 6,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 3.1728630420002446,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 46.52806496620178,
+      "sum_native_locked_inference_seconds": 69.6000683250004,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 7.842337017999853,
+          "min_seconds": 7.840256647999922,
+          "max_seconds": 7.843713027999911,
+          "individual_seconds": [
+            7.843713027999911,
+            7.842337017999853,
+            7.840256647999922
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 1.510394286000519,
+          "min_seconds": 1.5057913280006687,
+          "max_seconds": 1.511030108000341,
+          "individual_seconds": [
+            1.511030108000341,
+            1.510394286000519,
+            1.5057913280006687
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 4.327152674999525,
+          "min_seconds": 4.326980132999779,
+          "max_seconds": 4.333935024000311,
+          "individual_seconds": [
+            4.326980132999779,
+            4.327152674999525,
+            4.333935024000311
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold2-bir-float32-r2-l40s",
+      "model": "openfold2",
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 15,
+      "valid": 15,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 29.3918694899985,
+          "min_seconds": 29.380674476999047,
+          "max_seconds": 29.39389090500117,
+          "individual_seconds": [
+            29.3918694899985,
+            29.39389090500117,
+            29.380674476999047
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 4.844485272000384,
+          "min_seconds": 4.835534992000248,
+          "max_seconds": 4.848100158000307,
+          "individual_seconds": [
+            4.848100158000307,
+            4.844485272000384,
+            4.835534992000248
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 15.496334575998844,
+          "min_seconds": 15.493097339000087,
+          "max_seconds": 15.502249908999147,
+          "individual_seconds": [
+            15.496334575998844,
+            15.502249908999147,
+            15.493097339000087
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold2-bir-float32-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:33:50.044779+00:00",
+          "input_sha256": "dfa972ca02a513b2a34e463816966a0b2339275a4783427b0ced77997735c39d",
+          "input_bytes": 169,
+          "http_seconds": 6.444454297001357,
+          "status": 200,
+          "validation": {
+            "residues": 46,
+            "confidence": 47.815933186074965,
+            "ptm": 0.20111161470413208,
+            "server_seconds": 5.759228795001036
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 6.445855181000297
+        },
+        {
+          "request_id": "openfold2-bir-float32-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:34:11.019999+00:00",
+          "input_sha256": "85e7111ef2de62e028c643d849fb3807221a986bcfceb8f1fecc978f5a867c31",
+          "input_bytes": 252,
+          "http_seconds": 15.664463323000746,
+          "status": 200,
+          "validation": {
+            "residues": 129,
+            "confidence": 40.613335942113125,
+            "ptm": 0.21603068709373474,
+            "server_seconds": 15.6417986330016
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 15.672705484999824
+        },
+        {
+          "request_id": "openfold2-bir-float32-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:35:13.186552+00:00",
+          "input_sha256": "e262ce3a016db95f3375a7f0ab911aa8cb8c62174923a1eaa2eb288d6f8bd6ff",
+          "input_bytes": 337,
+          "http_seconds": 29.365757909999957,
+          "status": 200,
+          "validation": {
+            "residues": 214,
+            "confidence": 47.293174084101885,
+            "ptm": 0.23064936697483063,
+            "server_seconds": 29.319513185000687
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 29.387582003000716
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:33:07Z",
+        "evidence_collected_utc": "2026-09-15T21:38:46.387353+00:00",
+        "lower_seconds": 340.3570349216461,
+        "upper_seconds": 372.1280529499054,
+        "delete_requested_utc": "2026-09-15T21:38:47.357035+00:00",
+        "deleted_observed_utc": "2026-09-15T21:39:19.128053+00:00",
+        "gpu_seconds_per_valid_request_lower": 22.690468994776406,
+        "gpu_seconds_per_valid_request_upper": 24.808536863327028,
+        "valid_per_allocated_gpu_hour_lower": 145.11133888438476,
+        "valid_per_allocated_gpu_hour_upper": 158.65692334648347
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164\" already present on machine and can be accessed by the pod",
+        "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" in 2.093s (2.093s including waiting). Image size: 3604083011 bytes."
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://f080c14e475059d4888b74565139b3ed20acbf7fe7469c2475d5b873fa7ae658",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "48Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:33:13Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:33:44Z",
+      "mixed": {
+        "seconds": 49.67490560199985,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 0,
+        "expected_400_rejections": 0,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 6.445855181000297,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 49.49063420295715,
+      "sum_native_locked_inference_seconds": 249.20357400699868,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 29.32104803999937,
+          "min_seconds": 29.313049681000848,
+          "max_seconds": 29.325947989998895,
+          "individual_seconds": [
+            29.32104803999937,
+            29.325947989998895,
+            29.313049681000848
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 4.839995887999976,
+          "min_seconds": 4.83100499199827,
+          "max_seconds": 4.842756153999289,
+          "individual_seconds": [
+            4.842756153999289,
+            4.839995887999976,
+            4.83100499199827
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 15.465188010999555,
+          "min_seconds": 15.465128772000753,
+          "max_seconds": 15.474225231000673,
+          "individual_seconds": [
+            15.465128772000753,
+            15.474225231000673,
+            15.465188010999555
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold2-bir-mixed-r2-h100",
+      "model": "openfold2",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 15,
+      "valid": 15,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 1.2133955429999332,
+          "min_seconds": 1.2083078710002155,
+          "max_seconds": 1.219454420999682,
+          "individual_seconds": [
+            1.2133955429999332,
+            1.219454420999682,
+            1.2083078710002155
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 0.9274846500002241,
+          "min_seconds": 0.9075284539994755,
+          "max_seconds": 0.9497301680003147,
+          "individual_seconds": [
+            0.9497301680003147,
+            0.9274846500002241,
+            0.9075284539994755
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 1.0353011359993616,
+          "min_seconds": 1.0343257869999434,
+          "max_seconds": 1.0456808830003865,
+          "individual_seconds": [
+            1.0456808830003865,
+            1.0353011359993616,
+            1.0343257869999434
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold2-bir-mixed-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-mixed",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:13:03.018137+00:00",
+          "input_sha256": "d644ba8a9d11c258ed29652ad28b31545261a0b9192e2ca0c5b720ab8776a52e",
+          "input_bytes": 167,
+          "http_seconds": 2.828200714999184,
+          "status": 200,
+          "validation": {
+            "residues": 46,
+            "confidence": 47.275510663571566,
+            "ptm": 0.19938474893569946,
+            "server_seconds": 2.196004102000188
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 2.8294355859998177
+        },
+        {
+          "request_id": "openfold2-bir-mixed-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-mixed",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:13:08.633223+00:00",
+          "input_sha256": "2f40750e9db254b2d255324e263eb5884138c8ca54faa3055a49e5387b5f1dac",
+          "input_bytes": 250,
+          "http_seconds": 1.3505143419997694,
+          "status": 200,
+          "validation": {
+            "residues": 129,
+            "confidence": 40.937577772510146,
+            "ptm": 0.2167944312095642,
+            "server_seconds": 1.3350414140004432
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 1.3575201200001175
+        },
+        {
+          "request_id": "openfold2-bir-mixed-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-mixed",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:13:13.107963+00:00",
+          "input_sha256": "86ff6604f533dad5ee51eee4302b44a924d1c7db64ebe533c3ac462d79211465",
+          "input_bytes": 335,
+          "http_seconds": 1.2085023290001118,
+          "status": 200,
+          "validation": {
+            "residues": 214,
+            "confidence": 47.09965236164699,
+            "ptm": 0.2299271523952484,
+            "server_seconds": 1.1705649529994844
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 1.226738977000423
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T22:12:19Z",
+        "evidence_collected_utc": "2026-09-15T22:13:31.237763+00:00",
+        "lower_seconds": 99.85661506652832,
+        "upper_seconds": 132.08984804153442,
+        "delete_requested_utc": "2026-09-15T22:13:58.856615+00:00",
+        "deleted_observed_utc": "2026-09-15T22:14:31.089848+00:00",
+        "gpu_seconds_per_valid_request_lower": 6.657107671101888,
+        "gpu_seconds_per_valid_request_upper": 8.805989869435628,
+        "valid_per_allocated_gpu_hour_lower": 408.8126438227123,
+        "valid_per_allocated_gpu_hour_upper": 540.7753904338048
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://832c3455e20730e3a84b40dda3642bd6d8ea1df7b1bd94da80b58a9d513cdb8e",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:12:23Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T22:12:50Z",
+      "mixed": {
+        "seconds": 3.246168986000157,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 6,
+        "expected_400_rejections": 6,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 2.8294355859998177,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 46.847572565078735,
+      "sum_native_locked_inference_seconds": 17.182462918000056,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 1.1588391539999066,
+          "min_seconds": 1.1534521970006608,
+          "max_seconds": 1.1646933140000328,
+          "individual_seconds": [
+            1.1588391539999066,
+            1.1646933140000328,
+            1.1534521970006608
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 0.9218257820002691,
+          "min_seconds": 0.9037069100004373,
+          "max_seconds": 0.9441855169998234,
+          "individual_seconds": [
+            0.9441855169998234,
+            0.9218257820002691,
+            0.9037069100004373
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 1.0120649099999355,
+          "min_seconds": 1.010874669000259,
+          "max_seconds": 1.0227341580002758,
+          "individual_seconds": [
+            1.0227341580002758,
+            1.0120649099999355,
+            1.010874669000259
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold2-bir-mixed-r2-l40s",
+      "model": "openfold2",
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 15,
+      "valid": 15,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 2.408482008999272,
+          "min_seconds": 2.4083589279998705,
+          "max_seconds": 2.4279804449997755,
+          "individual_seconds": [
+            2.408482008999272,
+            2.4279804449997755,
+            2.4083589279998705
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 1.1879607459995896,
+          "min_seconds": 1.185316633000184,
+          "max_seconds": 1.1889147550009511,
+          "individual_seconds": [
+            1.185316633000184,
+            1.1879607459995896,
+            1.1889147550009511
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 1.4930929840011231,
+          "min_seconds": 1.4818905020001694,
+          "max_seconds": 1.5034014739994745,
+          "individual_seconds": [
+            1.5034014739994745,
+            1.4818905020001694,
+            1.4930929840011231
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold2-bir-mixed-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-mixed",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:40:01.067228+00:00",
+          "input_sha256": "d644ba8a9d11c258ed29652ad28b31545261a0b9192e2ca0c5b720ab8776a52e",
+          "input_bytes": 167,
+          "http_seconds": 3.1522712820005836,
+          "status": 200,
+          "validation": {
+            "residues": 46,
+            "confidence": 47.234981495401136,
+            "ptm": 0.19849973917007446,
+            "server_seconds": 2.464613164000184
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 3.153739352001139
+        },
+        {
+          "request_id": "openfold2-bir-mixed-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-mixed",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:40:07.784378+00:00",
+          "input_sha256": "2f40750e9db254b2d255324e263eb5884138c8ca54faa3055a49e5387b5f1dac",
+          "input_bytes": 250,
+          "http_seconds": 1.7650754389997019,
+          "status": 200,
+          "validation": {
+            "residues": 129,
+            "confidence": 40.88539299484371,
+            "ptm": 0.2161407768726349,
+            "server_seconds": 1.742526698999427
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 1.7732551829994918
+        },
+        {
+          "request_id": "openfold2-bir-mixed-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-mixed",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:40:14.038212+00:00",
+          "input_sha256": "86ff6604f533dad5ee51eee4302b44a924d1c7db64ebe533c3ac462d79211465",
+          "input_bytes": 335,
+          "http_seconds": 2.39432474899877,
+          "status": 200,
+          "validation": {
+            "residues": 214,
+            "confidence": 47.066703092272036,
+            "ptm": 0.2298724353313446,
+            "server_seconds": 2.342594772000666
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 2.4158931669990125
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:39:22Z",
+        "evidence_collected_utc": "2026-09-15T21:44:02.262878+00:00",
+        "lower_seconds": 281.24348306655884,
+        "upper_seconds": 313.46272110939026,
+        "delete_requested_utc": "2026-09-15T21:44:03.243483+00:00",
+        "deleted_observed_utc": "2026-09-15T21:44:35.462721+00:00",
+        "gpu_seconds_per_valid_request_lower": 18.74956553777059,
+        "gpu_seconds_per_valid_request_upper": 20.89751474062602,
+        "valid_per_allocated_gpu_hour_lower": 172.26928870165526,
+        "valid_per_allocated_gpu_hour_upper": 192.00444899631827
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://10b5e01dd535ae3a35cb021cb4746a7074e7e41f57df11b0a96d38a0cb5e2b52",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "48Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:39:25Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:39:57Z",
+      "mixed": {
+        "seconds": 5.084030915000767,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 6,
+        "expected_400_rejections": 6,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 3.153739352001139,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 42.220967531204224,
+      "sum_native_locked_inference_seconds": 26.52654108999559,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 2.341289575999326,
+          "min_seconds": 2.340277438999692,
+          "max_seconds": 2.349577564000356,
+          "individual_seconds": [
+            2.341289575999326,
+            2.349577564000356,
+            2.340277438999692
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 1.1827166519997263,
+          "min_seconds": 1.180017743999997,
+          "max_seconds": 1.184496585998204,
+          "individual_seconds": [
+            1.180017743999997,
+            1.1827166519997263,
+            1.184496585998204
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 1.460099779000302,
+          "min_seconds": 1.4515427379992616,
+          "max_seconds": 1.472643862998666,
+          "individual_seconds": [
+            1.472643862998666,
+            1.4515427379992616,
+            1.460099779000302
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold2-upstream-env-r2-l40s",
+      "model": "openfold2",
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 15,
+      "valid": 15,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 13.210031978000188,
+          "min_seconds": 13.20683561399892,
+          "max_seconds": 13.212272431999736,
+          "individual_seconds": [
+            13.20683561399892,
+            13.210031978000188,
+            13.212272431999736
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 1.71843628500028,
+          "min_seconds": 1.7072778980000294,
+          "max_seconds": 1.7210294310007157,
+          "individual_seconds": [
+            1.71843628500028,
+            1.7072778980000294,
+            1.7210294310007157
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 6.171287986000607,
+          "min_seconds": 6.1664145270005974,
+          "max_seconds": 6.1735602720000315,
+          "individual_seconds": [
+            6.1664145270005974,
+            6.1735602720000315,
+            6.171287986000607
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold2-upstream-env-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "upstream-env",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:44:59.068192+00:00",
+          "input_sha256": "b120f894db3ade6d47ae99a19aa28e1808e5d69ef71b3ef8a9a043b1965475a8",
+          "input_bytes": 170,
+          "http_seconds": 2.3038056080004026,
+          "status": 200,
+          "validation": {
+            "residues": 46,
+            "confidence": 47.80845629650614,
+            "ptm": 0.20108214020729065,
+            "server_seconds": 1.9824567010000465
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 2.3052315450004244
+        },
+        {
+          "request_id": "openfold2-upstream-env-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "upstream-env",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:45:06.521327+00:00",
+          "input_sha256": "bc11f49cd594ed94d85945f0265890898019fb3e4b33e8b5769d1e7f8f146726",
+          "input_bytes": 253,
+          "http_seconds": 6.262972028000149,
+          "status": 200,
+          "validation": {
+            "residues": 129,
+            "confidence": 40.66770010955574,
+            "ptm": 0.21568900346755981,
+            "server_seconds": 6.244722647001254
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 6.271479447999809
+        },
+        {
+          "request_id": "openfold2-upstream-env-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "upstream-env",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:45:31.306016+00:00",
+          "input_sha256": "a89719a4f601bfb70382891ab6a17c69b28b70d8a80a79971582b3a3b6c398fd",
+          "input_bytes": 338,
+          "http_seconds": 13.407138091999514,
+          "status": 200,
+          "validation": {
+            "residues": 214,
+            "confidence": 47.265731267839946,
+            "ptm": 0.23064039647579193,
+            "server_seconds": 13.364227508000113
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 13.429221366999627
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:44:37Z",
+        "evidence_collected_utc": "2026-09-15T21:46:55.950921+00:00",
+        "lower_seconds": 153.4524109363556,
+        "upper_seconds": 185.15005588531494,
+        "delete_requested_utc": "2026-09-15T21:47:10.452411+00:00",
+        "deleted_observed_utc": "2026-09-15T21:47:42.150056+00:00",
+        "gpu_seconds_per_valid_request_lower": 10.230160729090374,
+        "gpu_seconds_per_valid_request_upper": 12.343337059020996,
+        "valid_per_allocated_gpu_hour_lower": 291.6553264960855,
+        "valid_per_allocated_gpu_hour_upper": 351.9006294557112
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/openfold2@sha256:9fc70e781b18f4f547da237e2eb81387df3c38d092bb44c46145db6347e7e164\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://0f02fb084970ee721a209f6407ba7eb165f8df45f07f631b4bdbd6b7c10fffb5",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "48Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:44:40Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:44:52Z",
+      "mixed": {
+        "seconds": 21.423038896000435,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 6,
+        "expected_400_rejections": 6,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 2.3052315450004244,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 24.37342357635498,
+      "sum_native_locked_inference_seconds": 105.94657840200671,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 13.143922623001345,
+          "min_seconds": 13.142928762001247,
+          "max_seconds": 13.147919410999748,
+          "individual_seconds": [
+            13.142928762001247,
+            13.143922623001345,
+            13.147919410999748
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 1.7131818039997597,
+          "min_seconds": 1.7020734310008265,
+          "max_seconds": 1.7159058369998093,
+          "individual_seconds": [
+            1.7131818039997597,
+            1.7020734310008265,
+            1.7159058369998093
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 6.145334793000075,
+          "min_seconds": 6.139504922000924,
+          "max_seconds": 6.146920418001173,
+          "individual_seconds": [
+            6.139504922000924,
+            6.146920418001173,
+            6.145334793000075
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-baseline-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.957681200000025,
+          "min_seconds": 9.955417585000305,
+          "max_seconds": 10.081805153999994,
+          "individual_seconds": [
+            9.955417585000305,
+            10.081805153999994,
+            9.957681200000025
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 8.81967983200002,
+          "min_seconds": 8.783214683999631,
+          "max_seconds": 8.829119600000013,
+          "individual_seconds": [
+            8.81967983200002,
+            8.829119600000013,
+            8.783214683999631
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 9.447740299000088,
+          "min_seconds": 9.435715427000105,
+          "max_seconds": 9.45020114700037,
+          "individual_seconds": [
+            9.435715427000105,
+            9.45020114700037,
+            9.447740299000088
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 11.14023786100006,
+          "min_seconds": 10.77927741800022,
+          "max_seconds": 11.702567674999955,
+          "individual_seconds": [
+            11.702567674999955,
+            11.14023786100006,
+            10.77927741800022
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 9.410871336000127,
+          "min_seconds": 9.324789924000015,
+          "max_seconds": 9.418319467999936,
+          "individual_seconds": [
+            9.410871336000127,
+            9.418319467999936,
+            9.324789924000015
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-baseline-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:26:17.671005+00:00",
+          "input_sha256": "4b947f4217b1a1b2040007567002aca054963f82a6c429f14d17cbc8b58aa500",
+          "input_bytes": 279,
+          "http_seconds": 418.07401655500007,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.129994,
+            "ptm": 0.160841,
+            "server_seconds": 418.0722918649999
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 418.0742869999999
+        },
+        {
+          "request_id": "openfold3-baseline-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:33:42.178122+00:00",
+          "input_sha256": "3ec638e5909c9e9ed67ac3005ce294b794011cb532164c7cb461bc5579769773",
+          "input_bytes": 362,
+          "http_seconds": 9.872265508000055,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.079679,
+            "ptm": 0.165838,
+            "server_seconds": 9.87000249699986
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.87269685199999
+        },
+        {
+          "request_id": "openfold3-baseline-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:34:20.385292+00:00",
+          "input_sha256": "a0e1342dc6e4892dbaf4d300fe0679943b1e9e65750817ba3148a58511433c9a",
+          "input_bytes": 447,
+          "http_seconds": 9.997878111999853,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.056849,
+            "ptm": 0.20247,
+            "server_seconds": 9.995237829999951
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.998501794999811
+        },
+        {
+          "request_id": "openfold3-baseline-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:35:00.379682+00:00",
+          "input_sha256": "cf1acde718164fbb94091a7d2ee917c93a1427a5133a401487674d9f6765b193",
+          "input_bytes": 592,
+          "http_seconds": 11.13771141899997,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.262107,
+            "ptm": 0.51184,
+            "server_seconds": 11.134828549000304
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 11.138435856000342
+        },
+        {
+          "request_id": "openfold3-baseline-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:35:45.141803+00:00",
+          "input_sha256": "13cf2ba23afe7a873b63bf89e55d2133b202ff34fa593632d41ecdd513cbd4f4",
+          "input_bytes": 285551,
+          "http_seconds": 9.468047955000202,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.145328,
+            "ptm": 0.726639,
+            "server_seconds": 9.465096223999808
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.468382056000337
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:22:43Z",
+        "evidence_collected_utc": "2026-09-15T21:37:32.270904+00:00",
+        "lower_seconds": 889.2709040641785,
+        "upper_seconds": 924.0,
+        "upper_bound_source": "Next exclusive task GPU pod scheduled; exact earlier deletion time unavailable.",
+        "gpu_seconds_per_valid_request_lower": 38.663952350616455,
+        "gpu_seconds_per_valid_request_upper": 40.17391304347826,
+        "valid_per_allocated_gpu_hour_lower": 89.6103896103896,
+        "valid_per_allocated_gpu_hour_upper": 93.10998439461407
+      },
+      "image_pull_events": [
+        "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" in 2m50.019s (2m50.019s including waiting). Image size: 9907578964 bytes."
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "6",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://15bad24a6ae09801f1a730066a3440358a03e904e4387045d0647da526459826",
+          "image": "sha256:4422a00c43403ab331aad4137cd5856ef6aaea5e4ff1bede4e22df86e0d654e6",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "ephemeral-storage": "60Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "6",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:25:39Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/model-cache",
+              "name": "model-cache"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:25:59Z",
+      "mixed": {
+        "seconds": 29.454159066000102,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 0,
+        "expected_400_rejections": 0,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 418.0742869999999,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 632.7452919483185,
+      "sum_native_locked_inference_seconds": 634.476030066,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.954625743999713,
+          "min_seconds": 9.952220515000135,
+          "max_seconds": 10.078483335999863,
+          "individual_seconds": [
+            9.952220515000135,
+            10.078483335999863,
+            9.954625743999713
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 8.817253641000207,
+          "min_seconds": 8.78085731100009,
+          "max_seconds": 8.826915185999951,
+          "individual_seconds": [
+            8.817253641000207,
+            8.826915185999951,
+            8.78085731100009
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 9.445061788000203,
+          "min_seconds": 9.432843038000101,
+          "max_seconds": 9.447440698999799,
+          "individual_seconds": [
+            9.432843038000101,
+            9.447440698999799,
+            9.445061788000203
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 11.13663036800017,
+          "min_seconds": 10.775786960999994,
+          "max_seconds": 11.699069378999866,
+          "individual_seconds": [
+            11.699069378999866,
+            11.13663036800017,
+            10.775786960999994
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 9.407589050000297,
+          "min_seconds": 9.3215104410001,
+          "max_seconds": 9.415055593000034,
+          "individual_seconds": [
+            9.407589050000297,
+            9.415055593000034,
+            9.3215104410001
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-baseline-l40s",
+      "model": "openfold3",
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 11.706451721000121,
+          "min_seconds": 11.635218181998425,
+          "max_seconds": 11.904669921001187,
+          "individual_seconds": [
+            11.904669921001187,
+            11.706451721000121,
+            11.635218181998425
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 10.867862920000334,
+          "min_seconds": 10.864958860000115,
+          "max_seconds": 10.970643544998893,
+          "individual_seconds": [
+            10.864958860000115,
+            10.970643544998893,
+            10.867862920000334
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 11.222919220999756,
+          "min_seconds": 11.1661729690004,
+          "max_seconds": 11.302664762999484,
+          "individual_seconds": [
+            11.222919220999756,
+            11.1661729690004,
+            11.302664762999484
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 13.58795628199914,
+          "min_seconds": 13.408509688999402,
+          "max_seconds": 13.96517219999987,
+          "individual_seconds": [
+            13.96517219999987,
+            13.58795628199914,
+            13.408509688999402
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 11.156061300000147,
+          "min_seconds": 11.083875411999543,
+          "max_seconds": 11.216883825998593,
+          "individual_seconds": [
+            11.083875411999543,
+            11.216883825998593,
+            11.156061300000147
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-baseline-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:51:25.505663+00:00",
+          "input_sha256": "4b947f4217b1a1b2040007567002aca054963f82a6c429f14d17cbc8b58aa500",
+          "input_bytes": 279,
+          "http_seconds": 438.031320039001,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.119641,
+            "ptm": 0.163423,
+            "server_seconds": 438.0296066110004
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 438.0315662640005
+        },
+        {
+          "request_id": "openfold3-baseline-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:59:16.241568+00:00",
+          "input_sha256": "3ec638e5909c9e9ed67ac3005ce294b794011cb532164c7cb461bc5579769773",
+          "input_bytes": 362,
+          "http_seconds": 11.630523358000573,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.134002,
+            "ptm": 0.166132,
+            "server_seconds": 11.628244993000408
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 11.630905853000513
+        },
+        {
+          "request_id": "openfold3-baseline-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:00:01.565140+00:00",
+          "input_sha256": "a0e1342dc6e4892dbaf4d300fe0679943b1e9e65750817ba3148a58511433c9a",
+          "input_bytes": 447,
+          "http_seconds": 12.041844348999803,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.059324,
+            "ptm": 0.203161,
+            "server_seconds": 12.039192693000587
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 12.042424809000295
+        },
+        {
+          "request_id": "openfold3-baseline-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:00:48.854873+00:00",
+          "input_sha256": "cf1acde718164fbb94091a7d2ee917c93a1427a5133a401487674d9f6765b193",
+          "input_bytes": 592,
+          "http_seconds": 13.686593345999427,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.265979,
+            "ptm": 0.512046,
+            "server_seconds": 13.68347403900043
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 13.687249992999568
+        },
+        {
+          "request_id": "openfold3-baseline-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "baseline",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:01:43.505538+00:00",
+          "input_sha256": "13cf2ba23afe7a873b63bf89e55d2133b202ff34fa593632d41ecdd513cbd4f4",
+          "input_bytes": 285551,
+          "http_seconds": 11.210918036998919,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.14518,
+            "ptm": 0.725902,
+            "server_seconds": 11.208035207000648
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 11.21123507899938
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:47:47Z",
+        "evidence_collected_utc": "2026-09-15T22:03:12.288757+00:00",
+        "lower_seconds": 938.3705160617828,
+        "upper_seconds": 970.8813378810883,
+        "delete_requested_utc": "2026-09-15T22:03:25.370516+00:00",
+        "deleted_observed_utc": "2026-09-15T22:03:57.881338+00:00",
+        "gpu_seconds_per_valid_request_lower": 40.79871808964273,
+        "gpu_seconds_per_valid_request_upper": 42.212232081786446,
+        "valid_per_allocated_gpu_hour_lower": 85.28333666471318,
+        "valid_per_allocated_gpu_hour_upper": 88.23806650223908
+      },
+      "image_pull_events": [
+        "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" in 2m59.335s (2m59.335s including waiting). Image size: 9907578964 bytes."
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "6",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://96104eebb78d42c0b8a09e1c9af8864a2f3a1b539ee6c743c8b62353e03049ed",
+          "image": "sha256:4422a00c43403ab331aad4137cd5856ef6aaea5e4ff1bede4e22df86e0d654e6",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "ephemeral-storage": "60Gi",
+              "memory": "48Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "6",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:50:56Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/model-cache",
+              "name": "model-cache"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:51:18Z",
+      "mixed": {
+        "seconds": 35.29789403599898,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 7,
+        "expected_400_rejections": 7,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 438.0315662640005,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 656.5372292995453,
+      "sum_native_locked_inference_seconds": 697.8960110880016,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 11.703397848999884,
+          "min_seconds": 11.632208704000732,
+          "max_seconds": 11.901548728001217,
+          "individual_seconds": [
+            11.901548728001217,
+            11.703397848999884,
+            11.632208704000732
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 10.865728796999974,
+          "min_seconds": 10.86290071700023,
+          "max_seconds": 10.968420977998903,
+          "individual_seconds": [
+            10.86290071700023,
+            10.968420977998903,
+            10.865728796999974
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 11.220357604001038,
+          "min_seconds": 11.163533412000106,
+          "max_seconds": 11.300093473999368,
+          "individual_seconds": [
+            11.220357604001038,
+            11.163533412000106,
+            11.300093473999368
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 13.58445179499904,
+          "min_seconds": 13.404983137999807,
+          "max_seconds": 13.96181680799964,
+          "individual_seconds": [
+            13.96181680799964,
+            13.58445179499904,
+            13.404983137999807
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 11.152859928999533,
+          "min_seconds": 11.08041011900059,
+          "max_seconds": 11.213724688001093,
+          "individual_seconds": [
+            11.08041011900059,
+            11.213724688001093,
+            11.152859928999533
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-bir-float32-graph-resident-r7-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 3.9715376879994437,
+          "min_seconds": 3.9647694679997585,
+          "max_seconds": 3.9892298790000496,
+          "individual_seconds": [
+            3.9647694679997585,
+            3.9892298790000496,
+            3.9715376879994437
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 2.291311369000141,
+          "min_seconds": 2.284348308000517,
+          "max_seconds": 2.293464662999213,
+          "individual_seconds": [
+            2.291311369000141,
+            2.284348308000517,
+            2.293464662999213
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 2.9833230460008053,
+          "min_seconds": 2.978757640999902,
+          "max_seconds": 2.9836511349994908,
+          "individual_seconds": [
+            2.9833230460008053,
+            2.9836511349994908,
+            2.978757640999902
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 5.673769170000014,
+          "min_seconds": 5.648818738000045,
+          "max_seconds": 5.678065383999638,
+          "individual_seconds": [
+            5.673769170000014,
+            5.678065383999638,
+            5.648818738000045
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 2.8378181389998645,
+          "min_seconds": 2.8306671950003874,
+          "max_seconds": 2.885392942999715,
+          "individual_seconds": [
+            2.8378181389998645,
+            2.885392942999715,
+            2.8306671950003874
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-bir-graph-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:28:13.332228+00:00",
+          "input_sha256": "ad5e31f4c1cc295db9446dcaa75ac94ec213dbb7f65466578e7354145ed99603",
+          "input_bytes": 281,
+          "http_seconds": 6.0694671640003435,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.130252,
+            "ptm": 0.162132,
+            "server_seconds": 6.06769082899973
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 6.06970981700033
+        },
+        {
+          "request_id": "openfold3-bir-graph-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:28:26.271906+00:00",
+          "input_sha256": "da9dd1d4fe989877326f7efd2d6e6fcb825667a83e446a6d34760e9d60d0a42f",
+          "input_bytes": 364,
+          "http_seconds": 3.777177758999642,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.134036,
+            "ptm": 0.166303,
+            "server_seconds": 3.7748085630000787
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 3.7776593979997415
+        },
+        {
+          "request_id": "openfold3-bir-graph-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:28:38.996190+00:00",
+          "input_sha256": "be3bcb68d3aae90214f36709291ef9e020f7909b5b533eef505197eb16fc1975",
+          "input_bytes": 449,
+          "http_seconds": 4.28398960100003,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.056861,
+            "ptm": 0.202531,
+            "server_seconds": 4.281393301000207
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 4.28466253499937
+        },
+        {
+          "request_id": "openfold3-bir-graph-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:28:55.207519+00:00",
+          "input_sha256": "f1f1975e9a7a0557a63549ddb7bd593b39ad634634b77f429c53d0e8f68407ec",
+          "input_bytes": 594,
+          "http_seconds": 5.844875631999457,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.268133,
+            "ptm": 0.521592,
+            "server_seconds": 5.841595367000082
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 5.845737896999708
+        },
+        {
+          "request_id": "openfold3-bir-graph-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:29:18.055978+00:00",
+          "input_sha256": "192f358f35ca8c3a3ded3f29960dbadee80094c453f8fee4ac51220704574723",
+          "input_bytes": 285553,
+          "http_seconds": 3.1281110370000533,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.145257,
+            "ptm": 0.726286,
+            "server_seconds": 3.124957624999297
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 3.128580513000088
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T22:26:18Z",
+        "evidence_collected_utc": "2026-09-15T22:29:50.577312+00:00",
+        "lower_seconds": 217.95564699172974,
+        "upper_seconds": 249.93085598945618,
+        "delete_requested_utc": "2026-09-15T22:29:55.955647+00:00",
+        "deleted_observed_utc": "2026-09-15T22:30:27.930856+00:00",
+        "gpu_seconds_per_valid_request_lower": 9.476332477901293,
+        "gpu_seconds_per_valid_request_upper": 10.866558956063312,
+        "valid_per_allocated_gpu_hour_lower": 331.29162732709193,
+        "valid_per_allocated_gpu_hour_upper": 379.89380473882295
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://f6a7d09bfee39f6c35cdaa4d1de5d004605b052b66daeedd2e60641494ec3174",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:26:54Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T22:28:00Z",
+      "mixed": {
+        "seconds": 9.32721833800042,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 7,
+        "expected_400_rejections": 7,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 6.06970981700033,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 121.40193772315979,
+      "sum_native_locked_inference_seconds": 85.65877533100047,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 3.9683508069992968,
+          "min_seconds": 3.961339663000217,
+          "max_seconds": 3.985878739000327,
+          "individual_seconds": [
+            3.961339663000217,
+            3.985878739000327,
+            3.9683508069992968
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 2.2890929889999825,
+          "min_seconds": 2.282247537999865,
+          "max_seconds": 2.291190341999936,
+          "individual_seconds": [
+            2.2890929889999825,
+            2.282247537999865,
+            2.291190341999936
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 2.9806056269999317,
+          "min_seconds": 2.976177858000483,
+          "max_seconds": 2.980993455999851,
+          "individual_seconds": [
+            2.9806056269999317,
+            2.980993455999851,
+            2.976177858000483
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 5.669926388000022,
+          "min_seconds": 5.644970891999947,
+          "max_seconds": 5.6742785120004555,
+          "individual_seconds": [
+            5.669926388000022,
+            5.6742785120004555,
+            5.644970891999947
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 2.8344199080002,
+          "min_seconds": 2.827107029000217,
+          "max_seconds": 2.8817898269999205,
+          "individual_seconds": [
+            2.8344199080002,
+            2.8817898269999205,
+            2.827107029000217
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-bir-float32-graph-resident-r7-l40s",
+      "model": "openfold3",
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 5.9323376680004,
+          "min_seconds": 5.916933094000342,
+          "max_seconds": 5.93783287000042,
+          "individual_seconds": [
+            5.916933094000342,
+            5.93783287000042,
+            5.9323376680004
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 2.530494018999889,
+          "min_seconds": 2.5253425920000154,
+          "max_seconds": 2.5338051760008966,
+          "individual_seconds": [
+            2.530494018999889,
+            2.5253425920000154,
+            2.5338051760008966
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 3.299045686999307,
+          "min_seconds": 3.267893059999551,
+          "max_seconds": 3.3051733579995926,
+          "individual_seconds": [
+            3.299045686999307,
+            3.3051733579995926,
+            3.267893059999551
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 10.549841799000205,
+          "min_seconds": 10.539187402999232,
+          "max_seconds": 10.563520806999804,
+          "individual_seconds": [
+            10.549841799000205,
+            10.539187402999232,
+            10.563520806999804
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 3.15489921399967,
+          "min_seconds": 3.1504977120002877,
+          "max_seconds": 3.3755279060005705,
+          "individual_seconds": [
+            3.3755279060005705,
+            3.1504977120002877,
+            3.15489921399967
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-bir-graph-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:14:08.481853+00:00",
+          "input_sha256": "ad5e31f4c1cc295db9446dcaa75ac94ec213dbb7f65466578e7354145ed99603",
+          "input_bytes": 281,
+          "http_seconds": 7.001929734000441,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.119278,
+            "ptm": 0.161608,
+            "server_seconds": 6.999940263000099
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 7.0021941899995
+        },
+        {
+          "request_id": "openfold3-bir-graph-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:14:23.074703+00:00",
+          "input_sha256": "da9dd1d4fe989877326f7efd2d6e6fcb825667a83e446a6d34760e9d60d0a42f",
+          "input_bytes": 364,
+          "http_seconds": 4.4870956809991185,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.083576,
+            "ptm": 0.165944,
+            "server_seconds": 4.4849074550002115
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 4.48758733700015
+        },
+        {
+          "request_id": "openfold3-bir-graph-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:14:37.435478+00:00",
+          "input_sha256": "be3bcb68d3aae90214f36709291ef9e020f7909b5b533eef505197eb16fc1975",
+          "input_bytes": 449,
+          "http_seconds": 6.236563725000451,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.056946,
+            "ptm": 0.202955,
+            "server_seconds": 6.234006494998539
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 6.237222620000466
+        },
+        {
+          "request_id": "openfold3-bir-graph-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:15:01.461019+00:00",
+          "input_sha256": "f1f1975e9a7a0557a63549ddb7bd593b39ad634634b77f429c53d0e8f68407ec",
+          "input_bytes": 594,
+          "http_seconds": 10.565130449000208,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.2685,
+            "ptm": 0.522675,
+            "server_seconds": 10.56209431500065
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 10.565987357000267
+        },
+        {
+          "request_id": "openfold3-bir-graph-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "bir-graph",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:15:43.681740+00:00",
+          "input_sha256": "192f358f35ca8c3a3ded3f29960dbadee80094c453f8fee4ac51220704574723",
+          "input_bytes": 285553,
+          "http_seconds": 3.844851320000089,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.145227,
+            "ptm": 0.726133,
+            "server_seconds": 3.8417779890005477
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 3.8452556190004543
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T22:11:56Z",
+        "evidence_collected_utc": "2026-09-15T22:16:20.508456+00:00",
+        "lower_seconds": 365.2070701122284,
+        "upper_seconds": 397.69628405570984,
+        "delete_requested_utc": "2026-09-15T22:18:01.207070+00:00",
+        "deleted_observed_utc": "2026-09-15T22:18:33.696284+00:00",
+        "gpu_seconds_per_valid_request_lower": 15.878568265749061,
+        "gpu_seconds_per_valid_request_upper": 17.291142785030864,
+        "valid_per_allocated_gpu_hour_lower": 208.19907884379745,
+        "valid_per_allocated_gpu_hour_upper": 226.7206929333419
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://39caf4de5595fab594f2e4e0050cdaab369e8a0d8ff37f3ddca9b15a1333d853",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "48Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:12:35Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T22:13:56Z",
+      "mixed": {
+        "seconds": 11.805943654000657,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 7,
+        "expected_400_rejections": 7,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 7.0021941899995,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 139.48404717445374,
+      "sum_native_locked_inference_seconds": 120.457471816002,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 5.928935548001391,
+          "min_seconds": 5.913552279000214,
+          "max_seconds": 5.9346947699996235,
+          "individual_seconds": [
+            5.913552279000214,
+            5.9346947699996235,
+            5.928935548001391
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 2.5282907460004935,
+          "min_seconds": 2.523180725000202,
+          "max_seconds": 2.531665858999986,
+          "individual_seconds": [
+            2.5282907460004935,
+            2.523180725000202,
+            2.531665858999986
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 3.296198154999729,
+          "min_seconds": 3.265360135001174,
+          "max_seconds": 3.3025007659998664,
+          "individual_seconds": [
+            3.296198154999729,
+            3.3025007659998664,
+            3.265360135001174
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 10.545895834000476,
+          "min_seconds": 10.535400336999373,
+          "max_seconds": 10.559534613999858,
+          "individual_seconds": [
+            10.545895834000476,
+            10.535400336999373,
+            10.559534613999858
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 3.1514172890001646,
+          "min_seconds": 3.147082307999881,
+          "max_seconds": 3.372069494000243,
+          "individual_seconds": [
+            3.372069494000243,
+            3.147082307999881,
+            3.1514172890001646
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-bir-float32-r2-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 0,
+      "valid": 0,
+      "invalid": 0,
+      "startup_failed_without_requests": true,
+      "warm": {},
+      "first_shape": [],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:38:07Z",
+        "evidence_collected_utc": "2026-09-15T21:41:16.911084+00:00",
+        "lower_seconds": 190.88275909423828,
+        "upper_seconds": 191.99138498306274,
+        "delete_requested_utc": "2026-09-15T21:41:17.882759+00:00",
+        "deleted_observed_utc": "2026-09-15T21:41:18.991385+00:00"
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" in 57.243s (57.243s including waiting). Image size: 3604083011 bytes."
+      ],
+      "container_states": [
+        {
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "imageID": "",
+          "lastState": {},
+          "name": "model",
+          "ready": false,
+          "restartCount": 0,
+          "started": false,
+          "state": {
+            "waiting": {
+              "reason": "PodInitializing"
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:38:07Z",
+      "mixed": null,
+      "negative_contract_probes": {
+        "attempts": 0,
+        "expected_400_rejections": 0,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      }
+    },
+    {
+      "resource": "openfold3-bir-float32-r3-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 0,
+      "valid": 0,
+      "invalid": 0,
+      "startup_failed_without_requests": true,
+      "warm": {},
+      "first_shape": [],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:41:22Z",
+        "evidence_collected_utc": "2026-09-15T21:43:55.142429+00:00",
+        "lower_seconds": 154.17729902267456,
+        "upper_seconds": 186.1499650478363,
+        "delete_requested_utc": "2026-09-15T21:43:56.177299+00:00",
+        "deleted_observed_utc": "2026-09-15T21:44:28.149965+00:00"
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://3f4f6fe1c14dc3c511b6c2c3b66e5eb24babda86aea1040ef3ef2a462c9a2112",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": false,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:42:01Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:41:22Z",
+      "mixed": null,
+      "negative_contract_probes": {
+        "attempts": 0,
+        "expected_400_rejections": 0,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      }
+    },
+    {
+      "resource": "openfold3-bir-float32-r4-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 0,
+      "valid": 0,
+      "invalid": 0,
+      "startup_failed_without_requests": true,
+      "warm": {},
+      "first_shape": [],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:44:29Z",
+        "evidence_collected_utc": "2026-09-15T21:47:54.449130+00:00",
+        "lower_seconds": 206.41962003707886,
+        "upper_seconds": 238.10262298583984,
+        "delete_requested_utc": "2026-09-15T21:47:55.419620+00:00",
+        "deleted_observed_utc": "2026-09-15T21:48:27.102623+00:00"
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://3a9c693815c2f55675176b8a9a563a5446473ed0c081087e9210ccfd31d6f2f0",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": false,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:45:08Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:44:29Z",
+      "mixed": null,
+      "negative_contract_probes": {
+        "attempts": 0,
+        "expected_400_rejections": 0,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      }
+    },
+    {
+      "resource": "openfold3-bir-float32-r5-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.84405215300012,
+          "min_seconds": 9.826660685999741,
+          "max_seconds": 9.940587727000093,
+          "individual_seconds": [
+            9.84405215300012,
+            9.940587727000093,
+            9.826660685999741
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 8.62676905599983,
+          "min_seconds": 8.619188138000027,
+          "max_seconds": 8.823407308999776,
+          "individual_seconds": [
+            8.62676905599983,
+            8.619188138000027,
+            8.823407308999776
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 9.084174360999896,
+          "min_seconds": 9.083358025999587,
+          "max_seconds": 9.366561312999693,
+          "individual_seconds": [
+            9.083358025999587,
+            9.084174360999896,
+            9.366561312999693
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 11.411968095000702,
+          "min_seconds": 11.387278004000109,
+          "max_seconds": 11.771715312000197,
+          "individual_seconds": [
+            11.411968095000702,
+            11.387278004000109,
+            11.771715312000197
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 9.084791072999906,
+          "min_seconds": 9.037065820999487,
+          "max_seconds": 9.100015416000133,
+          "individual_seconds": [
+            9.084791072999906,
+            9.037065820999487,
+            9.100015416000133
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-bir-float32-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:50:29.627584+00:00",
+          "input_sha256": "9b2624a94920b9f32ac51fa76062842a3cea81be4b5fd256245b6ba7806ba818",
+          "input_bytes": 285,
+          "http_seconds": 12.631698662999952,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.073202,
+            "ptm": 0.14862,
+            "server_seconds": 12.629830738000237
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 12.63204066399976
+        },
+        {
+          "request_id": "openfold3-bir-float32-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:51:08.329874+00:00",
+          "input_sha256": "5b34f8c02406dd88db9e4c95eae360a1524f54d15e888e69a609bf9ea85f7594",
+          "input_bytes": 368,
+          "http_seconds": 10.209133571000166,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.041422,
+            "ptm": 0.16835,
+            "server_seconds": 10.206831631000568
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 10.209587344999818
+        },
+        {
+          "request_id": "openfold3-bir-float32-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:51:46.074464+00:00",
+          "input_sha256": "97cb7942abcb5bc4c3e3acfbcde28694ddfced81bf901cc38845e5470c641dbb",
+          "input_bytes": 453,
+          "http_seconds": 10.192277311999533,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.053023,
+            "ptm": 0.159977,
+            "server_seconds": 10.189510889000303
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 10.192889600999479
+        },
+        {
+          "request_id": "openfold3-bir-float32-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:52:25.879580+00:00",
+          "input_sha256": "6ec86ff7a814beea6b2ce3a3966abaafbdc3f6b981dfbf2313b731a6fa9552a1",
+          "input_bytes": 598,
+          "http_seconds": 11.493763086999934,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.273914,
+            "ptm": 0.519724,
+            "server_seconds": 11.490802080000321
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 11.494547657999647
+        },
+        {
+          "request_id": "openfold3-bir-float32-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "bir-float32",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:53:11.946762+00:00",
+          "input_sha256": "4bf736f59e89d1edbad82f72c3247563edfff35446dad9c4eaf26018ea2bc633",
+          "input_bytes": 285557,
+          "http_seconds": 9.273609896999915,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.145242,
+            "ptm": 0.726212,
+            "server_seconds": 9.270571386000483
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.273971622000317
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:48:28Z",
+        "evidence_collected_utc": "2026-09-15T21:54:29.122778+00:00",
+        "lower_seconds": 388.6592230796814,
+        "upper_seconds": 420.9647319316864,
+        "delete_requested_utc": "2026-09-15T21:54:56.659223+00:00",
+        "deleted_observed_utc": "2026-09-15T21:55:28.964732+00:00",
+        "gpu_seconds_per_valid_request_lower": 16.89822709042093,
+        "gpu_seconds_per_valid_request_upper": 18.302814431812454,
+        "valid_per_allocated_gpu_hour_lower": 196.6910615529585,
+        "valid_per_allocated_gpu_hour_upper": 213.04010064113328
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://c5de1b3d47eb559bd68c7e634be2c0ec29bd1f8001c04befde965b671388657b",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:49:05Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:50:17Z",
+      "mixed": {
+        "seconds": 29.01923268900009,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 7,
+        "expected_400_rejections": 7,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 12.63204066399976,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 134.25962471961975,
+      "sum_native_locked_inference_seconds": 227.7614783900026,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.840530752999257,
+          "min_seconds": 9.823402742000326,
+          "max_seconds": 9.93731093399947,
+          "individual_seconds": [
+            9.840530752999257,
+            9.93731093399947,
+            9.823402742000326
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 8.624437173000842,
+          "min_seconds": 8.616984475000208,
+          "max_seconds": 8.821068061000005,
+          "individual_seconds": [
+            8.624437173000842,
+            8.616984475000208,
+            8.821068061000005
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 9.081620933000522,
+          "min_seconds": 9.080800794000425,
+          "max_seconds": 9.363918220999949,
+          "individual_seconds": [
+            9.080800794000425,
+            9.081620933000522,
+            9.363918220999949
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 11.40838259999964,
+          "min_seconds": 11.383585219999986,
+          "max_seconds": 11.76827493500059,
+          "individual_seconds": [
+            11.40838259999964,
+            11.383585219999986,
+            11.76827493500059
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 9.08131019099983,
+          "min_seconds": 9.033669034999548,
+          "max_seconds": 9.096653483999944,
+          "individual_seconds": [
+            9.08131019099983,
+            9.033669034999548,
+            9.096653483999944
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-bir-float32-r6-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.968393707999894,
+          "min_seconds": 9.929408798000622,
+          "max_seconds": 10.001312411000072,
+          "individual_seconds": [
+            10.001312411000072,
+            9.929408798000622,
+            9.968393707999894
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 8.663782463999269,
+          "min_seconds": 8.649941574999502,
+          "max_seconds": 8.669030975000169,
+          "individual_seconds": [
+            8.649941574999502,
+            8.669030975000169,
+            8.663782463999269
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 9.174114651000309,
+          "min_seconds": 9.169125477000307,
+          "max_seconds": 9.353725682000004,
+          "individual_seconds": [
+            9.174114651000309,
+            9.353725682000004,
+            9.169125477000307
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 11.436802696000086,
+          "min_seconds": 11.373447015999773,
+          "max_seconds": 11.841052664000017,
+          "individual_seconds": [
+            11.373447015999773,
+            11.436802696000086,
+            11.841052664000017
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 9.159997642000235,
+          "min_seconds": 9.15424198599976,
+          "max_seconds": 9.171896992999791,
+          "individual_seconds": [
+            9.171896992999791,
+            9.159997642000235,
+            9.15424198599976
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-bir-float32-native-rng-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-float32-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:57:25.413250+00:00",
+          "input_sha256": "fb1684000cf423985bc353c7888ec017df868b5b760ccf5652d0a1a3234dd694",
+          "input_bytes": 307,
+          "http_seconds": 13.769720076999874,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.13028,
+            "ptm": 0.16227,
+            "server_seconds": 13.767910237000251
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 13.770014945000185
+        },
+        {
+          "request_id": "openfold3-bir-float32-native-rng-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-float32-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:58:05.166880+00:00",
+          "input_sha256": "3b811afa4560c31f5a7e1106a7445a182c6943b3397c0b188070f3fcc5e489f2",
+          "input_bytes": 390,
+          "http_seconds": 10.116163933999815,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.134036,
+            "ptm": 0.166303,
+            "server_seconds": 10.110741843000142
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 10.116710371000408
+        },
+        {
+          "request_id": "openfold3-bir-float32-native-rng-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-float32-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:58:42.981404+00:00",
+          "input_sha256": "57e93ffb40c997c063fe1f0104acdb6ef32c527337cdee5cb76fc855617c11a5",
+          "input_bytes": 475,
+          "http_seconds": 10.160593419000179,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.056861,
+            "ptm": 0.202531,
+            "server_seconds": 10.158065017000808
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 10.161253969999962
+        },
+        {
+          "request_id": "openfold3-bir-float32-native-rng-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "bir-float32-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T21:59:23.042791+00:00",
+          "input_sha256": "c7500185098a06d155de3fb1df577d5673d1c3573011232b2eb1282f7cd399b8",
+          "input_bytes": 620,
+          "http_seconds": 11.4494955629998,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.268133,
+            "ptm": 0.521592,
+            "server_seconds": 11.446658032999949
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 11.450356972999543
+        },
+        {
+          "request_id": "openfold3-bir-float32-native-rng-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "bir-float32-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:00:09.146402+00:00",
+          "input_sha256": "d0cb0be538d2fc41d42a3d48c9e37048d2cbb7671c403e1db864a5f72bc8995c",
+          "input_bytes": 285579,
+          "http_seconds": 9.216297140999814,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.145257,
+            "ptm": 0.726286,
+            "server_seconds": 9.213113931000407
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.216718894000223
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T21:55:30Z",
+        "evidence_collected_utc": "2026-09-15T22:01:26.486226+00:00",
+        "lower_seconds": 371.2497000694275,
+        "upper_seconds": 403.3757779598236,
+        "delete_requested_utc": "2026-09-15T22:01:41.249700+00:00",
+        "deleted_observed_utc": "2026-09-15T22:02:13.375778+00:00",
+        "gpu_seconds_per_valid_request_lower": 16.141291307366412,
+        "gpu_seconds_per_valid_request_upper": 17.538077302601028,
+        "valid_per_allocated_gpu_hour_lower": 205.2676549365017,
+        "valid_per_allocated_gpu_hour_upper": 223.0304832152472
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://6b20a0603f3ffc1b77d1eb1d0b1b3f8eed0dc0069869f16245360100db2406a5",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T21:56:06Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T21:57:17Z",
+      "mixed": {
+        "seconds": 29.22307092400024,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 7,
+        "expected_400_rejections": 7,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 13.770014945000185,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 129.18326497077942,
+      "sum_native_locked_inference_seconds": 229.57691332000104,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.9651539890001,
+          "min_seconds": 9.926174123000237,
+          "max_seconds": 9.998178652000206,
+          "individual_seconds": [
+            9.998178652000206,
+            9.926174123000237,
+            9.9651539890001
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 8.661516858000141,
+          "min_seconds": 8.64764328199999,
+          "max_seconds": 8.666772244999265,
+          "individual_seconds": [
+            8.64764328199999,
+            8.666772244999265,
+            8.661516858000141
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 9.166523003000293,
+          "min_seconds": 9.166193260999535,
+          "max_seconds": 9.351067935000174,
+          "individual_seconds": [
+            9.166193260999535,
+            9.351067935000174,
+            9.166523003000293
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 11.432854270999997,
+          "min_seconds": 11.369729825999457,
+          "max_seconds": 11.837495253999805,
+          "individual_seconds": [
+            11.369729825999457,
+            11.432854270999997,
+            11.837495253999805
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 9.156508445999862,
+          "min_seconds": 9.150855073000457,
+          "max_seconds": 9.168428545000097,
+          "individual_seconds": [
+            9.168428545000097,
+            9.156508445999862,
+            9.150855073000457
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-bir-mixed-r6-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.106344802999956,
+          "min_seconds": 9.005929107000156,
+          "max_seconds": 9.135445849999996,
+          "individual_seconds": [
+            9.135445849999996,
+            9.005929107000156,
+            9.106344802999956
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 8.17096085799949,
+          "min_seconds": 8.095745659000386,
+          "max_seconds": 8.288347984999746,
+          "individual_seconds": [
+            8.17096085799949,
+            8.288347984999746,
+            8.095745659000386
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 8.753810162999798,
+          "min_seconds": 8.724023189000036,
+          "max_seconds": 8.78063918999942,
+          "individual_seconds": [
+            8.724023189000036,
+            8.78063918999942,
+            8.753810162999798
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 9.65944952799964,
+          "min_seconds": 9.567449086000124,
+          "max_seconds": 9.796894699000404,
+          "individual_seconds": [
+            9.65944952799964,
+            9.567449086000124,
+            9.796894699000404
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 8.681756191000204,
+          "min_seconds": 8.558957464000741,
+          "max_seconds": 8.689852733999942,
+          "individual_seconds": [
+            8.558957464000741,
+            8.689852733999942,
+            8.681756191000204
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:04:13.103152+00:00",
+          "input_sha256": "1f66ab3087dda3b732cb84aef8e921a703ebbe63d4b5f5b84fcee8a3fa4125c4",
+          "input_bytes": 303,
+          "http_seconds": 14.09315319199959,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.064835,
+            "ptm": 0.161132,
+            "server_seconds": 14.091378326999802
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 14.093468020999353
+        },
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:04:51.752528+00:00",
+          "input_sha256": "adfa12698a76a2f54add5c7d32652039502cecdb92208fad090b5390dd546a0b",
+          "input_bytes": 386,
+          "http_seconds": 10.17199881399938,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.079551,
+            "ptm": 0.165197,
+            "server_seconds": 10.16961579800045
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 10.172484904999692
+        },
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:05:28.184329+00:00",
+          "input_sha256": "367f428151ee460d2ad1287980d9dabbca50a9a863737cd6e3868a26434a2809",
+          "input_bytes": 471,
+          "http_seconds": 9.64565913899969,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.095612,
+            "ptm": 0.197685,
+            "server_seconds": 9.643089999999575
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.646318617999896
+        },
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:06:05.079454+00:00",
+          "input_sha256": "a54d0a13501c87fe75fbf3c16b0a735751616addcba1352ffc11ca93ea030296",
+          "input_bytes": 616,
+          "http_seconds": 9.909595173000525,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.273273,
+            "ptm": 0.528944,
+            "server_seconds": 9.906550237999909
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.910415676000412
+        },
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:06:44.015726+00:00",
+          "input_sha256": "b8d8d929b3494dec7b9c2c823db7c9fe16f47e9588f5372474a5c14ae455227f",
+          "input_bytes": 285575,
+          "http_seconds": 8.764400729000045,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.145656,
+            "ptm": 0.728279,
+            "server_seconds": 8.761318719999508
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 8.76484859700031
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T22:02:18Z",
+        "evidence_collected_utc": "2026-09-15T22:07:56.885148+00:00",
+        "lower_seconds": 379.9881520271301,
+        "upper_seconds": 412.20805311203003,
+        "delete_requested_utc": "2026-09-15T22:08:37.988152+00:00",
+        "deleted_observed_utc": "2026-09-15T22:09:10.208053+00:00",
+        "gpu_seconds_per_valid_request_lower": 16.521224001179572,
+        "gpu_seconds_per_valid_request_upper": 17.922089265740436,
+        "valid_per_allocated_gpu_hour_lower": 200.86943807838853,
+        "valid_per_allocated_gpu_hour_upper": 217.90153076690746
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "64Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://ee2a35f1f06876d6812bbd2f5b800489fd89d38121c0f32ff92a3a62394d8ed1",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "192Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:02:53Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T22:04:04Z",
+      "mixed": {
+        "seconds": 26.873616259999835,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 7,
+        "expected_400_rejections": 7,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 14.093468020999353,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 129.1966199874878,
+      "sum_native_locked_inference_seconds": 212.4060581699996,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.102794508000443,
+          "min_seconds": 9.002446475999932,
+          "max_seconds": 9.13211271900036,
+          "individual_seconds": [
+            9.13211271900036,
+            9.002446475999932,
+            9.102794508000443
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 8.168695587000002,
+          "min_seconds": 8.09342921300049,
+          "max_seconds": 8.286194823000187,
+          "individual_seconds": [
+            8.168695587000002,
+            8.286194823000187,
+            8.09342921300049
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 8.751130398999521,
+          "min_seconds": 8.721171639000204,
+          "max_seconds": 8.778048082000169,
+          "individual_seconds": [
+            8.721171639000204,
+            8.778048082000169,
+            8.751130398999521
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 9.655733786999917,
+          "min_seconds": 9.563794370999858,
+          "max_seconds": 9.79299137399994,
+          "individual_seconds": [
+            9.655733786999917,
+            9.563794370999858,
+            9.79299137399994
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 8.67834415499965,
+          "min_seconds": 8.555617576999794,
+          "max_seconds": 8.686171970999567,
+          "individual_seconds": [
+            8.555617576999794,
+            8.686171970999567,
+            8.67834415499965
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-bir-mixed-r6-l40s",
+      "model": "openfold3",
+      "gpu": "l40s",
+      "node": "computeinstance-e00dczh75qcnbj0bx8",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 11.250732987999072,
+          "min_seconds": 11.134153455999694,
+          "max_seconds": 11.253324217999761,
+          "individual_seconds": [
+            11.253324217999761,
+            11.250732987999072,
+            11.134153455999694
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 10.408032645000276,
+          "min_seconds": 10.376614920000065,
+          "max_seconds": 10.483724322999478,
+          "individual_seconds": [
+            10.376614920000065,
+            10.483724322999478,
+            10.408032645000276
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 10.768532643998697,
+          "min_seconds": 10.68925199000114,
+          "max_seconds": 10.784336823999183,
+          "individual_seconds": [
+            10.784336823999183,
+            10.768532643998697,
+            10.68925199000114
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 11.7876698580003,
+          "min_seconds": 11.717615342999125,
+          "max_seconds": 11.837497124999572,
+          "individual_seconds": [
+            11.717615342999125,
+            11.837497124999572,
+            11.7876698580003
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 10.698827505999361,
+          "min_seconds": 10.622951182000179,
+          "max_seconds": 10.790588017000118,
+          "individual_seconds": [
+            10.622951182000179,
+            10.790588017000118,
+            10.698827505999361
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:06:17.187707+00:00",
+          "input_sha256": "1f66ab3087dda3b732cb84aef8e921a703ebbe63d4b5f5b84fcee8a3fa4125c4",
+          "input_bytes": 303,
+          "http_seconds": 15.732629181000448,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.065397,
+            "ptm": 0.163942,
+            "server_seconds": 15.730826126000466
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 15.732900035000057
+        },
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:07:04.189995+00:00",
+          "input_sha256": "adfa12698a76a2f54add5c7d32652039502cecdb92208fad090b5390dd546a0b",
+          "input_bytes": 386,
+          "http_seconds": 12.77493530799984,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.153071,
+            "ptm": 0.164581,
+            "server_seconds": 12.772745734999262
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 12.775488138999208
+        },
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:07:49.208583+00:00",
+          "input_sha256": "367f428151ee460d2ad1287980d9dabbca50a9a863737cd6e3868a26434a2809",
+          "input_bytes": 471,
+          "http_seconds": 11.953377506999459,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.05303,
+            "ptm": 0.195057,
+            "server_seconds": 11.950791563000166
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 11.95401682499869
+        },
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:08:34.802076+00:00",
+          "input_sha256": "a54d0a13501c87fe75fbf3c16b0a735751616addcba1352ffc11ca93ea030296",
+          "input_bytes": 616,
+          "http_seconds": 11.702893952000522,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.286323,
+            "ptm": 0.516202,
+            "server_seconds": 11.69975086500017
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 11.703792157000862
+        },
+        {
+          "request_id": "openfold3-bir-mixed-native-rng-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "bir-mixed-native-rng",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:09:21.850995+00:00",
+          "input_sha256": "b8d8d929b3494dec7b9c2c823db7c9fe16f47e9588f5372474a5c14ae455227f",
+          "input_bytes": 285575,
+          "http_seconds": 12.523744500998873,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.146041,
+            "ptm": 0.730204,
+            "server_seconds": 12.520738356000948
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 12.524188204999518
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T22:04:04Z",
+        "evidence_collected_utc": "2026-09-15T22:10:51.174143+00:00",
+        "lower_seconds": 432.9663460254669,
+        "upper_seconds": 465.1584050655365,
+        "delete_requested_utc": "2026-09-15T22:11:16.966346+00:00",
+        "deleted_observed_utc": "2026-09-15T22:11:49.158405+00:00",
+        "gpu_seconds_per_valid_request_lower": 18.82462374023769,
+        "gpu_seconds_per_valid_request_upper": 20.224278481110282,
+        "valid_per_allocated_gpu_hour_lower": 178.00387803018253,
+        "valid_per_allocated_gpu_hour_upper": 191.2388820980782
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod",
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "8",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://2ba03e17fd92e9ea7907a45b62ef6c4e6b7c7be8754b0c94fa4565adc12aa573",
+          "image": "sha256:79d8c7bacaa62a2fcc776cc3cf6b1c0bea728f044817050dc20379f8a2ce7286",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-public@sha256:2fcd9e8fff2e1c20e676657bedc56689ded0abb2fc9863618398390ed22805ce",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "32",
+              "ephemeral-storage": "60Gi",
+              "memory": "48Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "8",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:04:44Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/payload",
+              "name": "payload"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "source"
+            },
+            {
+              "mountPath": "/deps",
+              "name": "deps"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T22:06:05Z",
+      "mixed": {
+        "seconds": 33.252645935001055,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 7,
+        "expected_400_rejections": 7,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 15.732900035000057,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 148.92060708999634,
+      "sum_native_locked_inference_seconds": 262.4764449710001,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 11.247509180000634,
+          "min_seconds": 11.13087900299979,
+          "max_seconds": 11.250016152000171,
+          "individual_seconds": [
+            11.250016152000171,
+            11.247509180000634,
+            11.13087900299979
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 10.405875366001055,
+          "min_seconds": 10.374325598999349,
+          "max_seconds": 10.481544275999113,
+          "individual_seconds": [
+            10.374325598999349,
+            10.481544275999113,
+            10.405875366001055
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 10.765951078999933,
+          "min_seconds": 10.686641246000363,
+          "max_seconds": 10.781551207999655,
+          "individual_seconds": [
+            10.781551207999655,
+            10.765951078999933,
+            10.686641246000363
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 11.783881594999912,
+          "min_seconds": 11.713649617999181,
+          "max_seconds": 11.833545890000096,
+          "individual_seconds": [
+            11.713649617999181,
+            11.833545890000096,
+            11.783881594999912
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 10.695262974000798,
+          "min_seconds": 10.61928527300006,
+          "max_seconds": 10.787057301999084,
+          "individual_seconds": [
+            10.61928527300006,
+            10.787057301999084,
+            10.695262974000798
+          ]
+        }
+      }
+    },
+    {
+      "resource": "openfold3-upstream-resident-h100",
+      "model": "openfold3",
+      "gpu": "h100",
+      "node": "computeinstance-e00j20a9hkb508cn4a",
+      "images": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c"
+      ],
+      "attempts": 23,
+      "valid": 23,
+      "invalid": 0,
+      "startup_failed_without_requests": false,
+      "warm": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.314956467999764,
+          "min_seconds": 9.230575500000668,
+          "max_seconds": 9.510000524999668,
+          "individual_seconds": [
+            9.314956467999764,
+            9.230575500000668,
+            9.510000524999668
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 7.657909820999521,
+          "min_seconds": 7.653267945999687,
+          "max_seconds": 7.7644424420004725,
+          "individual_seconds": [
+            7.657909820999521,
+            7.7644424420004725,
+            7.653267945999687
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 8.535003948999474,
+          "min_seconds": 8.39008142900002,
+          "max_seconds": 8.643373275000158,
+          "individual_seconds": [
+            8.39008142900002,
+            8.535003948999474,
+            8.643373275000158
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 10.356039209999835,
+          "min_seconds": 10.33194060400001,
+          "max_seconds": 10.63689271200019,
+          "individual_seconds": [
+            10.356039209999835,
+            10.33194060400001,
+            10.63689271200019
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 8.64783633299976,
+          "min_seconds": 8.54774782200002,
+          "max_seconds": 8.749748540999462,
+          "individual_seconds": [
+            8.64783633299976,
+            8.749748540999462,
+            8.54774782200002
+          ]
+        }
+      },
+      "first_shape": [
+        {
+          "request_id": "openfold3-upstream-resident-1crn-first_shape-0",
+          "case": "1crn",
+          "variant": "upstream-resident",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:15:06.974344+00:00",
+          "input_sha256": "2f19098e72d361aa17f3c81f490bd0238c5217a3df6d5ab7503ffb4067a97e43",
+          "input_bytes": 297,
+          "http_seconds": 419.0300022579995,
+          "status": 200,
+          "validation": {
+            "residues_expected": 46,
+            "confidence": 0.119228,
+            "ptm": 0.161359,
+            "server_seconds": 419.0284145360001
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 419.0303237169992
+        },
+        {
+          "request_id": "openfold3-upstream-resident-1lyz-first_shape-0",
+          "case": "1lyz",
+          "variant": "upstream-resident",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:22:29.081161+00:00",
+          "input_sha256": "0c99626b1091e9743904c70af3e86dc19919417f8232f60c35af30ceb9fabc68",
+          "input_bytes": 380,
+          "http_seconds": 9.037771618000079,
+          "status": 200,
+          "validation": {
+            "residues_expected": 129,
+            "confidence": 0.134004,
+            "ptm": 0.166142,
+            "server_seconds": 9.035773223999968
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.03818242899979
+        },
+        {
+          "request_id": "openfold3-upstream-resident-1ake-first_shape-0",
+          "case": "1ake",
+          "variant": "upstream-resident",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:23:03.688531+00:00",
+          "input_sha256": "cc6cb9629b2b9318886a2273e519dd7d38c363b0c7f221f8406ecda874ba84cc",
+          "input_bytes": 465,
+          "http_seconds": 9.32396062999942,
+          "status": 200,
+          "validation": {
+            "residues_expected": 214,
+            "confidence": 0.056969,
+            "ptm": 0.203068,
+            "server_seconds": 9.32156236300034
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 9.324590442000044
+        },
+        {
+          "request_id": "openfold3-upstream-resident-4hhb-first_shape-0",
+          "case": "4hhb",
+          "variant": "upstream-resident",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:23:41.069594+00:00",
+          "input_sha256": "cefc9a41d3c6fb9aa0e7512a1eea7ff5749f25eccb7c48eb84ffc760a41cf248",
+          "input_bytes": 610,
+          "http_seconds": 10.942037971999525,
+          "status": 200,
+          "validation": {
+            "residues_expected": 287,
+            "confidence": 0.262726,
+            "ptm": 0.510193,
+            "server_seconds": 10.939155595999182
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 10.942733277000116
+        },
+        {
+          "request_id": "openfold3-upstream-resident-T1031_msa-first_shape-0",
+          "case": "T1031_msa",
+          "variant": "upstream-resident",
+          "cohort": "first_shape",
+          "utc": "2026-09-15T22:24:23.338827+00:00",
+          "input_sha256": "aa2e0705e6a6259185cbbd4130558d07eeb124edfab1b2cdbab6ec9fea31b4a8",
+          "input_bytes": 285569,
+          "http_seconds": 8.948791453999547,
+          "status": 200,
+          "validation": {
+            "residues_expected": 95,
+            "confidence": 0.145299,
+            "ptm": 0.726497,
+            "server_seconds": 8.946008220000294
+          },
+          "valid": true,
+          "wall_to_validated_artifact_seconds": 8.94912534299965
+        }
+      ],
+      "gpu_allocation": {
+        "start_scheduled_utc": "2026-09-15T22:14:35Z",
+        "evidence_collected_utc": "2026-09-15T22:25:33.718297+00:00",
+        "lower_seconds": 664.4409000873566,
+        "upper_seconds": 696.9366428852081,
+        "delete_requested_utc": "2026-09-15T22:25:39.440900+00:00",
+        "deleted_observed_utc": "2026-09-15T22:26:11.936643+00:00",
+        "gpu_seconds_per_valid_request_lower": 28.888734786406808,
+        "gpu_seconds_per_valid_request_upper": 30.301593168922093,
+        "valid_per_allocated_gpu_hour_lower": 118.80563440777202,
+        "valid_per_allocated_gpu_hour_upper": 124.61604935685622
+      },
+      "image_pull_events": [
+        "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c\" already present on machine and can be accessed by the pod"
+      ],
+      "container_states": [
+        {
+          "allocatedResources": {
+            "cpu": "6",
+            "ephemeral-storage": "20Gi",
+            "memory": "32Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "containerID": "containerd://be8fff6657a748db8a66e951066d53ba7c7fdd28a9c273c1cd3e94941ff362c0",
+          "image": "sha256:4422a00c43403ab331aad4137cd5856ef6aaea5e4ff1bede4e22df86e0d654e6",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/openfold3-preview2@sha256:1e35247f0de8be59119ddf875c2631173a8c533c90f7b21e1c01ef70a069c00c",
+          "lastState": {},
+          "name": "model",
+          "ready": true,
+          "resources": {
+            "limits": {
+              "cpu": "16",
+              "ephemeral-storage": "60Gi",
+              "memory": "64Gi",
+              "nvidia.com/gpu": "1"
+            },
+            "requests": {
+              "cpu": "6",
+              "ephemeral-storage": "20Gi",
+              "memory": "32Gi",
+              "nvidia.com/gpu": "1"
+            }
+          },
+          "restartCount": 0,
+          "started": true,
+          "state": {
+            "running": {
+              "startedAt": "2026-09-15T22:14:36Z"
+            }
+          },
+          "user": {
+            "linux": {
+              "gid": 10001,
+              "supplementalGroups": [
+                10001
+              ],
+              "uid": 10001
+            }
+          },
+          "volumeMounts": [
+            {
+              "mountPath": "/model-cache",
+              "name": "model-cache"
+            },
+            {
+              "mountPath": "/dev/shm",
+              "name": "shm"
+            },
+            {
+              "mountPath": "/eval",
+              "name": "evaluation-source",
+              "readOnly": true,
+              "recursiveReadOnly": "Disabled"
+            }
+          ]
+        }
+      ],
+      "ready_transition_utc": "2026-09-15T22:14:57Z",
+      "mixed": {
+        "seconds": 26.32200093099982,
+        "attempts": 3,
+        "valid": 3,
+        "concurrency": 3,
+        "meaning": "HTTP concurrent queue, not tensor batching"
+      },
+      "negative_contract_probes": {
+        "attempts": 7,
+        "expected_400_rejections": 7,
+        "unexpected_statuses": [],
+        "meaning": "Deliberately invalid feature requests, separate from valid-inference denominator."
+      },
+      "accepted_to_first_basic_valid_artifact_seconds": 419.0303237169992,
+      "scheduled_to_first_basic_valid_artifact_seconds_including_operator_delay": 451.00466775894165,
+      "sum_native_locked_inference_seconds": 617.5127388190031,
+      "warm_native_locked_inference": {
+        "1ake": {
+          "n": 3,
+          "median_seconds": 9.311758198000462,
+          "min_seconds": 9.227516552000452,
+          "max_seconds": 9.506932743000107,
+          "individual_seconds": [
+            9.311758198000462,
+            9.227516552000452,
+            9.506932743000107
+          ]
+        },
+        "1crn": {
+          "n": 3,
+          "median_seconds": 7.656017634000818,
+          "min_seconds": 7.65123598900027,
+          "max_seconds": 7.7623035260003235,
+          "individual_seconds": [
+            7.656017634000818,
+            7.7623035260003235,
+            7.65123598900027
+          ]
+        },
+        "1lyz": {
+          "n": 3,
+          "median_seconds": 8.532587068000794,
+          "min_seconds": 8.387554826000269,
+          "max_seconds": 8.640964840000379,
+          "individual_seconds": [
+            8.387554826000269,
+            8.532587068000794,
+            8.640964840000379
+          ]
+        },
+        "4hhb": {
+          "n": 3,
+          "median_seconds": 10.352575748000163,
+          "min_seconds": 10.328198780000093,
+          "max_seconds": 10.633194054999876,
+          "individual_seconds": [
+            10.352575748000163,
+            10.328198780000093,
+            10.633194054999876
+          ]
+        },
+        "T1031_msa": {
+          "n": 3,
+          "median_seconds": 8.644645309000225,
+          "min_seconds": 8.544516557999486,
+          "max_seconds": 8.74657193999974,
+          "individual_seconds": [
+            8.644645309000225,
+            8.74657193999974,
+            8.544516557999486
+          ]
+        }
+      }
+    }
+  ]
+}

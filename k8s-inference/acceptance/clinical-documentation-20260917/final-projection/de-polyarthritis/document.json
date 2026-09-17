@@ -1,0 +1,1000 @@
+{
+  "schema": "clinical-documentation/v4",
+  "kind": "consultation",
+  "language": "de",
+  "transcript_sha256": "8d463199b45a9c943c7623b19a932c4efe8f29205ed23783c88e3a5f1b021e2e",
+  "facts": [
+    {
+      "id": "F0001",
+      "section": "history",
+      "statement": "Die Patientin Frau Miriam Klein klagt seit mehreren Wochen über Gelenkschmerzen, Schwellungen und Morgensteifigkeit in den Fingern.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S1",
+          "quote": "Die Patientin Frau Miriam Klein klagt seit mehreren Wochen über bestehende Gelenkschmerzen, Schwellungen und Morgensteifigkeit in den Fingern.  Gestern wurde sie in ihrer Hausarztpraxis diesbezüglich untersucht.  Auch wurde Blut abgenommen. Die Laborwerte sprechen im Kontext der Anamnese mit an Sicherheit grenzender Wahrscheinlichkeit für das Vorliegen",
+          "spans": [
+            {
+              "start": 0,
+              "end": 354
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0001",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Patientin seit mehreren Wochen unter Gelenkschmerzen, Schwellungen und Morgensteifigkeit in den Fingern leidet, wird durch die direkte und vollständige Übereinstimmung mit dem zitierten Textabschnitt (S1) gestützt. Die Angaben zur Dauer und Symptomen sind explizit im Kontext enthalten."
+      }
+    },
+    {
+      "id": "F0002",
+      "section": "background",
+      "statement": "Gestern wurde die Patientin in ihrer Hausarztpraxis untersucht und Blut abgenommen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S1",
+          "quote": "Die Patientin Frau Miriam Klein klagt seit mehreren Wochen über bestehende Gelenkschmerzen, Schwellungen und Morgensteifigkeit in den Fingern.  Gestern wurde sie in ihrer Hausarztpraxis diesbezüglich untersucht.  Auch wurde Blut abgenommen. Die Laborwerte sprechen im Kontext der Anamnese mit an Sicherheit grenzender Wahrscheinlichkeit für das Vorliegen",
+          "spans": [
+            {
+              "start": 0,
+              "end": 354
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0002",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Patientin gestern in ihrer Hausarztpraxis untersucht und Blut abgenommen wurde, wird durch den zitierten Textabschnitt direkt belegt: 'Gestern wurde sie in ihrer Hausarztpraxis diesbezüglich untersucht. Auch wurde Blut abgenommen.'"
+      }
+    },
+    {
+      "id": "F0003",
+      "section": "findings",
+      "statement": "Die Laborwerte sprechen im Kontext der Anamnese mit an Sicherheit grenzender Wahrscheinlichkeit für das Vorliegen einer chronischen Polyarthritis.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S1",
+          "quote": "Die Patientin Frau Miriam Klein klagt seit mehreren Wochen über bestehende Gelenkschmerzen, Schwellungen und Morgensteifigkeit in den Fingern.  Gestern wurde sie in ihrer Hausarztpraxis diesbezüglich untersucht.  Auch wurde Blut abgenommen. Die Laborwerte sprechen im Kontext der Anamnese mit an Sicherheit grenzender Wahrscheinlichkeit für das Vorliegen",
+          "spans": [
+            {
+              "start": 0,
+              "end": 354
+            }
+          ]
+        },
+        {
+          "source_id": "S2",
+          "quote": " einer chronischen Polyatritis.  Heute kommt die Patientin, um über das Ergebnis der Laboruntersuchungen zu sprechen.  Ihre Aufgabe ist es der Patientin die schlechte Nachricht zu übermitteln, dass sie an Gelenkräume erkrankt ist. Guten Tag von Klein, nehmen Sie auf Platz, Frau Klein, wie geht es hin? Soweit ganz gut heute Morgen war es nochmal so ein",
+          "spans": [
+            {
+              "start": 354,
+              "end": 707
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0003",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Laborwerte im Kontext der Anamnese mit an Sicherheit grenzender Wahrscheinlichkeit für eine chronische Polyarthritis sprechen, wird direkt durch die zitierten Textpassagen aus S1 und S2 gestützt. Der vollständige Satz setzt sich aus beiden Zitaten zusammen: S1 enthält den Beginn der Aussage über die Laborwerte und die Anamnese, S2 vervollständigt den Satz mit 'einer chronischen Polyatritis' (offensichtlich ein Tippfehler für 'Polyarthritis'). Der Kontext der Gelenkschmerzen, Schwellungen und Morgensteifigkeit wird in S1 genannt, was die Anamnese abdeckt. Obwohl 'Polyatritis' eine offensichtliche Fehlschreibung ist, ist der medizinische Begriff im Kontext klar identifizierbar als 'chronische Polyarthritis', und die Aussage wird wörtlich im kombinierten Zitat getroffen."
+      }
+    },
+    {
+      "id": "F0004",
+      "section": "history",
+      "statement": "Die Patientin nahm heute Morgen Ipophäen gegen die Schmerzen ein, danach ging es ihr besser.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " einer chronischen Polyatritis.  Heute kommt die Patientin, um über das Ergebnis der Laboruntersuchungen zu sprechen.  Ihre Aufgabe ist es der Patientin die schlechte Nachricht zu übermitteln, dass sie an Gelenkräume erkrankt ist. Guten Tag von Klein, nehmen Sie auf Platz, Frau Klein, wie geht es hin? Soweit ganz gut heute Morgen war es nochmal so ein",
+          "spans": [
+            {
+              "start": 354,
+              "end": 707
+            }
+          ]
+        },
+        {
+          "source_id": "S3",
+          "quote": " bisschen, da habe ich dann Ipophäen genommen und jetzt ist besser.  Diese Schmerzen, die sie seit ein paar Wochen.  Genau, weswegen ich gekommen bin.  Richtig.  Ich glaube wir hatten uns heute für abredet, um die Ergebnisse der Blutuntersuchung zu bestehen.  Genau nicht genau.  Ich würde auch gerne haben Sie selber eine Idee, wo die Schmerzen hier kommen?",
+          "spans": [
+            {
+              "start": 707,
+              "end": 1065
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0004",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Patientin heute Morgen Ipophäen gegen die Schmerzen eingenommen hat und es ihr danach besser ging, wird durch den direkten Zitatenteil 'da habe ich dann Ipophäen genommen und jetzt ist besser' im Kontext der morgendlichen Schmerzen gestützt. Das Zitat belegt sowohl die Einnahme als auch die Besserung."
+      }
+    },
+    {
+      "id": "F0005",
+      "section": "history",
+      "statement": "Die Patientin vermutete zunächst, dass die Schmerzen durch Volleyball oder eine leichte Prellung verursacht wurden.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S3",
+          "quote": " bisschen, da habe ich dann Ipophäen genommen und jetzt ist besser.  Diese Schmerzen, die sie seit ein paar Wochen.  Genau, weswegen ich gekommen bin.  Richtig.  Ich glaube wir hatten uns heute für abredet, um die Ergebnisse der Blutuntersuchung zu bestehen.  Genau nicht genau.  Ich würde auch gerne haben Sie selber eine Idee, wo die Schmerzen hier kommen?",
+          "spans": [
+            {
+              "start": 707,
+              "end": 1065
+            }
+          ]
+        },
+        {
+          "source_id": "S4",
+          "quote": " Ich habe es gedacht, es geben vom Volleyball oder so, sondern irgendwie leichte Prellung oder irgendwie sonst nix.  Ich habe tatsächlich eine nicht so gute Nachhalt für sie.  Die Laborwerte, die wir abgenommen haben, sprechen dafür, dass bei Ihnen einen Rollenmar vorliegt, ein Gelenkrolmar weiß nicht, ob Sie davon schon mal was gehört haben.  Ja doch",
+          "spans": [
+            {
+              "start": 1065,
+              "end": 1418
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0005",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Patientin die Schmerzen zunächst auf Volleyball oder eine leichte Prellung zurückführte, wird durch die direkte Aussage im zweiten Zitat (S4) belegt: 'Ich habe es gedacht, es geben vom Volleyball oder so, sondern irgendwie leichte Prellung oder irgendwie sonst nix.' Dies entspricht inhaltlich exakt der behaupteten Vermutung der Patientin."
+      }
+    },
+    {
+      "id": "F0008",
+      "section": "assessment",
+      "statement": "Der Arzt geht aktuell davon aus, dass die Patientin an rheumatoider Arthritis leidet, obwohl eine weitere Abklärung durch einen Rheumatologen geplant ist.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " schon, also meine Großtante hatte Räume.  Genau, aber das ist jetzt sicher, dass die Laborwehrte sind eindeutig dafür, ich denke, dass wenn der weiteren Behandlung nochmal einen Rheumatologen hinzuziehen würden, aber ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben. Geht jetzt ein bisschen plötzlich.  Das habe ich jetzt gar",
+          "spans": [
+            {
+              "start": 1418,
+              "end": 1775
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0008",
+        "verdict": "supported",
+        "reason": "Der Arzt äußert im Zitat klar: 'ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben', wobei 'räume' im Kontext als phonetische Verzerrung von 'rheumatoide Arthritis' zu verstehen ist, und erwähnt zugleich die geplante Konsultation eines Rheumatologen mit 'dass wenn der weiteren Behandlung nochmal einen Rheumatologen hinzuziehen würden'. Damit wird die Aussage, dass der Arzt aktuell von rheumatoider Arthritis ausgeht, obwohl eine weitere Abklärung geplant ist, direkt unterstützt."
+      }
+    },
+    {
+      "id": "F0009",
+      "section": "assessment",
+      "statement": "Der Arzt betont, dass der Verlauf der Erkrankung bei verschiedenen Menschen unterschiedlich sein kann und nicht vorhersagbar ist.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S6",
+          "quote": " nicht.  Habe ich gar nicht so erwartet.  Das nervig sie sagten, dass ihre Großtante das hatte. Ja später im Rollstuhl weiß irgendwie viel sie von Rollen wissen, ob es ihn helfen würde, wenn ich ihn dazu ein bisschen sage, das ist nicht immer bei jedem gleich.  Aber trotzdem endet er dann so, oder wir sind ein bisschen zu erzählen.  Das ist tatsächlich so,",
+          "spans": [
+            {
+              "start": 1775,
+              "end": 2133
+            }
+          ]
+        },
+        {
+          "source_id": "S7",
+          "quote": " dass es bei verschiedenen Menschen ganz unterschiedlich laufen kann. Und das was sie bei ihrer Großtante gesehen haben, muss nicht das sein, was bei ihnen auftritt.  Das ist überhaupt nicht vorhersagbar. Das ist vorstellbar, dass eine erbliche Komponente da ist, wenn das in der Familie war, aber das heißt überhaupt nicht, dass dann auch die Verläufe immer",
+          "spans": [
+            {
+              "start": 2133,
+              "end": 2491
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0009",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Verlauf der Erkrankung bei verschiedenen Menschen unterschiedlich sein kann und nicht vorhersagbar ist, wird durch die Zitate aus S6 und S7 gestützt. In S7 heißt es explizit: 'dass es bei verschiedenen Menschen ganz unterschiedlich laufen kann' und 'Das ist überhaupt nicht vorhersagbar', was die Behauptung direkt belegt."
+      }
+    },
+    {
+      "id": "F0010",
+      "section": "assessment",
+      "statement": "Ein erblicher Faktor ist möglich, aber kein Garant für einen ähnlichen Krankheitsverlauf wie bei der Großtante.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S7",
+          "quote": " dass es bei verschiedenen Menschen ganz unterschiedlich laufen kann. Und das was sie bei ihrer Großtante gesehen haben, muss nicht das sein, was bei ihnen auftritt.  Das ist überhaupt nicht vorhersagbar. Das ist vorstellbar, dass eine erbliche Komponente da ist, wenn das in der Familie war, aber das heißt überhaupt nicht, dass dann auch die Verläufe immer",
+          "spans": [
+            {
+              "start": 2133,
+              "end": 2491
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0010",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass ein erblicher Faktor möglich, aber kein Garant für einen ähnlichen Krankheitsverlauf wie bei der Großtante ist, wird durch die zitierte Passage direkt gestützt. Dort heißt es, dass eine erbliche Komponente vorstellbar sei, wenn die Erkrankung in der Familie vorkam, dies aber keineswegs bedeute, dass die Verläufe gleich seien, und dass das, was bei der Großtante beobachtet wurde, nicht zwangsläufig bei der Patientin auftreten müsse, da dies nicht vorhersagbar sei."
+      }
+    },
+    {
+      "id": "F0011",
+      "section": "plan",
+      "statement": "Es gibt Medikamente, mit denen die Erkrankung heute gut kontrolliert werden kann, um eine Fortschreitung und Gelenkzerstörung zu verhindern.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " gleich sind. Das heißt ja dann schon, dass ich jetzt schwere Medikamente nehmen muss oder hier läuft das ab.  Ja schwere Medikamente, also es gibt Medikamente, mit denen man heute die diese Erkrankung sehr gut häufig, sehr gut kontrollieren kann, so dass sie nicht fortschreitet und dass diese Gelenkserstörung gar nicht erst auftreten. Und die sind dann, da",
+          "spans": [
+            {
+              "start": 2491,
+              "end": 2850
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0011",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass es Medikamente gibt, mit denen die Erkrankung gut kontrolliert werden kann, um Fortschreitung und Gelenkzerstörung zu verhindern, wird durch die direkte Aussage im Zitat aus S8 gestützt: 'es gibt Medikamente, mit denen man heute die diese Erkrankung sehr gut häufig, sehr gut kontrollieren kann, so dass sie nicht fortschreitet und dass diese Gelenkserstörung gar nicht erst auftreten.'"
+      }
+    },
+    {
+      "id": "F0012",
+      "section": "plan",
+      "statement": "Die Medikamente sind nicht für jeden gut verträglich und erfordern eine engmaschige Überwachung.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S8",
+          "quote": " gleich sind. Das heißt ja dann schon, dass ich jetzt schwere Medikamente nehmen muss oder hier läuft das ab.  Ja schwere Medikamente, also es gibt Medikamente, mit denen man heute die diese Erkrankung sehr gut häufig, sehr gut kontrollieren kann, so dass sie nicht fortschreitet und dass diese Gelenkserstörung gar nicht erst auftreten. Und die sind dann, da",
+          "spans": [
+            {
+              "start": 2491,
+              "end": 2850
+            }
+          ]
+        },
+        {
+          "source_id": "S9",
+          "quote": " muss man, da muss man filmiert gucken, die sind nicht für jeden gut verträglich.  Das bedeutet, dass sie häufiger in die Praxis kommen müssen, als sie das gewohnt sind.  Auf der anderen Seite viele Patienten vertragen ja auch gut, ohne dass Nebenwirkung auftreten. Mein Beruf in Zukunft, also ich bin Sportlehrerin.  Das kann ich ja dann irgendwann nicht",
+          "spans": [
+            {
+              "start": 2850,
+              "end": 3205
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0012",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Medikamente nicht für jeden gut verträglich sind und eine engmaschige Überwachung erfordern, wird durch die Quelle S9 gestützt: 'die sind nicht für jeden gut verträglich. Das bedeutet, dass sie häufiger in die Praxis kommen müssen, als sie das gewohnt sind.' Dies impliziert die Notwendigkeit einer engmaschigen Überwachung aufgrund der Verträglichkeitsprobleme."
+      }
+    },
+    {
+      "id": "F0013",
+      "section": "plan",
+      "statement": "Die Patientin muss häufiger in die Praxis kommen als gewohnt, um die Therapie zu überwachen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " muss man, da muss man filmiert gucken, die sind nicht für jeden gut verträglich.  Das bedeutet, dass sie häufiger in die Praxis kommen müssen, als sie das gewohnt sind.  Auf der anderen Seite viele Patienten vertragen ja auch gut, ohne dass Nebenwirkung auftreten. Mein Beruf in Zukunft, also ich bin Sportlehrerin.  Das kann ich ja dann irgendwann nicht",
+          "spans": [
+            {
+              "start": 2850,
+              "end": 3205
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0013",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Patientin häufiger in die Praxis kommen muss als gewohnt, wird durch die direkte Aussage im Zitat aus S9 gestützt: 'Das bedeutet, dass sie häufiger in die Praxis kommen müssen, als sie das gewohnt sind.' Dies bezieht sich im Kontext auf die Notwendigkeit der Therapieüberwachung."
+      }
+    },
+    {
+      "id": "F0014",
+      "section": "assessment",
+      "statement": "Viele Patienten vertragen die Medikamente gut ohne Nebenwirkungen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " muss man, da muss man filmiert gucken, die sind nicht für jeden gut verträglich.  Das bedeutet, dass sie häufiger in die Praxis kommen müssen, als sie das gewohnt sind.  Auf der anderen Seite viele Patienten vertragen ja auch gut, ohne dass Nebenwirkung auftreten. Mein Beruf in Zukunft, also ich bin Sportlehrerin.  Das kann ich ja dann irgendwann nicht",
+          "spans": [
+            {
+              "start": 2850,
+              "end": 3205
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0014",
+        "verdict": "supported",
+        "reason": "Die Aussage 'Viele Patienten vertragen die Medikamente gut ohne Nebenwirkungen.' wird durch die direkte Aussage im Zitat aus S9 gestützt: 'viele Patienten vertragen ja auch gut, ohne dass Nebenwirkung auftreten.' Dies entspricht inhaltlich exakt der behaupteten Tatsache und befindet sich im richtigen Kontext."
+      }
+    },
+    {
+      "id": "F0015",
+      "section": "history",
+      "statement": "Die Patientin ist Sportlehrerin und macht sich Sorgen um ihre berufliche Zukunft.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " muss man, da muss man filmiert gucken, die sind nicht für jeden gut verträglich.  Das bedeutet, dass sie häufiger in die Praxis kommen müssen, als sie das gewohnt sind.  Auf der anderen Seite viele Patienten vertragen ja auch gut, ohne dass Nebenwirkung auftreten. Mein Beruf in Zukunft, also ich bin Sportlehrerin.  Das kann ich ja dann irgendwann nicht",
+          "spans": [
+            {
+              "start": 2850,
+              "end": 3205
+            }
+          ]
+        },
+        {
+          "source_id": "S10",
+          "quote": " mehr ausüben oder wie ist das?  Kann man so nicht sagen ein Schock.  Ja schon mich gerade bei mir passieren konnte.  Sie fragen sich, was ihr falsch gemacht haben, wir wissen gar nicht, warum rollen aber jemanden auftritt.  Wir wissen nichts, was jemand falsch machen könnte.  Also ich will jetzt nicht mal sagen, Sie haben nicht falsch gemacht, weil von der",
+          "spans": [
+            {
+              "start": 3205,
+              "end": 3564
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0015",
+        "verdict": "supported",
+        "reason": "Die Patientin äußert im ersten Zitat explizit ihren Beruf als Sportlehrerin ('Mein Beruf in Zukunft, also ich bin Sportlehrerin') und drückt im selben Satz Bedenken über die zukünftige Ausübung ihres Berufs aus ('Das kann ich ja dann irgendwann nicht'). Im zweiten Zitat folgt die Frage 'mehr ausüben oder wie ist das?', was die Sorge um die berufliche Fortsetzung unterstreicht. Beide Zitate zusammen belegen direkt die Aussage, dass sie sich Sorgen um ihre berufliche Zukunft macht."
+      }
+    },
+    {
+      "id": "F0016",
+      "section": "assessment",
+      "statement": "Der Arzt betont, dass rheumatoide Arthritis nicht automatisch zur Berufsunfähigkeit führt.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S11",
+          "quote": " Erkrankung so wenig verstanden, sie tritt auf und wir wissen nicht warum sie bei dem einen Auftritt, wenn dem anderen nicht.  Und wir können eben auch nicht die schwere Vorhersagen und darum nein, das heißt nicht, dass sie berufenfähig werden, sondern es heißt, dass für sie ein Risiko besteht.  Deswegen Berufen fähig zu werden.  Es gibt Sportlehrerinnen,",
+          "spans": [
+            {
+              "start": 3564,
+              "end": 3921
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0016",
+        "verdict": "supported",
+        "reason": "Der Arzt erklärt im Zitat, dass rheumatoide Arthritis nicht automatisch zur Berufsunfähigkeit führt (‚das heißt nicht, dass sie berufenfähig werden‘), sondern ein Risiko darstellt. Dies entspricht direkt der Aussage im Fakt."
+      }
+    },
+    {
+      "id": "F0018",
+      "section": "assessment",
+      "statement": "Der Arzt kann nicht versprechen, dass der Verlauf bei der Patientin günstig sein wird, auch unter Medikamenteneinnahme.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S12",
+          "quote": " die Räume kriegen und trotzdem ist zur Rente arbeiten können.  Ihre Medikamente gut vertragen und wo es nicht so gelenkt zerstörungen kommt.  Ich kann mir das nur nicht versprechen. Also trotz Medikamente kann es auch anders verlaufen, es geht in den noch durch den Kopf. Das Mögliche ist gerade so alles glaube so mein Gefühl für dieses Gespräch wäre, dass",
+          "spans": [
+            {
+              "start": 3921,
+              "end": 4279
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0018",
+        "verdict": "supported",
+        "reason": "Der Arzt äußert im zitierten Text explizit, dass er nicht versprechen kann, dass der Verlauf trotz Medikamenteneinnahme günstig sein wird (\"Ich kann mir das nur nicht versprechen. Also trotz Medikamente kann es auch anders verlaufen\"). Dies entspricht direkt der Aussage in der Tatsache."
+      }
+    },
+    {
+      "id": "F0019",
+      "section": "plan",
+      "statement": "Der Arzt schlägt vor, gemeinsam zu überlegen, zu welchem Rheumatologen die Patientin überwiesen werden soll.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S13",
+          "quote": " war, dass man bei dieser Information belassen und ich mit Ihnen überlegen würde, zu welchem Rheumatologen Sie gerne gehen möchten und dass wir dann erstmal abwarten, was dir empfiehlt und wir dann sehr gerne auch mit mir nochmal über Nebenwirkungen sprechen können. Muss man jetzt einfach abwarten, was hielten die davon, wenn wir uns noch ein zweites Mal",
+          "spans": [
+            {
+              "start": 4279,
+              "end": 4635
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0019",
+        "verdict": "supported",
+        "reason": "Der Arzt äußert im Zitat explizit, dass er gemeinsam mit der Patientin überlegen möchte, zu welchem Rheumatologen sie gerne gehen möchte, was der Aussage im Fakt entspricht."
+      }
+    },
+    {
+      "id": "F0020",
+      "section": "plan",
+      "statement": "Der Arzt empfiehlt, die Diagnoseinformation erstmal sacken zu lassen und in einem zweiten Gespräch konkrete Schritte zu planen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S13",
+          "quote": " war, dass man bei dieser Information belassen und ich mit Ihnen überlegen würde, zu welchem Rheumatologen Sie gerne gehen möchten und dass wir dann erstmal abwarten, was dir empfiehlt und wir dann sehr gerne auch mit mir nochmal über Nebenwirkungen sprechen können. Muss man jetzt einfach abwarten, was hielten die davon, wenn wir uns noch ein zweites Mal",
+          "spans": [
+            {
+              "start": 4279,
+              "end": 4635
+            }
+          ]
+        },
+        {
+          "source_id": "S14",
+          "quote": " zusammensetzen und so konkrete Schritte zu planen, dass das erstmal so ein bisschen Sacken kann. Ich merke, wie unerwartet sie das getroffen hat. Sprechen können, der darf natürlich gerne mitkommen und dass wir dann so ein bisschen in die konkreten Planungen reingehen.  Ich möchte das heute nicht überfrachten. Das gut kommen auch bestimmt wieder neue",
+          "spans": [
+            {
+              "start": 4635,
+              "end": 4988
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0020",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Arzt empfiehlt, die Diagnoseinformation erstmal sacken zu lassen und in einem zweiten Gespräch konkrete Schritte zu planen, wird durch die Zitate aus S13 und S14 gestützt. In S14 heißt es explizit: 'dass das erstmal so ein bisschen Sacken kann' und 'dass wir dann so ein bisschen in die konkreten Planungen reingehen', sowie 'Ich möchte das heute nicht überfrachten'. Auch aus S13 geht hervor, dass ein weiteres Gespräch geplant ist ('dass wir uns noch ein zweites Mal [zusammensetzen]'). Diese Äußerungen belegen, dass der Arzt bewusst eine Entlastung des aktuellen Gesprächs vorsieht und die konkrete Planung auf ein späteres Gespräch verlegt, um der Patientin Zeit zu geben, die Information zu verarbeiten."
+      }
+    },
+    {
+      "id": "F0021",
+      "section": "plan",
+      "statement": "Der Arzt möchte das Gespräch heute nicht überfrachten und rät, neue Fragen in einem Folgetermin zu besprechen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S14",
+          "quote": " zusammensetzen und so konkrete Schritte zu planen, dass das erstmal so ein bisschen Sacken kann. Ich merke, wie unerwartet sie das getroffen hat. Sprechen können, der darf natürlich gerne mitkommen und dass wir dann so ein bisschen in die konkreten Planungen reingehen.  Ich möchte das heute nicht überfrachten. Das gut kommen auch bestimmt wieder neue",
+          "spans": [
+            {
+              "start": 4635,
+              "end": 4988
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0021",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Arzt das Gespräch heute nicht überfrachten möchte, wird durch die direkte Äußerung 'Ich möchte das heute nicht überfrachten' im zitierten Text belegt. Der Kontext weist darauf hin, dass konkrete Planungen und neue Themen auf einen Folgetermin verschoben werden sollen, was die Intention, das Gespräch nicht zu überlasten, unterstützt."
+      }
+    },
+    {
+      "id": "F0022",
+      "section": "plan",
+      "statement": "Der Arzt wird versuchen, der Patientin schnell einen Termin beim Rheumatologen zu besorgen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S15",
+          "quote": " Fragen.  Genau.  Ja, dann gucken Sie einfach in der Woche einfach nächste Woche, wie Sie möchten, sehe zu, dass sie schnell einen Termin am Rhematologen kriegen, aber ich würde es heute erstmal gerne dabei belasten.  Alles gut",
+          "spans": [
+            {
+              "start": 4988,
+              "end": 5215
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0022",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass der Arzt versuchen wird, der Patientin schnell einen Termin beim Rheumatologen zu besorgen, wird durch die direkte Äußerung im Zitat aus S15 gestützt: 'sehe zu, dass sie schnell einen Termin am Rhematologen kriegen'. Dies entspricht inhaltlich der behaupteten Tatsache, auch wenn 'Rhematologen' eine offensichtliche Schreibweise von 'Rheumatologen' ist. Die Absicht des Arztes, einen schnellen Termin zu organisieren, ist klar aus dem Kontext ersichtlich."
+      }
+    },
+    {
+      "id": "F0023",
+      "section": "plan",
+      "statement": "Der Arzt schlägt vor, sich in der nächsten Woche erneut zu treffen, um konkrete Planungen zu besprechen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S14",
+          "quote": " zusammensetzen und so konkrete Schritte zu planen, dass das erstmal so ein bisschen Sacken kann. Ich merke, wie unerwartet sie das getroffen hat. Sprechen können, der darf natürlich gerne mitkommen und dass wir dann so ein bisschen in die konkreten Planungen reingehen.  Ich möchte das heute nicht überfrachten. Das gut kommen auch bestimmt wieder neue",
+          "spans": [
+            {
+              "start": 4635,
+              "end": 4988
+            }
+          ]
+        },
+        {
+          "source_id": "S15",
+          "quote": " Fragen.  Genau.  Ja, dann gucken Sie einfach in der Woche einfach nächste Woche, wie Sie möchten, sehe zu, dass sie schnell einen Termin am Rhematologen kriegen, aber ich würde es heute erstmal gerne dabei belasten.  Alles gut",
+          "spans": [
+            {
+              "start": 4988,
+              "end": 5215
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0023",
+        "verdict": "supported",
+        "reason": "Der Arzt erwähnt, dass er in der nächsten Woche einen Termin vereinbaren möchte, um 'in die konkreten Planungen reinzugehen', und betont, dass er das Thema heute nicht überfrachten möchte. Die Zitate aus S14 und S15 belegen, dass ein erneutes Treffen in der nächsten Woche vorgeschlagen wird, um konkrete Schritte zu besprechen."
+      }
+    },
+    {
+      "id": "F0024",
+      "section": "plan",
+      "statement": "Ein Angehöriger darf gerne zum nächsten Gespräch mitkommen.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S14",
+          "quote": " zusammensetzen und so konkrete Schritte zu planen, dass das erstmal so ein bisschen Sacken kann. Ich merke, wie unerwartet sie das getroffen hat. Sprechen können, der darf natürlich gerne mitkommen und dass wir dann so ein bisschen in die konkreten Planungen reingehen.  Ich möchte das heute nicht überfrachten. Das gut kommen auch bestimmt wieder neue",
+          "spans": [
+            {
+              "start": 4635,
+              "end": 4988
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0024",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass ein Angehöriger zum nächsten Gespräch mitkommen darf, wird durch die Aussage im Quelltext gestützt: 'der darf natürlich gerne mitkommen'. Dies bezieht sich im Kontext auf ein zukünftiges Gespräch zur Planung konkreter Schritte, was die Behauptung direkt belegt."
+      }
+    },
+    {
+      "id": "F0025",
+      "section": "assessment",
+      "statement": "Die Patientin ist von der Diagnose unerwartet getroffen und befindet sich im Schock.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S10",
+          "quote": " mehr ausüben oder wie ist das?  Kann man so nicht sagen ein Schock.  Ja schon mich gerade bei mir passieren konnte.  Sie fragen sich, was ihr falsch gemacht haben, wir wissen gar nicht, warum rollen aber jemanden auftritt.  Wir wissen nichts, was jemand falsch machen könnte.  Also ich will jetzt nicht mal sagen, Sie haben nicht falsch gemacht, weil von der",
+          "spans": [
+            {
+              "start": 3205,
+              "end": 3564
+            }
+          ]
+        },
+        {
+          "source_id": "S14",
+          "quote": " zusammensetzen und so konkrete Schritte zu planen, dass das erstmal so ein bisschen Sacken kann. Ich merke, wie unerwartet sie das getroffen hat. Sprechen können, der darf natürlich gerne mitkommen und dass wir dann so ein bisschen in die konkreten Planungen reingehen.  Ich möchte das heute nicht überfrachten. Das gut kommen auch bestimmt wieder neue",
+          "spans": [
+            {
+              "start": 4635,
+              "end": 4988
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0025",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass die Patientin von der Diagnose unerwartet getroffen ist und sich im Schock befindet, wird durch die Quellen gestützt. In S14 wird explizit gesagt: 'Ich merke, wie unerwartet sie das getroffen hat', was den unerwarteten Schock direkt belegt. In S10 wird der Begriff 'ein Schock' im Kontext der emotionalen Reaktion erwähnt: 'mehr ausüben oder wie ist das? Kann man so nicht sagen ein Schock', was im Zusammenhang mit der Diagnoseemotion interpretierbar ist. Beide Zitate belegen gemeinsam den emotionalen Zustand der Patientin als unerwartet getroffen und im Schock."
+      }
+    },
+    {
+      "id": "F0026",
+      "section": "assessment",
+      "statement": "Der Arzt betont, dass niemand schuld an der Erkrankung ist und dass der Ausbruch nicht vorhersagbar ist.",
+      "uncertain": false,
+      "evidence": [
+        {
+          "source_id": "S10",
+          "quote": " mehr ausüben oder wie ist das?  Kann man so nicht sagen ein Schock.  Ja schon mich gerade bei mir passieren konnte.  Sie fragen sich, was ihr falsch gemacht haben, wir wissen gar nicht, warum rollen aber jemanden auftritt.  Wir wissen nichts, was jemand falsch machen könnte.  Also ich will jetzt nicht mal sagen, Sie haben nicht falsch gemacht, weil von der",
+          "spans": [
+            {
+              "start": 3205,
+              "end": 3564
+            }
+          ]
+        },
+        {
+          "source_id": "S11",
+          "quote": " Erkrankung so wenig verstanden, sie tritt auf und wir wissen nicht warum sie bei dem einen Auftritt, wenn dem anderen nicht.  Und wir können eben auch nicht die schwere Vorhersagen und darum nein, das heißt nicht, dass sie berufenfähig werden, sondern es heißt, dass für sie ein Risiko besteht.  Deswegen Berufen fähig zu werden.  Es gibt Sportlehrerinnen,",
+          "spans": [
+            {
+              "start": 3564,
+              "end": 3921
+            }
+          ]
+        }
+      ],
+      "review": {
+        "id": "F0026",
+        "verdict": "supported",
+        "reason": "Die Aussage, dass niemand schuld an der Erkrankung ist und der Ausbruch nicht vorhersagbar ist, wird durch die Zitate aus S10 und S11 gestützt. Im ersten Zitat heißt es, dass man nicht sagen kann, was jemand falsch gemacht haben könnte, und im zweiten Zitat wird betont, dass die Erkrankung nicht vorhersagbar ist und man nicht weiß, warum sie bei dem einen auftritt und bei dem anderen nicht. Diese Aussagen entsprechen direkt der behaupteten Tatsache."
+      }
+    }
+  ],
+  "uncertainties": [
+    {
+      "description": "Der Medikamentenname 'Ipophäen' ist unklar und möglicherweise falsch wiedergegeben; genaue Identifikation nicht möglich.",
+      "evidence": [
+        {
+          "source_id": "S2",
+          "quote": " einer chronischen Polyatritis.  Heute kommt die Patientin, um über das Ergebnis der Laboruntersuchungen zu sprechen.  Ihre Aufgabe ist es der Patientin die schlechte Nachricht zu übermitteln, dass sie an Gelenkräume erkrankt ist. Guten Tag von Klein, nehmen Sie auf Platz, Frau Klein, wie geht es hin? Soweit ganz gut heute Morgen war es nochmal so ein",
+          "spans": [
+            {
+              "start": 354,
+              "end": 707
+            }
+          ]
+        },
+        {
+          "source_id": "S3",
+          "quote": " bisschen, da habe ich dann Ipophäen genommen und jetzt ist besser.  Diese Schmerzen, die sie seit ein paar Wochen.  Genau, weswegen ich gekommen bin.  Richtig.  Ich glaube wir hatten uns heute für abredet, um die Ergebnisse der Blutuntersuchung zu bestehen.  Genau nicht genau.  Ich würde auch gerne haben Sie selber eine Idee, wo die Schmerzen hier kommen?",
+          "spans": [
+            {
+              "start": 707,
+              "end": 1065
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Der Begriff 'Rollenmar' und 'Gelenkrolmar' ist unklar und vermutlich ein Sprachfehler für 'rheumatoide Arthritis'.",
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " Ich habe es gedacht, es geben vom Volleyball oder so, sondern irgendwie leichte Prellung oder irgendwie sonst nix.  Ich habe tatsächlich eine nicht so gute Nachhalt für sie.  Die Laborwerte, die wir abgenommen haben, sprechen dafür, dass bei Ihnen einen Rollenmar vorliegt, ein Gelenkrolmar weiß nicht, ob Sie davon schon mal was gehört haben.  Ja doch",
+          "spans": [
+            {
+              "start": 1065,
+              "end": 1418
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Der Ausdruck 'Laborwehrte' ist vermutlich ein Sprachfehler für 'Laborwerte'.",
+      "evidence": [
+        {
+          "source_id": "S5",
+          "quote": " schon, also meine Großtante hatte Räume.  Genau, aber das ist jetzt sicher, dass die Laborwehrte sind eindeutig dafür, ich denke, dass wenn der weiteren Behandlung nochmal einen Rheumatologen hinzuziehen würden, aber ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben. Geht jetzt ein bisschen plötzlich.  Das habe ich jetzt gar",
+          "spans": [
+            {
+              "start": 1418,
+              "end": 1775
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Der Begriff 'Räume' wird mehrfach verwendet und ist vermutlich ein Sprachfehler für 'rheumatoide Arthritis'.",
+      "evidence": [
+        {
+          "source_id": "S4",
+          "quote": " Ich habe es gedacht, es geben vom Volleyball oder so, sondern irgendwie leichte Prellung oder irgendwie sonst nix.  Ich habe tatsächlich eine nicht so gute Nachhalt für sie.  Die Laborwerte, die wir abgenommen haben, sprechen dafür, dass bei Ihnen einen Rollenmar vorliegt, ein Gelenkrolmar weiß nicht, ob Sie davon schon mal was gehört haben.  Ja doch",
+          "spans": [
+            {
+              "start": 1065,
+              "end": 1418
+            }
+          ]
+        },
+        {
+          "source_id": "S5",
+          "quote": " schon, also meine Großtante hatte Räume.  Genau, aber das ist jetzt sicher, dass die Laborwehrte sind eindeutig dafür, ich denke, dass wenn der weiteren Behandlung nochmal einen Rheumatologen hinzuziehen würden, aber ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben. Geht jetzt ein bisschen plötzlich.  Das habe ich jetzt gar",
+          "spans": [
+            {
+              "start": 1418,
+              "end": 1775
+            }
+          ]
+        },
+        {
+          "source_id": "S6",
+          "quote": " nicht.  Habe ich gar nicht so erwartet.  Das nervig sie sagten, dass ihre Großtante das hatte. Ja später im Rollstuhl weiß irgendwie viel sie von Rollen wissen, ob es ihn helfen würde, wenn ich ihn dazu ein bisschen sage, das ist nicht immer bei jedem gleich.  Aber trotzdem endet er dann so, oder wir sind ein bisschen zu erzählen.  Das ist tatsächlich so,",
+          "spans": [
+            {
+              "start": 1775,
+              "end": 2133
+            }
+          ]
+        },
+        {
+          "source_id": "S10",
+          "quote": " mehr ausüben oder wie ist das?  Kann man so nicht sagen ein Schock.  Ja schon mich gerade bei mir passieren konnte.  Sie fragen sich, was ihr falsch gemacht haben, wir wissen gar nicht, warum rollen aber jemanden auftritt.  Wir wissen nichts, was jemand falsch machen könnte.  Also ich will jetzt nicht mal sagen, Sie haben nicht falsch gemacht, weil von der",
+          "spans": [
+            {
+              "start": 3205,
+              "end": 3564
+            }
+          ]
+        },
+        {
+          "source_id": "S11",
+          "quote": " Erkrankung so wenig verstanden, sie tritt auf und wir wissen nicht warum sie bei dem einen Auftritt, wenn dem anderen nicht.  Und wir können eben auch nicht die schwere Vorhersagen und darum nein, das heißt nicht, dass sie berufenfähig werden, sondern es heißt, dass für sie ein Risiko besteht.  Deswegen Berufen fähig zu werden.  Es gibt Sportlehrerinnen,",
+          "spans": [
+            {
+              "start": 3564,
+              "end": 3921
+            }
+          ]
+        },
+        {
+          "source_id": "S12",
+          "quote": " die Räume kriegen und trotzdem ist zur Rente arbeiten können.  Ihre Medikamente gut vertragen und wo es nicht so gelenkt zerstörungen kommt.  Ich kann mir das nur nicht versprechen. Also trotz Medikamente kann es auch anders verlaufen, es geht in den noch durch den Kopf. Das Mögliche ist gerade so alles glaube so mein Gefühl für dieses Gespräch wäre, dass",
+          "spans": [
+            {
+              "start": 3921,
+              "end": 4279
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Der Begriff 'Rhematologen' ist vermutlich ein Sprachfehler für 'Rheumatologen'.",
+      "evidence": [
+        {
+          "source_id": "S13",
+          "quote": " war, dass man bei dieser Information belassen und ich mit Ihnen überlegen würde, zu welchem Rheumatologen Sie gerne gehen möchten und dass wir dann erstmal abwarten, was dir empfiehlt und wir dann sehr gerne auch mit mir nochmal über Nebenwirkungen sprechen können. Muss man jetzt einfach abwarten, was hielten die davon, wenn wir uns noch ein zweites Mal",
+          "spans": [
+            {
+              "start": 4279,
+              "end": 4635
+            }
+          ]
+        },
+        {
+          "source_id": "S15",
+          "quote": " Fragen.  Genau.  Ja, dann gucken Sie einfach in der Woche einfach nächste Woche, wie Sie möchten, sehe zu, dass sie schnell einen Termin am Rhematologen kriegen, aber ich würde es heute erstmal gerne dabei belasten.  Alles gut",
+          "spans": [
+            {
+              "start": 4988,
+              "end": 5215
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Der Satz 'muss man filmiert gucken' ist unklar und möglicherweise ein Sprachfehler; vermutlich gemeint ist 'muss man engmaschig überwachen'.",
+      "evidence": [
+        {
+          "source_id": "S9",
+          "quote": " muss man, da muss man filmiert gucken, die sind nicht für jeden gut verträglich.  Das bedeutet, dass sie häufiger in die Praxis kommen müssen, als sie das gewohnt sind.  Auf der anderen Seite viele Patienten vertragen ja auch gut, ohne dass Nebenwirkung auftreten. Mein Beruf in Zukunft, also ich bin Sportlehrerin.  Das kann ich ja dann irgendwann nicht",
+          "spans": [
+            {
+              "start": 2850,
+              "end": 3205
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "question": "Welches Medikament meint die Patientin genau mit 'Ipophäen'? Ist dies eine Verwechslung von Ibuprofen, Paracetamol oder einem anderen Schmerzmittel?",
+      "reason": "Der Begriff 'Ipophäen' ist nicht standard und könnte auf ein bekanntes Analgetikum hinweisen; Klarstellung ist wichtig für die Arzneimittelanamnese.",
+      "fact_ids": [
+        "F0004"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Wird mit 'Rollenmar' oder 'Gelenkrolmar' eine spezifische Diagnose wie rheumatoide Arthritis gemeint, und wie sicher ist diese Zuordnung im Gesprächskontext?",
+      "reason": "Diese Begriffe sind nicht medizinisch standardisiert und vermutlich phonetische Verzerrungen; Klarstellung sichert das Verständnis der diagnostischen Einschätzung.",
+      "fact_ids": [
+        "F0008"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Ist mit 'Räume' durchgängig rheumatoide Arthritis gemeint, und gibt es Hinweise auf eine andere rheumatische Erkrankung?",
+      "reason": "Der Begriff 'Räume' erscheint mehrfach und ist wahrscheinlich ein Sprechfehler; Klarstellung verhindert Missverständnisse über die vermutete Diagnose.",
+      "fact_ids": [
+        "F0008",
+        "F0026"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Was ist mit der Aussage 'muss man filmiert gucken' gemeint – bezieht sich dies auf eine engmaschige Überwachung der Therapie durch Kontrolluntersuchungen?",
+      "reason": "Der Ausdruck ist unklar und möglicherweise ein Sprachfehler; die Absicht deutet auf notwendige Therapieüberwachung hin, sollte aber präzisiert werden.",
+      "fact_ids": [
+        "F0012"
+      ],
+      "basis": "unclear_source"
+    },
+    {
+      "question": "Ist 'Rhematologen' als 'Rheumatologen' zu interpretieren, und gibt es Hinweise auf eine gezielte Weiterleitung zu einem bestimmten Facharzt oder Zentrum?",
+      "reason": "Die Schreibweise 'Rhematologen' ist atypisch; Klarstellung stellt sicher, dass die geplante fachärztliche Abklärung korrekt verstanden wird.",
+      "fact_ids": [
+        "F0022",
+        "F0019"
+      ],
+      "basis": "unclear_source"
+    }
+  ],
+  "rejected": [
+    {
+      "candidate": {
+        "id": "F0006",
+        "section": "findings",
+        "statement": "Der Arzt teilt der Patientin mit, dass die Laborwerte eindeutig für eine rheumatoide Arthritis sprechen.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S4",
+            "quote": " Ich habe es gedacht, es geben vom Volleyball oder so, sondern irgendwie leichte Prellung oder irgendwie sonst nix.  Ich habe tatsächlich eine nicht so gute Nachhalt für sie.  Die Laborwerte, die wir abgenommen haben, sprechen dafür, dass bei Ihnen einen Rollenmar vorliegt, ein Gelenkrolmar weiß nicht, ob Sie davon schon mal was gehört haben.  Ja doch",
+            "spans": [
+              {
+                "start": 1065,
+                "end": 1418
+              }
+            ]
+          },
+          {
+            "source_id": "S5",
+            "quote": " schon, also meine Großtante hatte Räume.  Genau, aber das ist jetzt sicher, dass die Laborwehrte sind eindeutig dafür, ich denke, dass wenn der weiteren Behandlung nochmal einen Rheumatologen hinzuziehen würden, aber ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben. Geht jetzt ein bisschen plötzlich.  Das habe ich jetzt gar",
+            "spans": [
+              {
+                "start": 1418,
+                "end": 1775
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S4",
+              "quote": " Ich habe es gedacht, es geben vom Volleyball oder so, sondern irgendwie leichte Prellung oder irgendwie sonst nix.  Ich habe tatsächlich eine nicht so gute Nachhalt für sie.  Die Laborwerte, die wir abgenommen haben, sprechen dafür, dass bei Ihnen einen Rollenmar vorliegt, ein Gelenkrolmar weiß nicht, ob Sie davon schon mal was gehört haben.  Ja doch",
+              "spans": [
+                {
+                  "start": 1065,
+                  "end": 1418
+                }
+              ]
+            },
+            {
+              "source_id": "S5",
+              "quote": " schon, also meine Großtante hatte Räume.  Genau, aber das ist jetzt sicher, dass die Laborwehrte sind eindeutig dafür, ich denke, dass wenn der weiteren Behandlung nochmal einen Rheumatologen hinzuziehen würden, aber ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben. Geht jetzt ein bisschen plötzlich.  Das habe ich jetzt gar",
+              "spans": [
+                {
+                  "start": 1418,
+                  "end": 1775
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage, dass der Arzt der Patientin mitteilt, die Laborwerte sprächen eindeutig für eine rheumatoide Arthritis, wird nicht vollständig durch die Zitate gestützt. Im ersten Zitat (S4) spricht der Arzt von einem 'Rollenmar' bzw. 'Gelenkrolmar', was nicht mit rheumatoider Arthritis übereinstimmt und möglicherweise ein Sprachfehler oder Missverständnis ist. Im zweiten Zitat (S5) erwähnt der Arzt 'räume' und sagt, er gehe davon aus, dass es sich um 'räume' handelt, was vermutlich 'Rheuma' meint, aber nicht explizit 'rheumatoide Arthritis' ist. Auch der Begriff 'eindeutig dafür' wird im Kontext nicht so klar belegt – vielmehr wird Unsicherheit ausgedrückt ('ich gehe jetzt erstmal davon aus'). Eine eindeutige, diagnostische Zuordnung zu rheumatoider Arthritis durch den Arzt fehlt in den Zitaten."
+        }
+      },
+      "reason": "Die Zitate enthalten keine klare Aussage, dass die Laborwerte eindeutig für eine rheumatoide Arthritis sprechen. Stattdessen werden unsichere Formulierungen wie 'ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist' verwendet, und die Begriffe 'Rollenmar' bzw. 'Gelenkrolmar' deuten auf Verwirrung oder Missverständnisse hin. Der spezifische Begriff 'rheumatoide Arthritis' wird nicht genannt, und die Eindeutigkeit der Laborwerte wird nicht bestätigt, sondern mit Unsicherheit kommuniziert."
+    },
+    {
+      "candidate": {
+        "id": "F0007",
+        "section": "background",
+        "statement": "Die Patientin hat eine Großtante, die an rheumatoider Arthritis erkrankt war.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S5",
+            "quote": " schon, also meine Großtante hatte Räume.  Genau, aber das ist jetzt sicher, dass die Laborwehrte sind eindeutig dafür, ich denke, dass wenn der weiteren Behandlung nochmal einen Rheumatologen hinzuziehen würden, aber ich gehe jetzt erstmal davon aus, dass das tatsächlich räume ist, was Sie haben. Geht jetzt ein bisschen plötzlich.  Das habe ich jetzt gar",
+            "spans": [
+              {
+                "start": 1418,
+                "end": 1775
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S4",
+              "quote": " Ich habe es gedacht, es geben vom Volleyball oder so, sondern irgendwie leichte Prellung oder irgendwie sonst nix.  Ich habe tatsächlich eine nicht so gute Nachhalt für sie.  Die Laborwerte, die wir abgenommen haben, sprechen dafür, dass bei Ihnen einen Rollenmar vorliegt, ein Gelenkrolmar weiß nicht, ob Sie davon schon mal was gehört haben.  Ja doch",
+              "spans": [
+                {
+                  "start": 1065,
+                  "end": 1418
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage über die Großtante mit rheumatoider Arthritis wird im zitierten Textausschnitt (S4, Spannungen 1065–1418) nicht erwähnt oder belegt. Der Abschnitt behandelt Laborwerte und eine Gelenkerkrankung beim Patienten, nicht die Familienanamnese. Es gibt keine Erwähnung einer Großtante oder einer rheumatoiden Arthritis in der Familie."
+        }
+      },
+      "reason": "Die Aussage über die Großtante mit rheumatoider Arthritis wird im zitierten Quellenauszug (S5) nicht klar belegt. Der zitierte Text enthält eine unklare Äußerung („meine Großtante hatte Räume“), wobei „Räume“ vermutlich ein phonetisch verfälschter Versuch von „RA“ (rheumatoide Arthritis) ist. Da die korrekte medizinische Bezeichnung nicht eindeutig genannt wird und keine klare, unterstützende Aussage im Kontext vorliegt, ist die Behauptung aufgrund der fehlenden klaren und direkten Bezugnahme als unsupported einzustufen. Eine phonetische Vermutung reicht nicht aus, um die Tatsachenbehauptung als supported zu bewerten."
+    },
+    {
+      "candidate": {
+        "id": "F0017",
+        "section": "assessment",
+        "statement": "Es gibt Sportlehrerinnen mit rheumatoider Arthritis, die bis zur Rente arbeiten können, wenn sie die Medikamente gut vertragen und keine schweren Gelenkzerstörungen auftreten.",
+        "uncertain": false,
+        "evidence": [
+          {
+            "source_id": "S11",
+            "quote": " Erkrankung so wenig verstanden, sie tritt auf und wir wissen nicht warum sie bei dem einen Auftritt, wenn dem anderen nicht.  Und wir können eben auch nicht die schwere Vorhersagen und darum nein, das heißt nicht, dass sie berufenfähig werden, sondern es heißt, dass für sie ein Risiko besteht.  Deswegen Berufen fähig zu werden.  Es gibt Sportlehrerinnen,",
+            "spans": [
+              {
+                "start": 3564,
+                "end": 3921
+              }
+            ]
+          },
+          {
+            "source_id": "S12",
+            "quote": " die Räume kriegen und trotzdem ist zur Rente arbeiten können.  Ihre Medikamente gut vertragen und wo es nicht so gelenkt zerstörungen kommt.  Ich kann mir das nur nicht versprechen. Also trotz Medikamente kann es auch anders verlaufen, es geht in den noch durch den Kopf. Das Mögliche ist gerade so alles glaube so mein Gefühl für dieses Gespräch wäre, dass",
+            "spans": [
+              {
+                "start": 3921,
+                "end": 4279
+              }
+            ]
+          }
+        ],
+        "citation_repair": {
+          "original_evidence": [
+            {
+              "source_id": "S11",
+              "quote": " Erkrankung so wenig verstanden, sie tritt auf und wir wissen nicht warum sie bei dem einen Auftritt, wenn dem anderen nicht.  Und wir können eben auch nicht die schwere Vorhersagen und darum nein, das heißt nicht, dass sie berufenfähig werden, sondern es heißt, dass für sie ein Risiko besteht.  Deswegen Berufen fähig zu werden.  Es gibt Sportlehrerinnen,",
+              "spans": [
+                {
+                  "start": 3564,
+                  "end": 3921
+                }
+              ]
+            },
+            {
+              "source_id": "S12",
+              "quote": " die Räume kriegen und trotzdem ist zur Rente arbeiten können.  Ihre Medikamente gut vertragen und wo es nicht so gelenkt zerstörungen kommt.  Ich kann mir das nur nicht versprechen. Also trotz Medikamente kann es auch anders verlaufen, es geht in den noch durch den Kopf. Das Mögliche ist gerade so alles glaube so mein Gefühl für dieses Gespräch wäre, dass",
+              "spans": [
+                {
+                  "start": 3921,
+                  "end": 4279
+                }
+              ]
+            }
+          ],
+          "reason": "Die Aussage behauptet, dass Sportlehrerinnen mit rheumatoider Arthritis bis zur Rente arbeiten können, wenn sie die Medikamente gut vertragen und keine schweren Gelenkzerstörungen auftreten. Die zitierten Quellenstellen (S11 und S12) enthalten zwar Erwähnungen von Sportlehrerinnen, Medikamentenverträglichkeit und Gelenkzerstörungen, jedoch wird kein kausaler oder bedingter Zusammenhang zwischen diesen Faktoren und der Berufsfähigkeit bis zur Rente klar hergestellt. Der Sprecher betont Unsicherheit („Ich kann mir das nur nicht versprechen“, „es kann auch anders verlaufen“) und lehnt eine sichere Prognose ab. Damit wird die positive, verallgemeinernde Aussage in F0017 nicht unterstützt, sondern im Gegenteil als unsicher dargestellt."
+        }
+      },
+      "reason": "Die zitierten Ausschnitte (S11 und S12) erwähnen zwar Sportlehrerinnen, Medikamentenverträglichkeit und das Fehlen schwerer Gelenkzerstörungen im Zusammenhang mit der Möglichkeit, bis zur Rente zu arbeiten, stellen aber keinen klaren, unterstützenden Kausalzusammenhang her. Der Sprecher äußert Unsicherheit (z. B. 'Ich kann mir das nur nicht versprechen', 'es kann auch anders verlaufen') und betont, dass keine sichere Vorhersage über den Krankheitsverlauf möglich ist. Die Aussage in F0017 formuliert eine positive, verallgemeinernde Bedingung, die im Originalkontext nicht belegt ist, sondern als unsicher und spekulativ dargestellt wird."
+    }
+  ],
+  "validation": "literal source checks and automated fact review; not clinical validation",
+  "projection": {
+    "source_document_sha256": "326b963fd9f57688b9c29ce487b401be08cfa2d415a3cf70d1d939d45e921cff",
+    "source": "k8s-inference/acceptance/clinical-documentation-20260917/full-r2/de-polyarthritis",
+    "live_inference": false,
+    "change": "unclear source support withheld for human review; neutral empty-section text; readable review queue"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "events": [
+    {
+      "stage": "OpenFold2 frozen application ConfigMap preparation",
+      "failure": "Client-side apply annotation exceeded the Kubernetes 262144-byte annotation limit when including the full parent fixture collection.",
+      "gpu_pod_created": false,
+      "correction": "Freeze only the selected 1crn, 1lyz and 1ake fixture fields in the application ConfigMap. Actual benchmark used 1crn and 1lyz. No API limit or cluster policy was changed.",
+      "exact_timestamp": null,
+      "evidence_note": "Original error appeared in the tool invocation; this retained record documents the harness attempt without inventing a timestamp or successful GPU execution."
+    },
+    {
+      "stage": "First Boltz asyncio fresh restore",
+      "failure": "Initializer pre-created the scratch cache directory; supervisor copytree rejected the existing destination before CRIU restore.",
+      "correction": "Stop pre-creating that scratch/cache path, matching the existing restore helper contract; launch a new pod for the corrected trial.",
+      "evidence": "raw/fs2-bioir-snapshot-boltz2-restore-1"
+    }
+  ]
+}

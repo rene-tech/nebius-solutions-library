@@ -1,0 +1,22 @@
+{
+  "observed_unix": 1789515042.3596282,
+  "cohort": "y0jt",
+  "namespace": "fs2-bioir-protenix",
+  "pod": null,
+  "pvc": null,
+  "pv": null,
+  "configmaps": [
+    null,
+    null
+  ],
+  "gpu_release": {
+    "unix": 1789515042.35427,
+    "processes": "",
+    "telemetry": "GPU-9885f9c6-110a-10b5-2c26-c256e895d575, NVIDIA H100 80GB HBM3, 580.173.02, 0 MiB, 0 %\n"
+  },
+  "normal_deletion_only": true,
+  "force_or_finalizer_changes": false,
+  "provider_changes": false,
+  "deleted_material": "Task-only checkpoint PVC and immutable source/app ConfigMaps requested for normal deletion. Raw outputs, source hashes, logs and manifests remain. Checkpoint binary has no external backup.",
+  "residual_interpretation": "A deletion acknowledgement does not prove physical reclamation. Terminating stopped-node resources must be handled by the manager without forced deletion."
+}

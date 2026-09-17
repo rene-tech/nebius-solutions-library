@@ -1,0 +1,520 @@
+{
+  "models": [
+    {
+      "model_id": "protenix-v2",
+      "bir_fit": "Public BIR0.1.0 model module in exact current Protenix v2 featurizer/dumper/validator prototype",
+      "status": "partial",
+      "baseline": {
+        "variant": "ordinary load of identical persistent BIR worker on same H100",
+        "request_history": "load\u2192warm76\u2192129\u219276",
+        "summary": {}
+      },
+      "comparisons": [
+        {
+          "variant": "fresh-pod CUDA/CRIU restore",
+          "request_history": "donor load\u2192warm76\u2192capture\u2192donor deletion\u2192fresh restore\u2192129\u219276",
+          "summary": {
+            "variant": "restore",
+            "n": 2,
+            "create_to_ready_seconds": {
+              "samples": [
+                114.20660376548767,
+                105.74054837226868
+              ],
+              "median": 109.97357606887817
+            },
+            "container_to_ready_seconds": {
+              "samples": [
+                87.20660376548767,
+                87.74054837226868
+              ],
+              "median": 87.47357606887817
+            },
+            "create_to_first_validated_seconds": {
+              "samples": [
+                133.6609125137329,
+                144.5794177055359
+              ],
+              "median": 139.1201651096344
+            },
+            "container_to_first_validated_seconds": {
+              "samples": [
+                106.66091251373291,
+                126.57941770553589
+              ],
+              "median": 116.6201651096344
+            },
+            "first_request_seconds": {
+              "samples": [
+                6.804416343000412,
+                6.4418997250004395
+              ],
+              "median": 6.623158034000426
+            }
+          },
+          "restore_over_normal_ready_ratio": null,
+          "first_validated_output_ratio": null,
+          "first_output_ratio_exclusion": "normal first input76; restored first input129. Keep raw clocks, do not divide unlike request histories."
+        }
+      ],
+      "quality": {
+        "native_validation": "finite coordinates, chain sequence/residue cardinality, confidence envelope, exact checkpoint/provenance, successful forward and actual graph state",
+        "matched_history_output_pairs": [],
+        "byte_identical_to_normal_count": 0,
+        "paired_count": 0,
+        "scientific_parity": "NOT QUALIFIED: experimental-reference regression in Protenix model lane persists independently of snapshot results",
+        "metric": "Full matching-sequence per-chain CA-lDDT;15A pairs,0.5/1/2/4A thresholds; not all-atom lDDT or interface quality",
+        "reference_scores": [
+          {
+            "pod": "bir-protenix-snapshot-donor",
+            "case": "ubiquitin-76",
+            "label": "warm-prepared",
+            "scores": [
+              0.4876412429378531
+            ]
+          },
+          {
+            "pod": "bir-protenix-snapshot-restore-1",
+            "case": "lysozyme-129",
+            "label": "measured",
+            "scores": [
+              0.2967133800467134
+            ]
+          },
+          {
+            "pod": "bir-protenix-snapshot-restore-1",
+            "case": "ubiquitin-76",
+            "label": "measured",
+            "scores": [
+              0.4901129943502825
+            ]
+          },
+          {
+            "pod": "bir-protenix-snapshot-restore-2",
+            "case": "lysozyme-129",
+            "label": "measured",
+            "scores": [
+              0.2887053720387054
+            ]
+          },
+          {
+            "pod": "bir-protenix-snapshot-restore-2",
+            "case": "ubiquitin-76",
+            "label": "measured",
+            "scores": [
+              0.495409604519774
+            ]
+          }
+        ],
+        "within_cohort_numerical_dispersion": [
+          {
+            "variant": "restore",
+            "case": "ubiquitin-76",
+            "pods": [
+              "bir-protenix-snapshot-restore-1",
+              "bir-protenix-snapshot-restore-2"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.8353161114887832
+            ]
+          },
+          {
+            "variant": "restore",
+            "case": "lysozyme-129",
+            "pods": [
+              "bir-protenix-snapshot-restore-1",
+              "bir-protenix-snapshot-restore-2"
+            ],
+            "byte_identical": false,
+            "ca_lddt": [
+              0.7057205720572057
+            ]
+          }
+        ]
+      },
+      "features": {
+        "three_fresh_restore_cycles": 2,
+        "different_shape_after_restore": "129-aa graph capture followed by76-aa graph replay",
+        "seed": 101,
+        "cycles": 10,
+        "diffusion_steps": 200,
+        "samples": 1,
+        "dtype": "bf16 serving profile with BIR mixed-precision implementation",
+        "msa_templates": "disabled exactly as model lane",
+        "request_routing": "pod-local Python HTTPServer, no external Service/Ingress or production label",
+        "fallback": "not completed in this cohort"
+      },
+      "snapshot": {
+        "mechanism": "NVIDIA cuda-checkpoint plus CRIU process dump/restore; not CUDA Graph capture alone",
+        "identity": {
+          "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+          "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+          "kernel_release": "6.11.0-1016-nvidia",
+          "runtime_id": "protenix-v2-bir-public-0.1.0-global-rng",
+          "model_revision": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48:8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+          "gpu_uuid": "GPU-1d3b90d3-7eed-1abd-59e8-95141843bde0",
+          "gpu_name": "NVIDIA H100 80GB HBM3",
+          "driver_version": "580.159.04",
+          "compute_capability": "9.0",
+          "snapshot_source_sha256": {
+            "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+            "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+            "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+            "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+            "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+            "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+            "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+          }
+        },
+        "capture": {
+          "action": "capture",
+          "records": [
+            {
+              "command": [
+                "/tools/cuda-checkpoint",
+                "--action",
+                "lock",
+                "--pid",
+                "174"
+              ],
+              "seconds": 0.013663358999110642,
+              "returncode": 0,
+              "stdout": "",
+              "stderr": ""
+            },
+            {
+              "command": [
+                "/tools/cuda-checkpoint",
+                "--action",
+                "checkpoint",
+                "--pid",
+                "174"
+              ],
+              "seconds": 1.0218763809998563,
+              "returncode": 0,
+              "stdout": "",
+              "stderr": ""
+            },
+            {
+              "command": [
+                "/tools/lib/ld-linux-x86-64.so.2",
+                "--library-path",
+                "/tools/lib",
+                "/tools/criu",
+                "dump",
+                "--tree",
+                "174",
+                "--images-dir",
+                "/checkpoints/protenix-globalrng-r1/images",
+                "--shell-job",
+                "--log-file",
+                "dump.log",
+                "-v4",
+                "--file-locks",
+                "--tcp-established",
+                "--link-remap",
+                "--manage-cgroups=ignore",
+                "--libdir",
+                "/tmp/empty-criu-plugins"
+              ],
+              "seconds": 2.9160249309998107,
+              "returncode": 0,
+              "stdout": "",
+              "stderr": ""
+            }
+          ],
+          "status": "passed",
+          "runtime_identity": {
+            "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94",
+            "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+            "kernel_release": "6.11.0-1016-nvidia",
+            "runtime_id": "protenix-v2-bir-public-0.1.0-global-rng",
+            "model_revision": "5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48:8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+            "gpu_uuid": "GPU-1d3b90d3-7eed-1abd-59e8-95141843bde0",
+            "gpu_name": "NVIDIA H100 80GB HBM3",
+            "driver_version": "580.159.04",
+            "compute_capability": "9.0",
+            "snapshot_source_sha256": {
+              "process_checkpoint.py": "8a65528b0abfdfd4308f438b572b78b5183fde41a5f0a3d5980aaa9329a761ea",
+              "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+              "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+              "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+              "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+              "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+              "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+            }
+          },
+          "cuda_process_probes": [
+            {
+              "pid": 174,
+              "returncode": 0,
+              "state": "running",
+              "stderr": ""
+            }
+          ],
+          "cuda_pids": [
+            174
+          ],
+          "checkpoint_flush_seconds": 85.01846357299928
+        },
+        "lifecycle": [
+          {
+            "pod": "bir-protenix-snapshot-donor",
+            "variant": "donor",
+            "pod_uid": "8bc57304-3af7-48e1-b7f8-3e1277e1437b",
+            "created_unix": 1789510675.0,
+            "container_started_unix": 1789510715.0,
+            "ready_unix": 1789510775.044315,
+            "create_to_ready_seconds": 100.04431509971619,
+            "container_to_ready_seconds": 60.04431509971619,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+              "Pulling image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\"",
+              "Successfully pulled image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" in 6.01s (6.01s including waiting). Image size: 3722860672 bytes."
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 174,
+              "model_load_seconds": 53.90309374900062,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 14.92940426200039,
+            "create_to_first_validated_seconds": 275.6147572994232,
+            "container_to_first_validated_seconds": 235.61475729942322,
+            "first_request_case": "ubiquitin-76",
+            "gpu_slot_seconds_bounds": [
+              269.6147572994232,
+              401.19315576553345
+            ]
+          },
+          {
+            "pod": "bir-protenix-snapshot-restore-1",
+            "variant": "restore",
+            "pod_uid": "4b24c9e0-3685-4b57-8e34-b56a77569f51",
+            "created_unix": 1789511112.0,
+            "container_started_unix": 1789511139.0,
+            "ready_unix": 1789511226.2066038,
+            "create_to_ready_seconds": 114.20660376548767,
+            "container_to_ready_seconds": 87.20660376548767,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 174,
+              "model_load_seconds": 53.90309374900062,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 6.804416343000412,
+            "create_to_first_validated_seconds": 133.6609125137329,
+            "container_to_first_validated_seconds": 106.66091251373291,
+            "first_request_case": "lysozyme-129",
+            "gpu_slot_seconds_bounds": [
+              186.80407571792603,
+              188.76518082618713
+            ]
+          },
+          {
+            "pod": "bir-protenix-snapshot-restore-2",
+            "variant": "restore",
+            "pod_uid": "540bcdbb-6303-408e-bea0-1fbf32699f60",
+            "created_unix": 1789511339.0,
+            "container_started_unix": 1789511357.0,
+            "ready_unix": 1789511444.7405484,
+            "create_to_ready_seconds": 105.74054837226868,
+            "container_to_ready_seconds": 87.74054837226868,
+            "init_seconds": 0.0,
+            "image_pull_events": [
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4\" already present on machine and can be accessed by the pod",
+              "Container image \"cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-evaluation/bioir-protenix@sha256:0c391bdc2ab0c5260a222ec7df5e5adc5ea9bfdbc2e158b386a97aac5dc72e94\" already present on machine and can be accessed by the pod"
+            ],
+            "ready_metadata": {
+              "ready": true,
+              "model": "protenix-v2",
+              "pid": 174,
+              "model_load_seconds": 53.90309374900062,
+              "boundary": "immutable model loaded and CUDA synchronized; request compilation excluded",
+              "binding": {
+                "artifact_manifest_sha256": "a093d28ecfc8374f143cc32ff713b0e6ad1124c095dbbca5af6e51b4f7dcc6b7",
+                "checkpoint_sha256": "8f931f9774a396b67033d0e58628e1834f4a1448165e04254b40a780b0c0d599",
+                "source_revision": "2475421477ab414b571149ad4a875c390ff8a35d",
+                "dtype": "bf16",
+                "model_name": "protenix-v2",
+                "load_checkpoint_dir": "/models/protenix-v2/checkpoint"
+              }
+            },
+            "first_request_seconds": 6.4418997250004395,
+            "create_to_first_validated_seconds": 144.5794177055359,
+            "container_to_first_validated_seconds": 126.57941770553589,
+            "first_request_case": "lysozyme-129",
+            "gpu_slot_seconds_bounds": [
+              218.56414461135864,
+              220.42490196228027
+            ]
+          }
+        ],
+        "startup_summaries": [
+          {
+            "variant": "donor",
+            "n": 1,
+            "create_to_ready_seconds": {
+              "samples": [
+                100.04431509971619
+              ],
+              "median": 100.04431509971619
+            },
+            "container_to_ready_seconds": {
+              "samples": [
+                60.04431509971619
+              ],
+              "median": 60.04431509971619
+            },
+            "create_to_first_validated_seconds": {
+              "samples": [
+                275.6147572994232
+              ],
+              "median": 275.6147572994232
+            },
+            "container_to_first_validated_seconds": {
+              "samples": [
+                235.61475729942322
+              ],
+              "median": 235.61475729942322
+            },
+            "first_request_seconds": {
+              "samples": [
+                14.92940426200039
+              ],
+              "median": 14.92940426200039
+            }
+          },
+          {
+            "variant": "restore",
+            "n": 2,
+            "create_to_ready_seconds": {
+              "samples": [
+                114.20660376548767,
+                105.74054837226868
+              ],
+              "median": 109.97357606887817
+            },
+            "container_to_ready_seconds": {
+              "samples": [
+                87.20660376548767,
+                87.74054837226868
+              ],
+              "median": 87.47357606887817
+            },
+            "create_to_first_validated_seconds": {
+              "samples": [
+                133.6609125137329,
+                144.5794177055359
+              ],
+              "median": 139.1201651096344
+            },
+            "container_to_first_validated_seconds": {
+              "samples": [
+                106.66091251373291,
+                126.57941770553589
+              ],
+              "median": 116.6201651096344
+            },
+            "first_request_seconds": {
+              "samples": [
+                6.804416343000412,
+                6.4418997250004395
+              ],
+              "median": 6.623158034000426
+            }
+          }
+        ],
+        "gpu_slot_seconds_bounds": [
+          674.9829776287079,
+          810.3832385540009
+        ],
+        "gpu_slot_seconds_per_validated_prediction_bounds": [
+          134.99659552574158,
+          162.07664771080016
+        ],
+        "gpu_cost_scope": "Includes loading, troubleshooting, capture/flush, request execution, collection, idle gaps and deletion. Slot-time proxy, not GPU compute time or production throughput. Excludes interrupted restore3 lifetime whose release is unobserved; do not treat closed-pod sum as total experiment cost.",
+        "interrupted_cohort": {
+          "completed_restores": 2,
+          "interrupted_restore": "bir-protenix-snapshot-restore-3",
+          "controls": 0,
+          "reason": "NodeNotReady22:35:29Z; provider reportsSTOPPED, initiating cause not attributed here",
+          "evidence": "incident/",
+          "cleanup": "Final normal reclamation confirmed: task pods/PVC/PV/ConfigMaps absent. Earlier pending receipts are historical. No force/finalizer/provider changes."
+        }
+      },
+      "recommendation": "Hold: original node stopped during third restore. Two real restores are retained, but matched normal controls/fallback were not run; no startup ratio or numerical-parity conclusion.",
+      "limitations": [
+        "Technical restore compatibility only: model-lane Protenix scientific-quality regression remains disqualifying.",
+        "Same GPU UUID, image, driver and kernel only; no device remapping or driver-upgrade qualification.",
+        "Tiny fixed-seed public cohort does not establish biological non-inferiority or tail latency.",
+        "Preparation handoffs reused exactly from validated current CPU lane; candidate image lacks zstd for standalone CPU handoff packaging.",
+        "Readiness polling and kubectl overhead are included; health model_load_seconds is inherited captured metadata, not restore time.",
+        "Initial donor includes first image pull and troubleshooting; excluded from matched restore/normal ratio.",
+        "The initial donor first-output delay includes failed CPU-preparation attempts and operator time; excluded from matched startup ratios.",
+        "First donor and later restored outputs differ, but their request histories differ too. Matched-history controls and their own numerical dispersion are retained without causal attribution.",
+        "Per-request wall_seconds ends after native wrapper and finite-coordinate/cardinality validation. Additional sequence/graph audit and controller collection occur outside that request clock; full pod allocation bounds include them.",
+        "Ordinary-load controls start with an empty task executable cache; restore and guarded normal-load fallback reuse the donor's captured executable cache. Fallback is a single distinct cached-start path, not another matched normal control or a repeated cache-only optimization benchmark."
+      ],
+      "evidence": [
+        "analysis.json",
+        "manifests/",
+        "inventory/",
+        "lifecycle/",
+        "raw/",
+        "control.py",
+        "operate.py",
+        "matrix.py",
+        "request.py",
+        "summarize.py"
+      ],
+      "resource_closure": {
+        "pods": [],
+        "pvc": null,
+        "pv": null,
+        "configmaps": [
+          null,
+          null
+        ],
+        "gpu_release": "Final memory not directly re-probed after historical interruption. Latest manager receipt has this node Ready=True again; historical STOPPED evidence is not current state. Last completed pod release was separately verified.",
+        "cleanup_receipts": "incident/cleanup-request.json",
+        "latest_saved_node_condition": {
+          "name": "computeinstance-e00fkt1bsa4ec657sn",
+          "ready": {
+            "lastHeartbeatTime": "2026-09-15T23:30:05Z",
+            "lastTransitionTime": "2026-09-15T23:17:17Z",
+            "message": "kubelet is posting ready status",
+            "reason": "KubeletReady",
+            "status": "True",
+            "type": "Ready"
+          }
+        }
+      }
+    }
+  ]
+}
