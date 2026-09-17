@@ -105,6 +105,9 @@ class NetworkBoundaryConfig:
     transition_groups: frozenset[str]
     maintenance_groups: frozenset[str]
     certificate_groups: frozenset[str]
+    custody_epoch: str
+    custody_active_from: datetime
+    custody_active_until: datetime
     release_inventory: tuple[ReleaseInventoryEntry, ...] = ()
     controller_manager_writer: str = "system:kube-controller-manager"
 
@@ -468,6 +471,25 @@ class NetworkBoundaryAdmission:
         ]
         if len(keys) != len(set(keys)):
             raise NetworkBoundaryError("the signed Helm release inventory has duplicate authorities")
+        if (
+            re.fullmatch(r"[a-f0-9]{64}", config.custody_epoch) is None
+            or config.custody_active_from.tzinfo is None
+            or config.custody_active_until.tzinfo is None
+            or config.custody_active_from >= config.custody_active_until
+            or config.custody_active_until - config.custody_active_from
+            > timedelta(hours=2)
+        ):
+            raise NetworkBoundaryError("the admission custody epoch is malformed")
+
+    def _require_active_custody(self) -> datetime:
+        now = self.clock().astimezone(UTC)
+        if not (
+            self.config.custody_active_from.astimezone(UTC)
+            <= now
+            < self.config.custody_active_until.astimezone(UTC)
+        ):
+            raise NetworkBoundaryError("the signed admission custody epoch is not active")
+        return now
 
     @staticmethod
     def _service_account_groups(username: str) -> frozenset[str] | None:
@@ -502,6 +524,12 @@ class NetworkBoundaryAdmission:
         raise NetworkBoundaryError("the authenticated writer has no exact group contract")
 
     def _authorize_identity(self, user_info: Mapping[str, Any], expected_username: str) -> None:
+        if expected_username in {
+            self.config.authorizer_writer,
+            self.config.transition_writer,
+            self.config.maintenance_writer,
+        }:
+            self._require_active_custody()
         username = user_info.get("username")
         groups = user_info.get("groups", [])
         extra = user_info.get("extra", {})
@@ -546,7 +574,10 @@ class NetworkBoundaryAdmission:
             raise NetworkBoundaryError(f"{label} renewTime is malformed") from exc
         if renewed.tzinfo is None:
             raise NetworkBoundaryError(f"{label} renewTime has no timezone")
-        return renewed.astimezone(UTC) + timedelta(seconds=duration)
+        renewed = renewed.astimezone(UTC)
+        if renewed - self.clock().astimezone(UTC) > timedelta(seconds=30):
+            raise NetworkBoundaryError(f"{label} renewTime is ahead of server time")
+        return renewed + timedelta(seconds=duration)
 
     async def _active_holder(self, *, lease_name: str, writer: str) -> str:
         lease = await self.reader.get(
@@ -802,6 +833,7 @@ class NetworkBoundaryAdmission:
         old_value: Mapping[str, Any],
     ) -> None:
         self._authorize_identity(user_info, expected_writer)
+        now = self._require_active_custody()
         username = user_info.get("username")
         if operation == "DELETE":
             raise NetworkBoundaryError("the retained network-boundary Lease cannot be deleted")
@@ -809,6 +841,24 @@ class NetworkBoundaryAdmission:
         new_annotations = _mapping(new_metadata.get("annotations"), "transition Lease.annotations")
         new_spec = _mapping(value.get("spec"), "transition Lease.spec")
         new_holder = new_spec.get("holderIdentity", "")
+        duration = new_spec.get("leaseDurationSeconds")
+        renew_time = new_spec.get("renewTime")
+        try:
+            renewed = datetime.fromisoformat(str(renew_time).replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise NetworkBoundaryError("transition Lease renewTime is malformed") from exc
+        if (
+            not isinstance(duration, int)
+            or isinstance(duration, bool)
+            or not 1 <= duration <= 7200
+            or renewed.tzinfo is None
+            or abs((renewed.astimezone(UTC) - now).total_seconds()) > 30
+            or renewed.astimezone(UTC) + timedelta(seconds=duration)
+            > self.config.custody_active_until.astimezone(UTC)
+        ):
+            raise NetworkBoundaryError(
+                "transition Lease timing is outside server time or signed custody"
+            )
         if not isinstance(new_holder, str):
             raise NetworkBoundaryError(f"{lease_name} holder is malformed")
         if new_annotations.get(TRANSITION_WRITER_ANNOTATION) != username:

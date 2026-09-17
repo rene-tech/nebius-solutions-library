@@ -1,16 +1,18 @@
 # SAI-03 model-runtime network isolation
 
 Status: unreviewed additive corrective successor whose direct parent is rejected
-source commit `3212a466b546132a39cbfa2a37cc9f88fc04b709` / tree
-`a08ede4d8044f4860541a4ee07c3e12bb98e2cbe`; that exact commit and every
+source commit `79b39dd53a769dc179027d2e506018e7ce6a209b` / tree
+`fff4f4309147dccae95423be3c6fe3679cd3461c`; that exact commit and every
 predecessor remain preserved as negative evidence. Its exact final static review
-remained SOURCE/INTEGRATION/LIVE NO-GO on nine enumerated blockers. Rejected commits
+remained SOURCE/INTEGRATION/LIVE NO-GO on eight enumerated blockers. Rejected commits
 `6dc67038698ed4d0412873e02baa1d50b179ff3c` and
 `093798f53cb4249887e59513a3b0114246f7e94c`, plus final-NO-GO
 `9b71b8a58b1e23a1d5f9d9ac11243dbad9a4652f` and
 `518c60c34439e4a2f7dafc6c218de58af6a0c2a9`,
 `6eb6d7afb3365658da5d7ab51b7b152e66b8237a`, and
-`fe0f71034af842df8782f3c7f52d74bcf4ad8d48` are ancestors of this successor
+`fe0f71034af842df8782f3c7f52d74bcf4ad8d48`,
+`3212a466b546132a39cbfa2a37cc9f88fc04b709`, and
+`4548723496cf766659dd061fa9e491eff89a3202` are ancestors of this successor
 and remain negative evidence; `92f9394cb3eb76b9b02f7682c96c056ae600e9ed` and
 `89b5cfe17cffd0a1924fcb4f1af52c8a449c4d1e` remain separate rejected evidence.
 No commit in this lineage has been deployed. Production rollout remains gated
@@ -220,6 +222,9 @@ the rule before either can integrate.
    provider-enforced zero-principal freeze that self-protects and freezes new
    inherited-scope IAM grants, and each gateway's exact instance, measurement
    resource/version, release, boot, non-root process and exact non-loopback listener state.
+   The production exporter is a signed, root-custodied static ELF with no
+   interpreter segment, executed from sealed bytes in a fresh environment; the
+   Python implementation is protocol-reference-only.
    The provider endpoint and TLS leaf are pinned into the observed snapshot;
    every provider object digest/
    resourceVersion must match, every live member address must equal its exact
@@ -256,7 +261,10 @@ the rule before either can integrate.
    reconstructs the active phase credential and independent auditor from their
    embedded X.509 kubeconfigs, and requires the provider-signed inventory for
    the other phase credentials; it never treats `kubectl auth whoami` or a
-   self-asserted `impersonation_allowed=false` field as custody. These
+   self-asserted `impersonation_allowed=false` field as custody. Each credential
+   has a unique signed epoch and a validity window equal to the active provider
+   freeze; the gateway rejects every mutation outside that window, and Lease
+   timestamps must be within 30 seconds of gateway/admission server time. These
    credentials are external prerequisites; this task does not mint or commit
    them. The two operation Leases are provider-precreated retained objects,
    excluded from the zero-principal freeze, and reachable only through a
@@ -340,13 +348,18 @@ the rule before either can integrate.
    and the exact running controller digest unlock `default-deny`. The admission
    freezes reject an external Helm release write or direct model-controller
    mutation after verification; the Lease serializes every supported
-   post-prepare transition. `inference-stack` repeats the complete provider/IAM,
+   post-prepare transition. Before infrastructure apply, registry mirroring, or
+   foundation/workloads apply, `inference-stack` verifies the same signed
+   provider and authority boundary and fixes the cluster, context, client-tool,
+   and phase-credential epoch. It repeats the complete provider/IAM,
    HA TLS/status, stable-policy, provider-authority, runtime-measurement, and
    excluded-admission-guard verifier every
    five seconds while Terraform is running. It accepts only an extended expiry
    for the same transaction and stable policy, terminates before the remaining
    window falls below 90 seconds, and performs a final custody check after a
-   successful apply. A nominal two-hour maximum assertion therefore cannot
+   successful apply. Terraform runs in a new process group; a failed watchdog
+   first stops the group, then terminates and waits for the complete group, and
+   requires a post-abort live reconciliation. A nominal two-hour maximum assertion therefore cannot
    silently expire during an unbounded apply.
    Concurrent arbitrary-App changes remain safe because admission permits them
    only with a finite immutable profile. The receipt can be refreshed while the
@@ -493,6 +506,28 @@ and terminates
 TLS 1.3 with client-certificate verification inside the measured gateway
 process. These source corrections have not been executed under the no-test
 constraint and are presented for independent review, not as a GO finding.
+
+Exact successor `79b39dd53a769dc179027d2e506018e7ce6a209b` / tree
+`fff4f4309147dccae95423be3c6fe3679cd3461c` also received final
+**SOURCE/INTEGRATION/LIVE NO-GO**. The eight blockers were caller/ambient
+OpenSSL, pathname-reopen verification/parse races, an unsealed Python
+exporter/interpreter/import graph, caller-selected kubectl/Nebius tools,
+authority-only RBAC rebinding, non-expiring phase credentials and client-time
+Lease renewal, custody verification after earlier mutations, and Terraform
+children surviving a watchdog abort. This successor addresses those defects by
+single-reading root-custodied documents and tools with descriptor-relative
+`O_NOFOLLOW`; verifying signatures and X.509 data from sealed bytes using a
+fixed `/usr/bin/openssl` whose exact SHA-256 is pinned by the root deployment
+contract, copied to sealed executable bytes, and run in a fresh environment; requiring a
+provenance-bound static-ELF provider exporter with no `PT_INTERP`; binding the
+exact kubectl/Nebius hashes, profile, home and context into provider custody v7;
+guarding authority-control as well as identity-mint roles; binding every phase
+credential to the active freeze epoch and server time, with every Lease renewal
+and its full duration contained by that freeze; verifying authority and
+provider custody before the first infrastructure, registry, foundation, or
+workloads mutation; and running Terraform in a separately fenced/reaped process
+group with a post-abort live reconciliation. These are unexecuted source
+corrections, not acceptance evidence or a GO claim.
 
 Run from `k8s-inference` unless a command changes directory:
 

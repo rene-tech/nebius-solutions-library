@@ -1435,8 +1435,9 @@ variable "model_runtime_overrides" {
 variable "model_runtime_network_policy" {
   description = "Phased fs2-models isolation contract. Enforcement requires an apply-time-verified workload, Pod, admission and live-controller receipt; Helm rollback requires a later receipt proving default-deny was removed first."
   type = object({
-    phase = optional(string, "prepare")
-    inventory_receipt = optional(object({
+    phase                     = optional(string, "prepare")
+    signature_verifier_sha256 = optional(string, "")
+    inventory_receipt         = optional(object({
       schema          = string
       cluster_id      = string
       namespace       = string

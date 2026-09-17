@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,7 @@ FROZEN_POLICY = (
     "validatingadmissionpolicies.admissionregistration.k8s.io/"
     "_cluster/fs2-model-network-static-custody"
 )
+FIXED_NOW = datetime(2026, 9, 17, 0, 30, tzinfo=UTC)
 
 
 def test_gateway_identity_is_a_verified_transport_digest_not_an_http_header() -> None:
@@ -80,11 +82,14 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
                 "system:authenticated",
             ),
             index == 2,
+            str(index) * 64,
+            datetime(2026, 9, 17, 0, 0, tzinfo=UTC),
+            datetime(2026, 9, 17, 1, 0, tzinfo=UTC),
         )
         for index in range(1, 7)
     }
     value: dict[str, Any] = {
-        "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v3",
+        "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v4",
         "cluster_id": "mk8scluster-test",
         "policy_id": "network-boundary-test",
         "policy_revision": "1",
@@ -102,7 +107,7 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
         "principals": {},
         "mutation_freeze": {
             "active_from": "2026-09-17T00:00:00Z",
-            "active_until": "2999-09-17T00:00:00Z",
+            "active_until": "2026-09-17T01:00:00Z",
             "protected_kubernetes_resources": [FROZEN_POLICY],
         },
         "operation_locks": {
@@ -159,7 +164,9 @@ def gateway(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[ProviderCu
         "gateway-a",
         member,
     )
-    return ProviderCustodyGateway(policy, client=client), client  # type: ignore[arg-type]
+    return ProviderCustodyGateway(
+        policy, client=client, clock=lambda: FIXED_NOW
+    ), client  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -219,7 +226,12 @@ async def test_operation_lease_requires_exact_principal_and_json_patch_cas(
             "path": "/spec/holderIdentity",
             "value": "testrun:123:0123456789abcdef0123456789abcdef",
         },
-        {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 7200},
+        {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 1200},
+        {
+            "op": "replace",
+            "path": "/spec/renewTime",
+            "value": "2026-09-17T00:30:00Z",
+        },
     ]
     body = json.dumps(patch).encode()
     headers = {"content-type": "application/json-patch+json"}
@@ -234,10 +246,26 @@ async def test_operation_lease_requires_exact_principal_and_json_patch_cas(
             transition, "PATCH", path, "", without_holder_test, headers
         )
     overlong = json.loads(body)
-    overlong[-1]["value"] = 7201
+    overlong[-2]["value"] = 7201
     with pytest.raises(ProviderCustodyError, match="duration exceeds"):
         await boundary.proxy(
             transition, "PATCH", path, "", json.dumps(overlong).encode(), headers
+        )
+    beyond_freeze = json.loads(body)
+    beyond_freeze[-2]["value"] = 1801
+    with pytest.raises(ProviderCustodyError, match="exceeds the provider custody freeze"):
+        await boundary.proxy(
+            transition,
+            "PATCH",
+            path,
+            "",
+            json.dumps(beyond_freeze).encode(),
+            headers,
+        )
+    without_renew_time = json.dumps(patch[:-1]).encode()
+    with pytest.raises(ProviderCustodyError, match="one duration and one renewTime"):
+        await boundary.proxy(
+            transition, "PATCH", path, "", without_renew_time, headers
         )
     response = await boundary.proxy(transition, "PATCH", path, "", body, headers)
     assert response.status_code == 200

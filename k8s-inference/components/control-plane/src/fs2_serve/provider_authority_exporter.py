@@ -1,15 +1,16 @@
-"""Pinned client for the provider-native effective-authority snapshot API.
+"""Reference client for the provider-native effective-authority snapshot API.
 
-The installed artifact is measured by the signed custody receipt and must be
-root-owned and non-writable.  It performs two-way TLS directly to the provider
-authority API, pins the live server leaf, supplies a nonce, and emits only the
-provider observation envelope consumed by ``inference-stack``.  Credentials,
-raw certificates and response headers are never written to stdout.
+This module remains a readable protocol reference and unit-test surface. It is
+not an admissible production custody executable: the deployment wrapper accepts
+only the separately built, provenance-bound static ELF implementation under
+``provider-custody/native-exporter``. That restriction closes the ambient
+Python interpreter/import/loader trust gap.
 """
 
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import http.client
 import json
@@ -17,6 +18,7 @@ import os
 import re
 import secrets
 import ssl
+import stat
 import sys
 from collections.abc import Mapping
 from pathlib import Path
@@ -31,18 +33,39 @@ class ProviderAuthorityExportError(RuntimeError):
     """The provider-native authority observation failed closed."""
 
 
-def _private_file(environment_name: str) -> Path:
-    path = Path(os.environ.get(environment_name, ""))
+def _sealed_private_file(environment_name: str) -> Path:
+    """Accept only an inherited, immutable memfd from the trusted launcher."""
+
+    value = os.environ.get(environment_name, "")
+    match = re.fullmatch(r"/proc/self/fd/([1-9][0-9]*)", value)
+    if match is None:
+        raise ProviderAuthorityExportError(
+            f"{environment_name} must name an inherited sealed descriptor"
+        )
+    descriptor = int(match.group(1))
+    try:
+        metadata = os.fstat(descriptor)
+        required_seals = (
+            fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_WRITE
+            | fcntl.F_SEAL_SEAL
+        )
+        observed_seals = fcntl.fcntl(descriptor, fcntl.F_GET_SEALS)
+    except OSError as exc:
+        raise ProviderAuthorityExportError(
+            f"{environment_name} descriptor is unavailable"
+        ) from exc
     if (
-        not path.is_absolute()
-        or path.is_symlink()
-        or not path.is_file()
-        or path.stat().st_mode & 0o077
+        not stat.S_ISREG(metadata.st_mode)
+        or metadata.st_mode & 0o077
+        or metadata.st_size < 1
+        or observed_seals != required_seals
     ):
         raise ProviderAuthorityExportError(
-            f"{environment_name} must be an absolute mode-0600 regular file"
+            f"{environment_name} must be an immutable private regular memfd"
         )
-    return path
+    return Path(value)
 
 
 def _provider_endpoint() -> str:
@@ -65,11 +88,11 @@ def _provider_endpoint() -> str:
 
 def _tls_context() -> ssl.SSLContext:
     context = ssl.create_default_context(
-        cafile=str(_private_file("FS2_PROVIDER_AUTHORITY_API_CA"))
+        cafile=str(_sealed_private_file("FS2_PROVIDER_AUTHORITY_API_CA"))
     )
     context.load_cert_chain(
-        str(_private_file("FS2_PROVIDER_AUTHORITY_API_CLIENT_CERT")),
-        str(_private_file("FS2_PROVIDER_AUTHORITY_API_CLIENT_KEY")),
+        str(_sealed_private_file("FS2_PROVIDER_AUTHORITY_API_CLIENT_CERT")),
+        str(_sealed_private_file("FS2_PROVIDER_AUTHORITY_API_CLIENT_KEY")),
     )
     context.minimum_version = ssl.TLSVersion.TLSv1_3
     context.maximum_version = ssl.TLSVersion.TLSv1_3

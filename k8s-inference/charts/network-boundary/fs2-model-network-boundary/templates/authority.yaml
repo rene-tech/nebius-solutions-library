@@ -116,6 +116,9 @@ metadata:
     fs2-serve.nebius.ai/external-custody-policy-revision: {{ .Values.externalCustody.policyRevision | quote }}
     fs2-serve.nebius.ai/external-custody-policy-sha256: {{ .Values.externalCustody.policySha256 | quote }}
     fs2-serve.nebius.ai/provider-trust-root-sha256: {{ .Values.externalCustody.providerTrustRootSha256 | quote }}
+    fs2-serve.nebius.ai/custody-credential-epoch: {{ .Values.externalCustody.credentialEpoch | quote }}
+    fs2-serve.nebius.ai/custody-active-from: {{ .Values.externalCustody.activeFrom | quote }}
+    fs2-serve.nebius.ai/custody-active-until: {{ .Values.externalCustody.activeUntil | quote }}
     fs2-serve.nebius.ai/release-inventory-sha256: {{ .Values.releaseInventory | toJson | sha256sum | quote }}
 spec:
   replicas: {{ .Values.replicaCount }}
@@ -198,6 +201,12 @@ spec:
               value: {{ .Values.releaseInventory | toJson | quote }}
             - name: FS2_NETWORK_BOUNDARY_ADMISSION_API_TIMEOUT_SECONDS
               value: {{ .Values.apiTimeoutSeconds | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_CUSTODY_EPOCH
+              value: {{ .Values.externalCustody.credentialEpoch | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_CUSTODY_ACTIVE_FROM
+              value: {{ .Values.externalCustody.activeFrom | quote }}
+            - name: FS2_NETWORK_BOUNDARY_ADMISSION_CUSTODY_ACTIVE_UNTIL
+              value: {{ .Values.externalCustody.activeUntil | quote }}
           volumeMounts:
             - name: kubernetes-api
               mountPath: /var/run/secrets/fs2-network-boundary

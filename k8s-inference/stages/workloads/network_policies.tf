@@ -928,13 +928,16 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         var.model_network_boundary_authority_receipt.jobset_writer.username == local.model_runtime_jobset_writer &&
         var.model_network_boundary_authority_receipt.custody.trust_root_sha256 == var.model_network_boundary_trust_root_sha256 &&
         var.model_network_boundary_authority_receipt.custody.provider.kind == "nebius-iam" &&
-        var.model_network_boundary_authority_receipt.external_custody.schema == "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5" &&
+        var.model_network_boundary_authority_receipt.external_custody.schema == "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7" &&
         var.model_network_boundary_authority_receipt.external_custody.provider_trust_root_sha256 == var.model_network_provider_trust_root_sha256 &&
+        var.model_network_boundary_authority_receipt.external_custody.signature_verifier_sha256 == var.model_runtime_network_policy.signature_verifier_sha256 &&
+        can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.client_tools_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.attestation_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.stable_policy_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.gateway_policy_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.kubernetes_authorization_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.provider_authority_census_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.credential_epochs_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.model_network_boundary_authority_receipt.external_custody.gateway_runtime_measurements_sha256)) &&
         var.model_network_boundary_authority_receipt.external_custody.provider_inventory_sha256 == local.live_model_network_provider_inventory_sha256 &&
         var.model_network_boundary_authority_receipt.external_custody.gateway_member_ids == [for member in local.live_model_network_provider_gateway_members : member.member_id] &&
@@ -963,7 +966,7 @@ resource "terraform_data" "model_runtime_network_policy_transition" {
         })),
         false,
       )
-      error_message = "Every live model-network phase requires a signature-verified v5 authority receipt, two stable provider-native scope/IAM/freeze/runtime observations, no in-cluster subject with direct excluded-guard mutation authority, exact-object VAP custody, live TLS/Service/VWC/RBAC semantics, a twice-read exact JobSet writer, and phase-correct bootstrap or armed identities."
+      error_message = "Every live model-network phase requires a signature-verified v7 authority receipt, a root-pinned signature verifier, two stable provider-native scope/IAM/freeze/runtime observations, no in-cluster subject with direct excluded-guard mutation authority, exact-object VAP custody, live TLS/Service/VWC/RBAC semantics, a twice-read exact JobSet writer, and phase-correct bootstrap or armed identities."
     }
 
     precondition {

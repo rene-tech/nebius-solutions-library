@@ -22,6 +22,12 @@ async def serve() -> None:
     settings = Settings()
     if not settings.network_boundary_admission_enabled:
         raise RuntimeError("network-boundary admission is disabled")
+    if (
+        settings.network_boundary_admission_custody_epoch is None
+        or settings.network_boundary_admission_custody_active_from is None
+        or settings.network_boundary_admission_custody_active_until is None
+    ):
+        raise RuntimeError("network-boundary admission custody epoch is required")
     reader = KubernetesBoundaryReader(
         base_url=settings.network_boundary_admission_api_url,
         token_file=settings.network_boundary_admission_token_file,
@@ -45,6 +51,9 @@ async def serve() -> None:
             transition_groups=frozenset(settings.network_boundary_admission_transition_groups),
             maintenance_groups=frozenset(settings.network_boundary_admission_maintenance_groups),
             certificate_groups=frozenset(settings.network_boundary_admission_certificate_groups),
+            custody_epoch=settings.network_boundary_admission_custody_epoch,
+            custody_active_from=settings.network_boundary_admission_custody_active_from,
+            custody_active_until=settings.network_boundary_admission_custody_active_until,
             release_inventory=tuple(
                 ReleaseInventoryEntry.from_value(value)
                 for value in settings.network_boundary_admission_release_inventory

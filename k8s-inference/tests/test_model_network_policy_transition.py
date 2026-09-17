@@ -108,6 +108,7 @@ def prepare_contract() -> dict[str, object]:
         "boundary_webhook_name": "fs2-model-network-boundary",
         "boundary_authority": boundary_authority(),
         "provider_trust_root_sha256": "f" * 64,
+        "signature_verifier_sha256": "e" * 64,
         "jobset_writer_username": (
             "system:serviceaccount:jobset-system:fs2-testrun-jobset-controller"
         ),
@@ -703,10 +704,13 @@ def boundary_authority() -> dict[str, object]:
             "serving_certificate_sha256": "3" * 64,
         },
         "external_custody": {
-            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5",
+            "schema": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7",
             "policy_id": "network-boundary-test",
             "policy_revision": "1",
             "provider_trust_root_sha256": "f" * 64,
+            "signature_verifier_sha256": "e" * 64,
+            "client_tools_sha256": "1" * 64,
+            "credential_epochs_sha256": "d" * 64,
             "attestation_sha256": "4" * 64,
             "stable_policy_sha256": "8" * 64,
             "gateway_policy_sha256": "7" * 64,
@@ -1354,6 +1358,9 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
     assert "kind: ValidatingAdmissionPolicy" in static_custody
     assert "fs2-model-network-static-custody" in static_custody
     assert "fs2-model-network-impersonation-guard" in static_custody
+    assert "newProtectedBinding" in static_custody
+    assert "authorityControlClusterRoles" in static_custody
+    assert "authorityControlRoles" in static_custody
     assert "request.operation != 'DELETE'" in static_custody
     assert "certificateController" in static_custody
     assert "request.operation in ['CREATE', 'UPDATE']" in static_custody
@@ -1364,7 +1371,7 @@ def test_external_boundary_authority_is_separate_and_narrowly_scoped() -> None:
     assert "fs2-model-network-helm-writer" in helm_writer
     assert "fs2-model-network-maintenance" in helm_writer
     assert receipt_schema["properties"]["schema"]["const"].endswith("/v4")
-    assert provider_schema["properties"]["schema"]["const"].endswith("/v5")
+    assert provider_schema["properties"]["schema"]["const"].endswith("/v7")
     assert "protected_kubernetes_resources" in provider_schema["properties"][
         "mutation_freeze"
     ]["required"]
@@ -1453,7 +1460,7 @@ def test_provider_custody_closes_in_cluster_ha_inventory_and_apply_expiry_paths(
     assert schema["properties"]["provider_enumeration"]["properties"][
         "service_accounts_sha256"
     ]["$ref"] == "#/$defs/sha256"
-    assert schema["properties"]["schema"]["const"].endswith("/v5")
+    assert schema["properties"]["schema"]["const"].endswith("/v7")
     assert "provider_authority_census" in schema["required"]
     assert schema["$defs"]["providerAuthorityCensus"]["properties"][
         "snapshot"

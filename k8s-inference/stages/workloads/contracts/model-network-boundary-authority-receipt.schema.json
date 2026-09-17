@@ -113,12 +113,15 @@
     },
     "external_custody": {
       "type": "object",
-      "required": ["schema", "policy_id", "policy_revision", "provider_trust_root_sha256", "attestation_sha256", "stable_policy_sha256", "gateway_policy_sha256", "provider_inventory_sha256", "kubernetes_authorization_sha256", "provider_authority_census_sha256", "gateway_runtime_measurements_sha256", "gateway_member_ids", "cluster_resource_version", "gateway_egress_host_cidrs", "freeze_transaction_id", "freeze_expires_at", "frozen_resources_sha256"],
+      "required": ["schema", "policy_id", "policy_revision", "provider_trust_root_sha256", "signature_verifier_sha256", "client_tools_sha256", "credential_epochs_sha256", "attestation_sha256", "stable_policy_sha256", "gateway_policy_sha256", "provider_inventory_sha256", "kubernetes_authorization_sha256", "provider_authority_census_sha256", "gateway_runtime_measurements_sha256", "gateway_member_ids", "cluster_resource_version", "gateway_egress_host_cidrs", "freeze_transaction_id", "freeze_expires_at", "frozen_resources_sha256"],
       "properties": {
-        "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5"},
+        "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7"},
         "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
         "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
         "provider_trust_root_sha256": {"$ref": "#/$defs/sha256"},
+        "signature_verifier_sha256": {"$ref": "#/$defs/sha256"},
+        "client_tools_sha256": {"$ref": "#/$defs/sha256"},
+        "credential_epochs_sha256": {"$ref": "#/$defs/sha256"},
         "attestation_sha256": {"$ref": "#/$defs/sha256"},
         "stable_policy_sha256": {"$ref": "#/$defs/sha256"},
         "gateway_policy_sha256": {"$ref": "#/$defs/sha256"},
@@ -254,7 +257,7 @@
     "imageDigest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "credential": {
       "type": "object",
-      "required": ["username", "groups", "extras", "authentication_mode", "provider_principal_id", "kubeconfig_sha256", "client_certificate_sha256", "issuer_ca_sha256", "gateway_server"],
+      "required": ["username", "groups", "extras", "authentication_mode", "provider_principal_id", "kubeconfig_sha256", "client_certificate_sha256", "issuer_ca_sha256", "gateway_server", "credential_epoch", "not_before", "not_after"],
       "properties": {
         "username": {"enum": ["fs2-model-network-authorizer", "fs2-model-network-transition", "fs2-model-network-maintenance", "fs2-model-network-auditor", "fs2-model-network-custodian", "fs2-model-network-recovery"]},
         "groups": {
@@ -270,7 +273,10 @@
         "kubeconfig_sha256": {"$ref": "#/$defs/sha256"},
         "client_certificate_sha256": {"$ref": "#/$defs/sha256"},
         "issuer_ca_sha256": {"$ref": "#/$defs/sha256"},
-        "gateway_server": {"type": "string", "pattern": "^https://[^/?#]+(?::[0-9]{1,5})?$"}
+        "gateway_server": {"type": "string", "pattern": "^https://[^/?#]+(?::[0-9]{1,5})?$"},
+        "credential_epoch": {"$ref": "#/$defs/sha256"},
+        "not_before": {"type": "string", "format": "date-time"},
+        "not_after": {"type": "string", "format": "date-time"}
       },
       "additionalProperties": false
     },

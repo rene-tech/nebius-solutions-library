@@ -28,6 +28,14 @@ STACK = importlib.util.module_from_spec(SPEC)
 sys.modules[MODULE_NAME] = STACK
 LOADER.exec_module(STACK)
 
+KUBECTL_TOOL = {
+    "path": "/usr/bin/kubectl",
+    "sha256": "1" * 64,
+    "context": "test-context",
+}
+KUBECONFIG_SHA256 = "2" * 64
+CUSTODY_EXPIRES_AT = STACK.datetime.now(STACK.UTC) + STACK.timedelta(hours=1)
+
 
 def arguments() -> Namespace:
     return Namespace(
@@ -79,6 +87,12 @@ def contract() -> dict:
             "workloads": {
                 "deployment_profile": "full_catalog",
                 "enabled_model_ids": ["proteinmpnn"],
+                "model_runtime_network_policy": {
+                    "phase": "prepare",
+                    "authority_trust_root_sha256": "a" * 64,
+                    "provider_trust_root_sha256": "b" * 64,
+                    "signature_verifier_sha256": "c" * 64,
+                },
             },
         },
         "secret_environment": {
@@ -93,6 +107,50 @@ def contract() -> dict:
             "nvcr_dockerconfig": True,
         },
     }
+
+
+def provider_custody_fixture() -> tuple[dict, dict]:
+    attestation = {
+        "cluster_id": "mk8scluster-test",
+        "client_tools": {
+            "kubectl": {
+                "path": "kubectl-test",
+                "sha256": "1" * 64,
+                "context": "fs2-wrapper-test",
+            },
+            "nebius": {
+                "path": "nebius-test",
+                "sha256": "2" * 64,
+                "profile": "sandbox",
+                "home_path": "/root/provider-home",
+            },
+        },
+        "credentials": {
+            "authorizer": {"kubeconfig_sha256": "3" * 64},
+            "transition": {"kubeconfig_sha256": "4" * 64},
+            "maintenance": {"kubeconfig_sha256": "5" * 64},
+            "auditor": {"kubeconfig_sha256": "6" * 64},
+        },
+        "mutation_freeze": {"transaction_id": "freeze1:1:" + "7" * 32},
+        "provider_gateway": {"provider_inventory_sha256": "8" * 64},
+        "kubernetes_authorization": {},
+        "provider_authority_census": {
+            "snapshot": {"gateway_runtime_measurements": {}},
+        },
+    }
+    external_custody = {
+        "stable_policy_sha256": STACK._provider_custody_stable_sha256(attestation),
+        "freeze_transaction_id": attestation["mutation_freeze"]["transaction_id"],
+        "provider_inventory_sha256": "8" * 64,
+        "kubernetes_authorization_sha256": STACK._json_sha256({}),
+        "provider_authority_census_sha256": (
+            STACK._provider_authority_census_stable_sha256(
+                attestation["provider_authority_census"]
+            )
+        ),
+        "gateway_runtime_measurements_sha256": STACK._json_sha256({}),
+    }
+    return attestation, {"external_custody": external_custody}
 
 
 def dynamic_outputs(run_root: Path) -> dict:
@@ -248,11 +306,11 @@ def regional_dynamic(run_root: Path) -> dict:
 
 
 class InferenceStackTests(unittest.TestCase):
-    @mock.patch.object(STACK.subprocess, "run")
+    @mock.patch.object(STACK, "_pinned_kubectl_command")
     def test_network_transition_rejects_an_already_pending_helm_release(
-        self, subprocess_run: mock.Mock
+        self, pinned_kubectl: mock.Mock
     ) -> None:
-        subprocess_run.return_value = subprocess.CompletedProcess(
+        pinned_kubectl.return_value = subprocess.CompletedProcess(
             args=["kubectl-test", "get", "secrets,configmaps"],
             returncode=0,
             stdout=json.dumps(
@@ -270,48 +328,52 @@ class InferenceStackTests(unittest.TestCase):
                         }
                     ]
                 }
-            ),
-            stderr="",
+            ).encode(),
+            stderr=b"",
         )
 
         with self.assertRaisesRegex(STACK.DeploymentError, "not idle"):
             STACK.ensure_control_plane_helm_release_idle(
                 kubectl="kubectl-test",
+                kubectl_tool=KUBECTL_TOOL,
                 kubeconfig="/read-only/kubeconfig",
+                kubeconfig_sha256=KUBECONFIG_SHA256,
                 context="test-context",
             )
 
-    @mock.patch.object(STACK.subprocess, "run")
+    @mock.patch.object(STACK, "_pinned_kubectl_command")
     def test_prepare_accepts_absent_helm_history_only_when_explicit(
-        self, subprocess_run: mock.Mock
+        self, pinned_kubectl: mock.Mock
     ) -> None:
-        subprocess_run.return_value = subprocess.CompletedProcess(
+        pinned_kubectl.return_value = subprocess.CompletedProcess(
             args=["kubectl-test", "get", "secrets,configmaps"],
             returncode=0,
-            stdout=json.dumps({"items": []}),
-            stderr="",
+            stdout=json.dumps({"items": []}).encode(),
+            stderr=b"",
         )
         STACK.ensure_control_plane_helm_release_idle(
             kubectl="kubectl-test",
+            kubectl_tool=KUBECTL_TOOL,
             kubeconfig="/read-only/kubeconfig",
+            kubeconfig_sha256=KUBECONFIG_SHA256,
             context="test-context",
             allow_absent=True,
         )
         with self.assertRaisesRegex(STACK.DeploymentError, "history is missing"):
             STACK.ensure_control_plane_helm_release_idle(
                 kubectl="kubectl-test",
+                kubectl_tool=KUBECTL_TOOL,
                 kubeconfig="/read-only/kubeconfig",
+                kubeconfig_sha256=KUBECONFIG_SHA256,
                 context="test-context",
             )
 
-    @mock.patch.object(STACK, "run")
-    @mock.patch.object(STACK.subprocess, "run")
+    @mock.patch.object(STACK, "_pinned_kubectl_command")
     def test_transition_lock_fails_closed_on_unauthorized_get(
         self,
-        subprocess_run: mock.Mock,
-        mutating_run: mock.Mock,
+        pinned_kubectl: mock.Mock,
     ) -> None:
-        subprocess_run.return_value = subprocess.CompletedProcess(
+        pinned_kubectl.return_value = subprocess.CompletedProcess(
             args=["kubectl-test", "auth", "whoami"],
             returncode=0,
             stdout=json.dumps(
@@ -324,30 +386,31 @@ class InferenceStackTests(unittest.TestCase):
                         }
                     }
                 }
-            ),
-            stderr="",
+            ).encode(),
+            stderr=b"",
         )
 
         with self.assertRaisesRegex(STACK.DeploymentError, "dedicated"):
             with STACK.model_network_transition_lock(
                 kubectl="kubectl-test",
+                kubectl_tool=KUBECTL_TOOL,
                 kubeconfig="/read-only/kubeconfig",
+                kubeconfig_sha256=KUBECONFIG_SHA256,
                 context="test-context",
+                custody_expires_at=CUSTODY_EXPIRES_AT,
                 run_id="testrun",
             ):
                 self.fail("an unauthorized Lease read must not acquire the lock")
 
-        mutating_run.assert_not_called()
+        self.assertEqual(1, pinned_kubectl.call_count)
 
-    @mock.patch.object(STACK, "run")
-    @mock.patch.object(STACK.subprocess, "run")
+    @mock.patch.object(STACK, "_pinned_kubectl_command")
     def test_transition_lock_binds_the_authenticated_writer_in_the_lease(
         self,
-        subprocess_run: mock.Mock,
-        mutating_run: mock.Mock,
+        pinned_kubectl: mock.Mock,
     ) -> None:
         username = "fs2-model-network-transition"
-        subprocess_run.side_effect = [
+        pinned_kubectl.side_effect = [
             subprocess.CompletedProcess(
                 args=["kubectl-test", "auth", "whoami"],
                 returncode=0,
@@ -364,8 +427,8 @@ class InferenceStackTests(unittest.TestCase):
                             }
                         }
                     }
-                ),
-                stderr="",
+                ).encode(),
+                stderr=b"",
             ),
             subprocess.CompletedProcess(
                 args=["kubectl-test", "get", "lease"],
@@ -385,22 +448,36 @@ class InferenceStackTests(unittest.TestCase):
                             "leaseTransitions": 4,
                         },
                     }
-                ),
-                stderr="",
+                ).encode(),
+                stderr=b"",
             ),
+            subprocess.CompletedProcess([], 0, stdout=b"", stderr=b""),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                stdout=json.dumps(
+                    {"metadata": {"resourceVersion": "18"}}
+                ).encode(),
+                stderr=b"",
+            ),
+            subprocess.CompletedProcess([], 0, stdout=b"", stderr=b""),
         ]
 
         with STACK.model_network_transition_lock(
             kubectl="kubectl-test",
+            kubectl_tool=KUBECTL_TOOL,
             kubeconfig="/read-only/kubeconfig",
+            kubeconfig_sha256=KUBECONFIG_SHA256,
             context="test-context",
+            custody_expires_at=CUSTODY_EXPIRES_AT,
             run_id="testrun",
         ) as (holder, observed_username):
             self.assertTrue(holder.startswith("testrun:"))
             self.assertEqual(username, observed_username)
 
+        acquisition_arguments = pinned_kubectl.call_args_list[2].kwargs["arguments"]
         acquisition_patch = json.loads(
-            mutating_run.call_args_list[0].kwargs["input_text"]
+            acquisition_arguments[acquisition_arguments.index("-p") + 1]
         )
         self.assertIn(
             {
@@ -410,18 +487,16 @@ class InferenceStackTests(unittest.TestCase):
             },
             acquisition_patch,
         )
-        self.assertEqual(2, mutating_run.call_count)
+        self.assertEqual(5, pinned_kubectl.call_count)
 
-    @mock.patch.object(STACK, "run")
-    @mock.patch.object(STACK.subprocess, "run")
+    @mock.patch.object(STACK, "_pinned_kubectl_command")
     def test_transition_lock_replaces_an_expired_nonempty_holder_by_rv_cas(
         self,
-        subprocess_run: mock.Mock,
-        mutating_run: mock.Mock,
+        pinned_kubectl: mock.Mock,
     ) -> None:
         username = "fs2-model-network-transition"
         old_holder = "testrun:100:0123456789abcdef0123456789abcdef"
-        subprocess_run.side_effect = [
+        pinned_kubectl.side_effect = [
             subprocess.CompletedProcess(
                 args=["kubectl-test", "auth", "whoami"],
                 returncode=0,
@@ -438,8 +513,8 @@ class InferenceStackTests(unittest.TestCase):
                             }
                         }
                     }
-                ),
-                stderr="",
+                ).encode(),
+                stderr=b"",
             ),
             subprocess.CompletedProcess(
                 args=["kubectl-test", "get", "lease"],
@@ -460,22 +535,36 @@ class InferenceStackTests(unittest.TestCase):
                             "leaseTransitions": 7,
                         },
                     }
-                ),
-                stderr="",
+                ).encode(),
+                stderr=b"",
             ),
+            subprocess.CompletedProcess([], 0, stdout=b"", stderr=b""),
+            subprocess.CompletedProcess(
+                [],
+                0,
+                stdout=json.dumps(
+                    {"metadata": {"resourceVersion": "42"}}
+                ).encode(),
+                stderr=b"",
+            ),
+            subprocess.CompletedProcess([], 0, stdout=b"", stderr=b""),
         ]
 
         with STACK.model_network_transition_lock(
             kubectl="kubectl-test",
+            kubectl_tool=KUBECTL_TOOL,
             kubeconfig="/read-only/kubeconfig",
+            kubeconfig_sha256=KUBECONFIG_SHA256,
             context="test-context",
+            custody_expires_at=CUSTODY_EXPIRES_AT,
             run_id="testrun",
         ) as (holder, observed_username):
             self.assertNotEqual(old_holder, holder)
             self.assertEqual(username, observed_username)
 
+        acquisition_arguments = pinned_kubectl.call_args_list[2].kwargs["arguments"]
         acquisition_patch = json.loads(
-            mutating_run.call_args_list[0].kwargs["input_text"]
+            acquisition_arguments[acquisition_arguments.index("-p") + 1]
         )
         self.assertIn(
             {"op": "test", "path": "/metadata/resourceVersion", "value": "41"},
@@ -1534,24 +1623,54 @@ class InferenceStackTests(unittest.TestCase):
                 STACK.preflight_accelerators(arguments(), configuration)
 
     def test_nebius_profile_is_used_for_kubeconfig_retrieval(self) -> None:
-        calls: list[list[str]] = []
         with tempfile.TemporaryDirectory(
             prefix="inference-stack-profile-"
         ) as temporary:
             run_root = Path(temporary)
 
-            def fake_run(arguments, **_kwargs):
-                calls.append(list(arguments))
-                if arguments[0] == "nebius-test":
-                    (run_root / "kubeconfig").write_text("test", encoding="utf-8")
-                    return subprocess.CompletedProcess(arguments, 0, stdout="")
-                return subprocess.CompletedProcess(
-                    arguments,
-                    0,
-                    stdout="11111111-2222-3333-4444-555555555555",
-                )
+            def create_kubeconfig(**_kwargs):
+                (run_root / "kubeconfig").write_text("test", encoding="utf-8")
+                return subprocess.CompletedProcess([], 0, stdout=b"", stderr=b"")
 
-            with mock.patch.object(STACK, "run", side_effect=fake_run):
+            provider_attestation = {
+                "cluster_id": "mk8scluster-test",
+                "client_tools": {
+                    "nebius": {
+                        "path": "nebius-test",
+                        "sha256": "1" * 64,
+                        "profile": "explicit-profile",
+                        "home_path": "/root/provider-home",
+                    },
+                    "kubectl": {
+                        "path": "kubectl-test",
+                        "sha256": "2" * 64,
+                        "context": "fs2-wrapper-test",
+                    },
+                },
+                "credentials": {
+                    "auditor": {"kubeconfig_sha256": "3" * 64},
+                },
+            }
+            with (
+                mock.patch.object(
+                    STACK, "_pinned_custody_command", side_effect=create_kubeconfig
+                ) as pinned_nebius,
+                mock.patch.object(
+                    STACK,
+                    "_root_custody_directory",
+                    return_value="/root/provider-home",
+                ),
+                mock.patch.object(
+                    STACK,
+                    "_pinned_kubectl_command",
+                    return_value=subprocess.CompletedProcess(
+                        [],
+                        0,
+                        stdout=b"11111111-2222-3333-4444-555555555555",
+                        stderr=b"",
+                    ),
+                ),
+            ):
                 STACK.ensure_kubeconfig(
                     nebius="nebius-test",
                     nebius_profile="explicit-profile",
@@ -1559,16 +1678,17 @@ class InferenceStackTests(unittest.TestCase):
                     run_root=run_root,
                     cluster_id="mk8scluster-test",
                     cluster_name="fs2-wrapper-test",
+                    provider_attestation=provider_attestation,
                 )
 
         self.assertEqual(
-            calls[0][:5],
+            pinned_nebius.call_args.kwargs["arguments"][:5],
             [
-                "nebius-test",
                 "--profile",
                 "explicit-profile",
                 "mk8s",
                 "cluster",
+                "get-credentials",
             ],
         )
 
@@ -1630,6 +1750,7 @@ class InferenceStackTests(unittest.TestCase):
                     nebius="nebius-test",
                     nebius_profile="sandbox",
                     kubectl="kubectl-test",
+                    provider_attestation={},
                 )
 
             self.assertIsNone(outputs["infrastructure_contract"])
@@ -1688,9 +1809,49 @@ class InferenceStackTests(unittest.TestCase):
         self.assertNotIn("TF_CLI_ARGS", cleaned)
         self.assertNotIn("TF_CLI_ARGS_plan", cleaned)
 
+    def test_network_custody_tool_and_process_fences_are_structural(self) -> None:
+        source = STACK_PATH.read_text(encoding="utf-8")
+        self.assertNotIn('os.environ.get("FS2_OPENSSL"', source)
+        self.assertIn("expected_sha256=signature_verifier_sha256", source)
+        self.assertIn("_stable_root_file_bytes(", source)
+        self.assertIn("_sealed_memfd(", source)
+        self.assertIn("_require_static_elf(exporter_bytes", source)
+        self.assertIn("start_new_session=True", source)
+        self.assertIn("os.killpg(process_group_id, signal.SIGSTOP)", source)
+        self.assertIn("os.killpg(process_group_id, signal.SIGKILL)", source)
+        apply_source = source[source.index("def apply_stack(") : source.index("def plan_stack(")]
+        self.assertLess(
+            apply_source.index("preflight_attestation = provider_custody_preflight"),
+            apply_source.index("write_infrastructure_variables("),
+        )
+        self.assertLess(
+            apply_source.index("model_network_boundary_credential("),
+            apply_source.index("plan_stage("),
+        )
+
     def test_apply_converges_stages_then_records_root_configuration(self) -> None:
         run_root = Path("/private/test-run")
         planned_stages: list[str] = []
+        provider_attestation, authority_receipt = provider_custody_fixture()
+
+        def boundary_credential(**kwargs):
+            if kwargs["phase"] == "prepare-transition":
+                return (
+                    "/credentials/transition",
+                    "fs2-model-network-transition",
+                    authority_receipt,
+                )
+            return (
+                "/credentials/authorizer",
+                "fs2-model-network-authorizer",
+                authority_receipt,
+            )
+
+        transition_lock = mock.MagicMock()
+        transition_lock.return_value.__enter__.return_value = (
+            "r0123456789:1:" + "9" * 32,
+            "fs2-model-network-transition",
+        )
         endpoint_values = {
             "mcp_endpoint_url": "https://192.0.2.10/mcp",
             "admin_web_interface_url": "https://192.0.2.10/admin/",
@@ -1724,6 +1885,33 @@ class InferenceStackTests(unittest.TestCase):
             ),
             mock.patch.object(STACK, "plan_stage", side_effect=fake_plan),
             mock.patch.object(STACK, "apply_plan") as apply_plan,
+            mock.patch.object(
+                STACK,
+                "provider_custody_preflight",
+                return_value=provider_attestation,
+            ),
+            mock.patch.object(
+                STACK,
+                "_verified_provider_custody",
+                return_value=(
+                    provider_attestation,
+                    "a" * 64,
+                    CUSTODY_EXPIRES_AT,
+                ),
+            ),
+            mock.patch.object(
+                STACK,
+                "model_network_boundary_credential",
+                side_effect=boundary_credential,
+            ),
+            mock.patch.object(
+                STACK, "ensure_control_plane_helm_release_idle"
+            ),
+            mock.patch.object(
+                STACK,
+                "model_network_transition_lock",
+                transition_lock,
+            ),
             mock.patch.object(
                 STACK,
                 "infrastructure_outputs",
@@ -2429,6 +2617,18 @@ class InferenceStackTests(unittest.TestCase):
                         return_value=dynamic_outputs(run_root),
                     ),
                     mock.patch.object(
+                        STACK, "provider_custody_preflight", return_value={}
+                    ),
+                    mock.patch.object(
+                        STACK,
+                        "model_network_boundary_credential",
+                        return_value=(
+                            "/credentials/authorizer",
+                            "fs2-model-network-authorizer",
+                            {},
+                        ),
+                    ),
+                    mock.patch.object(
                         STACK,
                         "write_downstream_variables",
                         return_value=(
@@ -2563,6 +2763,9 @@ class InferenceStackTests(unittest.TestCase):
                         return_value=dynamic_outputs(run_root),
                     ),
                     mock.patch.object(
+                        STACK, "provider_custody_preflight", return_value={}
+                    ),
+                    mock.patch.object(
                         STACK,
                         "write_downstream_variables",
                         return_value=(
@@ -2602,6 +2805,9 @@ class InferenceStackTests(unittest.TestCase):
             ),
             mock.patch.object(STACK, "state_has_resources", return_value=True),
             mock.patch.object(STACK, "state_ready", return_value=True),
+            mock.patch.object(
+                STACK, "provider_custody_preflight", return_value={}
+            ),
             mock.patch.object(
                 STACK,
                 "infrastructure_outputs",
@@ -2688,6 +2894,9 @@ class InferenceStackTests(unittest.TestCase):
                 mock.patch.object(STACK, "state_has_resources", return_value=True),
                 mock.patch.object(STACK, "state_ready", return_value=True),
                 mock.patch.object(
+                    STACK, "provider_custody_preflight", return_value={}
+                ),
+                mock.patch.object(
                     STACK, "infrastructure_outputs", return_value=dynamic
                 ),
                 mock.patch.object(
@@ -2761,6 +2970,9 @@ class InferenceStackTests(unittest.TestCase):
             mock.patch.object(STACK, "state_has_resources", return_value=True),
             mock.patch.object(STACK, "state_ready", return_value=True),
             mock.patch.object(
+                STACK, "provider_custody_preflight", return_value={}
+            ),
+            mock.patch.object(
                 STACK,
                 "infrastructure_outputs",
                 return_value=dynamic_outputs(Path("/private/test-run")),
@@ -2812,6 +3024,9 @@ class InferenceStackTests(unittest.TestCase):
                     return_value=run_root / "infrastructure.tfvars.json",
                 ),
                 mock.patch.object(STACK, "state_has_resources", return_value=True),
+                mock.patch.object(
+                    STACK, "provider_custody_preflight", return_value={}
+                ),
                 mock.patch.object(STACK, "state_ready") as readiness,
                 mock.patch.object(STACK, "infrastructure_outputs") as infrastructure,
                 mock.patch.object(STACK, "write_downstream_variables") as downstream,
@@ -2975,6 +3190,7 @@ class InferenceStackTests(unittest.TestCase):
     ) -> None:
         configuration = regional_contract()
         configuration["selected_model_ids"] = []
+        provider_attestation, authority_receipt = provider_custody_fixture()
         tag_calls = 0
 
         def mismatched_digest(_crane, reference, _environment, **_kwargs):
@@ -3012,6 +3228,29 @@ class InferenceStackTests(unittest.TestCase):
                 return_value=(Path("/infra.tfplan"), {}, {}),
             ) as plan_stage,
             mock.patch.object(STACK, "apply_plan"),
+            mock.patch.object(
+                STACK,
+                "provider_custody_preflight",
+                return_value=provider_attestation,
+            ),
+            mock.patch.object(
+                STACK,
+                "_verified_provider_custody",
+                return_value=(
+                    provider_attestation,
+                    "a" * 64,
+                    CUSTODY_EXPIRES_AT,
+                ),
+            ),
+            mock.patch.object(
+                STACK,
+                "model_network_boundary_credential",
+                return_value=(
+                    "/credentials/authorizer",
+                    "fs2-model-network-authorizer",
+                    authority_receipt,
+                ),
+            ),
             mock.patch.object(
                 STACK,
                 "infrastructure_outputs",
@@ -3099,6 +3338,9 @@ class InferenceStackTests(unittest.TestCase):
             mock.patch.object(
                 STACK, "infrastructure_outputs", return_value=dynamic
             ) as infrastructure_outputs,
+            mock.patch.object(
+                STACK, "provider_custody_preflight", return_value={}
+            ),
             mock.patch.object(STACK, "write_downstream_variables") as downstream,
             mock.patch.object(
                 STACK,

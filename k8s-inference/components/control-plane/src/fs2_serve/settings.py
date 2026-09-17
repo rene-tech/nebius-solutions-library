@@ -6,6 +6,7 @@ import ipaddress
 import json
 import re
 from collections.abc import Mapping
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import SplitResult, urlsplit
@@ -279,6 +280,11 @@ class Settings(BaseSettings):
         "system:authenticated",
     )
     network_boundary_admission_release_inventory: tuple[dict[str, Any], ...] = ()
+    network_boundary_admission_custody_epoch: str | None = Field(
+        default=None, pattern=r"^[a-f0-9]{64}$"
+    )
+    network_boundary_admission_custody_active_from: datetime | None = None
+    network_boundary_admission_custody_active_until: datetime | None = None
     network_boundary_admission_api_timeout_seconds: float = Field(default=2, ge=0.1, le=10)
     scientific_batch_enabled: bool = False
     scientific_batch_writes_enabled: bool = False

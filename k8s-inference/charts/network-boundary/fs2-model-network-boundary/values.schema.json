@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
-  "required": ["image", "replicaCount", "modelNamespace", "systemNamespace", "authorityNamespace", "authorizerUsername", "transitionWriterUsername", "maintenanceWriterUsername", "custodianUsername", "recoveryUsername", "auditorUsername", "custodyTrustDomain", "custodianPrincipalId", "recoveryPrincipalId", "certificateWriterUsername", "custodianGroups", "recoveryGroups", "auditorGroups", "authorizerGroups", "transitionWriterGroups", "maintenanceWriterGroups", "certificateWriterGroups", "acquisitionServiceAccountName", "scientificWriterServiceAccountName", "directJobWriterUsername", "jobsetWriterUsername", "modelControllerWriterUsername", "transitionHolder", "maintenanceHolder", "privilegedCapabilityClusterRoles", "privilegedCapabilityRoles", "releaseInventory", "externalCustody", "kubernetesApiUrl", "kubernetesApiCidrs", "apiTimeoutSeconds", "tokenExpirationSeconds", "service", "certificate", "resources", "nodeSelector", "tolerations", "affinity", "topologySpreadConstraints"],
+  "required": ["image", "replicaCount", "modelNamespace", "systemNamespace", "authorityNamespace", "authorizerUsername", "transitionWriterUsername", "maintenanceWriterUsername", "custodianUsername", "recoveryUsername", "auditorUsername", "custodyTrustDomain", "custodianPrincipalId", "recoveryPrincipalId", "certificateWriterUsername", "custodianGroups", "recoveryGroups", "auditorGroups", "authorizerGroups", "transitionWriterGroups", "maintenanceWriterGroups", "certificateWriterGroups", "acquisitionServiceAccountName", "scientificWriterServiceAccountName", "directJobWriterUsername", "jobsetWriterUsername", "modelControllerWriterUsername", "transitionHolder", "maintenanceHolder", "privilegedCapabilityClusterRoles", "privilegedCapabilityRoles", "authorityControlClusterRoles", "authorityControlRoles", "releaseInventory", "externalCustody", "kubernetesApiUrl", "kubernetesApiCidrs", "apiTimeoutSeconds", "tokenExpirationSeconds", "service", "certificate", "resources", "nodeSelector", "tolerations", "affinity", "topologySpreadConstraints"],
   "properties": {
     "image": {
       "type": "object",
@@ -54,6 +54,19 @@
       "uniqueItems": true,
       "items": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"}
     },
+    "authorityControlClusterRoles": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 2048,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"}
+    },
+    "authorityControlRoles": {
+      "type": "array",
+      "maxItems": 2048,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?/[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"}
+    },
     "releaseInventory": {
       "type": "array",
       "minItems": 1,
@@ -78,12 +91,15 @@
     },
     "externalCustody": {
       "type": "object",
-      "required": ["policyId", "policyRevision", "policySha256", "providerTrustRootSha256"],
+      "required": ["policyId", "policyRevision", "policySha256", "providerTrustRootSha256", "credentialEpoch", "activeFrom", "activeUntil"],
       "properties": {
         "policyId": {"type": "string", "minLength": 1, "maxLength": 253},
         "policyRevision": {"type": "string", "minLength": 1, "maxLength": 253},
         "policySha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-        "providerTrustRootSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        "providerTrustRootSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "credentialEpoch": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "activeFrom": {"type": "string", "format": "date-time"},
+        "activeUntil": {"type": "string", "format": "date-time"}
       },
       "additionalProperties": false
     },

@@ -201,6 +201,8 @@ metadata:
     fs2-serve.nebius.ai/custody-provider: nebius-iam
     fs2-serve.nebius.ai/privileged-capability-cluster-roles-sha256: {{ .Values.privilegedCapabilityClusterRoles | sortAlpha | toJson | sha256sum | quote }}
     fs2-serve.nebius.ai/privileged-capability-roles-sha256: {{ .Values.privilegedCapabilityRoles | sortAlpha | toJson | sha256sum | quote }}
+    fs2-serve.nebius.ai/authority-control-cluster-roles-sha256: {{ .Values.authorityControlClusterRoles | sortAlpha | toJson | sha256sum | quote }}
+    fs2-serve.nebius.ai/authority-control-roles-sha256: {{ .Values.authorityControlRoles | sortAlpha | toJson | sha256sum | quote }}
 spec:
   policyName: fs2-model-network-static-custody
   validationActions: [Deny]
@@ -250,6 +252,10 @@ spec:
            rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
            rule.resources.exists(resource,
              resource in ['certificatesigningrequests', 'certificatesigningrequests/approval', 'signers', '*'])) ||
+          (rule.verbs.exists(verb, verb in ['create', 'update', 'patch', 'delete', 'deletecollection', '*']) &&
+           rule.apiGroups.exists(group, group in ['admissionregistration.k8s.io', '*']) &&
+           rule.resources.exists(resource,
+             resource in ['validatingadmissionpolicies', 'validatingadmissionpolicybindings', 'validatingwebhookconfigurations', '*'])) ||
           (rule.verbs.exists(verb, verb in ['create', 'get', 'list', 'watch', 'update', 'patch', '*']) &&
            ((rule.apiGroups.exists(group, group in ['', '*']) &&
              rule.resources.exists(resource, resource in ['serviceaccounts/token', 'secrets', '*'])) ||
@@ -279,6 +285,10 @@ spec:
            rule.apiGroups.exists(group, group in ['certificates.k8s.io', '*']) &&
            rule.resources.exists(resource,
              resource in ['certificatesigningrequests', 'certificatesigningrequests/approval', 'signers', '*'])) ||
+          (rule.verbs.exists(verb, verb in ['create', 'update', 'patch', 'delete', 'deletecollection', '*']) &&
+           rule.apiGroups.exists(group, group in ['admissionregistration.k8s.io', '*']) &&
+           rule.resources.exists(resource,
+             resource in ['validatingadmissionpolicies', 'validatingadmissionpolicybindings', 'validatingwebhookconfigurations', '*'])) ||
           (rule.verbs.exists(verb, verb in ['create', 'get', 'list', 'watch', 'update', 'patch', '*']) &&
            ((rule.apiGroups.exists(group, group in ['', '*']) &&
              rule.resources.exists(resource, resource in ['serviceaccounts/token', 'secrets', '*'])) ||
@@ -293,11 +303,13 @@ spec:
              rule.resources.exists(resource, resource in ['cronjobs', 'jobs', '*'])) ||
             (rule.apiGroups.exists(group, group in ['jobset.x-k8s.io', '*']) &&
              rule.resources.exists(resource, resource in ['jobsets', '*'])))))
-    - name: newPrivilegedBinding
+    - name: newProtectedBinding
       expression: >-
         variables.isBinding &&
-        ((object.roleRef.kind == 'ClusterRole' && object.roleRef.name in {{ .Values.privilegedCapabilityClusterRoles | toJson }}) ||
-         (object.roleRef.kind == 'Role' && (request.namespace + '/' + object.roleRef.name) in {{ .Values.privilegedCapabilityRoles | toJson }}))
+        ((object.roleRef.kind == 'ClusterRole' &&
+          object.roleRef.name in ({{ .Values.privilegedCapabilityClusterRoles | toJson }} + {{ .Values.authorityControlClusterRoles | toJson }})) ||
+         (object.roleRef.kind == 'Role' &&
+          (request.namespace + '/' + object.roleRef.name) in ({{ .Values.privilegedCapabilityRoles | toJson }} + {{ .Values.authorityControlRoles | toJson }})))
     - name: noExtras
       expression: "!has(request.userInfo.extra) || request.userInfo.extra.size() == 0"
     - name: repair
@@ -317,12 +329,12 @@ spec:
       message: "new or expanded identity, Secret read, workload mutation, exec, escalation, signer, token, or credential grants require external repair custody"
       reason: Forbidden
     - expression: >-
-        variables.repair || !variables.newPrivilegedBinding ||
+        variables.repair || !variables.newProtectedBinding ||
         (request.operation == 'UPDATE' &&
          object.roleRef == oldObject.roleRef &&
          ((!has(object.subjects) && !has(oldObject.subjects)) ||
           (has(object.subjects) && has(oldObject.subjects) && object.subjects == oldObject.subjects)))
-      message: "new principals or bindings to receipt-enumerated privileged roles require external repair custody"
+      message: "new principals or bindings to receipt-enumerated privileged or excluded-guard authority roles require external repair custody"
       reason: Forbidden
 ---
 apiVersion: admissionregistration.k8s.io/v1

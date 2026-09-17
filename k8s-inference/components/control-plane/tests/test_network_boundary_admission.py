@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -37,8 +37,11 @@ def admission(
     reader: FakeReader,
     *,
     now: datetime | None = None,
+    custody_active_from: datetime | None = None,
+    custody_active_until: datetime | None = None,
     release_inventory: tuple[ReleaseInventoryEntry, ...] = (),
 ) -> NetworkBoundaryAdmission:
+    effective_now = now or datetime.now(UTC)
     return NetworkBoundaryAdmission(
         config=NetworkBoundaryConfig(
             model_namespace="fs2-models",
@@ -64,10 +67,17 @@ def admission(
                     "system:serviceaccounts:cert-manager",
                 }
             ),
+            custody_epoch="a" * 64,
+            custody_active_from=(
+                custody_active_from or effective_now - timedelta(minutes=1)
+            ),
+            custody_active_until=(
+                custody_active_until or effective_now + timedelta(minutes=30)
+            ),
             release_inventory=release_inventory,
         ),
         reader=reader,  # type: ignore[arg-type]
-        clock=(lambda: now) if now is not None else None,
+        clock=lambda: effective_now,
     )
 
 
@@ -605,6 +615,47 @@ async def test_expired_transition_holder_cannot_authorize_profiled_parent() -> N
                 group="apps",
             )
         )
+
+
+@pytest.mark.asyncio
+async def test_expired_custody_blocks_phase_writer_but_not_model_controller() -> None:
+    fixed_now = datetime(2026, 9, 17, 2, 0, tzinfo=UTC)
+    policy = admission(
+        FakeReader(),
+        now=fixed_now,
+        custody_active_from=datetime(2026, 9, 17, 0, 0, tzinfo=UTC),
+        custody_active_until=datetime(2026, 9, 17, 1, 0, tzinfo=UTC),
+    )
+    runtime_labels = labels(
+        workload_class="runtime", profile="gateway-dns-tcp-8000-v1"
+    )
+    deployment = {
+        "metadata": {"name": "runtime", "labels": runtime_labels},
+        "spec": {"template": pod_template(runtime_labels)},
+    }
+    with pytest.raises(NetworkBoundaryError, match="custody epoch is not active"):
+        await policy.review(
+            review(
+                kind="Deployment",
+                resource="deployments",
+                value=deployment,
+                username="fs2-model-network-transition",
+                group="apps",
+            )
+        )
+
+    accepted = await policy.review(
+        review(
+            kind="Deployment",
+            resource="deployments",
+            value=deployment,
+            username=(
+                "system:serviceaccount:fs2-system:fs2-serve-control-plane-controller"
+            ),
+            group="apps",
+        )
+    )
+    assert accepted["response"]["allowed"] is True
 
 
 @pytest.mark.asyncio

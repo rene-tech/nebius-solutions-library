@@ -14,12 +14,15 @@ import json
 import os
 import re
 import secrets
+import signal
 import socket
 import ssl
+import stat
+import struct
 import subprocess
 import sys
 import tempfile
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterator, Mapping, Sequence
@@ -154,6 +157,376 @@ def clean_environment() -> dict[str, str]:
         and not key.startswith("TF_CLI_ARGS")
         and key not in {"TF_DATA_DIR", "TF_WORKSPACE"}
     }
+
+
+_PINNED_OPENSSL = Path("/usr/bin/openssl")
+_MAX_CUSTODY_DOCUMENT_BYTES = 16 * 1024 * 1024
+_MAX_CUSTODY_SIGNATURE_BYTES = 64 * 1024
+_MAX_CUSTODY_EXECUTABLE_BYTES = 128 * 1024 * 1024
+
+
+def _custody_environment(*, python: bool = False) -> dict[str, str]:
+    """Construct the complete environment for a custody subprocess.
+
+    Nothing is inherited from the invoking process.  In particular, loader,
+    Python import, proxy, credential, PATH and caller-selected tool variables
+    cannot cross the custody boundary.
+    """
+
+    environment = {
+        "HOME": "/nonexistent",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "TZ": "UTC",
+    }
+    if python:
+        environment.update(
+            {
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONSAFEPATH": "1",
+            }
+        )
+    else:
+        environment["OPENSSL_CONF"] = "/dev/null"
+    return environment
+
+
+def _stable_root_file_bytes(
+    path: Path,
+    *,
+    label: str,
+    maximum_bytes: int,
+    private: bool = False,
+) -> tuple[bytes, str]:
+    """Read one immutable root-custodied regular file without path reopens.
+
+    Every component is traversed relative to a held directory descriptor with
+    ``O_NOFOLLOW``.  The final descriptor is read once, checked for stability,
+    and then compared with the still-held directory entry.  Callers consume
+    only the returned bytes; verification and parsing never reopen ``path``.
+    """
+
+    if not path.is_absolute() or not path.parts[1:]:
+        raise DeploymentError(f"{label} must be an absolute file path")
+    components = path.parts[1:]
+    if any(component in {"", ".", ".."} for component in components):
+        raise DeploymentError(f"{label} contains an unsafe path component")
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    file_flags = os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW
+    directory_fd = os.open("/", directory_flags)
+    try:
+        directory_stat = os.fstat(directory_fd)
+        if directory_stat.st_uid != 0 or directory_stat.st_mode & 0o022:
+            raise DeploymentError(f"{label} root directory is not root-custodied")
+        for component in components[:-1]:
+            next_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            directory_stat = os.fstat(next_fd)
+            if (
+                not stat.S_ISDIR(directory_stat.st_mode)
+                or directory_stat.st_uid != 0
+                or directory_stat.st_mode & 0o022
+            ):
+                os.close(next_fd)
+                raise DeploymentError(
+                    f"{label} parent directories must be root-owned and non-writable"
+                )
+            os.close(directory_fd)
+            directory_fd = next_fd
+        descriptor = os.open(components[-1], file_flags, dir_fd=directory_fd)
+        try:
+            before = os.fstat(descriptor)
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_uid != 0
+                or before.st_mode & 0o022
+                or (private and before.st_mode & 0o077)
+                or before.st_nlink != 1
+                or before.st_size < 1
+                or before.st_size > maximum_bytes
+            ):
+                raise DeploymentError(
+                    f"{label} must be a stable root-owned, non-writable regular file"
+                )
+            chunks: list[bytes] = []
+            remaining = maximum_bytes + 1
+            while remaining:
+                chunk = os.read(descriptor, min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            value = b"".join(chunks)
+            after = os.fstat(descriptor)
+            named = os.stat(
+                components[-1], dir_fd=directory_fd, follow_symlinks=False
+            )
+            stable_fields = (
+                "st_dev",
+                "st_ino",
+                "st_mode",
+                "st_uid",
+                "st_gid",
+                "st_nlink",
+                "st_size",
+                "st_mtime_ns",
+                "st_ctime_ns",
+            )
+            if (
+                len(value) != before.st_size
+                or len(value) > maximum_bytes
+                or any(
+                    getattr(before, field) != getattr(after, field)
+                    or getattr(before, field) != getattr(named, field)
+                    for field in stable_fields
+                )
+            ):
+                raise DeploymentError(f"{label} changed during its single read")
+        finally:
+            os.close(descriptor)
+    except OSError as exc:
+        raise DeploymentError(f"cannot securely read {label}") from exc
+    finally:
+        os.close(directory_fd)
+    return value, hashlib.sha256(value).hexdigest()
+
+
+def _root_custody_directory(path: Path, *, label: str, private: bool = False) -> str:
+    """Resolve only a root-owned, non-writable directory chain by descriptors."""
+
+    if not path.is_absolute() or not path.parts[1:]:
+        raise DeploymentError(f"{label} must be an absolute directory path")
+    components = path.parts[1:]
+    if any(component in {"", ".", ".."} for component in components):
+        raise DeploymentError(f"{label} contains an unsafe path component")
+    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
+    descriptor = os.open("/", flags)
+    try:
+        for component in components:
+            next_descriptor = os.open(component, flags, dir_fd=descriptor)
+            metadata = os.fstat(next_descriptor)
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid != 0
+                or metadata.st_mode & 0o022
+                or (private and metadata.st_mode & 0o077)
+            ):
+                os.close(next_descriptor)
+                raise DeploymentError(
+                    f"{label} must be root-owned and non-writable"
+                )
+            os.close(descriptor)
+            descriptor = next_descriptor
+    except OSError as exc:
+        raise DeploymentError(f"cannot securely open {label}") from exc
+    finally:
+        os.close(descriptor)
+    return str(path)
+
+
+@contextmanager
+def _sealed_memfd(
+    label: str, value: bytes, *, executable: bool = False
+) -> Iterator[int]:
+    """Expose exact captured bytes to a subprocess without a mutable path."""
+
+    required_constants = (
+        "F_ADD_SEALS",
+        "F_GET_SEALS",
+        "F_SEAL_GROW",
+        "F_SEAL_SHRINK",
+        "F_SEAL_WRITE",
+        "F_SEAL_SEAL",
+    )
+    if not hasattr(os, "memfd_create") or any(
+        not hasattr(fcntl, name) for name in required_constants
+    ):
+        raise DeploymentError("sealed in-memory custody files are unavailable")
+    descriptor = os.memfd_create(
+        re.sub(r"[^a-zA-Z0-9_.-]", "-", label)[:64],
+        os.MFD_CLOEXEC | os.MFD_ALLOW_SEALING,
+    )
+    try:
+        offset = 0
+        while offset < len(value):
+            offset += os.write(descriptor, value[offset:])
+        os.fchmod(descriptor, 0o500 if executable else 0o400)
+        seals = (
+            fcntl.F_SEAL_GROW
+            | fcntl.F_SEAL_SHRINK
+            | fcntl.F_SEAL_WRITE
+            | fcntl.F_SEAL_SEAL
+        )
+        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, seals)
+        if fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) != seals:
+            raise DeploymentError(f"could not seal exact bytes for {label}")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
+
+def _pinned_openssl(
+    arguments: Sequence[str],
+    *,
+    expected_sha256: str,
+    input_bytes: bytes | None = None,
+    inherited_fds: Sequence[int] = (),
+) -> subprocess.CompletedProcess[bytes]:
+    executable, digest = _stable_root_file_bytes(
+        _PINNED_OPENSSL,
+        label="pinned OpenSSL executable",
+        maximum_bytes=_MAX_CUSTODY_EXECUTABLE_BYTES,
+    )
+    if (
+        re.fullmatch(r"[a-f0-9]{64}", expected_sha256) is None
+        or digest != expected_sha256
+    ):
+        raise DeploymentError(
+            "the fixed OpenSSL executable differs from the root contract"
+        )
+    with _sealed_memfd("fs2-openssl", executable, executable=True) as executable_fd:
+        return subprocess.run(
+            [f"/proc/self/fd/{executable_fd}", *arguments],
+            env=_custody_environment(),
+            input=input_bytes,
+            capture_output=True,
+            check=False,
+            pass_fds=(executable_fd, *inherited_fds),
+        )
+
+
+def _pinned_custody_command(
+    *,
+    executable_path: Path,
+    expected_sha256: str,
+    label: str,
+    arguments: Sequence[str],
+    environment: Mapping[str, str] | None = None,
+    input_bytes: bytes | None = None,
+    timeout: int = 30,
+    inherited_fds: Sequence[int] = (),
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a signed executable copy; never execute the caller-supplied path."""
+
+    executable, actual_sha256 = _stable_root_file_bytes(
+        executable_path,
+        label=label,
+        maximum_bytes=_MAX_CUSTODY_EXECUTABLE_BYTES,
+    )
+    if (
+        re.fullmatch(r"[a-f0-9]{64}", expected_sha256) is None
+        or actual_sha256 != expected_sha256
+    ):
+        raise DeploymentError(f"{label} differs from signed custody")
+    exact_environment = _custody_environment()
+    if environment is not None:
+        forbidden = {
+            "PATH",
+            "PYTHONPATH",
+            "PYTHONHOME",
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "FS2_OPENSSL",
+        }
+        if forbidden.intersection(environment):
+            raise DeploymentError(f"{label} environment contains an unsafe override")
+        exact_environment.update(environment)
+    with _sealed_memfd(label, executable, executable=True) as executable_fd:
+        return subprocess.run(
+            [f"/proc/self/fd/{executable_fd}", *arguments],
+            env=exact_environment,
+            input=input_bytes,
+            capture_output=True,
+            check=False,
+            timeout=timeout,
+            pass_fds=(executable_fd, *inherited_fds),
+        )
+
+
+def _require_static_elf(value: bytes, *, label: str) -> None:
+    """Reject scripts and ELF binaries that depend on an ambient loader.
+
+    The provider authority exporter is a trust-boundary executable.  Its exact
+    signed bytes are copied to a sealed memfd, but that is insufficient if a
+    shebang, PT_INTERP, or caller-controlled Python import graph can select more
+    executable code.  Only a native ELF artifact without PT_INTERP is admitted.
+    """
+
+    if len(value) < 64 or value[:4] != b"\x7fELF":
+        raise DeploymentError(f"{label} must be a native static ELF artifact")
+    elf_class = value[4]
+    elf_data = value[5]
+    if elf_class not in {1, 2} or elf_data not in {1, 2}:
+        raise DeploymentError(f"{label} has an unsupported ELF encoding")
+    byte_order = "<" if elf_data == 1 else ">"
+    try:
+        if elf_class == 2:
+            program_offset = struct.unpack_from(f"{byte_order}Q", value, 32)[0]
+            program_entry_size = struct.unpack_from(f"{byte_order}H", value, 54)[0]
+            program_count = struct.unpack_from(f"{byte_order}H", value, 56)[0]
+            minimum_entry_size = 56
+        else:
+            program_offset = struct.unpack_from(f"{byte_order}I", value, 28)[0]
+            program_entry_size = struct.unpack_from(f"{byte_order}H", value, 42)[0]
+            program_count = struct.unpack_from(f"{byte_order}H", value, 44)[0]
+            minimum_entry_size = 32
+    except struct.error as exc:
+        raise DeploymentError(f"{label} has a truncated ELF header") from exc
+    table_end = program_offset + program_entry_size * program_count
+    if (
+        program_count < 1
+        or program_entry_size < minimum_entry_size
+        or program_offset < 1
+        or table_end > len(value)
+    ):
+        raise DeploymentError(f"{label} has an invalid ELF program table")
+    try:
+        program_types = {
+            struct.unpack_from(
+                f"{byte_order}I", value, program_offset + index * program_entry_size
+            )[0]
+            for index in range(program_count)
+        }
+    except struct.error as exc:
+        raise DeploymentError(f"{label} has a truncated ELF program table") from exc
+    if 3 in program_types:  # PT_INTERP
+        raise DeploymentError(
+            f"{label} must not depend on a mutable dynamic loader or interpreter"
+        )
+
+
+def _verify_detached_signature(
+    *,
+    document: bytes,
+    signature: bytes,
+    trust_root: bytes,
+    verifier_sha256: str,
+    label: str,
+) -> None:
+    with ExitStack() as stack:
+        document_fd = stack.enter_context(_sealed_memfd(f"{label}-document", document))
+        signature_fd = stack.enter_context(
+            _sealed_memfd(f"{label}-signature", signature)
+        )
+        trust_root_fd = stack.enter_context(
+            _sealed_memfd(f"{label}-trust-root", trust_root)
+        )
+        verified = _pinned_openssl(
+            [
+                "dgst",
+                "-sha256",
+                "-verify",
+                f"/proc/self/fd/{trust_root_fd}",
+                "-signature",
+                f"/proc/self/fd/{signature_fd}",
+                f"/proc/self/fd/{document_fd}",
+            ],
+            expected_sha256=verifier_sha256,
+            inherited_fds=(document_fd, signature_fd, trust_root_fd),
+        )
+    if verified.returncode != 0 or verified.stdout.strip() != b"Verified OK":
+        raise DeploymentError(f"the {label} signature is invalid")
 
 
 # Write-only Secret arguments (`data_wo`) are a Terraform 1.11 feature. On an
@@ -1790,37 +2163,65 @@ def ensure_kubeconfig(
     run_root: Path,
     cluster_id: str,
     cluster_name: str,
+    provider_attestation: Mapping[str, Any],
 ) -> tuple[Path, str]:
     kubeconfig = run_root / "kubeconfig"
     if kubeconfig.is_symlink():
         raise DeploymentError(f"kubeconfig path must not be a symlink: {kubeconfig}")
-    environment = clean_environment()
-    environment["KUBECONFIG"] = str(kubeconfig)
-    run(
-        [
-            nebius,
-            "--profile",
-            nebius_profile,
-            "mk8s",
-            "cluster",
-            "get-credentials",
-            "--id",
-            cluster_id,
-            "--external",
-            "--force",
-            "--context-name",
-            cluster_name,
-        ],
-        env=environment,
-    )
-    if not kubeconfig.is_file():
-        raise DeploymentError("Nebius CLI did not create the run-scoped kubeconfig")
-    kubeconfig.chmod(0o600)
-    result = run(
-        [
-            kubectl,
+    tools = provider_attestation.get("client_tools", {})
+    credentials = provider_attestation.get("credentials", {})
+    nebius_tool = tools.get("nebius", {}) if isinstance(tools, Mapping) else {}
+    kubectl_tool = tools.get("kubectl", {}) if isinstance(tools, Mapping) else {}
+    auditor = credentials.get("auditor", {}) if isinstance(credentials, Mapping) else {}
+    signed_context = kubectl_tool.get("context") if isinstance(kubectl_tool, Mapping) else None
+    if (
+        cluster_id != provider_attestation.get("cluster_id")
+        or cluster_name != signed_context
+        or not isinstance(nebius_tool, Mapping)
+        or not isinstance(kubectl_tool, Mapping)
+        or not isinstance(auditor, Mapping)
+    ):
+        raise DeploymentError(
+            "infrastructure kubeconfig target differs from signed provider custody"
+        )
+    if not kubeconfig.exists():
+        created = _pinned_custody_command(
+            executable_path=Path(str(nebius_tool["path"])),
+            expected_sha256=str(nebius_tool["sha256"]),
+            label="provider-signed Nebius CLI",
+            arguments=[
+                "--profile",
+                nebius_profile,
+                "mk8s",
+                "cluster",
+                "get-credentials",
+                "--id",
+                cluster_id,
+                "--external",
+                "--context-name",
+                cluster_name,
+            ],
+            environment={
+                "HOME": _root_custody_directory(
+                    Path(str(nebius_tool["home_path"])),
+                    label="signed Nebius CLI home",
+                    private=True,
+                ),
+                "KUBECONFIG": str(kubeconfig),
+            },
+        )
+        if created.returncode != 0:
+            raise DeploymentError(
+                "provider-signed Nebius CLI could not create the run-scoped kubeconfig"
+            )
+    auditor_path = os.environ.get("FS2_NETWORK_AUDITOR_KUBECONFIG", "")
+    result = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=str(auditor.get("kubeconfig_sha256", "")),
+        arguments=[
             "--kubeconfig",
-            str(kubeconfig),
+            auditor_path,
             "--context",
             cluster_name,
             "get",
@@ -1829,10 +2230,16 @@ def ensure_kubeconfig(
             "-o",
             "jsonpath={.metadata.uid}",
         ],
-        env=environment,
-        capture=True,
     )
-    uid = result.stdout.strip()
+    try:
+        uid = result.stdout.decode("utf-8", errors="strict").strip()
+    except UnicodeDecodeError as exc:
+        raise DeploymentError("kube-system returned a malformed namespace UID") from exc
+    if result.returncode != 0:
+        raise DeploymentError("provider-pinned kubectl could not read kube-system")
+    if not kubeconfig.is_file():
+        raise DeploymentError("Nebius CLI did not create the run-scoped kubeconfig")
+    kubeconfig.chmod(0o600)
     if len(uid) < 20:
         raise DeploymentError("kube-system did not return a valid namespace UID")
     return kubeconfig, uid
@@ -1891,6 +2298,7 @@ def infrastructure_outputs(
     nebius: str,
     nebius_profile: str,
     kubectl: str,
+    provider_attestation: Mapping[str, Any],
 ) -> dict[str, Any]:
     environment = stage_environment(run_root, "infrastructure", contract)
     state, _, _ = stage_paths(run_root, "infrastructure")
@@ -1906,6 +2314,7 @@ def infrastructure_outputs(
         run_root=run_root,
         cluster_id=cluster_id,
         cluster_name=cluster_name,
+        provider_attestation=provider_attestation,
     )
     target_contract = terraform_json_output(
         terraform, INFRA_ROOT, "target_contract", environment
@@ -2409,8 +2818,55 @@ def apply_plan(
         raise DeploymentError(
             "provider custody has less than ten minutes remaining before apply"
         )
+
+    def process_group_alive(process_group_id: int) -> bool:
+        try:
+            os.killpg(process_group_id, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError as exc:
+            raise DeploymentError(
+                "cannot prove custody of the Terraform process group"
+            ) from exc
+        return True
+
+    def stop_process_tree(process: subprocess.Popen[Any]) -> None:
+        """Fence and reap Terraform plus surviving provider/plugin children."""
+
+        process_group_id = process.pid
+        if not process_group_alive(process_group_id):
+            if process.poll() is None:
+                process.wait()
+            return
+        try:
+            # SIGSTOP is the credential-use fence: no provider/plugin member can
+            # issue another request while termination and reconciliation begin.
+            os.killpg(process_group_id, signal.SIGSTOP)
+            os.killpg(process_group_id, signal.SIGTERM)
+            os.killpg(process_group_id, signal.SIGCONT)
+            if process.poll() is None:
+                process.wait(timeout=10)
+        except ProcessLookupError:
+            if process.poll() is None:
+                process.wait()
+        except subprocess.TimeoutExpired:
+            pass
+        if process_group_alive(process_group_id):
+            try:
+                os.killpg(process_group_id, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
+            process.wait(timeout=10)
+        if process_group_alive(process_group_id):
+            raise DeploymentError("Terraform process group survived custody fencing")
+
     try:
-        process = subprocess.Popen(arguments, env=dict(environment))
+        process = subprocess.Popen(
+            arguments,
+            env=dict(environment),
+            start_new_session=True,
+        )
     except FileNotFoundError as exc:
         raise DeploymentError(f"required executable not found: {terraform}") from exc
     while True:
@@ -2429,17 +2885,24 @@ def apply_plan(
                     raise DeploymentError(
                         "provider custody expiry approached during apply"
                     )
-            except BaseException:
-                process.terminate()
+            except BaseException as custody_error:
+                stop_process_tree(process)
                 try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait()
-                raise
+                    custody_guard()
+                except BaseException as reconciliation_error:
+                    raise DeploymentError(
+                        "provider custody failed during apply; the Terraform process group "
+                        "was fenced and the post-abort live reconciliation also failed"
+                    ) from reconciliation_error
+                raise custody_error
     if return_code != 0:
         raise DeploymentError(
             f"command failed with exit code {return_code}: {command_text(arguments)}"
+        )
+    if process_group_alive(process.pid):
+        stop_process_tree(process)
+        raise DeploymentError(
+            "Terraform returned while a provider/plugin process remained alive"
         )
     refreshed_expiry = custody_guard()
     if refreshed_expiry < expires_at or refreshed_expiry - datetime.now(UTC) < timedelta(seconds=60):
@@ -2472,8 +2935,11 @@ def _exact_kubernetes_user_info(document: Mapping[str, Any], label: str) -> dict
 def model_network_transition_lock(
     *,
     kubectl: str,
+    kubectl_tool: Mapping[str, Any],
     kubeconfig: str,
+    kubeconfig_sha256: str,
     context: str,
+    custody_expires_at: datetime,
     run_id: str,
     lease_name: str = "fs2-model-network-transition",
     expected_username: str = "fs2-model-network-transition",
@@ -2487,27 +2953,24 @@ def model_network_transition_lock(
     name = lease_name
     holder = f"{run_id}:{os.getpid()}:{secrets.token_hex(16)}"
     transition_writer = expected_username
-    environment = clean_environment()
     base = [
-        kubectl,
         "--kubeconfig",
         kubeconfig,
         "--context",
         context,
     ]
-    authenticated = subprocess.run(
-        [*base, "auth", "whoami", "-o", "json"],
-        env=environment,
-        text=True,
-        capture_output=True,
-        check=False,
+    authenticated = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=kubeconfig_sha256,
+        arguments=[*base, "auth", "whoami", "-o", "json"],
     )
     if authenticated.returncode != 0:
         raise DeploymentError(
             "cannot resolve the exact Kubernetes-authenticated transition writer: "
             + (
-                authenticated.stderr.strip()
-                or authenticated.stdout.strip()
+                authenticated.stderr.decode(errors="replace").strip()
+                or authenticated.stdout.decode(errors="replace").strip()
                 or "kubectl auth whoami failed"
             )
         )
@@ -2530,14 +2993,21 @@ def model_network_transition_lock(
         raise DeploymentError(
             "the model-network operation writer group/extra identity is not exact"
         )
-    observed = subprocess.run(
-        [*base, "-n", namespace, "get", "lease", name, "-o", "json"],
-        env=environment,
-        text=True,
-        capture_output=True,
-        check=False,
+    observed = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=kubeconfig_sha256,
+        arguments=[*base, "-n", namespace, "get", "lease", name, "-o", "json"],
     )
     now = datetime.now(UTC)
+    lease_duration_seconds = min(
+        7200,
+        int((custody_expires_at - now - timedelta(seconds=30)).total_seconds()),
+    )
+    if lease_duration_seconds < 60:
+        raise DeploymentError(
+            "provider custody has insufficient time to acquire an operation Lease"
+        )
     if observed.returncode != 0:
         raise DeploymentError(
             "the provider-owned model-network operation Lease is unavailable; "
@@ -2604,7 +3074,11 @@ def model_network_transition_lock(
                 "value": holder,
             },
             {"op": "replace", "path": "/spec/holderIdentity", "value": holder},
-            {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 7200},
+            {
+                "op": "replace",
+                "path": "/spec/leaseDurationSeconds",
+                "value": lease_duration_seconds,
+            },
             {
                 "op": "replace",
                 "path": "/spec/renewTime",
@@ -2616,8 +3090,11 @@ def model_network_transition_lock(
                 "value": transitions + 1,
             },
         ]
-        run(
-            [
+        acquired = _pinned_kubectl_command(
+            kubectl=kubectl,
+            tool=kubectl_tool,
+            expected_kubeconfig_sha256=kubeconfig_sha256,
+            arguments=[
                 *base,
                 "-n",
                 namespace,
@@ -2628,23 +3105,23 @@ def model_network_transition_lock(
                 "-p",
                 json.dumps(patch, separators=(",", ":")),
             ],
-            env=environment,
         )
+        if acquired.returncode != 0:
+            raise DeploymentError("provider-pinned kubectl could not acquire the operation Lease")
     try:
         yield holder, authenticated_username
     finally:
-        release_observed = subprocess.run(
-            [*base, "-n", namespace, "get", "lease", name, "-o", "json"],
-            env=environment,
-            text=True,
-            capture_output=True,
-            check=False,
+        release_observed = _pinned_kubectl_command(
+            kubectl=kubectl,
+            tool=kubectl_tool,
+            expected_kubeconfig_sha256=kubeconfig_sha256,
+            arguments=[*base, "-n", namespace, "get", "lease", name, "-o", "json"],
         )
         try:
             release_resource_version = json.loads(release_observed.stdout)["metadata"][
                 "resourceVersion"
             ]
-        except (KeyError, TypeError, json.JSONDecodeError) as exc:
+        except (KeyError, TypeError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise DeploymentError(
                 "cannot reconstruct the operation Lease CAS before release"
             ) from exc
@@ -2668,8 +3145,11 @@ def model_network_transition_lock(
             {"op": "replace", "path": "/spec/leaseDurationSeconds", "value": 1},
             {"op": "replace", "path": "/spec/renewTime", "value": released_at},
         ]
-        run(
-            [
+        released = _pinned_kubectl_command(
+            kubectl=kubectl,
+            tool=kubectl_tool,
+            expected_kubeconfig_sha256=kubeconfig_sha256,
+            arguments=[
                 *base,
                 "-n",
                 namespace,
@@ -2680,18 +3160,26 @@ def model_network_transition_lock(
                 "-p",
                 json.dumps(release_patch, separators=(",", ":")),
             ],
-            env=environment,
         )
+        if released.returncode != 0:
+            raise DeploymentError("provider-pinned kubectl could not release the operation Lease")
 
 
 def model_network_boundary_holder(
-    *, kubectl: str, kubeconfig: str, context: str
+    *,
+    kubectl: str,
+    kubectl_tool: Mapping[str, Any],
+    kubeconfig: str,
+    kubeconfig_sha256: str,
+    context: str,
 ) -> str:
     """Read the immutable marker's stable holder without mutating the boundary."""
 
-    result = subprocess.run(
-        [
-            kubectl,
+    result = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=kubeconfig_sha256,
+        arguments=[
             "--kubeconfig",
             kubeconfig,
             "--context",
@@ -2704,10 +3192,6 @@ def model_network_boundary_holder(
             "--output",
             "json",
         ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
     )
     if result.returncode != 0:
         raise DeploymentError("cannot read the armed model-network boundary marker")
@@ -2880,15 +3364,45 @@ def _verified_provider_authority_census(
         != "fs2-serve.nebius.ai/provider-control-plane-authority-census/v1"
         or not isinstance(exporter, Mapping)
         or set(exporter)
-        != {"sha256", "source_commit", "source_tree", "provenance_sha256"}
+        != {
+            "path",
+            "sha256",
+            "format",
+            "source_commit",
+            "source_tree",
+            "provenance_sha256",
+            "authority_ca_path",
+            "authority_ca_sha256",
+            "client_certificate_path",
+            "client_certificate_sha256",
+            "client_key_path",
+            "client_key_sha256",
+        }
         or any(
             re.fullmatch(r"[a-f0-9]{64}", str(exporter.get(field, ""))) is None
-            for field in ("sha256", "provenance_sha256")
+            for field in (
+                "sha256",
+                "provenance_sha256",
+                "authority_ca_sha256",
+                "client_certificate_sha256",
+                "client_key_sha256",
+            )
         )
         or any(
             re.fullmatch(r"[a-f0-9]{40}", str(exporter.get(field, ""))) is None
             for field in ("source_commit", "source_tree")
         )
+        or any(
+            not isinstance(exporter.get(field), str)
+            or not Path(str(exporter[field])).is_absolute()
+            for field in (
+                "path",
+                "authority_ca_path",
+                "client_certificate_path",
+                "client_key_path",
+            )
+        )
+        or exporter.get("format") != "static-elf-no-interpreter"
         or not isinstance(snapshot, Mapping)
         or census.get("snapshot_sha256") != _json_sha256(snapshot)
     ):
@@ -2898,16 +3412,40 @@ def _verified_provider_authority_census(
     exporter_path = Path(
         os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_AUTHORITY_EXPORTER", "")
     )
-    if (
-        not exporter_path.is_absolute()
-        or exporter_path.is_symlink()
-        or not exporter_path.is_file()
-        or exporter_path.stat().st_uid != 0
-        or exporter_path.stat().st_mode & 0o022
-        or _sha256_file(exporter_path) != exporter.get("sha256")
-    ):
+    if str(exporter_path) != exporter.get("path"):
         raise DeploymentError(
-            "the provider authority exporter must be a root-owned, non-writable, signed artifact"
+            "the provider authority exporter path differs from signed custody"
+        )
+    exporter_bytes, exporter_sha256 = _stable_root_file_bytes(
+        exporter_path,
+        label="provider authority exporter",
+        maximum_bytes=_MAX_CUSTODY_EXECUTABLE_BYTES,
+    )
+    _require_static_elf(exporter_bytes, label="provider authority exporter")
+    credential_bytes: dict[str, bytes] = {}
+    for credential_name, path_field, digest_field in (
+        ("authority-ca", "authority_ca_path", "authority_ca_sha256"),
+        (
+            "client-certificate",
+            "client_certificate_path",
+            "client_certificate_sha256",
+        ),
+        ("client-key", "client_key_path", "client_key_sha256"),
+    ):
+        captured, digest = _stable_root_file_bytes(
+            Path(str(exporter[path_field])),
+            label=f"provider authority exporter {credential_name}",
+            maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+            private=True,
+        )
+        if digest != exporter[digest_field]:
+            raise DeploymentError(
+                f"provider authority exporter {credential_name} differs from signed custody"
+            )
+        credential_bytes[credential_name] = captured
+    if exporter_sha256 != exporter.get("sha256"):
+        raise DeploymentError(
+            "provider authority exporter artifact differs from signed custody"
         )
 
     scope_chain = snapshot.get("scope_chain")
@@ -3318,80 +3856,105 @@ def _verified_provider_authority_census(
         raise DeploymentError(
             "provider control-plane resources are not held by the exact zero-principal freeze"
         )
-    command = [
-        str(exporter_path),
-        "snapshot",
-        "--project-id",
-        project_id,
-        "--cluster-id",
-        cluster_id,
-        "--freeze-transaction-id",
-        freeze_transaction_id,
-        "--output",
-        "json",
-    ]
     observations: list[dict[str, Any]] = []
     observation_request_ids: set[str] = set()
     observation_times: list[datetime] = []
-    for _index in range(2):
-        result = subprocess.run(
-            command,
-            env=clean_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=60,
-        )
-        try:
-            observation = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise DeploymentError(
-                "provider-native authority observation is malformed"
-            ) from exc
-        if result.returncode != 0 or not isinstance(observation, dict):
-            raise DeploymentError(
-                "provider-native authority observation failed closed"
+    with ExitStack() as stack:
+        credential_fds = {
+            name: stack.enter_context(
+                _sealed_memfd(f"fs2-provider-authority-{name}", value)
             )
-        request_ids = observation.get("provider_request_ids")
-        try:
-            observation_time = datetime.fromisoformat(
-                str(observation["observed_at"]).replace("Z", "+00:00")
+            for name, value in credential_bytes.items()
+        }
+        inherited_fds = tuple(credential_fds.values())
+        exporter_environment = {
+            "FS2_PROVIDER_AUTHORITY_API_URL": str(
+                snapshot["provider_api_endpoint"]
+            ),
+            "FS2_PROVIDER_AUTHORITY_API_SERVER_CERT_SHA256": str(
+                snapshot["authority_api_server_certificate_sha256"]
+            ),
+            "FS2_PROVIDER_AUTHORITY_API_CA": (
+                f"/proc/self/fd/{credential_fds['authority-ca']}"
+            ),
+            "FS2_PROVIDER_AUTHORITY_API_CLIENT_CERT": (
+                f"/proc/self/fd/{credential_fds['client-certificate']}"
+            ),
+            "FS2_PROVIDER_AUTHORITY_API_CLIENT_KEY": (
+                f"/proc/self/fd/{credential_fds['client-key']}"
+            ),
+        }
+        command = [
+            "snapshot",
+            "--project-id",
+            project_id,
+            "--cluster-id",
+            cluster_id,
+            "--freeze-transaction-id",
+            freeze_transaction_id,
+            "--output",
+            "json",
+        ]
+        for _index in range(2):
+            result = _pinned_custody_command(
+                executable_path=exporter_path,
+                expected_sha256=exporter_sha256,
+                label="provider authority exporter",
+                arguments=command,
+                environment=exporter_environment,
+                timeout=60,
+                inherited_fds=inherited_fds,
             )
-        except (KeyError, ValueError) as exc:
-            raise DeploymentError(
-                "provider-native authority observation time is malformed"
-            ) from exc
-        if (
-            set(observation)
-            != {
-                "schema",
-                "observed_at",
-                "provider_request_ids",
-                "snapshot",
-                "snapshot_sha256",
-            }
-            or observation.get("schema")
-            != "fs2-serve.nebius.ai/provider-control-plane-authority-observation/v1"
-            or observation.get("snapshot") != dict(snapshot)
-            or observation.get("snapshot_sha256") != census["snapshot_sha256"]
-            or not isinstance(request_ids, list)
-            or not request_ids
-            or request_ids != sorted(set(request_ids))
-            or not all(
-                isinstance(request_id, str) and 1 <= len(request_id) <= 253
-                for request_id in request_ids
-            )
-            or observation_time.tzinfo is None
-            or observation_time > datetime.now(UTC) + timedelta(seconds=30)
-            or datetime.now(UTC) - observation_time > timedelta(minutes=2)
-            or observation_request_ids.intersection(request_ids)
-        ):
-            raise DeploymentError(
-                "provider-native authority observation lacks unique live provenance"
-            )
-        observation_request_ids.update(request_ids)
-        observation_times.append(observation_time)
-        observations.append(dict(observation["snapshot"]))
+            try:
+                observation = json.loads(result.stdout)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise DeploymentError(
+                    "provider-native authority observation is malformed"
+                ) from exc
+            if result.returncode != 0 or not isinstance(observation, dict):
+                raise DeploymentError(
+                    "provider-native authority observation failed closed"
+                )
+            request_ids = observation.get("provider_request_ids")
+            try:
+                observation_time = datetime.fromisoformat(
+                    str(observation["observed_at"]).replace("Z", "+00:00")
+                )
+            except (KeyError, ValueError) as exc:
+                raise DeploymentError(
+                    "provider-native authority observation time is malformed"
+                ) from exc
+            if (
+                set(observation)
+                != {
+                    "schema",
+                    "observed_at",
+                    "provider_request_ids",
+                    "snapshot",
+                    "snapshot_sha256",
+                }
+                or observation.get("schema")
+                != "fs2-serve.nebius.ai/provider-control-plane-authority-observation/v1"
+                or observation.get("snapshot") != dict(snapshot)
+                or observation.get("snapshot_sha256") != census["snapshot_sha256"]
+                or not isinstance(request_ids, list)
+                or not request_ids
+                or request_ids != sorted(set(request_ids))
+                or not all(
+                    isinstance(request_id, str) and 1 <= len(request_id) <= 253
+                    for request_id in request_ids
+                )
+                or observation_time.tzinfo is None
+                or observation_time > datetime.now(UTC) + timedelta(seconds=30)
+                or datetime.now(UTC) - observation_time > timedelta(minutes=2)
+                or observation_request_ids.intersection(request_ids)
+            ):
+                raise DeploymentError(
+                    "provider-native authority observation lacks unique live provenance"
+                )
+            observation_request_ids.update(request_ids)
+            observation_times.append(observation_time)
+            observations.append(dict(observation["snapshot"]))
     if observations[0] != observations[1] or observation_times[1] < observation_times[0]:
         raise DeploymentError(
             "two provider-native authority observations are not stable and signed-equal"
@@ -3401,11 +3964,12 @@ def _verified_provider_authority_census(
 
 def _verified_provider_custody(
     *,
-    cluster_id: str,
+    cluster_id: str | None,
     project_id: str,
     nebius: str,
     nebius_profile: str,
     provider_trust_root_sha256: str,
+    signature_verifier_sha256: str,
 ) -> tuple[dict[str, Any], str, datetime]:
     """Verify the independent provider/IAM custody assertion.
 
@@ -3426,39 +3990,38 @@ def _verified_provider_custody(
             os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_TRUST_ROOT", "")
         ),
     }
-    for label, path in paths.items():
-        if not path.is_absolute() or path.is_symlink() or not path.is_file():
-            raise DeploymentError(
-                f"the external provider custody {label} must be an absolute regular file"
-            )
+    attestation_bytes, attestation_sha256 = _stable_root_file_bytes(
+        paths["attestation"],
+        label="external provider custody attestation",
+        maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+    )
+    signature_bytes, _signature_sha256 = _stable_root_file_bytes(
+        paths["signature"],
+        label="external provider custody signature",
+        maximum_bytes=_MAX_CUSTODY_SIGNATURE_BYTES,
+    )
+    trust_root_bytes, trust_root_actual_sha256 = _stable_root_file_bytes(
+        paths["trust root"],
+        label="external provider custody trust root",
+        maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+    )
     if not re.fullmatch(r"[a-f0-9]{64}", provider_trust_root_sha256):
         raise DeploymentError(
             "the root contract must pin the distinct provider custody trust root"
         )
-    if _sha256_file(paths["trust root"]) != provider_trust_root_sha256:
+    if trust_root_actual_sha256 != provider_trust_root_sha256:
         raise DeploymentError(
             "the provider custody signing key differs from the root-pinned digest"
         )
-    verified = subprocess.run(
-        [
-            os.environ.get("FS2_OPENSSL", "openssl"),
-            "dgst",
-            "-sha256",
-            "-verify",
-            str(paths["trust root"]),
-            "-signature",
-            str(paths["signature"]),
-            str(paths["attestation"]),
-        ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
+    _verify_detached_signature(
+        document=attestation_bytes,
+        signature=signature_bytes,
+        trust_root=trust_root_bytes,
+        verifier_sha256=signature_verifier_sha256,
+        label="external provider custody",
     )
-    if verified.returncode != 0 or verified.stdout.strip() != "Verified OK":
-        raise DeploymentError("the external provider custody signature is invalid")
     try:
-        attestation = json.loads(paths["attestation"].read_text(encoding="utf-8"))
+        attestation = json.loads(attestation_bytes)
         if not isinstance(attestation, dict):
             raise TypeError("provider attestation is not an object")
         payload = {
@@ -3481,10 +4044,18 @@ def _verified_provider_custody(
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError, OSError) as exc:
         raise DeploymentError("the external provider custody assertion is malformed") from exc
+    signed_cluster_id = attestation.get("cluster_id")
+    if cluster_id is None:
+        if (
+            not isinstance(signed_cluster_id, str)
+            or re.fullmatch(r"mk8scluster-[a-z0-9]+", signed_cluster_id) is None
+        ):
+            raise DeploymentError("provider custody has no exact managed-cluster identity")
+        cluster_id = signed_cluster_id
     now = datetime.now(UTC)
     if (
         attestation.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5"
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7"
         or attestation.get("cluster_id") != cluster_id
         or attestation.get("project_id") != project_id
         or attestation.get("payload_sha256") != _json_sha256(payload)
@@ -3531,6 +4102,33 @@ def _verified_provider_custody(
         raise DeploymentError(
             "the external provider custody assertion is stale or outside its exact cluster contract"
         )
+    client_tools = attestation.get("client_tools")
+    if (
+        not isinstance(client_tools, Mapping)
+        or set(client_tools) != {"kubectl", "nebius"}
+        or not all(isinstance(tool, Mapping) for tool in client_tools.values())
+    ):
+        raise DeploymentError("provider custody has no exact signed client-tool inventory")
+    nebius_tool = client_tools["nebius"]
+    kubectl_tool = client_tools["kubectl"]
+    if (
+        set(nebius_tool) != {"path", "sha256", "profile", "home_path"}
+        or set(kubectl_tool) != {"path", "sha256", "context"}
+        or str(Path(nebius)) != nebius_tool.get("path")
+        or nebius_profile != nebius_tool.get("profile")
+        or not Path(str(nebius_tool.get("path", ""))).is_absolute()
+        or not Path(str(kubectl_tool.get("path", ""))).is_absolute()
+        or re.fullmatch(r"[a-f0-9]{64}", str(nebius_tool.get("sha256", "")))
+        is None
+        or re.fullmatch(r"[a-f0-9]{64}", str(kubectl_tool.get("sha256", "")))
+        is None
+    ):
+        raise DeploymentError("provider custody client-tool identity is malformed")
+    nebius_home = _root_custody_directory(
+        Path(str(nebius_tool.get("home_path", ""))),
+        label="signed Nebius CLI home",
+        private=True,
+    )
     credentials = attestation.get("credentials")
     if (
         not isinstance(credentials, dict)
@@ -3548,6 +4146,52 @@ def _verified_provider_custody(
         raise DeploymentError(
             "the provider assertion must enumerate every separately issued credential"
         )
+    credential_epochs: set[str] = set()
+    for credential_name, credential in credentials.items():
+        if set(credential) != {
+            "username",
+            "groups",
+            "provider_principal_id",
+            "kubeconfig_sha256",
+            "client_certificate_sha256",
+            "issuer_ca_sha256",
+            "gateway_server",
+            "credential_epoch",
+            "not_before",
+            "not_after",
+        }:
+            raise DeploymentError(
+                f"provider custody credential {credential_name} is not exact"
+            )
+        try:
+            credential_not_before = datetime.fromisoformat(
+                str(credential["not_before"]).replace("Z", "+00:00")
+            )
+            credential_not_after = datetime.fromisoformat(
+                str(credential["not_after"]).replace("Z", "+00:00")
+            )
+        except (KeyError, ValueError) as exc:
+            raise DeploymentError(
+                f"provider custody credential {credential_name} validity is malformed"
+            ) from exc
+        credential_epoch = str(credential.get("credential_epoch", ""))
+        if (
+            re.fullmatch(r"[a-f0-9]{64}", credential_epoch) is None
+            or re.fullmatch(
+                r"[a-f0-9]{64}", str(credential.get("kubeconfig_sha256", ""))
+            )
+            is None
+            or credential_epoch in credential_epochs
+            or credential_not_before != freeze_active_from
+            or credential_not_after != freeze_active_until
+        ):
+            raise DeploymentError(
+                f"provider custody credential {credential_name} is not unique to the active freeze epoch"
+            )
+        credential_epochs.add(credential_epoch)
+    credential_epochs_sha256 = _json_sha256(
+        {"credential_epochs": sorted(credential_epochs)}
+    )
     operation_locks = attestation.get("operation_locks")
     expected_gateway_principals = {
         credential.get("client_certificate_sha256"): {
@@ -3555,6 +4199,9 @@ def _verified_provider_custody(
             "username": credential.get("username"),
             "groups": credential.get("groups"),
             "status_reader": name == "auditor",
+            "credential_epoch": credential.get("credential_epoch"),
+            "not_before": credential.get("not_before"),
+            "not_after": credential.get("not_after"),
         }
         for name, credential in credentials.items()
         if isinstance(credential, dict)
@@ -3740,9 +4387,11 @@ def _verified_provider_custody(
     def provider_collection(
         arguments: Sequence[str], label: str
     ) -> tuple[list[dict[str, Any]], str]:
-        result = subprocess.run(
-            [
-                nebius,
+        result = _pinned_custody_command(
+            executable_path=Path(str(nebius_tool["path"])),
+            expected_sha256=str(nebius_tool["sha256"]),
+            label="signed Nebius CLI",
+            arguments=[
                 "--profile",
                 nebius_profile,
                 *arguments,
@@ -3750,10 +4399,7 @@ def _verified_provider_custody(
                 "--format",
                 "json",
             ],
-            env=clean_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
+            environment={"HOME": nebius_home},
             timeout=30,
         )
         try:
@@ -3781,24 +4427,23 @@ def _verified_provider_custody(
     def provider_object(
         arguments: Sequence[str], label: str
     ) -> tuple[dict[str, Any], str]:
-        result = subprocess.run(
-            [
-                nebius,
+        result = _pinned_custody_command(
+            executable_path=Path(str(nebius_tool["path"])),
+            expected_sha256=str(nebius_tool["sha256"]),
+            label="signed Nebius CLI",
+            arguments=[
                 "--profile",
                 nebius_profile,
                 *arguments,
                 "--format",
                 "json",
             ],
-            env=clean_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
+            environment={"HOME": nebius_home},
             timeout=30,
         )
         try:
             document = json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise DeploymentError(f"provider {label} read is malformed") from exc
         if result.returncode != 0 or not isinstance(document, dict):
             raise DeploymentError(f"provider {label} read failed closed")
@@ -3999,21 +4644,56 @@ def _verified_provider_custody(
             os.environ.get("FS2_NETWORK_BOUNDARY_PROVIDER_GATEWAY_CLIENT_KEY", "")
         ),
     }
-    for label, path in gateway_paths.items():
-        if (
-            not path.is_absolute()
-            or path.is_symlink()
-            or not path.is_file()
-            or path.stat().st_mode & 0o077
-        ):
-            raise DeploymentError(
-                f"the provider custody gateway {label} must be an absolute mode-0600 regular file"
-            )
-    ssl_context = ssl.create_default_context(cafile=str(gateway_paths["CA"]))
-    ssl_context.load_cert_chain(
-        str(gateway_paths["client certificate"]),
-        str(gateway_paths["client key"]),
+    gateway_credential_bytes = {
+        label: _stable_root_file_bytes(
+            path,
+            label=f"provider custody gateway {label}",
+            maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+            private=True,
+        )[0]
+        for label, path in gateway_paths.items()
+    }
+    try:
+        ca_text = gateway_credential_bytes["CA"].decode("ascii", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise DeploymentError("provider custody gateway CA is not exact PEM") from exc
+    normalized_gateway_certificate = _pinned_openssl(
+        ["x509", "-outform", "DER"],
+        expected_sha256=signature_verifier_sha256,
+        input_bytes=gateway_credential_bytes["client certificate"],
     )
+    if (
+        normalized_gateway_certificate.returncode != 0
+        or hashlib.sha256(normalized_gateway_certificate.stdout).hexdigest()
+        != attestation["credentials"]["auditor"].get(
+            "client_certificate_sha256"
+        )
+        or hashlib.sha256(gateway_credential_bytes["CA"]).hexdigest()
+        != attestation["credentials"]["auditor"].get(
+            "issuer_ca_sha256"
+        )
+    ):
+        raise DeploymentError(
+            "provider gateway mTLS material differs from the signed auditor epoch"
+        )
+    ssl_context = ssl.create_default_context(cadata=ca_text)
+    with ExitStack() as gateway_stack:
+        certificate_fd = gateway_stack.enter_context(
+            _sealed_memfd(
+                "fs2-provider-gateway-client-certificate",
+                gateway_credential_bytes["client certificate"],
+            )
+        )
+        key_fd = gateway_stack.enter_context(
+            _sealed_memfd(
+                "fs2-provider-gateway-client-key",
+                gateway_credential_bytes["client key"],
+            )
+        )
+        ssl_context.load_cert_chain(
+            f"/proc/self/fd/{certificate_fd}",
+            f"/proc/self/fd/{key_fd}",
+        )
     for member in gateway_members:
         parsed_status_url = urlsplit(str(member["status_url"]))
         try:
@@ -4063,7 +4743,7 @@ def _verified_provider_custody(
                 f"provider custody gateway member {member['member_id']} is unavailable"
             ) from exc
         expected_live_status = {
-            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v3",
+            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v4",
             "challenge": challenge,
             "cluster_id": cluster_id,
             "policy_id": attestation.get("policy_id"),
@@ -4091,7 +4771,7 @@ def _verified_provider_custody(
             raise DeploymentError(
                 f"live provider custody gateway member {member['member_id']} differs from the signed full inventory"
             )
-    return attestation, _sha256_file(paths["attestation"]), freeze_active_until
+    return attestation, attestation_sha256, freeze_active_until
 
 
 def _decode_kubeconfig_data(value: Any, label: str) -> bytes:
@@ -4106,14 +4786,70 @@ def _decode_kubeconfig_data(value: Any, label: str) -> bytes:
     return decoded
 
 
+def _pinned_kubectl_command(
+    *,
+    kubectl: str,
+    tool: Mapping[str, Any],
+    arguments: Sequence[str],
+    expected_kubeconfig_sha256: str,
+    timeout: int = 30,
+) -> subprocess.CompletedProcess[bytes]:
+    if (
+        set(tool) != {"path", "sha256", "context"}
+        or str(Path(kubectl)) != tool.get("path")
+        or re.fullmatch(r"[a-f0-9]{64}", expected_kubeconfig_sha256) is None
+    ):
+        raise DeploymentError("kubectl differs from the provider-signed tool path")
+    exact_arguments = list(arguments)
+    if exact_arguments.count("--context") != 1:
+        raise DeploymentError("provider-signed kubectl requires one exact context")
+    context_index = exact_arguments.index("--context")
+    if (
+        context_index + 1 >= len(exact_arguments)
+        or exact_arguments[context_index + 1] != tool.get("context")
+    ):
+        raise DeploymentError("kubectl context differs from provider-signed custody")
+    if exact_arguments.count("--kubeconfig") != 1:
+        raise DeploymentError("provider-signed kubectl requires one exact kubeconfig")
+    kubeconfig_index = exact_arguments.index("--kubeconfig") + 1
+    if kubeconfig_index >= len(exact_arguments):
+        raise DeploymentError("provider-signed kubectl kubeconfig is absent")
+    kubeconfig_bytes, kubeconfig_sha256 = _stable_root_file_bytes(
+        Path(exact_arguments[kubeconfig_index]),
+        label="provider-issued kubeconfig",
+        maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+        private=True,
+    )
+    if kubeconfig_sha256 != expected_kubeconfig_sha256:
+        raise DeploymentError("provider-issued kubeconfig differs from signed custody")
+    with _sealed_memfd("fs2-provider-kubeconfig", kubeconfig_bytes) as kubeconfig_fd:
+        exact_arguments[kubeconfig_index] = f"/proc/self/fd/{kubeconfig_fd}"
+        return _pinned_custody_command(
+            executable_path=Path(str(tool["path"])),
+            expected_sha256=str(tool["sha256"]),
+            label="provider-signed kubectl",
+            arguments=exact_arguments,
+            timeout=timeout,
+            inherited_fds=(kubeconfig_fd,),
+        )
+
+
 def _provider_bound_kubeconfig_identity(
-    *, kubectl: str, kubeconfig: Path, context: str
+    *,
+    kubectl: str,
+    kubectl_tool: Mapping[str, Any],
+    kubeconfig: Path,
+    kubeconfig_sha256: str,
+    context: str,
+    signature_verifier_sha256: str,
 ) -> dict[str, str]:
     """Reconstruct certificate and provider principal facts from kubeconfig bytes."""
 
-    viewed = subprocess.run(
-        [
-            kubectl,
+    viewed = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=kubeconfig_sha256,
+        arguments=[
             "--kubeconfig",
             str(kubeconfig),
             "--context",
@@ -4125,10 +4861,6 @@ def _provider_bound_kubeconfig_identity(
             "--output",
             "json",
         ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
     )
     try:
         document = json.loads(viewed.stdout)
@@ -4168,25 +4900,15 @@ def _provider_bound_kubeconfig_identity(
     issuer_ca = _decode_kubeconfig_data(
         cluster.get("certificate-authority-data"), "issuer CA"
     )
-    inspected = subprocess.run(
-        [
-            os.environ.get("FS2_OPENSSL", "openssl"),
-            "x509",
-            "-noout",
-            "-ext",
-            "subjectAltName",
-        ],
-        env=clean_environment(),
-        input=certificate,
-        capture_output=True,
-        check=False,
+    inspected = _pinned_openssl(
+        ["x509", "-noout", "-ext", "subjectAltName"],
+        expected_sha256=signature_verifier_sha256,
+        input_bytes=certificate,
     )
-    normalized_certificate = subprocess.run(
-        [os.environ.get("FS2_OPENSSL", "openssl"), "x509", "-outform", "DER"],
-        env=clean_environment(),
-        input=certificate,
-        capture_output=True,
-        check=False,
+    normalized_certificate = _pinned_openssl(
+        ["x509", "-outform", "DER"],
+        expected_sha256=signature_verifier_sha256,
+        input_bytes=certificate,
     )
     try:
         output = inspected.stdout.decode("utf-8", errors="strict")
@@ -4215,7 +4937,9 @@ def _provider_bound_kubeconfig_identity(
 def _authority_ready_endpoints(
     *,
     kubectl: str,
+    kubectl_tool: Mapping[str, Any],
     auditor: Path,
+    auditor_kubeconfig_sha256: str,
     context: str,
     serving_certificate_sha256: str,
 ) -> dict[str, Any]:
@@ -4226,9 +4950,11 @@ def _authority_ready_endpoints(
     and require exact equality, alongside the two protected-object/RBAC reads.
     """
 
-    endpoints_result = subprocess.run(
-        [
-            kubectl,
+    endpoints_result = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+        arguments=[
             "--kubeconfig",
             str(auditor),
             "--context",
@@ -4241,14 +4967,12 @@ def _authority_ready_endpoints(
             "--output",
             "json",
         ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
     )
-    pods_result = subprocess.run(
-        [
-            kubectl,
+    pods_result = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+        arguments=[
             "--kubeconfig",
             str(auditor),
             "--context",
@@ -4262,10 +4986,6 @@ def _authority_ready_endpoints(
             "--output",
             "json",
         ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
     )
     try:
         endpoints_document = json.loads(endpoints_result.stdout)
@@ -4307,9 +5027,11 @@ def _authority_ready_endpoints(
             or not pod_spec["nodeName"]
         ):
             raise DeploymentError("a boundary endpoint has no stable Pod/node identity")
-        readiness = subprocess.run(
-            [
-                kubectl,
+        readiness = _pinned_kubectl_command(
+            kubectl=kubectl,
+            tool=kubectl_tool,
+            expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+            arguments=[
                 "--kubeconfig",
                 str(auditor),
                 "--context",
@@ -4321,10 +5043,6 @@ def _authority_ready_endpoints(
                     f"https:{pod_metadata['name']}:8443/proxy/readyz"
                 ),
             ],
-            env=clean_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
         )
         try:
             readiness_body = json.loads(readiness.stdout)
@@ -4375,9 +5093,9 @@ def model_network_boundary_authority_custody(
     credential_kind: str,
     expected_username: str,
     expected_receipt_phase: str,
-    observed_identity: Mapping[str, Any],
     trust_root_sha256: str,
     provider_trust_root_sha256: str,
+    signature_verifier_sha256: str,
 ) -> dict[str, Any]:
     """Verify the externally signed authority receipt and every bound live object."""
 
@@ -4391,11 +5109,53 @@ def model_network_boundary_authority_custody(
         nebius=nebius,
         nebius_profile=nebius_profile,
         provider_trust_root_sha256=provider_trust_root_sha256,
+        signature_verifier_sha256=signature_verifier_sha256,
     )
+    kubectl_tool = provider_attestation["client_tools"]["kubectl"]
+    if context != kubectl_tool.get("context"):
+        raise DeploymentError("requested context differs from provider-signed custody")
+    selected_kubeconfig_sha256 = str(
+        provider_attestation["credentials"][credential_kind].get(
+            "kubeconfig_sha256", ""
+        )
+    )
+    authenticated = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=selected_kubeconfig_sha256,
+        arguments=[
+            "--kubeconfig",
+            str(credential),
+            "--context",
+            context,
+            "auth",
+            "whoami",
+            "-o",
+            "json",
+        ],
+    )
+    try:
+        observed_identity = _exact_kubernetes_user_info(
+            json.loads(authenticated.stdout), "provider-pinned kubectl auth whoami"
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, DeploymentError) as exc:
+        raise DeploymentError(
+            "the separately issued model-network credential has no exact live identity"
+        ) from exc
+    if (
+        authenticated.returncode != 0
+        or observed_identity.get("username") != expected_username
+    ):
+        raise DeploymentError(
+            "the separately issued model-network credential has the wrong live identity"
+        )
     reconstructed_identity = _provider_bound_kubeconfig_identity(
         kubectl=kubectl,
+        kubectl_tool=kubectl_tool,
         kubeconfig=credential,
+        kubeconfig_sha256=selected_kubeconfig_sha256,
         context=context,
+        signature_verifier_sha256=signature_verifier_sha256,
     )
 
     paths = {
@@ -4407,41 +5167,38 @@ def model_network_boundary_authority_custody(
             os.environ.get("FS2_NETWORK_BOUNDARY_AUTHORITY_TRUST_ROOT", "")
         ),
     }
-    for label, path in paths.items():
-        if not path.is_absolute() or path.is_symlink() or not path.is_file():
-            raise DeploymentError(
-                f"the model-network authority {label} must be an absolute regular file"
-            )
+    receipt_bytes, _receipt_sha256 = _stable_root_file_bytes(
+        paths["receipt"],
+        label="model-network authority receipt",
+        maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+    )
+    signature_bytes, _signature_sha256 = _stable_root_file_bytes(
+        paths["signature"],
+        label="model-network authority signature",
+        maximum_bytes=_MAX_CUSTODY_SIGNATURE_BYTES,
+    )
+    trust_root_bytes, trust_root_actual_sha256 = _stable_root_file_bytes(
+        paths["trust root"],
+        label="model-network authority trust root",
+        maximum_bytes=_MAX_CUSTODY_DOCUMENT_BYTES,
+    )
     if not re.fullmatch(r"[a-f0-9]{64}", trust_root_sha256):
         raise DeploymentError(
             "the root deployment contract must pin the authority trust-root SHA-256"
         )
-    if _sha256_file(paths["trust root"]) != trust_root_sha256:
+    if trust_root_actual_sha256 != trust_root_sha256:
         raise DeploymentError(
             "the authority signing key differs from the root-pinned digest"
         )
-    verified = subprocess.run(
-        [
-            os.environ.get("FS2_OPENSSL", "openssl"),
-            "dgst",
-            "-sha256",
-            "-verify",
-            str(paths["trust root"]),
-            "-signature",
-            str(paths["signature"]),
-            str(paths["receipt"]),
-        ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
+    _verify_detached_signature(
+        document=receipt_bytes,
+        signature=signature_bytes,
+        trust_root=trust_root_bytes,
+        verifier_sha256=signature_verifier_sha256,
+        label="model-network authority custody",
     )
-    if verified.returncode != 0 or verified.stdout.strip() != "Verified OK":
-        raise DeploymentError(
-            "the model-network authority custody signature is invalid"
-        )
     try:
-        receipt = json.loads(paths["receipt"].read_text(encoding="utf-8"))
+        receipt = json.loads(receipt_bytes)
         if not isinstance(receipt, dict):
             raise TypeError("receipt is not an object")
         payload = {
@@ -4482,7 +5239,8 @@ def model_network_boundary_authority_custody(
         or credential_claim.get("authentication_mode") != "x509-client-certificate"
         or credential_claim.get("provider_principal_id")
         != reconstructed_identity["provider_principal_id"]
-        or credential_claim.get("kubeconfig_sha256") != _sha256_file(credential)
+        or credential_claim.get("kubeconfig_sha256")
+        != selected_kubeconfig_sha256
         or credential_claim.get("client_certificate_sha256")
         != reconstructed_identity["client_certificate_sha256"]
         or credential_claim.get("issuer_ca_sha256")
@@ -4527,11 +5285,19 @@ def model_network_boundary_authority_custody(
                     "username",
                     "groups",
                     "provider_principal_id",
+                    "kubeconfig_sha256",
                     "client_certificate_sha256",
                     "issuer_ca_sha256",
                     "gateway_server",
+                    "credential_epoch",
+                    "not_before",
+                    "not_after",
                 )
             )
+            or claim.get("not_before")
+            != provider_attestation["mutation_freeze"].get("active_from")
+            or claim.get("not_after")
+            != provider_attestation["mutation_freeze"].get("active_until")
         ):
             raise DeploymentError(f"the signed {name} custody identity is incomplete")
         provider_principals.add(claim["provider_principal_id"])
@@ -4552,6 +5318,12 @@ def model_network_boundary_authority_custody(
         != provider_attestation.get("policy_revision")
         or external_custody.get("provider_trust_root_sha256")
         != provider_trust_root_sha256
+        or external_custody.get("signature_verifier_sha256")
+        != signature_verifier_sha256
+        or external_custody.get("client_tools_sha256")
+        != _json_sha256(provider_attestation.get("client_tools", {}))
+        or external_custody.get("credential_epochs_sha256")
+        != credential_epochs_sha256
         or external_custody.get("attestation_sha256")
         != provider_attestation_sha256
         or external_custody.get("stable_policy_sha256")
@@ -4622,6 +5394,11 @@ def model_network_boundary_authority_custody(
     auditor_raw = os.environ.get("FS2_NETWORK_AUDITOR_KUBECONFIG", "")
     auditor = Path(auditor_raw)
     auditor_claim = credentials.get("auditor")
+    auditor_kubeconfig_sha256 = str(
+        provider_attestation["credentials"]["auditor"].get(
+            "kubeconfig_sha256", ""
+        )
+    )
     if (
         not auditor.is_absolute()
         or auditor.is_symlink()
@@ -4631,14 +5408,17 @@ def model_network_boundary_authority_custody(
         or not isinstance(auditor_claim, dict)
         or auditor_claim.get("username") != "fs2-model-network-auditor"
         or auditor_claim.get("authentication_mode") != "x509-client-certificate"
-        or auditor_claim.get("kubeconfig_sha256") != _sha256_file(auditor)
+        or auditor_claim.get("kubeconfig_sha256")
+        != auditor_kubeconfig_sha256
     ):
         raise DeploymentError(
             "FS2_NETWORK_AUDITOR_KUBECONFIG must be the distinct signed mode-0600 auditor credential"
         )
-    auditor_whoami = subprocess.run(
-        [
-            kubectl,
+    auditor_whoami = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+        arguments=[
             "--kubeconfig",
             str(auditor),
             "--context",
@@ -4648,10 +5428,6 @@ def model_network_boundary_authority_custody(
             "-o",
             "json",
         ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
     )
     try:
         auditor_identity = _exact_kubernetes_user_info(
@@ -4880,7 +5656,6 @@ def model_network_boundary_authority_custody(
             )
         observed_keys.add(key)
         command = [
-            kubectl,
             "--kubeconfig",
             str(auditor),
             "--context",
@@ -4889,12 +5664,11 @@ def model_network_boundary_authority_custody(
         if namespace:
             command.extend(["--namespace", namespace])
         command.extend(["get", resource, name, "--output", "json"])
-        result = subprocess.run(
-            command,
-            env=clean_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
+        result = _pinned_kubectl_command(
+            kubectl=kubectl,
+            tool=kubectl_tool,
+            expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+            arguments=command,
         )
         if result.returncode != 0:
             raise DeploymentError(
@@ -5256,7 +6030,6 @@ def model_network_boundary_authority_custody(
 
     def audited_collection(resource: str, *, all_namespaces: bool) -> dict[str, Any]:
         command = [
-            kubectl,
             "--kubeconfig",
             str(auditor),
             "--context",
@@ -5267,12 +6040,11 @@ def model_network_boundary_authority_custody(
         if all_namespaces:
             command.append("--all-namespaces")
         command.extend(["--output", "json"])
-        result = subprocess.run(
-            command,
-            env=clean_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
+        result = _pinned_kubectl_command(
+            kubectl=kubectl,
+            tool=kubectl_tool,
+            expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+            arguments=command,
         )
         if result.returncode != 0:
             raise DeploymentError(f"cannot capture exhaustive {resource} custody census")
@@ -5746,9 +6518,11 @@ def model_network_boundary_authority_custody(
     )
     if not isinstance(static_binding, dict):
         raise DeploymentError("the static custody binding is absent from signed inventory")
-    live_static = subprocess.run(
-        [
-            kubectl,
+    live_static = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+        arguments=[
             "--kubeconfig",
             str(auditor),
             "--context",
@@ -5759,10 +6533,6 @@ def model_network_boundary_authority_custody(
             "--output",
             "json",
         ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
     )
     try:
         annotations = json.loads(live_static.stdout)["metadata"]["annotations"]
@@ -5774,6 +6544,12 @@ def model_network_boundary_authority_custody(
     expected_role_hash = hashlib.sha256(
         json.dumps(capable_roles, separators=(",", ":")).encode()
     ).hexdigest()
+    expected_authority_cluster_hash = hashlib.sha256(
+        json.dumps(authority_cluster_roles, separators=(",", ":")).encode()
+    ).hexdigest()
+    expected_authority_role_hash = hashlib.sha256(
+        json.dumps(authority_roles, separators=(",", ":")).encode()
+    ).hexdigest()
     if (
         live_static.returncode != 0
         or annotations.get(
@@ -5784,6 +6560,12 @@ def model_network_boundary_authority_custody(
             "fs2-serve.nebius.ai/privileged-capability-roles-sha256"
         )
         != expected_role_hash
+        or annotations.get(
+            "fs2-serve.nebius.ai/authority-control-cluster-roles-sha256"
+        )
+        != expected_authority_cluster_hash
+        or annotations.get("fs2-serve.nebius.ai/authority-control-roles-sha256")
+        != expected_authority_role_hash
     ):
         raise DeploymentError("the API-native impersonation guard is not bound to the live census")
 
@@ -5840,9 +6622,11 @@ def model_network_boundary_authority_custody(
     if not isinstance(jobset_writer, dict) or jobset_match is None:
         raise DeploymentError("the live authority has no exact run-scoped JobSet writer")
     def read_jobset_writer() -> dict[str, str]:
-        jobset_deployment = subprocess.run(
-            [
-                kubectl,
+        jobset_deployment = _pinned_kubectl_command(
+            kubectl=kubectl,
+            tool=kubectl_tool,
+            expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+            arguments=[
                 "--kubeconfig",
                 str(auditor),
                 "--context",
@@ -5855,10 +6639,6 @@ def model_network_boundary_authority_custody(
                 "--output",
                 "json",
             ],
-            env=clean_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
         )
         try:
             jobset_document = json.loads(jobset_deployment.stdout)
@@ -5922,7 +6702,9 @@ def model_network_boundary_authority_custody(
 
     service_endpoints = _authority_ready_endpoints(
         kubectl=kubectl,
+        kubectl_tool=kubectl_tool,
         auditor=auditor,
+        auditor_kubeconfig_sha256=auditor_kubeconfig_sha256,
         context=context,
         serving_certificate_sha256=live_serving_certificate_sha256,
     )
@@ -5961,9 +6743,11 @@ def model_network_boundary_authority_custody(
         raise DeploymentError(
             "the dedicated catalog acquisition identity is not live-bound"
         )
-    scientific_account_result = subprocess.run(
-        [
-            kubectl,
+    scientific_account_result = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+        arguments=[
             "--kubeconfig",
             str(auditor),
             "--context",
@@ -5976,10 +6760,6 @@ def model_network_boundary_authority_custody(
             "--output",
             "json",
         ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
     )
     if scientific_account_result.returncode != 0:
         if receipt.get("phase") != "bootstrap" or scientific_writer is not None:
@@ -6092,12 +6872,11 @@ def model_network_boundary_authority_custody(
         if namespace:
             command.extend(["--namespace", namespace])
         command.extend(["get", resource, name, "--output", "json"])
-        second = subprocess.run(
-            command,
-            env=clean_environment(),
-            text=True,
-            capture_output=True,
-            check=False,
+        second = _pinned_kubectl_command(
+            kubectl=kubectl,
+            tool=kubectl_tool,
+            expected_kubeconfig_sha256=auditor_kubeconfig_sha256,
+            arguments=command,
         )
         try:
             live = json.loads(second.stdout)
@@ -6131,7 +6910,9 @@ def model_network_boundary_authority_custody(
     }
     second_service_endpoints = _authority_ready_endpoints(
         kubectl=kubectl,
+        kubectl_tool=kubectl_tool,
         auditor=auditor,
+        auditor_kubeconfig_sha256=auditor_kubeconfig_sha256,
         context=context,
         serving_certificate_sha256=live_serving_certificate_sha256,
     )
@@ -6173,7 +6954,7 @@ def model_network_boundary_authority_custody(
 def model_network_boundary_credential(
     *,
     kubectl: str,
-    shared_kubeconfig: str,
+    shared_kubeconfig: str | None,
     context: str,
     phase: str,
     cluster_id: str,
@@ -6182,6 +6963,7 @@ def model_network_boundary_credential(
     nebius_profile: str,
     trust_root_sha256: str,
     provider_trust_root_sha256: str,
+    signature_verifier_sha256: str,
 ) -> tuple[str, str, dict[str, Any]]:
     """Require a signed, distinct X.509 credential and prove its live identity."""
 
@@ -6211,57 +6993,18 @@ def model_network_boundary_credential(
             f"{environment_name} must name the separately issued model-network credential"
         )
     credential = Path(raw_path)
-    shared = Path(shared_kubeconfig)
+    shared = Path(shared_kubeconfig) if shared_kubeconfig is not None else None
     if (
         not credential.is_absolute()
         or credential.is_symlink()
         or not credential.is_file()
-        or credential.resolve() == shared.resolve()
+        or (shared is not None and credential.resolve() == shared.resolve())
     ):
         raise DeploymentError(
             f"{environment_name} must be an absolute regular file distinct from the shared kubeconfig"
         )
     if credential.stat().st_mode & 0o077:
         raise DeploymentError(f"{environment_name} must not be group/world accessible")
-    authenticated = subprocess.run(
-        [
-            kubectl,
-            "--kubeconfig",
-            str(credential),
-            "--context",
-            context,
-            "auth",
-            "whoami",
-            "-o",
-            "json",
-        ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-    if authenticated.returncode != 0:
-        raise DeploymentError(
-            f"cannot authenticate the separate {environment_name} credential: "
-            + (
-                authenticated.stderr.strip()
-                or authenticated.stdout.strip()
-                or "kubectl auth whoami failed"
-            )
-        )
-    try:
-        observed_identity = _exact_kubernetes_user_info(
-            json.loads(authenticated.stdout), environment_name
-        )
-        username = observed_identity["username"]
-    except (DeploymentError, json.JSONDecodeError) as exc:
-        raise DeploymentError(
-            f"{environment_name} returned no exact authenticated username"
-        ) from exc
-    if username != expected_username:
-        raise DeploymentError(
-            f"{environment_name} authenticates as {username!r}, not {expected_username!r}"
-        )
     custody = model_network_boundary_authority_custody(
         kubectl=kubectl,
         context=context,
@@ -6273,9 +7016,9 @@ def model_network_boundary_credential(
         credential_kind=credential_kind,
         expected_username=expected_username,
         expected_receipt_phase=expected_receipt_phase,
-        observed_identity=observed_identity,
         trust_root_sha256=trust_root_sha256,
         provider_trust_root_sha256=provider_trust_root_sha256,
+        signature_verifier_sha256=signature_verifier_sha256,
     )
     return str(credential.resolve()), expected_username, custody
 
@@ -6283,15 +7026,19 @@ def model_network_boundary_credential(
 def ensure_control_plane_helm_release_idle(
     *,
     kubectl: str,
+    kubectl_tool: Mapping[str, Any],
     kubeconfig: str,
+    kubeconfig_sha256: str,
     context: str,
     allow_absent: bool = False,
 ) -> None:
     """Reject a transition while the latest Helm release is pending."""
 
-    result = subprocess.run(
-        [
-            kubectl,
+    result = _pinned_kubectl_command(
+        kubectl=kubectl,
+        tool=kubectl_tool,
+        expected_kubeconfig_sha256=kubeconfig_sha256,
+        arguments=[
             "--kubeconfig",
             kubeconfig,
             "--context",
@@ -6305,15 +7052,15 @@ def ensure_control_plane_helm_release_idle(
             "-o",
             "json",
         ],
-        env=clean_environment(),
-        text=True,
-        capture_output=True,
-        check=False,
     )
     if result.returncode != 0:
         raise DeploymentError(
             "cannot inspect the control-plane Helm release before arming the network boundary: "
-            + (result.stderr.strip() or result.stdout.strip() or "unknown error")
+            + (
+                result.stderr.decode(errors="replace").strip()
+                or result.stdout.decode(errors="replace").strip()
+                or "unknown error"
+            )
         )
     try:
         document = json.loads(result.stdout)
@@ -6690,6 +7437,27 @@ def state_has_resources(
     return bool(state_addresses(terraform, stage_root(stage), environment))
 
 
+def provider_custody_preflight(
+    args: argparse.Namespace, contract: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Verify provider custody before deriving any cluster client state."""
+
+    transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
+    attestation, _attestation_sha256, _active_until = _verified_provider_custody(
+        cluster_id=None,
+        project_id=contract["target"]["project_id"],
+        nebius=args.nebius,
+        nebius_profile=args.nebius_profile,
+        provider_trust_root_sha256=transition.get(
+            "provider_trust_root_sha256", ""
+        ),
+        signature_verifier_sha256=transition.get(
+            "signature_verifier_sha256", ""
+        ),
+    )
+    return attestation
+
+
 def apply_stack(
     args: argparse.Namespace,
     run_root: Path,
@@ -6697,6 +7465,104 @@ def apply_stack(
     commit: str,
     configuration_environment: Mapping[str, str],
 ) -> None:
+    transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
+    transition_phase = transition.get("phase", "prepare")
+    trust_root_sha256 = transition.get("authority_trust_root_sha256", "")
+    provider_trust_root_sha256 = transition.get(
+        "provider_trust_root_sha256", ""
+    )
+    signature_verifier_sha256 = transition.get(
+        "signature_verifier_sha256", ""
+    )
+    preflight_attestation = provider_custody_preflight(args, contract)
+    preflight_cluster_id = str(preflight_attestation["cluster_id"])
+    kubectl_tool = preflight_attestation["client_tools"]["kubectl"]
+    preflight_context = str(kubectl_tool["context"])
+    boundary_credential_kind = (
+        "authorizer"
+        if transition_phase == "prepare"
+        else "maintenance"
+        if transition_phase == "maintenance"
+        else "transition"
+    )
+    boundary_kubeconfig_sha256 = str(
+        preflight_attestation["credentials"][boundary_credential_kind][
+            "kubeconfig_sha256"
+        ]
+    )
+    auditor_kubeconfig = os.environ.get("FS2_NETWORK_AUDITOR_KUBECONFIG", "")
+    auditor_kubeconfig_sha256 = str(
+        preflight_attestation["credentials"]["auditor"]["kubeconfig_sha256"]
+    )
+    boundary_kubeconfig, boundary_username, authority_receipt = (
+        model_network_boundary_credential(
+            kubectl=args.kubectl,
+            shared_kubeconfig=None,
+            context=preflight_context,
+            phase=transition_phase,
+            cluster_id=preflight_cluster_id,
+            project_id=contract["target"]["project_id"],
+            nebius=args.nebius,
+            nebius_profile=args.nebius_profile,
+            trust_root_sha256=trust_root_sha256,
+            provider_trust_root_sha256=provider_trust_root_sha256,
+            signature_verifier_sha256=signature_verifier_sha256,
+        )
+    )
+    expected_external_custody = authority_receipt.get("external_custody", {})
+
+    def custody_guard() -> datetime:
+        attestation, _attestation_sha256, active_until = (
+            _verified_provider_custody(
+                cluster_id=preflight_cluster_id,
+                project_id=contract["target"]["project_id"],
+                nebius=args.nebius,
+                nebius_profile=args.nebius_profile,
+                provider_trust_root_sha256=provider_trust_root_sha256,
+                signature_verifier_sha256=signature_verifier_sha256,
+            )
+        )
+        if (
+            not isinstance(expected_external_custody, Mapping)
+            or attestation.get("client_tools")
+            != preflight_attestation.get("client_tools")
+            or attestation.get("credentials")
+            != preflight_attestation.get("credentials")
+            or _provider_custody_stable_sha256(attestation)
+            != expected_external_custody.get("stable_policy_sha256")
+            or attestation.get("mutation_freeze", {}).get("transaction_id")
+            != expected_external_custody.get("freeze_transaction_id")
+            or attestation.get("provider_gateway", {}).get(
+                "provider_inventory_sha256"
+            )
+            != expected_external_custody.get("provider_inventory_sha256")
+            or _json_sha256(attestation.get("kubernetes_authorization", {}))
+            != expected_external_custody.get(
+                "kubernetes_authorization_sha256"
+            )
+            or _provider_authority_census_stable_sha256(
+                attestation.get("provider_authority_census", {})
+            )
+            != expected_external_custody.get(
+                "provider_authority_census_sha256"
+            )
+            or _json_sha256(
+                attestation.get("provider_authority_census", {})
+                .get("snapshot", {})
+                .get("gateway_runtime_measurements", {})
+            )
+            != expected_external_custody.get(
+                "gateway_runtime_measurements_sha256"
+            )
+        ):
+            raise DeploymentError(
+                "provider custody changed during the saved-plan transaction"
+            )
+        return active_until
+
+    # No infrastructure, registry, Kubernetes, or root-state mutation may
+    # precede this independently signed and live-reconciled boundary.
+    custody_guard()
     infrastructure_variables = write_infrastructure_variables(
         run_root, contract, commit, args.nebius_profile
     )
@@ -6707,7 +7573,13 @@ def apply_stack(
         contract=contract,
         variable_file=infrastructure_variables,
     )
-    apply_plan(args.terraform, INFRA_ROOT, plan_path, environment)
+    apply_plan(
+        args.terraform,
+        INFRA_ROOT,
+        plan_path,
+        environment,
+        custody_guard=custody_guard,
+    )
 
     dynamic = infrastructure_outputs(
         args.terraform,
@@ -6716,8 +7588,41 @@ def apply_stack(
         nebius=args.nebius,
         nebius_profile=args.nebius_profile,
         kubectl=args.kubectl,
+        provider_attestation=preflight_attestation,
     )
+    if (
+        dynamic["cluster_id"] != preflight_cluster_id
+        or dynamic["kube_context"] != preflight_context
+    ):
+        raise DeploymentError(
+            "infrastructure outputs differ from the provider-signed cluster/context"
+        )
+    revalidated_kubeconfig, revalidated_username, revalidated_receipt = (
+        model_network_boundary_credential(
+            kubectl=args.kubectl,
+            shared_kubeconfig=dynamic["kubeconfig_path"],
+            context=preflight_context,
+            phase=transition_phase,
+            cluster_id=preflight_cluster_id,
+            project_id=contract["target"]["project_id"],
+            nebius=args.nebius,
+            nebius_profile=args.nebius_profile,
+            trust_root_sha256=trust_root_sha256,
+            provider_trust_root_sha256=provider_trust_root_sha256,
+            signature_verifier_sha256=signature_verifier_sha256,
+        )
+    )
+    if (
+        revalidated_kubeconfig != boundary_kubeconfig
+        or revalidated_username != boundary_username
+        or revalidated_receipt != authority_receipt
+    ):
+        raise DeploymentError(
+            "model-network custody changed during infrastructure convergence"
+        )
+    custody_guard()
     mirror_selected_images(args, run_root, contract, dynamic)
+    custody_guard()
     foundation_variables, workloads_variables = write_downstream_variables(
         run_root, contract, dynamic
     )
@@ -6729,80 +7634,20 @@ def apply_stack(
         contract=contract,
         variable_file=foundation_variables,
     )
-    apply_plan(args.terraform, FOUNDATION_ROOT, plan_path, environment)
-
-    transition = contract["stages"]["workloads"]["model_runtime_network_policy"]
-    transition_phase = transition.get("phase", "prepare")
-    trust_root_sha256 = transition.get("authority_trust_root_sha256", "")
-    provider_trust_root_sha256 = transition.get(
-        "provider_trust_root_sha256", ""
+    apply_plan(
+        args.terraform,
+        FOUNDATION_ROOT,
+        plan_path,
+        environment,
+        custody_guard=custody_guard,
     )
-    boundary_kubeconfig, boundary_username, authority_receipt = (
-        model_network_boundary_credential(
-            kubectl=args.kubectl,
-            shared_kubeconfig=dynamic["kubeconfig_path"],
-            context=dynamic["kube_context"],
-            phase=transition_phase,
-            cluster_id=dynamic["cluster_id"],
-            project_id=contract["target"]["project_id"],
-            nebius=args.nebius,
-            nebius_profile=args.nebius_profile,
-            trust_root_sha256=trust_root_sha256,
-            provider_trust_root_sha256=provider_trust_root_sha256,
-        )
-    )
+    custody_guard()
 
     def apply_workloads(
         boundary_holder_identity: str = "",
         operation_lock_identity: str = "",
         operation_writer_username: str = "",
     ) -> None:
-        expected_external_custody = authority_receipt.get("external_custody", {})
-
-        def custody_guard() -> datetime:
-            attestation, _attestation_sha256, active_until = (
-                _verified_provider_custody(
-                    cluster_id=dynamic["cluster_id"],
-                    project_id=contract["target"]["project_id"],
-                    nebius=args.nebius,
-                    nebius_profile=args.nebius_profile,
-                    provider_trust_root_sha256=provider_trust_root_sha256,
-                )
-            )
-            if (
-                not isinstance(expected_external_custody, Mapping)
-                or _provider_custody_stable_sha256(attestation)
-                != expected_external_custody.get("stable_policy_sha256")
-                or attestation.get("mutation_freeze", {}).get("transaction_id")
-                != expected_external_custody.get("freeze_transaction_id")
-                or attestation.get("provider_gateway", {}).get(
-                    "provider_inventory_sha256"
-                )
-                != expected_external_custody.get("provider_inventory_sha256")
-                or _json_sha256(attestation.get("kubernetes_authorization", {}))
-                != expected_external_custody.get(
-                    "kubernetes_authorization_sha256"
-                )
-                or _provider_authority_census_stable_sha256(
-                    attestation.get("provider_authority_census", {})
-                )
-                != expected_external_custody.get(
-                    "provider_authority_census_sha256"
-                )
-                or _json_sha256(
-                    attestation.get("provider_authority_census", {})
-                    .get("snapshot", {})
-                    .get("gateway_runtime_measurements", {})
-                )
-                != expected_external_custody.get(
-                    "gateway_runtime_measurements_sha256"
-                )
-            ):
-                raise DeploymentError(
-                    "provider custody changed during the saved-plan transaction"
-                )
-            return active_until
-
         overrides = {
             "FS2_NETWORK_TRANSITION_LOCK_IDENTITY": boundary_holder_identity,
             "FS2_NETWORK_TRANSITION_WRITER_USERNAME": operation_writer_username,
@@ -6815,8 +7660,6 @@ def apply_stack(
             "TF_VAR_model_network_boundary_kubeconfig_path": boundary_kubeconfig,
             "TF_VAR_model_network_helm_kubeconfig_path": (
                 boundary_kubeconfig
-                if transition_phase in {"prepare", "maintenance", "rollback-helm"}
-                else dynamic["kubeconfig_path"]
             ),
             "TF_VAR_model_network_boundary_authority_receipt": json.dumps(
                 authority_receipt, sort_keys=True, separators=(",", ":")
@@ -6825,8 +7668,10 @@ def apply_stack(
         if operation_lock_identity:
             ensure_control_plane_helm_release_idle(
                 kubectl=args.kubectl,
-                kubeconfig=dynamic["kubeconfig_path"],
-                context=dynamic["kube_context"],
+                kubectl_tool=kubectl_tool,
+                kubeconfig=auditor_kubeconfig,
+                kubeconfig_sha256=auditor_kubeconfig_sha256,
+                context=preflight_context,
                 allow_absent=transition_phase == "prepare",
             )
         plan_path, workloads_plan, environment = plan_stage(
@@ -6843,8 +7688,10 @@ def apply_stack(
         if operation_lock_identity:
             ensure_control_plane_helm_release_idle(
                 kubectl=args.kubectl,
-                kubeconfig=dynamic["kubeconfig_path"],
-                context=dynamic["kube_context"],
+                kubectl_tool=kubectl_tool,
+                kubeconfig=auditor_kubeconfig,
+                kubeconfig_sha256=auditor_kubeconfig_sha256,
+                context=preflight_context,
                 allow_absent=transition_phase == "prepare",
             )
         revalidated_kubeconfig, revalidated_username, revalidated_receipt = (
@@ -6859,6 +7706,7 @@ def apply_stack(
                 nebius_profile=args.nebius_profile,
                 trust_root_sha256=trust_root_sha256,
                 provider_trust_root_sha256=provider_trust_root_sha256,
+                signature_verifier_sha256=signature_verifier_sha256,
             )
         )
         if (
@@ -6879,8 +7727,10 @@ def apply_stack(
         if operation_lock_identity:
             ensure_control_plane_helm_release_idle(
                 kubectl=args.kubectl,
-                kubeconfig=dynamic["kubeconfig_path"],
-                context=dynamic["kube_context"],
+                kubectl_tool=kubectl_tool,
+                kubeconfig=auditor_kubeconfig,
+                kubeconfig_sha256=auditor_kubeconfig_sha256,
+                context=preflight_context,
             )
 
     if transition_phase == "prepare":
@@ -6898,6 +7748,7 @@ def apply_stack(
                 nebius_profile=args.nebius_profile,
                 trust_root_sha256=trust_root_sha256,
                 provider_trust_root_sha256=provider_trust_root_sha256,
+                signature_verifier_sha256=signature_verifier_sha256,
             )
         )
         if transition_receipt != authority_receipt:
@@ -6906,14 +7757,24 @@ def apply_stack(
             )
         ensure_control_plane_helm_release_idle(
             kubectl=args.kubectl,
-            kubeconfig=dynamic["kubeconfig_path"],
-            context=dynamic["kube_context"],
+            kubectl_tool=kubectl_tool,
+            kubeconfig=auditor_kubeconfig,
+            kubeconfig_sha256=auditor_kubeconfig_sha256,
+            context=preflight_context,
             allow_absent=True,
+        )
+        transition_kubeconfig_sha256 = str(
+            preflight_attestation["credentials"]["transition"][
+                "kubeconfig_sha256"
+            ]
         )
         with model_network_transition_lock(
             kubectl=args.kubectl,
+            kubectl_tool=kubectl_tool,
             kubeconfig=transition_kubeconfig,
-            context=dynamic["kube_context"],
+            kubeconfig_sha256=transition_kubeconfig_sha256,
+            context=preflight_context,
+            custody_expires_at=custody_guard(),
             run_id=contract["run_id"],
         ) as (lock_identity, transition_writer_username):
             if transition_writer_username != transition_username:
@@ -6928,18 +7789,25 @@ def apply_stack(
     elif transition_phase == "maintenance":
         stable_holder = model_network_boundary_holder(
             kubectl=args.kubectl,
-            kubeconfig=boundary_kubeconfig,
-            context=dynamic["kube_context"],
+            kubectl_tool=kubectl_tool,
+            kubeconfig=auditor_kubeconfig,
+            kubeconfig_sha256=auditor_kubeconfig_sha256,
+            context=preflight_context,
         )
         ensure_control_plane_helm_release_idle(
             kubectl=args.kubectl,
-            kubeconfig=dynamic["kubeconfig_path"],
-            context=dynamic["kube_context"],
+            kubectl_tool=kubectl_tool,
+            kubeconfig=auditor_kubeconfig,
+            kubeconfig_sha256=auditor_kubeconfig_sha256,
+            context=preflight_context,
         )
         with model_network_transition_lock(
             kubectl=args.kubectl,
+            kubectl_tool=kubectl_tool,
             kubeconfig=boundary_kubeconfig,
-            context=dynamic["kube_context"],
+            kubeconfig_sha256=boundary_kubeconfig_sha256,
+            context=preflight_context,
+            custody_expires_at=custody_guard(),
             run_id=contract["run_id"],
             lease_name="fs2-model-network-maintenance",
             expected_username="fs2-model-network-maintenance",
@@ -6964,13 +7832,18 @@ def apply_stack(
         # an operation that became pending immediately before the fence armed.
         ensure_control_plane_helm_release_idle(
             kubectl=args.kubectl,
-            kubeconfig=dynamic["kubeconfig_path"],
-            context=dynamic["kube_context"],
+            kubectl_tool=kubectl_tool,
+            kubeconfig=auditor_kubeconfig,
+            kubeconfig_sha256=auditor_kubeconfig_sha256,
+            context=preflight_context,
         )
         with model_network_transition_lock(
             kubectl=args.kubectl,
+            kubectl_tool=kubectl_tool,
             kubeconfig=boundary_kubeconfig,
-            context=dynamic["kube_context"],
+            kubeconfig_sha256=boundary_kubeconfig_sha256,
+            context=preflight_context,
+            custody_expires_at=custody_guard(),
             run_id=contract["run_id"],
         ) as (lock_identity, transition_writer_username):
             if transition_writer_username != boundary_username:
@@ -6989,6 +7862,7 @@ def apply_stack(
         DEPLOY_ROOT,
         run_root / "configuration.tfplan",
         configuration_environment,
+        custody_guard=custody_guard,
     )
 
     endpoints = workload_endpoint_outputs(args.terraform, run_root, contract)
@@ -7030,6 +7904,7 @@ def plan_stack(
         )
         return
 
+    provider_attestation = provider_custody_preflight(args, contract)
     dynamic = infrastructure_outputs(
         args.terraform,
         run_root,
@@ -7037,6 +7912,7 @@ def plan_stack(
         nebius=args.nebius,
         nebius_profile=args.nebius_profile,
         kubectl=args.kubectl,
+        provider_attestation=provider_attestation,
     )
     if "artifact_delivery" not in dynamic["accelerator_pool_contract"]:
         plan_stage(
@@ -7095,6 +7971,9 @@ def plan_stack(
             provider_trust_root_sha256=transition.get(
                 "provider_trust_root_sha256", ""
             ),
+            signature_verifier_sha256=transition.get(
+                "signature_verifier_sha256", ""
+            ),
         )
     )
     workloads_overrides = {
@@ -7141,6 +8020,7 @@ def destroy_stack(
     contract: Mapping[str, Any],
     commit: str,
 ) -> None:
+    provider_attestation = provider_custody_preflight(args, contract)
     reference_infrastructure = (
         contract.get("stages", {}).get("infrastructure", {}).get("reference_data", {})
     )
@@ -7191,6 +8071,7 @@ def destroy_stack(
             nebius=args.nebius,
             nebius_profile=args.nebius_profile,
             kubectl=args.kubectl,
+            provider_attestation=provider_attestation,
         )
         if reference_retained and not isinstance(
             dynamic.get("reference_data_storage_contract"), Mapping
@@ -7237,6 +8118,7 @@ def destroy_stack(
                     nebius=args.nebius,
                     nebius_profile=args.nebius_profile,
                     kubectl=args.kubectl,
+                    provider_attestation=provider_attestation,
                 )
             downstream = write_downstream_variables(run_root, contract, dynamic)
         else:

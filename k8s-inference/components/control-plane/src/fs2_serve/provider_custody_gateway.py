@@ -24,7 +24,7 @@ import ipaddress
 import json
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -100,6 +100,9 @@ class Principal:
     username: str
     groups: tuple[str, ...]
     status_reader: bool
+    credential_epoch: str
+    not_before: datetime
+    not_after: datetime
 
 
 @dataclass(frozen=True)
@@ -125,7 +128,7 @@ class GatewayPolicy:
         except json.JSONDecodeError as exc:
             raise ProviderCustodyError("provider custody policy is not JSON") from exc
         if not isinstance(value, Mapping) or value.get("schema") != (
-            "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v3"
+            "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v4"
         ):
             raise ProviderCustodyError("provider custody policy schema is not exact")
         if (
@@ -304,7 +307,16 @@ class GatewayPolicy:
             if (
                 not isinstance(certificate_sha256, str)
                 or _CERTIFICATE_SHA256.fullmatch(certificate_sha256) is None
-                or set(item) != {"principal_id", "username", "groups", "status_reader"}
+                or set(item)
+                != {
+                    "principal_id",
+                    "username",
+                    "groups",
+                    "status_reader",
+                    "credential_epoch",
+                    "not_before",
+                    "not_after",
+                }
                 or not isinstance(item.get("principal_id"), str)
                 or not item["principal_id"].startswith("spiffe://")
                 or not isinstance(item.get("username"), str)
@@ -316,16 +328,42 @@ class GatewayPolicy:
                 or not isinstance(item.get("status_reader"), bool)
             ):
                 raise ProviderCustodyError("provider custody principal inventory is malformed")
+            try:
+                not_before = datetime.fromisoformat(
+                    str(item["not_before"]).replace("Z", "+00:00")
+                )
+                not_after = datetime.fromisoformat(
+                    str(item["not_after"]).replace("Z", "+00:00")
+                )
+            except (KeyError, ValueError) as exc:
+                raise ProviderCustodyError(
+                    "provider custody principal validity is malformed"
+                ) from exc
+            if (
+                re.fullmatch(r"[a-f0-9]{64}", str(item.get("credential_epoch", "")))
+                is None
+                or not_before.tzinfo is None
+                or not_after.tzinfo is None
+                or not_before >= not_after
+                or not_after - not_before > timedelta(hours=2)
+            ):
+                raise ProviderCustodyError(
+                    "provider custody principal epoch or validity is malformed"
+                )
             principals[certificate_sha256] = Principal(
                 item["principal_id"],
                 item["username"],
                 tuple(groups),
                 item["status_reader"],
+                str(item["credential_epoch"]),
+                not_before.astimezone(UTC),
+                not_after.astimezone(UTC),
             )
         if (
             len(principals) != 6
             or len({principal.principal_id for principal in principals.values()}) != 6
             or len({principal.username for principal in principals.values()}) != 6
+            or len({principal.credential_epoch for principal in principals.values()}) != 6
             or sum(principal.status_reader for principal in principals.values()) != 1
         ):
             raise ProviderCustodyError(
@@ -382,6 +420,14 @@ class GatewayPolicy:
             ]
         ):
             raise ProviderCustodyError("provider full-inventory freeze is malformed")
+        if any(
+            principal.not_before != active_from
+            or principal.not_after != active_until
+            for principal in principals.values()
+        ):
+            raise ProviderCustodyError(
+                "every provider principal must be unique to the exact mutation-freeze epoch"
+            )
         locks = _mapping(value.get("operation_locks"), "operation_locks")
         lock_values = _mapping(locks.get("locks"), "operation_locks.locks")
         if (
@@ -462,8 +508,14 @@ def _resource_identity(path: str, body: bytes, method: str) -> str | None:
 
 
 class ProviderCustodyGateway:
-    def __init__(self, policy: GatewayPolicy, client: httpx.AsyncClient | None = None) -> None:
+    def __init__(
+        self,
+        policy: GatewayPolicy,
+        client: httpx.AsyncClient | None = None,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self.policy = policy
+        self.clock = clock or (lambda: datetime.now(UTC))
         self.token_file = _exact_file("FS2_PROVIDER_CUSTODY_UPSTREAM_TOKEN")
         self._owns_client = client is None
         self.client = client or httpx.AsyncClient(
@@ -486,6 +538,11 @@ class ProviderCustodyGateway:
         principal = self.policy.principals.get(certificate_sha256)
         if principal is None:
             raise ProviderCustodyError("provider mTLS client identity is not authorized")
+        now = self.clock()
+        if not (principal.not_before <= now < principal.not_after):
+            raise ProviderCustodyError(
+                "provider mTLS client identity is outside its signed epoch"
+            )
         return principal
 
     def status(self, principal: Principal, document: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -498,7 +555,7 @@ class ProviderCustodyGateway:
         ):
             raise ProviderCustodyError("provider custody status request is unauthorized")
         return {
-            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v3",
+            "schema": "fs2-serve.nebius.ai/model-network-provider-gateway-status/v4",
             "challenge": challenge,
             "cluster_id": self.policy.value["cluster_id"],
             "policy_id": self.policy.value["policy_id"],
@@ -534,6 +591,9 @@ class ProviderCustodyGateway:
                     "username": principal.username,
                     "groups": list(principal.groups),
                     "status_reader": principal.status_reader,
+                    "credential_epoch": principal.credential_epoch,
+                    "not_before": principal.not_before.isoformat().replace("+00:00", "Z"),
+                    "not_after": principal.not_after.isoformat().replace("+00:00", "Z"),
                 }
                 for certificate_sha256, principal in sorted(
                     self.policy.principals.items()
@@ -545,7 +605,11 @@ class ProviderCustodyGateway:
 
     @staticmethod
     def _validate_lock_json_patch(
-        document: object, *, principal: Principal
+        document: object,
+        *,
+        principal: Principal,
+        now: datetime,
+        freeze_active_until: datetime,
     ) -> None:
         if not isinstance(document, list) or not document:
             raise ProviderCustodyError("operation Lease JSON Patch is malformed")
@@ -563,6 +627,9 @@ class ProviderCustodyGateway:
         resource_version_tests = 0
         holder_tests = 0
         holder_mutations = 0
+        lease_timestamps: list[datetime] = []
+        lease_duration_seconds: int | None = None
+        renew_time_mutations = 0
         for raw_operation in document:
             operation = _mapping(raw_operation, "operation Lease JSON Patch entry")
             if set(operation) != {"op", "path", "value"}:
@@ -608,23 +675,44 @@ class ProviderCustodyGateway:
                     )
             elif path == "/spec/leaseDurationSeconds":
                 if (
-                    not isinstance(value, int)
+                    verb not in {"add", "replace"}
+                    or lease_duration_seconds is not None
+                    or not isinstance(value, int)
                     or isinstance(value, bool)
                     or not 1 <= value <= 7200
                 ):
                     raise ProviderCustodyError("operation Lease duration exceeds policy")
+                lease_duration_seconds = value
             elif path == "/spec/leaseTransitions" and (
                 not isinstance(value, int) or isinstance(value, bool) or value < 0
             ):
                 raise ProviderCustodyError("operation Lease transition count is malformed")
-            elif path in {"/spec/acquireTime", "/spec/renewTime"} and (
-                not isinstance(value, str)
-                or re.fullmatch(
-                    r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z", value
-                )
-                is None
-            ):
-                raise ProviderCustodyError("operation Lease timestamp is malformed")
+            elif path in {"/spec/acquireTime", "/spec/renewTime"}:
+                if (
+                    verb not in {"add", "replace"}
+                    or not isinstance(value, str)
+                    or re.fullmatch(
+                        r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z", value
+                    )
+                    is None
+                ):
+                    raise ProviderCustodyError("operation Lease timestamp is malformed")
+                try:
+                    timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                except ValueError as exc:
+                    raise ProviderCustodyError(
+                        "operation Lease timestamp is not a real instant"
+                    ) from exc
+                if (
+                    timestamp.tzinfo is None
+                    or abs((timestamp.astimezone(UTC) - now).total_seconds()) > 30
+                    or timestamp.astimezone(UTC) >= freeze_active_until
+                ):
+                    raise ProviderCustodyError(
+                        "operation Lease timestamp is outside server time or custody"
+                    )
+                lease_timestamps.append(timestamp.astimezone(UTC))
+                renew_time_mutations += path == "/spec/renewTime"
         if resource_version_tests != 1:
             raise ProviderCustodyError(
                 "operation Lease requires exactly one resourceVersion CAS test"
@@ -632,6 +720,25 @@ class ProviderCustodyGateway:
         if holder_tests != 1 or holder_mutations != 1:
             raise ProviderCustodyError(
                 "operation Lease requires one holder test and one holder mutation"
+            )
+        if lease_duration_seconds is None or renew_time_mutations != 1:
+            raise ProviderCustodyError(
+                "operation Lease requires one duration and one renewTime mutation"
+            )
+        if (
+            now + timedelta(seconds=lease_duration_seconds) > freeze_active_until
+            or any(
+                timestamp + timedelta(seconds=lease_duration_seconds)
+                > freeze_active_until
+                for timestamp in lease_timestamps
+            )
+        ):
+            raise ProviderCustodyError(
+                "operation Lease validity exceeds the provider custody freeze"
+            )
+        if not lease_timestamps:
+            raise ProviderCustodyError(
+                "operation Lease mutation requires a server-bounded timestamp"
             )
 
     async def proxy(
@@ -652,7 +759,7 @@ class ProviderCustodyGateway:
             raise ProviderCustodyError(
                 "provider gateway rejects unresolvable or collection-wide mutations"
             )
-        now = datetime.now(UTC)
+        now = self.clock()
         freeze = _mapping(self.policy.value["mutation_freeze"], "mutation_freeze")
         try:
             active_from = datetime.fromisoformat(
@@ -663,6 +770,10 @@ class ProviderCustodyGateway:
             )
         except (KeyError, ValueError) as exc:
             raise ProviderCustodyError("provider mutation-freeze time is malformed") from exc
+        if method in _MUTATING_METHODS and not (active_from <= now < active_until):
+            raise ProviderCustodyError(
+                "provider gateway denies every mutation outside the active custody freeze"
+            )
         if (
             method in _MUTATING_METHODS
             and identity is not None
@@ -704,7 +815,12 @@ class ProviderCustodyGateway:
                 mutation = json.loads(body)
             except json.JSONDecodeError as exc:
                 raise ProviderCustodyError("operation Lease mutation is not JSON") from exc
-            self._validate_lock_json_patch(mutation, principal=principal)
+            self._validate_lock_json_patch(
+                mutation,
+                principal=principal,
+                now=now,
+                freeze_active_until=active_until,
+            )
         token = self.token_file.read_text(encoding="utf-8").strip()
         if len(token) < 16:
             raise ProviderCustodyError("provider gateway upstream credential is unavailable")

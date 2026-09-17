@@ -264,6 +264,7 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
     if authority.get("payload_sha256") != _sha256(authority_payload):
         raise ReceiptError("external boundary authority payload digest is inconsistent")
     provider_root = contract.get("provider_trust_root_sha256")
+    signature_verifier = contract.get("signature_verifier_sha256")
     external_custody = _object(
         authority.get("external_custody"), "contract.boundary_authority.external_custody"
     )
@@ -271,8 +272,17 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
         not isinstance(provider_root, str)
         or re.fullmatch(r"[a-f0-9]{64}", provider_root) is None
         or external_custody.get("schema")
-        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5"
+        != "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7"
         or external_custody.get("provider_trust_root_sha256") != provider_root
+        or not isinstance(signature_verifier, str)
+        or re.fullmatch(r"[a-f0-9]{64}", signature_verifier) is None
+        or external_custody.get("signature_verifier_sha256")
+        != signature_verifier
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(external_custody.get("client_tools_sha256", "")),
+        )
+        is None
         or re.fullmatch(
             r"[a-f0-9]{64}",
             str(external_custody.get("stable_policy_sha256", "")),
@@ -291,6 +301,11 @@ def _contract(contract: dict[str, Any], *, phases: set[str]) -> dict[str, Any]:
         or re.fullmatch(
             r"[a-f0-9]{64}",
             str(external_custody.get("provider_authority_census_sha256", "")),
+        )
+        is None
+        or re.fullmatch(
+            r"[a-f0-9]{64}",
+            str(external_custody.get("credential_epochs_sha256", "")),
         )
         is None
         or re.fullmatch(

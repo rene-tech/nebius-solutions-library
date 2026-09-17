@@ -38,6 +38,11 @@ maintenanceHolder: ""
 # mutate/exec workloads, impersonate, bind/escalate, or sign credentials.
 privilegedCapabilityClusterRoles: [cluster-admin]
 privilegedCapabilityRoles: []
+# Exact roles whose admissionregistration mutation rules reach one of the five
+# VAP/VAPBinding/VWC objects excluded from admission self-protection. The same
+# signed census drives these lists and the static binding hashes.
+authorityControlClusterRoles: [cluster-admin]
+authorityControlRoles: []
 # Installed only from an externally signed Platform-Security receipt. Each
 # entry is an exact API resource/name/namespace/operation tuple. Helm release
 # storage Secret names are enumerated explicitly for the one admitted revision.
@@ -47,6 +52,9 @@ externalCustody:
   policyRevision: ""
   policySha256: ""
   providerTrustRootSha256: ""
+  credentialEpoch: ""
+  activeFrom: ""
+  activeUntil: ""
 kubernetesApiUrl: https://kubernetes.default.svc
 kubernetesApiCidrs: []
 apiTimeoutSeconds: "2"

@@ -41,7 +41,7 @@ No client-certificate HTTP header or front proxy is trusted. Those hosts' exact 
 `/32` or `/128` egress routes must be the complete managed-cluster public API
 allowlist. Its digest-pinned policy denies mutation of the signed full
 inventory before kube-apiserver and rejects unresolvable or collection-wide
-writes. The provider/IAM v5 assertion binds the live policy digest, gateway,
+writes. The provider/IAM v7 assertion binds the live policy digest, gateway,
 firewall and endpoint-access resource IDs, cluster resourceVersion, host
 routes, six certificate principals, provider-native project-to-organization
 IAM/mutation-authority observations, a self-protecting provider freeze over

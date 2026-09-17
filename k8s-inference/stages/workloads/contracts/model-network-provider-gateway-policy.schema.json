@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-gateway-policy/v3",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-provider-gateway-policy/v4",
   "title": "External provider model-network preventive gateway policy",
   "type": "object",
   "required": [
@@ -11,7 +11,7 @@
     "operation_locks"
   ],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v3"},
+    "schema": {"const": "fs2-serve.nebius.ai/model-network-provider-gateway-policy/v4"},
     "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
     "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
     "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
@@ -32,12 +32,15 @@
       "patternProperties": {
         "^[a-f0-9]{64}$": {
           "type": "object",
-          "required": ["principal_id", "username", "groups", "status_reader"],
+          "required": ["principal_id", "username", "groups", "status_reader", "credential_epoch", "not_before", "not_after"],
           "properties": {
             "principal_id": {"type": "string", "pattern": "^spiffe://[^\\s]+$"},
             "username": {"type": "string", "minLength": 1, "maxLength": 253},
             "groups": {"type": "array", "minItems": 1, "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 253}},
-            "status_reader": {"type": "boolean"}
+            "status_reader": {"type": "boolean"},
+            "credential_epoch": {"$ref": "model-network-boundary-provider-custody.schema.json#/$defs/sha256"},
+            "not_before": {"type": "string", "format": "date-time"},
+            "not_after": {"type": "string", "format": "date-time"}
           },
           "additionalProperties": false
         }

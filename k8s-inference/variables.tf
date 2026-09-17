@@ -173,6 +173,7 @@ variable "deployment" {
         phase                              = optional(string, "prepare")
         authority_trust_root_sha256        = optional(string, "")
         provider_trust_root_sha256         = optional(string, "")
+        signature_verifier_sha256          = optional(string, "")
         provider_gateway_egress_host_cidrs = optional(set(string), [])
         provider_gateway_members = optional(map(object({
           status_url                = string
@@ -827,10 +828,20 @@ variable "deployment" {
 
   validation {
     condition = (
-      (var.deployment.models.network_policy.authority_trust_root_sha256 == "") ==
-      (var.deployment.models.network_policy.provider_trust_root_sha256 == "")
+      var.deployment.models.network_policy.signature_verifier_sha256 == "" ||
+      can(regex("^[a-f0-9]{64}$", var.deployment.models.network_policy.signature_verifier_sha256))
     )
-    error_message = "authority_trust_root_sha256 and the distinct provider_trust_root_sha256 must be supplied together or both omitted for offline source checks."
+    error_message = "deployment.models.network_policy.signature_verifier_sha256 must be empty for offline source checks or the exact SHA-256 of /usr/bin/openssl."
+  }
+
+  validation {
+    condition = (
+      (var.deployment.models.network_policy.authority_trust_root_sha256 == "") ==
+      (var.deployment.models.network_policy.provider_trust_root_sha256 == "") &&
+      (var.deployment.models.network_policy.authority_trust_root_sha256 == "") ==
+      (var.deployment.models.network_policy.signature_verifier_sha256 == "")
+    )
+    error_message = "authority_trust_root_sha256, provider_trust_root_sha256, and signature_verifier_sha256 must be supplied together or all omitted for offline source checks."
   }
 
   validation {

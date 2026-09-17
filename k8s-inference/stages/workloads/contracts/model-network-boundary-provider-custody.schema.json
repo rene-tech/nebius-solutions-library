@@ -1,18 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/model-network-boundary-provider-custody/v5",
+  "$id": "https://fs2-serve.nebius.ai/schema/model-network-boundary-provider-custody/v7",
   "title": "Provider-issued model-network boundary custody snapshot",
   "type": "object",
   "required": [
     "schema", "cluster_id", "policy_id", "policy_revision", "observed_at",
-    "expires_at", "provider_trust_domain", "project_id", "provider_enumeration", "provider_authority_census", "kubernetes_authorization", "credentials",
+    "expires_at", "provider_trust_domain", "project_id", "provider_enumeration", "provider_authority_census", "client_tools", "kubernetes_authorization", "credentials",
     "exclusive_break_glass_principals", "protected_kubernetes_resources",
     "preventive_controls", "mutation_freeze", "operation_locks", "provider_gateway",
     "authorized_privileged_bindings", "authorized_authority_control_bindings", "release_inventory_sha256",
     "payload_sha256"
   ],
   "properties": {
-    "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v5"},
+    "schema": {"const": "fs2-serve.nebius.ai/model-network-boundary-provider-custody/v7"},
     "cluster_id": {"type": "string", "pattern": "^mk8scluster-[a-z0-9]+$"},
     "policy_id": {"type": "string", "minLength": 1, "maxLength": 253},
     "policy_revision": {"type": "string", "minLength": 1, "maxLength": 253},
@@ -36,6 +36,34 @@
       "additionalProperties": false
     },
     "provider_authority_census": {"$ref": "#/$defs/providerAuthorityCensus"},
+    "client_tools": {
+      "type": "object",
+      "required": ["kubectl", "nebius"],
+      "properties": {
+        "kubectl": {
+          "type": "object",
+          "required": ["path", "sha256", "context"],
+          "properties": {
+            "path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "context": {"type": "string", "minLength": 1, "maxLength": 253}
+          },
+          "additionalProperties": false
+        },
+        "nebius": {
+          "type": "object",
+          "required": ["path", "sha256", "profile", "home_path"],
+          "properties": {
+            "path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
+            "sha256": {"$ref": "#/$defs/sha256"},
+            "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"},
+            "home_path": {"type": "string", "pattern": "^/[^\\u0000]+$"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
     "kubernetes_authorization": {
       "type": "object",
       "required": ["source_cluster_sha256", "authorizers", "anonymous_authentication_enabled", "static_token_authentication_enabled", "legacy_abac_enabled", "service_account_issuer", "service_account_signing_key_sha256", "privileged_client_certificate_sha256"],
@@ -166,7 +194,7 @@
     "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "credential": {
       "type": "object",
-      "required": ["username", "groups", "provider_principal_id", "client_certificate_sha256", "issuer_ca_sha256", "gateway_server"],
+      "required": ["username", "groups", "provider_principal_id", "kubeconfig_sha256", "client_certificate_sha256", "issuer_ca_sha256", "gateway_server", "credential_epoch", "not_before", "not_after"],
       "properties": {
         "username": {"type": "string", "minLength": 1, "maxLength": 253},
         "groups": {
@@ -174,9 +202,13 @@
           "items": {"type": "string", "minLength": 1, "maxLength": 253}
         },
         "provider_principal_id": {"type": "string", "pattern": "^spiffe://[^\\s]+$"},
+        "kubeconfig_sha256": {"$ref": "#/$defs/sha256"},
         "client_certificate_sha256": {"$ref": "#/$defs/sha256"},
         "issuer_ca_sha256": {"$ref": "#/$defs/sha256"},
-        "gateway_server": {"type": "string", "pattern": "^https://[^/?#]+(?::[0-9]{1,5})?$"}
+        "gateway_server": {"type": "string", "pattern": "^https://[^/?#]+(?::[0-9]{1,5})?$"},
+        "credential_epoch": {"$ref": "#/$defs/sha256"},
+        "not_before": {"type": "string", "format": "date-time"},
+        "not_after": {"type": "string", "format": "date-time"}
       },
       "additionalProperties": false
     },
@@ -241,12 +273,20 @@
         "schema": {"const": "fs2-serve.nebius.ai/provider-control-plane-authority-census/v1"},
         "exporter": {
           "type": "object",
-          "required": ["sha256", "source_commit", "source_tree", "provenance_sha256"],
+          "required": ["path", "sha256", "format", "source_commit", "source_tree", "provenance_sha256", "authority_ca_path", "authority_ca_sha256", "client_certificate_path", "client_certificate_sha256", "client_key_path", "client_key_sha256"],
           "properties": {
+            "path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
             "sha256": {"$ref": "#/$defs/sha256"},
+            "format": {"const": "static-elf-no-interpreter"},
             "source_commit": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
             "source_tree": {"type": "string", "pattern": "^[a-f0-9]{40}$"},
-            "provenance_sha256": {"$ref": "#/$defs/sha256"}
+            "provenance_sha256": {"$ref": "#/$defs/sha256"},
+            "authority_ca_path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
+            "authority_ca_sha256": {"$ref": "#/$defs/sha256"},
+            "client_certificate_path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
+            "client_certificate_sha256": {"$ref": "#/$defs/sha256"},
+            "client_key_path": {"type": "string", "pattern": "^/[^\\u0000]+$"},
+            "client_key_sha256": {"$ref": "#/$defs/sha256"}
           },
           "additionalProperties": false
         },

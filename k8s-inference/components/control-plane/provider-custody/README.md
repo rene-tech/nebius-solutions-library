@@ -15,7 +15,7 @@ principals and supplies the corresponding exact Kubernetes username and group
 set upstream. Policy, upstream CA, upstream token, server certificate/key and
 client CA are absolute mode-0600 provider-host files. The policy bytes are
 pinned by `FS2_PROVIDER_CUSTODY_POLICY_SHA256`. The retained NGINX template is
-an evidence-only fail-closed 503 listener and is not part of policy v3.
+an evidence-only fail-closed 503 listener and is not part of policy v4.
 
 During a transition the policy's `mutation_freeze` list is the complete
 receipt-bound Kubernetes inventory. Every resolved CREATE, UPDATE, PATCH, or
@@ -28,7 +28,10 @@ two retained operation Leases are deliberately outside that frozen list and
 use a separate channel: only their distinct transition or maintenance
 principal may send an exact JSON Patch containing one resourceVersion CAS;
 CREATE, DELETE, merge patch, strategic merge patch, PUT, overlong duration,
-unknown fields, and another principal all fail closed.
+unknown fields, and another principal all fail closed. Every patch must mutate
+exactly one server-clock-bounded `renewTime` and one duration, and both the
+gateway's current time plus duration and `renewTime` plus duration must remain
+inside the active provider freeze.
 
 The two Leases must therefore exist before endpoint cutover. Bootstrap creates
 them once under the separately reviewed provider procedure with the exact
@@ -66,16 +69,31 @@ inherited scope. This preserves ordinary cloud operators outside the bounded
 resources while preventing a new parent-scope grant during the transition and
 making endpoint, firewall, IAM and signing-material mutation atomic.
 
-The repository entry point is `fs2-provider-authority-exporter`. Its installed
-artifact digest/source commit/tree/provenance are part of the v5 attestation.
-It uses direct TLS 1.3 with mode-0600 client credentials, a private provider CA
-and an independently pinned live server leaf to call the exact provider-native
+The production exporter source is in `native-exporter/`. Build it with
+`CGO_ENABLED=0`, publish it as a provenance-bound Linux artifact, and enroll its
+exact SHA-256/source commit/tree in provider custody v7. `inference-stack`
+accepts only a root-owned static ELF with no `PT_INTERP`, copies the exact bytes
+to a sealed memfd, and runs it with a new minimal environment. The Python entry
+point is retained only as a readable protocol reference and test surface; it is
+never an admissible custody executable. The native exporter uses direct TLS
+1.3 with sealed inherited client credentials, a private provider CA and an
+independently pinned live server leaf to call the exact provider-native
 effective-authority API. The nonce-bound response must contain the provider
 endpoint and server-leaf digest repeated by the signed snapshot, and the
 provider response digest repeated by the completeness token; redirects, proxy
 environment variables, non-JSON responses and oversized responses fail closed.
-`inference-stack` additionally requires the installed executable to be owned
-by root and not group/world writable.
+
+The v7 attestation also pins the absolute kubectl and Nebius CLI paths, hashes,
+Nebius profile/home, and exact Kubernetes context. The wrapper reads each tool
+once through descriptor-relative `O_NOFOLLOW`, executes a sealed copy with no
+inherited PATH, loader, Python, proxy, or credential environment, and supplies
+only single-read, root-custodied kubeconfig bytes through sealed memfds. Signed
+attestations, signatures, trust roots, and phase credentials are verified and
+parsed from the same captured bytes; pathname reopens are not authoritative.
+The root deployment contract separately pins the exact SHA-256 of the fixed
+`/usr/bin/openssl` signature and X.509 verifier before either signed document is
+trusted; that verifier is also executed from a sealed copy in the same minimal
+environment and repeated in the signed authority receipt.
 
 The same provider-native snapshot binds every gateway's exact instance and
 measurement resource/version, immutable release, entrypoint, systemd unit/
@@ -105,14 +123,20 @@ from self-admission must resolve exclusively to the six external X.509 users.
 This closes the in-cluster bypass without deauthorizing the deployment,
 ReplicaSet, Job, JobSet or Endpoint controllers.
 
-Before every plan, Terraform also refreshes `nebius_mk8s_v1_cluster` and the
+Before the first mutating stage, the wrapper verifies provider custody v7 and
+authority receipt v4, fixes the signed cluster/context/tool/credential epoch,
+and refuses bootstrap through an unguarded shared kubeconfig. Terraform also
+refreshes `nebius_mk8s_v1_cluster` and the
 named provider resources and requires the live resourceVersion, complete
 endpoint allowlist, labels, and semantic digests to equal the signed receipt.
 Immediately before apply, `inference-stack` repeats provider enumeration and
 every member challenge. During apply it repeats the full custody verifier every
 five seconds, accepts only a later expiry for the same stable transaction and
 policy, terminates the apply before the remaining window falls below 90
-seconds, and repeats custody after a successful apply. A two-hour assertion is
+seconds, and repeats custody after a successful apply. Terraform runs in a new
+process group; on custody failure the complete group is stopped, terminated,
+waited, and followed by a live custody reconciliation before the wrapper
+returns. A two-hour assertion is
 therefore only a maximum renewal envelope, not permission for an unbounded
 unwatched apply.
 
