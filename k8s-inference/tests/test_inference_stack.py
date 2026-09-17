@@ -381,29 +381,29 @@ class InferenceStackTests(unittest.TestCase):
                 "expires_at": "2099-01-01T00:00:00Z",
                 "revision": 1,
                 "subjects": ["nvcr.io/example/runtime@sha256:" + "b" * 64],
+                "authorization_model": "repository-digest-action",
                 "refresh_owner_id": "reviewed-owner",
                 "refresh_interval_seconds": 300,
                 "rotate_before_expiry_seconds": 120,
                 "management_mode": "external-short-lived-refresh-controller",
                 "retire_superseded_without_delete": True,
                 "refresh_registration_sha256": "c" * 64,
+                "refresh_owner_ready": True,
+                "refresh_owner_ready_observed_at": "2026-09-17T00:00:00Z",
             }
-            with (
-                mock.patch.dict(os.environ, secret_values, clear=False),
-                mock.patch.object(
-                    STACK,
-                    "REGISTRY_CREDENTIAL",
-                    {
-                        "docker_config_json": '{"auths":{"nvcr.io":{"auth":"SENTINEL"}}}',
-                        "authorization": authorization,
-                    },
-                ),
-            ):
+            registry_credential = {
+                "docker_config_json": '{"auths":{"nvcr.io":{"auth":"SENTINEL"}}}',
+                "authorization": authorization,
+            }
+            with mock.patch.dict(os.environ, secret_values, clear=False):
                 foundation_environment = STACK.stage_environment(
                     run_root, "foundation", configuration
                 )
                 workloads_environment = STACK.stage_environment(
-                    run_root, "workloads", configuration
+                    run_root,
+                    "workloads",
+                    configuration,
+                    registry_credential=registry_credential,
                 )
 
             credentials = json.loads(
@@ -2383,6 +2383,7 @@ class InferenceStackTests(unittest.TestCase):
                         Path(temporary),
                         configuration,
                         regional_dynamic(Path(temporary)),
+                        None,
                     )
             self.assertIsNotNone(receipt)
             payload = json.loads(receipt.read_text(encoding="utf-8"))
@@ -2421,6 +2422,7 @@ class InferenceStackTests(unittest.TestCase):
                     Path(temporary),
                     configuration,
                     regional_dynamic(Path(temporary)),
+                    None,
                 )
             self.assertEqual(copy_image.call_count, 2)
             self.assertTrue(receipt_path.is_file())
@@ -2455,6 +2457,7 @@ class InferenceStackTests(unittest.TestCase):
                     Path(temporary),
                     configuration,
                     regional_dynamic(Path(temporary)),
+                    None,
                 )
             copy_image.assert_called_once()
             self.assertFalse(receipt_path.exists())
@@ -2611,6 +2614,58 @@ class InferenceStackTests(unittest.TestCase):
         )
         self.assertEqual(STACK.FOUNDATION_ROOT, DEPLOY_ROOT / "stages" / "foundation")
         self.assertEqual(STACK.WORKLOADS_ROOT, DEPLOY_ROOT / "stages" / "workloads")
+
+    def test_forged_capsule_environment_cannot_enter_stack(self) -> None:
+        forged = {
+            "FS2_EXTERNAL_CAPSULE_ACTIVE": "1",
+            "FS2_CAPSULE_SOURCE_ROOT": str(DEPLOY_ROOT),
+            "FS2_CAPSULE_TOOL_DIR": "/attacker/tools",
+            "FS2_IMAGE_GATE_BOOTSTRAP": "/attacker/bootstrap",
+        }
+        with (
+            mock.patch.dict(os.environ, forged, clear=False),
+            self.assertRaisesRegex(
+                STACK.DeploymentError, "inherited external-capsule capability FD"
+            ),
+        ):
+            STACK.main(["output"])
+
+    def test_repository_cli_has_no_capsule_or_credential_path_selectors(self) -> None:
+        source = STACK_PATH.read_text(encoding="utf-8")
+        parser_source = source.split("def parse_args", 1)[1].split(
+            "def main", 1
+        )[0]
+        for forbidden in (
+            "--image-gate-bootstrap",
+            "--image-gate-toolchain",
+            "--external-capsule-trust",
+            "--registry-auth-receipt",
+            "--registry-docker-config",
+            "--registry-refresh-registration",
+            "--terraform",
+            "--kubectl",
+            "--nebius",
+            "--crane",
+        ):
+            self.assertNotIn(forbidden, parser_source)
+        self.assertIn("SO_PEERCRED", source)
+        self.assertIn("SOCK_SEQPACKET", source)
+        self.assertIn("direct inference-stack execution is disabled", source)
+
+    def test_workload_credential_is_acquired_after_foundation_and_at_apply_margin(self) -> None:
+        source = STACK_PATH.read_text(encoding="utf-8")
+        apply_source = source.split("def apply_stack", 1)[1].split(
+            "def plan_stack", 1
+        )[0]
+        foundation_apply = apply_source.index("FOUNDATION_ROOT")
+        workload_acquire = apply_source.index('purpose="workload-secret"')
+        workload_plan = apply_source.index('stage="workloads"')
+        workload_apply = apply_source.index("WORKLOADS_ROOT")
+        self.assertLess(foundation_apply, workload_acquire)
+        self.assertLess(workload_acquire, workload_plan)
+        self.assertLess(workload_plan, workload_apply)
+        self.assertIn("require_registry_credential_margin", apply_source)
+        self.assertIn("MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS", apply_source)
 
 
 if __name__ == "__main__":

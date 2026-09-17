@@ -148,9 +148,9 @@ runtime context, not desired state, so select it with `NEBIUS_PROFILE` or
 cd k8s-inference
 install -m 0600 terraform.tfvars.example terraform.tfvars
 
-# Static NVCR Docker config is forbidden. Protected integration supplies a
-# broker receipt, its short-lived Docker bytes, and a signed refresh-owner
-# registration as files outside the checkout. NGC_API_KEY is additionally
+# Static NVCR Docker config is forbidden. The immutable external capsule
+# acquires fresh short-lived Docker bytes and exact signed receipts just before
+# workload plan/apply, after proving the refresh owner Ready. NGC_API_KEY is additionally
 # required only when the selected set contains an
 # NGC-backed NIM (currently MSA Search PDB70, OpenFold2, or OpenFold3).
 export FS2_NGC_API_KEY='...'
@@ -159,32 +159,13 @@ export FS2_NGC_API_KEY='...'
 export FS2_GRAFANA_ADMIN_USERNAME='...'
 export FS2_GRAFANA_ADMIN_PASSWORD='...'
 
-capsule=/external/root-owned/path/to/fs2-capsule-bootstrap
-external_trust=/external/root-owned/path/to/capsule-trust.json
-toolchain=/absolute/path/to/execution-toolchain.lock.json
-source_root=/absolute/read-only/candidate/k8s-inference
-stack=("$capsule" python-entry --external-trust "$external_trust" \
-  --toolchain "$toolchain" --source-root "$source_root" \
-  --entry inference-stack --)
-release=(--image-gate-bootstrap "$capsule" \
-  --external-capsule-trust "$external_trust" \
-  --image-gate-toolchain "$toolchain" \
-  --release-image-closure /protected/release-image-closure.json \
-  --registry-auth-receipt /private/workload-pull-receipt.json \
-  --registry-docker-config /private/workload-docker-config.json \
-  --registry-refresh-registration /private/refresh-registration.json)
+stack=(/opt/fs2-sai24/bin/fs2-capsule inference-stack --)
 
-NEBIUS_PROFILE=sandbox "${stack[@]}" validate --var-file terraform.tfvars \
-  --image-gate-bootstrap "$capsule" --external-capsule-trust "$external_trust" \
-  --image-gate-toolchain "$toolchain"
-NEBIUS_PROFILE=sandbox "${stack[@]}" plan --var-file terraform.tfvars "${release[@]}"
-NEBIUS_PROFILE=sandbox "${stack[@]}" apply --var-file terraform.tfvars "${release[@]}"
-NEBIUS_PROFILE=sandbox "${stack[@]}" status --var-file terraform.tfvars \
-  --image-gate-bootstrap "$capsule" --external-capsule-trust "$external_trust" \
-  --image-gate-toolchain "$toolchain"
-NEBIUS_PROFILE=sandbox "${stack[@]}" output --var-file terraform.tfvars \
-  --image-gate-bootstrap "$capsule" --external-capsule-trust "$external_trust" \
-  --image-gate-toolchain "$toolchain"
+NEBIUS_PROFILE=sandbox "${stack[@]}" validate --var-file terraform.tfvars
+NEBIUS_PROFILE=sandbox "${stack[@]}" plan --var-file terraform.tfvars
+NEBIUS_PROFILE=sandbox "${stack[@]}" apply --var-file terraform.tfvars
+NEBIUS_PROFILE=sandbox "${stack[@]}" status --var-file terraform.tfvars
+NEBIUS_PROFILE=sandbox "${stack[@]}" output --var-file terraform.tfvars
 ```
 
 After a deployment, `apply` and `status` print all non-secret customer entry
@@ -250,8 +231,6 @@ one value directly from the bundle:
 
 ```bash
 NEBIUS_PROFILE=sandbox "${stack[@]}" output --var-file terraform.tfvars \
-  --image-gate-bootstrap "$capsule" --external-capsule-trust "$external_trust" \
-  --image-gate-toolchain "$toolchain" \
   | jq -r '.credentials.admin_bootstrap_token'
 ```
 

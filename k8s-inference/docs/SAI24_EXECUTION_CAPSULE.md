@@ -25,6 +25,15 @@ Before starting Python, Helm or Terraform, the bootstrap must:
   that child; the latter names a private, root-owned, read-only exact-tree
   mirror whose hash is in external trust. Protected modules reject direct
   pathname execution before importing any repository sibling;
+- import `inference-stack` as a measured sealed module and call
+  `main(capsule_fd=...)` with one inherited Unix `SOCK_SEQPACKET` capability.
+  The other endpoint remains in the root-owned supervisor. The module verifies
+  `SO_PEERCRED`, accepts only UID 0, and receives the exact bootstrap, external
+  trust, toolchain, tool-tree and release-contract bindings from that peer.
+  The one-shot response must echo the child PID and a fresh 256-bit challenge;
+  the inherited descriptor is closed immediately after that handshake.
+  Direct execution is permanently disabled; environment flags and repository
+  CLI options are not capsule membership and cannot select any binding;
 - execute Git, OpenSSL, Helm, kubectl and Terraform only from sealed descriptors
   or an equivalently fs-verity-protected read-only mount, never through `PATH`;
 - expose an externally bound read-only tool-dispatch directory for Terraform,
@@ -49,7 +58,8 @@ Before starting Python, Helm or Terraform, the bootstrap must:
 The reviewed bootstrap command surface is closed: `verify`, `python-entry`,
 `python-stdin`, `shell-entry`, `exec-tool`, `tool-sha256`, `terraform-init`,
 `terraform-validate-root`, `signed-terraform-plan`, `signed-terraform-apply`,
-`verify-workload-registry-credential`, `apply-registry-secret`, and
+`acquire-release-registry-credential`,
+`acquire-workload-registry-credential`, `verify-workload-registry-credential`, `apply-registry-secret`, and
 `register-workload-registry-refresh`. The protected scan workflow uses the
 toolchain-bound Trivy executable and records that executable's exact digest;
 it does not download a second scanner after capsule verification.
@@ -73,3 +83,12 @@ Its runtime/image/provenance fields and its trust hash are deliberately null;
 ordinary private pulls remain blocked until an independently installed owner
 is attested, authorized and shown to refresh all three Secrets without putting
 long-lived credentials in Terraform state.
+
+The repository never accepts broker receipt, Docker configuration, bootstrap,
+trust, toolchain or refresh-registration paths on the `inference-stack` CLI.
+After infrastructure and foundation have converged, it asks the authenticated
+capsule peer for a new exact-subject workload credential immediately before the
+workload plan/apply pair. Admission requires the independently attested refresh
+owner to be live and observed, and requires at least 600 seconds of credential
+lifetime at both plan and apply entry. If planning consumes that margin, apply
+fails before mutation and a new plan must be created with a fresh credential.

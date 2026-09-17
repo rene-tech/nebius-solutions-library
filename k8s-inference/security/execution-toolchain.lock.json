@@ -2,6 +2,12 @@
   "schema": "fs2-serve.nebius.ai/execution-toolchain-lock/v1",
   "state": "blocked_pending_independent_toolchain_capture",
   "authority": "Platform Security must publish and review every absolute executable, runtime tree, and source-file digest before a release gate can run.",
+  "protected_entrypoint": {
+    "schema": "fs2-serve.nebius.ai/inference-stack-capsule-session/v1",
+    "transport": "inherited-unix-sock-seqpacket",
+    "required_peer_uid": 0,
+    "caller_selectable_bindings": false
+  },
   "python": {
     "executable": null,
     "sha256": null,

@@ -275,12 +275,18 @@ def test_external_capsule_is_the_only_release_execution_authority() -> None:
         "signed-terraform-plan",
         "signed-terraform-apply",
         "tool-sha256",
+        "acquire-release-registry-credential",
+        "acquire-workload-registry-credential",
     }.issubset(external["capsule_contract"]["bootstrap_commands"])
     assert external["capsule_contract"]["protected_entrypoint_environment"] == {
         "FS2_EXTERNAL_CAPSULE_ACTIVE": "1",
         "FS2_CAPSULE_SOURCE_ROOT": "externally-bound-read-only-tree",
         "FS2_CAPSULE_TOOL_DIR": "externally-bound-read-only-tools",
     }
+    protected_entry = external["capsule_contract"]["inference_stack_entry"]
+    assert protected_entry["capability_transport"] == "inherited-unix-sock-seqpacket"
+    assert protected_entry["required_peer_uid"] == 0
+    assert protected_entry["caller_selectable_bindings"] is False
 
     toolchain = json.loads(
         (ROOT / "security/execution-toolchain.lock.json").read_text()
@@ -306,7 +312,14 @@ def test_external_capsule_is_the_only_release_execution_authority() -> None:
     assert "lock = _load(protected_path)" not in validator
 
     stack = (ROOT / "inference-stack").read_text()
-    assert 'FS2_EXTERNAL_CAPSULE_ACTIVE") != "1"' in stack
+    assert "receive_capsule_bindings" in stack
+    assert "SO_PEERCRED" in stack
+    assert "SOCK_SEQPACKET" in stack
+    assert "direct inference-stack execution is disabled" in stack
+    parser_source = stack.split("def parse_args", 1)[1].split("def main", 1)[0]
+    assert "--image-gate-bootstrap" not in parser_source
+    assert "--external-capsule-trust" not in parser_source
+    assert "--registry-docker-config" not in parser_source
     assert "FS2_CAPSULE_TOOL_DIR" in stack
     assert "signed-terraform-apply" in stack
     assert "signed-terraform-plan" in stack
@@ -316,6 +329,8 @@ def test_external_capsule_is_the_only_release_execution_authority() -> None:
     assert 'DEPLOY_ROOT: "."' in stack
     assert 'INFRA_ROOT: "stages/infrastructure"' in stack
     assert "FS2_NVCR_DOCKERCONFIGJSON" not in stack
+    assert 'purpose="workload-secret"' in stack
+    assert "MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS = 600" in stack
 
     jobset = (ROOT / "modules/jobset-controller/main.tf").read_text()
     assert 'binary_path = var.release_image_contract.bootstrap_path' in jobset

@@ -90,15 +90,8 @@ three stage roots with an example configuration, use the capsule-loaded
 `inference-stack` entrypoint described in `docs/SAI24_EXECUTION_CAPSULE.md`:
 
 ```bash
-"$FS2_IMAGE_GATE_BOOTSTRAP" python-entry \
-  --external-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
-  --toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
-  --source-root /absolute/read-only/candidate/k8s-inference \
-  --entry inference-stack -- validate \
+/opt/fs2-sai24/bin/fs2-capsule inference-stack -- validate \
   --var-file k8s-inference/terraform.tfvars.example \
-  --image-gate-bootstrap "$FS2_IMAGE_GATE_BOOTSTRAP" \
-  --external-capsule-trust "$FS2_EXTERNAL_CAPSULE_TRUST" \
-  --image-gate-toolchain "$FS2_IMAGE_GATE_TOOLCHAIN" \
   --run-root "${XDG_STATE_HOME:-$HOME/.local/state}/nebius-k8s-inference/validation"
 ```
 
@@ -123,10 +116,10 @@ the mocked Nebius provider, including an empty disposable apply/teardown.
 The supported lifecycle is:
 
 ```bash
-./k8s-inference/inference-stack plan --var-file k8s-inference/terraform.tfvars
-./k8s-inference/inference-stack apply --var-file k8s-inference/terraform.tfvars
-./k8s-inference/inference-stack status --var-file k8s-inference/terraform.tfvars
-./k8s-inference/inference-stack destroy --var-file k8s-inference/terraform.tfvars
+/opt/fs2-sai24/bin/fs2-capsule inference-stack -- plan --var-file k8s-inference/terraform.tfvars
+/opt/fs2-sai24/bin/fs2-capsule inference-stack -- apply --var-file k8s-inference/terraform.tfvars
+/opt/fs2-sai24/bin/fs2-capsule inference-stack -- status --var-file k8s-inference/terraform.tfvars
+/opt/fs2-sai24/bin/fs2-capsule inference-stack -- destroy --var-file k8s-inference/terraform.tfvars
 ```
 
 Destroy runs workloads, foundation, and infrastructure in reverse dependency

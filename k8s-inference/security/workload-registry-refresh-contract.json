@@ -5,6 +5,16 @@
   "management_mode": "external-short-lived-refresh-controller",
   "maximum_refresh_interval_seconds": 300,
   "required_rotation_margin_seconds": 60,
+  "initial_admission_minimum_remaining_ttl_seconds": 600,
+  "initial_admission_sequence": [
+    "refresh-owner-ready-and-observed",
+    "fresh-exact-subject-credential-issued",
+    "workload-plan-created",
+    "remaining-ttl-rechecked-before-apply",
+    "secret-admitted",
+    "refresh-owner-confirms-revision"
+  ],
+  "readiness_receipt_schema": "fs2-serve.nebius.ai/workload-registry-refresh-readiness/v1",
   "retire_superseded_without_delete": true,
   "credential_storage": "kubernetes-secret-write-only-no-terraform-state",
   "subject_scope": "exact-repository-digest-pull",

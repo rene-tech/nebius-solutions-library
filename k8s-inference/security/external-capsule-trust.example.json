@@ -19,6 +19,8 @@
       "terraform-validate-root",
       "signed-terraform-plan",
       "signed-terraform-apply",
+      "acquire-release-registry-credential",
+      "acquire-workload-registry-credential",
       "verify-workload-registry-credential",
       "apply-registry-secret",
       "register-workload-registry-refresh"
@@ -31,6 +33,16 @@
     "terraform_modes": ["init", "plan", "show", "apply"],
     "deny_path_reopen": true,
     "deny_path_lookup": true,
+    "inference_stack_entry": {
+      "mode": "sealed-python-import-only",
+      "protocol": "fs2-serve.nebius.ai/inference-stack-capsule-session/v1",
+      "capability_transport": "inherited-unix-sock-seqpacket",
+      "required_peer_uid": 0,
+      "descriptor_delivery": "direct-python-argument-not-environment",
+      "handshake_binding": "one-shot-child-pid-and-256-bit-challenge",
+      "caller_selectable_bindings": false,
+      "inject_exact_bootstrap_trust_toolchain_tools_and_release_contract": true
+    },
     "protected_entrypoint_environment": {
       "FS2_EXTERNAL_CAPSULE_ACTIVE": "1",
       "FS2_CAPSULE_SOURCE_ROOT": "externally-bound-read-only-tree",

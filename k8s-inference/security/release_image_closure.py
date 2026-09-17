@@ -333,7 +333,12 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
         "FS2_CAPSULE_SOURCE_ROOT",
         "FS2_CAPSULE_TOOL_DIR",
         "signed-terraform-plan",
-        "verify-workload-registry-credential",
+        "receive_capsule_bindings",
+        "SO_PEERCRED",
+        "SOCK_SEQPACKET",
+        "acquire-workload-registry-credential",
+        "MINIMUM_WORKLOAD_CREDENTIAL_TTL_SECONDS",
+        "direct inference-stack execution is disabled",
         "registry_refresh_registration_path",
         'terraform_capsule_command("terraform-init"',
     ):

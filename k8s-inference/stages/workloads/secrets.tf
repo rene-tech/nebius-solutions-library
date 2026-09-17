@@ -199,6 +199,9 @@ resource "kubernetes_secret_v1" "nvcrio_cred" {
       "fs2.nebius.ai/registry-auth-management" = try(var.nvcrio_credential_authorization.management_mode, "blocked")
       "fs2.nebius.ai/registry-auth-retirement" = try(var.nvcrio_credential_authorization.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
       "fs2.nebius.ai/registry-auth-refresh-registration-sha256" = try(var.nvcrio_credential_authorization.refresh_registration_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-authorization-model" = try(var.nvcrio_credential_authorization.authorization_model, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-owner-ready" = try(var.nvcrio_credential_authorization.refresh_owner_ready, false) ? "true" : "blocked"
+      "fs2.nebius.ai/registry-auth-refresh-owner-observed-at" = try(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, "blocked")
     }
   }
   type = "kubernetes.io/dockerconfigjson"
@@ -225,6 +228,9 @@ resource "kubernetes_secret_v1" "dcgm_exporter_nvcrio" {
       "fs2.nebius.ai/registry-auth-management" = try(var.nvcrio_credential_authorization.management_mode, "blocked")
       "fs2.nebius.ai/registry-auth-retirement" = try(var.nvcrio_credential_authorization.retire_superseded_without_delete, false) ? "retain-then-supersede" : "blocked"
       "fs2.nebius.ai/registry-auth-refresh-registration-sha256" = try(var.nvcrio_credential_authorization.refresh_registration_sha256, "blocked")
+      "fs2.nebius.ai/registry-auth-authorization-model" = try(var.nvcrio_credential_authorization.authorization_model, "blocked")
+      "fs2.nebius.ai/registry-auth-refresh-owner-ready" = try(var.nvcrio_credential_authorization.refresh_owner_ready, false) ? "true" : "blocked"
+      "fs2.nebius.ai/registry-auth-refresh-owner-observed-at" = try(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, "blocked")
     }
   }
   type = "kubernetes.io/dockerconfigjson"

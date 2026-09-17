@@ -1627,12 +1627,15 @@ variable "nvcrio_credential_authorization" {
     expires_at                         = string
     revision                           = number
     subjects                           = set(string)
+    authorization_model                = string
     refresh_owner_id                   = string
     refresh_interval_seconds           = number
     rotate_before_expiry_seconds       = number
     management_mode                    = string
     retire_superseded_without_delete   = bool
     refresh_registration_sha256        = string
+    refresh_owner_ready                = bool
+    refresh_owner_ready_observed_at    = string
   })
   nullable = true
   default  = null
@@ -1641,12 +1644,17 @@ variable "nvcrio_credential_authorization" {
     condition = var.nvcrio_credential_authorization == null || (
       can(regex("^[0-9a-f]{64}$", var.nvcrio_credential_authorization.receipt_sha256)) &&
       can(timecmp(var.nvcrio_credential_authorization.expires_at, timestamp())) &&
+      timecmp(var.nvcrio_credential_authorization.expires_at, timeadd(timestamp(), "600s")) >= 0 &&
       floor(var.nvcrio_credential_authorization.revision) == var.nvcrio_credential_authorization.revision &&
       var.nvcrio_credential_authorization.revision > 0 &&
       length(var.nvcrio_credential_authorization.refresh_owner_id) > 0 &&
       floor(var.nvcrio_credential_authorization.refresh_interval_seconds) == var.nvcrio_credential_authorization.refresh_interval_seconds &&
       var.nvcrio_credential_authorization.refresh_interval_seconds >= 60 &&
       var.nvcrio_credential_authorization.refresh_interval_seconds <= 300 &&
+      var.nvcrio_credential_authorization.authorization_model == "repository-digest-action" &&
+      var.nvcrio_credential_authorization.refresh_owner_ready &&
+      can(timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp())) &&
+      timecmp(var.nvcrio_credential_authorization.refresh_owner_ready_observed_at, timestamp()) <= 0 &&
       floor(var.nvcrio_credential_authorization.rotate_before_expiry_seconds) == var.nvcrio_credential_authorization.rotate_before_expiry_seconds &&
       var.nvcrio_credential_authorization.rotate_before_expiry_seconds >= 60 &&
       var.nvcrio_credential_authorization.management_mode == "external-short-lived-refresh-controller" &&
@@ -1658,7 +1666,7 @@ variable "nvcrio_credential_authorization" {
         can(regex("^[^@[:space:]]+@sha256:[0-9a-f]{64}$", subject))
       ])
     )
-    error_message = "NVCR authorization requires a signed receipt, exact digest subjects, and an approved <=300-second non-delete refresh lifecycle."
+    error_message = "NVCR authorization requires a signed receipt with >=600 seconds remaining, exact digest subjects, and a live approved <=300-second non-delete refresh owner."
   }
 }
 
