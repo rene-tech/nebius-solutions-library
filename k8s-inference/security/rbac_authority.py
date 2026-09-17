@@ -195,6 +195,16 @@ CONTROLLER_ALLOWANCES: dict[str, frozenset[tuple[str, str, str]]] = {
             ("core", "nodes", "watch"),
         }
     ),
+    "node_health": frozenset(
+        {
+            ("core", "nodes", verb)
+            for verb in ("get", "list", "watch", "update", "patch")
+        }
+        | {
+            ("core", "nodes/status", verb)
+            for verb in ("get", "update", "patch")
+        }
+    ),
 }
 
 CONTROLLER_ROLES = frozenset(CONTROLLER_ALLOWANCES)
@@ -238,19 +248,44 @@ def reject_unapproved_dangerous(
         )
 
 
+def _daemonset_maintenance_allowed(
+    capability: str,
+    exact_names_by_namespace: dict[str, set[str]],
+) -> bool:
+    """Allow only resourceName-fenced update/patch of signed critical agents."""
+
+    fields = capability.split("|")
+    if len(fields) != 5 or not fields[4].startswith("names="):
+        raise ValueError("expanded Kubernetes capability is malformed")
+    scope, api_group, resource, verb, names_field = fields
+    if (
+        api_group != "apps"
+        or resource != "daemonsets"
+        or verb not in {"update", "patch"}
+        or scope not in exact_names_by_namespace
+    ):
+        return False
+    names = set(filter(None, names_field.removeprefix("names=").split(",")))
+    return bool(names) and names <= exact_names_by_namespace[scope]
+
+
 def verify_subject_inventory(
     service_accounts: list[dict[str, Any]],
     system_subjects: list[dict[str, Any]],
     effective_authority: list[dict[str, Any]],
     *,
     controller_identities: dict[str, dict[str, Any]] | None = None,
+    critical_daemonset_maintenance: dict[
+        tuple[str, str, str], dict[str, set[str]]
+    ]
+    | None = None,
 ) -> None:
     """Derive groups/rules independently and reject unmediated authority."""
 
     controllers = controller_identities or {}
     if controller_identities is not None and set(controllers) != CONTROLLER_ROLES:
         raise ValueError("all observed Kubernetes controller identities are required")
-    controller_role_by_subject: dict[tuple[str, str, str], str] = {}
+    controller_roles_by_subject: dict[tuple[str, str, str], set[str]] = {}
     for role, identity in controllers.items():
         if not isinstance(identity, dict) or set(identity) != {
             "kind",
@@ -313,9 +348,10 @@ def verify_subject_inventory(
                 f"{role} controller identity is not bound to its audited live subject"
             )
         subject_key = (kind, namespace, name)
-        if subject_key in controller_role_by_subject:
-            raise ValueError("controller roles cannot alias one authenticated subject")
-        controller_role_by_subject[subject_key] = role
+        # Real controller installations may multiplex multiple controller
+        # roles through one authenticated kube-system principal.  The signed
+        # audit receipt, not an invented role username, defines that mapping.
+        controller_roles_by_subject.setdefault(subject_key, set()).add(role)
 
     declarations: list[tuple[dict[str, Any], str, str, str]] = []
     for subject in service_accounts:
@@ -349,7 +385,22 @@ def verify_subject_inventory(
             raise ValueError(
                 f"signed {kind} {namespace}/{name} dangerous authority differs"
             )
-        reject_unapproved_dangerous(
-            dangerous,
-            controller_role=controller_role_by_subject.get((kind, namespace, name)),
+        subject_key = (kind, namespace, name)
+        controller_roles = controller_roles_by_subject.get(subject_key, set())
+        daemonset_names = (critical_daemonset_maintenance or {}).get(
+            subject_key, {}
         )
+        unexpected = [
+            capability
+            for capability in dangerous
+            if not any(
+                _controller_capability_allowed(capability, role)
+                for role in controller_roles
+            )
+            and not _daemonset_maintenance_allowed(capability, daemonset_names)
+        ]
+        if unexpected:
+            raise ValueError(
+                "independently derived dangerous Kubernetes authority is not "
+                f"mediated: {unexpected[0]}"
+            )

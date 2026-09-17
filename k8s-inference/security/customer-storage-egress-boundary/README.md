@@ -204,3 +204,28 @@ full label and taint maps, then re-reads the live Node after the Deny binding is
 installed. The stable lane is provisioned first by the separate provisioning
 root; post-creation Node/controller/agent facts are signed only in the later
 attestation/admission generation, removing the prior bootstrap cycle.
+
+## v11 authenticated maintenance and NodeGroup binding
+
+The v11 successor keeps every v10 predecessor but replaces its unverified
+inputs. Controller roles are mapped only by a fresh, externally signed audit
+receipt from the fixed read-only authority store; command-line controller JSON
+is not accepted. The receipt covers the actual ServiceAccount or native system
+identity username, UID and complete groups. It also supplies the exact
+node-health controller and exact mutable health label/taint keys.
+
+The protected Node is admitted only after its `spec.providerID` is proved as a
+member of the fresh signed NodeGroup/provider/backend receipt. Admission keeps
+the Node UID, providerID, lane label and lane taint immutable. Ordinary status
+updates remain possible when scheduling metadata is unchanged; only the
+audit-proven node-health identity may change the signed allowlist of health
+labels/taints or `unschedulable`. Provider maintenance can therefore operate
+without allowing a different Node or security group into the credential lane.
+
+Every live DaemonSet is read twice at one exact list resourceVersion. The full
+list digest and all blanket-tolerating agents are signed, then the boundary
+repeats that complete check before and after the Deny binding. Critical-agent
+updates require an audit-proven ServiceAccount plus namespace-scoped
+`resourceNames` RBAC for only the recorded DaemonSet names; wildcard update or
+patch authority is rejected. The provider-only bootstrap uses one node rather
+than relying on a DaemonSet to scale a zero-node group.

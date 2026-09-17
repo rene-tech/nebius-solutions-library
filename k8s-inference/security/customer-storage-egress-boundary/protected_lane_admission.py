@@ -14,7 +14,13 @@ import re
 import sys
 from typing import Any
 
-CONTROLLER_ROLES = {"deployment", "replicaset", "daemonset", "scheduler"}
+CONTROLLER_ROLES = {
+    "deployment",
+    "replicaset",
+    "daemonset",
+    "scheduler",
+    "node_health",
+}
 OBSERVER_CLASSES = {"lane", "critical-blanket-agent"}
 UID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -54,12 +60,16 @@ def validate_contract(value: object) -> dict[str, Any]:
         "protected_node_attestations",
         "protected_node_attestation_sha256",
         "controller_identities",
+        "controller_audit_receipt_sha256",
+        "node_health_mutation",
+        "daemonset_inventory_sha256",
+        "daemonset_list_resource_version",
         "observers",
         "observer_inventory_sha256",
     }
     if set(value) != expected:
         raise ValueError("protected-lane contract fields differ")
-    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v4":
+    if value.get("schema") != "fs2-serve.nebius.ai/protected-lane-admission/v5":
         raise ValueError("protected-lane contract schema differs")
     generation = _string(value.get("generation"), "generation")
     if not re.fullmatch(r"g[0-9]{14}-[a-f0-9]{12}", generation):
@@ -116,11 +126,32 @@ def validate_contract(value: object) -> dict[str, Any]:
     for node_name, attestation in attestations.items():
         if (
             not isinstance(attestation, dict)
-            or set(attestation) != {"name", "uid", "resource_version", "labels", "taints"}
+            or set(attestation)
+            != {
+                "name",
+                "uid",
+                "resource_version",
+                "provider_id",
+                "node_group_id",
+                "provisioning_receipt_sha256",
+                "observed_at",
+                "labels",
+                "taints",
+            }
             or attestation.get("name") != node_name
             or not UID_RE.fullmatch(str(attestation.get("uid", "")))
             or not isinstance(attestation.get("resource_version"), str)
             or not attestation["resource_version"]
+            or not isinstance(attestation.get("provider_id"), str)
+            or not attestation["provider_id"]
+            or not isinstance(attestation.get("node_group_id"), str)
+            or not attestation["node_group_id"]
+            or not re.fullmatch(
+                r"[a-f0-9]{64}",
+                str(attestation.get("provisioning_receipt_sha256", "")),
+            )
+            or not isinstance(attestation.get("observed_at"), str)
+            or not attestation["observed_at"]
             or attestation.get("labels") != scheduling_labels[node_name]
             or not isinstance(attestation.get("taints"), list)
             or {
@@ -130,7 +161,39 @@ def validate_contract(value: object) -> dict[str, Any]:
             }
             not in attestation["taints"]
         ):
-            raise ValueError("protected-node identity, labels, or taints differ")
+            raise ValueError("protected-node provider membership, identity, labels, or taints differ")
+
+    if not re.fullmatch(
+        r"[a-f0-9]{64}", str(value.get("controller_audit_receipt_sha256", ""))
+    ) or not re.fullmatch(
+        r"[a-f0-9]{64}", str(value.get("daemonset_inventory_sha256", ""))
+    ):
+        raise ValueError("controller audit or complete DaemonSet inventory digest is absent")
+    if not isinstance(value.get("daemonset_list_resource_version"), str) or not value[
+        "daemonset_list_resource_version"
+    ]:
+        raise ValueError("DaemonSet list resourceVersion is absent")
+    node_health = value.get("node_health_mutation")
+    if (
+        not isinstance(node_health, dict)
+        or set(node_health)
+        != {
+            "identity_role",
+            "mutable_label_keys",
+            "mutable_taint_keys",
+            "allow_unschedulable",
+        }
+        or node_health.get("identity_role") != "node_health"
+        or not isinstance(node_health.get("mutable_label_keys"), list)
+        or node_health["mutable_label_keys"]
+        != sorted(set(node_health["mutable_label_keys"]))
+        or not isinstance(node_health.get("mutable_taint_keys"), list)
+        or not node_health["mutable_taint_keys"]
+        or node_health["mutable_taint_keys"]
+        != sorted(set(node_health["mutable_taint_keys"]))
+        or node_health.get("allow_unschedulable") is not True
+    ):
+        raise ValueError("narrow node-health mutation contract differs")
 
     identities = value.get("controller_identities")
     if not isinstance(identities, dict) or set(identities) != CONTROLLER_ROLES:
@@ -185,7 +248,7 @@ def validate_contract(value: object) -> dict[str, Any]:
         raise ValueError("complete signed observer inventory is required")
     seen: set[tuple[str, str] | str] = set()
     for role, observer in observers.items():
-        if not isinstance(observer, dict) or set(observer) != {
+        observer_fields = {
             "class",
             "namespace",
             "name",
@@ -193,7 +256,11 @@ def validate_contract(value: object) -> dict[str, Any]:
             "owner_identity",
             "daemonset_spec",
             "daemonset_spec_sha256",
-        }:
+        }
+        if not isinstance(observer, dict) or set(observer) not in (
+            observer_fields,
+            observer_fields | {"maintenance_audit_sha256"},
+        ):
             raise ValueError(f"{role} observer fields differ")
         observer_class = observer.get("class")
         if observer_class not in OBSERVER_CLASSES:
@@ -226,6 +293,15 @@ def validate_contract(value: object) -> dict[str, Any]:
             raise ValueError(f"{role} additive compatibility observer must be in kube-system")
         if not UID_RE.fullmatch(uid):
             raise ValueError(f"{role} UID is invalid")
+        if observer_class == "critical-blanket-agent" and not re.fullmatch(
+            r"[a-f0-9]{64}", str(observer.get("maintenance_audit_sha256", ""))
+        ):
+            raise ValueError(f"{role} maintainer lacks authenticated audit evidence")
+        if (
+            observer_class != "critical-blanket-agent"
+            and "maintenance_audit_sha256" in observer
+        ):
+            raise ValueError(f"{role} has an inapplicable maintenance audit binding")
         if (namespace, name) in seen or uid in seen:
             raise ValueError("observer names and UIDs must be unique")
         seen.update({(namespace, name), uid})

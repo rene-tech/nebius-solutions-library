@@ -65,6 +65,7 @@ variable "customer_storage" {
           })
           daemonset_spec        = any
           daemonset_spec_sha256 = string
+          maintenance_audit_sha256 = optional(string)
         })), {})
         protected_observer_inventory_sha256               = optional(string, "")
         protected_node_names                              = optional(list(string), [])
@@ -89,6 +90,10 @@ variable "customer_storage" {
         provider_state_custody_sha256                     = optional(string, "")
         boundary_state_custody_sha256                     = optional(string, "")
         controller_identities                             = optional(map(any), {})
+        controller_audit_receipt_sha256                   = optional(string, "")
+        node_health_mutation                              = optional(any, {})
+        daemonset_inventory_sha256                        = optional(string, "")
+        daemonset_list_resource_version                   = optional(string, "")
         retained_legacy_boundary_policies = optional(map(object({
           name          = string
           policy_sha256 = string
@@ -173,7 +178,7 @@ variable "customer_storage" {
         timecmp(var.customer_storage.auth_key_expires_at, plantimestamp()) > 0 &&
         timecmp(var.customer_storage.auth_key_expires_at, timeadd(plantimestamp(), "2160h")) <= 0 &&
         var.customer_storage.egress_contract_json != "" &&
-        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v10" &&
+        var.customer_storage.egress_boundary.schema == "fs2-serve.nebius.ai/customer-storage-egress-security-handoff/v11" &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.generation)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.contract_sha256)) &&
         endswith(var.customer_storage.egress_boundary.generation, substr(var.customer_storage.egress_boundary.contract_sha256, 0, 12)) &&
@@ -192,7 +197,7 @@ variable "customer_storage" {
         var.customer_storage.egress_boundary.security_owner_subject_sha256 != var.customer_storage.egress_boundary.workloads_subject_sha256 &&
         var.customer_storage.egress_boundary.protected_observer_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.protected_observer_inventory_sha256 &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.protected_observer_live_sha256)) &&
-        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v10" &&
+        var.customer_storage.egress_boundary.provider_authority.schema == "fs2-serve.nebius.ai/customer-storage-provider-egress-handoff/v11" &&
         var.customer_storage.egress_boundary.provider_authority.contract_sha256 == var.customer_storage.egress_boundary.contract_sha256 &&
         can(regex("^g[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.generation)) &&
         can(regex("^p[0-9]{14}-[a-f0-9]{12}$", var.customer_storage.egress_boundary.provider_authority.provisioning_generation)) &&
@@ -219,6 +224,9 @@ variable "customer_storage" {
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_rbac_inventory_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_rbac_effective_authority_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.kubernetes_rbac_inventory_receipt_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.controller_audit_receipt_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.daemonset_inventory_sha256)) &&
+        var.customer_storage.egress_boundary.provider_authority.daemonset_list_resource_version != "" &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.provider_project_iam_inventory_receipt_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.provider_effective_authority_graph_receipt_sha256)) &&
         can(regex("^[a-f0-9]{64}$", var.customer_storage.egress_boundary.provider_authority.provider_authority_adapter_sha256)) &&
@@ -231,7 +239,7 @@ variable "customer_storage" {
           retained_v3_boundary_policies     = var.customer_storage.egress_boundary.provider_authority.retained_v3_boundary_policies
           retained_v3_workload_policies     = var.customer_storage.egress_boundary.provider_authority.retained_v3_workload_policies
         })) == var.customer_storage.egress_boundary.provider_authority.retained_admission_custody_sha256 &&
-        toset(keys(var.customer_storage.egress_boundary.provider_authority.controller_identities)) == toset(["deployment", "replicaset", "daemonset", "scheduler"]) &&
+        toset(keys(var.customer_storage.egress_boundary.provider_authority.controller_identities)) == toset(["deployment", "replicaset", "daemonset", "scheduler", "node_health"]) &&
         alltrue([
           for identity in values(var.customer_storage.egress_boundary.provider_authority.controller_identities) :
           (
@@ -248,6 +256,13 @@ variable "customer_storage" {
           ) &&
           can(regex("^[a-f0-9]{64}$", try(identity.audit_evidence_sha256, "")))
         ]) &&
+        try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.identity_role, "") == "node_health" &&
+        try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.mutable_label_keys, []) == sort(distinct(try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.mutable_label_keys, []))) &&
+        length(try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.mutable_taint_keys, [])) > 0 &&
+        try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.mutable_taint_keys, []) == sort(distinct(try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.mutable_taint_keys, []))) &&
+        !contains(try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.mutable_label_keys, []), var.customer_storage.egress_boundary.provider_authority.node_selector_key) &&
+        !contains(try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.mutable_taint_keys, []), var.customer_storage.egress_boundary.provider_authority.taint_key) &&
+        try(var.customer_storage.egress_boundary.provider_authority.node_health_mutation.allow_unschedulable, false) &&
         var.customer_storage.egress_boundary.identity_inventory_sha256 == var.customer_storage.egress_boundary.provider_authority.kubernetes_identity_inventory_sha256 &&
         can(regex("^[a-f0-9]{40}$", var.customer_storage.egress_boundary.provider_authority.accepted_sai10_commit)) &&
         can(regex("^[a-f0-9]{40}$", var.customer_storage.egress_boundary.provider_authority.accepted_sai10_tree)) &&
@@ -260,7 +275,7 @@ variable "customer_storage" {
         var.customer_storage.egress_boundary.provider_authority.taint_key == var.customer_storage.egress_boundary.provider_authority.node_selector_key &&
         var.customer_storage.egress_boundary.provider_authority.taint_value == var.customer_storage.egress_boundary.provider_authority.lane_id &&
         var.customer_storage.egress_boundary.provider_authority.taint_effect == "NoSchedule" &&
-        var.customer_storage.egress_boundary.provider_authority.min_node_count == 0 &&
+        var.customer_storage.egress_boundary.provider_authority.min_node_count == 1 &&
         var.customer_storage.egress_boundary.provider_authority.max_node_count == 1 &&
         length(var.customer_storage.egress_boundary.provider_authority.protected_node_names) == 1 &&
         var.customer_storage.egress_boundary.provider_authority.protected_node_names == sort(distinct(var.customer_storage.egress_boundary.provider_authority.protected_node_names)) &&
@@ -281,6 +296,10 @@ variable "customer_storage" {
           for node_name, attestation in var.customer_storage.egress_boundary.provider_authority.protected_node_attestations :
           try(attestation.name, "") == node_name &&
           try(attestation.uid, "") != "" && try(attestation.resource_version, "") != "" &&
+          try(attestation.provider_id, "") != "" &&
+          try(attestation.node_group_id, "") == var.customer_storage.egress_boundary.provider_authority.node_group_id &&
+          try(attestation.provisioning_receipt_sha256, "") == var.customer_storage.egress_boundary.provider_authority.provisioning_receipt_sha256 &&
+          try(attestation.observed_at, "") != "" &&
           try(attestation.labels, {}) == var.customer_storage.egress_boundary.provider_authority.protected_node_scheduling_labels[node_name] &&
           contains(try(attestation.taints, []), {
             key    = var.customer_storage.egress_boundary.provider_authority.taint_key
@@ -303,6 +322,7 @@ variable "customer_storage" {
           can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", observer.owner_identity.uid)) &&
           observer.owner_identity.groups == ["system:authenticated", "system:serviceaccounts", "system:serviceaccounts:${try(split(":", observer.owner_identity.username)[2], "")}"] &&
           sha256(jsonencode(observer.daemonset_spec)) == observer.daemonset_spec_sha256 &&
+          (observer.class != "critical-blanket-agent" || can(regex("^[a-f0-9]{64}$", try(observer.maintenance_audit_sha256, "")))) &&
           try(observer.daemonset_spec.selector.matchLabels, {}) == try(observer.daemonset_spec.template.metadata.labels, {}) &&
           try(observer.daemonset_spec.template.metadata.labels["app.kubernetes.io/component"], "") != "" &&
           (observer.class == "lane" ? (

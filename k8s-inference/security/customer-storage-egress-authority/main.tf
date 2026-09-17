@@ -101,6 +101,9 @@ resource "terraform_data" "external_authority" {
     kubernetes_service_accounts   = data.external.authority.result.kubernetes_service_account_inventory_sha256
     kubernetes_system_subjects    = data.external.authority.result.kubernetes_system_subject_inventory_sha256
     controller_identities         = data.external.authority.result.controller_identities_json
+    controller_audit_receipt      = data.external.authority.result.controller_audit_receipt_sha256
+    daemonset_inventory           = data.external.authority.result.daemonset_inventory_sha256
+    daemonset_list_resource_version = data.external.authority.result.daemonset_list_resource_version
     kubernetes_rbac_inventory     = data.external.authority.result.kubernetes_rbac_inventory_sha256
     kubernetes_rbac_receipt       = data.external.authority.result.kubernetes_rbac_inventory_receipt_sha256
     accepted_sai10_commit         = data.external.authority.result.accepted_sai10_commit

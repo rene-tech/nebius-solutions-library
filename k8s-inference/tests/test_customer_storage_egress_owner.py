@@ -40,7 +40,7 @@ CONTROLLERS = {
         "audit_evidence_sha256": f"{index}" * 64,
     }
     for index, role in enumerate(
-        ("deployment", "replicaset", "daemonset", "scheduler"), start=1
+        ("deployment", "replicaset", "daemonset", "scheduler", "node_health"), start=1
     )
 }
 
@@ -92,6 +92,7 @@ def query() -> dict[str, str]:
         "service_account_inventory_json": json.dumps(controller_service_accounts()),
         "system_subject_inventory_json": json.dumps(system_subject_inventory()),
         "controller_identities_json": json.dumps(CONTROLLERS),
+        "critical_daemonset_maintenance_json": "{}",
         "expected_rbac_inventory_sha256": "a" * 64,
         "expected_effective_authority_sha256": hashlib.sha256(b"[]").hexdigest(),
         "protected_names_json": json.dumps(
@@ -335,6 +336,91 @@ def test_controller_inventory_accepts_only_canonical_identities_and_authority():
     ):
         owner_module.verify_subject_inventory(
             service_accounts, [], [], controller_identities=substituted
+        )
+
+
+def test_critical_daemonset_maintenance_requires_exact_resource_names():
+    maintainer = {
+        "namespace": "kube-system",
+        "name": "critical-agent-manager",
+        "uid": "50000000-0000-4000-8000-000000000001",
+        "owner": "platform-security",
+        "groups": deterministic_groups(
+            kind="ServiceAccount",
+            namespace="kube-system",
+            name="critical-agent-manager",
+        ),
+    }
+    authority = [
+        {
+            "subject": {
+                "kind": "ServiceAccount",
+                "namespace": "kube-system",
+                "name": "critical-agent-manager",
+            },
+            "scope": "kube-system",
+            "binding": {
+                "kind": "RoleBinding",
+                "namespace": "kube-system",
+                "name": "critical-agent-manager",
+            },
+            "roleRef": {
+                "kind": "Role",
+                "namespace": "kube-system",
+                "name": "critical-agent-manager",
+            },
+            "rules": [
+                {
+                    "apiGroups": ["apps"],
+                    "resources": ["daemonsets"],
+                    "verbs": ["update", "patch"],
+                    "resourceNames": ["cni-node", "filesystem-csi"],
+                }
+            ],
+        }
+    ]
+    digest, dangerous = subject_authority(
+        authority,
+        kind="ServiceAccount",
+        namespace=maintainer["namespace"],
+        name=maintainer["name"],
+        groups=maintainer["groups"],
+    )
+    maintainer.update(
+        {
+            "effective_authority_sha256": digest,
+            "dangerous_permissions": dangerous,
+        }
+    )
+    exact = {
+        ("ServiceAccount", "kube-system", "critical-agent-manager"): {
+            "kube-system": {"cni-node", "filesystem-csi"}
+        }
+    }
+    owner_module.verify_subject_inventory(
+        [maintainer], [], authority, critical_daemonset_maintenance=exact
+    )
+
+    widened = copy.deepcopy(authority)
+    widened[0]["rules"][0].pop("resourceNames")
+    widened_digest, widened_dangerous = subject_authority(
+        widened,
+        kind="ServiceAccount",
+        namespace=maintainer["namespace"],
+        name=maintainer["name"],
+        groups=maintainer["groups"],
+    )
+    widened_declaration = {
+        **maintainer,
+        "effective_authority_sha256": widened_digest,
+        "dangerous_permissions": widened_dangerous,
+    }
+    with pytest.raises(ValueError, match="independently derived dangerous"):
+        owner_module.verify_subject_inventory(
+            [widened_declaration],
+            [],
+            widened,
+            critical_daemonset_maintenance=exact,
         )
 
 

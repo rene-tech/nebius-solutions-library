@@ -122,3 +122,34 @@ cluster-wide inventory of every DaemonSet with a keyless blanket
 `Exists`/`NoSchedule` toleration; the admission inventory must equal it exactly,
 so CNI, kube-proxy, GPU, storage and telemetry agents are not represented by a
 fixed source allowlist.
+
+## v11 bootstrap and live-custody successor
+
+The v11 source supersedes the v10 zero-minimum bootstrap without removing the
+v10 record. A newly signed provider-only `p...` generation is fixed at one
+bootstrap node (`min=1`, `max=1`); it no longer depends on a DaemonSet to wake a
+zero-sized NodeGroup. `capture_provisioning_receipt.py` invokes only the pinned,
+root-owned read-only custody adapter. The resulting externally signed v2
+receipt binds the fresh remote backend lineage, serial, version and full address
+set to a fresh provider read of the exact security group, NodeGroup and member
+provider IDs. The authority verifier re-invokes that exact digest-pinned adapter
+and requires byte-equivalent provider/backend custody before accepting the new
+generation. The Kubernetes Node attestation must carry a `spec.providerID`
+present exactly once in that signed NodeGroup membership.
+
+Controller identities now come from a separately signed, fresh audit artifact
+at the fixed authority path. A separately pinned root-owned read-only audit
+adapter re-fetches the exact audit IDs from the cluster audit backend and must
+return byte-equivalent normalized event bodies. The artifact binds the real
+authenticated username, UID and groups for Deployment, ReplicaSet, DaemonSet,
+scheduler and node-health events; the RBAC collector no longer accepts
+caller-provided controller JSON. Critical
+DaemonSet maintainers likewise require a successful exact-name update/patch
+audit event and resourceName-fenced RBAC. Wildcard DaemonSet mutation remains
+forbidden.
+
+DaemonSet discovery records a complete list resourceVersion and full-list
+digest, then repeats the read at that exact resourceVersion. The admission root
+repeats the complete double read both before and after its Deny binding. This
+closes missing, newly added and single-read blanket-agent gaps while preserving
+all inventoried CNI, kube-proxy, GPU, storage and telemetry agents.

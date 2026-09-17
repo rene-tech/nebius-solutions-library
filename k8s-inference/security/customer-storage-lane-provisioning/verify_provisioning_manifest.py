@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 REGISTRY = Path("/etc/fs2-security-ro/authority/customer-storage-lane-provisioning.json")
 MAX_BYTES = 1024 * 1024
-SCHEMA = "fs2-serve.nebius.ai/protected-lane-provisioning/v1"
+SCHEMA = "fs2-serve.nebius.ai/protected-lane-provisioning/v2"
 FIELDS = {
     "provisioning_generation",
     "lane_id",
@@ -140,8 +140,16 @@ def main() -> None:
     if set(query) != {"manifest_json"}:
         raise ValueError("provisioning verifier query fields differ")
     registry = strict_json(safe_root_read(REGISTRY))
-    if set(registry) != {"schema", "approved_manifest_sha256", "manifest_public_key_pem"} or registry.get("schema") != "fs2-serve.nebius.ai/protected-lane-provisioning-registry/v1":
+    if set(registry) != {
+        "schema",
+        "approved_manifest_sha256",
+        "manifest_public_key_pem",
+        "checkpoint_public_key_pem",
+        "custody_adapter_sha256",
+    } or registry.get("schema") != "fs2-serve.nebius.ai/protected-lane-provisioning-registry/v2":
         raise ValueError("provisioning registry differs")
+    if not re.fullmatch(r"[a-f0-9]{64}", str(registry["custody_adapter_sha256"])):
+        raise ValueError("provisioning custody adapter digest is invalid")
     manifest = strict_json(str(query["manifest_json"]))
     if set(manifest) != {
         "schema",
@@ -179,7 +187,10 @@ def main() -> None:
             or lane_id in lane_ids
             or generation.get("scheduling_key")
             != f"workload.fs2.nebius/customer-storage-egress-{lane_id[-12:]}"
-            or generation.get("min_node_count") != 0
+            # Bootstrap is deliberately one node.  A DaemonSet cannot cause a
+            # zero-sized NodeGroup to scale, and Node attestation is a later
+            # phase that cannot authorize the NodeGroup which creates it.
+            or generation.get("min_node_count") != 1
             or generation.get("max_node_count") != 1
             or any(
                 not isinstance(generation.get(field), str) or not generation[field]

@@ -393,6 +393,16 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
         Path(__file__).parents[1]
         / "security/customer-storage-lane-provisioning/main.tf"
     ).read_text(encoding="utf-8")
+    lane_receipt_capture = (
+        Path(__file__).parents[1]
+        / "security/customer-storage-lane-provisioning/capture_provisioning_receipt.py"
+    ).read_text(encoding="utf-8")
+    controller_audit = (
+        PROVIDER_AUTHORITY_ROOT / "verify_controller_audit.py"
+    ).read_text(encoding="utf-8")
+    daemonset_live_verifier = (
+        SECURITY_ROOT / "verify_live_daemonset_inventory.py"
+    ).read_text(encoding="utf-8")
 
     assert "_is_ancestor(REJECTED_SAI10, commit)" in dependency
     assert '_is_ancestor(REJECTED_SAI10, "HEAD")' in dependency
@@ -467,7 +477,7 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert "min_node_count = try(each.value.min_node_count, 0)" in provider
     assert "max_node_count = try(each.value.max_node_count, 1)" in provider
     assert "fixed_node_count = null" in provider
-    assert 'retained.get("min_node_count") != 0' in authority
+    assert 'entry.get("min_node_count") != 1' in authority
     assert 'entry.get("max_node_count") != 1' in authority
     assert "kube_system_daemon_pod_cel" not in boundary
     assert "protected_node_pod_spec_cel" not in boundary
@@ -490,9 +500,33 @@ def test_sai08_external_authority_workload_and_state_closure_regression() -> Non
     assert '"--all-namespaces"' in rbac_capture
     assert '"blanket_tolerating_agents"' in rbac_capture
     assert '"controller_identities"' in rbac_capture
+    assert '"controller_audit_receipt_sha256"' in rbac_capture
+    assert '"daemonset_list_resource_version"' in rbac_capture
+    assert '"--resource-version-match=Exact"' in rbac_capture
+    assert "controller-identities-json" not in rbac_capture
+    assert "verify_live_controller_audit" in rbac_capture
+    assert "AUDIT_ADAPTER_PATH" in controller_audit
+    assert "live authenticated audit evidence differs" in controller_audit
     assert '"resourceVersion"' in node_attestation_capture
+    assert 'node_spec.get("providerID")' in node_attestation_capture
+    assert 'member.get("provider_id") == provider_id' in node_attestation_capture
     assert 'resource "nebius_mk8s_v1_node_group" "lane"' in lane_provisioning
     assert "provisioning_manifest_json" in lane_provisioning
+    assert 'generation.get("min_node_count") != 1' in (
+        Path(__file__).parents[1]
+        / "security/customer-storage-lane-provisioning/verify_provisioning_manifest.py"
+    ).read_text(encoding="utf-8")
+    assert "CUSTODY_ADAPTER" in lane_receipt_capture
+    assert '"backend_custody"' in lane_receipt_capture
+    assert '"provider_inventory"' in lane_receipt_capture
+    assert '"members"' in lane_receipt_capture
+    assert "verify_live_lane_custody" in authority
+    assert "LANE_CUSTODY_ADAPTER" in authority
+    assert "_daemonset_snapshot" in daemonset_live_verifier
+    assert 'data "external" "live_daemonsets_post_guard"' in boundary
+    assert 'resource "terraform_data" "daemonset_inventory_post_guard"' in boundary
+    assert "controller_identity_cel.node_health" in boundary
+    assert "object.spec.providerID" in boundary
     assert "stable_provider_generations = {}" in provider
     assert 'data "kubernetes_resource" "protected_node_post_guard"' in boundary
     assert "protected_node_exempt_namespaces_cel" not in boundary
