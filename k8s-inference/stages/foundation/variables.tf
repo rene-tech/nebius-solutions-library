@@ -1,3 +1,22 @@
+variable "release_image_contract" {
+  description = "Protected signed release-image closure and JSON exported from the exact saved Terraform plan. Both absolute paths are mandatory for every production plan/apply."
+  type = object({
+    closure_path   = string
+    plan_json_path = string
+  })
+  nullable = false
+
+  validation {
+    condition = (
+      startswith(var.release_image_contract.closure_path, "/") &&
+      startswith(var.release_image_contract.plan_json_path, "/") &&
+      !strcontains(var.release_image_contract.closure_path, "..") &&
+      !strcontains(var.release_image_contract.plan_json_path, "..")
+    )
+    error_message = "release_image_contract paths must be absolute and traversal-free."
+  }
+}
+
 variable "kubeconfig_path" {
   description = "Absolute path to the run-scoped mode-0600 kubeconfig created for this disposable cluster."
   type        = string

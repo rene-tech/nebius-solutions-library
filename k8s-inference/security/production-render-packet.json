@@ -10,6 +10,7 @@
   "inventory_sha256": null,
   "first_party_inventory_sha256": null,
   "catalog_image_map_sha256": null,
+  "materials_authorization_sha256": null,
   "terraform_plans": {
     "stages/foundation": null,
     "stages/workloads": null

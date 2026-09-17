@@ -180,7 +180,7 @@ resource "helm_release" "modelexpress" {
 
   postrender {
     binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json"]
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
   }
 
   values = [yamlencode(local.modelexpress_helm_values)]

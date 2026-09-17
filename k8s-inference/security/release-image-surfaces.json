@@ -51,6 +51,24 @@
     "observability/scripts/install.sh",
     "stages/infrastructure/bootstrap/bootstrap.sh"
   ],
+  "non_release_helm_scripts": [
+    {
+      "path": "components/control-plane/scripts/test-helm4-lifecycle.sh",
+      "purpose": "isolated chart lifecycle test fixture; never a release installer"
+    },
+    {
+      "path": "modules/jobset-controller/scripts/kind-jobset-kueue-integration.sh",
+      "purpose": "ephemeral kind integration fixture; never a production entrypoint"
+    },
+    {
+      "path": "modules/kueue-scheduling/scripts/kind-localqueue-rebind.sh",
+      "purpose": "ephemeral kind rebind test fixture; never a production entrypoint"
+    },
+    {
+      "path": "modules/kueue-scheduling/scripts/server-dry-run-v0.17.8.sh",
+      "purpose": "pinned upstream server dry-run fixture; never a production entrypoint"
+    }
+  ],
   "direct_render_surfaces": [
     "addons/cert-manager",
     "addons/envoy-gateway",
@@ -78,7 +96,7 @@
     {"id": "addons/kserve", "script": "addons/scripts/install.sh", "anchor": "upgrade --install kserve \"", "gate_marker": "${common[@]}"},
     {"id": "addons/kserve-crd", "script": "addons/scripts/install.sh", "anchor": "upgrade --install kserve-crd ", "gate_marker": "${common[@]}"},
     {"id": "addons/kueue", "script": "addons/scripts/install.sh", "anchor": "upgrade --install kueue ", "gate_marker": "${common[@]}"},
-    {"id": "charts/addons/modelexpress", "script": "charts/addons/modelexpress/deploy.sh", "anchors": ["helm upgrade ", "helm install "], "gate_marker": "${image_gate[@]}"},
+    {"id": "charts/addons/modelexpress", "script": "charts/addons/modelexpress/deploy.sh", "anchors": ["helm upgrade ", "helm install "], "gate_marker": "${image_gate[@]}", "release_name_variable": "RELEASE_NAME", "namespace_variable": "NAMESPACE", "chart_source": "charts/addons/modelexpress", "modes": {"install": "helm install ", "upgrade": "helm upgrade "}},
     {"id": "bootstrap/cert-manager", "script": "stages/infrastructure/bootstrap/bootstrap.sh", "anchor": "install_chart \"$prefix-cert-manager\" cert-manager cert-manager ", "gate_marker": "--post-renderer-args=--trust", "gate_scope": "script-wrapper"},
     {"id": "bootstrap/dcgm-exporter", "script": "stages/infrastructure/bootstrap/bootstrap.sh", "anchor": "install_chart \"$prefix-dcgm\" fs2-observability dcgm-exporter ", "gate_marker": "--post-renderer-args=--trust", "gate_scope": "script-wrapper"},
     {"id": "bootstrap/envoy-gateway", "script": "stages/infrastructure/bootstrap/bootstrap.sh", "anchor": "install_chart \"$prefix-envoy\" envoy-gateway-system envoy-gateway ", "gate_marker": "--post-renderer-args=--trust", "gate_scope": "script-wrapper"},

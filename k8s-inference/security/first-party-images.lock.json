@@ -1,7 +1,7 @@
 {
   "schema": "fs2-serve.nebius.ai/first-party-image-lock/v1",
   "inventory_state": "blocked_pending_protected_build_attestation",
-  "authority": "A protected release worker must bind each production repository and digest to a small signed build attestation containing exact retained build, SBOM, report, scan-receipt, image-signature, OCI referrer-manifest, and authorized registry Referrers API query hashes. OCI archives stay in the 90-day evidence store, not Git. Source-only local builds and locally assembled referrer lists are not promotion evidence.",
+  "authority": "A protected release worker must bind each production repository and digest to a small signed build attestation containing exact retained build, structured in-toto/SLSA provenance, SBOM, report, scan-receipt, image-signature, OCI referrer-manifest, authorized registry Referrers API query hashes, and a signed provider-retention receipt over the raw artifact API response and complete opened archive. OCI archives stay in the 90-day evidence store, not Git. Source-only local builds, self-asserted retention, and locally assembled referrer lists are not promotion evidence.",
   "images": [
     {
       "id": "control-plane",

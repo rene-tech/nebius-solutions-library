@@ -19,6 +19,8 @@ task_image_gate=(
   --post-renderer-args "$task_security_dir/first-party-images.lock.json"
   --post-renderer-args=--trust
   --post-renderer-args "$task_security_dir/image-attestation-trust.json"
+  --post-renderer-args=--authorization
+  --post-renderer-args "${FS2_IMAGE_GATE_AUTHORIZATION:-$task_security_dir/image-materials-authorization.json}"
 )
 
 cleanup() {

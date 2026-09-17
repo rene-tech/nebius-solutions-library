@@ -35,6 +35,8 @@ resource "terraform_data" "cluster_contract" {
     }
   }
 
+  depends_on = [terraform_data.release_image_closure_gate]
+
   # Every foundation object depends directly or transitively on this receipt,
   # so its destroy provisioner runs after Helm releases, CRDs, and namespaces.
   # Kueue's aggregate-role controller can race Helm uninstall and recreate two

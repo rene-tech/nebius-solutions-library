@@ -105,6 +105,10 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
     assert "--render-packet k8s-inference/security/production-render-packet.json" not in workflow
     assert "--first-party-inventory" in workflow
     assert "--catalog-image-map" in workflow
+    assert "--materials-authorization" in workflow
+    assert "image-gate-requirements.lock" in workflow
+    assert "--subject" in workflow
+    assert "--registry\\n" not in workflow
     assert "--release-closure" in workflow
     assert "--resolution-receipt" not in workflow
 
@@ -160,6 +164,7 @@ def test_image_security_policy_is_fail_closed_and_time_bounded() -> None:
     assert packet_template["status"] == "template_only_not_release_evidence"
     assert packet_template["source"] == {"commit": None, "tree": None}
     assert packet_template["schema"].endswith("/v2")
+    assert packet_template["materials_authorization_sha256"] is None
     assert set(packet_template["terraform_plans"]) == {
         "stages/foundation",
         "stages/workloads",
@@ -183,6 +188,10 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
     assert 'helm install "${helm_args[@]}" "${image_gate[@]}"' in deploy
     assert "FS2_SAI24_RELEASE_CLOSURE" in deploy
     assert "--verify-direct-closure" in deploy
+    assert "--rendered-manifest-stdin" in deploy
+    assert '--release-name "$RELEASE_NAME"' in deploy
+    assert '--namespace "$NAMESPACE"' in deploy
+    assert '--chart-path "$CHART_DIR"' in deploy
     assert '--values-file "$VALUES_FILE"' in deploy
     assert "FS2_IMAGE_ATTESTATION_TRUST" not in deploy
     main_body = deploy.split("main() {", maxsplit=1)[1]
@@ -191,12 +200,39 @@ def test_catalog_mapping_is_consumed_by_runtime_and_model_express_cannot_bypass_
     )
     postrenderer = (ROOT / "security/helm_image_postrenderer.py").read_text()
     assert "FS2_IMAGE_ATTESTATION_TRUST" not in postrenderer
+    assert "validate_image_gate_authorization" in postrenderer
+
+    semantic_gate = (ROOT / "security/semantic_yaml_images.py").read_text()
+    assert "yaml.compose_all" in semantic_gate
+    assert "Counter(lexical_values) != Counter(semantic)" in semantic_gate
+
+    for stage in ("foundation", "workloads"):
+        gate = (ROOT / f"stages/{stage}/release_image_gate.tf").read_text()
+        assert "release_image_closure_gate" in gate
+        assert "--verify-terraform-closure" in gate
+        cluster_contract = (ROOT / f"stages/{stage}/cluster_contract.tf").read_text()
+        assert "depends_on = [terraform_data.release_image_closure_gate]" in cluster_contract
+    apply_wrapper = (ROOT / "security/apply_signed_terraform_plan.sh").read_text()
+    assert 'terraform -chdir="$source_root/$root" show -json "$saved_plan"' in apply_wrapper
+    assert 'exec terraform -chdir="$source_root/$root" apply "$saved_plan"' in apply_wrapper
 
     evidence_validator = (ROOT / "security/image_security_evidence.py").read_text()
     assert "registry-referrers-query-receipt/v1" in evidence_validator
     assert "/referrers/{subject_digest}" in evidence_validator
     assert "application/vnd.dev.cosign.simplesigning.v1+json" in evidence_validator
+    assert "evidence-retention-provider-receipt/v1" in evidence_validator
+    assert "zipfile.ZipFile" in evidence_validator
+    assert '"https://in-toto.io/Statement/v1"' in evidence_validator
+    assert "serialized_provenance" not in evidence_validator
+    broker = (ROOT / "security/oidc_attestation_broker.py").read_text()
+    assert '"actions": ["pull"]' in broker
+    assert 'registry_command.add_argument("--subject"' in broker
+    assert 'registry_command.add_argument("--registry"' not in broker
     surfaces = json.loads((ROOT / "security/release-image-surfaces.json").read_text())
     assert "charts/addons/modelexpress/deploy.sh" in surfaces[
         "direct_installer_scripts"
     ]
+    assert surfaces["non_release_helm_scripts"]
+    modelexpress_readme = (ROOT / "charts/addons/modelexpress/README.md").read_text()
+    assert "helm install " not in modelexpress_readme
+    assert "helm upgrade " not in modelexpress_readme

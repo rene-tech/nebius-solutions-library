@@ -182,7 +182,7 @@ resource "helm_release" "jobset" {
 
   postrender {
     binary_path = "/usr/bin/env"
-    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json"]
+    args = ["python3", "${path.module}/../../security/helm_image_postrenderer.py", "--lock", "${path.module}/../../security/third-party-images.lock.json", "--first-party-lock", "${path.module}/../../security/first-party-images.lock.json", "--trust", "${path.module}/../../security/image-attestation-trust.json", "--authorization", "${path.module}/../../security/image-materials-authorization.json"]
   }
 
   values = [yamlencode({

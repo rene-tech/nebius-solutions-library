@@ -1,0 +1,14 @@
+{
+  "schema": "fs2-serve.nebius.ai/image-materials-authorization/v1",
+  "status": "template_only_not_authorized",
+  "authority": "A protected release environment must supply this document out of tree with a detached signature. The checked-in template deliberately authorizes no inventory.",
+  "source": {
+    "commit": null,
+    "tree": null
+  },
+  "trust_policy_sha256": null,
+  "inventory_sha256": null,
+  "first_party_inventory_sha256": null,
+  "catalog_image_map_sha256": null,
+  "attestation": null
+}

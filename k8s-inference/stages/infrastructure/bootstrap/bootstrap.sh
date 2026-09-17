@@ -8,6 +8,7 @@ readonly IMAGE_POST_RENDERER="$SCRIPT_DIR/../../../security/helm_image_postrende
 readonly IMAGE_LOCK="$SCRIPT_DIR/../../../security/third-party-images.lock.json"
 readonly FIRST_PARTY_IMAGE_LOCK="$SCRIPT_DIR/../../../security/first-party-images.lock.json"
 readonly IMAGE_ATTESTATION_TRUST="$SCRIPT_DIR/../../../security/image-attestation-trust.json"
+readonly IMAGE_MATERIALS_AUTHORIZATION="${FS2_IMAGE_GATE_AUTHORIZATION:-$SCRIPT_DIR/../../../security/image-materials-authorization.json}"
 readonly KUEUE_CLUSTER_POLICY="$SCRIPT_DIR/../../infra/kubernetes/kueue-cluster-queues.json"
 readonly KUEUE_LOCAL_QUEUES="$SCRIPT_DIR/../../catalog/kubernetes/localqueues.json"
 readonly CLUSTER_ID_PREFIX="mk8scluster-"
@@ -131,6 +132,8 @@ install_chart() {
     --post-renderer-args "$FIRST_PARTY_IMAGE_LOCK" \
     --post-renderer-args=--trust \
     --post-renderer-args "$IMAGE_ATTESTATION_TRUST" \
+    --post-renderer-args=--authorization \
+    --post-renderer-args "$IMAGE_MATERIALS_AUTHORIZATION" \
     "$@"
 }
 

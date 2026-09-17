@@ -235,7 +235,7 @@ resource "helm_release" "control_plane" {
 
   postrender {
     binary_path = "/usr/bin/env"
-    args = ["python3", "${local.fs2_root}/security/helm_image_postrenderer.py", "--lock", "${local.fs2_root}/security/third-party-images.lock.json", "--first-party-lock", "${local.fs2_root}/security/first-party-images.lock.json", "--trust", "${local.fs2_root}/security/image-attestation-trust.json"]
+    args = ["python3", "${local.fs2_root}/security/helm_image_postrenderer.py", "--lock", "${local.fs2_root}/security/third-party-images.lock.json", "--first-party-lock", "${local.fs2_root}/security/first-party-images.lock.json", "--trust", "${local.fs2_root}/security/image-attestation-trust.json", "--authorization", var.release_image_contract.closure_path]
   }
 
   values = [

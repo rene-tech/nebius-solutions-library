@@ -13,7 +13,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -22,6 +21,7 @@ try:
         DIGEST_REFERENCE,
         EvidenceError,
         validate_first_party_inventory,
+        validate_image_gate_authorization,
         validate_inventory,
     )
 except ImportError:
@@ -29,43 +29,21 @@ except ImportError:
         DIGEST_REFERENCE,
         EvidenceError,
         validate_first_party_inventory,
+        validate_image_gate_authorization,
         validate_inventory,
     )
 try:
-    from .yaml_image_references import (
-        YamlImageError,
-        image_scalars,
-        rewrite_image_scalars,
+    from .semantic_yaml_images import (
+        SemanticYamlError,
+        independently_validated_image_scalars,
     )
+    from .yaml_image_references import rewrite_image_scalars
 except ImportError:
-    from yaml_image_references import (
-        YamlImageError,
-        image_scalars,
-        rewrite_image_scalars,
+    from semantic_yaml_images import (
+        SemanticYamlError,
+        independently_validated_image_scalars,
     )
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def _protected_path(argument: Path, variable: str) -> Path:
-    """Use a hash-bound out-of-tree release artifact when one is supplied."""
-
-    override = os.environ.get(variable)
-    expected = os.environ.get(f"{variable}_SHA256")
-    if override is None and expected is None:
-        return argument.resolve()
-    if not override or not expected or not re.fullmatch(r"[0-9a-f]{64}", expected):
-        raise EvidenceError(f"{variable} and {variable}_SHA256 must be supplied together")
-    path = Path(override).resolve()
-    if _sha256(path) != expected:
-        raise EvidenceError(f"{variable} hash differs from the protected release binding")
-    return path
+    from yaml_image_references import rewrite_image_scalars
 
 
 def rewrite(
@@ -90,8 +68,8 @@ def rewrite(
     subjects: set[str] = set()
     replacements: dict[tuple[int, int], str] = {}
     try:
-        scalars = image_scalars(rendered)
-    except YamlImageError as exc:
+        scalars = independently_validated_image_scalars(rendered)
+    except SemanticYamlError as exc:
         raise EvidenceError(str(exc)) from exc
     for scalar in scalars:
         reference = scalar.reference
@@ -116,18 +94,46 @@ def rewrite(
     return rewrite_image_scalars(rendered, replacements), subjects
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--lock", required=True, type=Path)
     parser.add_argument("--first-party-lock", required=True, type=Path)
     parser.add_argument("--trust", required=True, type=Path)
+    parser.add_argument("--authorization", required=True, type=Path)
     args = parser.parse_args()
     try:
-        lock = _protected_path(args.lock, "FS2_THIRD_PARTY_IMAGE_LOCK")
-        first_party_lock = _protected_path(
-            args.first_party_lock, "FS2_FIRST_PARTY_IMAGE_LOCK"
-        )
+        lock = Path(os.environ.get("FS2_THIRD_PARTY_IMAGE_LOCK", args.lock)).resolve()
+        first_party_lock = Path(
+            os.environ.get("FS2_FIRST_PARTY_IMAGE_LOCK", args.first_party_lock)
+        ).resolve()
         trust = args.trust.resolve()
+        authorization = Path(
+            os.environ.get("FS2_IMAGE_GATE_AUTHORIZATION", args.authorization)
+        ).resolve()
+        authorized = validate_image_gate_authorization(
+            authorization,
+            trust,
+            Path(__file__).resolve().parent.parent,
+        )
+        if _sha256(lock) != authorized["inventory_sha256"]:
+            raise EvidenceError(
+                "third-party inventory differs from signed image-gate authority"
+            )
+        if (
+            _sha256(first_party_lock)
+            != authorized["first_party_inventory_sha256"]
+        ):
+            raise EvidenceError(
+                "first-party inventory differs from signed image-gate authority"
+            )
         rendered = sys.stdin.read()
         rewritten, _ = rewrite(
             rendered, lock, first_party_lock, trust

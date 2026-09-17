@@ -40,10 +40,12 @@ digests.
 
 The protected scan derives the registry set from that exact closure. Every
 registry must be explicitly classified in the trust policy. Private production
-registries and `nvcr.io` use a protected-environment OIDC exchange for a
-short-lived, registry-scoped Docker config; PR jobs never receive it, and no
-static registry credential is inherited. An NVCR subject without that protected
-authentication classification fails before scanning.
+registries and `nvcr.io` use a protected-environment OIDC exchange whose request
+and response authorize only the exact repository, manifest digest, and `pull`
+action for each closure subject. The returned host entry merely transports that
+claim-bounded token; it is not host-wide authority. PR jobs never receive it,
+and no static registry credential is inherited. An NVCR subject without that
+protected authentication classification fails before scanning.
 
 ## SAI-24 source changes
 
@@ -64,6 +66,10 @@ authentication classification fails before scanning.
   `security/image-attestation-trust.json`. It rewrites reviewed third-party
   tags to digests, accepts exact attested first-party digests, and rejects every
   unknown tag or unlisted digest; observability is not removed.
+- The post-renderer does not treat its span lexer as a YAML parser. A separately
+  hash-pinned PyYAML 6.0.2 parse must produce the same image multiset, and the
+  semantic pass rejects aliases, anchors, merge keys, duplicate keys and
+  non-scalar image values before any rewrite.
 - The same source-derived installer discovery includes separate `helm install`
   and `helm upgrade` forms. The shipped ModelExpress helper and its test hook
   therefore pass through the post-render gate instead of retaining a tag-only
@@ -99,13 +105,18 @@ authentication classification fails before scanning.
   Terraform surfaces are additionally joined to the exact planned
   `helm_release` address, planned values bytes, release name, namespace,
   repository and version, and undeclared planned Helm resources are rejected.
-  Direct installers are joined to the source script and exact normalized
-  install command hashes. ModelExpress additionally verifies the signed
-  release closure before Helm and hashes the operator-selected values file in
-  the same order as the attested render. A caller may select signed evidence,
-  but cannot replace the source-pinned trust authority or use values absent
-  from that evidence. A signer cannot substitute an unrelated render bundle
-  for the HCL or shipped invocation.
+  Direct installers are discovered across every shell entrypoint regardless of
+  filename; workflows, Makefiles, and operator documentation are also searched
+  for raw install commands. Non-release test fixtures require an explicit
+  purpose ledger. ModelExpress additionally verifies the signed release name,
+  namespace, install/upgrade mode, chart source tree, ordered values and actual
+  post-rendered manifest before any cluster request. The two production
+  Terraform roots require a closure contract and place a signed plan-closure
+  gate before their cluster contract. `security/apply_signed_terraform_plan.sh`
+  streams JSON from the exact saved binary plan into that verifier and applies
+  that same plan only after every planned Helm resource matches the closure.
+  A caller may select a candidate evidence path, but cannot replace the
+  source-pinned trust authority or authorize values absent from signed evidence.
 - `security/catalog-images.lock.json` maps `registry.example.invalid` source
   identities to real production repositories while preserving the manifest
   digest. Every mapping and every third-party tag resolution requires a signed
@@ -120,13 +131,22 @@ authentication classification fails before scanning.
   overrides are preserved rather than silently remapped. The checked-in
   blocked template is never a production mapping.
 
-The post-renderer accepts protected out-of-tree inventories only when the
-operator supplies each path together with its SHA-256 through
-`FS2_THIRD_PARTY_IMAGE_LOCK` and `FS2_FIRST_PARTY_IMAGE_LOCK` (plus the
-corresponding `_SHA256` variables). The trust policy remains the reviewed
-source file and cannot be replaced by an environment variable. This keeps the
-source templates fail-closed while preserving the install path once the
-external evidence packet has been independently accepted.
+The post-renderer accepts protected out-of-tree inventories only when a signed
+materials authorization (during rendering) or signed final release closure
+(during apply) binds their exact hashes to the current clean commit/tree and
+the source-pinned trust policy. Caller-supplied hashes are not authority. The
+checked-in materials document authorizes nothing. The trust policy cannot be
+replaced by an environment variable. This keeps source templates fail-closed
+while preserving the install path once the external evidence packet has been
+independently accepted.
+
+First-party custody validation opens the provider archive and requires its
+member set and bytes to equal the declared reports, SBOM, provenance, receipts,
+signatures and OCI artifacts. A separately signed provider receipt binds the
+raw GitHub artifact API response, archive bytes, workflow run, repository and
+90-day expiry under an authorized protected observer. Build provenance is
+matched as structured in-toto/SLSA fields—OCI subject, Git commit/tree,
+Dockerfile path/hash and authorized builder—not by substring search.
 
 ## Required integration work
 

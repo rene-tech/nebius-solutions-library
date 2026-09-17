@@ -68,7 +68,8 @@
       "detached-scan-receipt-signature",
       "attested-release-image-closure-json",
       "signed-oci-referrer-set-json",
-      "signed-registry-referrers-query-receipt-json"
+      "signed-registry-referrers-query-receipt-json",
+      "signed-evidence-retention-provider-receipt-json"
     ],
     "required_bindings": [
       "source_commit",
@@ -84,12 +85,19 @@
       "ordered_values_sha256",
       "terraform_planned_helm_resource_sha256",
       "direct_installer_command_sha256",
+      "independent_semantic_yaml_parser_agreement",
+      "signed_image_materials_authorization_sha256",
+      "saved_terraform_plan_binary_to_signed_closure",
+      "direct_release_namespace_mode_chart_and_render_sha256",
       "dockerfile_sha256",
       "oci_archive_subject_digest",
       "oci_referrer_payload_and_signature_sha256",
       "oci_referrer_manifest_and_registry_response_sha256",
       "image_signature_subject_and_source_binding",
       "evidence_artifact_id_and_retention_until",
+      "provider_response_and_exact_archive_member_closure",
+      "structured_in_toto_slsa_subject_source_dockerfile_and_builder",
+      "repository_digest_pull_only_registry_authorization",
       "registry_resolution_receipt_signature_sha256",
       "oidc_protected_environment_identity"
     ]

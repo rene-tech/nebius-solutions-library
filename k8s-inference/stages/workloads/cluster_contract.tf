@@ -78,6 +78,8 @@ resource "terraform_data" "cluster_contract" {
     public_edge_contract             = var.public_edge_contract
   }
 
+  depends_on = [terraform_data.release_image_closure_gate]
+
   lifecycle {
     precondition {
       condition = (

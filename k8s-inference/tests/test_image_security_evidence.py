@@ -14,12 +14,19 @@ from security.image_security_evidence import (
     validate_receipt,
 )
 from security.helm_image_postrenderer import rewrite
+from security.oidc_attestation_broker import BrokerError, registry_auth
 from security.release_image_closure import (
+    _is_shell_entrypoint,
     _production_reference,
     _release_declaration_hashes,
+    _script_helm_installs,
     _validate_terraform_resource_closure,
     validate_source_surfaces,
     verify_direct_invocation,
+)
+from security.semantic_yaml_images import (
+    SemanticYamlError,
+    independently_validated_image_scalars,
 )
 from security.yaml_image_references import YamlImageError, image_scalars
 
@@ -223,6 +230,21 @@ def test_yaml_image_lexer_rejects_composite_or_multiline_image_values() -> None:
             image_scalars(rendered)
 
 
+@pytest.mark.parametrize(
+    "rendered",
+    [
+        "defaults: &runtime\n  image: registry.example/image:1\ncontainer: *runtime\n",
+        "defaults: &runtime\n  image: registry.example/image:1\ncontainer:\n  <<: *runtime\n",
+        "container:\n  image: registry.example/one:1\n  image: registry.example/two:2\n",
+    ],
+)
+def test_independent_yaml_parser_rejects_graph_and_lexer_disagreement(
+    rendered: str,
+) -> None:
+    with pytest.raises(SemanticYamlError):
+        independently_validated_image_scalars(rendered)
+
+
 def test_direct_installer_rejects_values_absent_from_signed_closure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -237,7 +259,19 @@ def test_direct_installer_rejects_values_absent_from_signed_closure(
     surfaces.write_text("governed-surfaces")
     values.write_text("replicaCount: 2\n")
     signature.write_text("detached-signature")
-    source_execution = {"kind": "direct-installer", "script_sha256": "a" * 64}
+    chart = tmp_path / "chart"
+    chart.mkdir()
+    (chart / "Chart.yaml").write_text("name: modelexpress\nversion: 1.0.0\n")
+    rendered = b"apiVersion: v1\nkind: ConfigMap\n"
+    source_execution = {
+        "kind": "direct-installer",
+        "script_sha256": "a" * 64,
+        "release_name_variable": "RELEASE_NAME",
+        "namespace_variable": "NAMESPACE",
+        "chart_source": "chart",
+        "chart_source_sha256": "d" * 64,
+        "commands_sha256_by_mode": {"install": "e" * 64, "upgrade": "f" * 64},
+    }
     closure.write_text(
         json.dumps(
             {
@@ -253,6 +287,9 @@ def test_direct_installer_rejects_values_absent_from_signed_closure(
                         "ordered_values_sha256": [
                             hashlib.sha256(values.read_bytes()).hexdigest()
                         ],
+                        "release_name": "modelexpress",
+                        "namespace": "modelexpress",
+                        "rendered_manifest_sha256": hashlib.sha256(rendered).hexdigest(),
                     }
                 },
             }
@@ -260,6 +297,9 @@ def test_direct_installer_rejects_values_absent_from_signed_closure(
     )
     monkeypatch.setattr(
         closure_module, "validate_detached_signature", lambda *_args: None
+    )
+    monkeypatch.setattr(
+        closure_module, "_source_tree_sha256", lambda _path: "d" * 64
     )
     monkeypatch.setattr(
         closure_module,
@@ -291,6 +331,11 @@ def test_direct_installer_rejects_values_absent_from_signed_closure(
         closure_path=closure,
         surface_id="charts/addons/modelexpress",
         values_paths=[values],
+        release_name="modelexpress",
+        namespace="modelexpress",
+        mode="install",
+        chart_path=chart,
+        rendered_manifest=rendered,
     )
     values.write_text("replicaCount: 99\n")
     with pytest.raises(EvidenceError, match="selected values differ"):
@@ -301,6 +346,11 @@ def test_direct_installer_rejects_values_absent_from_signed_closure(
             closure_path=closure,
             surface_id="charts/addons/modelexpress",
             values_paths=[values],
+            release_name="modelexpress",
+            namespace="modelexpress",
+            mode="install",
+            chart_path=chart,
+            rendered_manifest=rendered,
         )
 
 
@@ -350,6 +400,36 @@ def test_placeholder_images_require_authoritative_production_mapping() -> None:
     ) == customer_override
 
 
+def test_registry_auth_rejects_host_or_tag_scope_before_oidc_exchange(
+    tmp_path: Path,
+) -> None:
+    trust = tmp_path / "trust.json"
+    identity = tmp_path / "identity.json"
+    trust.write_text(
+        json.dumps(
+            {
+                "registry_authentication": {
+                    "broker_url": "https://broker.invalid/token",
+                    "audience": "release",
+                    "maximum_ttl_seconds": 300,
+                    "allowed_registries": ["registry.example"],
+                }
+            }
+        )
+    )
+    identity.write_text("{}")
+    for invalid in ("registry.example", "registry.example/team/image:latest"):
+        with pytest.raises(BrokerError, match="digest-bound"):
+            registry_auth(
+                [invalid],
+                "https://broker.invalid/token",
+                "release",
+                identity,
+                trust,
+                tmp_path / "docker-config.json",
+            )
+
+
 def test_source_surface_manifest_is_derived_from_actual_helm_consumers() -> None:
     manifest = validate_source_surfaces(
         ROOT, ROOT / "security/release-image-surfaces.json"
@@ -373,3 +453,11 @@ def test_source_surface_manifest_is_derived_from_actual_helm_consumers() -> None
         "control-plane",
         "admin-console",
     }
+
+
+def test_installer_discovery_accepts_extensionless_shell_and_arbitrary_helm_alias() -> None:
+    source = '#!/usr/bin/env bash\nrelease_client=(helm --kube-context exact)\n"${release_client[@]}" upgrade --install demo chart\n'
+    assert _is_shell_entrypoint("bin/release", source)
+    assert _script_helm_installs(source) == [
+        '"${release_client[@]}" upgrade --install demo chart'
+    ]

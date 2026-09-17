@@ -17,6 +17,15 @@
   "render_provenance": {
     "authorized_builder_ids": []
   },
+  "first_party_build_provenance": {
+    "authorized_builder_ids": []
+  },
+  "evidence_retention": {
+    "provider": "github-actions",
+    "repository": "rene-tech/nebius-solutions-library",
+    "minimum_days": 90,
+    "authorized_observer_identities": []
+  },
   "registry_resolution": {
     "authorized_resolver_identities": [],
     "referrers_api": {
@@ -29,6 +38,8 @@
     "broker_url": null,
     "audience": "fs2-sai24-release-attestation",
     "maximum_ttl_seconds": 3600,
+    "required_authorization_model": "repository-digest-action",
+    "authorized_broker_ids": [],
     "allowed_registries": [],
     "anonymous_registries": []
   }

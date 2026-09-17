@@ -61,18 +61,19 @@ helm repo add modelexpress https://your-repo-url
 helm repo update
 ```
 
-### 4. Install the chart
+### 4. Install the chart through the signed release gate
 
 ```bash
-# Install with default values
-helm install my-modelexpress ./helm
-
-# Install with custom values
-helm install my-modelexpress ./helm -f values.yaml
-
-# Install in a specific namespace
-helm install my-modelexpress ./helm --namespace modelexpress --create-namespace
+export FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json
+./deploy.sh
+./deploy.sh -f values.yaml
 ```
+
+The adjacent detached signature is mandatory. The helper verifies the signed
+source, release name, namespace, chart tree, selected mode and values, then
+compares the actual post-rendered manifest with the retained exact render
+before it makes any cluster request. Direct Helm release commands are not a
+supported installation path.
 
 ## Configuration
 
@@ -91,7 +92,8 @@ helm install my-modelexpress ./helm --namespace modelexpress --create-namespace
 # Copy and customize production values
 cp helm/values-production.yaml helm/my-production-values.yaml
 # Edit my-production-values.yaml with your actual values
-helm install modelexpress ./helm -f helm/my-production-values.yaml
+FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json \
+  ./deploy.sh -f my-production-values.yaml
 ```
 
 The following table lists the configurable parameters of the ModelExpress chart and their default values.
@@ -143,7 +145,7 @@ The following table lists the configurable parameters of the ModelExpress chart 
 ### Basic Installation
 
 ```bash
-helm install modelexpress ./helm
+FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json ./deploy.sh
 ```
 
 ### Custom Image Repository
@@ -220,7 +222,8 @@ extraEnv:
 ## Upgrading
 
 ```bash
-helm upgrade my-modelexpress ./helm
+FS2_SAI24_RELEASE_CLOSURE=/absolute/path/to/release-image-closure.json \
+  ./deploy.sh --upgrade
 ```
 
 ## Uninstalling

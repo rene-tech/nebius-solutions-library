@@ -14,12 +14,16 @@ import base64
 import hashlib
 import json
 import os
+import re
 import sys
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+
+DIGEST_REFERENCE = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 
 
 class BrokerError(ValueError):
@@ -164,14 +168,14 @@ def sign(
 
 
 def registry_auth(
-    registries: list[str],
+    subjects: list[str],
     broker_url: str,
     audience: str,
     identity_path: Path,
     trust_path: Path,
     output: Path,
 ) -> None:
-    """Exchange protected OIDC for a bounded, registry-scoped Docker config."""
+    """Exchange protected OIDC for exact repository/digest pull-only credentials."""
 
     trust = json.loads(trust_path.read_text(encoding="utf-8"))
     policy = trust.get("registry_authentication") if isinstance(trust, dict) else None
@@ -180,12 +184,28 @@ def registry_auth(
     if policy.get("audience") != audience:
         raise BrokerError("registry authentication audience is not trusted")
     allowed = policy.get("allowed_registries")
-    requested = sorted(set(registries))
+    requested = sorted(set(subjects))
+    parsed: list[dict[str, Any]] = []
+    for subject in requested:
+        if not DIGEST_REFERENCE.fullmatch(subject):
+            raise BrokerError("registry authentication subject is not digest-bound")
+        repository, digest = subject.rsplit("@", 1)
+        registry, separator, repository_path = repository.partition("/")
+        if not separator or not repository_path:
+            raise BrokerError("registry authentication repository is invalid")
+        parsed.append(
+            {
+                "subject": subject,
+                "registry": registry,
+                "repository": repository_path,
+                "digest": digest,
+                "actions": ["pull"],
+            }
+        )
     if (
         not requested
         or not isinstance(allowed, list)
-        or any(registry not in allowed for registry in requested)
-        or any("/" in registry or registry.startswith(".") for registry in requested)
+        or any(item["registry"] not in allowed for item in parsed)
     ):
         raise BrokerError("registry authentication scope is not authorized")
     expected_identity = json.loads(identity_path.read_text(encoding="utf-8"))
@@ -197,9 +217,10 @@ def registry_auth(
         {
             "schema": "fs2-serve.nebius.ai/oidc-registry-auth-request/v1",
             "identity": expected_identity,
-            "registries": requested,
+            "subjects": parsed,
             "oidc_token": _oidc_token(audience),
             "credential_format": "docker-config-json",
+            "required_actions": ["pull"],
         }
     ).encode("utf-8")
     response = _json_response(
@@ -212,7 +233,19 @@ def registry_auth(
     )
     if response.get("schema") != "fs2-serve.nebius.ai/oidc-registry-auth-response/v1":
         raise BrokerError("registry authentication response schema is unsupported")
-    if response.get("identity") != expected_identity or response.get("registries") != requested:
+    authorized_brokers = policy.get("authorized_broker_ids")
+    if (
+        response.get("identity") != expected_identity
+        or response.get("authorized_subjects") != parsed
+        or response.get("required_actions") != ["pull"]
+        or policy.get("required_authorization_model")
+        != "repository-digest-action"
+        or response.get("authorization_model")
+        != "repository-digest-action"
+        or not isinstance(authorized_brokers, list)
+        or response.get("broker_id") not in authorized_brokers
+        or response.get("digest_scope_enforced") is not True
+    ):
         raise BrokerError("registry authentication response scope differs")
     expires_value = response.get("expires_at")
     try:
@@ -240,7 +273,8 @@ def registry_auth(
     if hashlib.sha256(docker_config).hexdigest() != expected_sha256:
         raise BrokerError("registry authentication payload hash differs")
     auths = document.get("auths") if isinstance(document, dict) else None
-    if not isinstance(auths, dict) or sorted(auths) != requested:
+    expected_registries = sorted({item["registry"] for item in parsed})
+    if not isinstance(auths, dict) or sorted(auths) != expected_registries:
         raise BrokerError("registry authentication Docker config scope differs")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(docker_config)
@@ -266,7 +300,7 @@ def main() -> int:
     registry_command.add_argument("--audience", required=True)
     registry_command.add_argument("--identity", required=True, type=Path)
     registry_command.add_argument("--trust", required=True, type=Path)
-    registry_command.add_argument("--registry", action="append", required=True)
+    registry_command.add_argument("--subject", action="append", required=True)
     registry_command.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     try:
@@ -290,7 +324,7 @@ def main() -> int:
             )
         else:
             registry_auth(
-                args.registry,
+                args.subject,
                 args.broker_url,
                 args.audience,
                 args.identity,

@@ -62,6 +62,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install hash-bound independent YAML parser
+        shell: bash
+        run: |
+          python3 -m pip install --require-hashes --only-binary=:all: \
+            --requirement k8s-inference/security/image-gate-requirements.lock
+
       - name: Install checksum-bound Trivy
         shell: bash
         run: |
@@ -233,6 +239,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install hash-bound independent YAML parser
+        shell: bash
+        run: |
+          python3 -m pip install --require-hashes --only-binary=:all: \
+            --requirement k8s-inference/security/image-gate-requirements.lock
+
       - name: Acquire exact signed render packet outside the Git tree
         shell: bash
         env:
@@ -269,7 +281,9 @@ jobs:
             production-render-packet.json \
             third-party-images.lock.json \
             first-party-images.lock.json \
-            catalog-images.lock.json; do
+            catalog-images.lock.json \
+            image-materials-authorization.json \
+            image-materials-authorization.json.sig; do
             test -f "${bundle}/${required}"
           done
           {
@@ -277,6 +291,7 @@ jobs:
             printf 'THIRD_PARTY_INVENTORY=%s\n' "${bundle}/third-party-images.lock.json"
             printf 'FIRST_PARTY_INVENTORY=%s\n' "${bundle}/first-party-images.lock.json"
             printf 'CATALOG_IMAGE_MAP=%s\n' "${bundle}/catalog-images.lock.json"
+            printf 'MATERIALS_AUTHORIZATION=%s\n' "${bundle}/image-materials-authorization.json"
           } >> "$GITHUB_ENV"
 
       - name: Materialize protected OIDC attestation identity
@@ -321,6 +336,7 @@ jobs:
             --inventory "$THIRD_PARTY_INVENTORY" \
             --first-party-inventory "$FIRST_PARTY_INVENTORY" \
             --catalog-image-map "$CATALOG_IMAGE_MAP" \
+            --materials-authorization "$MATERIALS_AUTHORIZATION" \
             --attestation-identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
             --output "${evidence}/release-image-closure.json"
           python3 k8s-inference/security/oidc_attestation_broker.py sign \
@@ -363,17 +379,27 @@ jobs:
           selected = sorted(actual & authenticated)
           if not selected:
               raise SystemExit("release closure has no authenticated registry subjects")
+          subjects = json.loads(pathlib.Path(
+              os.environ["RUNNER_TEMP"] +
+              "/sai-24-third-party/release-image-closure.json"
+          ).read_text())["subjects"]
+          selected_subjects = sorted(
+              subject for subject in subjects
+              if subject.split("/", 1)[0] in selected
+          )
+          if not selected_subjects:
+              raise SystemExit("no exact authenticated repository/digest subjects")
           pathlib.Path(
-              os.environ["RUNNER_TEMP"] + "/authenticated-registries.txt"
-          ).write_text("".join(f"--registry\n{value}\n" for value in selected))
+              os.environ["RUNNER_TEMP"] + "/authenticated-subjects.txt"
+          ).write_text("".join(f"--subject\n{value}\n" for value in selected_subjects))
           PY
-          mapfile -t registry_args < "${RUNNER_TEMP}/authenticated-registries.txt"
+          mapfile -t subject_args < "${RUNNER_TEMP}/authenticated-subjects.txt"
           python3 k8s-inference/security/oidc_attestation_broker.py registry-auth \
             --broker-url "$REGISTRY_AUTH_BROKER_URL" \
             --audience "$ATTESTATION_AUDIENCE" \
             --identity "${RUNNER_TEMP}/sai-24-attestation-identity.json" \
             --trust k8s-inference/security/image-attestation-trust.json \
-            "${registry_args[@]}" \
+            "${subject_args[@]}" \
             --output "${auth_dir}/config.json"
           printf 'DOCKER_CONFIG=%s\n' "$auth_dir" >> "$GITHUB_ENV"
 

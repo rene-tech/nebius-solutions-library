@@ -28,6 +28,7 @@ try:
         validate_catalog_image_map,
         validate_detached_signature,
         validate_first_party_inventory,
+        validate_image_gate_authorization,
         validate_inventory,
     )
 except ImportError:
@@ -38,21 +39,43 @@ except ImportError:
         validate_catalog_image_map,
         validate_detached_signature,
         validate_first_party_inventory,
+        validate_image_gate_authorization,
         validate_inventory,
     )
 try:
-    from .yaml_image_references import YamlImageError, image_key_lines, image_scalars
+    from .semantic_yaml_images import (
+        SemanticYamlError,
+        independently_validated_image_scalars,
+    )
 except ImportError:
-    from yaml_image_references import YamlImageError, image_key_lines, image_scalars
+    from semantic_yaml_images import (
+        SemanticYamlError,
+        independently_validated_image_scalars,
+    )
+try:
+    from .yaml_image_references import YamlImageError, image_key_lines
+except ImportError:
+    from yaml_image_references import YamlImageError, image_key_lines
 
 
 HELM_RESOURCE = re.compile(r'resource\s+"helm_release"\s+"([^"]+)"\s*\{')
 HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
-RELEASE_INSTALLER_NAMES = {"install.sh", "deploy.sh", "bootstrap.sh"}
 HELM_INSTALL = re.compile(
-    r"(?:^|\s)(?:helm|hctl|\"?\$\{h\[@\]\}\"?)\s+"
+    r"(?:^|\s)(?:helm|hctl)\s+"
     r"(?:install(?:\s|$)|upgrade(?:\s+--install)?(?:\s|$))"
 )
+HELM_ARRAY_ALIAS = re.compile(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)=\(\s*helm(?:\s|\))")
+DOCUMENTED_HELM_INSTALL = re.compile(
+    r"^\s*(?:\$\s*)?(?:helm|hctl)\s+(?:install|upgrade)(?:\s|$)", re.MULTILINE
+)
+TEXT_ENTRYPOINT_SUFFIXES = {
+    ".sh", ".bash", ".yml", ".yaml", ".md", ".py", ".js", ".ts", ".tsx"
+}
+PROGRAMMATIC_HELM_INSTALL = re.compile(
+    r"['\"]helm['\"]\s*,\s*['\"](?:install|upgrade)['\"]|"
+    r"\bhelm\.(?:install|upgrade)\b"
+)
+IGNORED_SOURCE_PARTS = {".git", ".terraform", "node_modules", "vendor"}
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -128,13 +151,74 @@ def _logical_shell_commands(source: str) -> list[str]:
     return commands
 
 
-def _release_installer(path: Path, root: Path) -> bool:
-    relative = path.relative_to(root)
-    if path.name not in RELEASE_INSTALLER_NAMES or "tests" in relative.parts:
-        return False
-    return any(HELM_INSTALL.search(command) for command in _logical_shell_commands(
-        path.read_text(encoding="utf-8")
-    ))
+def _source_text_entrypoints(root: Path) -> dict[str, str]:
+    """Read every potential shell, workflow, Makefile, and operator-doc entrypoint."""
+
+    result: dict[str, str] = {}
+    repository_workflows = root.parent / ".github/workflows"
+    candidates = list(root.rglob("*"))
+    if repository_workflows.is_dir():
+        candidates.extend(repository_workflows.rglob("*"))
+    for path in sorted(candidates):
+        if not path.is_file() or any(part in IGNORED_SOURCE_PARTS for part in path.parts):
+            continue
+        try:
+            with path.open("rb") as stream:
+                first_line = stream.readline(256)
+        except OSError as exc:
+            raise EvidenceError(f"{path}: cannot inspect governed entrypoint") from exc
+        shell_shebang = first_line.startswith(b"#!") and any(
+            shell in first_line for shell in (b"/sh", b"/bash", b"/dash", b"/ksh")
+        )
+        if (
+            path.suffix not in TEXT_ENTRYPOINT_SUFFIXES
+            and path.name != "Makefile"
+            and not shell_shebang
+        ):
+            continue
+        try:
+            if path.is_relative_to(root):
+                relative = path.relative_to(root).as_posix()
+            else:
+                relative = (
+                    "repository/.github/workflows/"
+                    + path.relative_to(repository_workflows).as_posix()
+                )
+            result[relative] = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise EvidenceError(f"{path}: governed entrypoint is not UTF-8") from exc
+    return result
+
+
+def _script_helm_installs(source: str) -> list[str]:
+    commands = _logical_shell_commands(source)
+    aliases = {
+        match.group("name")
+        for command in commands
+        for match in [HELM_ARRAY_ALIAS.match(command)]
+        if match is not None
+    }
+    result: list[str] = []
+    for command in commands:
+        alias_install = any(
+            re.search(
+                rf"(?:^|\s)\"?\$\{{{re.escape(alias)}\[@\]\}}\"?\s+"
+                r"(?:install(?:\s|$)|upgrade(?:\s+--install)?(?:\s|$))",
+                command,
+            )
+            for alias in aliases
+        )
+        if HELM_INSTALL.search(command) or alias_install:
+            result.append(command)
+    return result
+
+
+def _is_shell_entrypoint(relative: str, source: str) -> bool:
+    first_line = source.splitlines()[0] if source.splitlines() else ""
+    return relative.endswith((".sh", ".bash")) or (
+        first_line.startswith("#!")
+        and any(shell in first_line for shell in ("/sh", "/bash", "/dash", "/ksh"))
+    )
 
 
 def _anchor_strings(binding: dict[str, Any], manifest_path: Path) -> list[str]:
@@ -170,6 +254,7 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
                 "third-party-images.lock.json",
                 "first-party-images.lock.json",
                 "image-attestation-trust.json",
+                "--authorization",
             ):
                 if required not in block:
                     raise EvidenceError(f"{identifier}: missing {required} consumer")
@@ -189,6 +274,35 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
         raise EvidenceError(
             f"{manifest_path}: every Terraform Helm release needs one production plan owner"
         )
+    for plan_root in sorted(set(owners.values())):
+        gate_source = _resolve(root, f"{plan_root}/release_image_gate.tf").read_text(
+            encoding="utf-8"
+        )
+        cluster_source = _resolve(root, f"{plan_root}/cluster_contract.tf").read_text(
+            encoding="utf-8"
+        )
+        for required in (
+            'resource "terraform_data" "release_image_closure_gate"',
+            "triggers_replace = [timestamp()]",
+            "--verify-terraform-closure",
+            "--terraform-plan-json-stdin",
+        ):
+            if required not in gate_source:
+                raise EvidenceError(f"{plan_root}: apply root omits {required}")
+        if "depends_on = [terraform_data.release_image_closure_gate]" not in cluster_source:
+            raise EvidenceError(
+                f"{plan_root}: cluster mutations do not depend on the image closure gate"
+            )
+    apply_wrapper = _resolve(root, "security/apply_signed_terraform_plan.sh").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        'show -json "$saved_plan"',
+        "--verify-terraform-closure",
+        'apply "$saved_plan"',
+    ):
+        if required not in apply_wrapper:
+            raise EvidenceError(f"saved-plan apply wrapper omits {required}")
     for relative in manifest.get("direct_installer_scripts", []):
         source = _resolve(root, relative).read_text(encoding="utf-8")
         for required in (
@@ -197,20 +311,67 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
             "third-party-images.lock.json",
             "first-party-images.lock.json",
             "image-attestation-trust.json",
+            "--authorization",
         ):
             if required not in source:
                 raise EvidenceError(f"{relative}: missing {required} consumer")
+    entrypoints = _source_text_entrypoints(root)
     discovered_installers = {
-        path.relative_to(root).as_posix()
-        for path in root.rglob("*.sh")
-        if _release_installer(path, root)
+        relative
+        for relative, source in entrypoints.items()
+        if _is_shell_entrypoint(relative, source) and _script_helm_installs(source)
     }
     expected_installers = set(manifest.get("direct_installer_scripts", []))
-    if discovered_installers != expected_installers:
+    exclusions = manifest.get("non_release_helm_scripts")
+    if not isinstance(exclusions, list) or not all(
+        isinstance(item, dict)
+        and isinstance(item.get("path"), str)
+        and isinstance(item.get("purpose"), str)
+        and item["purpose"]
+        for item in exclusions
+    ):
+        raise EvidenceError(f"{manifest_path}: non-release Helm script ledger is invalid")
+    excluded_installers = {item["path"] for item in exclusions}
+    if discovered_installers != expected_installers | excluded_installers:
         raise EvidenceError(
             "direct Helm installer mismatch: "
-            f"missing={sorted(discovered_installers - expected_installers)} "
-            f"stale={sorted(expected_installers - discovered_installers)}"
+            f"unclassified={sorted(discovered_installers - expected_installers - excluded_installers)} "
+            f"stale={sorted((expected_installers | excluded_installers) - discovered_installers)}"
+        )
+    documented_bypasses = sorted(
+        relative
+        for relative, source in entrypoints.items()
+        if relative.endswith(".md") and DOCUMENTED_HELM_INSTALL.search(source)
+    )
+    if documented_bypasses:
+        raise EvidenceError(
+            "operator documentation contains raw Helm install/upgrade bypasses: "
+            f"{documented_bypasses}"
+        )
+    workflow_or_make_bypasses = sorted(
+        relative
+        for relative, source in entrypoints.items()
+        if (
+            relative.endswith((".yml", ".yaml"))
+            or Path(relative).name == "Makefile"
+        )
+        and DOCUMENTED_HELM_INSTALL.search(source)
+    )
+    if workflow_or_make_bypasses:
+        raise EvidenceError(
+            "workflow or Makefile contains an ungoverned Helm install/upgrade: "
+            f"{workflow_or_make_bypasses}"
+        )
+    programmatic_bypasses = sorted(
+        relative
+        for relative, source in entrypoints.items()
+        if relative.endswith((".py", ".js", ".ts", ".tsx"))
+        and PROGRAMMATIC_HELM_INSTALL.search(source)
+    )
+    if programmatic_bypasses:
+        raise EvidenceError(
+            "programmatic Helm install/upgrade bypasses the governed entrypoints: "
+            f"{programmatic_bypasses}"
         )
     anchors = manifest.get("direct_surface_anchors")
     if not isinstance(anchors, list):
@@ -238,9 +399,7 @@ def validate_source_surfaces(root: Path, manifest_path: Path) -> dict[str, Any]:
                 command for command in commands if command.startswith("install_chart ")
             ]
         else:
-            install_commands = [
-                command for command in commands if HELM_INSTALL.search(command)
-            ]
+            install_commands = _script_helm_installs(source)
         if len(install_commands) != len(expected_anchors):
             raise EvidenceError(
                 f"{relative}: discovered {len(install_commands)} install calls but "
@@ -344,7 +503,7 @@ def _direct_execution_bindings(
                     f"{binding['id']}: direct invocation anchor is ambiguous"
                 )
             matched.append(candidates[0])
-        result[binding["id"]] = {
+        execution: dict[str, Any] = {
             "kind": "direct-installer",
             "script": binding["script"],
             "script_sha256": _sha256(script),
@@ -352,7 +511,72 @@ def _direct_execution_bindings(
                 json.dumps(matched, separators=(",", ":")).encode("utf-8")
             ).hexdigest(),
         }
+        modes = binding.get("modes")
+        if modes is not None:
+            if (
+                not isinstance(modes, dict)
+                or set(modes) != {"install", "upgrade"}
+                or not all(isinstance(value, str) and value for value in modes.values())
+            ):
+                raise EvidenceError(f"{binding['id']}: direct modes are invalid")
+            command_by_mode: dict[str, str] = {}
+            for mode, anchor in modes.items():
+                candidates = [command for command in commands if anchor in command]
+                if len(candidates) != 1:
+                    raise EvidenceError(
+                        f"{binding['id']}: {mode} invocation is absent or ambiguous"
+                    )
+                command_by_mode[mode] = hashlib.sha256(
+                    candidates[0].encode("utf-8")
+                ).hexdigest()
+            chart_source = binding.get("chart_source")
+            release_name_variable = binding.get("release_name_variable")
+            namespace_variable = binding.get("namespace_variable")
+            if not all(
+                isinstance(value, str) and value
+                for value in (
+                    chart_source,
+                    release_name_variable,
+                    namespace_variable,
+                )
+            ):
+                raise EvidenceError(
+                    f"{binding['id']}: release, namespace, or chart binding is missing"
+                )
+            execution.update(
+                {
+                    "release_name_variable": release_name_variable,
+                    "namespace_variable": namespace_variable,
+                    "chart_source": chart_source,
+                    "chart_source_sha256": _source_tree_sha256(
+                        _resolve(root, chart_source)
+                    ),
+                    "commands_sha256_by_mode": command_by_mode,
+                }
+            )
+        result[binding["id"]] = execution
     return result
+
+
+def _source_tree_sha256(path: Path) -> str:
+    if not path.is_dir():
+        raise EvidenceError(f"{path}: chart source must be a directory")
+    entries: list[dict[str, str]] = []
+    for candidate in sorted(path.rglob("*")):
+        if candidate.is_symlink():
+            raise EvidenceError(f"{candidate}: chart source symlinks are not accepted")
+        if candidate.is_file():
+            entries.append(
+                {
+                    "path": candidate.relative_to(path).as_posix(),
+                    "sha256": _sha256(candidate),
+                }
+            )
+    if not entries:
+        raise EvidenceError(f"{path}: chart source is empty")
+    return hashlib.sha256(
+        json.dumps(entries, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def _git_identity(root: Path) -> tuple[str, str]:
@@ -431,6 +655,7 @@ def _validate_render_provenance(
     post_renderer_sha256: str,
     inventory_sha256: str,
     first_party_inventory_sha256: str,
+    materials_authorization_sha256: str,
     trust_policy_sha256: str,
     source_execution: dict[str, Any],
     trust_path: Path,
@@ -471,6 +696,7 @@ def _validate_render_provenance(
             "script_sha256": post_renderer_sha256,
             "third_party_inventory_sha256": inventory_sha256,
             "first_party_inventory_sha256": first_party_inventory_sha256,
+            "materials_authorization_sha256": materials_authorization_sha256,
             "trust_policy_sha256": trust_policy_sha256,
         },
         "source_execution": source_execution,
@@ -619,11 +845,16 @@ def _planned_images(path: Path) -> set[str]:
 
 
 def _terraform_helm_resources(path: Path) -> dict[str, dict[str, Any]]:
-    plan = _load(path)
+    return _terraform_helm_resources_document(_load(path), str(path))
+
+
+def _terraform_helm_resources_document(
+    plan: dict[str, Any], label: str
+) -> dict[str, dict[str, Any]]:
     planned = plan.get("planned_values")
     root_module = planned.get("root_module") if isinstance(planned, dict) else None
     if not isinstance(root_module, dict):
-        raise EvidenceError(f"{path}: Terraform planned root module is missing")
+        raise EvidenceError(f"{label}: Terraform planned root module is missing")
     result: dict[str, dict[str, Any]] = {}
 
     def visit(module: dict[str, Any]) -> None:
@@ -633,18 +864,18 @@ def _terraform_helm_resources(path: Path) -> dict[str, dict[str, Any]]:
             address = resource.get("address")
             values = resource.get("values")
             if not isinstance(address, str) or not isinstance(values, dict):
-                raise EvidenceError(f"{path}: malformed planned Helm resource")
+                raise EvidenceError(f"{label}: malformed planned Helm resource")
             if address in result:
-                raise EvidenceError(f"{path}: duplicate planned address {address}")
+                raise EvidenceError(f"{label}: duplicate planned address {address}")
             result[address] = values
         for child in module.get("child_modules", []):
             if not isinstance(child, dict):
-                raise EvidenceError(f"{path}: malformed planned child module")
+                raise EvidenceError(f"{label}: malformed planned child module")
             visit(child)
 
     visit(root_module)
     if not result:
-        raise EvidenceError(f"{path}: Terraform plan contains no Helm resources")
+        raise EvidenceError(f"{label}: Terraform plan contains no Helm resources")
     return result
 
 
@@ -704,6 +935,7 @@ def _terraform_execution_binding(
         "third-party-images.lock.json",
         "first-party-images.lock.json",
         "image-attestation-trust.json",
+        "--authorization",
     ):
         if required not in serialized_postrender:
             raise EvidenceError(
@@ -779,9 +1011,11 @@ def _static_manifest_images(
             try:
                 references = {
                     scalar.reference
-                    for scalar in image_scalars(path.read_text(encoding="utf-8"))
+                    for scalar in independently_validated_image_scalars(
+                        path.read_text(encoding="utf-8")
+                    )
                 }
-            except YamlImageError as exc:
+            except SemanticYamlError as exc:
                 raise EvidenceError(f"{path}: {exc}") from exc
             invalid = sorted(
                 ref for ref in references if not DIGEST_REFERENCE.fullmatch(ref)
@@ -807,6 +1041,7 @@ def derive_closure(
     inventory_path: Path,
     first_party_inventory_path: Path,
     catalog_image_map_path: Path,
+    materials_authorization_path: Path,
     attestation_identity_path: Path,
 ) -> dict[str, Any]:
     manifest = validate_source_surfaces(root, manifest_path)
@@ -841,6 +1076,21 @@ def derive_closure(
         raise EvidenceError(f"{packet_path}: first-party inventory hash mismatch")
     if packet.get("catalog_image_map_sha256") != _sha256(catalog_image_map_path):
         raise EvidenceError(f"{packet_path}: catalog image map hash mismatch")
+    if packet.get("materials_authorization_sha256") != _sha256(
+        materials_authorization_path
+    ):
+        raise EvidenceError(f"{packet_path}: materials authorization hash mismatch")
+    authorized_materials = validate_image_gate_authorization(
+        materials_authorization_path, trust_path, root
+    )
+    if authorized_materials != {
+        "inventory_sha256": _sha256(inventory_path),
+        "first_party_inventory_sha256": _sha256(first_party_inventory_path),
+        "catalog_image_map_sha256": _sha256(catalog_image_map_path),
+    }:
+        raise EvidenceError(
+            f"{packet_path}: signed materials authorization differs from render inputs"
+        )
     source_catalog_map = root / "security/catalog-images.lock.json"
     if _sha256(catalog_image_map_path) != _sha256(source_catalog_map):
         raise EvidenceError(
@@ -990,6 +1240,8 @@ def derive_closure(
             )
         surface_executions[surface_id] = {
             "chart_digest": chart["digest"],
+            "release_name": chart["release_name"],
+            "namespace": chart["namespace"],
             "ordered_values_sha256": value_hashes,
             "rendered_manifest_sha256": _sha256(rendered),
             "source_execution": source_execution,
@@ -1006,6 +1258,7 @@ def derive_closure(
             post_renderer_sha256=_sha256(root / "security/helm_image_postrenderer.py"),
             inventory_sha256=_sha256(inventory_path),
             first_party_inventory_sha256=_sha256(first_party_inventory_path),
+            materials_authorization_sha256=_sha256(materials_authorization_path),
             trust_policy_sha256=_sha256(trust_path),
             source_execution=source_execution,
             trust_path=trust_path,
@@ -1013,9 +1266,11 @@ def derive_closure(
         try:
             references = {
                 scalar.reference
-                for scalar in image_scalars(rendered.read_text(encoding="utf-8"))
+                for scalar in independently_validated_image_scalars(
+                    rendered.read_text(encoding="utf-8")
+                )
             }
-        except YamlImageError as exc:
+        except SemanticYamlError as exc:
             raise EvidenceError(f"{surface_id}: {exc}") from exc
         if not references:
             raise EvidenceError(f"{surface_id}: render contains no images")
@@ -1135,6 +1390,7 @@ def derive_closure(
         "inventory_sha256": _sha256(inventory_path),
         "first_party_inventory_sha256": _sha256(first_party_inventory_path),
         "catalog_image_map_sha256": _sha256(catalog_image_map_path),
+        "materials_authorization_sha256": _sha256(materials_authorization_path),
         "trust_policy_sha256": _sha256(trust_path),
         "render_packet_sha256": _sha256(packet_path),
         "render_packet_signature_sha256": _sha256(signature),
@@ -1158,6 +1414,11 @@ def verify_direct_invocation(
     closure_path: Path,
     surface_id: str,
     values_paths: list[Path],
+    release_name: str,
+    namespace: str,
+    mode: str,
+    chart_path: Path,
+    rendered_manifest: bytes,
 ) -> None:
     """Authorize one direct installer invocation against a signed closure.
 
@@ -1198,11 +1459,114 @@ def verify_direct_invocation(
         raise EvidenceError(
             f"{closure_path}: direct surface invocation differs from source"
         )
+    if mode not in {"install", "upgrade"}:
+        raise EvidenceError(f"{closure_path}: unsupported direct release mode")
+    if (
+        execution.get("release_name") != release_name
+        or execution.get("namespace") != namespace
+        or expected_execution.get("release_name_variable") != "RELEASE_NAME"
+        or expected_execution.get("namespace_variable") != "NAMESPACE"
+        or mode not in expected_execution.get("commands_sha256_by_mode", {})
+    ):
+        raise EvidenceError(
+            f"{closure_path}: release name, namespace, or mode differs from evidence"
+        )
+    expected_chart = _resolve(root, expected_execution["chart_source"])
+    if chart_path.resolve() != expected_chart:
+        raise EvidenceError(f"{closure_path}: direct chart path differs from evidence")
+    if _source_tree_sha256(expected_chart) != expected_execution["chart_source_sha256"]:
+        raise EvidenceError(f"{closure_path}: direct chart source differs from evidence")
+    if hashlib.sha256(rendered_manifest).hexdigest() != execution.get(
+        "rendered_manifest_sha256"
+    ):
+        raise EvidenceError(
+            f"{closure_path}: actual post-rendered manifest differs from signed render"
+        )
     value_hashes = [_sha256(path.resolve()) for path in values_paths]
     if execution.get("ordered_values_sha256") != value_hashes:
         raise EvidenceError(
             f"{closure_path}: selected values differ from the signed render"
         )
+
+
+def verify_terraform_apply_gate(
+    *,
+    root: Path,
+    manifest_path: Path,
+    trust_path: Path,
+    closure_path: Path,
+    plan_root: str,
+    plan_json: bytes,
+) -> None:
+    """Bind an actual saved-plan apply to the signed release image closure."""
+
+    validate_detached_signature(closure_path, Path(f"{closure_path}.sig"), trust_path)
+    closure = _load(closure_path)
+    if closure.get("schema") != "fs2-serve.nebius.ai/release-image-closure/v2":
+        raise EvidenceError(f"{closure_path}: unsupported release closure schema")
+    validate_attestation_identity(
+        closure.get("attestation"), trust_path, purpose=str(closure_path)
+    )
+    commit, tree = _git_identity(root)
+    if closure.get("source") != {"commit": commit, "tree": tree}:
+        raise EvidenceError(f"{closure_path}: closure source differs from checkout")
+    if closure.get("trust_policy_sha256") != _sha256(trust_path):
+        raise EvidenceError(f"{closure_path}: closure trust policy differs from source")
+    if closure.get("surface_manifest_sha256") != _sha256(manifest_path):
+        raise EvidenceError(f"{closure_path}: closure surface policy differs from source")
+    manifest = validate_source_surfaces(root, manifest_path)
+    expected_roots = set(manifest.get("terraform_plan_owners", {}).values())
+    if plan_root not in expected_roots:
+        raise EvidenceError(f"{plan_root}: plan root is not governed")
+    expected_plan_hashes = closure.get("terraform_plan_sha256")
+    actual_plan_sha256 = hashlib.sha256(plan_json).hexdigest()
+    if (
+        not isinstance(expected_plan_hashes, dict)
+        or expected_plan_hashes.get(plan_root) != actual_plan_sha256
+    ):
+        raise EvidenceError(f"{plan_root}: saved-plan JSON differs from signed closure")
+    try:
+        plan_document = json.loads(plan_json)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise EvidenceError(f"{plan_root}: saved-plan JSON is invalid") from exc
+    if not isinstance(plan_document, dict):
+        raise EvidenceError(f"{plan_root}: saved-plan JSON root must be an object")
+    resources = _terraform_helm_resources_document(plan_document, plan_root)
+    _validate_terraform_resource_closure(manifest, {plan_root: resources})
+    executions = closure.get("surface_executions")
+    if not isinstance(executions, dict):
+        raise EvidenceError(f"{closure_path}: surface execution closure is missing")
+    expected_surfaces = {
+        surface_id
+        for surface_id, owner in manifest["terraform_plan_owners"].items()
+        if owner == plan_root
+    }
+    for surface_id in expected_surfaces:
+        resource_name = surface_id.rsplit("::", 1)[1]
+        matches = [
+            values
+            for address, values in resources.items()
+            if re.search(
+                rf"(?:^|\.)helm_release\.{re.escape(resource_name)}(?:\[.+\])?$",
+                address,
+            )
+        ]
+        execution = executions.get(surface_id)
+        if len(matches) != 1 or not isinstance(execution, dict):
+            raise EvidenceError(f"{surface_id}: signed execution is absent or ambiguous")
+        actual_resource_sha256 = hashlib.sha256(
+            json.dumps(matches[0], sort_keys=True, separators=(",", ":")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+        source_execution = execution.get("source_execution")
+        if (
+            not isinstance(source_execution, dict)
+            or source_execution.get("plan_root") != plan_root
+            or source_execution.get("planned_resource_sha256")
+            != actual_resource_sha256
+        ):
+            raise EvidenceError(f"{surface_id}: applied Helm resource differs from closure")
 
 
 def main() -> int:
@@ -1214,18 +1578,56 @@ def main() -> int:
     parser.add_argument("--inventory", type=Path)
     parser.add_argument("--first-party-inventory", type=Path)
     parser.add_argument("--catalog-image-map", type=Path)
+    parser.add_argument("--materials-authorization", type=Path)
     parser.add_argument("--attestation-identity", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--verify-direct-closure", type=Path)
     parser.add_argument("--surface-id")
     parser.add_argument("--values-file", action="append", default=[], type=Path)
+    parser.add_argument("--release-name")
+    parser.add_argument("--namespace")
+    parser.add_argument("--mode", choices=("install", "upgrade"))
+    parser.add_argument("--chart-path", type=Path)
+    parser.add_argument("--rendered-manifest-stdin", action="store_true")
+    parser.add_argument("--verify-terraform-closure", type=Path)
+    parser.add_argument("--plan-root")
+    parser.add_argument("--terraform-plan-json-stdin", action="store_true")
     args = parser.parse_args()
     try:
         root = args.root.resolve()
-        if args.verify_direct_closure is not None:
-            if args.trust is None or not args.surface_id:
+        if args.verify_terraform_closure is not None:
+            if (
+                args.trust is None
+                or not args.plan_root
+                or not args.terraform_plan_json_stdin
+                or args.render_packet is not None
+                or args.verify_direct_closure is not None
+            ):
                 raise EvidenceError(
-                    "--trust and --surface-id are required with "
+                    "--trust, --plan-root, and --terraform-plan-json-stdin are "
+                    "required exclusively with --verify-terraform-closure"
+                )
+            verify_terraform_apply_gate(
+                root=root,
+                manifest_path=args.surfaces.resolve(),
+                trust_path=args.trust.resolve(),
+                closure_path=args.verify_terraform_closure.resolve(),
+                plan_root=args.plan_root,
+                plan_json=sys.stdin.buffer.read(),
+            )
+        elif args.verify_direct_closure is not None:
+            if (
+                args.trust is None
+                or not args.surface_id
+                or not args.release_name
+                or not args.namespace
+                or not args.mode
+                or args.chart_path is None
+                or not args.rendered_manifest_stdin
+            ):
+                raise EvidenceError(
+                    "--trust, --surface-id, --release-name, --namespace, --mode, "
+                    "--chart-path, and --rendered-manifest-stdin are required with "
                     "--verify-direct-closure"
                 )
             if args.render_packet is not None:
@@ -1239,6 +1641,11 @@ def main() -> int:
                 closure_path=args.verify_direct_closure.resolve(),
                 surface_id=args.surface_id,
                 values_paths=args.values_file,
+                release_name=args.release_name,
+                namespace=args.namespace,
+                mode=args.mode,
+                chart_path=args.chart_path,
+                rendered_manifest=sys.stdin.buffer.read(),
             )
         elif args.render_packet is None:
             validate_source_surfaces(root, args.surfaces.resolve())
@@ -1249,11 +1656,13 @@ def main() -> int:
                 or args.inventory is None
                 or args.first_party_inventory is None
                 or args.catalog_image_map is None
+                or args.materials_authorization is None
                 or args.attestation_identity is None
             ):
                 raise EvidenceError(
                     "--output, --trust, --inventory, --first-party-inventory, "
-                    "--catalog-image-map, and --attestation-identity are required "
+                    "--catalog-image-map, --materials-authorization, and "
+                    "--attestation-identity are required "
                     "with --render-packet"
                 )
             closure = derive_closure(
@@ -1264,6 +1673,7 @@ def main() -> int:
                 args.inventory.resolve(),
                 args.first_party_inventory.resolve(),
                 args.catalog_image_map.resolve(),
+                args.materials_authorization.resolve(),
                 args.attestation_identity.resolve(),
             )
             args.output.write_text(

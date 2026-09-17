@@ -32,6 +32,8 @@ image_gate=(
     --post-renderer-args "$SECURITY_DIR/first-party-images.lock.json"
     --post-renderer-args=--trust
     --post-renderer-args "$SECURITY_DIR/image-attestation-trust.json"
+    --post-renderer-args=--authorization
+    --post-renderer-args "${FS2_SAI24_RELEASE_CLOSURE:-$SECURITY_DIR/image-materials-authorization.json}"
 )
 RELEASE_CLOSURE="${FS2_SAI24_RELEASE_CLOSURE:-}"
 
@@ -169,12 +171,21 @@ create_namespace() {
 # Verify source, trust, and exact selected values before any cluster or registry
 # prerequisite check can make a request or create a namespace.
 verify_release_evidence() {
+    local mode=install
+    local template_args=(
+        template "$RELEASE_NAME" "$CHART_DIR"
+        --namespace "$NAMESPACE"
+    )
     local evidence_args=(
         --root "$SECURITY_DIR/.."
         --surfaces "$SECURITY_DIR/release-image-surfaces.json"
         --trust "$SECURITY_DIR/image-attestation-trust.json"
         --verify-direct-closure "$RELEASE_CLOSURE"
         --surface-id charts/addons/modelexpress
+        --release-name "$RELEASE_NAME"
+        --namespace "$NAMESPACE"
+        --chart-path "$CHART_DIR"
+        --rendered-manifest-stdin
     )
 
     if [ -z "$RELEASE_CLOSURE" ]; then
@@ -184,9 +195,20 @@ verify_release_evidence() {
 
     if [ -n "$VALUES_FILE" ]; then
         evidence_args+=(--values-file "$VALUES_FILE")
+        template_args+=(--values "$VALUES_FILE")
     fi
 
-    python3 "$SECURITY_DIR/release_image_closure.py" "${evidence_args[@]}"
+    if [ "$UPGRADE" = true ]; then
+        mode=upgrade
+    fi
+    evidence_args+=(--mode "$mode")
+
+    command -v helm >/dev/null 2>&1 || {
+        print_error "Helm is required to verify the exact signed render."
+        exit 1
+    }
+    helm "${template_args[@]}" "${image_gate[@]}" | \
+        python3 "$SECURITY_DIR/release_image_closure.py" "${evidence_args[@]}"
 }
 
 # Function to deploy the chart

@@ -1,0 +1,7 @@
+# Exact independently maintained semantic parser used by the SAI-24 gate.
+# Hashes are retained from components/control-plane/uv.lock.
+PyYAML==6.0.2 \
+    --hash=sha256:d584d9ec91ad65861cc08d42e834324ef890a082e591037abe114850ff7bbc3e \
+    --hash=sha256:3ad2a3decf9aaba3d29c8f537ac4b243e36bef957511b4766cb0057d32b0be85 \
+    --hash=sha256:80bab7bfc629882493af4aa31a4cfa43a4c57c83813253626916b8c7ada83476 \
+    --hash=sha256:70b189594dbe54f75b730324c78620e8328ae28b64d0c1403ec3f2d237ebb5

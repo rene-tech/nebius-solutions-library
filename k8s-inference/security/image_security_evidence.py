@@ -16,6 +16,7 @@ import re
 import subprocess
 import sys
 import tarfile
+import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -147,6 +148,47 @@ def validate_attestation_identity(
         if not isinstance(identity.get(field), str) or not identity[field]:
             raise EvidenceError(f"{purpose}: OIDC {field} is missing")
     return identity
+
+
+def validate_image_gate_authorization(
+    path: Path,
+    trust_path: Path,
+    source_root: Path,
+) -> dict[str, str]:
+    """Validate signed inventory authority for render or apply post-rendering."""
+
+    validate_detached_signature(path, Path(f"{path}.sig"), trust_path)
+    document = _load_object(path)
+    schema = document.get("schema")
+    if schema not in {
+        "fs2-serve.nebius.ai/image-materials-authorization/v1",
+        "fs2-serve.nebius.ai/release-image-closure/v2",
+    }:
+        raise EvidenceError(f"{path}: unsupported image-gate authorization schema")
+    if (
+        schema == "fs2-serve.nebius.ai/image-materials-authorization/v1"
+        and document.get("status") != "authorized"
+    ):
+        raise EvidenceError(f"{path}: image materials are not authorized")
+    commit, tree = _git_identity(source_root.resolve())
+    if document.get("source") != {"commit": commit, "tree": tree}:
+        raise EvidenceError(f"{path}: authorization source differs from checkout")
+    if document.get("trust_policy_sha256") != _sha256(trust_path):
+        raise EvidenceError(f"{path}: authorization trust differs from source")
+    validate_attestation_identity(
+        document.get("attestation"), trust_path, purpose=str(path)
+    )
+    result: dict[str, str] = {}
+    for field in (
+        "inventory_sha256",
+        "first_party_inventory_sha256",
+        "catalog_image_map_sha256",
+    ):
+        value = document.get(field)
+        if not isinstance(value, str) or not HEX_SHA256.fullmatch(value):
+            raise EvidenceError(f"{path}: authorization {field} is invalid")
+        result[field] = value
+    return result
 
 
 def _repository_and_tag(reference: str) -> tuple[str, str]:
@@ -385,6 +427,212 @@ def validate_first_party_inventory(
         if parsed.tzinfo is None:
             raise EvidenceError(f"{path}: {label} timestamp has no timezone")
         return parsed.astimezone(timezone.utc)
+
+    def validate_structured_provenance(
+        provenance_path: Path,
+        subject: str,
+        build_source: dict[str, str],
+        dockerfile: dict[str, str],
+        label: str,
+    ) -> None:
+        provenance = _load_object(provenance_path)
+        repository, digest = subject.rsplit("@sha256:", 1)
+        subjects = provenance.get("subject")
+        expected_subject = {"name": repository, "digest": {"sha256": digest}}
+        if (
+            provenance.get("_type") != "https://in-toto.io/Statement/v1"
+            or provenance.get("predicateType") != "https://slsa.dev/provenance/v1"
+            or not isinstance(subjects, list)
+            or expected_subject not in subjects
+        ):
+            raise EvidenceError(f"{label}: provenance subject is not the OCI manifest")
+        predicate = provenance.get("predicate")
+        build_definition = (
+            predicate.get("buildDefinition") if isinstance(predicate, dict) else None
+        )
+        run_details = predicate.get("runDetails") if isinstance(predicate, dict) else None
+        external = (
+            build_definition.get("externalParameters")
+            if isinstance(build_definition, dict)
+            else None
+        )
+        expected_external = {
+            "source": build_source,
+            "dockerfile": dockerfile,
+        }
+        dependencies = (
+            build_definition.get("resolvedDependencies")
+            if isinstance(build_definition, dict)
+            else None
+        )
+        expected_dependency = {
+            "uri": "git+https://github.com/rene-tech/nebius-solutions-library.git",
+            "digest": {
+                "gitCommit": build_source["commit"],
+                "gitTree": build_source["tree"],
+            },
+        }
+        trust = _load_object(trust_path)
+        builders = trust.get("first_party_build_provenance")
+        authorized_builders = (
+            builders.get("authorized_builder_ids")
+            if isinstance(builders, dict)
+            else None
+        )
+        builder = run_details.get("builder") if isinstance(run_details, dict) else None
+        if (
+            external != expected_external
+            or not isinstance(dependencies, list)
+            or expected_dependency not in dependencies
+            or not isinstance(builder, dict)
+            or not isinstance(authorized_builders, list)
+            or builder.get("id") not in authorized_builders
+        ):
+            raise EvidenceError(
+                f"{label}: provenance does not structurally bind source, Dockerfile, and builder"
+            )
+
+    def validate_archive_members(
+        archive_path: Path, artifacts: dict[str, Any], label: str
+    ) -> None:
+        excluded = {
+            "evidence_archive",
+            "retention_provider_response",
+            "retention_provider_receipt",
+            "retention_provider_receipt_signature",
+        }
+        expected: dict[str, dict[str, Any]] = {}
+        for name, binding in artifacts.items():
+            if name in excluded:
+                continue
+            if not isinstance(binding, dict):
+                raise EvidenceError(f"{label}: archive binding {name} is invalid")
+            member = binding.get("archive_member")
+            if (
+                not isinstance(member, str)
+                or not member
+                or member.startswith("/")
+                or ".." in Path(member).parts
+                or member in expected
+            ):
+                raise EvidenceError(f"{label}: archive member {name} is invalid")
+            expected[member] = binding
+        try:
+            with zipfile.ZipFile(archive_path) as archive:
+                actual: set[str] = set()
+                for member in archive.infolist():
+                    if member.is_dir():
+                        continue
+                    unix_file_type = (member.external_attr >> 16) & 0o170000
+                    if (
+                        member.filename.startswith("/")
+                        or ".." in Path(member.filename).parts
+                        or unix_file_type == 0o120000
+                    ):
+                        raise EvidenceError(f"{label}: archive path escapes custody")
+                    if member.filename in actual:
+                        raise EvidenceError(f"{label}: archive has duplicate members")
+                    actual.add(member.filename)
+                    binding = expected.get(member.filename)
+                    if binding is None:
+                        raise EvidenceError(f"{label}: archive has undeclared evidence")
+                    digest = hashlib.sha256()
+                    with archive.open(member) as stream:
+                        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                    if (
+                        digest.hexdigest() != binding.get("sha256")
+                        or member.file_size
+                        != (path.parent / binding["path"]).resolve().stat().st_size
+                    ):
+                        raise EvidenceError(f"{label}: archived evidence content differs")
+                if actual != set(expected):
+                    raise EvidenceError(f"{label}: archive evidence set is incomplete")
+        except (OSError, zipfile.BadZipFile) as exc:
+            raise EvidenceError(f"{label}: evidence archive is invalid: {exc}") from exc
+
+    def validate_retention_provider(
+        retained: dict[str, Any],
+        artifacts: dict[str, Any],
+        archive_path: Path,
+        build_source: dict[str, str],
+        label: str,
+    ) -> tuple[datetime, datetime]:
+        response_path = artifact(
+            artifacts.get("retention_provider_response"),
+            f"{label} retention provider response",
+        )
+        receipt_path = artifact(
+            artifacts.get("retention_provider_receipt"),
+            f"{label} retention provider receipt",
+        )
+        receipt_signature = artifact(
+            artifacts.get("retention_provider_receipt_signature"),
+            f"{label} retention provider receipt signature",
+        )
+        if receipt_signature != Path(f"{receipt_path}.sig"):
+            raise EvidenceError(f"{label}: retention receipt signature is not adjacent")
+        validate_detached_signature(receipt_path, receipt_signature, trust_path)
+        response = _load_object(response_path)
+        receipt = _load_object(receipt_path)
+        trust = _load_object(trust_path)
+        retention_policy = trust.get("evidence_retention")
+        minimum_days = (
+            retention_policy.get("minimum_days")
+            if isinstance(retention_policy, dict)
+            else None
+        )
+        if not isinstance(minimum_days, int) or minimum_days < 90:
+            raise EvidenceError(f"{label}: retention trust minimum is invalid")
+        observers = (
+            retention_policy.get("authorized_observer_identities")
+            if isinstance(retention_policy, dict)
+            else None
+        )
+        created_at = utc(response.get("created_at"), f"{label} provider created_at")
+        expires_at = utc(response.get("expires_at"), f"{label} provider expires_at")
+        workflow_run = response.get("workflow_run")
+        receipt_attestation = receipt.get("attestation")
+        archive_binding = artifacts.get("evidence_archive")
+        if (
+            receipt.get("schema")
+            != "fs2-serve.nebius.ai/evidence-retention-provider-receipt/v1"
+            or not isinstance(retention_policy, dict)
+            or retention_policy.get("provider") != "github-actions"
+            or response.get("id") != retained.get("artifact_id")
+            or response.get("size_in_bytes") != archive_path.stat().st_size
+            or response.get("expired") is not False
+            or not isinstance(workflow_run, dict)
+            or workflow_run.get("head_sha") != build_source["commit"]
+            or expires_at - created_at < timedelta(days=minimum_days)
+            or expires_at <= datetime.now(timezone.utc)
+            or receipt.get("provider_response_sha256") != _sha256(response_path)
+            or receipt.get("archive")
+            != {
+                "sha256": _sha256(archive_path),
+                "size": archive_path.stat().st_size,
+            }
+            or receipt.get("artifact")
+            != {
+                "id": response.get("id"),
+                "name": response.get("name"),
+                "workflow_run_id": workflow_run.get("id"),
+                "workflow_run_attempt": (
+                    receipt_attestation.get("run_attempt")
+                    if isinstance(receipt_attestation, dict)
+                    else None
+                ),
+            }
+            or not isinstance(archive_binding, dict)
+            or receipt.get("repository") != retention_policy.get("repository")
+            or not isinstance(observers, list)
+            or receipt.get("observer_identity") not in observers
+        ):
+            raise EvidenceError(f"{label}: provider retention proof is invalid")
+        validate_attestation_identity(
+            receipt_attestation, trust_path, purpose=f"{label} retention proof"
+        )
+        return created_at, expires_at
 
     def validate_oci_archive(archive_path: Path, subject: str, label: str) -> None:
         digest = subject.rsplit("@", 1)[1]
@@ -695,20 +943,8 @@ def validate_first_party_inventory(
         if not isinstance(retained, dict):
             raise EvidenceError(f"{path}: {identifier} retained evidence is missing")
         artifact_id = retained.get("artifact_id")
-        created_at = utc(retained.get("created_at"), f"{identifier} created_at")
-        retention_until = utc(
-            retained.get("retention_until"), f"{identifier} retention_until"
-        )
-        if (
-            not isinstance(artifact_id, str)
-            or not artifact_id.isdigit()
-            or retained.get("retention_days") != 90
-            or retention_until - created_at < timedelta(days=90)
-            or retention_until <= datetime.now(timezone.utc)
-        ):
-            raise EvidenceError(
-                f"{path}: {identifier} has no verified 90-day retained artifact"
-            )
+        if not isinstance(artifact_id, int) or artifact_id < 1:
+            raise EvidenceError(f"{path}: {identifier} provider artifact ID is invalid")
         artifacts = retained.get("artifacts")
         if not isinstance(artifacts, dict):
             raise EvidenceError(f"{path}: {identifier} retained artifacts are missing")
@@ -762,16 +998,21 @@ def validate_first_party_inventory(
         )
         if retained.get("evidence_archive_sha256") != _sha256(evidence_archive):
             raise EvidenceError(f"{path}: {identifier} evidence archive identity differs")
+        created_at, retention_until = validate_retention_provider(
+            retained, artifacts, evidence_archive, build_source, identifier
+        )
+        validate_archive_members(evidence_archive, artifacts, identifier)
         validate_oci_archive(oci_archive, digest_reference, identifier)
         metadata = _load_object(build_metadata)
         if metadata.get("containerimage.digest") != digest_reference.rsplit("@", 1)[1]:
             raise EvidenceError(f"{path}: {identifier} build output digest differs")
-        provenance = _load_object(provenance_path)
-        serialized_provenance = json.dumps(provenance, sort_keys=True)
-        if not all(value in serialized_provenance for value in build_source.values()):
-            raise EvidenceError(f"{path}: {identifier} provenance lacks source identity")
-        if dockerfile["sha256"] not in serialized_provenance:
-            raise EvidenceError(f"{path}: {identifier} provenance lacks Dockerfile hash")
+        validate_structured_provenance(
+            provenance_path,
+            digest_reference,
+            build_source,
+            dockerfile,
+            identifier,
+        )
         sbom = _load_object(sbom_path)
         if not isinstance(sbom.get("packages"), list):
             raise EvidenceError(f"{path}: {identifier} SBOM has no package closure")
@@ -1105,14 +1346,28 @@ def create_receipt(args: argparse.Namespace) -> None:
         if not isinstance(descriptor, dict) or descriptor.get("digest") != built_digest:
             raise EvidenceError("build descriptor differs from output digest")
         build_provenance = build_metadata.get("buildx.build.provenance")
-        if not isinstance(build_provenance, (dict, str)) or not build_provenance:
-            raise EvidenceError("BuildKit provenance is missing")
-        serialized_provenance = json.dumps(build_provenance, sort_keys=True)
+        invocation = (
+            build_provenance.get("invocation")
+            if isinstance(build_provenance, dict)
+            else None
+        )
+        parameters = invocation.get("parameters") if isinstance(invocation, dict) else None
+        build_args = parameters.get("args") if isinstance(parameters, dict) else None
         if (
-            args.source_commit not in serialized_provenance
-            or args.source_tree not in serialized_provenance
+            not isinstance(build_provenance, dict)
+            or build_provenance.get("buildType")
+            != "https://mobyproject.org/buildkit@v1"
+            or not isinstance(build_provenance.get("materials"), list)
+            or not isinstance(build_args, dict)
+            or build_args.get("FS2_SOURCE_COMMIT") != args.source_commit
+            or build_args.get("FS2_SOURCE_TREE") != args.source_tree
+            or not HEX_SHA256.fullmatch(
+                str(build_args.get("FS2_DOCKERFILE_SHA256", ""))
+            )
         ):
-            raise EvidenceError("BuildKit provenance does not bind source commit/tree")
+            raise EvidenceError(
+                "BuildKit provenance does not structurally bind source and Dockerfile"
+            )
         artifacts["build_metadata"] = {
             "path": args.build_metadata.name,
             "sha256": _sha256(args.build_metadata),
@@ -1125,7 +1380,9 @@ def create_receipt(args: argparse.Namespace) -> None:
             "kind": "local-oci-build",
             "manifest_digest": built_digest,
             "buildkit_provenance_sha256": hashlib.sha256(
-                serialized_provenance.encode("utf-8")
+                json.dumps(
+                    build_provenance, sort_keys=True, separators=(",", ":")
+                ).encode("utf-8")
             ).hexdigest(),
         }
     elif args.kind == "release-image":
