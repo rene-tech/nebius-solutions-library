@@ -587,6 +587,9 @@ def require_deployable_images(contract: Mapping[str, Any]) -> None:
     policy = contract["artifact_delivery"]["mode"]
     application_images = {
         "control plane": workloads["control_plane_image"],
+        "control-plane schema compatibility": workloads[
+            "control_plane_schema_compatibility_image"
+        ],
         "admin console": workloads["admin_console"]["image"],
     }
     for label, image in application_images.items():
@@ -727,6 +730,10 @@ def selected_image_artifacts(
             f"{workloads['control_plane_image']['repository']}@{workloads['control_plane_image']['digest']}",
         ),
         (
+            "application/control-plane-schema-compatibility",
+            f"{workloads['control_plane_schema_compatibility_image']['repository']}@{workloads['control_plane_schema_compatibility_image']['digest']}",
+        ),
+        (
             "application/admin-console",
             f"{workloads['admin_console']['image']['repository']}@{workloads['admin_console']['image']['digest']}",
         ),
@@ -795,6 +802,11 @@ def rewritten_workloads(
         "target_repository"
     ]
     workloads["control_plane_image"] = control_plane
+    schema_compatibility = dict(workloads["control_plane_schema_compatibility_image"])
+    schema_compatibility["repository"] = artifacts[
+        "application/control-plane-schema-compatibility"
+    ]["target_repository"]
+    workloads["control_plane_schema_compatibility_image"] = schema_compatibility
 
     admin_console = dict(workloads["admin_console"])
     admin_image = dict(admin_console["image"])

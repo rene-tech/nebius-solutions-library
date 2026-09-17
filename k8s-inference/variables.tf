@@ -197,6 +197,30 @@ variable "deployment" {
         "fs2-release-model-bootstrap-assertion",
       )
       bootstrap_assertion_generation = optional(string, "")
+      bootstrap_authority = optional(object({
+        username      = string
+        uid           = string
+        credential_id = string
+      }), {
+        username      = ""
+        uid           = ""
+        credential_id = ""
+      })
+      bootstrap_trust_binding = optional(object({
+        enabled                  = bool
+        config_map_uid           = string
+        config_map_object_sha256 = string
+        trust_json_sha256        = string
+        key_set_sha256           = string
+        admission_object_uids    = map(string)
+      }), {
+        enabled                  = false
+        config_map_uid           = ""
+        config_map_object_sha256 = ""
+        trust_json_sha256        = ""
+        key_set_sha256           = ""
+        admission_object_uids    = {}
+      })
       # Deprecated rejected caller-copy surface. This must stay empty; the
       # workloads stage discovers and imports retained Kubernetes history.
       bootstrap_retained_assertions = optional(map(object({
@@ -672,6 +696,11 @@ variable "deployment" {
         repository             = string
         digest                 = string
         catalog_rollout_digest = string
+        # Kept source-forward when the application image is rolled back.
+        schema_compatibility_image = object({
+          repository = string
+          digest     = string
+        })
         autoscaling = optional(object({
           enabled                           = optional(bool, true)
           min_replicas                      = optional(number, 2)
@@ -985,6 +1014,8 @@ variable "deployment" {
       can(regex("^[a-zA-Z0-9._:/-]+$", var.deployment.applications.control_plane.repository)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.digest)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.catalog_rollout_digest)) &&
+      can(regex("^[a-zA-Z0-9._:/-]+$", var.deployment.applications.control_plane.schema_compatibility_image.repository)) &&
+      can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.schema_compatibility_image.digest)) &&
       floor(var.deployment.applications.control_plane.autoscaling.min_replicas) == var.deployment.applications.control_plane.autoscaling.min_replicas &&
       floor(var.deployment.applications.control_plane.autoscaling.max_replicas) == var.deployment.applications.control_plane.autoscaling.max_replicas &&
       floor(var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage) == var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage &&

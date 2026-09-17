@@ -38,6 +38,15 @@ locals {
       digest     = var.control_plane_image.digest
       pullPolicy = "IfNotPresent"
     }
+    # This image is intentionally independent from the application image. A
+    # source-forward rollback may select an older gateway, but migration and
+    # wait-schema must continue using the newest schema-compatible binary.
+    migration = {
+      compatibilityImage = {
+        repository = var.control_plane_schema_compatibility_image.repository
+        digest     = var.control_plane_schema_compatibility_image.digest
+      }
+    }
     # Publish the tenant-private academic delivery contract to the chart so a model
     # runtime learns which claim to mount, where, and which group grants read
     # access. The control plane itself never mounts licensed bytes.

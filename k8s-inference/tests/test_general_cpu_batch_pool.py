@@ -73,6 +73,10 @@ TEST_APPLICATIONS = {
         "repository": "registry.example.invalid/inference/control-plane",
         "digest": f"sha256:{'0' * 64}",
         "catalog_rollout_digest": f"sha256:{'1' * 64}",
+        "schema_compatibility_image": {
+            "repository": "registry.example.invalid/inference/control-plane",
+            "digest": f"sha256:{'2' * 64}",
+        },
     },
     "admin_console": {
         "repository": "registry.example.invalid/inference/admin-console",

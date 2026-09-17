@@ -880,6 +880,25 @@ def test_source_forward_rollback_keeps_successor_migration_and_schema_wait_image
     )
 
 
+def test_terraform_wires_schema_compatibility_image_independently_from_application_image() -> None:
+    repository_root = Path(__file__).parents[3]
+    source = (
+        repository_root / "stages" / "workloads" / "control_plane.tf"
+    ).read_text(encoding="utf-8")
+    variables = (
+        repository_root / "stages" / "workloads" / "variables.tf"
+    ).read_text(encoding="utf-8")
+    root_variables = (repository_root / "variables.tf").read_text(encoding="utf-8")
+    root_locals = (repository_root / "locals.tf").read_text(encoding="utf-8")
+    wrapper = (repository_root / "inference-stack").read_text(encoding="utf-8")
+    assert "control_plane_schema_compatibility_image" in variables
+    assert "repository = var.control_plane_schema_compatibility_image.repository" in source
+    assert "digest     = var.control_plane_schema_compatibility_image.digest" in source
+    assert "schema_compatibility_image = object" in root_variables
+    assert "var.deployment.applications.control_plane.schema_compatibility_image" in root_locals
+    assert '"application/control-plane-schema-compatibility"' in wrapper
+
+
 def test_activation_controller_is_owned_by_the_separate_child_and_absent_from_the_gateway_chart() -> None:
     documents = render()
     assert {document["metadata"]["name"] for document in documents if document["kind"] == "Service"} == {

@@ -12,6 +12,9 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from fs2_serve import model_bootstrap_retention as live_retention
+from fs2_serve.release_identity import ReleaseIdentityTrust
+
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 VERIFIER = REPOSITORY_ROOT / "stages/workloads/scripts/verify_model_bootstrap_receipt.py"
 
@@ -161,3 +164,59 @@ def test_configmap_phase_cannot_claim_terminal_job_or_consumption() -> None:
     result = invoke(query)
     assert result.returncode == 1
     assert "cannot claim assertion consumption" in result.stderr
+
+
+def test_apply_time_fence_binds_uid_and_entire_live_object() -> None:
+    observed = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": {
+            "name": "fs2-model-bootstrap-" + "1" * 32,
+            "namespace": "fs2-system",
+            "uid": "11111111-1111-4111-8111-111111111111",
+        },
+        "immutable": True,
+        "data": {"bootstrap-identity.json": "{}"},
+    }
+    digest = live_retention._sha256(live_retention._canonical_json(observed))
+    live_retention._match_resource(
+        observed,
+        uid="11111111-1111-4111-8111-111111111111",
+        digest=digest,
+        label="bootstrap ConfigMap",
+    )
+
+    replaced = json.loads(json.dumps(observed))
+    replaced["metadata"]["uid"] = "22222222-2222-4222-8222-222222222222"
+    with pytest.raises(live_retention.BootstrapRetentionError, match="UID differs"):
+        live_retention._match_resource(
+            replaced,
+            uid="11111111-1111-4111-8111-111111111111",
+            digest=digest,
+            label="bootstrap ConfigMap",
+        )
+
+    mutated = json.loads(json.dumps(observed))
+    mutated["metadata"]["labels"] = {"out-of-band": "replacement"}
+    with pytest.raises(
+        live_retention.BootstrapRetentionError,
+        match="full-object digest differs",
+    ):
+        live_retention._match_resource(
+            mutated,
+            uid="11111111-1111-4111-8111-111111111111",
+            digest=digest,
+            label="bootstrap ConfigMap",
+        )
+
+
+def test_apply_time_fence_canonicalizes_the_complete_trust_key_set() -> None:
+    query, _, _ = fixture()
+    trust = ReleaseIdentityTrust.model_validate(json.loads(query["trust_json"]))
+    digest = live_retention._trust_key_set_sha256(trust)
+    assert len(digest) == 64
+
+    changed = json.loads(query["trust_json"])
+    changed["issuers"][0]["keys"][0]["key_id"] = "key-2"
+    changed_trust = ReleaseIdentityTrust.model_validate(changed)
+    assert live_retention._trust_key_set_sha256(changed_trust) != digest

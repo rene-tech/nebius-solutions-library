@@ -62,7 +62,10 @@ from .configuration import (
 )
 from .configuration_models import ConfigurationRevision, PlatformConfiguration
 from .crypto import KeyedHasher, PayloadCipher
-from .entrypoint import SCIENTIFIC_COMPANION_COMMANDS
+from .entrypoint import (
+    MODEL_BOOTSTRAP_RETENTION_COMMAND,
+    SCIENTIFIC_COMPANION_COMMANDS,
+)
 from .federation import FederationRouter
 from .gpu_allocation_observer import KubernetesGpuAllocationPublisher, run_gpu_allocation_observer
 from .lifecycle import PostgresLifecycleRepository
@@ -770,6 +773,7 @@ def main() -> None:
             "postgresql-release-contract",
             "model-controller",
             "gpu-allocation-observer",
+            MODEL_BOOTSTRAP_RETENTION_COMMAND,
             "scientific-materialize",
             "scientific-materialize-many",
             "scientific-collect",
@@ -780,6 +784,11 @@ def main() -> None:
         default="serve",
     )
     args = parser.parse_args()
+    if args.command == MODEL_BOOTSTRAP_RETENTION_COMMAND:
+        from .model_bootstrap_retention import main as retention_main
+
+        retention_main()
+        return
     settings = Settings()
     logging.basicConfig(level=settings.log_level, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     if args.command == "validate":

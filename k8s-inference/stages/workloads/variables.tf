@@ -1082,6 +1082,90 @@ variable "release_identity_model_bootstrap_retained_assertions" {
   }
 }
 
+variable "release_identity_model_bootstrap_authority" {
+  description = "Exact short-lived release credential admitted to create bootstrap trust, receipts, assertions, history, and verification Jobs. username alone is insufficient: Kubernetes service-account UID and bound-token credential ID are mandatory and are embedded in admission policy."
+  type = object({
+    username      = string
+    uid           = string
+    credential_id = string
+  })
+  default = {
+    username      = ""
+    uid           = ""
+    credential_id = ""
+  }
+
+  validation {
+    condition = (
+      (
+        var.release_identity_model_bootstrap_authority.username == "" &&
+        var.release_identity_model_bootstrap_authority.uid == "" &&
+        var.release_identity_model_bootstrap_authority.credential_id == ""
+      ) || (
+        can(regex(
+          "^system:serviceaccount:fs2-system:fs2-release-identity-[a-z0-9](?:[-a-z0-9]{0,49}[a-z0-9])$",
+          var.release_identity_model_bootstrap_authority.username,
+        )) &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", var.release_identity_model_bootstrap_authority.uid)) &&
+        can(regex("^[A-Za-z0-9][A-Za-z0-9._:/=-]{7,255}$", var.release_identity_model_bootstrap_authority.credential_id))
+      )
+    )
+    error_message = "release_identity_model_bootstrap_authority must be wholly empty or bind a generation-specific release service-account username, canonical UID, and exact bound-token credential ID; the reusable fs2-release-identity username is refused."
+  }
+}
+
+variable "release_identity_model_bootstrap_trust_binding" {
+  description = "Integration-reviewed bootstrap trust and admission pin. Enable only after the policy-first apply; every UID/hash is compared with provider inventory before recovery verification or import."
+  type = object({
+    enabled                  = bool
+    config_map_uid           = string
+    config_map_object_sha256 = string
+    trust_json_sha256        = string
+    key_set_sha256           = string
+    admission_object_uids    = map(string)
+  })
+  default = {
+    enabled                  = false
+    config_map_uid           = ""
+    config_map_object_sha256 = ""
+    trust_json_sha256        = ""
+    key_set_sha256           = ""
+    admission_object_uids    = {}
+  }
+
+  validation {
+    condition = !var.release_identity_model_bootstrap_trust_binding.enabled || (
+      can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", var.release_identity_model_bootstrap_trust_binding.config_map_uid)) &&
+      alltrue([
+        for digest in [
+          var.release_identity_model_bootstrap_trust_binding.config_map_object_sha256,
+          var.release_identity_model_bootstrap_trust_binding.trust_json_sha256,
+          var.release_identity_model_bootstrap_trust_binding.key_set_sha256,
+        ] : can(regex("^[a-f0-9]{64}$", digest))
+      ]) &&
+      toset(keys(var.release_identity_model_bootstrap_trust_binding.admission_object_uids)) == toset([
+        "validatingadmissionpolicy/fs2-model-bootstrap-policy-lifecycle",
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-policy-lifecycle",
+        "validatingadmissionpolicy/fs2-model-bootstrap-history",
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-history",
+        "validatingadmissionpolicy/fs2-model-bootstrap-retention-receipts",
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-retention-receipts",
+        "validatingadmissionpolicy/fs2-release-identity-trust",
+        "validatingadmissionpolicybinding/fs2-release-identity-trust",
+        "validatingadmissionpolicy/fs2-model-bootstrap-assertion-secrets",
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-assertion-secrets",
+        "validatingadmissionpolicy/fs2-model-bootstrap-verifications",
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-verifications",
+      ]) &&
+      alltrue([
+        for uid in values(var.release_identity_model_bootstrap_trust_binding.admission_object_uids) :
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", uid))
+      ])
+    )
+    error_message = "An enabled release_identity_model_bootstrap_trust_binding must pin the exact trust ConfigMap UID/full-object/trust/key-set digests and all policy/binding UIDs from the completed policy-first apply."
+  }
+}
+
 variable "model_express" {
   description = "Optional NVIDIA ModelExpress service and exact per-model runtime client declarations. Disabled leaves workloads and infrastructure unchanged."
   type = object({
@@ -1556,6 +1640,26 @@ variable "control_plane_image" {
   validation {
     condition     = can(regex("^sha256:[a-f0-9]{64}$", var.control_plane_image.digest))
     error_message = "control_plane_image.digest must be immutable."
+  }
+}
+
+variable "control_plane_schema_compatibility_image" {
+  description = "Immutable newest-schema control-plane image retained for migration and wait-schema across an application rollback. Pin this independently of control_plane_image and do not roll it back while schema 0034 or later remains installed."
+  type = object({
+    repository = string
+    digest     = string
+  })
+  default = {
+    repository = "registry.example.invalid/k8s-inference/control-plane-schema-compatibility"
+    digest     = "sha256:da2624948771c1231b5f70d2420c87f635516b6be0ec5539d8437830d57add55"
+  }
+
+  validation {
+    condition = (
+      length(var.control_plane_schema_compatibility_image.repository) > 0 &&
+      can(regex("^sha256:[a-f0-9]{64}$", var.control_plane_schema_compatibility_image.digest))
+    )
+    error_message = "control_plane_schema_compatibility_image must be an explicit immutable image reference."
   }
 }
 

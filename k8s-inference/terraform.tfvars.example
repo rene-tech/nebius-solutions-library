@@ -123,6 +123,36 @@ deployment = {
     # and hardware-qualified accelerator tuple may be bootstrapped. Cosmos
     # remains Terraform-owned until that retained qualification is promoted.
     bootstrap_model_ids = ["qwen3-8b"]
+    bootstrap_assertion_secret_name = "fs2-release-model-bootstrap-release-example-01"
+    bootstrap_assertion_generation  = "release-example-01"
+    # Replace all public identity values from the policy-first release apply.
+    # The credential itself is never a Terraform value.
+    bootstrap_authority = {
+      username      = "system:serviceaccount:fs2-system:fs2-release-identity-release-example-01"
+      uid           = "11111111-2222-4333-8444-555555555555"
+      credential_id = "JTI=replace-with-bound-token-credential-id"
+    }
+    bootstrap_trust_binding = {
+      enabled                  = true
+      config_map_uid           = "11111111-2222-4333-8444-666666666666"
+      config_map_object_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      trust_json_sha256        = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      key_set_sha256           = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      admission_object_uids = {
+        "validatingadmissionpolicy/fs2-model-bootstrap-policy-lifecycle"                = "11111111-2222-4333-8444-700000000001"
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-policy-lifecycle"         = "11111111-2222-4333-8444-700000000002"
+        "validatingadmissionpolicy/fs2-model-bootstrap-history"                         = "11111111-2222-4333-8444-700000000003"
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-history"                  = "11111111-2222-4333-8444-700000000004"
+        "validatingadmissionpolicy/fs2-model-bootstrap-retention-receipts"              = "11111111-2222-4333-8444-700000000005"
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-retention-receipts"       = "11111111-2222-4333-8444-700000000006"
+        "validatingadmissionpolicy/fs2-release-identity-trust"                          = "11111111-2222-4333-8444-700000000007"
+        "validatingadmissionpolicybinding/fs2-release-identity-trust"                   = "11111111-2222-4333-8444-700000000008"
+        "validatingadmissionpolicy/fs2-model-bootstrap-assertion-secrets"               = "11111111-2222-4333-8444-700000000009"
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-assertion-secrets"        = "11111111-2222-4333-8444-700000000010"
+        "validatingadmissionpolicy/fs2-model-bootstrap-verifications"                   = "11111111-2222-4333-8444-700000000011"
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-verifications"            = "11111111-2222-4333-8444-700000000012"
+      }
+    }
     fresh_install       = true
     # Optional, machine-generated benchmark projection. Keep the receipt
     # cohort outside this human-authored file.
@@ -544,6 +574,12 @@ deployment = {
       repository             = "registry.example.invalid/k8s-inference/control-plane"
       digest                 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
       catalog_rollout_digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      # Keep this at the newest installed schema even when rolling back the
+      # application image above.
+      schema_compatibility_image = {
+        repository = "registry.example.invalid/k8s-inference/control-plane"
+        digest     = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
       # Size this envelope to the schedulable CPU capacity of the system pool.
       autoscaling = {
         enabled                           = true

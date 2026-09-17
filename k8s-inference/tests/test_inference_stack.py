@@ -221,6 +221,10 @@ def regional_contract() -> dict:
                 "repository": "cr.eu-north1.nebius.cloud/source/fs2-platform/control-plane",
                 "digest": f"sha256:{'a' * 64}",
             },
+            "control_plane_schema_compatibility_image": {
+                "repository": "cr.eu-north1.nebius.cloud/source/fs2-platform/control-plane-schema",
+                "digest": f"sha256:{'d' * 64}",
+            },
             "admin_console": {
                 "image": {
                     "repository": "cr.eu-north1.nebius.cloud/source/fs2-platform/admin-console",
@@ -2265,6 +2269,13 @@ class InferenceStackTests(unittest.TestCase):
             },
         )
         self.assertEqual(
+            workloads["control_plane_schema_compatibility_image"],
+            {
+                "repository": f"{target_root}/fs2-platform/control-plane-schema",
+                "digest": f"sha256:{'d' * 64}",
+            },
+        )
+        self.assertEqual(
             workloads["model_image_overrides"]["proteinmpnn"],
             f"{target_root}/fs2-models/proteinmpnn@sha256:{'c' * 64}",
         )
@@ -2321,7 +2332,9 @@ class InferenceStackTests(unittest.TestCase):
         self,
     ) -> None:
         configuration = regional_contract()
-        expected_digests = {f"sha256:{character * 64}" for character in ("a", "b", "c")}
+        expected_digests = {
+            f"sha256:{character * 64}" for character in ("a", "b", "c", "d")
+        }
 
         def digest_from_reference(_crane, reference, environment, **_kwargs):
             self.assertEqual(environment["NEBIUS_PROFILE"], "explicit-profile")

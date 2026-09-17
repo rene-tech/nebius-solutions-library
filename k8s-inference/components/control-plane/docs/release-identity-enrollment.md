@@ -62,20 +62,43 @@ retries because an ambiguous response must not replay a single-use assertion.
 Existing model identities are preserved; new proposals still pass the ordinary
 preview, qualification, persistence, and projection services.
 
-Bootstrap recovery is append-only and receipt-driven. Before each plan,
+Bootstrap recovery is append-only, receipt-driven, and staged. First apply the
+admission-policy lifecycle guard and the history, trust, receipt, assertion,
+and verification policies with model bootstrap disabled and root deployment
+`dynamic_models.bootstrap_trust_binding.enabled=false` (forwarded internally as
+`release_identity_model_bootstrap_trust_binding`). Every CREATE is
+bound to one generation-specific release ServiceAccount username, its exact
+Kubernetes UID, and the credential ID of one bound short-lived token; the old
+reusable `fs2-release-identity` username is refused. These three public
+identifiers are root `dynamic_models.bootstrap_authority`; no bearer token is a
+Terraform value. The lifecycle policy makes
+the accepted policies and bindings append-only. Record their provider-observed
+UIDs only after that policy-first apply.
+
+The same exact release credential may then create the immutable public trust
+ConfigMap. Integration records its UID, full provider-object SHA-256, trust
+document SHA-256, canonical issuer/key-set SHA-256, and every policy/binding
+UID in root `dynamic_models.bootstrap_trust_binding`. Source preconditions
+recompute and compare all values and require trust/history creation timestamps
+to follow their admission bindings. A trust document selected only from the
+same inventory is never authority.
+
 Terraform's Kubernetes provider exhaustively discovers all generation-prefixed
 ConfigMaps, Jobs, and retention receipts in `fs2-system`. Discovery is not
-authority. The automation-only release identity signs a public durable compact
-JWS only after observing the exact generation. It binds the identity digest,
-ConfigMap UID/full-object digest, and—for terminal history—the Job UID, entire
-observed Job-object digest, and consumed assertion receipt.
-Terraform verifies that signature against the immutable release trust document
-before a discovered object enters declarative import. A replaced object has a
-new UID and cannot reuse the receipt. The deprecated
+authority. The release authority signs a public durable compact JWS only after
+observing the exact generation. It binds the identity digest, ConfigMap
+UID/full-object digest, and—for terminal history—the Job UID, entire observed
+Job-object digest, and consumed assertion receipt. Terraform does not execute
+an ambient interpreter or repository script to accept that signature. It
+creates a retained, zero-retry verification Job from root
+`applications.control_plane.schema_compatibility_image` (forwarded as
+`control_plane_schema_compatibility_image`), after admission and read-only RBAC
+are active. That Job re-reads the exact API objects, verifies the pinned trust
+root and Ed25519 receipt, and exits successfully only on an exact UID/spec/hash
+match. Only a later plan may use the protected terminal Job as import
+authority. A replaced object has a new UID and cannot reuse either receipt or
+verification Job. The deprecated
 `release_identity_model_bootstrap_retained_assertions` input must be empty.
-The workloads runner must execute Terraform with the control-plane's pinned
-Python verifier dependencies (including `cryptography==50.0.1`); a missing
-verifier or provider dependency fails planning and has no unsigned fallback.
 
 To rotate or recover, supply a new assertion generation and its exact
 `fs2-release-model-bootstrap-<generation>` Secret; never copy history into
@@ -84,11 +107,11 @@ tfvars. Terraform creates a new immutable ConfigMap and zero-retry Job while
 nonterminal, one-sided, unsigned, or UID-mismatched history fails closed. A
 current ConfigMap-only partial apply requires its own authority-signed
 ConfigMap-phase receipt before import and Job creation; it cannot self-attest.
-Fail-closed ValidatingAdmissionPolicies deny ConfigMap/Job/trust/receipt mutation
-or deletion, restrict trust and receipt creation to the exact release
-ServiceAccount, and
-admit only immutable generation-labeled single-`assertion`-key Secrets. The
-receipt controller and policies must exist before assertion Secret creation.
+Fail-closed ValidatingAdmissionPolicies deny ConfigMap/Job/trust/receipt and
+assertion-Secret mutation or deletion, restrict all creation to the exact
+generation-specific release credential, and admit only immutable
+generation-labeled single-`assertion`-key Secrets. The policies must exist
+before trust, receipt, history, assertion, or verification creation.
 This is the supported
 fresh-install and recovery path; a mutable Secret behind a fixed Job name is
 not.
@@ -103,13 +126,21 @@ the seed Job from running. Neither condition falls back to the historical
 shared secret.
 
 Limiter rollout is also source-forward. Migration `0034` keeps both old and
-new SQL entry points behind one fail-closed bridge. Every preexisting database
-quiesces session exchange for a full configured window before the exact ring
-can admit; only a transaction-proven empty installation starts immediately.
-During application rollback,
-keep the successor image in Helm `migration.compatibilityImage` for the
-migration Job and schema-wait init container, and change only the application
-image. This preserves forward schema checks and the legacy wrapper.
+new SQL entry points behind one bridge. Its first post-commit caller locks the
+cutover state, validates the limiter configuration, and conservatively imports
+every still-active fixed-window admission into the exact ring at that call's
+timestamp. The imported budget remains active for one complete window; there
+is no empty-ring reset and no blanket 60-second operator/debug-login outage.
+The migration explicitly removes inherited execute privileges from the
+internal exact and bridge functions before granting only the legacy and exact
+public wrappers.
+
+Terraform always supplies Helm `migration.compatibilityImage` from the
+independent root `applications.control_plane.schema_compatibility_image`.
+During application
+rollback, retain that successor image for the migration Job and schema-wait
+init container and change only `control_plane_image`. This preserves forward
+schema checks and the legacy wrapper.
 
 Rollback is otherwise data-preserving: retain the release assertion
 receipts, operator principals, credential verifier rows, sessions, audit rows,

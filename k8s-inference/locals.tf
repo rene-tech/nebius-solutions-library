@@ -1143,6 +1143,12 @@ locals {
     release_identity_model_bootstrap_retained_assertions = (
       var.deployment.dynamic_models.bootstrap_retained_assertions
     )
+    release_identity_model_bootstrap_authority = (
+      var.deployment.dynamic_models.bootstrap_authority
+    )
+    release_identity_model_bootstrap_trust_binding = (
+      var.deployment.dynamic_models.bootstrap_trust_binding
+    )
     # core_pool_capacity is declared inside the workloads stage's scheduling
     # object and read as var.scheduling.core_pool_capacity, so it must travel
     # inside that object. Emitted as a sibling it was an undeclared variable:
@@ -1219,6 +1225,9 @@ locals {
       repository = var.deployment.applications.control_plane.repository
       digest     = var.deployment.applications.control_plane.digest
     }
+    control_plane_schema_compatibility_image = (
+      var.deployment.applications.control_plane.schema_compatibility_image
+    )
     control_plane_autoscaling = var.deployment.applications.control_plane.autoscaling
     control_plane_rollout     = var.deployment.applications.control_plane.rollout
     catalog_rollout_digest    = var.deployment.applications.control_plane.catalog_rollout_digest

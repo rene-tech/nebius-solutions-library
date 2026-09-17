@@ -1340,6 +1340,30 @@ locals {
     var.model_controller.workload_owner == "controller" &&
     length(var.model_controller.bootstrap_model_ids) > 0
   )
+  model_controller_bootstrap_security_enabled = (
+    var.release_identity_model_bootstrap_authority.username != "" ||
+    var.release_identity_model_bootstrap_authority.uid != "" ||
+    var.release_identity_model_bootstrap_authority.credential_id != "" ||
+    var.release_identity_model_bootstrap_assertion_generation != "" ||
+    var.release_identity_model_bootstrap_trust_binding.enabled ||
+    length(local.model_controller_bootstrap_inventory_configmaps) > 0 ||
+    length(local.model_controller_bootstrap_inventory_jobs) > 0 ||
+    length(local.model_controller_bootstrap_inventory_receipts) > 0 ||
+    length(local.model_controller_bootstrap_inventory_verification_jobs) > 0
+  )
+  model_controller_bootstrap_authority_bound = (
+    var.release_identity_model_bootstrap_authority.username != "" &&
+    var.release_identity_model_bootstrap_authority.uid != "" &&
+    var.release_identity_model_bootstrap_authority.credential_id != ""
+  )
+  model_controller_bootstrap_authority_cel = join(" && ", [
+    "request.userInfo.username == ${jsonencode(var.release_identity_model_bootstrap_authority.username)}",
+    "request.userInfo.uid == ${jsonencode(var.release_identity_model_bootstrap_authority.uid)}",
+    "has(request.userInfo.extra)",
+    "'authentication.kubernetes.io/credential-id' in request.userInfo.extra",
+    "request.userInfo.extra['authentication.kubernetes.io/credential-id'].size() == 1",
+    "request.userInfo.extra['authentication.kubernetes.io/credential-id'][0] == ${jsonencode(var.release_identity_model_bootstrap_authority.credential_id)}",
+  ])
   model_controller_bootstrap_script = <<-PY
     import hashlib
     import json
@@ -1462,6 +1486,10 @@ locals {
     for item in data.kubernetes_resources.model_controller_bootstrap_jobs.objects : item
     if try(startswith(item.metadata.name, "fs2-model-bootstrap-"), false)
   ]
+  model_controller_bootstrap_inventory_verification_jobs = [
+    for item in data.kubernetes_resources.model_controller_bootstrap_jobs.objects : item
+    if try(startswith(item.metadata.name, "fs2-bootstrap-verification-"), false)
+  ]
   model_controller_bootstrap_discovered_specs = {
     for item in local.model_controller_bootstrap_inventory_configmaps :
     trimprefix(item.metadata.name, "fs2-model-bootstrap-") => {
@@ -1477,6 +1505,7 @@ locals {
       observed_component   = try(item.metadata.labels["app.kubernetes.io/component"], "")
       observed_immutable   = try(item.immutable, false)
       observed_uid         = try(item.metadata.uid, "")
+      observed_created_at  = try(item.metadata.creationTimestamp, "")
       observed_namespace   = try(item.metadata.namespace, "")
       observed_object_sha256 = sha256(jsonencode(item))
     }
@@ -1489,6 +1518,7 @@ locals {
       observed_generation = try(item.metadata.labels["fs2.nebius.ai/generation"], "")
       observed_component  = try(item.metadata.labels["app.kubernetes.io/component"], "")
       observed_uid        = try(item.metadata.uid, "")
+      observed_created_at = try(item.metadata.creationTimestamp, "")
       observed_template_labels = try({
         for label, value in item.spec.template.metadata.labels : label => value
         if !contains([
@@ -1533,10 +1563,12 @@ locals {
       observed_name      = try(item.metadata.name, "")
       observed_namespace = try(item.metadata.namespace, "")
       observed_uid       = try(item.metadata.uid, "")
+      observed_created_at = try(item.metadata.creationTimestamp, "")
       observed_labels    = try(item.metadata.labels, {})
       observed_immutable = try(item.immutable, false)
       observed_data      = try(item.data, {})
       receipt_jws        = try(item.data["receipt.jws"], "")
+      observed_object_sha256 = sha256(jsonencode(item))
     }
   }
   model_controller_bootstrap_trust_configmaps = [
@@ -1547,14 +1579,120 @@ locals {
     one(local.model_controller_bootstrap_trust_configmaps).data["trust.json"],
     "",
   )
+  model_controller_bootstrap_trust_key_records = flatten([
+    for issuer in try(jsondecode(local.model_controller_bootstrap_trust_json).issuers, []) : [
+      for key in try(issuer.keys, []) : jsonencode({
+        issuer            = try(issuer.issuer, "")
+        key_id            = try(key.key_id, "")
+        public_key_base64 = try(key.public_key_base64, "")
+      })
+    ]
+  ])
+  model_controller_bootstrap_observed_admission_uids = merge(
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_policies.objects :
+      "validatingadmissionpolicy/${try(item.metadata.name, "")}" => try(item.metadata.uid, "")
+      if contains([
+        "fs2-model-bootstrap-policy-lifecycle",
+        "fs2-model-bootstrap-history",
+        "fs2-model-bootstrap-retention-receipts",
+        "fs2-release-identity-trust",
+        "fs2-model-bootstrap-assertion-secrets",
+        "fs2-model-bootstrap-verifications",
+      ], try(item.metadata.name, ""))
+    },
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_bindings.objects :
+      "validatingadmissionpolicybinding/${try(item.metadata.name, "")}" => try(item.metadata.uid, "")
+      if contains([
+        "fs2-model-bootstrap-policy-lifecycle",
+        "fs2-model-bootstrap-history",
+        "fs2-model-bootstrap-retention-receipts",
+        "fs2-release-identity-trust",
+        "fs2-model-bootstrap-assertion-secrets",
+        "fs2-model-bootstrap-verifications",
+      ], try(item.metadata.name, ""))
+    },
+  )
+  model_controller_bootstrap_observed_admission_created_at = merge(
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_policies.objects :
+      "validatingadmissionpolicy/${try(item.metadata.name, "")}" => try(item.metadata.creationTimestamp, "")
+      if contains([
+        "fs2-model-bootstrap-policy-lifecycle",
+        "fs2-model-bootstrap-history",
+        "fs2-model-bootstrap-retention-receipts",
+        "fs2-release-identity-trust",
+        "fs2-model-bootstrap-assertion-secrets",
+        "fs2-model-bootstrap-verifications",
+      ], try(item.metadata.name, ""))
+    },
+    {
+      for item in data.kubernetes_resources.model_controller_bootstrap_admission_bindings.objects :
+      "validatingadmissionpolicybinding/${try(item.metadata.name, "")}" => try(item.metadata.creationTimestamp, "")
+      if contains([
+        "fs2-model-bootstrap-policy-lifecycle",
+        "fs2-model-bootstrap-history",
+        "fs2-model-bootstrap-retention-receipts",
+        "fs2-release-identity-trust",
+        "fs2-model-bootstrap-assertion-secrets",
+        "fs2-model-bootstrap-verifications",
+      ], try(item.metadata.name, ""))
+    },
+  )
+  model_controller_bootstrap_admission_order_valid = try(
+    local.model_controller_bootstrap_observed_admission_created_at[
+      "validatingadmissionpolicy/fs2-model-bootstrap-policy-lifecycle"
+    ] <= local.model_controller_bootstrap_observed_admission_created_at[
+      "validatingadmissionpolicybinding/fs2-model-bootstrap-policy-lifecycle"
+    ] && alltrue([
+      for key, created_at in local.model_controller_bootstrap_observed_admission_created_at :
+      created_at >= local.model_controller_bootstrap_observed_admission_created_at[
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-policy-lifecycle"
+      ] if !contains([
+        "validatingadmissionpolicy/fs2-model-bootstrap-policy-lifecycle",
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-policy-lifecycle",
+      ], key)
+    ]),
+    false,
+  )
+  model_controller_bootstrap_admission_binding_valid = (
+    var.release_identity_model_bootstrap_trust_binding.enabled &&
+    local.model_controller_bootstrap_observed_admission_uids ==
+    var.release_identity_model_bootstrap_trust_binding.admission_object_uids &&
+    local.model_controller_bootstrap_admission_order_valid
+  )
+  model_controller_bootstrap_trust_binding_valid = (
+    local.model_controller_bootstrap_admission_binding_valid &&
+    length(local.model_controller_bootstrap_trust_configmaps) == 1 && try(
+      one(local.model_controller_bootstrap_trust_configmaps).metadata.namespace == "fs2-system" &&
+      one(local.model_controller_bootstrap_trust_configmaps).metadata.uid ==
+      var.release_identity_model_bootstrap_trust_binding.config_map_uid &&
+      one(local.model_controller_bootstrap_trust_configmaps).immutable == true &&
+      toset(keys(one(local.model_controller_bootstrap_trust_configmaps).data)) ==
+      toset(["trust.json"]) &&
+      sha256(jsonencode(one(local.model_controller_bootstrap_trust_configmaps))) ==
+      var.release_identity_model_bootstrap_trust_binding.config_map_object_sha256 &&
+      one(local.model_controller_bootstrap_trust_configmaps).metadata.creationTimestamp >=
+      local.model_controller_bootstrap_observed_admission_created_at[
+        "validatingadmissionpolicybinding/fs2-release-identity-trust"
+      ] &&
+      sha256(local.model_controller_bootstrap_trust_json) ==
+      var.release_identity_model_bootstrap_trust_binding.trust_json_sha256 &&
+      sha256(jsonencode(sort(local.model_controller_bootstrap_trust_key_records))) ==
+      var.release_identity_model_bootstrap_trust_binding.key_set_sha256,
+      false,
+    )
+  )
   model_controller_bootstrap_inventory_keys = sort(keys(local.model_controller_bootstrap_discovered_specs))
   model_controller_bootstrap_job_keys       = sort(keys(local.model_controller_bootstrap_observed_jobs))
   model_controller_bootstrap_receipt_queries = {
     for receipt_key, receipt in local.model_controller_bootstrap_receipts : receipt_key => {
       receipt_jws             = receipt.receipt_jws
-      trust_json              = local.model_controller_bootstrap_trust_json
       generation              = receipt.generation
       phase                   = receipt.phase
+      receipt_uid             = receipt.observed_uid
+      receipt_object_sha256   = receipt.observed_object_sha256
       identity_sha256         = sha256(jsonencode(local.model_controller_bootstrap_discovered_specs[receipt.generation].identity))
       config_map_uid          = local.model_controller_bootstrap_discovered_specs[receipt.generation].observed_uid
       config_map_object_sha256 = local.model_controller_bootstrap_discovered_specs[receipt.generation].observed_object_sha256
@@ -1564,18 +1702,127 @@ locals {
       job_object_sha256 = receipt.phase == "terminal" ? (
         local.model_controller_bootstrap_observed_jobs[receipt.generation].observed_object_sha256
       ) : ""
+      trust_config_map_uid           = var.release_identity_model_bootstrap_trust_binding.config_map_uid
+      trust_config_map_object_sha256 = var.release_identity_model_bootstrap_trust_binding.config_map_object_sha256
+      trust_json_sha256              = var.release_identity_model_bootstrap_trust_binding.trust_json_sha256
+      trust_key_set_sha256           = var.release_identity_model_bootstrap_trust_binding.key_set_sha256
+      verifier_image                 = "${var.control_plane_schema_compatibility_image.repository}@${var.control_plane_schema_compatibility_image.digest}"
     }
-    if contains(local.model_controller_bootstrap_inventory_keys, receipt.generation) && (
+    if local.model_controller_bootstrap_trust_binding_valid &&
+    contains(local.model_controller_bootstrap_inventory_keys, receipt.generation) && (
       receipt.phase == "configmap" || (
         receipt.phase == "terminal" &&
         contains(local.model_controller_bootstrap_job_keys, receipt.generation)
       )
     )
   }
+  model_controller_bootstrap_verification_queries = {
+    for receipt_key, query in local.model_controller_bootstrap_receipt_queries : receipt_key => merge(query, {
+      verification_id = substr(sha256(jsonencode(query)), 0, 8)
+      verification_name = "fs2-bootstrap-verification-${query.generation}-${substr(sha256(jsonencode(query)), 0, 8)}"
+      verification_env = {
+        FS2_BOOTSTRAP_GENERATION                  = query.generation
+        FS2_BOOTSTRAP_RECEIPT_PHASE               = query.phase
+        FS2_BOOTSTRAP_IDENTITY_SHA256             = query.identity_sha256
+        FS2_BOOTSTRAP_CONFIG_MAP_UID              = query.config_map_uid
+        FS2_BOOTSTRAP_CONFIG_MAP_OBJECT_SHA256    = query.config_map_object_sha256
+        FS2_BOOTSTRAP_JOB_UID                     = query.job_uid
+        FS2_BOOTSTRAP_JOB_OBJECT_SHA256           = query.job_object_sha256
+        FS2_BOOTSTRAP_RECEIPT_UID                 = query.receipt_uid
+        FS2_BOOTSTRAP_RECEIPT_OBJECT_SHA256       = query.receipt_object_sha256
+        FS2_BOOTSTRAP_TRUST_CONFIG_MAP_UID        = query.trust_config_map_uid
+        FS2_BOOTSTRAP_TRUST_CONFIG_MAP_SHA256     = query.trust_config_map_object_sha256
+        FS2_BOOTSTRAP_TRUST_JSON_SHA256           = query.trust_json_sha256
+        FS2_BOOTSTRAP_TRUST_KEY_SET_SHA256        = query.trust_key_set_sha256
+      }
+    })
+  }
+  model_controller_bootstrap_observed_verifications = {
+    for item in local.model_controller_bootstrap_inventory_verification_jobs :
+    "${try(item.metadata.labels["fs2.nebius.ai/generation"], "")}/${try(item.metadata.labels["fs2.nebius.ai/receipt-phase"], "")}/${try(item.metadata.labels["fs2.nebius.ai/verification-id"], "")}" => {
+      observed_name       = try(item.metadata.name, "")
+      observed_namespace  = try(item.metadata.namespace, "")
+      observed_labels     = try(item.metadata.labels, {})
+      observed_uid        = try(item.metadata.uid, "")
+      observed_created_at = try(item.metadata.creationTimestamp, "")
+      active              = coalesce(try(item.status.active, null), 0)
+      succeeded           = coalesce(try(item.status.succeeded, null), 0)
+      failed              = coalesce(try(item.status.failed, null), 0)
+      backoff_limit       = try(item.spec.backoffLimit, null)
+      active_deadline     = try(item.spec.activeDeadlineSeconds, null)
+      service_account     = try(item.spec.template.spec.serviceAccountName, "")
+      automount_token     = try(item.spec.template.spec.automountServiceAccountToken, null)
+      restart_policy      = try(item.spec.template.spec.restartPolicy, "")
+      observed_template_labels = try({
+        for label, value in item.spec.template.metadata.labels : label => value
+        if !contains([
+          "batch.kubernetes.io/controller-uid",
+          "batch.kubernetes.io/job-name",
+          "controller-uid",
+          "job-name",
+        ], label)
+      }, {})
+      containers          = try(item.spec.template.spec.containers, [])
+      observed_object_sha256 = sha256(jsonencode(item))
+    }
+  }
   model_controller_bootstrap_verified_receipts = {
-    for receipt_key, verification in data.external.model_controller_bootstrap_receipt :
-    receipt_key => verification.result
-    if try(verification.result.valid == "true", false)
+    for receipt_key, query in local.model_controller_bootstrap_verification_queries : receipt_key => {
+      valid        = "true"
+      generation   = query.generation
+      phase        = query.phase
+      config_map_uid = query.config_map_uid
+      job_uid      = query.job_uid
+    }
+    if try(
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].observed_name == query.verification_name &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].observed_namespace == "fs2-system" &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].observed_created_at >=
+      local.model_controller_bootstrap_observed_admission_created_at[
+        "validatingadmissionpolicybinding/fs2-model-bootstrap-verifications"
+      ] &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].observed_labels == merge(local.common_labels, {
+        "app.kubernetes.io/component" = "model-bootstrap-verification"
+        "fs2.nebius.ai/generation"     = query.generation
+        "fs2.nebius.ai/receipt-phase"  = query.phase
+        "fs2.nebius.ai/verification-id" = query.verification_id
+      }) &&
+      length(local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].observed_uid) > 0 &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].active == 0 &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].succeeded == 1 &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].failed == 0 &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].backoff_limit == 0 &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].active_deadline == 300 &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].service_account == "fs2-model-bootstrap-verifier" &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].automount_token == true &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].restart_policy == "Never" &&
+      local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].observed_template_labels == merge(local.common_labels, {
+        "app.kubernetes.io/component"  = "model-bootstrap-verification"
+        "fs2.nebius.ai/generation"      = query.generation
+        "fs2.nebius.ai/receipt-phase"   = query.phase
+        "fs2.nebius.ai/verification-id" = query.verification_id
+      }) &&
+      length(local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].containers) == 1 &&
+      one(local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].containers).name == "verifier" &&
+      one(local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].containers).image == query.verifier_image &&
+      one(local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].containers).command == ["fs2-serve", "verify-model-bootstrap-retention"] &&
+      {
+        for environment in one(local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].containers).env :
+        environment.name => environment.value
+      } == query.verification_env &&
+      one(local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].containers).resources == {
+        requests = { cpu = "25m", memory = "64Mi" }
+        limits   = { cpu = "250m", memory = "256Mi" }
+      } &&
+      one(local.model_controller_bootstrap_observed_verifications["${receipt_key}/${query.verification_id}"].containers).securityContext == {
+        allowPrivilegeEscalation = false
+        capabilities             = { drop = ["ALL"] }
+        readOnlyRootFilesystem   = true
+        runAsNonRoot             = true
+        runAsUser                = 65532
+      },
+      false,
+    )
   }
   model_controller_bootstrap_verified_specs = {
     for generation_key, spec in local.model_controller_bootstrap_discovered_specs :
@@ -1599,26 +1846,20 @@ locals {
     length(local.model_controller_bootstrap_inventory_jobs) == length(local.model_controller_bootstrap_observed_jobs) &&
     length(local.model_controller_bootstrap_inventory_receipts) == length(local.model_controller_bootstrap_receipts) &&
     length(local.model_controller_bootstrap_receipts) == length(local.model_controller_bootstrap_receipt_queries) &&
-    length(local.model_controller_bootstrap_receipts) == length(local.model_controller_bootstrap_verified_receipts) &&
     (
-      length(local.model_controller_bootstrap_receipts) > 0 ?
-      length(local.model_controller_bootstrap_trust_configmaps) == 1 :
-      length(local.model_controller_bootstrap_trust_configmaps) <= 1
-    ) &&
-    (
-      length(local.model_controller_bootstrap_receipts) == 0 || try(
-        one(local.model_controller_bootstrap_trust_configmaps).metadata.namespace == "fs2-system" &&
-        one(local.model_controller_bootstrap_trust_configmaps).immutable == true &&
-        toset(keys(one(local.model_controller_bootstrap_trust_configmaps).data)) ==
-        toset(["trust.json"]),
-        false,
-      )
+      length(local.model_controller_bootstrap_inventory_configmaps) == 0 &&
+      length(local.model_controller_bootstrap_inventory_jobs) == 0 &&
+      length(local.model_controller_bootstrap_inventory_receipts) == 0 ?
+      true : local.model_controller_bootstrap_trust_binding_valid
     ) &&
     alltrue([
       for receipt_key, receipt in local.model_controller_bootstrap_receipts : try(
         contains(["configmap", "terminal"], receipt.phase) &&
         receipt.observed_name == "fs2-model-bootstrap-receipt-${receipt.generation}-${receipt.phase}" &&
         receipt.observed_namespace == "fs2-system" &&
+        receipt.observed_created_at >= local.model_controller_bootstrap_observed_admission_created_at[
+          "validatingadmissionpolicybinding/fs2-model-bootstrap-retention-receipts"
+        ] &&
         receipt.observed_immutable == true &&
         length(receipt.observed_uid) > 0 &&
         receipt.observed_labels == merge(local.common_labels, {
@@ -1628,17 +1869,26 @@ locals {
         }) &&
         toset(keys(receipt.observed_data)) == toset(["receipt.jws"]) &&
         length(receipt.receipt_jws) > 0 && length(receipt.receipt_jws) <= 8192 &&
-        data.external.model_controller_bootstrap_receipt[receipt_key].result.generation == receipt.generation &&
-        data.external.model_controller_bootstrap_receipt[receipt_key].result.phase == receipt.phase &&
-        data.external.model_controller_bootstrap_receipt[receipt_key].result.config_map_uid == local.model_controller_bootstrap_discovered_specs[receipt.generation].observed_uid &&
-        data.external.model_controller_bootstrap_receipt[receipt_key].result.job_uid == (
+        local.model_controller_bootstrap_receipt_queries[receipt_key].generation == receipt.generation &&
+        local.model_controller_bootstrap_receipt_queries[receipt_key].phase == receipt.phase &&
+        local.model_controller_bootstrap_receipt_queries[receipt_key].config_map_uid == local.model_controller_bootstrap_discovered_specs[receipt.generation].observed_uid &&
+        local.model_controller_bootstrap_receipt_queries[receipt_key].job_uid == (
           receipt.phase == "terminal" ? local.model_controller_bootstrap_observed_jobs[receipt.generation].observed_uid : ""
         ),
         false,
       )
     ]) &&
-    length(local.model_controller_bootstrap_verified_specs) == length(local.model_controller_bootstrap_discovered_specs) &&
-    length(local.model_controller_bootstrap_verified_job_specs) == length(local.model_controller_bootstrap_observed_jobs) &&
+    setunion(
+      toset(keys(local.model_controller_bootstrap_verified_specs)),
+      toset([for query in values(local.model_controller_bootstrap_verification_queries) : query.generation]),
+    ) == toset(local.model_controller_bootstrap_inventory_keys) &&
+    setunion(
+      toset(keys(local.model_controller_bootstrap_verified_job_specs)),
+      toset([
+        for query in values(local.model_controller_bootstrap_verification_queries) : query.generation
+        if query.phase == "terminal"
+      ]),
+    ) == toset(local.model_controller_bootstrap_job_keys) &&
     length(distinct([
       for spec in values(local.model_controller_bootstrap_discovered_specs) : spec.secret_name
     ])) == length(local.model_controller_bootstrap_discovered_specs) &&
@@ -1676,6 +1926,9 @@ locals {
         spec.observed_component == "model-bootstrap" &&
         spec.observed_immutable == true &&
         length(spec.observed_uid) > 0 &&
+        spec.observed_created_at >= local.model_controller_bootstrap_observed_admission_created_at[
+          "validatingadmissionpolicybinding/fs2-model-bootstrap-history"
+        ] &&
         spec.identity.schema == "fs2-serve.nebius.ai/model-bootstrap-identity/v2" &&
         spec.identity == {
           schema                = "fs2-serve.nebius.ai/model-bootstrap-identity/v2"
@@ -1719,6 +1972,10 @@ locals {
             local.model_controller_bootstrap_observed_jobs[generation_key].observed_generation == generation_key &&
             local.model_controller_bootstrap_observed_jobs[generation_key].observed_component == "model-bootstrap" &&
             length(local.model_controller_bootstrap_observed_jobs[generation_key].observed_uid) > 0 &&
+            local.model_controller_bootstrap_observed_jobs[generation_key].observed_created_at >=
+            local.model_controller_bootstrap_observed_admission_created_at[
+              "validatingadmissionpolicybinding/fs2-model-bootstrap-history"
+            ] &&
             local.model_controller_bootstrap_observed_jobs[generation_key].active == 0 &&
             (
               local.model_controller_bootstrap_observed_jobs[generation_key].succeeded > 0 ||
@@ -1780,7 +2037,10 @@ locals {
   )
   model_controller_bootstrap_assertions = merge(
     local.model_controller_bootstrap_verified_specs,
-    local.model_controller_bootstrap_enabled ? {
+    local.model_controller_bootstrap_enabled && !contains(
+      local.model_controller_bootstrap_inventory_keys,
+      local.model_controller_bootstrap_current_generation,
+    ) ? {
       (local.model_controller_bootstrap_current_generation) = merge(
         local.model_controller_bootstrap_current_spec,
         { identity = local.model_controller_bootstrap_current_identity },
@@ -1803,6 +2063,20 @@ resource "terraform_data" "model_controller_contract" {
   }
 
   lifecycle {
+    precondition {
+      condition = !local.model_controller_bootstrap_security_enabled || (
+        local.model_controller_bootstrap_authority_bound
+      )
+      error_message = "Model-bootstrap security resources require the exact generation-specific release service-account UID and bound-token credential ID; a reusable username-only identity is refused."
+    }
+
+    precondition {
+      condition = !local.model_controller_bootstrap_enabled || (
+        local.model_controller_bootstrap_trust_binding_valid
+      )
+      error_message = "Model bootstrap requires the integration-pinned trust ConfigMap UID/full-object/trust/key-set digests and exact admission policy/binding UIDs from a completed policy-first apply."
+    }
+
     precondition {
       condition     = local.model_controller_fast_start_evidence_valid
       error_message = "Fast-start evidence must map only controller-qualified model IDs to the exact bounded wire shape emitted by project_fast_start_evidence.py."
@@ -1952,12 +2226,88 @@ resource "kubernetes_config_map_v1" "model_controller_bootstrap" {
   ]
 }
 
+# Protect the bootstrap admission boundary itself before any inventory can be
+# admitted for recovery. Later changes use new additive policy names: these
+# exact policies and bindings cannot be updated or deleted in place.
+resource "kubernetes_manifest" "model_controller_bootstrap_policy_lifecycle" {
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-model-bootstrap-policy-lifecycle"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [
+          {
+            apiGroups   = ["admissionregistration.k8s.io"]
+            apiVersions = ["v1"]
+            operations  = ["CREATE", "UPDATE", "DELETE"]
+            resources   = ["validatingadmissionpolicies", "validatingadmissionpolicybindings"]
+            scope       = "Cluster"
+          },
+        ]
+      }
+      matchConditions = [{
+        name = "model-bootstrap-policy-lifecycle"
+        expression = "request.name in [" + join(",", [
+          for name in [
+            "fs2-model-bootstrap-policy-lifecycle",
+            "fs2-model-bootstrap-history",
+            "fs2-model-bootstrap-retention-receipts",
+            "fs2-release-identity-trust",
+            "fs2-model-bootstrap-assertion-secrets",
+            "fs2-model-bootstrap-verifications",
+          ] : jsonencode(name)
+        ]) + "]"
+      }]
+      validations = [
+        {
+          expression = "request.operation == 'CREATE'"
+          message    = "model-bootstrap admission policies and bindings are append-only"
+        },
+        {
+          expression = local.model_controller_bootstrap_authority_cel
+          message    = "only the exact short-lived release credential may create model-bootstrap admission policy"
+        },
+      ]
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_manifest" "model_controller_bootstrap_policy_lifecycle_binding" {
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-model-bootstrap-policy-lifecycle"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-model-bootstrap-policy-lifecycle"
+      validationActions = ["Deny"]
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_manifest.model_controller_bootstrap_policy_lifecycle]
+}
+
 # The cluster enforces append-only history independently of Terraform state.
 # A self-consistent object pair is not authority: only an externally signed,
 # UID-bound receipt admitted for the exact automation identity can make it an
 # import candidate on a later plan.
 resource "kubernetes_manifest" "model_controller_bootstrap_history_policy" {
-  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -1996,6 +2346,10 @@ resource "kubernetes_manifest" "model_controller_bootstrap_history_policy" {
           message    = "model-bootstrap ConfigMaps and Jobs are append-only and cannot be updated or deleted"
         },
         {
+          expression = local.model_controller_bootstrap_authority_cel
+          message    = "only the exact short-lived release credential may create model-bootstrap history"
+        },
+        {
           expression = "has(object.metadata.labels) && object.metadata.labels['app.kubernetes.io/component'] == 'model-bootstrap' && object.metadata.labels['fs2.nebius.ai/generation'].matches('^[0-9a-f]{32}$') && object.metadata.name == 'fs2-model-bootstrap-' + object.metadata.labels['fs2.nebius.ai/generation']"
           message    = "model-bootstrap object name and generation labels must be exact"
         },
@@ -2014,12 +2368,13 @@ resource "kubernetes_manifest" "model_controller_bootstrap_history_policy" {
   lifecycle { prevent_destroy = true }
   depends_on = [
     terraform_data.cluster_contract,
+    kubernetes_manifest.model_controller_bootstrap_policy_lifecycle_binding,
     kubernetes_manifest.model_controller_bootstrap_trust_policy_binding,
   ]
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_history_policy_binding" {
-  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2039,7 +2394,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_history_policy_bindin
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy" {
-  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2069,8 +2424,8 @@ resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy" {
           message    = "model-bootstrap retention receipts are append-only and cannot be updated or deleted"
         },
         {
-          expression = "request.userInfo.username == 'system:serviceaccount:fs2-system:fs2-release-identity'"
-          message    = "only the approved automation-only release identity may publish retention receipts"
+          expression = local.model_controller_bootstrap_authority_cel
+          message    = "only the exact short-lived release credential may publish retention receipts"
         },
         {
           expression = "has(object.immutable) && object.immutable == true && has(object.data) && object.data.size() == 1 && 'receipt.jws' in object.data && object.data['receipt.jws'].size() > 0 && object.data['receipt.jws'].size() <= 8192"
@@ -2087,12 +2442,13 @@ resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy" {
   lifecycle { prevent_destroy = true }
   depends_on = [
     terraform_data.cluster_contract,
+    kubernetes_manifest.model_controller_bootstrap_policy_lifecycle_binding,
     kubernetes_manifest.model_controller_bootstrap_trust_policy_binding,
   ]
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy_binding" {
-  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2116,7 +2472,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_receipt_policy_bindin
 # root; only the same automation-only release identity may create it while the
 # policy is active.
 resource "kubernetes_manifest" "model_controller_bootstrap_trust_policy" {
-  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2146,8 +2502,8 @@ resource "kubernetes_manifest" "model_controller_bootstrap_trust_policy" {
           message    = "the release identity trust root is append-only and cannot be updated or deleted"
         },
         {
-          expression = "request.userInfo.username == 'system:serviceaccount:fs2-system:fs2-release-identity'"
-          message    = "only the approved automation-only release identity may publish the trust root"
+          expression = local.model_controller_bootstrap_authority_cel
+          message    = "only the exact short-lived release credential may publish the trust root"
         },
         {
           expression = "has(object.immutable) && object.immutable == true && has(object.data) && object.data.size() == 1 && 'trust.json' in object.data && object.data['trust.json'].size() > 0 && object.data['trust.json'].size() <= 65536"
@@ -2158,11 +2514,14 @@ resource "kubernetes_manifest" "model_controller_bootstrap_trust_policy" {
   }
 
   lifecycle { prevent_destroy = true }
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    terraform_data.cluster_contract,
+    kubernetes_manifest.model_controller_bootstrap_policy_lifecycle_binding,
+  ]
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_trust_policy_binding" {
-  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2215,7 +2574,7 @@ resource "kubernetes_network_policy_v1" "model_controller_bootstrap" {
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
-  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2230,7 +2589,7 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
         resourceRules = [{
           apiGroups   = [""]
           apiVersions = ["v1"]
-          operations  = ["CREATE", "UPDATE"]
+          operations  = ["CREATE", "UPDATE", "DELETE"]
           resources   = ["secrets"]
           scope       = "Namespaced"
         }]
@@ -2240,6 +2599,14 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
         expression = "object.metadata.namespace == 'fs2-system' && object.metadata.name.startsWith('fs2-release-model-bootstrap-')"
       }]
       validations = [
+        {
+          expression = "request.operation == 'CREATE'"
+          message    = "model-bootstrap assertion Secrets are generation-retained and cannot be updated or deleted"
+        },
+        {
+          expression = local.model_controller_bootstrap_authority_cel
+          message    = "only the exact short-lived release credential may create model-bootstrap assertion Secrets"
+        },
         {
           expression = "has(object.immutable) && object.immutable == true"
           message    = "model-bootstrap assertion Secrets must be immutable"
@@ -2257,11 +2624,14 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy" {
   }
 
   lifecycle { prevent_destroy = true }
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    terraform_data.cluster_contract,
+    kubernetes_manifest.model_controller_bootstrap_policy_lifecycle_binding,
+  ]
 }
 
 resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy_binding" {
-  count = (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0) ? 1 : 0
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
 
   manifest = {
     apiVersion = "admissionregistration.k8s.io/v1"
@@ -2278,6 +2648,242 @@ resource "kubernetes_manifest" "model_controller_bootstrap_secret_policy_binding
 
   lifecycle { prevent_destroy = true }
   depends_on = [kubernetes_manifest.model_controller_bootstrap_secret_policy]
+}
+
+resource "kubernetes_manifest" "model_controller_bootstrap_verification_policy" {
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicy"
+    metadata = {
+      name   = "fs2-model-bootstrap-verifications"
+      labels = local.common_labels
+    }
+    spec = {
+      failurePolicy = "Fail"
+      matchConstraints = {
+        resourceRules = [{
+          apiGroups   = ["batch"]
+          apiVersions = ["v1"]
+          operations  = ["CREATE", "UPDATE", "DELETE"]
+          resources   = ["jobs"]
+          scope       = "Namespaced"
+        }]
+      }
+      matchConditions = [{
+        name       = "model-bootstrap-verification"
+        expression = "request.namespace == 'fs2-system' && request.name.startsWith('fs2-bootstrap-verification-')"
+      }]
+      validations = [
+        {
+          expression = "request.operation == 'CREATE'"
+          message    = "model-bootstrap verification Jobs are append-only and cannot be updated or deleted"
+        },
+        {
+          expression = local.model_controller_bootstrap_authority_cel
+          message    = "only the exact short-lived release credential may create model-bootstrap verification Jobs"
+        },
+        {
+          expression = "has(object.metadata.labels) && object.metadata.labels['app.kubernetes.io/component'] == 'model-bootstrap-verification' && object.metadata.labels['fs2.nebius.ai/generation'].matches('^[0-9a-f]{32}$') && object.metadata.labels['fs2.nebius.ai/receipt-phase'] in ['configmap', 'terminal'] && object.metadata.labels['fs2.nebius.ai/verification-id'].matches('^[0-9a-f]{8}$') && object.metadata.name == 'fs2-bootstrap-verification-' + object.metadata.labels['fs2.nebius.ai/generation'] + '-' + object.metadata.labels['fs2.nebius.ai/verification-id']"
+          message    = "model-bootstrap verification Job identity must be content-addressed"
+        },
+        {
+          expression = "object.spec.backoffLimit == 0 && object.spec.activeDeadlineSeconds == 300 && object.spec.template.spec.serviceAccountName == 'fs2-model-bootstrap-verifier' && object.spec.template.spec.automountServiceAccountToken == true && object.spec.template.spec.restartPolicy == 'Never' && object.spec.template.spec.containers.size() == 1 && object.spec.template.spec.containers[0].name == 'verifier' && object.spec.template.spec.containers[0].image.matches('^.+@sha256:[a-f0-9]{64}$')"
+          message    = "model-bootstrap verification Jobs must be bounded, digest-pinned, and use only the read-only verifier identity"
+        },
+      ]
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [
+    terraform_data.cluster_contract,
+    kubernetes_manifest.model_controller_bootstrap_policy_lifecycle_binding,
+  ]
+}
+
+resource "kubernetes_manifest" "model_controller_bootstrap_verification_policy_binding" {
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "admissionregistration.k8s.io/v1"
+    kind       = "ValidatingAdmissionPolicyBinding"
+    metadata = {
+      name   = "fs2-model-bootstrap-verifications"
+      labels = local.common_labels
+    }
+    spec = {
+      policyName        = "fs2-model-bootstrap-verifications"
+      validationActions = ["Deny"]
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [kubernetes_manifest.model_controller_bootstrap_verification_policy]
+}
+
+resource "kubernetes_manifest" "model_controller_bootstrap_verifier_service_account" {
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "v1"
+    kind       = "ServiceAccount"
+    metadata = {
+      name      = "fs2-model-bootstrap-verifier"
+      namespace = "fs2-system"
+      labels    = merge(local.common_labels, { "app.kubernetes.io/component" = "model-bootstrap-verifier" })
+    }
+    automountServiceAccountToken = false
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_manifest" "model_controller_bootstrap_verifier_role" {
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "rbac.authorization.k8s.io/v1"
+    kind       = "Role"
+    metadata = {
+      name      = "fs2-model-bootstrap-verifier"
+      namespace = "fs2-system"
+      labels    = merge(local.common_labels, { "app.kubernetes.io/component" = "model-bootstrap-verifier" })
+    }
+    rules = concat(
+      [{
+        apiGroups = [""]
+        resources = ["configmaps"]
+        verbs     = ["get"]
+        resourceNames = distinct(concat(
+          ["fs2-serve-release-identity-trust"],
+          [for query in values(local.model_controller_bootstrap_verification_queries) : "fs2-model-bootstrap-${query.generation}"],
+          [for query in values(local.model_controller_bootstrap_verification_queries) : "fs2-model-bootstrap-receipt-${query.generation}-${query.phase}"],
+        ))
+      }],
+      length([
+        for query in values(local.model_controller_bootstrap_verification_queries) :
+        query if query.phase == "terminal"
+      ]) > 0 ? [{
+        apiGroups = ["batch"]
+        resources = ["jobs"]
+        verbs     = ["get"]
+        resourceNames = distinct([
+          for query in values(local.model_controller_bootstrap_verification_queries) :
+          "fs2-model-bootstrap-${query.generation}" if query.phase == "terminal"
+        ])
+      }] : [],
+    )
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_manifest" "model_controller_bootstrap_verifier_role_binding" {
+  count = local.model_controller_bootstrap_security_enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "rbac.authorization.k8s.io/v1"
+    kind       = "RoleBinding"
+    metadata = {
+      name      = "fs2-model-bootstrap-verifier"
+      namespace = "fs2-system"
+      labels    = merge(local.common_labels, { "app.kubernetes.io/component" = "model-bootstrap-verifier" })
+    }
+    roleRef = {
+      apiGroup = "rbac.authorization.k8s.io"
+      kind     = "Role"
+      name     = "fs2-model-bootstrap-verifier"
+    }
+    subjects = [{
+      kind      = "ServiceAccount"
+      name      = "fs2-model-bootstrap-verifier"
+      namespace = "fs2-system"
+    }]
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [
+    kubernetes_manifest.model_controller_bootstrap_verifier_service_account,
+    kubernetes_manifest.model_controller_bootstrap_verifier_role,
+  ]
+}
+
+# This Job is the apply-time fence. It runs from the retained newest-schema
+# image, after all admission bindings, and re-reads the exact UID/spec/hash
+# tuple from the API. Only a later plan may treat its terminal success as
+# authority for declarative import.
+resource "kubernetes_job_v1" "model_controller_bootstrap_receipt_verification" {
+  for_each = local.model_controller_bootstrap_verification_queries
+
+  metadata {
+    name      = each.value.verification_name
+    namespace = "fs2-system"
+    labels = merge(local.common_labels, {
+      "app.kubernetes.io/component"  = "model-bootstrap-verification"
+      "fs2.nebius.ai/generation"      = each.value.generation
+      "fs2.nebius.ai/receipt-phase"   = each.value.phase
+      "fs2.nebius.ai/verification-id" = each.value.verification_id
+    })
+  }
+
+  wait_for_completion = true
+  timeouts { create = "10m" }
+
+  spec {
+    backoff_limit           = 0
+    active_deadline_seconds = 300
+    template {
+      metadata {
+        labels = merge(local.common_labels, {
+          "app.kubernetes.io/component"  = "model-bootstrap-verification"
+          "fs2.nebius.ai/generation"      = each.value.generation
+          "fs2.nebius.ai/receipt-phase"   = each.value.phase
+          "fs2.nebius.ai/verification-id" = each.value.verification_id
+        })
+      }
+      spec {
+        service_account_name            = "fs2-model-bootstrap-verifier"
+        automount_service_account_token = true
+        restart_policy                  = "Never"
+        container {
+          name    = "verifier"
+          image   = each.value.verifier_image
+          command = ["fs2-serve", "verify-model-bootstrap-retention"]
+          dynamic "env" {
+            for_each = each.value.verification_env
+            content {
+              name  = env.key
+              value = env.value
+            }
+          }
+          resources {
+            requests = { cpu = "25m", memory = "64Mi" }
+            limits   = { cpu = "250m", memory = "256Mi" }
+          }
+          security_context {
+            allow_privilege_escalation = false
+            read_only_root_filesystem  = true
+            run_as_non_root            = true
+            run_as_user                = 65532
+            capabilities { drop = ["ALL"] }
+          }
+        }
+      }
+    }
+  }
+
+  lifecycle { prevent_destroy = true }
+  depends_on = [
+    kubernetes_manifest.model_controller_bootstrap_history_policy_binding,
+    kubernetes_manifest.model_controller_bootstrap_receipt_policy_binding,
+    kubernetes_manifest.model_controller_bootstrap_trust_policy_binding,
+    kubernetes_manifest.model_controller_bootstrap_verification_policy_binding,
+    kubernetes_manifest.model_controller_bootstrap_verifier_role_binding,
+  ]
 }
 
 resource "kubernetes_job_v1" "model_controller_bootstrap" {

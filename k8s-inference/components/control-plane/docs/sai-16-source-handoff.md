@@ -3,12 +3,15 @@
 This document describes a static source candidate. It is not integration,
 deployment, live verification, or security acceptance evidence.
 
-The exact parent `375a88e363f13c8f80e96c2abf4a3f58e109a93e` / tree
-`59b235e3fe5e5cb65bb9ad6c8342a79e7380a817` is preserved as SOURCE NO-GO.
-It corrected the earlier aligned-window, quota, and copied-history defects, but
-its empty-ring migration was not mixed-version safe and its provider inventory
-remained self-authenticating. Every prior rejected commit remains provenance;
-this successor is additive.
+The exact parent `362026705237be0ffd3eeb88353d768fb465e27f` / tree
+`cdf5954c85669daa3dfa466535641193e1c0f1cc` is preserved as
+SOURCE/INTEGRATION/LIVE NO-GO. It added the first mixed-version bridge and
+signed full-object retention receipts, but began a blanket cutover interval
+inside the migration transaction, preserved an internal runtime ACL, used an
+ambient verifier and same-inventory trust root, lacked an apply-time fence and
+strong admission identity/lifecycle, left assertion Secret DELETE open, and
+did not platform-wire the rollback image. Every prior rejected commit remains
+provenance; this successor is additive.
 
 ## Session-exchange admission
 
@@ -32,25 +35,32 @@ historical window.
 
 Migration `0034` repairs the `0032`/`0033` rollout boundary without rewriting
 either rejected migration. The migration runner publishes the schema version
-which existed before its serialized transaction. If any prior migration
-pre-existed—or provenance is absent—both the legacy and exact-v2 function
-signatures enter one shared bridge and refuse every exchange for one complete
-configured window. The refusal is read-only after the first settings bind.
-Only then can the exact ring admit. Only a transaction-proven empty installation
-can start immediately; a pre-limiter upgrade also quiesces because its earlier
-audit-backed or process-era budget cannot be reconstructed exactly. Both
-function signatures retain runtime `EXECUTE`, so old
-rolling replicas and source-forward rollback replicas make the same decision.
-Rollback keeps the successor migration/schema-wait image through
-`migration.compatibilityImage` while selecting the prior application image;
-it never reverses schema or discards limiter state.
+which existed before its serialized transaction. The first post-commit call
+locks one shared bridge, binds the limiter configuration, checks that active
+legacy source and aggregate counts agree, and imports each still-active legacy
+admission into the exact ring at that call's timestamp. The synthetic entries
+conservatively retain the whole prior budget for a complete new window without
+resetting capacity or denying every operator/debug-login attempt. Old rolling
+replicas and new replicas use the legacy and exact public wrappers over that
+same bridge. The internal bridge and renamed exact-v2 function have inherited
+runtime/current-role execute grants explicitly revoked.
 
-Read-only source identities for this isolated lineage are: migration `0034`
-SHA-256 `3b7e2df9858857afdb3a99c32aa3e73e205a63f30614122604eb2269b4b1eb10`,
-34-entry ordered migration-set SHA-256
-`31a94c628489cec61a8288b653b59c9eab96b7ba58e9642a5bb22e6f185efb92`,
-and release-contract payload SHA-256
-`eb37ee6ba8a70b105ec77e7dd6d8eb06dc724a07a053d9281a891de15bd1f571`.
+The platform-root deployment contract requires, validates, regionally mirrors,
+and forwards the independent immutable
+`applications.control_plane.schema_compatibility_image` as workloads-stage
+`control_plane_schema_compatibility_image`, which Terraform maps to Helm
+`migration.compatibilityImage`. Rollback retains that successor
+migration/schema-wait image while selecting the prior application image; it
+never reverses schema or discards limiter state.
+
+The regenerated `0034` SHA-256 is
+`35ea43d1cebab826f7c52aa432ca8e3d782c5fe924400fdeb0703bdc7c4ad6e2`;
+the ordered migration-set SHA-256 is
+`f87489dff4d81a15ddd8496a1876e10ec9e9cfe29f243a7cd14ce767ee80ef73`;
+and the release-contract payload SHA-256 is
+`08c4bed91506b78ab0a15542ff59df174dabdc8b4fb13ddd52568fccf59c7eac`.
+The exact successor commit/tree is recorded in the Task Deck handoff after the
+additive commit is sealed.
 
 The first rejection transition may write one bounded evidence slot and one
 audit event saying only `one_or_more`; it never claims an exact rejection
@@ -79,21 +89,32 @@ Job object. It also binds the already consumed release
 assertion receipt. A ConfigMap-only partial-apply receipt is permitted before
 assertion consumption, but cannot attest a Job.
 
-Terraform verifies Ed25519 against the same immutable public trust document
-used by the control plane and imports only receipt-verified objects.
-Fail-closed admission admits trust and receipt creation only from
-`system:serviceaccount:fs2-system:fs2-release-identity`; trust, receipt,
-ConfigMap, and Job updates/deletes are denied. Delete/recreate changes the
-Kubernetes UID and
-invalidates the signed chain. An injected self-consistent pair without the
-external receipt fails planning. The legacy caller-copied retention map remains
-empty.
+Recovery now requires a policy-first apply. The lifecycle guardian and exact
+history/trust/receipt/assertion/verification policies are installed before any
+object may be accepted. Every CREATE is bound to a generation-specific release
+ServiceAccount username, its canonical UID, and the exact Kubernetes bound
+token credential ID; a reusable username alone is insufficient. The accepted
+policy and binding UIDs are integration inputs. The trust binding separately
+pins the trust ConfigMap UID, full-object digest, trust JSON digest, canonical
+issuer/key-set digest, and policy/binding UIDs. Provider inventory recomputes
+all pins and requires object creation after the relevant binding.
+
+Terraform no longer executes `python3` plus a mutable repository verifier.
+After admission is bound it creates a retained zero-retry verifier Job from the
+digest-pinned schema-compatibility image. The Job has read-only resource-name
+RBAC, re-reads each exact ConfigMap/Job/receipt/trust object from the API,
+verifies Ed25519 and every UID/full-object digest, and records success only as
+terminal Job status. Only a later plan can import that exact generation. All
+source objects and the verifier Job are append-only, so there is no plan/apply
+replacement window. An injected self-consistent pair without the external
+receipt and successful apply-time fence is never an import candidate. The
+legacy caller-copied retention map remains empty.
 
 ConfigMaps and zero-retry, non-root, tokenless Jobs remain generation-keyed and
 protected with `prevent_destroy` plus cluster admission. A separate fail-closed
 ValidatingAdmissionPolicy, installed before Secret creation, admits only
 immutable, generation-labeled, uniquely named Secrets containing exactly the
-`assertion` key.
+`assertion` key. UPDATE and DELETE are both denied.
 
 ## Parent integration dependencies
 
@@ -102,10 +123,10 @@ immutable, generation-labeled, uniquely named Secrets containing exactly the
   successor, and additive `0034` mixed-version bridge; parent integration must
   retain all exact sibling histories and regenerate the combined immutable
   migration manifest. This branch does not copy or modify SAI-10.
-- Before integration, security-owned release automation must independently pin
-  the initial trust ConfigMap UID/digest and signer custody, then install the
-  trust/history/receipt policies before it publishes any retained-history
-  receipt. This source candidate does not manufacture that external authority.
+- Before integration, security-owned release automation must perform the
+  policy-first apply, pin every policy/binding and trust UID/digest/key-set,
+  then run the apply-time verifier stage before any later import plan. This
+  source candidate does not manufacture that external authority.
 - SAI-01 independently owns request-capture exclusions and the 90-day debug
   expiry/purge contract. This isolated SAI-16 lineage still predates those
   changes, so it must not be integrated alone over accepted SAI-01 work. This

@@ -121,7 +121,7 @@ def test_model_bootstrap_recovery_is_generation_keyed_and_retains_job_history() 
     assert "runtime_image" in bootstrap
     assert 'data "kubernetes_resources" "model_controller_bootstrap_configmaps"' in inventory
     assert 'data "kubernetes_resources" "model_controller_bootstrap_jobs"' in inventory
-    assert inventory.count("import {") == 2
+    assert inventory.count("import {") == 3
     assert "model_controller_bootstrap_verified_specs" in inventory
     assert "model_controller_bootstrap_verified_job_specs" in inventory
     assert "model-bootstrap-identity/v2" in bootstrap
@@ -146,7 +146,7 @@ def test_model_bootstrap_recovery_is_generation_keyed_and_retains_job_history() 
     assert "length(var.release_identity_model_bootstrap_retained_assertions) == 0" in variables
     assert "bootstrap_managed_generations" in outputs
     assert "bootstrap_retained_generations" in outputs
-    assert 'bootstrap_inventory_authority   = "release-signed-uid-bound-kubernetes-inventory-v2"' in outputs
+    assert 'bootstrap_inventory_authority   = "policy-first-apply-time-verified-kubernetes-inventory-v3"' in outputs
 
 
 def test_postgres_session_exchange_uses_exact_bounded_sliding_state() -> None:
@@ -194,14 +194,19 @@ def test_postgres_session_exchange_cutover_is_shared_fail_closed_and_rollback_co
     assert "<> '__fresh__'" in migration
     assert ">= '0032_session_exchange_buckets.sql'" not in migration
     assert "cutover_required" in migration
-    assert "state.migration_started_at + make_interval(secs => p_window_seconds)" in normalized
-    assert "v_now < v_state.cutover_not_before" in migration
-    assert "cutover_quiescence" in migration
+    assert "first_bridge_at" in migration
+    assert "legacy_admissions_imported" in migration
+    assert "generate_series(1, bucket.admitted_count)" in migration
+    assert "v_first_bridge_at" in migration
+    assert "cutover_not_before" not in migration
+    assert "cutover_quiescence" not in migration
     assert "fs2_consume_session_exchange_bridge($1,$2,$3,$4)" in migration
     assert "CREATE OR REPLACE FUNCTION fs2_consume_session_exchange(" in migration
     assert "CREATE FUNCTION fs2_consume_session_exchange_sliding(" in migration
     assert migration.count("GRANT EXECUTE ON FUNCTION fs2_consume_session_exchange") >= 2
-    assert "REVOKE EXECUTE ON FUNCTION fs2_consume_session_exchange(" not in migration
+    assert "fs2_consume_session_exchange_exact_v2" in migration
+    assert "FROM fs2_serve_runtime" not in normalized
+    assert "known_role.rolname" in migration
     assert "set_config('fs2.preexisting_schema_version',$1,true)" in store
     assert "legacy signature is intentionally retained" in store
 
@@ -210,25 +215,52 @@ def test_model_bootstrap_history_requires_signed_uid_bound_full_object_receipts(
     bootstrap = (REPOSITORY_ROOT / "stages/workloads/model_controller.tf").read_text(encoding="utf-8")
     inventory = (REPOSITORY_ROOT / "stages/workloads/model_bootstrap_inventory.tf").read_text(encoding="utf-8")
     verifier = (
-        REPOSITORY_ROOT / "stages/workloads/scripts/verify_model_bootstrap_receipt.py"
+        REPOSITORY_ROOT
+        / "components/control-plane/src/fs2_serve/model_bootstrap_retention.py"
     ).read_text(encoding="utf-8")
-    assert 'data "external" "model_controller_bootstrap_receipt"' in inventory
+    assert 'data "external" "model_controller_bootstrap_receipt"' not in inventory
     assert "model_controller_bootstrap_verified_specs" in inventory
     assert "observed_object_sha256 = sha256(jsonencode" in bootstrap
-    assert bootstrap.count("observed_object_sha256 = sha256(jsonencode(item))") == 2
+    assert bootstrap.count("observed_object_sha256 = sha256(jsonencode(item))") >= 4
     assert "config_map_uid" in bootstrap
     assert "job_uid" in bootstrap
     assert "release_assertion_fingerprint" in verifier
-    assert "public_key.verify" in verifier
+    assert "Ed25519PublicKey.from_public_bytes" in verifier
     assert "fs2-model-bootstrap-retention+jws" in verifier
     assert "request.operation == 'CREATE'" in bootstrap
-    assert "system:serviceaccount:fs2-system:fs2-release-identity" in bootstrap
+    assert "model_controller_bootstrap_authority_cel" in bootstrap
+    assert "model_controller_bootstrap_inventory_verification_jobs" in bootstrap
+    assert "authentication.kubernetes.io/credential-id" in bootstrap
+    assert "model_controller_bootstrap_trust_binding_valid" in bootstrap
+    assert "model_controller_bootstrap_policy_lifecycle_binding" in bootstrap
+    assert "model_controller_bootstrap_receipt_verification" in bootstrap
+    assert "verify-model-bootstrap-retention" in bootstrap
+    assert "FS2_BOOTSTRAP_TRUST_KEY_SET_SHA256" in bootstrap
+    assert 'query if query.phase == "terminal"' in bootstrap
     assert "model_controller_bootstrap_history_policy_binding" in bootstrap
     assert "model_controller_bootstrap_trust_policy_binding" in bootstrap
     assert "model_controller_bootstrap_receipt_policy_binding" in bootstrap
     assert "fs2-serve-release-identity-trust" in bootstrap
     assert "request.name.startsWith('fs2-model-bootstrap-')" in bootstrap
     assert "for_each = local.model_controller_bootstrap_verified_specs" in inventory
+
+
+def test_model_bootstrap_assertion_secret_is_append_only_and_credential_bound() -> None:
+    bootstrap = (REPOSITORY_ROOT / "stages/workloads/model_controller.tf").read_text(encoding="utf-8")
+    variables = (REPOSITORY_ROOT / "stages/workloads/variables.tf").read_text(encoding="utf-8")
+    root_variables = (REPOSITORY_ROOT / "variables.tf").read_text(encoding="utf-8")
+    root_locals = (REPOSITORY_ROOT / "locals.tf").read_text(encoding="utf-8")
+    assert 'operations  = ["CREATE", "UPDATE", "DELETE"]' in bootstrap
+    assert "assertion Secrets are generation-retained and cannot be updated or deleted" in bootstrap
+    assert "release_identity_model_bootstrap_authority" in variables
+    assert "the reusable fs2-release-identity username is refused" in variables
+    assert "config_map_object_sha256" in variables
+    assert "key_set_sha256" in variables
+    assert "admission_object_uids" in variables
+    assert "bootstrap_authority = optional(object" in root_variables
+    assert "bootstrap_trust_binding = optional(object" in root_variables
+    assert "var.deployment.dynamic_models.bootstrap_authority" in root_locals
+    assert "var.deployment.dynamic_models.bootstrap_trust_binding" in root_locals
 
 
 def test_trusted_proxy_source_is_canonical_and_untrusted_forwarding_is_ignored() -> None:

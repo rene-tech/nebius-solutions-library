@@ -39,7 +39,7 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
         "first_migration_version": "0001_initial.sql",
         "last_migration_version": "0034_session_exchange_cutover_bridge.sql",
         "migration_count": 34,
-        "migration_set_sha256": "31a94c628489cec61a8288b653b59c9eab96b7ba58e9642a5bb22e6f185efb92",
+        "migration_set_sha256": "f87489dff4d81a15ddd8496a1876e10ec9e9cfe29f243a7cd14ce767ee80ef73",
         "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
@@ -79,6 +79,13 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count(
         "fs2_consume_session_exchange(text,integer,integer,integer)','EXECUTE'"
     ) == 2
+    for internal_function in (
+        "fs2_consume_session_exchange_exact_v2",
+        "fs2_consume_session_exchange_bridge",
+    ):
+        assert wait_source.count(
+            f"{internal_function}(text,integer,integer,integer)','EXECUTE'"
+        ) == 2
     assert "fs2_session_exchange_source_buckets','SELECT'" in wait_source
     assert "fs2_session_exchange_aggregate_buckets','SELECT'" in wait_source
     assert wait_source.count("fs2_session_exchange_source_buckets','SELECT'") == 2

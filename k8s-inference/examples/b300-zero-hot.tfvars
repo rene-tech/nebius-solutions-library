@@ -76,6 +76,10 @@ deployment = {
       repository             = "registry.example.invalid/k8s-inference/control-plane"
       digest                 = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
       catalog_rollout_digest = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      schema_compatibility_image = {
+        repository = "registry.example.invalid/k8s-inference/control-plane"
+        digest     = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+      }
     }
     admin_console = {
       repository = "registry.example.invalid/k8s-inference/admin-console"

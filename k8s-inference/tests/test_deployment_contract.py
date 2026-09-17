@@ -61,6 +61,10 @@ TEST_APPLICATIONS = {
         # Application and catalog are independently immutable tfvars inputs;
         # deployment must not depend on a source-code digest-pair allowlist.
         "catalog_rollout_digest": f"sha256:{'1' * 64}",
+        "schema_compatibility_image": {
+            "repository": "registry.example.invalid/inference/control-plane",
+            "digest": f"sha256:{'2' * 64}",
+        },
     },
     "admin_console": {
         "repository": "registry.example.invalid/inference/admin-console",
@@ -425,6 +429,12 @@ class DeploymentContractTests(unittest.TestCase):
                 "control_plane_rollout"
             ],
             applications["control_plane"]["rollout"],
+        )
+        self.assertEqual(
+            outputs["deployment_contract"]["stages"]["workloads"][
+                "control_plane_schema_compatibility_image"
+            ],
+            applications["control_plane"]["schema_compatibility_image"],
         )
 
         control_plane_source = (
@@ -1799,6 +1809,14 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_model_ids": ["qwen3-8b"],
                 "bootstrap_assertion_secret_name": "fs2-release-model-bootstrap-release-test-02",
                 "bootstrap_assertion_generation": "release-test-02",
+                "bootstrap_authority": {
+                    "username": (
+                        "system:serviceaccount:fs2-system:"
+                        "fs2-release-identity-release-test-02"
+                    ),
+                    "uid": "12345678-1234-4234-8234-123456789abc",
+                    "credential_id": "JTI=release-test-02-bound-token",
+                },
                 "fresh_install": True,
             },
         }
@@ -1815,6 +1833,13 @@ class DeploymentContractTests(unittest.TestCase):
             "release-test-02",
         )
         self.assertEqual(workloads["release_identity_model_bootstrap_retained_assertions"], {})
+        self.assertEqual(
+            workloads["release_identity_model_bootstrap_authority"],
+            deployment["dynamic_models"]["bootstrap_authority"],
+        )
+        self.assertFalse(
+            workloads["release_identity_model_bootstrap_trust_binding"]["enabled"]
+        )
 
         self.assertEqual(
             dynamic,

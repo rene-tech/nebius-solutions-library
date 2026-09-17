@@ -538,6 +538,34 @@ dynamic_models = {
   bootstrap_model_ids            = ["cosmos3-nano", "qwen3-8b"]
   bootstrap_assertion_secret_name = "fs2-release-model-bootstrap-release-20260917-01"
   bootstrap_assertion_generation  = "release-20260917-01"
+  bootstrap_authority = {
+    username      = "system:serviceaccount:fs2-system:fs2-release-identity-release-20260917-01"
+    uid           = "11111111-2222-4333-8444-555555555555"
+    credential_id = "JTI=replace-with-bound-token-credential-id"
+  }
+  # Enable only after the policy-first apply. Values below are non-secret
+  # placeholders for the integration-reviewed provider observations.
+  bootstrap_trust_binding = {
+    enabled                  = true
+    config_map_uid           = "11111111-2222-4333-8444-666666666666"
+    config_map_object_sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    trust_json_sha256        = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    key_set_sha256           = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    admission_object_uids = {
+      "validatingadmissionpolicy/fs2-model-bootstrap-policy-lifecycle"                = "11111111-2222-4333-8444-700000000001"
+      "validatingadmissionpolicybinding/fs2-model-bootstrap-policy-lifecycle"         = "11111111-2222-4333-8444-700000000002"
+      "validatingadmissionpolicy/fs2-model-bootstrap-history"                         = "11111111-2222-4333-8444-700000000003"
+      "validatingadmissionpolicybinding/fs2-model-bootstrap-history"                  = "11111111-2222-4333-8444-700000000004"
+      "validatingadmissionpolicy/fs2-model-bootstrap-retention-receipts"              = "11111111-2222-4333-8444-700000000005"
+      "validatingadmissionpolicybinding/fs2-model-bootstrap-retention-receipts"       = "11111111-2222-4333-8444-700000000006"
+      "validatingadmissionpolicy/fs2-release-identity-trust"                          = "11111111-2222-4333-8444-700000000007"
+      "validatingadmissionpolicybinding/fs2-release-identity-trust"                   = "11111111-2222-4333-8444-700000000008"
+      "validatingadmissionpolicy/fs2-model-bootstrap-assertion-secrets"               = "11111111-2222-4333-8444-700000000009"
+      "validatingadmissionpolicybinding/fs2-model-bootstrap-assertion-secrets"        = "11111111-2222-4333-8444-700000000010"
+      "validatingadmissionpolicy/fs2-model-bootstrap-verifications"                   = "11111111-2222-4333-8444-700000000011"
+      "validatingadmissionpolicybinding/fs2-model-bootstrap-verifications"            = "11111111-2222-4333-8444-700000000012"
+    }
+  }
   bootstrap_retained_assertions   = {}
   fresh_install                  = true
 }
@@ -555,7 +583,10 @@ object digest. UID replacement, unsigned injection, one-sided history, or a
 mismatched receipt fails closed. Admission makes history, trust, and receipts
 append-only and permits trust/receipt creation only to the automation-only
 release ServiceAccount. A separate policy accepts only immutable, generation-labeled,
-single-key assertion Secrets.
+single-key assertion Secrets. The short-lived release credential and the
+integration-reviewed trust/policy pins are ordinary root deployment fields;
+the workloads stage cannot be invoked through the supported platform facade
+without forwarding them.
 
 Startup retention prevents already-requested capacity from being removed during
 initialization when a short request queue drains. It does not raise replica/node

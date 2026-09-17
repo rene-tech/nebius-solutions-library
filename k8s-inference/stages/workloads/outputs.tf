@@ -239,7 +239,14 @@ output "dynamic_model_contract" {
     bootstrap_current_retention_spec = (
       null
     )
-    bootstrap_inventory_authority   = "release-signed-uid-bound-kubernetes-inventory-v2"
+    bootstrap_inventory_authority   = "policy-first-apply-time-verified-kubernetes-inventory-v3"
+    bootstrap_trust_binding = var.release_identity_model_bootstrap_trust_binding.enabled ? {
+      config_map_uid           = var.release_identity_model_bootstrap_trust_binding.config_map_uid
+      config_map_object_sha256 = var.release_identity_model_bootstrap_trust_binding.config_map_object_sha256
+      trust_json_sha256        = var.release_identity_model_bootstrap_trust_binding.trust_json_sha256
+      key_set_sha256           = var.release_identity_model_bootstrap_trust_binding.key_set_sha256
+      admission_object_uids    = var.release_identity_model_bootstrap_trust_binding.admission_object_uids
+    } : null
     bootstrap_inventory_generations = local.model_controller_bootstrap_inventory_keys
     bootstrap_managed_generations  = sort(keys(local.model_controller_bootstrap_assertions))
     bootstrap_retained_generations = local.model_controller_bootstrap_inventory_keys
@@ -433,7 +440,8 @@ output "managed_resource_count" {
     length(local.terraform_owned_model_scalers) +
     length(local.fast_start_managed_compile_cache_claims) +
     length(local.fast_start_managed_residency_receipt_claims) +
-    (var.model_controller.enabled || length(local.model_controller_bootstrap_assertions) > 0 ? 8 : 0) +
+    (local.model_controller_bootstrap_security_enabled ? 15 : 0) +
+    length(local.model_controller_bootstrap_verification_queries) +
     (local.model_controller_bootstrap_enabled ? 1 : 0) +
     (var.model_controller.enabled ? 2 : 0) +
     2 * length(local.model_controller_bootstrap_assertions) +

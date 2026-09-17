@@ -263,10 +263,12 @@ a new signed public assertion generation whose Secret is exactly
 The Kubernetes provider inventories retained ConfigMap/Job generations, but
 imports only generations carrying a release-authority-signed receipt bound to
 their exact ConfigMap/Job UIDs and full observed object digests. Install the
-append-only history/receipt policies and assertion-Secret policy before Secret
-creation. Only the automation-only `fs2-release-identity` ServiceAccount may
-create the trust root or receipts; no identity may update or delete them or
-their bound history.
+append-only policy-lifecycle, history, receipt, trust, assertion-Secret, and
+verification policies before Secret creation. Creation requires the exact
+generation-specific automation ServiceAccount username, immutable UID, and
+bound-token credential ID configured for that release; the reusable
+`fs2-release-identity` username alone is refused. No identity may update or
+delete the policies, trust, receipts, assertions, or their bound history.
 The new immutable Job runs once; prior terminal Jobs remain protected by both
 admission and `prevent_destroy`.
 
@@ -286,14 +288,17 @@ or an unkeyed hash. A separate, much larger aggregate ceiling bounds total
 password work without collapsing normal administrators into a shared
 per-source bucket.
 
-Every preexisting database upgrade intentionally returns
-429 for one complete configured exchange window. Migration `0034` routes old
-and new replicas through the same bridge during that quiescence, then through
-the same exact sliding ledger. Do not bypass the gate or revoke the legacy SQL
-signature during rollout. For source-forward rollback, retain the successor
-repository/digest under `migration.compatibilityImage` and change only the
-application `image`; the migration and schema-wait containers must understand
-the newest additive schema. An admin
+On the first post-commit call, migration `0034` atomically imports every active
+legacy admitted count into the exact sliding ledger at the bridge-call time.
+Old and new replicas use that same bridge, so the prior budget survives a full
+window without an empty-ring reset or a blanket login outage. Do not bypass the
+gate or revoke the legacy SQL signature during rollout. The platform-root
+application contract requires and regionally mirrors the independent immutable
+`schema_compatibility_image`, then Terraform wires it as
+`control_plane_schema_compatibility_image` to
+`migration.compatibilityImage`; for source-forward rollback retain that
+successor value and change only `control_plane_image`. The migration and
+schema-wait containers must understand the newest additive schema. An admin
 can invalidate every session for an in-scope principal with
 `DELETE /admin/api/v1/principals/{principal_id}/sessions`.
 The bounded settings are `FS2_ADMIN_SESSION_IDLE_TIMEOUT_SECONDS`,

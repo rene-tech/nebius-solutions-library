@@ -11,13 +11,18 @@ SCIENTIFIC_COMPANION_COMMANDS = (
     "scientific-prepare-workspace",
     "scientific-verify-runtime-artifacts",
 )
+MODEL_BOOTSTRAP_RETENTION_COMMAND = "verify-model-bootstrap-retention"
 
 
 def main() -> None:
-    # Every scientific stage starts several short-lived init containers. Those
-    # processes need artifact helpers, but never the API, database, MCP, admin,
-    # autoscaler or tracing services imported by the long-lived gateway.
-    if len(sys.argv) > 1 and sys.argv[1] in SCIENTIFIC_COMPANION_COMMANDS:
+    # Scientific helpers and the retained-history verifier are short-lived,
+    # narrowly scoped processes. They must not import the API, database, MCP,
+    # admin, autoscaler, or tracing services used by the long-lived gateway.
+    if len(sys.argv) > 1 and sys.argv[1] == MODEL_BOOTSTRAP_RETENTION_COMMAND:
+        from .model_bootstrap_retention import main as retention_main
+
+        retention_main()
+    elif len(sys.argv) > 1 and sys.argv[1] in SCIENTIFIC_COMPANION_COMMANDS:
         from .scientific_companion_cli import main as companion_main
 
         companion_main()
