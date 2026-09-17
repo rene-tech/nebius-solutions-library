@@ -79,6 +79,7 @@ from .capacity_summary import CapacitySummaryService
 from .capacity_summary_routes import capacity_summary_router
 from .configuration import ConfigurationService
 from .configuration_routes import configuration_router
+from .cosmos_media_security import CosmosMediaReferenceError
 from .lifecycle import (
     LifecycleAdminList,
     LifecycleRepository,
@@ -837,6 +838,14 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     @app.exception_handler(ScientificRequestError)
     async def scientific_request_error(_: Request, __: ScientificRequestError) -> JSONResponse:
         return _error(422, "scientific_request_invalid", "request violates the canonical scientific contract")
+
+    @app.exception_handler(CosmosMediaReferenceError)
+    async def cosmos_media_reference_error(_: Request, __: CosmosMediaReferenceError) -> JSONResponse:
+        return _error(
+            422,
+            CosmosMediaReferenceError.code,
+            "Cosmos media inputs require a finalized platform artifact",
+        )
 
     @app.exception_handler(ScientificBatchNotFoundError)
     async def scientific_not_found(_: Request, __: ScientificBatchNotFoundError) -> JSONResponse:

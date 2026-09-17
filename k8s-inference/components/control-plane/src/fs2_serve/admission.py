@@ -20,6 +20,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from .activation_contract import ActivationContractError, ScaleContract
 from .artifact_inputs import ArtifactInputError, ArtifactInputMaterializer
 from .artifact_outputs import ServingOutputArtifactizer
+from .cosmos_media_security import enforce_cosmos_media_reference_policy
 from .lifecycle import (
     LifecycleClock,
     LifecycleCorrelation,
@@ -214,6 +215,7 @@ class AdmissionService:
         if admission.protocol not in model.gateway.protocols:
             raise ValueError("model does not implement requested protocol")
         request_body = admission.request_body
+        enforce_cosmos_media_reference_policy(model, admission.protocol, request_body)
         trace_carrier: dict[str, str] = {}
         TraceContextTextMapPropagator().inject(trace_carrier)
         continued_traceparent = trace_carrier.get("traceparent")

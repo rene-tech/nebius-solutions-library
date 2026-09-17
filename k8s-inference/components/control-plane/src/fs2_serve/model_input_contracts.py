@@ -46,6 +46,13 @@ class ModelInputContract:
     model_ref: str
     protocol: str
 
+    def __post_init__(self) -> None:
+        # Cosmos contracts may also be assembled by specialized MCP builders.
+        # Enforce the artifact-only boundary at the shared contract DTO so a
+        # new media workflow cannot accidentally republish a fetchable URL.
+        if self.model_ref == "cosmos3-nano":
+            object.__setattr__(self, "input_schema", _secure_cosmos_media_references(self.input_schema))
+
 
 @lru_cache(maxsize=8)
 def _resource(name: str) -> dict[str, Any]:
@@ -138,6 +145,67 @@ def _transportable(
         "x-fs2-artifact-max-bytes": max_bytes,
         "x-fs2-artifact-media-types": list(media_types),
     }
+
+
+def _artifact_only_input(
+    description: str,
+    *,
+    media_types: tuple[str, ...],
+    max_bytes: int,
+) -> Schema:
+    """Describe a tenant-owned artifact that is materialized at dispatch."""
+
+    reference = _artifact_reference(media_types=media_types)
+    reference["description"] = (
+        description
+        + " Upload and finalize the media through the platform artifact API; "
+        "external URLs and runtime-local paths are not accepted."
+    )
+    reference["x-fs2-artifact-materialization"] = "data-url"
+    reference["x-fs2-artifact-max-bytes"] = max_bytes
+    reference["x-fs2-artifact-media-types"] = list(media_types)
+    return reference
+
+
+def _secure_cosmos_media_references(schema: Schema) -> Schema:
+    """Replace every Cosmos media locator with an artifact-only contract."""
+
+    secured = copy.deepcopy(schema)
+    media_types = ("image/jpeg", "image/png", "image/webp", "video/mp4", "application/mp4")
+
+    def visit(value: Any, path: tuple[str, ...]) -> None:
+        if not isinstance(value, dict):
+            return
+        properties = value.get("properties")
+        if isinstance(properties, dict):
+            for name, child in tuple(properties.items()):
+                child_path = path + (name,)
+                if name in {"input_reference", "vision_path"}:
+                    properties[name] = _artifact_only_input(
+                        "Caller-owned source image or video.",
+                        media_types=media_types,
+                        max_bytes=512 * 1024 * 1024,
+                    )
+                    continue
+                if name == "reference" and "controls" in path:
+                    properties[name] = _artifact_only_input(
+                        "Caller-owned control image or video.",
+                        media_types=media_types,
+                        max_bytes=128 * 1024 * 1024,
+                    )
+                    continue
+                visit(child, child_path)
+        items = value.get("items")
+        if isinstance(items, dict):
+            visit(items, path)
+        for keyword in ("allOf", "anyOf", "oneOf"):
+            alternatives = value.get(keyword)
+            if isinstance(alternatives, list):
+                for child in alternatives:
+                    visit(child, path)
+
+    visit(secured, ())
+    return secured
 
 
 _DESCRIPTIONS = {
