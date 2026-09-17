@@ -2,8 +2,8 @@
 
 The kubelet device-plugin checkpoint is the local authority that binds a Pod
 UID to physical GPU UUIDs.  This observer publishes only that bounded mapping
-and the instant at which it first saw the allocation.  It does not infer an
-allocation start time and never overwrites a conflicting Pod annotation.
+and the instant at which it saw the allocation into its isolated namespace.
+It does not infer an allocation start time and never mutates workload Pods.
 """
 
 from __future__ import annotations
@@ -21,13 +21,14 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from .model_deployment import MODEL_ID_LABEL
-from .runtime_kubernetes import (
-    GPU_ALLOCATION_OBSERVED_AT_ANNOTATION,
-    GPU_OBSERVER_RESOLUTION_ANNOTATION,
-    GPU_UUIDS_ANNOTATION,
-    pod_gpu_count,
+from .gpu_allocation_contract import (
+    DATA_KEY,
+    allocation_config_map_name,
+    encode_observations,
+    parse_observations,
 )
+from .model_deployment import MODEL_ID_LABEL
+from .runtime_kubernetes import pod_gpu_count
 
 LOGGER = logging.getLogger(__name__)
 
@@ -114,6 +115,7 @@ class KubernetesGpuAllocationPublisher:
     token_file: Path
     ca_file: Path
     namespaces: tuple[str, ...]
+    publication_namespace: str
     node_name: str
     poll_seconds: float
 
@@ -133,6 +135,7 @@ class KubernetesGpuAllocationPublisher:
             or len(self.namespaces) > MAX_NAMESPACES
             or len(set(self.namespaces)) != len(self.namespaces)
             or any(_NAMESPACE.fullmatch(namespace) is None for namespace in self.namespaces)
+            or _NAMESPACE.fullmatch(self.publication_namespace) is None
         ):
             raise ValueError("GPU observer namespaces are invalid")
 
@@ -155,24 +158,28 @@ class KubernetesGpuAllocationPublisher:
         # Projected service-account tokens rotate; reload before every bounded
         # poll instead of pinning the bootstrap token for the process lifetime.
         client.headers.update(self._headers())
-        published = 0
+        observed: dict[str, tuple[str, ...]] = {}
         for namespace in self.namespaces:
-            published += await self._publish_namespace(
+            namespace_observations = await self._observe_namespace(
                 client,
                 allocations,
                 namespace=namespace,
-                observed_at=observed_at,
             )
-        return published
+            for pod_uid, gpu_uuids in namespace_observations.items():
+                existing = observed.get(pod_uid)
+                if existing is not None and existing != gpu_uuids:
+                    raise RuntimeError("GPU observer found a conflicting Pod allocation")
+                observed[pod_uid] = gpu_uuids
+        await self._publish_observations(client, observed, observed_at=observed_at)
+        return len(observed)
 
-    async def _publish_namespace(
+    async def _observe_namespace(
         self,
         client: httpx.AsyncClient,
         allocations: Mapping[str, tuple[str, ...]],
         *,
         namespace: str,
-        observed_at: datetime,
-    ) -> int:
+    ) -> dict[str, tuple[str, ...]]:
         response = await client.get(
             f"/api/v1/namespaces/{namespace}/pods",
             params={"fieldSelector": f"spec.nodeName={self.node_name}", "limit": str(MAX_PODS)},
@@ -187,60 +194,89 @@ class KubernetesGpuAllocationPublisher:
         if len(pods) > MAX_PODS:
             raise RuntimeError("GPU observer Pod list exceeded its bound")
 
-        published = 0
+        observed: dict[str, tuple[str, ...]] = {}
         for raw_pod in pods:
             pod = _mapping(raw_pod)
             metadata = _mapping(pod.get("metadata"))
             labels = _mapping(metadata.get("labels"))
             pod_uid = metadata.get("uid")
-            pod_name = metadata.get("name")
-            resource_version = metadata.get("resourceVersion")
             if (
                 not _has_unambiguous_model_label(labels)
                 or not isinstance(pod_uid, str)
-                or not isinstance(pod_name, str)
-                or not isinstance(resource_version, str)
             ):
                 continue
             gpu_uuids = allocations.get(pod_uid)
             gpu_count = pod_gpu_count(pod)
             if gpu_uuids is None or gpu_count is None or len(gpu_uuids) != gpu_count:
                 continue
-            annotations = _mapping(metadata.get("annotations"))
-            expected_gpu_json = json.dumps(gpu_uuids, separators=(",", ":"))
-            existing = {
-                GPU_UUIDS_ANNOTATION: annotations.get(GPU_UUIDS_ANNOTATION),
-                GPU_ALLOCATION_OBSERVED_AT_ANNOTATION: annotations.get(GPU_ALLOCATION_OBSERVED_AT_ANNOTATION),
-                GPU_OBSERVER_RESOLUTION_ANNOTATION: annotations.get(GPU_OBSERVER_RESOLUTION_ANNOTATION),
-            }
-            if all(value is not None for value in existing.values()):
-                # An identical existing mapping remains the first observation;
-                # a conflict is never overwritten by a later poll.
-                continue
-            if any(value is not None for value in existing.values()):
-                continue
-            body = {
-                "metadata": {
-                    "resourceVersion": resource_version,
-                    "annotations": {
-                        GPU_UUIDS_ANNOTATION: expected_gpu_json,
-                        GPU_ALLOCATION_OBSERVED_AT_ANNOTATION: observed_at.astimezone(UTC)
-                        .isoformat()
-                        .replace("+00:00", "Z"),
-                        GPU_OBSERVER_RESOLUTION_ANNOTATION: str(self.poll_seconds),
-                    },
-                }
-            }
-            patched = await client.patch(
-                f"/api/v1/namespaces/{namespace}/pods/{pod_name}",
-                headers={"content-type": "application/merge-patch+json"},
-                content=json.dumps(body, separators=(",", ":")).encode(),
+            observed[pod_uid] = gpu_uuids
+        return observed
+
+    async def _publish_observations(
+        self,
+        client: httpx.AsyncClient,
+        allocations: Mapping[str, tuple[str, ...]],
+        *,
+        observed_at: datetime,
+    ) -> None:
+        name = allocation_config_map_name(self.node_name)
+        path = f"/api/v1/namespaces/{self.publication_namespace}/configmaps/{name}"
+        response = await client.get(path)
+        if response.status_code not in {200, 404}:
+            raise RuntimeError("GPU observer publication lookup failed")
+        resource_version: str | None = None
+        prior = {}
+        if response.status_code == 200:
+            if len(response.content) > MAX_POD_LIST_BYTES:
+                raise RuntimeError("GPU observer publication is too large")
+            try:
+                existing = _mapping(response.json())
+            except (json.JSONDecodeError, UnicodeDecodeError, RecursionError):
+                raise RuntimeError("GPU observer publication is invalid") from None
+            metadata = _mapping(existing.get("metadata"))
+            labels = _mapping(metadata.get("labels"))
+            resource_version = metadata.get("resourceVersion")
+            if (
+                labels.get("app.kubernetes.io/component") != "gpu-allocation-observer"
+                or not isinstance(resource_version, str)
+            ):
+                raise RuntimeError("GPU observer publication has different ownership")
+            try:
+                prior = parse_observations(existing, expected_node_name=self.node_name)
+            except ValueError:
+                raise RuntimeError("GPU observer publication contract is invalid") from None
+        metadata: dict[str, Any] = {
+            "name": name,
+            "namespace": self.publication_namespace,
+            "labels": {"app.kubernetes.io/component": "gpu-allocation-observer"},
+        }
+        if resource_version is not None:
+            metadata["resourceVersion"] = resource_version
+        body = {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": metadata,
+            "data": {
+                DATA_KEY: encode_observations(
+                    node_name=self.node_name,
+                    allocations=allocations,
+                    observed_at=observed_at,
+                    resolution_seconds=self.poll_seconds,
+                    prior=prior,
+                )
+            },
+        }
+        if resource_version is None:
+            published = await client.post(
+                f"/api/v1/namespaces/{self.publication_namespace}/configmaps",
+                json=body,
             )
-            if patched.status_code in {200, 201}:
-                published += 1
-            elif patched.status_code != 409:
-                raise RuntimeError("GPU observer Pod annotation failed")
-        return published
+            if published.status_code not in {201, 409}:
+                raise RuntimeError("GPU observer publication create failed")
+        else:
+            published = await client.put(path, json=body)
+            if published.status_code != 200:
+                raise RuntimeError("GPU observer publication update failed")
 
 
 async def run_gpu_allocation_observer(

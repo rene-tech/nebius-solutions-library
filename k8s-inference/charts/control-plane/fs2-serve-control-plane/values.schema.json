@@ -943,9 +943,11 @@
       "type": "object",
       "required": [
         "enabled",
+        "observerNamespace",
         "modelNamespace",
         "namespaces",
         "kubernetesApiUrl",
+        "kubernetesApiCidrs",
         "tokenExpirationSeconds",
         "pollSeconds",
         "checkpointHostPath",
@@ -955,6 +957,7 @@
       ],
       "properties": {
         "enabled": {"type": "boolean"},
+        "observerNamespace": {"const": "fs2-node-observability"},
         "modelNamespace": {"$ref": "#/$defs/dnsName"},
         "namespaces": {
           "type": "array",
@@ -967,6 +970,15 @@
           "minLength": 1,
           "maxLength": 2048,
           "pattern": "^https://[^/?#]+$"
+        },
+        "kubernetesApiCidrs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(([0-9]{1,3}\\.){3}[0-9]{1,3}/32|[0-9A-Fa-f:]+/128)$"
+          }
         },
         "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600},
         "pollSeconds": {

@@ -15,6 +15,11 @@ from uuid import UUID
 
 import httpx
 
+from ..gpu_allocation_contract import (
+    GpuAllocationObservation,
+    allocation_config_map_name,
+    parse_observations,
+)
 from .models import (
     COLLECTION_GRACE_SECONDS,
     COLLECTOR_CONTAINER_NAME,
@@ -73,9 +78,9 @@ WORKLOAD_NAMESPACE_ANNOTATION = "fs2.nebius.ai/workload-namespace"
 PODSET_ENVELOPE_ANNOTATION = "fs2.nebius.ai/podset-resource-envelope"
 PODSET_ENVELOPE_DIGEST_ANNOTATION = "fs2.nebius.ai/podset-resource-envelope-sha256"
 ROUTE_NAMESPACE_ANNOTATION = "fs2.nebius.ai/route-namespace"
-# A trusted kubelet/DCGM enricher may publish the immutable allocation on the
-# Pod. Workload containers cannot forge it because scientific Pods do not mount
-# a service-account token. The observer rejects partial or mismatched values.
+# Legacy rollout/rollback compatibility accepts annotations from the prior
+# trusted kubelet/DCGM enricher. New observations come from the observer's
+# isolated ConfigMap publication; partial or mismatched values are rejected.
 GPU_UUIDS_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-uuids"
 GPU_ALLOCATION_OBSERVED_AT_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-allocation-observed-at"
 GPU_OBSERVER_RESOLUTION_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds"
@@ -378,7 +383,12 @@ def _pod_gpu_count(spec: Mapping[str, Any], resource_name: str | None) -> int:
 def _gpu_allocation(
     metadata: Mapping[str, Any],
     gpu_count: int,
+    published: GpuAllocationObservation | None = None,
 ) -> tuple[tuple[str, ...], datetime | None, float]:
+    if published is not None:
+        if len(published.gpu_uuids) != gpu_count:
+            raise ScientificKubernetesError("trusted GPU allocation differs from the Pod allocation")
+        return published.gpu_uuids, published.observed_at, published.resolution_seconds
     annotations = metadata.get("annotations", {})
     if not isinstance(annotations, Mapping):
         return (), None, 0.0
@@ -473,6 +483,7 @@ def _pod_lifecycle(
     accelerator_resource_name: str | None,
     observed_at: datetime,
     snapshot_request_at: datetime | None = None,
+    gpu_allocation: GpuAllocationObservation | None = None,
 ) -> PodLifecycleObservation | None:
     metadata = raw_pod.get("metadata")
     spec = raw_pod.get("spec", {})
@@ -497,7 +508,7 @@ def _pod_lifecycle(
         raise ScientificKubernetesError("Kubernetes Pod creation timestamp is absent")
     pod_started_at = _optional_time(status.get("startTime"), "Pod start")
     gpu_count = _pod_gpu_count(spec, accelerator_resource_name)
-    gpu_uuids, device_observed_at, device_resolution = _gpu_allocation(metadata, gpu_count)
+    gpu_uuids, device_observed_at, device_resolution = _gpu_allocation(metadata, gpu_count, gpu_allocation)
     completed_at = _pod_completed_at(status)
     if scheduled_at is None:
         # Unscheduled Pods own no accelerator allocation. Preserve their UID
@@ -772,6 +783,7 @@ class HttpScientificBatchCluster:
         fence: ScientificFenceAuthority,
         renderer: ScientificManifestRenderer,
         writes_enabled: bool,
+        gpu_allocation_namespace: str | None = None,
         pod_placement: AcceleratorPodPlacement | None = None,
         timeout_seconds: float = 5,
         client: httpx.AsyncClient | None = None,
@@ -782,6 +794,7 @@ class HttpScientificBatchCluster:
         self.fence = fence
         self.renderer = renderer
         self.writes_enabled = writes_enabled
+        self.gpu_allocation_namespace = gpu_allocation_namespace
         self.pod_placement = pod_placement
         self.clock = clock or _utcnow
         self._snapshot_markers: dict[str, datetime] = {}
@@ -1118,6 +1131,7 @@ class HttpScientificBatchCluster:
         pending_codes: list[str] = []
         scheduled = False
         observed_at = self.clock()
+        allocation_documents: dict[str, dict[str, GpuAllocationObservation]] = {}
         for raw_pod in pods if isinstance(pods, list) else []:
             if not isinstance(raw_pod, Mapping):
                 continue
@@ -1125,11 +1139,48 @@ class HttpScientificBatchCluster:
             pod_uid = pod_metadata.get("uid") if isinstance(pod_metadata, Mapping) else None
             if isinstance(pod_uid, str) and pod_uid:
                 pod_uids.append(pod_uid)
+            pod_spec = raw_pod.get("spec")
+            node_name = pod_spec.get("nodeName") if isinstance(pod_spec, Mapping) else None
+            gpu_count = (
+                _pod_gpu_count(pod_spec, scheduling.accelerator_resource_name)
+                if isinstance(pod_spec, Mapping)
+                else 0
+            )
+            gpu_allocation: GpuAllocationObservation | None = None
+            if (
+                self.gpu_allocation_namespace is not None
+                and gpu_count > 0
+                and isinstance(node_name, str)
+                and node_name
+                and isinstance(pod_uid, str)
+                and pod_uid
+            ):
+                if node_name not in allocation_documents:
+                    try:
+                        allocation_response = await self._request(
+                            "GET",
+                            f"/api/v1/namespaces/{quote(self.gpu_allocation_namespace, safe='')}/configmaps/"
+                            f"{allocation_config_map_name(node_name)}",
+                        )
+                        if allocation_response.status_code == 200:
+                            allocation_documents[node_name] = parse_observations(
+                                cast(dict[str, Any], allocation_response.json()),
+                                expected_node_name=node_name,
+                            )
+                        else:
+                            allocation_documents[node_name] = {}
+                    except (ValueError, ScientificKubernetesError):
+                        # Attribution is optional telemetry. Preserve the
+                        # legacy read-only annotations if publication is
+                        # unavailable during a staged rollout or rollback.
+                        allocation_documents[node_name] = {}
+                gpu_allocation = allocation_documents[node_name].get(pod_uid)
             lifecycle = _pod_lifecycle(
                 raw_pod,
                 accelerator_resource_name=scheduling.accelerator_resource_name,
                 observed_at=observed_at,
                 snapshot_request_at=await self._snapshot_request_at(raw_pod, ref.namespace),
+                gpu_allocation=gpu_allocation,
             )
             if lifecycle is not None:
                 pod_lifecycle.append(lifecycle)

@@ -11,6 +11,11 @@ import httpx
 import pytest
 
 from fs2_serve.admission import AdmissionService
+from fs2_serve.gpu_allocation_contract import (
+    allocation_config_map_name,
+    encode_observations,
+    parse_observations,
+)
 from fs2_serve.gpu_allocation_observer import (
     SCIENTIFIC_MODEL_ID_LABEL,
     KubernetesGpuAllocationPublisher,
@@ -93,9 +98,16 @@ def _pod(
 
 
 class FakeReader:
-    def __init__(self, *, pods: list[dict[str, Any]], events: list[dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        pods: list[dict[str, Any]],
+        events: list[dict[str, Any]] | None = None,
+        allocation_config_map: dict[str, Any] | None = None,
+    ) -> None:
         self.pods = pods
         self.events = events or []
+        self.allocation_config_map = allocation_config_map
 
     async def list(self, path: str) -> list[Mapping[str, Any]]:
         if path.endswith("/pods"):
@@ -105,6 +117,9 @@ class FakeReader:
         raise AssertionError(path)
 
     async def get(self, path: str) -> Mapping[str, Any]:
+        if "/configmaps/" in path:
+            assert self.allocation_config_map is not None
+            return self.allocation_config_map
         assert path == "/api/v1/nodes/gpu-node-1"
         return {
             "metadata": {
@@ -176,6 +191,30 @@ async def test_runtime_attribution_fails_closed_when_multiple_ready_replicas_are
     assert await provider.resolve(operation_id=uuid4(), model_id="qwen3-8b") == RuntimeIdentity()
 
 
+@pytest.mark.asyncio
+async def test_runtime_attribution_reads_observer_owned_publication_without_pod_mutation() -> None:
+    config_map = {
+        "data": {
+            "observations.json": encode_observations(
+                node_name="gpu-node-1",
+                allocations={"pod-uid-1": (GPU_UUID,)},
+                observed_at=NOW + timedelta(seconds=12),
+                resolution_seconds=1,
+            )
+        }
+    }
+    provider = KubernetesRuntimeMetadataProvider(
+        FakeReader(pods=[_pod("qwen3-8b")], allocation_config_map=config_map),
+        allocation_namespace="fs2-node-observability",
+    )
+
+    observation = await provider.resolve_lifecycle(operation_id=uuid4(), model_id="qwen3-8b")
+
+    assert observation is not None
+    assert observation.runtime.gpu_uuids == [GPU_UUID]
+    assert observation.device_allocation_observed_at == NOW + timedelta(seconds=12)
+
+
 def test_kubelet_checkpoint_parser_extracts_only_exact_nvidia_allocations() -> None:
     checkpoint = {
         "Data": {
@@ -208,16 +247,57 @@ def test_gpu_observer_settings_use_plural_namespaces_with_legacy_fallback() -> N
     ).gpu_allocation_observer_namespace_set() == ("fs2-academic-poc", "fs2-models")
 
 
+def test_database_url_file_is_loaded_without_environment_secret(tmp_path: Path) -> None:
+    database_url_file = tmp_path / "url"
+    database_url_file.write_text("postgresql://runtime:secret@postgres/fs2_serve\n", encoding="utf-8")
+
+    settings = Settings(database_url_file=database_url_file)
+
+    assert settings.database_url == "postgresql://runtime:secret@postgres/fs2_serve"
+
+
+def test_gpu_observer_contract_preserves_first_observation_for_unchanged_allocation() -> None:
+    first_document = {
+        "data": {
+            "observations.json": encode_observations(
+                node_name="gpu-node-1",
+                allocations={"pod-uid-1": (GPU_UUID,)},
+                observed_at=NOW,
+                resolution_seconds=1,
+            )
+        }
+    }
+    first = parse_observations(first_document, expected_node_name="gpu-node-1")
+    next_document = {
+        "data": {
+            "observations.json": encode_observations(
+                node_name="gpu-node-1",
+                allocations={"pod-uid-1": (GPU_UUID,)},
+                observed_at=NOW + timedelta(seconds=12),
+                resolution_seconds=1,
+                prior=first,
+            )
+        }
+    }
+
+    observed = parse_observations(next_document, expected_node_name="gpu-node-1")
+
+    assert observed["pod-uid-1"].observed_at == NOW
+
+
 @pytest.mark.asyncio
-async def test_gpu_observer_publishes_first_observation_without_overwriting(tmp_path: Path) -> None:
-    patches: list[dict[str, Any]] = []
+async def test_gpu_observer_publishes_first_observation_without_pod_mutation(tmp_path: Path) -> None:
+    publications: list[dict[str, Any]] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET":
+        if request.url.path.endswith("/pods"):
+            assert request.method == "GET"
             return httpx.Response(200, json={"items": [_pod("qwen3-8b")]})
-        assert request.method == "PATCH"
-        patches.append(json.loads(request.content))
-        return httpx.Response(200, json={})
+        if request.method == "GET":
+            return httpx.Response(404, json={})
+        assert request.method == "POST"
+        publications.append(json.loads(request.content))
+        return httpx.Response(201, json={})
 
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
@@ -226,6 +306,7 @@ async def test_gpu_observer_publishes_first_observation_without_overwriting(tmp_
         token_file=token_file,
         ca_file=Path("/unused"),
         namespaces=("fs2-models",),
+        publication_namespace="fs2-node-observability",
         node_name="gpu-node-1",
         poll_seconds=1,
     )
@@ -240,27 +321,27 @@ async def test_gpu_observer_publishes_first_observation_without_overwriting(tmp_
             observed_at=NOW + timedelta(seconds=12),
         )
     assert published == 1
-    annotations = patches[0]["metadata"]["annotations"]
-    assert annotations == {
-        GPU_UUIDS_ANNOTATION: json.dumps([GPU_UUID], separators=(",", ":")),
-        GPU_ALLOCATION_OBSERVED_AT_ANNOTATION: _iso(12),
-        GPU_OBSERVER_RESOLUTION_ANNOTATION: "1",
-    }
+    assert publications[0]["metadata"]["namespace"] == "fs2-node-observability"
+    parsed = parse_observations(publications[0], expected_node_name="gpu-node-1")
+    assert parsed["pod-uid-1"].gpu_uuids == (GPU_UUID,)
+    assert parsed["pod-uid-1"].observed_at == NOW + timedelta(seconds=12)
 
 
 @pytest.mark.asyncio
 async def test_gpu_observer_publishes_scientific_pod_allocation(tmp_path: Path) -> None:
-    patches: list[dict[str, Any]] = []
+    publications: list[dict[str, Any]] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "GET":
+        if request.url.path.endswith("/pods"):
             return httpx.Response(
                 200,
                 json={"items": [_pod("rfdiffusion", model_label=SCIENTIFIC_MODEL_ID_LABEL)]},
             )
-        assert request.method == "PATCH"
-        patches.append(json.loads(request.content))
-        return httpx.Response(200, json={})
+        if request.method == "GET":
+            return httpx.Response(404, json={})
+        assert request.method == "POST"
+        publications.append(json.loads(request.content))
+        return httpx.Response(201, json={})
 
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
@@ -269,6 +350,7 @@ async def test_gpu_observer_publishes_scientific_pod_allocation(tmp_path: Path) 
         token_file=token_file,
         ca_file=Path("/unused"),
         namespaces=("fs2-models",),
+        publication_namespace="fs2-node-observability",
         node_name="gpu-node-1",
         poll_seconds=1,
     )
@@ -284,7 +366,7 @@ async def test_gpu_observer_publishes_scientific_pod_allocation(tmp_path: Path) 
         )
 
     assert published == 1
-    assert len(patches) == 1
+    assert len(publications) == 1
 
 
 @pytest.mark.asyncio
@@ -293,15 +375,17 @@ async def test_gpu_observer_publishes_across_exact_namespaces(tmp_path: Path) ->
 
     async def handler(request: httpx.Request) -> httpx.Response:
         paths.append(request.url.path)
-        if request.method == "GET":
+        if request.url.path.endswith("/pods"):
             items = (
                 [_pod("alphafold3", model_label=SCIENTIFIC_MODEL_ID_LABEL)]
                 if request.url.path.endswith("/fs2-academic-poc/pods")
                 else []
             )
             return httpx.Response(200, json={"items": items})
-        assert request.method == "PATCH"
-        return httpx.Response(200, json={})
+        if request.method == "GET":
+            return httpx.Response(404, json={})
+        assert request.method == "POST"
+        return httpx.Response(201, json={})
 
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
@@ -310,6 +394,7 @@ async def test_gpu_observer_publishes_across_exact_namespaces(tmp_path: Path) ->
         token_file=token_file,
         ca_file=Path("/unused"),
         namespaces=("fs2-models", "fs2-academic-poc"),
+        publication_namespace="fs2-node-observability",
         node_name="gpu-node-1",
         poll_seconds=1,
     )
@@ -328,7 +413,9 @@ async def test_gpu_observer_publishes_across_exact_namespaces(tmp_path: Path) ->
     assert paths == [
         "/api/v1/namespaces/fs2-models/pods",
         "/api/v1/namespaces/fs2-academic-poc/pods",
-        "/api/v1/namespaces/fs2-academic-poc/pods/alphafold3-runtime",
+        "/api/v1/namespaces/fs2-node-observability/configmaps/"
+        f"{allocation_config_map_name('gpu-node-1')}",
+        "/api/v1/namespaces/fs2-node-observability/configmaps",
     ]
 
 
@@ -338,8 +425,13 @@ async def test_gpu_observer_rejects_conflicting_model_labels(tmp_path: Path) -> 
     pod["metadata"]["labels"][MODEL_ID_LABEL] = "different-model"
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        assert request.method == "GET"
-        return httpx.Response(200, json={"items": [pod]})
+        if request.url.path.endswith("/pods"):
+            assert request.method == "GET"
+            return httpx.Response(200, json={"items": [pod]})
+        if request.method == "GET":
+            return httpx.Response(404, json={})
+        assert request.method == "POST"
+        return httpx.Response(201, json={})
 
     token_file = tmp_path / "token"
     token_file.write_text("t" * 32, encoding="utf-8")
@@ -348,6 +440,7 @@ async def test_gpu_observer_rejects_conflicting_model_labels(tmp_path: Path) -> 
         token_file=token_file,
         ca_file=Path("/unused"),
         namespaces=("fs2-models",),
+        publication_namespace="fs2-node-observability",
         node_name="gpu-node-1",
         poll_seconds=1,
     )

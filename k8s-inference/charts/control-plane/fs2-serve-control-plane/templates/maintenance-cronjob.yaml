@@ -39,6 +39,7 @@ spec:
               env:
                 {{- include "fs2-serve.maintenanceEnv" . | nindent 16 }}
               volumeMounts:
+                {{- include "fs2-serve.databaseCredentialsVolumeMount" . | nindent 16 }}
                 {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 16 }}
               resources:
                 requests:
@@ -53,5 +54,6 @@ spec:
                 capabilities:
                   drop: ["ALL"]
           volumes:
+            {{- include "fs2-serve.databaseCredentialsVolume" (dict "secret" .Values.secrets.maintenanceDatabase) | nindent 12 }}
             {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.maintenanceDatabase) | nindent 12 }}
 {{- end }}

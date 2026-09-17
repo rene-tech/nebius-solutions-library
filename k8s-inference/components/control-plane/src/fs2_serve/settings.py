@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"  # noqa: S104
     port: int = Field(default=8080, ge=1, le=65535)
     database_url: str = "postgresql://fs2_serve@postgres/fs2_serve"
+    database_url_file: Path | None = None
     catalog_dir: Path = Path("/etc/fs2-serve/catalog")
     bindings_file: Path = Path("/etc/fs2-serve/serving-bindings.json")
     variant_promotions_file: Path = Path("/etc/fs2-serve/bindings/model-variant-promotions.json")
@@ -147,6 +148,12 @@ class Settings(BaseSettings):
     gpu_allocation_observer_namespaces: tuple[str, ...] = Field(
         default=(),
         max_length=32,
+    )
+    gpu_allocation_observer_publication_namespace: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=63,
+        pattern=r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$",
     )
     gpu_allocation_observer_api_url: str = Field(default="https://kubernetes.default.svc", max_length=2048)
     gpu_allocation_observer_token_file: Path = Path("/var/run/secrets/fs2-serve/gpu-observer/token")
@@ -342,6 +349,14 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_urls(self) -> Settings:
         self.gpu_allocation_observer_namespace_set()
+        if self.database_url_file is not None:
+            try:
+                size = self.database_url_file.stat().st_size
+                if not 1 <= size <= 16 * 1024:
+                    raise ValueError("database URL file size is invalid")
+                self.database_url = self.database_url_file.read_text(encoding="utf-8").strip()
+            except OSError as error:
+                raise ValueError("database URL file is unavailable") from error
         if not self.database_url.startswith(("postgresql://", "postgresql+asyncpg://")):
             raise ValueError("database_url must be PostgreSQL")
         parsed = _validated_public_url(self.public_base_url, allow_http=self.allow_non_cluster_urls)

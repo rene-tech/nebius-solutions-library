@@ -170,8 +170,13 @@ locals {
     # Publish exact kubelet Pod -> GPU UUID observations for the lifecycle
     # ledger. This is GPU-model agnostic and schedules only on Nebius GPU nodes.
     runtimeAttribution = {
-      enabled    = true
-      namespaces = local.runtime_attribution_namespaces
+      enabled            = true
+      observerNamespace  = "fs2-node-observability"
+      namespaces         = local.runtime_attribution_namespaces
+      kubernetesApiCidrs = sort(tolist(setunion(
+        local.kubernetes_api_service_cidrs,
+        local.kubernetes_api_endpoint_cidrs,
+      )))
     }
     modelController = {
       enabled                             = var.model_controller.enabled

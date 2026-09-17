@@ -294,15 +294,19 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         "runtimeAttribution.enabled=true",
         "--set",
         "runtimeAttribution.namespaces={fs2-models,fs2-academic-poc}",
+        "--set-string",
+        "runtimeAttribution.kubernetesApiCidrs[0]=192.0.2.10/32",
     )
     daemonset = next(document for document in documents if document["kind"] == "DaemonSet")
     pod_spec = daemonset["spec"]["template"]["spec"]
     container = pod_spec["containers"][0]
     assert daemonset["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
+    assert daemonset["metadata"]["namespace"] == "fs2-node-observability"
     assert pod_spec["nodeSelector"] == {"nebius.com/gpu": "true"}
     assert container["args"] == ["gpu-allocation-observer"]
     environment = {item["name"]: item.get("value") for item in container["env"]}
     assert environment["FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES"] == '["fs2-academic-poc","fs2-models"]'
+    assert environment["FS2_GPU_ALLOCATION_OBSERVER_PUBLICATION_NAMESPACE"] == "fs2-node-observability"
     assert container["volumeMounts"][0] == {
         "name": "kubelet-device-plugins",
         "mountPath": "/var/lib/kubelet/device-plugins",
@@ -319,7 +323,7 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     ]
     assert {role["metadata"]["namespace"] for role in roles} == {"fs2-models", "fs2-academic-poc"}
     assert all(
-        role["rules"] == [{"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list", "patch"]}]
+        role["rules"] == [{"apiGroups": [""], "resources": ["pods"], "verbs": ["get", "list"]}]
         for role in roles
     )
     bindings = [
@@ -328,12 +332,48 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         if document["kind"] == "RoleBinding" and document["metadata"]["name"] == daemonset["metadata"]["name"]
     ]
     assert {binding["metadata"]["namespace"] for binding in bindings} == {"fs2-models", "fs2-academic-poc"}
+    assert {
+        subject["namespace"] for binding in bindings for subject in binding["subjects"]
+    } == {"fs2-node-observability"}
+    observer_account = next(
+        document
+        for document in documents
+        if document["kind"] == "ServiceAccount"
+        and document["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
+    )
+    assert observer_account["metadata"]["namespace"] == "fs2-node-observability"
+    serialized_rbac = json.dumps(
+        [document for document in documents if document["kind"] in {"Role", "ClusterRole"}]
+    )
+    assert '"resources": ["pods"], "verbs": ["get", "list", "patch"]' not in serialized_rbac
+    publication_roles = {
+        document["metadata"]["name"]: document
+        for document in documents
+        if document["kind"] == "Role" and document["metadata"]["namespace"] == "fs2-node-observability"
+    }
+    assert publication_roles[f"{daemonset['metadata']['name']}-publication-writer"]["rules"] == [
+        {"apiGroups": [""], "resources": ["configmaps"], "verbs": ["get", "create", "update"]}
+    ]
+    assert publication_roles[f"{daemonset['metadata']['name']}-publication-reader"]["rules"] == [
+        {"apiGroups": [""], "resources": ["configmaps"], "verbs": ["get"]}
+    ]
+    observer_policy = next(
+        document
+        for document in documents
+        if document["kind"] == "NetworkPolicy"
+        and document["metadata"]["namespace"] == "fs2-node-observability"
+    )
+    assert "169.254.169.254" not in json.dumps(observer_policy)
+    assert observer_policy["spec"]["ingress"] == []
+    assert observer_policy["spec"]["egress"][1]["to"] == [{"ipBlock": {"cidr": "192.0.2.10/32"}}]
 
     legacy_documents = render(
         "--set",
         "runtimeAttribution.enabled=true",
         "--set",
         "runtimeAttribution.modelNamespace=legacy-models",
+        "--set-string",
+        "runtimeAttribution.kubernetesApiCidrs[0]=192.0.2.10/32",
     )
     legacy_daemonset = next(document for document in legacy_documents if document["kind"] == "DaemonSet")
     legacy_environment = {
@@ -345,6 +385,23 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         for document in legacy_documents
         if document["kind"] == "Role" and document["metadata"]["name"] == legacy_daemonset["metadata"]["name"]
     } == {"legacy-models"}
+
+
+def test_gpu_allocation_observer_rejects_imds_and_broad_api_egress() -> None:
+    for cidr in ("169.254.169.254/32", "0.0.0.0/0", "10.0.0.0/24"):
+        result = subprocess.run(  # noqa: S603 - fixed Helm binary and bounded adversarial values.
+            render_command(
+                "--set",
+                "runtimeAttribution.enabled=true",
+                "--set-string",
+                f"runtimeAttribution.kubernetesApiCidrs[0]={cidr}",
+            ),
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode != 0
+        assert "exact non-IMDS host CIDRs" in result.stderr
 
 
 def test_admin_console_renders_digest_bound_workload_route_and_network_boundary() -> None:
@@ -768,8 +825,9 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
         assert container["securityContext"]["allowPrivilegeEscalation"] is False
         assert container["securityContext"]["capabilities"]["drop"] == ["ALL"]
         assert container["resources"]["requests"] and container["resources"]["limits"]
-    database = next(item for item in pod["containers"][0]["env"] if item["name"] == "FS2_DATABASE_URL")
-    assert "secretKeyRef" in database["valueFrom"]
+    database = next(item for item in pod["containers"][0]["env"] if item["name"] == "FS2_DATABASE_URL_FILE")
+    assert database["value"] == "/var/run/secrets/fs2-serve/database/url"
+    assert "FS2_DATABASE_URL" not in {item["name"] for item in pod["containers"][0]["env"]}
     evidence_env = next(item for item in pod["containers"][0]["env"] if item["name"] == "FS2_EVIDENCE_ROOT")
     assert evidence_env["value"] == "/etc/fs2-serve/evidence"
     assert "FS2_MIGRATIONS_DIR" not in {item["name"] for item in pod["containers"][0]["env"]}
@@ -812,11 +870,16 @@ def test_workloads_are_nonroot_bounded_and_use_digest_pins_and_secret_references
     ]
     init = pod["initContainers"][0]
     assert init["args"] == ["wait-schema"]
-    assert {item["name"] for item in init["env"]} == {"FS2_DATABASE_URL", "FS2_SCHEMA_WAIT_SECONDS"}
-    assert init["volumeMounts"] == [{"name": "database-ca", "mountPath": "/tls", "readOnly": True}]
-    init_database = next(item for item in init["env"] if item["name"] == "FS2_DATABASE_URL")
-    assert init_database["valueFrom"]["secretKeyRef"] == {"name": "fs2-serve-database", "key": "url"}
-    assert database["valueFrom"]["secretKeyRef"] == {"name": "fs2-serve-database", "key": "url"}
+    assert {item["name"] for item in init["env"]} == {"FS2_DATABASE_URL_FILE", "FS2_SCHEMA_WAIT_SECONDS"}
+    assert {item["name"] for item in init["volumeMounts"]} == {"database-credentials", "database-ca"}
+    init_database = next(item for item in init["env"] if item["name"] == "FS2_DATABASE_URL_FILE")
+    assert init_database["value"] == "/var/run/secrets/fs2-serve/database/url"
+    database_credentials = next(item for item in pod["volumes"] if item["name"] == "database-credentials")
+    assert database_credentials["secret"] == {
+        "secretName": "fs2-serve-database",
+        "defaultMode": 256,
+        "items": [{"key": "url", "path": "url"}],
+    }
     database_ca = next(item for item in pod["volumes"] if item["name"] == "database-ca")
     assert database_ca["secret"] == {
         "secretName": "fs2-serve-database",
@@ -905,11 +968,10 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert environment["FS2_ADMIN_KUBERNETES_CA_FILE"]["value"] == "/var/run/secrets/fs2-model-controller/ca.crt"
     assert environment["FS2_ADMIN_KUBERNETES_MODEL_NAMESPACE"]["value"] == "fs2-models"
     assert environment["FS2_ADMIN_KUBERNETES_SYSTEM_NAMESPACE"]["value"] == "fs2-system"
-    assert environment["FS2_DATABASE_URL"]["valueFrom"]["secretKeyRef"] == {
-        "name": "fs2-serve-database",
-        "key": "url",
-    }
+    assert environment["FS2_DATABASE_URL_FILE"]["value"] == "/var/run/secrets/fs2-serve/database/url"
+    assert "FS2_DATABASE_URL" not in environment
     assert {item["name"] for item in pod["volumes"]} == {
+        "database-credentials",
         "database-ca",
         "kubernetes-api",
         "infrastructure-envelope",
@@ -1673,18 +1735,23 @@ def test_migration_job_is_the_only_ddl_credential_consumer_and_has_no_runtime_se
     container = migration_pod["containers"][0]
     assert container["args"] == ["migrate"]
     assert {item["name"] for item in container["env"]} == {
-        "FS2_DATABASE_URL",
+        "FS2_DATABASE_URL_FILE",
         "FS2_REPORTING_DATABASE_ROLE",
         "FS2_RUNTIME_DATABASE_ROLE",
         "FS2_MAINTENANCE_DATABASE_ROLE",
         "FS2_ACTIVATION_DATABASE_ROLE",
     }
-    assert container["env"][0]["valueFrom"]["secretKeyRef"] == {
-        "name": "fs2-serve-database-migrations",
-        "key": "url",
-    }
-    assert container["volumeMounts"] == [{"name": "database-ca", "mountPath": "/tls", "readOnly": True}]
+    assert container["env"][0]["value"] == "/var/run/secrets/fs2-serve/database/url"
+    assert {item["name"] for item in container["volumeMounts"]} == {"database-credentials", "database-ca"}
     assert migration_pod["volumes"] == [
+        {
+            "name": "database-credentials",
+            "secret": {
+                "secretName": "fs2-serve-database-migrations",
+                "defaultMode": 256,
+                "items": [{"key": "url", "path": "url"}],
+            },
+        },
         {
             "name": "database-ca",
             "secret": {
@@ -1740,17 +1807,14 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
     maintenance_pod = cron["spec"]["jobTemplate"]["spec"]["template"]["spec"]
     maintenance = maintenance_pod["containers"][0]
     assert {item["name"] for item in maintenance["env"]} == {
-        "FS2_DATABASE_URL",
+        "FS2_DATABASE_URL_FILE",
         "FS2_OPERATION_RETENTION_SECONDS",
         "FS2_PAT_RETENTION_SECONDS",
         "FS2_AUDIT_RETENTION_SECONDS",
         "FS2_USAGE_RETENTION_SECONDS",
     }
-    assert maintenance["env"][0]["valueFrom"]["secretKeyRef"] == {
-        "name": "fs2-serve-database-maintenance",
-        "key": "url",
-    }
-    assert maintenance["volumeMounts"] == [{"name": "database-ca", "mountPath": "/tls", "readOnly": True}]
+    assert maintenance["env"][0]["value"] == "/var/run/secrets/fs2-serve/database/url"
+    assert {item["name"] for item in maintenance["volumeMounts"]} == {"database-credentials", "database-ca"}
     assert maintenance_pod["volumes"][0]["secret"]["secretName"] == "fs2-serve-database-maintenance"
     assert "fs2-serve-database-maintenance" not in json.dumps(deployment)
     assert 'fs2-serve-database"' not in json.dumps(cron)

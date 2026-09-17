@@ -52,6 +52,7 @@ spec:
           env:
             {{- include "fs2-serve.migrationEnv" . | nindent 12 }}
           volumeMounts:
+            {{- include "fs2-serve.databaseCredentialsVolumeMount" . | nindent 12 }}
             {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
           resources:
             {{- toYaml .Values.migration.resources | nindent 12 }}
@@ -61,4 +62,5 @@ spec:
             capabilities:
               drop: ["ALL"]
       volumes:
+        {{- include "fs2-serve.databaseCredentialsVolume" (dict "secret" .Values.secrets.migrationsDatabase) | nindent 8 }}
         {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.migrationsDatabase) | nindent 8 }}

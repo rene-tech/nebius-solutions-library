@@ -127,12 +127,15 @@ async def _store(settings: Settings) -> PostgresStore:
 async def observe_gpu_allocations(settings: Settings) -> None:
     if settings.gpu_allocation_observer_node_name is None:
         raise RuntimeError("GPU allocation observer requires its Kubernetes node name")
+    if settings.gpu_allocation_observer_publication_namespace is None:
+        raise RuntimeError("GPU allocation observer requires its publication namespace")
     await run_gpu_allocation_observer(
         publisher=KubernetesGpuAllocationPublisher(
             base_url=settings.gpu_allocation_observer_api_url,
             token_file=settings.gpu_allocation_observer_token_file,
             ca_file=settings.gpu_allocation_observer_ca_file,
             namespaces=settings.gpu_allocation_observer_namespace_set(),
+            publication_namespace=settings.gpu_allocation_observer_publication_namespace,
             node_name=settings.gpu_allocation_observer_node_name,
             poll_seconds=settings.gpu_allocation_observer_poll_seconds,
         ),
@@ -436,6 +439,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 fence=scientific_repository,
                 controller_id=settings.scientific_batch_controller_id or "scientific-batch-controller",
                 writes_enabled=settings.scientific_batch_writes_enabled,
+                gpu_allocation_namespace=settings.gpu_allocation_observer_publication_namespace,
                 pod_placement=scientific_scheduling.pod_placement,
                 timeout_seconds=settings.scientific_batch_api_timeout_seconds,
             ),
@@ -495,6 +499,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 timeout_seconds=settings.admin_adapter_timeout_seconds,
             ),
             namespace=settings.admin_kubernetes_model_namespace,
+            allocation_namespace=settings.gpu_allocation_observer_publication_namespace,
         )
         if settings.admin_capacity_enabled
         else None

@@ -105,12 +105,27 @@ locals {
     "fs2.nebius.ai/run-id"         = var.run_id
   }
 
+  pod_security_labels = {
+    "fs2-node-observability" = {
+      "pod-security.kubernetes.io/enforce" = "privileged"
+      "pod-security.kubernetes.io/audit"   = "restricted"
+      "pod-security.kubernetes.io/warn"    = "restricted"
+    }
+  }
+
+  pod_security_annotations = {
+    "fs2-node-observability" = {
+      "security.fs2.nebius.ai/pod-security-exception" = "node-observability-host-integration"
+    }
+  }
+
   namespaces = toset([
     "cert-manager",
     "cnpg-system",
     "envoy-gateway-system",
     "fs2-data",
     "fs2-models",
+    "fs2-node-observability",
     "fs2-observability",
     "fs2-system",
     "kserve",

@@ -138,6 +138,7 @@ spec:
             - name: FS2_LOG_LEVEL
               value: {{ .Values.config.logLevel | default "INFO" | quote }}
           volumeMounts:
+            {{- include "fs2-serve.databaseCredentialsVolumeMount" . | nindent 12 }}
             {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 12 }}
             - name: kubernetes-api
               mountPath: /var/run/secrets/fs2-model-controller
@@ -178,6 +179,7 @@ spec:
             capabilities:
               drop: ["ALL"]
       volumes:
+        {{- include "fs2-serve.databaseCredentialsVolume" (dict "secret" .Values.secrets.database) | nindent 8 }}
         {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) | nindent 8 }}
         - name: kubernetes-api
           projected:

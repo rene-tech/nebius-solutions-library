@@ -2,9 +2,11 @@
 
 The public inference response is not an attribution authority.  This adapter
 resolves a single ready ModelDeployment Pod through the Kubernetes API and
-uses only Pod/Node status, Kubernetes Events, and annotations written by the
-node-local GPU allocation observer.  Ambiguous replicas deliberately produce
-no attribution rather than guessing which Pod served a request.
+uses only Pod/Node status, Kubernetes Events, and a bounded publication written
+by the node-local GPU allocation observer in its isolated namespace. Legacy
+Pod annotations remain a rollout/rollback compatibility input. Ambiguous
+replicas deliberately produce no attribution rather than guessing which Pod
+served a request.
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from uuid import UUID
 
 from .admin import AdminAdapterUnavailableError
 from .admin_adapters import KubernetesListReader
+from .gpu_allocation_contract import allocation_config_map_name, parse_observations
 from .model_deployment import MODEL_ID_LABEL
 from .models import (
     RuntimeIdentity,
@@ -224,10 +227,13 @@ class KubernetesRuntimeMetadataProvider:
 
     reader: KubernetesListReader
     namespace: str = "fs2-models"
+    allocation_namespace: str | None = None
 
     def __post_init__(self) -> None:
         if _DNS_LABEL.fullmatch(self.namespace) is None:
             raise ValueError("runtime metadata namespace is invalid")
+        if self.allocation_namespace is not None and _DNS_LABEL.fullmatch(self.allocation_namespace) is None:
+            raise ValueError("GPU allocation publication namespace is invalid")
 
     async def resolve(self, *, operation_id: UUID, model_id: str) -> RuntimeIdentity:
         observation = await self.resolve_lifecycle(operation_id=operation_id, model_id=model_id)
@@ -274,17 +280,40 @@ class KubernetesRuntimeMetadataProvider:
                     preemptible = False
 
             annotations = _mapping(metadata.get("annotations"))
-            gpu_uuids = _gpu_uuids(annotations, gpu_count)
-            device_at = _timestamp(annotations.get(GPU_ALLOCATION_OBSERVED_AT_ANNOTATION)) if gpu_uuids else None
-            raw_resolution = annotations.get(GPU_OBSERVER_RESOLUTION_ANNOTATION)
+            gpu_uuids: tuple[str, ...] = ()
+            device_at: datetime | None = None
+            device_resolution = 0.0
             try:
-                device_resolution = float(raw_resolution) if raw_resolution is not None else 0.0
-            except (TypeError, ValueError):
-                device_resolution = 0.0
-            if not 0 <= device_resolution <= 300:
-                device_resolution = 0.0
-            if device_at is None:
-                gpu_uuids = ()
+                if self.allocation_namespace is None:
+                    raise AdminAdapterUnavailableError("GPU allocation publication is not configured")
+                allocation_map = await self.reader.get(
+                    f"/api/v1/namespaces/{self.allocation_namespace}/configmaps/"
+                    f"{allocation_config_map_name(str(node_name))}"
+                )
+                allocation = parse_observations(
+                    allocation_map,
+                    expected_node_name=str(node_name),
+                ).get(str(pod_uid))
+                if allocation is not None and len(allocation.gpu_uuids) == gpu_count:
+                    gpu_uuids = allocation.gpu_uuids
+                    device_at = allocation.observed_at
+                    device_resolution = allocation.resolution_seconds
+            except (AdminAdapterUnavailableError, ValueError):
+                pass
+            if not gpu_uuids:
+                # Compatibility during rollout and rollback: a pre-remediation
+                # observer may still have written the bounded annotations.
+                gpu_uuids = _gpu_uuids(annotations, gpu_count)
+                device_at = _timestamp(annotations.get(GPU_ALLOCATION_OBSERVED_AT_ANNOTATION)) if gpu_uuids else None
+                raw_resolution = annotations.get(GPU_OBSERVER_RESOLUTION_ANNOTATION)
+                try:
+                    device_resolution = float(raw_resolution) if raw_resolution is not None else 0.0
+                except (TypeError, ValueError):
+                    device_resolution = 0.0
+                if not 0 <= device_resolution <= 300:
+                    device_resolution = 0.0
+                if device_at is None:
+                    gpu_uuids = ()
 
             events: list[Mapping[str, Any]] = []
             try:

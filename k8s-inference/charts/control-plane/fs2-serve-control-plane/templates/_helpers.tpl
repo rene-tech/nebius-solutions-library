@@ -90,27 +90,18 @@ app.kubernetes.io/component: model-controller
 {{- end -}}
 
 {{- define "fs2-serve.databaseEnv" -}}
-- name: FS2_DATABASE_URL
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.secrets.database.name }}
-      key: {{ .Values.secrets.database.key }}
+- name: FS2_DATABASE_URL_FILE
+  value: /var/run/secrets/fs2-serve/database/url
 {{- end -}}
 
 {{- define "fs2-serve.migrationDatabaseEnv" -}}
-- name: FS2_DATABASE_URL
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.secrets.migrationsDatabase.name }}
-      key: {{ .Values.secrets.migrationsDatabase.key }}
+- name: FS2_DATABASE_URL_FILE
+  value: /var/run/secrets/fs2-serve/database/url
 {{- end -}}
 
 {{- define "fs2-serve.maintenanceDatabaseEnv" -}}
-- name: FS2_DATABASE_URL
-  valueFrom:
-    secretKeyRef:
-      name: {{ .Values.secrets.maintenanceDatabase.name }}
-      key: {{ .Values.secrets.maintenanceDatabase.key }}
+- name: FS2_DATABASE_URL_FILE
+  value: /var/run/secrets/fs2-serve/database/url
 {{- end -}}
 
 {{- define "fs2-serve.scientificArtifactsEnv" -}}
@@ -187,6 +178,10 @@ app.kubernetes.io/component: model-controller
 
 {{- define "fs2-serve.runtimeEnv" -}}
 {{ include "fs2-serve.databaseEnv" . }}
+{{- if .Values.runtimeAttribution.enabled }}
+- name: FS2_GPU_ALLOCATION_OBSERVER_PUBLICATION_NAMESPACE
+  value: {{ .Values.runtimeAttribution.observerNamespace | quote }}
+{{- end }}
 {{ include "fs2-serve.cryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}
 {{- include "fs2-serve.scientificArtifactsEnv" . }}
@@ -423,6 +418,22 @@ app.kubernetes.io/component: model-controller
   readOnly: true
 {{- end -}}
 
+{{- define "fs2-serve.databaseCredentialsVolumeMount" -}}
+- name: database-credentials
+  mountPath: /var/run/secrets/fs2-serve/database
+  readOnly: true
+{{- end -}}
+
+{{- define "fs2-serve.databaseCredentialsVolume" -}}
+- name: database-credentials
+  secret:
+    secretName: {{ .secret.name }}
+    defaultMode: 0400
+    items:
+      - key: {{ .secret.key }}
+        path: url
+{{- end -}}
+
 {{- define "fs2-serve.databaseCaVolume" -}}
 - name: database-ca
   secret:
@@ -436,6 +447,7 @@ app.kubernetes.io/component: model-controller
 {{- define "fs2-serve.runtimeVolumeMounts" -}}
 {{ include "fs2-serve.cryptoVolumeMounts" . }}
 {{- include "fs2-serve.scientificArtifactsVolumeMounts" . }}
+{{ include "fs2-serve.databaseCredentialsVolumeMount" . }}
 {{ include "fs2-serve.databaseCaVolumeMount" . }}
 {{- if eq .Values.catalog.delivery "pvc" }}
 - name: catalog
@@ -539,6 +551,7 @@ app.kubernetes.io/component: model-controller
 {{- define "fs2-serve.runtimeVolumes" -}}
 {{ include "fs2-serve.cryptoVolumes" . }}
 {{- include "fs2-serve.scientificArtifactsVolumes" . }}
+{{ include "fs2-serve.databaseCredentialsVolume" (dict "secret" .Values.secrets.database) }}
 {{ include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) }}
 {{- if eq .Values.catalog.delivery "pvc" }}
 - name: catalog
