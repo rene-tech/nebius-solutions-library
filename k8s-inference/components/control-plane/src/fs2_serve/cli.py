@@ -739,7 +739,7 @@ async def maintain_artifact_finalization(settings: Settings) -> None:
     object_store = _artifact_object_store(settings)
     try:
         service = ScientificArtifactService(
-            repository=PostgresArtifactRepository(pool),
+            repository=PostgresArtifactRepository(pool, recovery_authority=True),
             object_store=object_store,
             allowed_media_types=settings.artifact_media_types_set(),
             max_artifact_bytes=settings.artifact_max_bytes,
@@ -887,6 +887,7 @@ async def migrate(settings: Settings) -> None:
         settings.activation_database_role,
         settings.artifact_remover_database_role,
         settings.artifact_verifier_database_role,
+        settings.artifact_finalizer_database_role,
     )
 
 
@@ -918,6 +919,7 @@ async def migrate_expand(settings: Settings) -> None:
         settings.activation_database_role,
         settings.artifact_remover_database_role,
         settings.artifact_verifier_database_role,
+        settings.artifact_finalizer_database_role,
         preserve_predecessor_artifact_authority=True,
         rollout_bridge_image_ref=settings.schema_rollout_bridge_image_ref,
         rollout_predecessor_image_ref=settings.schema_rollout_predecessor_image_ref,
@@ -936,6 +938,7 @@ async def migrate_contract(settings: Settings) -> None:
         settings.activation_database_role,
         settings.artifact_remover_database_role,
         settings.artifact_verifier_database_role,
+        settings.artifact_finalizer_database_role,
         require_bridge_ready_receipt=True,
         rollout_bridge_image_ref=settings.schema_rollout_bridge_image_ref,
         rollout_predecessor_image_ref=settings.schema_rollout_predecessor_image_ref,
@@ -956,6 +959,7 @@ async def migrate_rollback(settings: Settings) -> None:
         settings.activation_database_role,
         settings.artifact_remover_database_role,
         settings.artifact_verifier_database_role,
+        settings.artifact_finalizer_database_role,
         rollback_bridge=True,
         rollout_bridge_image_ref=settings.schema_rollout_bridge_image_ref,
         rollout_predecessor_image_ref=settings.schema_rollout_predecessor_image_ref,

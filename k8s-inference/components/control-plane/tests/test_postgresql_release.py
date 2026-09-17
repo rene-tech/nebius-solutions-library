@@ -42,8 +42,8 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
         "first_migration_version": "0001_initial.sql",
         "last_migration_version": "0031_scientific_quota_fencing.sql",
         "migration_count": 31,
-        "migration_set_sha256": "64afcd319b2d5ca5c84c58b00018e66afb22c5097852c70511b16deb8c3736d8",
-        "namespace_role_ownership_sha256": "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580",
+        "migration_set_sha256": "43eae91cb9d79fd01dba89e899ab75b951c1ab11cb37ac9c505623d991d1f2a2",
+        "namespace_role_ownership_sha256": "fd7e8b0bbc6f41d4cbaead87eeefcf84998cf646f40af734adca75096791faf6",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
     assert len(migrations) == receipt["migration_count"]
@@ -113,7 +113,7 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     for privilege in ("SELECT", "INSERT", "UPDATE", "DELETE"):
         assert wait_source.count(f"fs2_scientific_admission_outbox','{privilege}'") == 2
     assert wait_source.count("fs2_scientific_batches','scheduling_digest','UPDATE'") == 2
-    assert wait_source.count("fs2_scientific_artifact_quota_reservations','SELECT'") == 2
+    assert wait_source.count("fs2_scientific_artifact_quota_reservations','SELECT'") == 3
     assert wait_source.count("fs2_scientific_artifact_quota_reservations','INSERT'") == 2
     assert wait_source.count("fs2_scientific_artifact_quota_reservations','expires_at','UPDATE'") == 2
     assert wait_source.count("fs2_scientific_artifact_quota_reservations','state','UPDATE'") == 2
@@ -124,13 +124,31 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count("fs2_scientific_gpu_settlements','INSERT'") == 2
     assert "GRANT SELECT,INSERT ON fs2_scientific_gpu_settlements" not in wait_source
     assert "fs2_serve_artifact_verifier" in wait_source
+    assert "fs2_serve_artifact_finalizer" in wait_source
     assert "fs2_scientific_claim_artifact_verifications_v2(integer)" in wait_source
     assert "fs2_scientific_claim_artifact_removals_v2(integer,uuid,text)" in wait_source
     assert "fs2_scientific_record_upload_capability_v2" in wait_source
     assert "fs2_scientific_record_artifact_removal_v2" in wait_source
+    assert "fs2_scientific_record_foreground_finalization_failure_v2" in wait_source
+    assert "fs2_scientific_record_recovery_finalization_failure_v2" in wait_source
+    assert "fs2_scientific_publish_foreground_artifact_v2" in wait_source
+    assert "fs2_scientific_publish_recovery_artifact_v2" in wait_source
+    assert "fs2_scientific_get_claimed_finalization_intent_v2" in wait_source
     assert "fs2_scientific_record_legacy_artifact_version_scan_v2" in wait_source
     assert "fs2_scientific_record_upload_session_aborted_v2" in wait_source
     assert "NOT has_function_privilege('fs2_serve_runtime'" in wait_source
+    assert "NOT has_table_privilege('fs2_serve_artifact_finalizer'" in wait_source
+    for table in (
+        "fs2_scientific_uploads",
+        "fs2_scientific_artifact_quota_reservations",
+        "fs2_scientific_artifact_finalization_leases",
+    ):
+        assert f"'public.{table}','SELECT'" in wait_source
+    migration_source = inspect.getsource(PostgresStore._apply_migrations)
+    assert "REVOKE ALL ON fs2_scientific_uploads," in migration_source
+    assert "FROM {quoted_artifact_finalizer}" in migration_source
+    assert "fs2_scientific_get_claimed_finalization_intent_v2" in migration_source
+    assert "GRANT SELECT ON fs2_scientific_uploads" not in migration_source
     assert "database schema runtime privileges are incomplete" in wait_source
 
 
@@ -361,6 +379,7 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
         "activation": ("fs2-system", "fs2-serve-database-activation", "url"),
         "artifact-removal": ("fs2-system", "fs2-serve-database-artifact-remover", "url"),
         "artifact-verification": ("fs2-system", "fs2-serve-database-artifact-verifier", "url"),
+        "artifact-finalization": ("fs2-system", "fs2-serve-database-artifact-finalizer", "url"),
         "maintenance": ("fs2-system", "fs2-serve-database-maintenance", "url"),
         "migrations": ("fs2-system", "fs2-serve-database-migrations", "url"),
         "reporting": ("fs2-observability", "fs2-serve-database-reporting", "url"),
@@ -370,6 +389,7 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
         "fs2_serve_activation",
         "fs2_serve_artifact_remover",
         "fs2_serve_artifact_verifier",
+        "fs2_serve_artifact_finalizer",
         "fs2_serve_maintenance",
         "fs2_serve_reporting",
         "fs2_serve_runtime",

@@ -285,6 +285,43 @@ run "storage_only_projects_the_canonical_chart_values" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        /* Preserved non-executable duplicate fixture text from the static-only authoring pass.
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        */
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -330,6 +367,38 @@ run "storage_only_projects_the_canonical_chart_values" {
         secret_reference_id = "mysteryboxsecret-scientificverifier"
         resource_version    = 0
       }
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
+        resource_version    = 0
+      }
+      /* Preserved non-executable duplicate fixture text from the static-only authoring pass.
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
+        resource_version    = 0
+      }
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
+        resource_version    = 0
+      }
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
+        resource_version    = 0
+      }
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
+        resource_version    = 0
+      }
+      */
     }
   }
 
@@ -375,6 +444,7 @@ run "storage_only_projects_the_canonical_chart_values" {
       terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactStore.key == "credentials.json" &&
       terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactRemoverStore.name == "fs2-serve-artifact-remover-store" &&
       terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactVerifierStore.name == "fs2-serve-artifact-verifier-store" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactFinalizerStore.name == "fs2-serve-artifact-finalizer-store" &&
       terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.removalSchedule == "*/5 * * * *" &&
       terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.finalizationSchedule == "1-59/5 * * * *" &&
       terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.verificationConcurrency == 4 &&
@@ -382,9 +452,12 @@ run "storage_only_projects_the_canonical_chart_values" {
       terraform_data.scientific_artifacts_contract.input.secret_name == "fs2-serve-artifact-store" &&
       terraform_data.scientific_artifacts_contract.input.remover_secret_name == "fs2-serve-artifact-remover-store" &&
       terraform_data.scientific_artifacts_contract.input.verifier_secret_name == "fs2-serve-artifact-verifier-store" &&
+      terraform_data.scientific_artifacts_contract.input.finalizer_secret_name == "fs2-serve-artifact-finalizer-store" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactFinalizerStore.key == "credentials.json" &&
+      terraform_data.scientific_artifacts_contract.input.finalizer_credential_revision > 0 &&
       terraform_data.scientific_artifacts_contract.input.namespace == "fs2-system"
     )
-    error_message = "Writer, remover and independent verifier credentials and schedules must remain distinct."
+    error_message = "Writer, remover, verifier and finalizer credentials and schedules must remain distinct."
   }
 
   assert {
@@ -456,6 +529,13 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -499,6 +579,12 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
         key_id              = "accesskey-scientificverifier"
         access_key_id       = "AJE000SCIENTIFICVERIFY"
         secret_reference_id = "mysteryboxsecret-scientificverifier"
+        resource_version    = 0
+      }
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
         resource_version    = 0
       }
     }
@@ -644,6 +730,13 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -687,6 +780,12 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
         key_id              = "accesskey-scientificverifier"
         access_key_id       = "AJE000SCIENTIFICVERIFY"
         secret_reference_id = "mysteryboxsecret-scientificverifier"
+        resource_version    = 0
+      }
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
         resource_version    = 0
       }
     }
@@ -850,6 +949,13 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -893,6 +999,12 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
         key_id              = "accesskey-scientificverifier"
         access_key_id       = "AJE000SCIENTIFICVERIFY"
         secret_reference_id = "mysteryboxsecret-scientificverifier"
+        resource_version    = 0
+      }
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
         resource_version    = 0
       }
     }
@@ -952,6 +1064,13 @@ run "an_out_of_region_bucket_is_refused" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        finalizer = {
+          service_account_id = "serviceaccount-scientificfinalizer"
+          group_id           = "group-scientificfinalizers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -995,6 +1114,12 @@ run "an_out_of_region_bucket_is_refused" {
         key_id              = "accesskey-scientificverifier"
         access_key_id       = "AJE000SCIENTIFICVERIFY"
         secret_reference_id = "mysteryboxsecret-scientificverifier"
+        resource_version    = 0
+      }
+      artifact_finalizer_object_storage_access = {
+        key_id              = "accesskey-scientificfinalizer"
+        access_key_id       = "AJE000SCIENTIFICFINAL"
+        secret_reference_id = "mysteryboxsecret-scientificfinalizer"
         resource_version    = 0
       }
     }

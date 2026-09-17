@@ -366,7 +366,7 @@ count `31`, first version `0001_initial.sql`, last version
 and namespace/role ownership SHA-256
 `cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580`.
 The whole logical contract payload is SHA-256
-`c4706d7953709940fc6bea3b78340e917719c4df656565429cca09dcf6e7f64f`.
+`23e15ebf20f1a5beb4e2164cf699549876a7475f4cfd41dc063abb403536162d`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -421,6 +421,15 @@ NOLOGIN groups `fs2_serve_runtime`, `fs2_serve_maintenance`,
 `fs2_serve_activation`, and `fs2_serve_reporting`. Application, maintenance,
 artifact-remover, artifact-verifier, artifact-finalizer, controller, and Grafana workloads only
 consume their named Secret and group membership.
+
+SAI-21 adds the canonical finalization-recovery database Secret
+`fs2-system/fs2-serve-database-artifact-finalizer` and NOLOGIN group
+`fs2_serve_artifact_finalizer`. Its single consumer is the tokenless
+`artifact-finalizer` CronJob, paired with the distinct
+`fs2-serve-artifact-finalizer-store` MysteryBox Secret. That group can claim an
+expired lease and read or settle only the exact unexpired recovery generation;
+it has no runtime, foreground, core-settlement, token, operation, or global
+upload/quota/lease read authority.
 
 The PAT and principal that admitted an operation have an implicit capability
 to read its status/result, cancel it, and explicitly acknowledge its retained

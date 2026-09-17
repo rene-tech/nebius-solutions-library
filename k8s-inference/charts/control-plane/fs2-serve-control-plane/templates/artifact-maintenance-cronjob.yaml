@@ -109,7 +109,7 @@ spec:
                 {{- include "fs2-serve.artifactFinalizationEnv" . | nindent 16 }}
               volumeMounts:
                 {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 16 }}
-                - name: artifact-store
+                - name: artifact-finalizer-store
                   mountPath: /var/run/secrets/fs2-serve/artifact-store
                   readOnly: true
               resources:
@@ -125,13 +125,13 @@ spec:
                 capabilities:
                   drop: ["ALL"]
           volumes:
-            {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.database) | nindent 12 }}
-            - name: artifact-store
+            {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.artifactFinalizationDatabase) | nindent 12 }}
+            - name: artifact-finalizer-store
               secret:
-                secretName: {{ .Values.secrets.artifactStore.name }}
+                secretName: {{ .Values.secrets.artifactFinalizerStore.name }}
                 defaultMode: 0400
                 items:
-                  - key: {{ .Values.secrets.artifactStore.key }}
+                  - key: {{ .Values.secrets.artifactFinalizerStore.key }}
                     path: credentials.json
 {{- end }}
 ---

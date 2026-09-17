@@ -544,6 +544,7 @@ class PostgresStore:
         activation_role: str = "fs2_serve_activation",
         artifact_remover_role: str = "fs2_serve_artifact_remover",
         artifact_verifier_role: str = "fs2_serve_artifact_verifier",
+        artifact_finalizer_role: str = "fs2_serve_artifact_finalizer",
         preserve_predecessor_artifact_authority: bool = False,
         rollback_bridge: bool = False,
         require_bridge_ready_receipt: bool = False,
@@ -558,6 +559,7 @@ class PostgresStore:
             ("activation", activation_role),
             ("artifact remover", artifact_remover_role),
             ("artifact verifier", artifact_verifier_role),
+            ("artifact finalizer", artifact_finalizer_role),
         ):
             if not role.replace("_", "a").isalnum() or not 1 <= len(role) <= 63:
                 raise ValueError(f"{label} database role is invalid")
@@ -569,11 +571,12 @@ class PostgresStore:
                 activation_role,
                 artifact_remover_role,
                 artifact_verifier_role,
+                artifact_finalizer_role,
             }
-        ) != 6:
+        ) != 7:
             raise ValueError(
-                "reporting, runtime, maintenance, activation, artifact-remover, and artifact-verifier "
-                "database roles must differ"
+                "reporting, runtime, maintenance, activation, artifact-remover, artifact-verifier, "
+                "and artifact-finalizer database roles must differ"
             )
         if preserve_predecessor_artifact_authority and rollback_bridge:
             raise ValueError("expand and rollback database modes are mutually exclusive")
@@ -702,6 +705,7 @@ class PostgresStore:
                 ("activation", activation_role),
                 ("artifact remover", artifact_remover_role),
                 ("artifact verifier", artifact_verifier_role),
+                ("artifact finalizer", artifact_finalizer_role),
             ):
                 can_login = await connection.fetchval("SELECT rolcanlogin FROM pg_roles WHERE rolname=$1", role)
                 if can_login is None:
@@ -716,6 +720,7 @@ class PostgresStore:
             quoted_activation = f'"{activation_role}"'
             quoted_artifact_remover = f'"{artifact_remover_role}"'
             quoted_artifact_verifier = f'"{artifact_verifier_role}"'
+            quoted_artifact_finalizer = f'"{artifact_finalizer_role}"'
             all_roles = (
                 quoted_reporting,
                 quoted_runtime,
@@ -723,6 +728,7 @@ class PostgresStore:
                 quoted_activation,
                 quoted_artifact_remover,
                 quoted_artifact_verifier,
+                quoted_artifact_finalizer,
             )
             for role in all_roles:
                 await connection.execute(
@@ -799,11 +805,21 @@ class PostgresStore:
                     f"fs2_scientific_mark_upload_session_completed_v2(uuid,text,integer,text,text,text,timestamptz),"
                     f"fs2_scientific_acquire_artifact_finalization_lease_v2(uuid,uuid,text,integer,uuid),"
                     f"fs2_scientific_claim_expired_finalization_leases_v2(integer),"
+                    f"fs2_scientific_get_claimed_finalization_intent_v2("
+                    f"uuid,uuid,text,uuid,integer,integer),"
                     f"fs2_scientific_record_finalization_failure_v2("
+                    f"uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz),"
+                    f"fs2_scientific_record_foreground_finalization_failure_v2("
+                    f"uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz),"
+                    f"fs2_scientific_record_recovery_finalization_failure_v2("
                     f"uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz),"
                     f"fs2_scientific_record_upload_capability_v2("
                     f"uuid,text,uuid,integer,integer,bigint,text,text,text,timestamptz),"
                     f"fs2_scientific_publish_artifact_v2("
+                    f"uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz),"
+                    f"fs2_scientific_publish_foreground_artifact_v2("
+                    f"uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz),"
+                    f"fs2_scientific_publish_recovery_artifact_v2("
                     f"uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz),"
                     f"fs2_scientific_claim_legacy_artifact_versions_v2(integer),"
                     f"fs2_scientific_record_legacy_artifact_version_scan_v2("
@@ -907,20 +923,34 @@ class PostgresStore:
                 f"fs2_scientific_bind_upload_session_v2("
                 f"uuid,text,text,uuid,text,bigint,integer,timestamptz),"
                 f"fs2_scientific_acquire_artifact_finalization_lease_v2("
-                f"uuid,uuid,text,integer,uuid),"
-                f"fs2_scientific_claim_expired_finalization_leases_v2(integer) TO {quoted_runtime}"
+                f"uuid,uuid,text,integer,uuid) TO {quoted_runtime}"
             )
             await connection.execute(
-                f"GRANT EXECUTE ON FUNCTION fs2_scientific_record_finalization_failure_v2("
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_record_foreground_finalization_failure_v2("
                 f"uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz) "
                 f"TO {quoted_runtime}"
             )
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_scientific_record_upload_capability_v2("
                 f"uuid,text,uuid,integer,integer,bigint,text,text,text,timestamptz),"
-                f"fs2_scientific_publish_artifact_v2("
+                f"fs2_scientific_publish_foreground_artifact_v2("
                 f"uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz) "
                 f"TO {quoted_runtime}"
+            )
+            await connection.execute(
+                f"REVOKE ALL ON fs2_scientific_uploads,"
+                f"fs2_scientific_artifact_quota_reservations,"
+                f"fs2_scientific_artifact_finalization_leases FROM {quoted_artifact_finalizer}"
+            )
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_expired_finalization_leases_v2(integer),"
+                f"fs2_scientific_get_claimed_finalization_intent_v2("
+                f"uuid,uuid,text,uuid,integer,integer),"
+                f"fs2_scientific_record_recovery_finalization_failure_v2("
+                f"uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz),"
+                f"fs2_scientific_publish_recovery_artifact_v2("
+                f"uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz) "
+                f"TO {quoted_artifact_finalizer}"
             )
             await connection.execute(
                 f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_stale_upload_session_creations_v2("
@@ -1142,6 +1172,7 @@ class PostgresStore:
         activation_role: str = "fs2_serve_activation",
         artifact_remover_role: str = "fs2_serve_artifact_remover",
         artifact_verifier_role: str = "fs2_serve_artifact_verifier",
+        artifact_finalizer_role: str = "fs2_serve_artifact_finalizer",
         preserve_predecessor_artifact_authority: bool = False,
         rollback_bridge: bool = False,
         require_bridge_ready_receipt: bool = False,
@@ -1167,6 +1198,7 @@ class PostgresStore:
                 activation_role,
                 artifact_remover_role,
                 artifact_verifier_role,
+                artifact_finalizer_role,
                 preserve_predecessor_artifact_authority,
                 rollback_bridge,
                 require_bridge_ready_receipt,
@@ -1302,15 +1334,34 @@ class PostgresStore:
                             "'public.fs2_scientific_acquire_artifact_finalization_lease_v2("
                             "uuid,uuid,text,integer,uuid)','EXECUTE')"
                             " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_record_foreground_finalization_failure_v2("
+                            "uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_claim_expired_finalization_leases_v2(integer)',"
                             "'EXECUTE')"
-                            " AND has_function_privilege('fs2_serve_runtime',"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_get_claimed_finalization_intent_v2("
+                            "uuid,uuid,text,uuid,integer,integer)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_record_recovery_finalization_failure_v2("
+                            "uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_publish_recovery_artifact_v2("
+                            "uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_record_finalization_failure_v2("
                             "uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,"
                             "timestamp with time zone)','EXECUTE')"
                             " AND NOT has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_artifact_finalization_failures','INSERT')"
                             " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_publish_foreground_artifact_v2("
+                            "uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_publish_artifact_v2("
                             "uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,"
                             "timestamp with time zone)','EXECUTE')"
@@ -1374,6 +1425,49 @@ class PostgresStore:
                             "'public.fs2_scientific_claim_artifact_removals(integer,uuid,text)','EXECUTE')"
                             " AND NOT has_function_privilege('fs2_serve_artifact_verifier',"
                             "'public.fs2_scientific_claim_artifact_verifications(integer)','EXECUTE')"
+                            " AND NOT has_table_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_uploads','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_artifact_quota_reservations','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_artifact_finalization_leases','SELECT')"
+                            " AND has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_claim_expired_finalization_leases_v2(integer)',"
+                            "'EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_get_claimed_finalization_intent_v2("
+                            "uuid,uuid,text,uuid,integer,integer)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_record_recovery_finalization_failure_v2("
+                            "uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_publish_recovery_artifact_v2("
+                            "uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_acquire_artifact_finalization_lease_v2("
+                            "uuid,uuid,text,integer,uuid)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_record_foreground_finalization_failure_v2("
+                            "uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_publish_foreground_artifact_v2("
+                            "uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_record_finalization_failure_v2("
+                            "uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_scientific_publish_artifact_v2("
+                            "uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,"
+                            "timestamp with time zone)','EXECUTE')"
+                            " AND NOT has_table_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_tokens','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_artifact_finalizer',"
+                            "'public.fs2_operations','SELECT')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_reservations','SELECT')"
                             " AND has_table_privilege(current_user,"

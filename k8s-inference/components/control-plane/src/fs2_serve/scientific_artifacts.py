@@ -4209,8 +4209,9 @@ _CLOSE_ATTEMPT_SQL = f"""
 class PostgresArtifactRepository:
     """Durable repository whose fences are enforced by SQL, not by callers."""
 
-    def __init__(self, pool: asyncpg.Pool[Any]) -> None:
+    def __init__(self, pool: asyncpg.Pool[Any], *, recovery_authority: bool = False) -> None:
         self.pool = pool
+        self._recovery_authority = recovery_authority
 
     @staticmethod
     def _translate(error: asyncpg.PostgresError) -> ArtifactServiceError | None:
@@ -4611,9 +4612,14 @@ class PostgresArtifactRepository:
         verified: VerifiedStoredObject,
         failure_code: Literal["content_verification_failed", "artifact_policy_failed"],
     ) -> ArtifactFinalizationFailureEvidence:
+        routine = (
+            "fs2_scientific_record_recovery_finalization_failure_v2"
+            if self._recovery_authority
+            else "fs2_scientific_record_foreground_finalization_failure_v2"
+        )
         try:
             row = await self.pool.fetchrow(
-                "SELECT * FROM fs2_scientific_record_finalization_failure_v2("
+                f"SELECT * FROM {routine}("  # noqa: S608 -- selected from fixed internal names above
                 "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
                 request.upload_id,
                 request.operation_id,
@@ -4869,22 +4875,40 @@ class PostgresArtifactRepository:
     async def get_leased_upload(
         self, request: FinalizeArtifactUpload, *, lease: ArtifactFinalizationLease
     ) -> UploadIntent:
-        row = await self.pool.fetchrow(
-            "SELECT upload.* FROM fs2_scientific_uploads upload "
-            "JOIN fs2_scientific_artifact_quota_reservations reservation "
-            "ON reservation.upload_id=upload.id "
-            "JOIN fs2_scientific_artifact_finalization_leases lease ON lease.upload_id=upload.id "
-            "WHERE upload.id=$1 AND upload.operation_id=$2 AND upload.tenant_id=$3 "
-            "AND upload.artifact_id IS NULL AND reservation.state='active' "
-            "AND lease.lease_id=$4 AND lease.lease_generation=$5 "
-            "AND lease.session_generation=$6 AND lease.state='active'",
-            request.upload_id,
-            request.operation_id,
-            request.tenant_id,
-            lease.lease_id,
-            lease.lease_generation,
-            lease.session_generation,
-        )
+        try:
+            if self._recovery_authority:
+                row = await self.pool.fetchrow(
+                    "SELECT * FROM fs2_scientific_get_claimed_finalization_intent_v2("
+                    "$1,$2,$3,$4,$5,$6)",
+                    request.upload_id,
+                    request.operation_id,
+                    request.tenant_id,
+                    lease.lease_id,
+                    lease.lease_generation,
+                    lease.session_generation,
+                )
+            else:
+                row = await self.pool.fetchrow(
+                    "SELECT upload.* FROM fs2_scientific_uploads upload "
+                    "JOIN fs2_scientific_artifact_quota_reservations reservation "
+                    "ON reservation.upload_id=upload.id "
+                    "JOIN fs2_scientific_artifact_finalization_leases lease ON lease.upload_id=upload.id "
+                    "WHERE upload.id=$1 AND upload.operation_id=$2 AND upload.tenant_id=$3 "
+                    "AND upload.artifact_id IS NULL AND reservation.state='active' "
+                    "AND lease.lease_id=$4 AND lease.lease_generation=$5 "
+                    "AND lease.session_generation=$6 AND lease.state='active'",
+                    request.upload_id,
+                    request.operation_id,
+                    request.tenant_id,
+                    lease.lease_id,
+                    lease.lease_generation,
+                    lease.session_generation,
+                )
+        except asyncpg.PostgresError as error:
+            raise (
+                self._translate(error)
+                or ArtifactConflictError("artifact finalization lease is stale")
+            ) from None
         if row is None:
             raise ArtifactConflictError("artifact finalization lease is stale")
         return _upload_from_row(row)
@@ -5220,9 +5244,14 @@ class PostgresArtifactRepository:
     ) -> ArtifactRecord:
         if session is None:
             raise ArtifactConflictError("artifact publication requires a provider session")
+        routine = (
+            "fs2_scientific_publish_recovery_artifact_v2"
+            if self._recovery_authority
+            else "fs2_scientific_publish_foreground_artifact_v2"
+        )
         try:
             row = await self.pool.fetchrow(
-                "SELECT * FROM fs2_scientific_publish_artifact_v2("
+                f"SELECT * FROM {routine}("  # noqa: S608 -- selected from fixed internal names above
                 "$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)",
                 request.upload_id,
                 request.operation_id,

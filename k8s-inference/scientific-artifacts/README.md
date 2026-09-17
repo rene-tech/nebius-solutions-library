@@ -66,6 +66,15 @@ tfvars, a Helm value, an output, a log or a receipt.
    rotation rewrites the Secret and restarts the control plane. The annotations
    carry numbers and an access-key ID, never credential material.
 
+SAI-21 amendment: the finalization recovery controller is a fourth, isolated
+consumer. Infrastructure issues a fourth MysteryBox key for
+`fs2-serve-artifact-finalizer-store`; workloads also project the distinct
+`fs2-serve-database-artifact-finalizer` Secret for NOLOGIN group
+`fs2_serve_artifact_finalizer`. The finalizer mounts neither runtime Secret. Its
+database authority is recovery-only: it can claim an expired generation and
+read or settle only that exact unexpired claim, without global `SELECT` over
+tenant uploads, quota reservations, or finalization leases.
+
 The cloud key's own `resource_version` cannot carry rotation on its own: a
 replaced key starts again at zero, so a revision derived from it would repeat
 the previous value and leave the stale secret mounted. Rotation therefore has
@@ -114,6 +123,11 @@ stability grace, maintenance throughput/deadline bounds, and distinct runtime,
 remover, verifier, and finalizer identities. The static wiring contract covers
 those names so a Terraform/chart drift fails before rollout.
 
+SAI-21 amendment: the chart seam now contains four artifact Secret references:
+writer, remover, verifier, and finalizer. The finalizer reference is paired
+with its own database Secret and recovery-only role; it is not an alias for the
+runtime writer credential.
+
 Customer begin-upload remains backward shaped: no protocol field means
 `single-put-v1` and still returns a required handle. The handle now targets one
 exact server-owned multipart part rather than replayable PutObject. Objects
@@ -155,12 +169,19 @@ gets for a key it may not read, and a probe that was never taken cannot count
 either. The credential is only ever
 read from a file, so it cannot appear in a process listing or a shell history.
 
-The writer holds `storage.object-editor`, which is object scoped and therefore
+The writer and the separately credentialed finalization reconciler hold
+`storage.object-editor`, which is object scoped and therefore
 cannot list the bucket. That is deliberate, and it is why cleanup deletes the
 exact versions the store reported rather than enumerating a prefix. Noncurrent
 versions remain available for the same interval as application metadata so an
 immutable VersionId pin cannot be invalidated before normal retention cleanup;
 the delete-marker rule then reclaims empty tombstones.
+
+The finalizer never shares the runtime key or runtime database login. Its
+object-store key is scoped to `scientific/v1/*`, while its database role can
+only claim expired finalization leases and settle the resulting unexpired
+recovery generation. Runtime settlement is separately fenced to an unexpired
+generation-1 lease.
 
 ## Evidence
 

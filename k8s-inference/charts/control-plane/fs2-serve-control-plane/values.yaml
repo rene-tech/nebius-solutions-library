@@ -313,6 +313,10 @@ secrets:
     name: fs2-serve-database-artifact-verifier
     key: url
     caKey: ca.crt
+  artifactFinalizationDatabase:
+    name: fs2-serve-database-artifact-finalizer
+    key: url
+    caKey: ca.crt
   payloadKeyring:
     name: fs2-serve-payload-keyring
     key: keyring.json
@@ -340,6 +344,10 @@ secrets:
   # Independent read-only provider identity mounted only into verification.
   artifactVerifierStore:
     name: fs2-serve-artifact-verifier-store
+    key: credentials.json
+  # Multipart completion/read credential mounted only into finalization recovery.
+  artifactFinalizerStore:
+    name: fs2-serve-artifact-finalizer-store
     key: credentials.json
 
 config:
@@ -410,18 +418,19 @@ migration:
   maintenanceDatabaseRole: fs2_serve_maintenance
   artifactRemoverDatabaseRole: fs2_serve_artifact_remover
   artifactVerifierDatabaseRole: fs2_serve_artifact_verifier
+  artifactFinalizerDatabaseRole: fs2_serve_artifact_finalizer
   activationDatabaseRole: fs2_serve_activation
   # Exact value-suppressed inputs emitted by `fs2-serve
   # postgresql-release-contract`. The migration Job publishes these annotations
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: c4706d7953709940fc6bea3b78340e917719c4df656565429cca09dcf6e7f64f
-    migrationSetSha256: 64afcd319b2d5ca5c84c58b00018e66afb22c5097852c70511b16deb8c3736d8
+    contractPayloadSha256: 23e15ebf20f1a5beb4e2164cf699549876a7475f4cfd41dc063abb403536162d
+    migrationSetSha256: 43eae91cb9d79fd01dba89e899ab75b951c1ab11cb37ac9c505623d991d1f2a2
     migrationCount: 31
     firstMigrationVersion: 0001_initial.sql
     lastMigrationVersion: 0031_scientific_quota_fencing.sql
-    namespaceRoleOwnershipSha256: cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580
+    namespaceRoleOwnershipSha256: fd7e8b0bbc6f41d4cbaead87eeefcf84998cf646f40af734adca75096791faf6
   resources:
     requests:
       cpu: 50m

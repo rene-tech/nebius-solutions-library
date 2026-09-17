@@ -183,12 +183,15 @@ output "access_bundle" {
       writer_role         = var.scientific_artifacts.storage_contract.writer.role
       remover_role        = var.scientific_artifacts.storage_contract.remover.role
       verifier_role       = var.scientific_artifacts.storage_contract.verifier.role
+      finalizer_role      = var.scientific_artifacts.storage_contract.finalizer.role
       credential_secret   = "fs2-system/${local.scientific_artifacts_secret_name}"
       remover_credential_secret = "fs2-system/${local.scientific_artifact_remover_secret_name}"
       verifier_credential_secret = "fs2-system/${local.scientific_artifact_verifier_secret_name}"
+      finalizer_credential_secret = "fs2-system/${local.scientific_artifact_finalizer_secret_name}"
       credential_revision = local.scientific_artifacts_revision
       remover_credential_revision = local.scientific_artifact_remover_revision
       verifier_credential_revision = local.scientific_artifact_verifier_revision
+      finalizer_credential_revision = local.scientific_artifact_finalizer_revision
       batch_enabled       = var.scientific_batch.enabled
     } : null
   }
@@ -365,6 +368,9 @@ output "scientific_artifacts_status" {
     verifier_role        = var.scientific_artifacts.storage_contract.verifier.role
     verifier_paths       = var.scientific_artifacts.storage_contract.verifier.paths
     verifier_secret_delivery = var.scientific_artifacts.storage_contract.verifier.secret_delivery
+    finalizer_role      = var.scientific_artifacts.storage_contract.finalizer.role
+    finalizer_paths     = var.scientific_artifacts.storage_contract.finalizer.paths
+    finalizer_secret_delivery = var.scientific_artifacts.storage_contract.finalizer.secret_delivery
     lifecycle           = var.scientific_artifacts.storage_contract.lifecycle
     retention           = var.scientific_artifacts.storage_contract.retention
     credential_secret   = "fs2-system/${local.scientific_artifacts_secret_name}"
@@ -374,6 +380,8 @@ output "scientific_artifacts_status" {
     remover_credential_revision = local.scientific_artifact_remover_revision
     verifier_credential_secret = "fs2-system/${local.scientific_artifact_verifier_secret_name}"
     verifier_credential_revision = local.scientific_artifact_verifier_revision
+    finalizer_credential_secret = "fs2-system/${local.scientific_artifact_finalizer_secret_name}"
+    finalizer_credential_revision = local.scientific_artifact_finalizer_revision
     handle_ttl_seconds  = var.scientific_artifacts.handle_ttl_seconds
     max_artifact_bytes  = var.scientific_artifacts.max_artifact_bytes
     tenant_quota_bytes  = var.scientific_artifacts.tenant_quota_bytes

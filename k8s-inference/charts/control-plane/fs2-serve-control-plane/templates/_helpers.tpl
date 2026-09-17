@@ -185,6 +185,14 @@ app.kubernetes.io/component: model-controller
       key: {{ .Values.secrets.artifactVerificationDatabase.key }}
 {{- end -}}
 
+{{- define "fs2-serve.artifactFinalizationDatabaseEnv" -}}
+- name: FS2_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.secrets.artifactFinalizationDatabase.name }}
+      key: {{ .Values.secrets.artifactFinalizationDatabase.key }}
+{{- end -}}
+
 {{- define "fs2-serve.scientificArtifactsEnv" -}}
 {{- if .Values.scientificArtifacts.enabled }}
 - name: FS2_SCIENTIFIC_ARTIFACTS_ENABLED
@@ -484,6 +492,8 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.migration.artifactRemoverDatabaseRole | quote }}
 - name: FS2_ARTIFACT_VERIFIER_DATABASE_ROLE
   value: {{ .Values.migration.artifactVerifierDatabaseRole | quote }}
+- name: FS2_ARTIFACT_FINALIZER_DATABASE_ROLE
+  value: {{ .Values.migration.artifactFinalizerDatabaseRole | quote }}
 - name: FS2_ACTIVATION_DATABASE_ROLE
   value: {{ .Values.migration.activationDatabaseRole | quote }}
 - name: FS2_SCHEMA_ROLLOUT_PREPARE_RECEIPT_FILE
@@ -515,7 +525,7 @@ app.kubernetes.io/component: model-controller
 {{- end -}}
 
 {{- define "fs2-serve.artifactFinalizationEnv" -}}
-{{ include "fs2-serve.databaseEnv" . }}
+{{ include "fs2-serve.artifactFinalizationDatabaseEnv" . }}
 {{ include "fs2-serve.scientificArtifactsEnv" . }}
 {{- end -}}
 

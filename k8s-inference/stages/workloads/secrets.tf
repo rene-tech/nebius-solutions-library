@@ -15,6 +15,9 @@ locals {
     artifact_verifier = {
       username = "fs2_serve_artifact_verifier_login"
     }
+    artifact_finalizer = {
+      username = "fs2_serve_artifact_finalizer_login"
+    }
     activation = {
       username = "fs2_serve_activation_login"
     }
@@ -54,6 +57,11 @@ locals {
       namespace   = "fs2-system"
       secret_name = "fs2-serve-database-artifact-verifier"
       account     = "artifact_verifier"
+    }
+    artifact_finalizer = {
+      namespace   = "fs2-system"
+      secret_name = "fs2-serve-database-artifact-finalizer"
+      account     = "artifact_finalizer"
     }
     activation = {
       namespace   = "fs2-system"

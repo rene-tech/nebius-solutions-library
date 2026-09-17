@@ -26,6 +26,7 @@ locals {
   scientific_artifacts_writer_role = "storage.object-editor"
   scientific_artifacts_remover_role = "storage.object-editor"
   scientific_artifacts_verifier_role = "storage.object-viewer"
+  scientific_artifacts_finalizer_role = "storage.object-editor"
 
   # Storage-side hygiene only. Expiring a *current* object is an application
   # decision made against the durable result record, so no rule here deletes
@@ -90,6 +91,8 @@ resource "terraform_data" "scientific_artifacts_contract" {
     remover_paths   = [local.scientific_artifacts_path_scope]
     verifier_role   = local.scientific_artifacts_verifier_role
     verifier_paths  = [local.scientific_artifacts_path_scope]
+    finalizer_role  = local.scientific_artifacts_finalizer_role
+    finalizer_paths = [local.scientific_artifacts_path_scope]
     lifecycle_rules = [for rule in local.scientific_artifacts_lifecycle_rules : rule.id]
     secret_delivery = "MYSTERY_BOX"
   }
@@ -213,6 +216,40 @@ resource "nebius_iam_v1_group_membership" "scientific_artifact_verifier" {
   member_id = nebius_iam_v1_service_account.scientific_artifact_verifier[0].id
 }
 
+resource "nebius_iam_v1_service_account" "scientific_artifact_finalizer" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-scientific-artifact-finalizer"
+  description = "Isolated multipart completion and recovery identity for scientific artifacts"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-finalization-recovery"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+
+  depends_on = [terraform_data.scientific_artifacts_contract]
+}
+
+resource "nebius_iam_v1_group" "scientific_artifact_finalizers" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id = var.project_id
+  name      = "${local.resource_name}-scientific-artifact-finalizers"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-finalization-recovery"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+
+  depends_on = [terraform_data.scientific_artifacts_contract]
+}
+
+resource "nebius_iam_v1_group_membership" "scientific_artifact_finalizer" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id = nebius_iam_v1_group.scientific_artifact_finalizers[0].id
+  member_id = nebius_iam_v1_service_account.scientific_artifact_finalizer[0].id
+}
+
 resource "nebius_storage_v1_bucket" "scientific_artifacts" {
   count = local.scientific_artifacts_retain ? 1 : 0
 
@@ -243,6 +280,11 @@ resource "nebius_storage_v1_bucket" "scientific_artifacts" {
         paths    = [local.scientific_artifacts_path_scope]
         roles    = [local.scientific_artifacts_verifier_role]
       },
+      {
+        group_id = nebius_iam_v1_group.scientific_artifact_finalizers[0].id
+        paths    = [local.scientific_artifacts_path_scope]
+        roles    = [local.scientific_artifacts_finalizer_role]
+      },
     ]
   }
   lifecycle_configuration = {
@@ -253,6 +295,7 @@ resource "nebius_storage_v1_bucket" "scientific_artifacts" {
     nebius_iam_v1_group_membership.scientific_artifacts_writer,
     nebius_iam_v1_group_membership.scientific_artifact_remover,
     nebius_iam_v1_group_membership.scientific_artifact_verifier,
+    nebius_iam_v1_group_membership.scientific_artifact_finalizer,
   ]
 
   lifecycle {
@@ -290,6 +333,11 @@ resource "nebius_storage_v1_bucket" "scientific_artifacts_disposable" {
         paths    = [local.scientific_artifacts_path_scope]
         roles    = [local.scientific_artifacts_verifier_role]
       },
+      {
+        group_id = nebius_iam_v1_group.scientific_artifact_finalizers[0].id
+        paths    = [local.scientific_artifacts_path_scope]
+        roles    = [local.scientific_artifacts_finalizer_role]
+      },
     ]
   }
   lifecycle_configuration = {
@@ -300,6 +348,7 @@ resource "nebius_storage_v1_bucket" "scientific_artifacts_disposable" {
     nebius_iam_v1_group_membership.scientific_artifacts_writer,
     nebius_iam_v1_group_membership.scientific_artifact_remover,
     nebius_iam_v1_group_membership.scientific_artifact_verifier,
+    nebius_iam_v1_group_membership.scientific_artifact_finalizer,
   ]
 }
 
@@ -369,6 +418,29 @@ resource "nebius_iam_v2_access_key" "scientific_artifact_verifier" {
   account = {
     service_account = {
       id = nebius_iam_v1_service_account.scientific_artifact_verifier[0].id
+    }
+  }
+
+  depends_on = [
+    nebius_storage_v1_bucket.scientific_artifacts,
+    nebius_storage_v1_bucket.scientific_artifacts_disposable,
+  ]
+}
+
+resource "nebius_iam_v2_access_key" "scientific_artifact_finalizer" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id           = var.project_id
+  name                = "${local.resource_name}-scientific-artifact-finalizer"
+  description         = "S3 access key isolated to multipart finalization recovery"
+  secret_delivery_mode = "MYSTERY_BOX"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-finalization-recovery"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+  account = {
+    service_account = {
+      id = nebius_iam_v1_service_account.scientific_artifact_finalizer[0].id
     }
   }
 

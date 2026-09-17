@@ -284,6 +284,11 @@ CREATE TRIGGER fs2_scientific_quota_queue_legacy_upload_session
 AFTER INSERT ON fs2_scientific_artifact_quota_reservations
 FOR EACH ROW EXECUTE FUNCTION fs2_scientific_queue_legacy_upload_session_v2();
 
+-- SECURITY DEFINER routines lose default PUBLIC EXECUTE in the same committed
+-- step that creates them.  The terminal privilege reset repeats this revoke as
+-- defense in depth, but resumable migration failure never leaves a window.
+REVOKE ALL ON FUNCTION fs2_scientific_queue_legacy_upload_session_v2() FROM PUBLIC;
+
 -- fs2-migration-transaction-boundary
 
 -- CREATE TRIGGER waits for predecessor writers that began before the DDL lock,
@@ -603,6 +608,8 @@ CREATE TRIGGER fs2_scientific_artifact_quota_tenant_cursor
 AFTER INSERT ON fs2_scientific_artifact_quota_reservations
 FOR EACH ROW EXECUTE FUNCTION fs2_scientific_ensure_artifact_janitor_tenant_cursor();
 
+REVOKE ALL ON FUNCTION fs2_scientific_ensure_artifact_janitor_tenant_cursor() FROM PUBLIC;
+
 -- fs2-migration-transaction-boundary
 
 INSERT INTO fs2_scientific_artifact_janitor_tenant_cursors(tenant_id)
@@ -802,6 +809,8 @@ $function$;
 CREATE TRIGGER fs2_scientific_artifacts_queue_legacy_version
 AFTER INSERT ON fs2_scientific_artifacts
 FOR EACH ROW EXECUTE FUNCTION fs2_scientific_queue_legacy_artifact_version_v2();
+
+REVOKE ALL ON FUNCTION fs2_scientific_queue_legacy_artifact_version_v2() FROM PUBLIC;
 
 -- fs2-migration-transaction-boundary
 
@@ -1286,6 +1295,57 @@ BEGIN
 END
 $function$;
 
+-- The autonomous finalizer may read only the upload intent attached to the
+-- exact recovery generation that it just claimed.  Keeping this projection
+-- behind a SECURITY DEFINER fence avoids granting the finalizer global SELECT
+-- over tenant storage keys or already-published provider version identities.
+CREATE FUNCTION fs2_scientific_get_claimed_finalization_intent_v2(
+    p_upload_id uuid,
+    p_operation_id uuid,
+    p_tenant_id text,
+    p_lease_id uuid,
+    p_lease_generation integer,
+    p_session_generation integer
+) RETURNS fs2_scientific_uploads
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+    claimed_lease record;
+    claimed_upload public.fs2_scientific_uploads%ROWTYPE;
+BEGIN
+    SELECT * INTO claimed_lease
+    FROM public.fs2_scientific_artifact_finalization_leases
+    WHERE upload_id=p_upload_id
+    FOR UPDATE;
+    IF NOT FOUND OR claimed_lease.state<>'active'
+       OR claimed_lease.lease_id<>p_lease_id
+       OR claimed_lease.lease_generation<=1
+       OR claimed_lease.lease_generation<>p_lease_generation
+       OR claimed_lease.session_generation<>p_session_generation
+       OR claimed_lease.expires_at<=clock_timestamp() THEN
+        RAISE EXCEPTION USING ERRCODE='FS202',
+            MESSAGE='artifact finalization recovery read claim is stale';
+    END IF;
+    SELECT upload.* INTO claimed_upload
+    FROM public.fs2_scientific_uploads upload
+    JOIN public.fs2_scientific_artifact_quota_reservations reservation
+      ON reservation.upload_id=upload.id
+    WHERE upload.id=p_upload_id
+      AND upload.operation_id=p_operation_id
+      AND upload.tenant_id=p_tenant_id
+      AND upload.artifact_id IS NULL
+      AND reservation.tenant_id=p_tenant_id
+      AND reservation.state='active';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING ERRCODE='FS202',
+            MESSAGE='artifact finalization recovery upload fence is stale';
+    END IF;
+    RETURN claimed_upload;
+END
+$function$;
+
 CREATE FUNCTION fs2_scientific_record_finalization_failure_v2(
     p_upload_id uuid,p_operation_id uuid,p_tenant_id text,p_lease_id uuid,
     p_lease_generation integer,p_session_generation integer,p_provider_upload_id text,
@@ -1375,6 +1435,81 @@ BEGIN
         RAISE EXCEPTION USING ERRCODE='FS202', MESSAGE='artifact finalization failure compare-and-set failed';
     END IF;
     RETURN evidence;
+END
+$function$;
+
+-- The public runtime may settle only the first, foreground lease it acquired.
+-- Recovery generations are deliberately reachable only through the dedicated
+-- finalizer role and the core routine below this wrapper.
+CREATE FUNCTION fs2_scientific_record_foreground_finalization_failure_v2(
+    p_upload_id uuid,p_operation_id uuid,p_tenant_id text,p_lease_id uuid,
+    p_lease_generation integer,p_session_generation integer,p_provider_upload_id text,
+    p_provider_version_id text,p_provider_request_id text,p_failure_code text,
+    p_observed_digest text,p_observed_size_bytes bigint,p_observed_media_type text,
+    p_observed_compression text,p_observed_at timestamptz
+) RETURNS fs2_scientific_artifact_finalization_failures
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+    foreground_lease record;
+BEGIN
+    SELECT * INTO foreground_lease
+    FROM public.fs2_scientific_artifact_finalization_leases
+    WHERE upload_id=p_upload_id
+    FOR UPDATE;
+    IF NOT FOUND OR foreground_lease.state<>'active'
+       OR foreground_lease.lease_id<>p_lease_id
+       OR foreground_lease.lease_generation<>1
+       OR p_lease_generation<>1
+       OR foreground_lease.expires_at<=clock_timestamp()
+       OR foreground_lease.session_generation<>p_session_generation THEN
+        RAISE EXCEPTION USING ERRCODE='FS202',
+            MESSAGE='foreground artifact finalization failure fence is stale';
+    END IF;
+    RETURN public.fs2_scientific_record_finalization_failure_v2(
+        p_upload_id,p_operation_id,p_tenant_id,p_lease_id,p_lease_generation,
+        p_session_generation,p_provider_upload_id,p_provider_version_id,
+        p_provider_request_id,p_failure_code,p_observed_digest,p_observed_size_bytes,
+        p_observed_media_type,p_observed_compression,p_observed_at
+    );
+END
+$function$;
+
+CREATE FUNCTION fs2_scientific_record_recovery_finalization_failure_v2(
+    p_upload_id uuid,p_operation_id uuid,p_tenant_id text,p_lease_id uuid,
+    p_lease_generation integer,p_session_generation integer,p_provider_upload_id text,
+    p_provider_version_id text,p_provider_request_id text,p_failure_code text,
+    p_observed_digest text,p_observed_size_bytes bigint,p_observed_media_type text,
+    p_observed_compression text,p_observed_at timestamptz
+) RETURNS fs2_scientific_artifact_finalization_failures
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+    recovery_lease record;
+BEGIN
+    SELECT * INTO recovery_lease
+    FROM public.fs2_scientific_artifact_finalization_leases
+    WHERE upload_id=p_upload_id
+    FOR UPDATE;
+    IF NOT FOUND OR recovery_lease.state<>'active'
+       OR recovery_lease.lease_id<>p_lease_id
+       OR recovery_lease.lease_generation<=1
+       OR recovery_lease.lease_generation<>p_lease_generation
+       OR recovery_lease.expires_at<=clock_timestamp()
+       OR recovery_lease.session_generation<>p_session_generation THEN
+        RAISE EXCEPTION USING ERRCODE='FS202',
+            MESSAGE='artifact finalization recovery claim is stale';
+    END IF;
+    RETURN public.fs2_scientific_record_finalization_failure_v2(
+        p_upload_id,p_operation_id,p_tenant_id,p_lease_id,p_lease_generation,
+        p_session_generation,p_provider_upload_id,p_provider_version_id,
+        p_provider_request_id,p_failure_code,p_observed_digest,p_observed_size_bytes,
+        p_observed_media_type,p_observed_compression,p_observed_at
+    );
 END
 $function$;
 
@@ -1624,6 +1759,101 @@ BEGIN
         upload.attempt_id,p_upload_id,p_artifact_id,published_at
     );
     RETURN artifact;
+END
+$function$;
+
+-- As above, runtime publication is bounded to the original foreground lease.
+-- A lease claimed by the autonomous reconciler has generation greater than one
+-- and can only be published through the finalizer-only core function.
+CREATE FUNCTION fs2_scientific_publish_foreground_artifact_v2(
+    p_upload_id uuid,
+    p_operation_id uuid,
+    p_tenant_id text,
+    p_artifact_id uuid,
+    p_lease_id uuid,
+    p_lease_generation integer,
+    p_session_generation integer,
+    p_provider_upload_id text,
+    p_provider_version_id text,
+    p_provider_request_id text,
+    p_observed_digest text,
+    p_observed_size_bytes bigint,
+    p_observed_media_type text,
+    p_observed_compression text,
+    p_observed_at timestamptz
+) RETURNS fs2_scientific_artifacts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+    foreground_lease record;
+BEGIN
+    SELECT * INTO foreground_lease
+    FROM public.fs2_scientific_artifact_finalization_leases
+    WHERE upload_id=p_upload_id
+    FOR UPDATE;
+    IF NOT FOUND OR foreground_lease.state<>'active'
+       OR foreground_lease.lease_id<>p_lease_id
+       OR foreground_lease.lease_generation<>1
+       OR p_lease_generation<>1
+       OR foreground_lease.expires_at<=clock_timestamp()
+       OR foreground_lease.session_generation<>p_session_generation THEN
+        RAISE EXCEPTION USING ERRCODE='FS202',
+            MESSAGE='foreground artifact publication fence is stale';
+    END IF;
+    RETURN public.fs2_scientific_publish_artifact_v2(
+        p_upload_id,p_operation_id,p_tenant_id,p_artifact_id,p_lease_id,
+        p_lease_generation,p_session_generation,p_provider_upload_id,
+        p_provider_version_id,p_provider_request_id,p_observed_digest,
+        p_observed_size_bytes,p_observed_media_type,p_observed_compression,p_observed_at
+    );
+END
+$function$;
+
+CREATE FUNCTION fs2_scientific_publish_recovery_artifact_v2(
+    p_upload_id uuid,
+    p_operation_id uuid,
+    p_tenant_id text,
+    p_artifact_id uuid,
+    p_lease_id uuid,
+    p_lease_generation integer,
+    p_session_generation integer,
+    p_provider_upload_id text,
+    p_provider_version_id text,
+    p_provider_request_id text,
+    p_observed_digest text,
+    p_observed_size_bytes bigint,
+    p_observed_media_type text,
+    p_observed_compression text,
+    p_observed_at timestamptz
+) RETURNS fs2_scientific_artifacts
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $function$
+DECLARE
+    recovery_lease record;
+BEGIN
+    SELECT * INTO recovery_lease
+    FROM public.fs2_scientific_artifact_finalization_leases
+    WHERE upload_id=p_upload_id
+    FOR UPDATE;
+    IF NOT FOUND OR recovery_lease.state<>'active'
+       OR recovery_lease.lease_id<>p_lease_id
+       OR recovery_lease.lease_generation<=1
+       OR recovery_lease.lease_generation<>p_lease_generation
+       OR recovery_lease.expires_at<=clock_timestamp()
+       OR recovery_lease.session_generation<>p_session_generation THEN
+        RAISE EXCEPTION USING ERRCODE='FS202',
+            MESSAGE='artifact publication recovery claim is stale';
+    END IF;
+    RETURN public.fs2_scientific_publish_artifact_v2(
+        p_upload_id,p_operation_id,p_tenant_id,p_artifact_id,p_lease_id,
+        p_lease_generation,p_session_generation,p_provider_upload_id,
+        p_provider_version_id,p_provider_request_id,p_observed_digest,
+        p_observed_size_bytes,p_observed_media_type,p_observed_compression,p_observed_at
+    );
 END
 $function$;
 
@@ -2638,6 +2868,90 @@ BEGIN
 END
 $function$;
 
+-- Every SECURITY DEFINER created by the long routine-installation step is
+-- closed to PUBLIC before this step commits.  These same revokes are repeated
+-- by the terminal privilege reset so both fresh installs and resumed expands
+-- remain fail closed if a later validation or grant step fails.
+REVOKE ALL ON FUNCTION fs2_scientific_claim_artifact_removals(integer,uuid,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_claim_artifact_verifications(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_artifact_removal(
+    uuid,uuid,uuid,text,text,text,text,integer,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_claim_upload_session_creation_v2(
+    uuid,text,text,uuid,bigint,integer
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_bind_upload_session_v2(
+    uuid,text,text,uuid,text,bigint,integer,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_claim_stale_upload_session_creations_v2(
+    integer
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_upload_session_creation_reconciled_v2(
+    uuid,text,text,uuid,integer,timestamptz,text,integer,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_upload_session_aborted_v2(
+    uuid,text,integer,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_mark_upload_session_completed_v2(
+    uuid,text,integer,text,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_acquire_artifact_finalization_lease_v2(
+    uuid,uuid,text,integer,uuid
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_claim_expired_finalization_leases_v2(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_get_claimed_finalization_intent_v2(
+    uuid,uuid,text,uuid,integer,integer
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_finalization_failure_v2(
+    uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_foreground_finalization_failure_v2(
+    uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_recovery_finalization_failure_v2(
+    uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_upload_capability_v2(
+    uuid,text,uuid,integer,integer,bigint,text,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_publish_artifact_v2(
+    uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_publish_foreground_artifact_v2(
+    uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_publish_recovery_artifact_v2(
+    uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_claim_legacy_artifact_versions_v2(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_legacy_artifact_version_scan_v2(
+    uuid,integer,timestamptz,text,text,text,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_legacy_artifact_version_v2(
+    uuid,uuid,text,text,integer,timestamptz,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_legacy_version_rollout_status_v2() FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_mark_schema_bridge_ready_v2(
+    text,bigint,text,text,text,text,bigint,bigint,integer,integer,integer,integer,
+    integer,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_ensure_artifact_janitor_tenant_cursor() FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_validate_artifact_provider_version_v2() FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_queue_legacy_artifact_version_v2() FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_queue_legacy_upload_session_v2() FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_claim_artifact_removals_v2(integer,uuid,text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_artifact_removal_completion_v2(
+    uuid,uuid,uuid,text,text,integer,timestamptz,text,text,bigint,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_claim_artifact_verifications_v2(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_artifact_verification_failure_v2(
+    uuid,text,integer,integer,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_artifact_removal_v2(
+    uuid,uuid,uuid,text,text,text,text,bigint,timestamptz,timestamptz,integer,integer,
+    text,text,text,text,text,text,text,text,text,text
+) FROM PUBLIC;
+
 -- fs2-migration-transaction-boundary
 
 -- Validation uses PostgreSQL's lower-impact constraint-validation lock after
@@ -2750,13 +3064,28 @@ REVOKE ALL ON FUNCTION fs2_scientific_acquire_artifact_finalization_lease_v2(
     uuid,uuid,text,integer,uuid
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fs2_scientific_claim_expired_finalization_leases_v2(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_get_claimed_finalization_intent_v2(
+    uuid,uuid,text,uuid,integer,integer
+) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fs2_scientific_record_finalization_failure_v2(
+    uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_foreground_finalization_failure_v2(
+    uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_record_recovery_finalization_failure_v2(
     uuid,uuid,text,uuid,integer,integer,text,text,text,text,text,bigint,text,text,timestamptz
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fs2_scientific_record_upload_capability_v2(
     uuid,text,uuid,integer,integer,bigint,text,text,text,timestamptz
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fs2_scientific_publish_artifact_v2(
+    uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_publish_foreground_artifact_v2(
+    uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION fs2_scientific_publish_recovery_artifact_v2(
     uuid,uuid,text,uuid,uuid,integer,integer,text,text,text,text,bigint,text,text,timestamptz
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION fs2_scientific_claim_legacy_artifact_versions_v2(integer) FROM PUBLIC;

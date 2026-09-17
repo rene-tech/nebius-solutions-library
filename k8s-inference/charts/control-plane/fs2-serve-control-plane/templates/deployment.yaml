@@ -41,23 +41,23 @@
 {{- if and (eq .Values.catalog.delivery "pvc") (eq .Values.catalog.persistentVolumeClaimName .Values.catalog.evidencePersistentVolumeClaimName) }}
 {{- fail "catalog and qualification evidence require distinct read-only PVCs" }}
 {{- end }}
-{{- if or (ne .Values.secrets.database.name "fs2-serve-database") (ne .Values.secrets.database.key "url") (ne .Values.secrets.migrationsDatabase.name "fs2-serve-database-migrations") (ne .Values.secrets.migrationsDatabase.key "url") (ne .Values.secrets.maintenanceDatabase.name "fs2-serve-database-maintenance") (ne .Values.secrets.maintenanceDatabase.key "url") (ne .Values.secrets.artifactRemovalDatabase.name "fs2-serve-database-artifact-remover") (ne .Values.secrets.artifactRemovalDatabase.key "url") (ne .Values.secrets.artifactVerificationDatabase.name "fs2-serve-database-artifact-verifier") (ne .Values.secrets.artifactVerificationDatabase.key "url") }}
+{{- if or (ne .Values.secrets.database.name "fs2-serve-database") (ne .Values.secrets.database.key "url") (ne .Values.secrets.migrationsDatabase.name "fs2-serve-database-migrations") (ne .Values.secrets.migrationsDatabase.key "url") (ne .Values.secrets.maintenanceDatabase.name "fs2-serve-database-maintenance") (ne .Values.secrets.maintenanceDatabase.key "url") (ne .Values.secrets.artifactRemovalDatabase.name "fs2-serve-database-artifact-remover") (ne .Values.secrets.artifactRemovalDatabase.key "url") (ne .Values.secrets.artifactVerificationDatabase.name "fs2-serve-database-artifact-verifier") (ne .Values.secrets.artifactVerificationDatabase.key "url") (ne .Values.secrets.artifactFinalizationDatabase.name "fs2-serve-database-artifact-finalizer") (ne .Values.secrets.artifactFinalizationDatabase.key "url") }}
 {{- fail "database Secret names and keys must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.secrets.database.caKey "ca.crt") (ne .Values.secrets.migrationsDatabase.caKey "ca.crt") (ne .Values.secrets.maintenanceDatabase.caKey "ca.crt") (ne .Values.secrets.artifactRemovalDatabase.caKey "ca.crt") (ne .Values.secrets.artifactVerificationDatabase.caKey "ca.crt") }}
+{{- if or (ne .Values.secrets.database.caKey "ca.crt") (ne .Values.secrets.migrationsDatabase.caKey "ca.crt") (ne .Values.secrets.maintenanceDatabase.caKey "ca.crt") (ne .Values.secrets.artifactRemovalDatabase.caKey "ca.crt") (ne .Values.secrets.artifactVerificationDatabase.caKey "ca.crt") (ne .Values.secrets.artifactFinalizationDatabase.caKey "ca.crt") }}
 {{- fail "database Secret CA keys must match the canonical PostgreSQL release contract" }}
 {{- end }}
 {{- if and (eq .Values.catalog.delivery "image") (ne .Values.catalog.imagePath "/opt/fs2/catalog") }}
 {{- fail "image-delivered catalog path must be /opt/fs2/catalog" }}
 {{- end }}
-{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.artifactRemoverDatabaseRole .Values.migration.artifactVerifierDatabaseRole .Values.migration.activationDatabaseRole }}
+{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.artifactRemoverDatabaseRole .Values.migration.artifactVerifierDatabaseRole .Values.migration.artifactFinalizerDatabaseRole .Values.migration.activationDatabaseRole }}
 {{- if ne (len $databaseRoles) (len (uniq $databaseRoles)) }}
-{{- fail "migration runtime, reporting, maintenance, artifact-remover, artifact-verifier, and activation database roles must differ" }}
+{{- fail "migration runtime, reporting, maintenance, artifact-remover, artifact-verifier, artifact-finalizer, and activation database roles must differ" }}
 {{- end }}
-{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.artifactRemoverDatabaseRole "fs2_serve_artifact_remover") (ne .Values.migration.artifactVerifierDatabaseRole "fs2_serve_artifact_verifier") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
+{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.artifactRemoverDatabaseRole "fs2_serve_artifact_remover") (ne .Values.migration.artifactVerifierDatabaseRole "fs2_serve_artifact_verifier") (ne .Values.migration.artifactFinalizerDatabaseRole "fs2_serve_artifact_finalizer") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "c4706d7953709940fc6bea3b78340e917719c4df656565429cca09dcf6e7f64f") (ne .Values.migration.releaseContract.migrationSetSha256 "64afcd319b2d5ca5c84c58b00018e66afb22c5097852c70511b16deb8c3736d8") (ne (int .Values.migration.releaseContract.migrationCount) 31) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0031_scientific_quota_fencing.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "23e15ebf20f1a5beb4e2164cf699549876a7475f4cfd41dc063abb403536162d") (ne .Values.migration.releaseContract.migrationSetSha256 "43eae91cb9d79fd01dba89e899ab75b951c1ab11cb37ac9c505623d991d1f2a2") (ne (int .Values.migration.releaseContract.migrationCount) 31) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0031_scientific_quota_fencing.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "fd7e8b0bbc6f41d4cbaead87eeefcf84998cf646f40af734adca75096791faf6") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- $rolloutPhase := .Values.migration.rolloutPhase -}}
@@ -106,7 +106,7 @@
 {{- fail "internal operator-proxy port must be from 1024 through 65535" }}
 {{- end }}
 {{- end }}
-{{- $secretNames := list .Values.secrets.database.name .Values.secrets.migrationsDatabase.name .Values.secrets.maintenanceDatabase.name .Values.secrets.artifactRemovalDatabase.name .Values.secrets.artifactVerificationDatabase.name .Values.secrets.artifactStore.name .Values.secrets.artifactRemoverStore.name .Values.secrets.artifactVerifierStore.name .Values.secrets.payloadKeyring.name .Values.secrets.ledgerHmacKeyring.name .Values.secrets.tokenPepper.name .Values.secrets.routeAttestors.name .Values.secrets.admin.name .Values.federation.secretName }}
+{{- $secretNames := list .Values.secrets.database.name .Values.secrets.migrationsDatabase.name .Values.secrets.maintenanceDatabase.name .Values.secrets.artifactRemovalDatabase.name .Values.secrets.artifactVerificationDatabase.name .Values.secrets.artifactFinalizationDatabase.name .Values.secrets.artifactStore.name .Values.secrets.artifactRemoverStore.name .Values.secrets.artifactVerifierStore.name .Values.secrets.artifactFinalizerStore.name .Values.secrets.payloadKeyring.name .Values.secrets.ledgerHmacKeyring.name .Values.secrets.tokenPepper.name .Values.secrets.routeAttestors.name .Values.secrets.admin.name .Values.federation.secretName }}
 {{- if .Values.bootstrapAccess.enabled }}
 {{- $secretNames = append $secretNames .Values.bootstrapAccess.secretName }}
 {{- end }}
@@ -114,7 +114,7 @@
 {{- $secretNames = append $secretNames .Values.scientificAccess.secretName }}
 {{- end }}
 {{- if ne (len $secretNames) (len (uniq $secretNames)) }}
-{{- fail "runtime, migration, maintenance, artifact-removal, artifact-verification, cryptographic, admin, federation, bootstrap, and scientific credentials must use distinct Secret objects" }}
+{{- fail "runtime, migration, maintenance, artifact-removal, artifact-verification, artifact-finalization, cryptographic, admin, federation, bootstrap, and scientific credentials must use distinct Secret objects" }}
 {{- end }}
 {{- $runtimeServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
 {{- $maintenanceServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}

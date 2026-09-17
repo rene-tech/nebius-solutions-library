@@ -224,8 +224,23 @@ The finalization recovery CronJob uses its own tokenless
 `artifact-finalizer` ServiceAccount, distinct from runtime, maintenance,
 remover, verifier, and migration identities. It has no RoleBinding; its network
 policy denies ingress and permits only DNS, PostgreSQL, and configured artifact
-store egress. The verifier retains the separately scoped Kubernetes read role
-needed for bridge readiness.
+store egress. It also mounts dedicated `fs2-serve-database-artifact-finalizer`
+and `fs2-serve-artifact-finalizer-store` Secrets. The PostgreSQL login can only
+claim an expired lease generation and settle that current, unexpired recovery
+generation; it cannot read runtime tokens/operations, acquire a foreground
+lease, call the unwrapped settlement functions, or globally select upload,
+reservation, or lease rows. A claim-bound definer projection returns only the
+exact intent for the current unexpired recovery generation. Its provider identity is a
+separate MysteryBox-delivered, canonical-prefix-only key needed for multipart
+completion and exact VersionId verification. The public runtime retains only
+unexpired generation-1 wrappers and cannot claim recovery work. The verifier
+retains the separately scoped Kubernetes read role needed for bridge readiness.
+
+Every `SECURITY DEFINER` routine introduced by resumable migration 0031 is
+revoked from `PUBLIC` before the transaction boundary that makes that routine
+visible. The final privilege-reset step repeats the exact revokes as defense in
+depth; a paused or failed later migration step therefore cannot expose definer
+authority to another database login.
 
 The target and rollback image digests must differ, and neither may equal the
 predecessor. A build/release lane must publish and independently accept the

@@ -2095,9 +2095,9 @@ def test_artifact_removal_and_absence_verification_use_disjoint_identities() -> 
     assert verifier["containers"][0]["args"] == ["artifact-verification"]
     assert finalizer["containers"][0]["args"] == ["artifact-finalization"]
     assert finalizer["containers"][0]["env"][0]["valueFrom"]["secretKeyRef"]["name"] == (
-        "fs2-serve-database"
+        "fs2-serve-database-artifact-finalizer"
     )
-    assert finalizer["volumes"][1]["secret"]["secretName"] == "fs2-serve-artifact-store"
+    assert finalizer["volumes"][1]["secret"]["secretName"] == "fs2-serve-artifact-finalizer-store"
     finalizer_policy = next(
         document
         for document in documents
@@ -2392,6 +2392,7 @@ def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_r
         "maintenance": "fs2_serve_maintenance",
         "artifact_remover": "fs2_serve_artifact_remover",
         "artifact_verifier": "fs2_serve_artifact_verifier",
+        "artifact_finalizer": "fs2_serve_artifact_finalizer",
         "activation": "fs2_serve_activation",
         "reporting": "fs2_serve_reporting",
     }
@@ -2403,6 +2404,7 @@ def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_r
     assert database["secret_refs"]["maintenance"]["name"] == "fs2-serve-database-maintenance"
     assert database["secret_refs"]["artifact_remover"]["name"] == "fs2-serve-database-artifact-remover"
     assert database["secret_refs"]["artifact_verifier"]["name"] == "fs2-serve-database-artifact-verifier"
+    assert database["secret_refs"]["artifact_finalizer"]["name"] == "fs2-serve-database-artifact-finalizer"
     assert database["secret_refs"]["migrations"]["name"] == "fs2-serve-database-migrations"
     assert database["secret_refs"]["reporting"] == {
         "namespace": "fs2-observability",
@@ -3207,6 +3209,7 @@ def test_chart_does_not_accept_an_activation_database_secret() -> None:
         ("maintenanceDatabaseRole", "fs2_serve_runtime"),
         ("artifactRemoverDatabaseRole", "fs2_serve_runtime"),
         ("artifactVerifierDatabaseRole", "fs2_serve_artifact_remover"),
+        ("artifactFinalizerDatabaseRole", "fs2_serve_runtime"),
     ],
 )
 def test_chart_rejects_database_role_reuse(field: str, value: str) -> None:
@@ -3304,6 +3307,16 @@ def test_chart_rejects_postgresql_namespace_secret_role_or_receipt_drift(
             "secrets.artifactRemoverStore.name=shared-artifact-secret",
             "secrets.artifactVerifierStore.name=shared-artifact-secret",
             "distinct Secret objects",
+        ),
+        (
+            "secrets.artifactFinalizerStore.name=shared-artifact-secret",
+            "secrets.artifactStore.name=shared-artifact-secret",
+            "distinct Secret objects",
+        ),
+        (
+            "secrets.artifactFinalizationDatabase.name=shared-db-secret",
+            "secrets.database.name=shared-db-secret",
+            "database Secret names and keys",
         ),
     ],
 )
@@ -3441,6 +3454,7 @@ def test_grafana_reporting_role_is_aggregate_only_and_provisioned_by_migration_j
     assert environment["FS2_MAINTENANCE_DATABASE_ROLE"]["value"] == "fs2_serve_maintenance"
     assert environment["FS2_ARTIFACT_REMOVER_DATABASE_ROLE"]["value"] == "fs2_serve_artifact_remover"
     assert environment["FS2_ARTIFACT_VERIFIER_DATABASE_ROLE"]["value"] == "fs2_serve_artifact_verifier"
+    assert environment["FS2_ARTIFACT_FINALIZER_DATABASE_ROLE"]["value"] == "fs2_serve_artifact_finalizer"
 
     store_source = (CONTROL_ROOT / "src" / "fs2_serve" / "postgres.py").read_text()
     assert "CREATE ROLE" in store_source and "NOLOGIN" in store_source

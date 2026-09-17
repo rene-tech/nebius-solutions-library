@@ -271,6 +271,13 @@ variable "scientific_artifacts" {
         paths              = list(string)
         secret_delivery    = string
       })
+      finalizer = object({
+        service_account_id = string
+        group_id           = string
+        role               = string
+        paths              = list(string)
+        secret_delivery    = string
+      })
       layout = object({
         root             = string
         tenant_prefix    = string
@@ -317,6 +324,12 @@ variable "scientific_artifacts" {
       secret_reference_id = string
       resource_version    = number
     }))
+    artifact_finalizer_object_storage_access = optional(object({
+      key_id              = string
+      access_key_id       = string
+      secret_reference_id = string
+      resource_version    = number
+    }))
   })
   default = {
     enabled               = false
@@ -336,6 +349,7 @@ variable "scientific_artifacts" {
     object_storage_access = null
     artifact_remover_object_storage_access = null
     artifact_verifier_object_storage_access = null
+    artifact_finalizer_object_storage_access = null
   }
 
   validation {
@@ -361,6 +375,19 @@ variable "scientific_artifacts" {
         var.scientific_artifacts.storage_contract.verifier.service_account_id != var.scientific_artifacts.storage_contract.remover.service_account_id &&
         var.scientific_artifacts.storage_contract.verifier.group_id != var.scientific_artifacts.storage_contract.writer.group_id &&
         var.scientific_artifacts.storage_contract.verifier.group_id != var.scientific_artifacts.storage_contract.remover.group_id &&
+        var.scientific_artifacts.storage_contract.finalizer.role == "storage.object-editor" &&
+        join(",", var.scientific_artifacts.storage_contract.finalizer.paths) == "scientific/v1/*" &&
+        var.scientific_artifacts.storage_contract.finalizer.secret_delivery == "MYSTERY_BOX" &&
+        !contains([
+          var.scientific_artifacts.storage_contract.writer.service_account_id,
+          var.scientific_artifacts.storage_contract.remover.service_account_id,
+          var.scientific_artifacts.storage_contract.verifier.service_account_id,
+        ], var.scientific_artifacts.storage_contract.finalizer.service_account_id) &&
+        !contains([
+          var.scientific_artifacts.storage_contract.writer.group_id,
+          var.scientific_artifacts.storage_contract.remover.group_id,
+          var.scientific_artifacts.storage_contract.verifier.group_id,
+        ], var.scientific_artifacts.storage_contract.finalizer.group_id) &&
         var.scientific_artifacts.storage_contract.layout.root == "scientific/v1" &&
         var.scientific_artifacts.storage_contract.retention.current_object_expiration == "application-owned" &&
         var.scientific_artifacts.storage_contract.retention.abort_incomplete_multipart_upload_days == 1 &&
@@ -399,6 +426,26 @@ variable "scientific_artifacts" {
         var.scientific_artifacts.artifact_verifier_object_storage_access.access_key_id != var.scientific_artifacts.artifact_remover_object_storage_access.access_key_id &&
         var.scientific_artifacts.artifact_verifier_object_storage_access.secret_reference_id != var.scientific_artifacts.object_storage_access.secret_reference_id &&
         var.scientific_artifacts.artifact_verifier_object_storage_access.secret_reference_id != var.scientific_artifacts.artifact_remover_object_storage_access.secret_reference_id &&
+        length(var.scientific_artifacts.artifact_finalizer_object_storage_access.access_key_id) >= 8 &&
+        can(regex("^[A-Za-z0-9_-]+$", var.scientific_artifacts.artifact_finalizer_object_storage_access.access_key_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.artifact_finalizer_object_storage_access.secret_reference_id)) &&
+        can(regex("^[a-z][a-z0-9-]+$", var.scientific_artifacts.artifact_finalizer_object_storage_access.key_id)) &&
+        var.scientific_artifacts.artifact_finalizer_object_storage_access.resource_version >= 0 &&
+        !contains([
+          var.scientific_artifacts.object_storage_access.key_id,
+          var.scientific_artifacts.artifact_remover_object_storage_access.key_id,
+          var.scientific_artifacts.artifact_verifier_object_storage_access.key_id,
+        ], var.scientific_artifacts.artifact_finalizer_object_storage_access.key_id) &&
+        !contains([
+          var.scientific_artifacts.object_storage_access.access_key_id,
+          var.scientific_artifacts.artifact_remover_object_storage_access.access_key_id,
+          var.scientific_artifacts.artifact_verifier_object_storage_access.access_key_id,
+        ], var.scientific_artifacts.artifact_finalizer_object_storage_access.access_key_id) &&
+        !contains([
+          var.scientific_artifacts.object_storage_access.secret_reference_id,
+          var.scientific_artifacts.artifact_remover_object_storage_access.secret_reference_id,
+          var.scientific_artifacts.artifact_verifier_object_storage_access.secret_reference_id,
+        ], var.scientific_artifacts.artifact_finalizer_object_storage_access.secret_reference_id) &&
         floor(var.scientific_artifacts.credential_generation) == var.scientific_artifacts.credential_generation &&
         var.scientific_artifacts.credential_generation >= 1 &&
         var.scientific_artifacts.credential_generation <= 1000 &&

@@ -178,6 +178,9 @@ output "owned_resource_ids" {
     scientific_artifact_verifier_sa = try(nebius_iam_v1_service_account.scientific_artifact_verifier[0].id, null)
     scientific_artifact_verifier_group = try(nebius_iam_v1_group.scientific_artifact_verifiers[0].id, null)
     scientific_artifact_verifier_key = try(nebius_iam_v2_access_key.scientific_artifact_verifier[0].id, null)
+    scientific_artifact_finalizer_sa = try(nebius_iam_v1_service_account.scientific_artifact_finalizer[0].id, null)
+    scientific_artifact_finalizer_group = try(nebius_iam_v1_group.scientific_artifact_finalizers[0].id, null)
+    scientific_artifact_finalizer_key = try(nebius_iam_v2_access_key.scientific_artifact_finalizer[0].id, null)
     nodepull_sa                     = nebius_iam_v1_service_account.nodepull.id
     target_reader_group             = nebius_iam_v1_group.target_registry_readers.id
     external_reader_groups = {
@@ -388,6 +391,13 @@ output "scientific_artifacts_storage_contract" {
       paths              = [local.scientific_artifacts_path_scope]
       secret_delivery    = "MYSTERY_BOX"
     }
+    finalizer = {
+      service_account_id = nebius_iam_v1_service_account.scientific_artifact_finalizer[0].id
+      group_id           = nebius_iam_v1_group.scientific_artifact_finalizers[0].id
+      role               = local.scientific_artifacts_finalizer_role
+      paths              = [local.scientific_artifacts_path_scope]
+      secret_delivery    = "MYSTERY_BOX"
+    }
     layout = {
       root             = local.scientific_artifacts_root
       tenant_prefix    = "${local.scientific_artifacts_root}/tenants/<tenant>"
@@ -440,6 +450,9 @@ output "scientific_artifacts_lifecycle" {
       verifier_service_account = nebius_iam_v1_service_account.scientific_artifact_verifier[0].id
       verifier_group   = nebius_iam_v1_group.scientific_artifact_verifiers[0].id
       verifier_access_key = nebius_iam_v2_access_key.scientific_artifact_verifier[0].id
+      finalizer_service_account = nebius_iam_v1_service_account.scientific_artifact_finalizer[0].id
+      finalizer_group   = nebius_iam_v1_group.scientific_artifact_finalizers[0].id
+      finalizer_access_key = nebius_iam_v2_access_key.scientific_artifact_finalizer[0].id
     }
   } : null
 }
@@ -478,5 +491,16 @@ output "scientific_artifact_verifier_object_storage_access" {
     access_key_id       = nebius_iam_v2_access_key.scientific_artifact_verifier[0].status.aws_access_key_id
     secret_reference_id = nebius_iam_v2_access_key.scientific_artifact_verifier[0].status.secret_reference_id
     resource_version    = nebius_iam_v2_access_key.scientific_artifact_verifier[0].resource_version
+  } : null
+}
+
+output "scientific_artifact_finalizer_object_storage_access" {
+  description = "Sensitive handoff containing only the isolated finalizer key's non-secret identifiers."
+  sensitive   = true
+  value = var.scientific_artifacts.enabled ? {
+    key_id              = nebius_iam_v2_access_key.scientific_artifact_finalizer[0].id
+    access_key_id       = nebius_iam_v2_access_key.scientific_artifact_finalizer[0].status.aws_access_key_id
+    secret_reference_id = nebius_iam_v2_access_key.scientific_artifact_finalizer[0].status.secret_reference_id
+    resource_version    = nebius_iam_v2_access_key.scientific_artifact_finalizer[0].resource_version
   } : null
 }

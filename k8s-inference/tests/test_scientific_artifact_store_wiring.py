@@ -126,10 +126,11 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
         for contract_key, opening in (
             ("remover_credential", "artifactRemoverStore = {"),
             ("verifier_credential", "artifactVerifierStore = {"),
+            ("finalizer_credential", "artifactFinalizerStore = {"),
         ):
             with self.subTest(credential=contract_key):
                 expected = self.contract[contract_key]
-                identity = "remover" if contract_key == "remover_credential" else "verifier"
+                identity = contract_key.removesuffix("_credential")
                 self.assertEqual(self.emitted(opening), {"key", "name"})
                 self.assertIn(f"name = local.scientific_artifact_{identity}_secret_name", self.workloads)
                 self.assertIn(expected["secret_name"], self.workloads)
@@ -147,6 +148,7 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
         self.assertIn("kubernetes_secret_v1.scientific_artifact_store", self.control_plane)
         self.assertIn("kubernetes_secret_v1.scientific_artifact_remover_store", self.control_plane)
         self.assertIn("kubernetes_secret_v1.scientific_artifact_verifier_store", self.control_plane)
+        self.assertIn("kubernetes_secret_v1.scientific_artifact_finalizer_store", self.control_plane)
 
     def test_the_obsolete_artifact_service_wiring_is_not_revived(self) -> None:
         for forbidden in self.contract["chart"]["forbidden_values"]:
@@ -188,13 +190,14 @@ class SecretSafetyTests(ArtifactStoreContractTests):
         # The mode is a constant, not a knob: an INLINE key would land in state.
         self.assertNotIn('secret_delivery_mode = "INLINE"', self.infrastructure)
         self.assertNotIn("var.scientific_artifacts.secret_delivery_mode", self.infrastructure)
-        self.assertEqual(self.infrastructure.count('secret_delivery_mode = "MYSTERY_BOX"'), 3)
+        self.assertEqual(self.infrastructure.count('secret_delivery_mode = "MYSTERY_BOX"'), 4)
 
     def test_only_identity_reference_and_revision_leave_the_infrastructure_stage(self) -> None:
         for output_name in (
             "scientific_artifacts_object_storage_access",
             "scientific_artifact_remover_object_storage_access",
             "scientific_artifact_verifier_object_storage_access",
+            "scientific_artifact_finalizer_object_storage_access",
         ):
             with self.subTest(output=output_name):
                 body = block(self.infrastructure_outputs, f'output "{output_name}" {{')
@@ -227,6 +230,11 @@ class SecretSafetyTests(ArtifactStoreContractTests):
                 "scientific_artifact_verifier_store",
                 "scientific_artifact_verifier_revision",
                 "scientific_artifact_verifier",
+            ),
+            (
+                "scientific_artifact_finalizer_store",
+                "scientific_artifact_finalizer_revision",
+                "scientific_artifact_finalizer",
             ),
         ):
             with self.subTest(resource=resource_name):
@@ -279,7 +287,7 @@ class SecretSafetyTests(ArtifactStoreContractTests):
             self.stack,
         )
 
-    def test_the_access_bundle_preserves_all_three_provider_roles(self) -> None:
+    def test_the_access_bundle_preserves_all_four_provider_roles(self) -> None:
         access_bundle = block(self.workloads_outputs, 'output "access_bundle" {')
         self.assertIn(
             "writer_role         = var.scientific_artifacts.storage_contract.writer.role",
@@ -291,6 +299,18 @@ class SecretSafetyTests(ArtifactStoreContractTests):
         )
         self.assertIn(
             "verifier_role       = var.scientific_artifacts.storage_contract.verifier.role",
+            access_bundle,
+        )
+        self.assertIn(
+            "finalizer_role      = var.scientific_artifacts.storage_contract.finalizer.role",
+            access_bundle,
+        )
+        self.assertIn(
+            "finalizer_credential_secret = \"fs2-system/${local.scientific_artifact_finalizer_secret_name}\"",
+            access_bundle,
+        )
+        self.assertIn(
+            "finalizer_credential_revision = local.scientific_artifact_finalizer_revision",
             access_bundle,
         )
 
@@ -329,12 +349,17 @@ class BucketProvisioningTests(ArtifactStoreContractTests):
             f'scientific_artifacts_verifier_role = "{storage["verifier_role"]}"',
             self.infrastructure,
         )
+        self.assertIn(
+            f'scientific_artifacts_finalizer_role = "{storage["finalizer_role"]}"',
+            self.infrastructure,
+        )
         for resource in ("scientific_artifacts", "scientific_artifacts_disposable"):
             body = block(self.infrastructure, f'resource "nebius_storage_v1_bucket" "{resource}" {{')
-            self.assertEqual(body.count("paths    = [local.scientific_artifacts_path_scope]"), 3)
+            self.assertEqual(body.count("paths    = [local.scientific_artifacts_path_scope]"), 4)
             self.assertIn("roles    = [local.scientific_artifacts_writer_role]", body)
             self.assertIn("roles    = [local.scientific_artifacts_remover_role]", body)
             self.assertIn("roles    = [local.scientific_artifacts_verifier_role]", body)
+            self.assertIn("roles    = [local.scientific_artifacts_finalizer_role]", body)
         # Project-wide roles would let the key read the model cache and registry.
         self.assertNotIn('role        = "editor"', self.infrastructure)
         self.assertNotIn('role        = "viewer"', self.infrastructure)
@@ -501,6 +526,12 @@ class FeatureGateTests(ArtifactStoreContractTests):
         self.assertIn('writer.role == "storage.object-editor"', body)
         self.assertIn('join(",", var.scientific_artifacts.storage_contract.writer.paths) == "scientific/v1/*"', body)
         self.assertIn('writer.secret_delivery == "MYSTERY_BOX"', body)
+        self.assertIn('finalizer.role == "storage.object-editor"', body)
+        self.assertIn(
+            'join(",", var.scientific_artifacts.storage_contract.finalizer.paths) == "scientific/v1/*"',
+            body,
+        )
+        self.assertIn('finalizer.secret_delivery == "MYSTERY_BOX"', body)
         self.assertIn('layout.root == "scientific/v1"', body)
 
 

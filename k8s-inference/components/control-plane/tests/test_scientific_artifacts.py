@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -1354,6 +1355,13 @@ def test_quota_fencing_migration_uses_nonblocking_fair_v2_claims() -> None:
         in normalized
     )
     assert "fs2_scientific_record_finalization_failure_v2" in sql
+    assert sql.count("foreground_lease.expires_at<=clock_timestamp()") == 2
+    assert sql.count("recovery_lease.expires_at<=clock_timestamp()") == 2
+    assert sql.count("recovery_lease.lease_generation<=1") == 2
+    assert "fs2_scientific_record_foreground_finalization_failure_v2" in sql
+    assert "fs2_scientific_record_recovery_finalization_failure_v2" in sql
+    assert "fs2_scientific_publish_foreground_artifact_v2" in sql
+    assert "fs2_scientific_publish_recovery_artifact_v2" in sql
     assert "fs2_scientific_artifact_finalization_failures" in sql
     assert "'legacy-single-put-v1:'||upload.id::text" in sql
     assert "state IN ('active','legacy','completed')" in sql
@@ -1366,6 +1374,99 @@ def test_quota_fencing_migration_uses_nonblocking_fair_v2_claims() -> None:
     assert "part_size_bytes,part_count,provider_stability_grace_seconds" in normalized
     assert "claim.provider_stability_grace_seconds" in normalized
     assert "record_finalization_failure" in PostgresArtifactRepository.__dict__
+
+
+def test_finalization_authority_is_generation_and_database_clock_fenced() -> None:
+    sql = (CONTROL_ROOT / "migrations" / "0031_scientific_quota_fencing.sql").read_text(
+        encoding="utf-8"
+    )
+
+    def function_body(name: str) -> str:
+        start = sql.index(f"CREATE FUNCTION {name}(")
+        end = sql.index("\nCREATE FUNCTION ", start + 1)
+        return " ".join(sql[start:end].split())
+
+    foreground_failure = function_body(
+        "fs2_scientific_record_foreground_finalization_failure_v2"
+    )
+    foreground_publish = function_body("fs2_scientific_publish_foreground_artifact_v2")
+    recovery_failure = function_body("fs2_scientific_record_recovery_finalization_failure_v2")
+    recovery_publish = function_body("fs2_scientific_publish_recovery_artifact_v2")
+    claimed_intent = function_body("fs2_scientific_get_claimed_finalization_intent_v2")
+
+    for body in (foreground_failure, foreground_publish):
+        assert "foreground_lease.lease_generation<>1" in body
+        assert "p_lease_generation<>1" in body
+        assert "foreground_lease.expires_at<=clock_timestamp()" in body
+    for body in (recovery_failure, recovery_publish, claimed_intent):
+        assert "lease_generation<=1" in body
+        assert "lease_generation<>p_lease_generation" in body
+        assert "expires_at<=clock_timestamp()" in body
+    assert "RETURNS fs2_scientific_uploads" in claimed_intent
+    assert "reservation.state='active'" in claimed_intent
+    assert "upload.artifact_id IS NULL" in claimed_intent
+
+    repository_source = inspect.getsource(PostgresArtifactRepository.get_leased_upload)
+    assert "if self._recovery_authority" in repository_source
+    assert "fs2_scientific_get_claimed_finalization_intent_v2" in repository_source
+    assert repository_source.index("if self._recovery_authority") < repository_source.index(
+        "SELECT upload.* FROM fs2_scientific_uploads upload"
+    )
+
+
+def test_every_quota_fencing_definer_is_revoked_before_its_step_commits() -> None:
+    sql = (CONTROL_ROOT / "migrations" / "0031_scientific_quota_fencing.sql").read_text(
+        encoding="utf-8"
+    )
+    boundary = "-- fs2-migration-transaction-boundary"
+    definer_creation = re.compile(
+        r"CREATE(?: OR REPLACE)? FUNCTION\s+([a-z0-9_]+)\s*\("
+        r"(?:(?!AS \$function\$).)*?SECURITY DEFINER"
+        r"(?:(?!AS \$function\$).)*?AS \$function\$",
+        re.DOTALL,
+    )
+    matches = list(definer_creation.finditer(sql))
+    created_names = {match.group(1) for match in matches}
+    assert {
+        "fs2_scientific_claim_artifact_removals",
+        "fs2_scientific_claim_artifact_verifications",
+        "fs2_scientific_record_artifact_removal",
+        "fs2_scientific_queue_legacy_upload_session_v2",
+        "fs2_scientific_ensure_artifact_janitor_tenant_cursor",
+        "fs2_scientific_queue_legacy_artifact_version_v2",
+        "fs2_scientific_claim_upload_session_creation_v2",
+        "fs2_scientific_bind_upload_session_v2",
+        "fs2_scientific_claim_stale_upload_session_creations_v2",
+        "fs2_scientific_record_upload_session_creation_reconciled_v2",
+        "fs2_scientific_record_upload_session_aborted_v2",
+        "fs2_scientific_mark_upload_session_completed_v2",
+        "fs2_scientific_acquire_artifact_finalization_lease_v2",
+        "fs2_scientific_claim_expired_finalization_leases_v2",
+        "fs2_scientific_get_claimed_finalization_intent_v2",
+        "fs2_scientific_record_finalization_failure_v2",
+        "fs2_scientific_record_foreground_finalization_failure_v2",
+        "fs2_scientific_record_recovery_finalization_failure_v2",
+        "fs2_scientific_record_upload_capability_v2",
+        "fs2_scientific_publish_artifact_v2",
+        "fs2_scientific_publish_foreground_artifact_v2",
+        "fs2_scientific_publish_recovery_artifact_v2",
+        "fs2_scientific_claim_legacy_artifact_versions_v2",
+        "fs2_scientific_record_legacy_artifact_version_scan_v2",
+        "fs2_scientific_record_legacy_artifact_version_v2",
+        "fs2_scientific_legacy_version_rollout_status_v2",
+        "fs2_scientific_mark_schema_bridge_ready_v2",
+        "fs2_scientific_claim_artifact_removals_v2",
+        "fs2_scientific_record_artifact_removal_completion_v2",
+        "fs2_scientific_claim_artifact_verifications_v2",
+        "fs2_scientific_record_artifact_verification_failure_v2",
+        "fs2_scientific_record_artifact_removal_v2",
+    } == created_names
+    for match in matches:
+        transaction_end = sql.find(boundary, match.end())
+        if transaction_end < 0:
+            transaction_end = len(sql)
+        transaction = sql[match.start() : transaction_end]
+        assert f"REVOKE ALL ON FUNCTION {match.group(1)}(" in transaction
 
 
 async def test_closing_an_attempt_does_not_release_unverified_object_quota() -> None:
@@ -2108,7 +2209,12 @@ async def test_retention_deletes_objects_then_metadata_and_records_evidence() ->
 # --------------------------------------------------------------------------
 
 TRUNCATE = """
-TRUNCATE fs2_scientific_artifact_verification_failures_v2,
+TRUNCATE fs2_scientific_artifact_finalization_failures,
+    fs2_scientific_artifact_finalization_leases,
+    fs2_scientific_artifact_upload_session_reconciliation_events,
+    fs2_scientific_artifact_upload_session_creation_claims,
+    fs2_scientific_artifact_upload_sessions,
+    fs2_scientific_artifact_verification_failures_v2,
     fs2_scientific_artifact_deletion_evidence_v2,
     fs2_scientific_artifact_removal_evidence_v2,
     fs2_scientific_artifact_upload_capabilities,
@@ -2197,6 +2303,199 @@ async def runtime_pool(postgres_store):
         yield pool
     finally:
         await pool.close()
+
+
+@pytest_asyncio.fixture
+async def finalizer_pool(postgres_store):
+    """A pool restricted to the autonomous recovery role, as in production."""
+
+    database_url = os.environ["FS2_TEST_DATABASE_URL"].replace(
+        "postgresql+asyncpg://", "postgresql://", 1
+    )
+
+    async def assume_finalizer_role(connection) -> None:
+        await connection.execute("SET ROLE fs2_serve_artifact_finalizer")
+
+    pool = await asyncpg.create_pool(
+        dsn=database_url,
+        min_size=2,
+        max_size=8,
+        init=assume_finalizer_role,
+    )
+    assert pool is not None
+    try:
+        yield pool
+    finally:
+        await pool.close()
+
+
+@pytest.mark.postgres
+async def test_postgres_finalization_roles_have_disjoint_entrypoints(
+    runtime_pool, finalizer_pool
+) -> None:
+    runtime_denied = (
+        "public.fs2_scientific_claim_expired_finalization_leases_v2(integer)",
+        "public.fs2_scientific_get_claimed_finalization_intent_v2(uuid,uuid,text,uuid,integer,integer)",
+        "public.fs2_scientific_record_finalization_failure_v2(uuid,uuid,text,uuid,integer,integer,"
+        "text,text,text,text,text,bigint,text,text,timestamp with time zone)",
+        "public.fs2_scientific_record_recovery_finalization_failure_v2(uuid,uuid,text,uuid,integer,"
+        "integer,text,text,text,text,text,bigint,text,text,timestamp with time zone)",
+        "public.fs2_scientific_publish_artifact_v2(uuid,uuid,text,uuid,uuid,integer,integer,text,"
+        "text,text,text,bigint,text,text,timestamp with time zone)",
+        "public.fs2_scientific_publish_recovery_artifact_v2(uuid,uuid,text,uuid,uuid,integer,integer,"
+        "text,text,text,text,bigint,text,text,timestamp with time zone)",
+    )
+    finalizer_denied = (
+        "public.fs2_scientific_acquire_artifact_finalization_lease_v2(uuid,uuid,text,integer,uuid)",
+        "public.fs2_scientific_record_finalization_failure_v2(uuid,uuid,text,uuid,integer,integer,"
+        "text,text,text,text,text,bigint,text,text,timestamp with time zone)",
+        "public.fs2_scientific_record_foreground_finalization_failure_v2(uuid,uuid,text,uuid,integer,"
+        "integer,text,text,text,text,text,bigint,text,text,timestamp with time zone)",
+        "public.fs2_scientific_publish_artifact_v2(uuid,uuid,text,uuid,uuid,integer,integer,text,"
+        "text,text,text,bigint,text,text,timestamp with time zone)",
+        "public.fs2_scientific_publish_foreground_artifact_v2(uuid,uuid,text,uuid,uuid,integer,"
+        "integer,text,text,text,text,bigint,text,text,timestamp with time zone)",
+    )
+    async with runtime_pool.acquire() as connection:
+        for signature in runtime_denied:
+            assert not await connection.fetchval(
+                "SELECT has_function_privilege(current_user,$1,'EXECUTE')", signature
+            )
+    async with finalizer_pool.acquire() as connection:
+        for signature in finalizer_denied:
+            assert not await connection.fetchval(
+                "SELECT has_function_privilege(current_user,$1,'EXECUTE')", signature
+            )
+        for table in (
+            "public.fs2_scientific_uploads",
+            "public.fs2_scientific_artifact_quota_reservations",
+            "public.fs2_scientific_artifact_finalization_leases",
+        ):
+            assert not await connection.fetchval(
+                "SELECT has_table_privilege(current_user,$1,'SELECT')", table
+            )
+
+
+@pytest.mark.postgres
+async def test_postgres_finalization_generation_transfer_is_clock_fenced(
+    postgres_store, runtime_pool, finalizer_pool
+) -> None:
+    runtime_repository = PostgresArtifactRepository(runtime_pool)
+    recovery_repository = PostgresArtifactRepository(finalizer_pool, recovery_authority=True)
+
+    async def create_foreground_lease() -> tuple[
+        FinalizeArtifactUpload,
+        ArtifactUploadSession,
+        Any,
+        VerifiedStoredObject,
+    ]:
+        operation_id = uuid4()
+        await insert_operation(runtime_pool, operation_id)
+        store = FakeObjectStore()
+        service = build_service(
+            runtime_repository,
+            store,
+            upload_completion_grace=timedelta(minutes=1),
+        )
+        attempt_id = await open_attempt(service, operation_id=operation_id)
+        value = b"lease-fence"
+        begun = await service.begin_upload(
+            BeginArtifactUpload(
+                upload_id=uuid4(),
+                attempt_id=attempt_id,
+                operation_id=operation_id,
+                tenant_id=TENANT,
+                direction=ArtifactDirection.OUTPUT,
+                expected_digest=digest(value),
+                expected_size_bytes=len(value),
+                media_type="chemical/x-pdb",
+            )
+        )
+        request = FinalizeArtifactUpload(
+            upload_id=begun.upload.upload_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+        )
+        lease = await runtime_repository.acquire_finalization_lease(
+            request,
+            session_generation=begun.session.session_generation,
+            lease_id=uuid4(),
+        )
+        verified = VerifiedStoredObject(
+            storage_key=begun.upload.storage_key,
+            provider_version_id="provider-version-finalization-fence",
+            provider_request_id="provider-request-finalization-fence",
+            digest=digest(value),
+            size_bytes=len(value),
+            media_type="chemical/x-pdb",
+        )
+        return request, begun.session, lease, verified
+
+    request, session, foreground_lease, verified = await create_foreground_lease()
+    with pytest.raises(ArtifactConflictError):
+        await recovery_repository.record_finalization_failure(
+            request,
+            session=session,
+            lease=foreground_lease,
+            verified=verified,
+            failure_code="content_verification_failed",
+        )
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_scientific_artifact_finalization_leases "
+            "SET expires_at=clock_timestamp()-interval '1 second' WHERE upload_id=$1",
+            request.upload_id,
+        )
+    with pytest.raises(ArtifactConflictError):
+        await runtime_repository.record_finalization_failure(
+            request,
+            session=session,
+            lease=foreground_lease,
+            verified=verified,
+            failure_code="content_verification_failed",
+        )
+    claimed = await recovery_repository.claim_expired_finalization_leases(limit=1)
+    assert len(claimed) == 1
+    assert claimed[0].lease.lease_generation > 1
+    assert await recovery_repository.get_leased_upload(
+        claimed[0].request, lease=claimed[0].lease
+    )
+    settled = await recovery_repository.record_finalization_failure(
+        claimed[0].request,
+        session=claimed[0].session,
+        lease=claimed[0].lease,
+        verified=verified,
+        failure_code="content_verification_failed",
+    )
+    assert settled.lease_generation == claimed[0].lease.lease_generation
+
+    stale_request, stale_session, _, stale_verified = await create_foreground_lease()
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_scientific_artifact_finalization_leases "
+            "SET expires_at=clock_timestamp()-interval '1 second' WHERE upload_id=$1",
+            stale_request.upload_id,
+        )
+    stale_claim = (await recovery_repository.claim_expired_finalization_leases(limit=1))[0]
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_scientific_artifact_finalization_leases "
+            "SET expires_at=clock_timestamp()-interval '1 second' WHERE upload_id=$1",
+            stale_request.upload_id,
+        )
+    with pytest.raises(ArtifactConflictError):
+        await recovery_repository.get_leased_upload(
+            stale_request,
+            lease=stale_claim.lease,
+        )
+    with pytest.raises(ArtifactConflictError):
+        await recovery_repository.record_finalization_failure(
+            stale_request,
+            session=stale_session,
+            lease=stale_claim.lease,
+            verified=stale_verified,
+            failure_code="content_verification_failed",
+        )
 
 
 @pytest.mark.postgres

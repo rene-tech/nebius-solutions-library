@@ -28,7 +28,11 @@
     "writer_role": "storage.object-editor",
     "remover_role": "storage.object-editor",
     "verifier_role": "storage.object-viewer",
+    "finalizer_role": "storage.object-editor",
     "writer_paths": [
+      "scientific/v1/*"
+    ],
+    "finalizer_paths": [
       "scientific/v1/*"
     ],
     "secret_delivery": "MYSTERY_BOX",
@@ -94,6 +98,18 @@
     "may_release_quota_after_provider_refetch": true,
     "write_only": true
   },
+  "finalizer_credential": {
+    "purpose": "multipart-finalization-recovery-only",
+    "namespace": "fs2-system",
+    "secret_name": "fs2-serve-artifact-finalizer-store",
+    "secret_key": "credentials.json",
+    "provider_role": "storage.object-editor",
+    "database_secret_name": "fs2-serve-database-artifact-finalizer",
+    "database_role": "fs2_serve_artifact_finalizer",
+    "may_claim_expired_finalization_leases": true,
+    "may_use_runtime_api_credentials": false,
+    "write_only": true
+  },
   "chart": {
     "scientificArtifacts": [
       "addressingStyle",
@@ -142,6 +158,10 @@
       "name"
     ],
     "secrets.artifactVerifierStore": [
+      "key",
+      "name"
+    ],
+    "secrets.artifactFinalizerStore": [
       "key",
       "name"
     ],

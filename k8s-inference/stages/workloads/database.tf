@@ -4,6 +4,7 @@ locals {
     maintenance      = "fs2_serve_maintenance"
     artifact_remover = "fs2_serve_artifact_remover"
     artifact_verifier = "fs2_serve_artifact_verifier"
+    artifact_finalizer = "fs2_serve_artifact_finalizer"
     activation       = "fs2_serve_activation"
     restore_verifier = "fs2_serve_restore_verifier"
     reporting        = "fs2_serve_reporting"
@@ -15,6 +16,7 @@ locals {
     "fs2_serve_maintenance",
     "fs2_serve_artifact_remover",
     "fs2_serve_artifact_verifier",
+    "fs2_serve_artifact_finalizer",
     "fs2_serve_activation",
     "fs2_serve_restore_verifier",
     "fs2_serve_reporting",

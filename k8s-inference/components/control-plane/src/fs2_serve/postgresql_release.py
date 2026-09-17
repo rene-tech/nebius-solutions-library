@@ -105,7 +105,7 @@ EXPECTED_MIGRATIONS: Final = (
     ),
     (
         "0031_scientific_quota_fencing.sql",
-        "4efa4924043a8bb40bffca4ed3d921921d6115858cfea70ff0c5af8c28f94bd7",
+        "011206fc57e381f0d58baa02bbc3769fe111144abc5d9019607a8313b5532265",
     ),
 )
 
@@ -153,6 +153,15 @@ NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
             "database_group_role": "fs2_serve_artifact_verifier",
             "writer_owner": "postgresql-platform-release",
             "consumer_owners": ["fs2-serve-control-plane-artifact-verifier"],
+        },
+        {
+            "purpose": "artifact-finalization",
+            "namespace": "fs2-system",
+            "name": "fs2-serve-database-artifact-finalizer",
+            "key": "url",
+            "database_group_role": "fs2_serve_artifact_finalizer",
+            "writer_owner": "postgresql-platform-release",
+            "consumer_owners": ["fs2-serve-control-plane-artifact-finalizer"],
         },
         {
             "purpose": "maintenance",
@@ -208,6 +217,12 @@ NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
         {
             "purpose": "artifact-verification",
             "name": "fs2_serve_artifact_verifier",
+            "login": False,
+            "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        },
+        {
+            "purpose": "artifact-finalization",
+            "name": "fs2_serve_artifact_finalizer",
             "login": False,
             "creation_and_grant_owner": "fs2-serve-control-plane-migration",
         },
