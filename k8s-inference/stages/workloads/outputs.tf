@@ -481,6 +481,9 @@ output "managed_resource_count" {
     # immutable exact-ingress contract ConfigMap, and four fail-closed
     # admission policy/binding pairs (including the transition freeze).
     + 14
+    # SAI-20 v5 adds three successor gates, two unknown apply-time nonces and
+    # the CNPG/database-peer exact-identity admission policy/binding pair.
+    + 7
   )
 }
 
@@ -518,6 +521,24 @@ output "sai20_database_authority_v4" {
     transition_policy_freeze = kubernetes_manifest.sai20_database_policy_freeze_v4.manifest.metadata.name
     exact_ingress_policy     = kubernetes_manifest.sai20_database_ingress_exact_spec_v4.manifest.metadata.name
     exact_owner_policy       = kubernetes_manifest.sai20_database_exact_owner_v4.manifest.metadata.name
+  }
+}
+
+output "sai20_database_authority_v5" {
+  description = "Externally enrolled, cluster-RBAC-complete, CNPG-peer-custodied SAI-20 activation receipt."
+  value = {
+    schema                              = "fs2-serve.nebius.ai/sai20-database-authority/v5"
+    successor_bundle_sha256             = terraform_data.sai20_database_authority_v5_apply.output.successor_bundle_sha256
+    successor_payload_sha256            = terraform_data.sai20_database_authority_v5_apply.output.successor_payload_sha256
+    source_commit                       = terraform_data.sai20_database_authority_v5_apply.output.source_commit
+    source_tree                         = terraform_data.sai20_database_authority_v5_apply.output.source_tree
+    external_enrollment_receipts_sha256 = terraform_data.sai20_database_authority_v5_apply.output.external_enrollment_receipts_sha256
+    cluster_authority_review_sha256     = terraform_data.sai20_database_authority_v5_apply.output.cluster_authority_review_sha256
+    peer_workload_inventory_sha256      = terraform_data.sai20_database_authority_v5_apply.output.peer_workload_inventory_sha256
+    cnpg_cluster_identity_sha256        = terraform_data.sai20_database_authority_v5_apply.output.cnpg_cluster_identity_sha256
+    bootstrap_guard_sha256              = terraform_data.sai20_database_authority_v5_apply.output.bootstrap_guard_sha256
+    provider_group_reobserved           = terraform_data.sai20_database_authority_v5_apply.output.provider_group_reobserved
+    peer_identity_policy                = kubernetes_manifest.sai20_database_peer_identity_v5.manifest.metadata.name
   }
 }
 

@@ -68,6 +68,8 @@ resource "terraform_data" "sai20_database_authority_v4_plan" {
   lifecycle {
     precondition {
       condition = try(
+        terraform_data.sai20_database_authority_v5_plan.output.successor_verified == "true" &&
+        terraform_data.sai20_database_authority_v5_plan.output.successor_bundle_sha256 == data.external.sai20_database_authority_v5_plan.result.successor_bundle_sha256 &&
         data.external.sai20_database_authority_v4_plan.result.verified == "true" &&
         data.external.sai20_database_authority_v4_plan.result.apply_reobserved == "false" &&
         data.external.sai20_database_authority_v4_plan.result.ingress_spec_sha256 == local.sai20_authority_v4_ingress_spec_sha256,
@@ -114,6 +116,10 @@ resource "terraform_data" "sai20_database_authority_v4_identity" {
   lifecycle {
     precondition {
       condition = try(
+        terraform_data.sai20_database_authority_v5_identity.output.successor_verified == "true" &&
+        terraform_data.sai20_database_authority_v5_identity.output.bootstrap_reobserved == "true" &&
+        terraform_data.sai20_database_authority_v5_identity.output.source_commit == data.external.sai20_database_authority_v4_identity.result.source_commit &&
+        terraform_data.sai20_database_authority_v5_identity.output.source_tree == data.external.sai20_database_authority_v4_identity.result.source_tree &&
         data.external.sai20_database_authority_v4_identity.result.verified == "true" &&
         data.external.sai20_database_authority_v4_identity.result.identity_reobserved == "true" &&
         data.external.sai20_database_authority_v4_identity.result.apply_reobserved == "false" &&
@@ -174,6 +180,11 @@ resource "terraform_data" "sai20_database_authority_v4_apply" {
   lifecycle {
     precondition {
       condition = try(
+        terraform_data.sai20_database_authority_v5_apply.output.successor_verified == "true" &&
+        terraform_data.sai20_database_authority_v5_apply.output.bootstrap_reobserved == "true" &&
+        terraform_data.sai20_database_authority_v5_apply.output.provider_group_reobserved == "true" &&
+        terraform_data.sai20_database_authority_v5_apply.output.source_commit == data.external.sai20_database_authority_v4_apply.result.source_commit &&
+        terraform_data.sai20_database_authority_v5_apply.output.source_tree == data.external.sai20_database_authority_v4_apply.result.source_tree &&
         data.external.sai20_database_authority_v4_apply.result.verified == "true" &&
         data.external.sai20_database_authority_v4_apply.result.identity_reobserved == "true" &&
         data.external.sai20_database_authority_v4_apply.result.apply_reobserved == "true" &&
@@ -266,6 +277,8 @@ resource "kubernetes_manifest" "sai20_database_authority_object_custody_v4" {
         "security.fs2.nebius.ai/authority-bundle-sha256" = terraform_data.sai20_database_authority_v4_identity.output.bundle_sha256
         "security.fs2.nebius.ai/source-commit"           = terraform_data.sai20_database_authority_v4_identity.output.source_commit
         "security.fs2.nebius.ai/source-tree"             = terraform_data.sai20_database_authority_v4_identity.output.source_tree
+        "security.fs2.nebius.ai/bootstrap-guard-sha256"  = terraform_data.sai20_database_authority_v5_identity.output.bootstrap_guard_sha256
+        "security.fs2.nebius.ai/successor-bundle-sha256" = terraform_data.sai20_database_authority_v5_identity.output.successor_bundle_sha256
       }
     }
     spec = {

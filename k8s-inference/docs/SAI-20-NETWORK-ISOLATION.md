@@ -272,3 +272,54 @@ Terraform, Helm, build, package manager, scanner, cluster command, live probe,
 deployment or cleanup ran. This successor is a candidate for independent
 static review only and makes no SOURCE GO, integration, deployment or live
 claim.
+
+## Independent-review correction after `d5c19b3a`
+
+Independent review rejected exact commit
+`d5c19b3a8b3345acbec7b16bd5a2c00a455874d8` / tree
+`560942184be49eea74c2ae321e7645ba6b8291dd`. Preserve that source as negative
+evidence. The v4 derivation ignored ClusterRoleBinding subjects, the database
+and CNPG-operator label peers lacked namespace-complete exact-owner admission,
+the first v4 policy was created before any binding protected its name, root
+enrollment was self-asserted, and provider group membership was not read again
+during apply.
+
+The additive v5 successor gate retains the v4 ingress contract, existing
+database clients, source/tree binding and unknown apply nonces, but makes v4
+activation depend on all of these additional conditions:
+
+- Every dangerous or sensitive RoleBinding **and ClusterRoleBinding** is
+  reconstructed from raw Role/ClusterRole and binding responses. Each record
+  includes the binding scope/name/UID, exact role reference, rules digest and
+  subject. The dual-signed cluster-authority review digest is recomputed from
+  the cluster-wide subset; cluster subjects can no longer disappear behind a
+  namespaced-only filter.
+- The signed workload closure now lists all Pod-producing resource kinds in
+  both `fs2-data` and `cnpg-system`, plus the exact
+  `postgresql.cnpg.io/v1` `Cluster/fs2-control-db`. Every existing database Pod
+  must point to that live Cluster name and UID. Every labelled CNPG operator
+  Pod must resolve to a signed live standard-controller parent, and its
+  controller username, groups and authentication extras are taken from an
+  authenticated SelfSubjectReview already in the principal closure. A new
+  fail-closed policy covers Pods and controller templates in both namespaces,
+  so a direct Pod or spoofed label/owner reference is denied.
+- The source-owned bootstrap-guard contract is a prerequisite, not a resource
+  created in the same apply. Plan evidence lists the active policy/binding;
+  the identity nonce re-reads them immediately before mutation; and the final
+  nonce re-reads the admission sets, rejects changes to pre-existing objects,
+  and permits only the enumerated v4/v5 additions protected by that guard.
+- Evidence-root enrollment needs a detached Ed25519 receipt from an external
+  Platform Security authority whose exact registry snapshot is a retained
+  strict ancestor of the root commit. Both new registries are intentionally
+  empty and `ENROLLMENT_REQUIRED`; neither a future provenance document nor a
+  packet can authenticate itself.
+- The final apply invokes a signed-digest provider observer and accepts only a
+  fresh authenticated response for the exact group-list request, endpoint and
+  CA. Its response must still be complete, empty and byte-content-equivalent
+  to the dual-signed plan response.
+
+No bootstrap guard, enrollment authority, root, receipt, bundle, observer,
+credential, cluster object or provider response was created or inspected in
+this task. The v5 regressions are authored but deliberately unexecuted under
+the coordinator boundary. This remains a fail-closed candidate for independent
+static review only: no SOURCE GO, integration, deployment or live claim.

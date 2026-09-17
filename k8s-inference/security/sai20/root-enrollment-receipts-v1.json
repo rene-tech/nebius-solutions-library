@@ -1,0 +1,6 @@
+{
+  "schema": "fs2-serve.nebius.ai/sai20-root-enrollment-receipts/v1",
+  "status": "ENROLLMENT_REQUIRED",
+  "receipts": [],
+  "note": "Receipts are detached Ed25519 signatures by a pre-existing enrollment authority over the exact evidence-root identity and immutable Git provenance. The authority snapshot must be a strict ancestor of the enrolled root's accepted source commit."
+}

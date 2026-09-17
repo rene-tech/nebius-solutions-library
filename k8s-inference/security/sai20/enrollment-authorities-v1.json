@@ -1,0 +1,11 @@
+{
+  "schema": "fs2-serve.nebius.ai/sai20-enrollment-authorities/v1",
+  "status": "ENROLLMENT_REQUIRED",
+  "authorities": [],
+  "requirements": {
+    "minimum_prior_commits": 1,
+    "signature_algorithm": "Ed25519",
+    "purpose": "sai20-root-enrollment",
+    "note": "No SAI-20 evidence root can be enrolled until an external Platform Security enrollment authority has been established in an independently accepted strict-ancestor commit."
+  }
+}

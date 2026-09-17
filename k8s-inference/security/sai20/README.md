@@ -42,3 +42,36 @@ impersonation digest from those bytes.
 
 No enrollment or evidence collection was performed while authoring this
 source-only successor.
+
+## v5 external enrollment and bootstrap prerequisites
+
+Independent review rejected `d5c19b3a8b3345acbec7b16bd5a2c00a455874d8`
+because the provenance document could assert its own acceptance. The v5 gate
+therefore does not treat that document, a reviewer string, a Terraform value
+or the v5 packet as an enrollment authority. Every evidence root additionally
+needs a detached Ed25519 receipt in `root-enrollment-receipts-v1.json`. The
+receipt statement binds the root key, role, principal, group and immutable Git
+provenance, and its signer must be a retained
+`platform-security-enrollment-authority` from an `ACTIVE`
+`enrollment-authorities-v1.json` snapshot in a strict-ancestor commit. The
+verifier resolves that historical commit/tree/path/blob and validates the
+signature. The committed authority and receipt registries are empty and
+`ENROLLMENT_REQUIRED`, so this source cannot activate or self-bootstrap.
+
+The successor also requires a source-exact, already active bootstrap
+ValidatingAdmissionPolicy and `Deny` binding. Their complete specs are defined
+in `contracts/sai20-bootstrap-guard-v5.json`; raw API lists are signed and the
+identity-stage apply read re-observes them before any v4/v5 policy is created.
+The guard protects its own names and every successor policy/binding name. This
+repository intentionally does not create that prerequisite: an integration
+owner must establish and independently accept it under an earlier trusted
+platform admission boundary, then supply its immutable UID/resourceVersion
+receipt. If no such prior boundary exists, activation stays blocked.
+
+Provider group membership is not a plan-only assertion. The v5 bundle signs
+the exact observer executable digest and credential-subject digest. The final
+unknown-nonce apply gate executes that observer, validates a fresh raw
+provider transcript against the pinned endpoint and CA, and requires its empty
+membership response to equal the signed response before the database policy
+can become authoritative. No provider executable, credential or response is
+committed here.
