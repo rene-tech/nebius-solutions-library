@@ -112,6 +112,12 @@ SCALE_GATE_DENIAL_MESSAGE = "fixed-scale gate blocks autoscaler targetRef creati
 SCALE_GATE_TARGET_PREFIX = "target."
 SCALE_GATE_SCALED_OBJECT_PREFIX = "scaledobject."
 SCALE_GATE_HPA_PREFIX = "hpa."
+SCALE_GATE_PREDECESSOR_EVIDENCE_PREFIX = "evidence."
+SCALE_GATE_AUTHORIZATION_MAX_BYTES = 64 * 1024
+SCALE_GATE_RECORD_MAX_BYTES = 128 * 1024
+SCALE_GATE_PREDECESSOR_EVIDENCE_MAX_BYTES = 64 * 1024
+KUBERNETES_CONFIG_MAP_MAX_BYTES = 1024 * 1024
+KUBERNETES_INT64_MAX = 9_223_372_036_854_775_807
 
 
 @dataclass(frozen=True)
@@ -200,7 +206,7 @@ class ScaleGateScalerCheckpoint(StrictModel):
 
     uid: str = Field(min_length=1, max_length=253)
     resource_version: str = Field(alias="resourceVersion", min_length=1, max_length=128)
-    generation: int = Field(ge=1)
+    generation: int = Field(ge=1, le=KUBERNETES_INT64_MAX)
     digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     managed_fields_digest: str = Field(alias="managedFieldsDigest", pattern=r"^sha256:[0-9a-f]{64}$")
 
@@ -217,7 +223,7 @@ class ScaleGateScalerCheckpointV2(StrictModel):
 
     uid: str = Field(min_length=1, max_length=253)
     resource_version: str = Field(alias="resourceVersion", min_length=1, max_length=128)
-    generation: int = Field(ge=1)
+    generation: int = Field(ge=1, le=KUBERNETES_INT64_MAX)
     digest: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     managed_fields_digest: str | None = Field(
         default=None,
@@ -235,14 +241,19 @@ class ScaleGateReleaseAuthorizationV2(StrictModel):
     deployment_uid: str = Field(alias="deploymentUID", min_length=1, max_length=253)
     model_uid: str = Field(alias="modelUID", min_length=1, max_length=253)
     model_resource_version: str = Field(alias="modelResourceVersion", min_length=1, max_length=128)
-    model_generation: int = Field(alias="modelGeneration", ge=1)
+    model_generation: int = Field(alias="modelGeneration", ge=1, le=KUBERNETES_INT64_MAX)
     model_spec_digest: str = Field(alias="modelSpecDigest", pattern=r"^sha256:[0-9a-f]{64}$")
     scaler_api_version: str = Field(alias="scalerAPIVersion", min_length=1, max_length=253)
     scaler_kind: str = Field(alias="scalerKind", min_length=1, max_length=253)
     scaler_namespace: str = Field(alias="scalerNamespace", min_length=1, max_length=253)
     scaler_name: str = Field(alias="scalerName", min_length=1, max_length=253)
     desired_scaler_digest: str = Field(alias="desiredScalerDigest", pattern=r"^sha256:[0-9a-f]{64}$")
-    expected_scaler_generation: int | None = Field(default=None, alias="expectedScalerGeneration", ge=1)
+    expected_scaler_generation: int | None = Field(
+        default=None,
+        alias="expectedScalerGeneration",
+        ge=1,
+        le=KUBERNETES_INT64_MAX,
+    )
     mutation_token: str | None = Field(default=None, alias="mutationToken", pattern=r"^sha256:[0-9a-f]{64}$")
     mutation_operation: Literal["Apply", "Update"] | None = Field(default=None, alias="mutationOperation")
     prior_scaler: ScaleGateScalerCheckpointV2 | None = Field(default=None, alias="priorScaler")
@@ -274,17 +285,27 @@ class ScaleGateReleaseAuthorization(StrictModel):
     deployment_uid: str = Field(alias="deploymentUID", min_length=1, max_length=253)
     model_uid: str = Field(alias="modelUID", min_length=1, max_length=253)
     model_resource_version: str = Field(alias="modelResourceVersion", min_length=1, max_length=128)
-    model_generation: int = Field(alias="modelGeneration", ge=1)
+    model_generation: int = Field(alias="modelGeneration", ge=1, le=KUBERNETES_INT64_MAX)
     model_spec_digest: str = Field(alias="modelSpecDigest", pattern=r"^sha256:[0-9a-f]{64}$")
     scaler_api_version: str = Field(alias="scalerAPIVersion", min_length=1, max_length=253)
     scaler_kind: str = Field(alias="scalerKind", min_length=1, max_length=253)
     scaler_namespace: str = Field(alias="scalerNamespace", min_length=1, max_length=253)
     scaler_name: str = Field(alias="scalerName", min_length=1, max_length=253)
     desired_scaler_digest: str = Field(alias="desiredScalerDigest", pattern=r"^sha256:[0-9a-f]{64}$")
-    expected_scaler_generation: int | None = Field(default=None, alias="expectedScalerGeneration", ge=1)
+    expected_scaler_generation: int | None = Field(
+        default=None,
+        alias="expectedScalerGeneration",
+        ge=1,
+        le=KUBERNETES_INT64_MAX,
+    )
     mutation_token: str | None = Field(default=None, alias="mutationToken", pattern=r"^sha256:[0-9a-f]{64}$")
     mutation_operation: Literal["Apply", "Update"] | None = Field(default=None, alias="mutationOperation")
-    mutation_model_generation: int | None = Field(default=None, alias="mutationModelGeneration", ge=1)
+    mutation_model_generation: int | None = Field(
+        default=None,
+        alias="mutationModelGeneration",
+        ge=1,
+        le=KUBERNETES_INT64_MAX,
+    )
     mutation_model_spec_digest: str | None = Field(
         default=None,
         alias="mutationModelSpecDigest",
@@ -292,6 +313,14 @@ class ScaleGateReleaseAuthorization(StrictModel):
     )
     prior_scaler: ScaleGateScalerCheckpoint | None = Field(default=None, alias="priorScaler")
     applied_scaler: ScaleGateScalerCheckpoint | None = Field(default=None, alias="appliedScaler")
+    predecessor_evidence_digest: str | None = Field(
+        default=None,
+        alias="predecessorEvidenceDigest",
+        pattern=r"^sha256:[0-9a-f]{64}$",
+    )
+    # Decode the brief rejected v3 lineage so it can be migrated in place.
+    # New records never embed this potentially large object; they retain its
+    # canonical bytes in a separately keyed, content-addressed gate entry.
     predecessor_authorization: ScaleGateReleaseAuthorizationV2 | None = Field(
         default=None,
         alias="predecessorAuthorization",
@@ -330,7 +359,7 @@ class ScaleGateRecord(StrictModel):
 
     version: Literal[1]
     target: ScaleGateTargetIdentity
-    authorization: str = Field(min_length=1, max_length=4096)
+    authorization: str = Field(min_length=1, max_length=SCALE_GATE_AUTHORIZATION_MAX_BYTES)
 
     def value(self) -> str:
         return self.model_dump_json(by_alias=True)
@@ -928,11 +957,17 @@ def _controller_owned_scale_authorization_receipt(body: Mapping[str, Any]) -> Sc
 
 
 def _scale_gate_record(value: Any, target: ScaleGateTargetIdentity) -> ScaleGateRecord | None:
-    if not isinstance(value, str) or not value or len(value) > 8192:
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value.encode()) > SCALE_GATE_RECORD_MAX_BYTES
+    ):
         return None
     try:
         record = ScaleGateRecord.model_validate_json(value)
     except (ValidationError, ValueError):
+        return None
+    if len(record.authorization.encode()) > SCALE_GATE_AUTHORIZATION_MAX_BYTES:
         return None
     return record if record.target == target else None
 
@@ -992,12 +1027,120 @@ def _scale_gate_target_key(target: ScaleGateTargetIdentity) -> str:
     return f"{SCALE_GATE_TARGET_PREFIX}{_scale_gate_target_digest(target)}"
 
 
+def _scale_gate_predecessor_evidence_value(
+    authorization: ScaleGateReleaseAuthorizationV2,
+) -> str:
+    """Return the single canonical byte representation retained for v2 evidence."""
+
+    value = json.dumps(
+        authorization.model_dump(mode="json", by_alias=True),
+        # ASCII escaping gives even lone Unicode surrogates a stable byte
+        # representation, so every string accepted by the bounded v2 schema
+        # remains canonically serializable.
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    if len(value.encode()) > SCALE_GATE_PREDECESSOR_EVIDENCE_MAX_BYTES:
+        raise ControllerError("protocol-v2 predecessor evidence exceeds its Kubernetes object bound")
+    return value
+
+
+def _scale_gate_predecessor_evidence_digest(
+    authorization: ScaleGateReleaseAuthorizationV2,
+) -> str:
+    value = _scale_gate_predecessor_evidence_value(authorization)
+    return f"sha256:{hashlib.sha256(value.encode()).hexdigest()}"
+
+
+def _scale_gate_predecessor_evidence_key(digest: str) -> str:
+    if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+        raise KubernetesConflictError("protocol-v2 predecessor evidence digest is invalid")
+    return f"{SCALE_GATE_PREDECESSOR_EVIDENCE_PREFIX}{digest.removeprefix('sha256:')}"
+
+
+def _scale_gate_predecessor_evidence_entry(
+    authorization: ScaleGateReleaseAuthorizationV2,
+) -> tuple[str, str]:
+    digest = _scale_gate_predecessor_evidence_digest(authorization)
+    return _scale_gate_predecessor_evidence_key(digest), _scale_gate_predecessor_evidence_value(authorization)
+
+
+def _scale_gate_predecessor_evidence_update(
+    data: Mapping[str, Any],
+    authorization: ScaleGateReleaseAuthorizationV2,
+) -> tuple[str, str]:
+    """Prepare an append-only evidence entry without overwriting retained bytes."""
+
+    key, value = _scale_gate_predecessor_evidence_entry(authorization)
+    if key in data and data.get(key) != value:
+        raise KubernetesConflictError("protocol-v2 predecessor evidence slot changed")
+    return key, value
+
+
+def _scale_gate_predecessor_evidence(
+    data: Mapping[str, Any],
+    authorization: ScaleGateReleaseAuthorization,
+) -> ScaleGateReleaseAuthorizationV2 | None:
+    """Resolve and verify retained v2 bytes before trusting a v3 reference.
+
+    A legacy embedded v3 value is accepted only long enough to be migrated by
+    the enclosing ConfigMap CAS. Digest-bearing records fail closed if their
+    separately retained canonical bytes are absent or changed.
+    """
+
+    embedded = authorization.predecessor_authorization
+    digest = authorization.predecessor_evidence_digest
+    if digest is None:
+        return embedded
+    value = data.get(_scale_gate_predecessor_evidence_key(digest))
+    if not isinstance(value, str) or len(value.encode()) > SCALE_GATE_PREDECESSOR_EVIDENCE_MAX_BYTES:
+        raise KubernetesConflictError("protocol-v2 predecessor evidence is absent or oversized")
+    try:
+        retained = ScaleGateReleaseAuthorizationV2.model_validate_json(value)
+    except (ValidationError, ValueError) as exc:
+        raise KubernetesConflictError("protocol-v2 predecessor evidence is malformed") from exc
+    if (
+        _scale_gate_predecessor_evidence_value(retained) != value
+        or _scale_gate_predecessor_evidence_digest(retained) != digest
+        or embedded is not None
+        and embedded != retained
+    ):
+        raise KubernetesConflictError("protocol-v2 predecessor evidence digest or canonical bytes changed")
+    return retained
+
+
+def _normalized_scale_gate_predecessor_reference(
+    authorization: ScaleGateReleaseAuthorization,
+    evidence: ScaleGateReleaseAuthorizationV2 | None,
+) -> ScaleGateReleaseAuthorization:
+    """Replace a legacy inline predecessor with its bounded digest reference."""
+
+    if evidence is None:
+        return authorization
+    digest = _scale_gate_predecessor_evidence_digest(evidence)
+    if authorization.predecessor_evidence_digest not in (None, digest):
+        raise KubernetesConflictError("protocol-v2 predecessor evidence reference changed")
+    return authorization.model_copy(
+        update={
+            "predecessor_evidence_digest": digest,
+            "predecessor_authorization": None,
+        }
+    )
+
+
 def _encoded_scale_gate_value(target: ScaleGateTargetIdentity, authorization: ScaleGateAuthorization) -> str:
-    return ScaleGateRecord(
+    authorization_value = authorization.annotation_value()
+    if len(authorization_value.encode()) > SCALE_GATE_AUTHORIZATION_MAX_BYTES:
+        raise ControllerError("scale gate authorization exceeds its Kubernetes object bound")
+    value = ScaleGateRecord(
         version=1,
         target=target,
-        authorization=authorization.annotation_value(),
+        authorization=authorization_value,
     ).value()
+    if len(value.encode()) > SCALE_GATE_RECORD_MAX_BYTES:
+        raise ControllerError("scale gate record exceeds its Kubernetes object bound")
+    return value
 
 
 def _encoded_scale_gate_tombstone_value(target: ScaleGateTargetIdentity, tombstone: ScaleGateTombstone) -> str:
@@ -2010,7 +2153,7 @@ class HttpKubernetesModelClient:
             "scalerNamespace": authorization.scaler_namespace,
             "scalerName": authorization.scaler_name,
             "desiredScalerDigest": authorization.desired_scaler_digest,
-            "predecessorAuthorization": authorization,
+            "predecessorEvidenceDigest": _scale_gate_predecessor_evidence_digest(authorization),
         }
         preserved_mutation = {}
         if has_complete_mutation_provenance:
@@ -3730,7 +3873,8 @@ class HttpKubernetesModelClient:
             raise KubernetesConflictError("fixed-scale admission gate release is not authorized")
         target = _scale_gate_target(resource)
         retained_gate = await self._scale_gate_config_map(resource.namespace)
-        retained_gate_value = _mapping(retained_gate.get("data")).get(_scale_gate_target_key(target))
+        retained_gate_data = _mapping(retained_gate.get("data"))
+        retained_gate_value = retained_gate_data.get(_scale_gate_target_key(target))
         retained_authorization = _scale_gate_authorization(retained_gate_value, target)
         if (
             retained_authorization is None
@@ -3843,6 +3987,7 @@ class HttpKubernetesModelClient:
             ):
                 raise KubernetesConflictError("rendered ScaledObject is deleting or foreign")
         if isinstance(retained_authorization, ScaleGateReleaseAuthorizationV2):
+            predecessor_evidence: ScaleGateReleaseAuthorizationV2 | None = retained_authorization
             retained_authorization = self._adopt_scale_release_authorization_v2(
                 retained_authorization,
                 scaler=scaler,
@@ -3852,6 +3997,17 @@ class HttpKubernetesModelClient:
                 owner_uid=owner_uid,
                 model_fence=model_fence,
             )
+        elif isinstance(retained_authorization, ScaleGateReleaseAuthorization):
+            predecessor_evidence = _scale_gate_predecessor_evidence(
+                retained_gate_data,
+                retained_authorization,
+            )
+            retained_authorization = _normalized_scale_gate_predecessor_reference(
+                retained_authorization,
+                predecessor_evidence,
+            )
+        else:
+            predecessor_evidence = None
         retain_applied_authorization = False
         recovered_mutation_checkpoint: ScaleGateScalerCheckpoint | None = None
         if isinstance(retained_authorization, ScaleGateReleaseAuthorization):
@@ -4058,8 +4214,8 @@ class HttpKubernetesModelClient:
                 mutationModelGeneration=model_fence.generation,
                 mutationModelSpecDigest=model_fence.spec_digest,
                 priorScaler=prior_scaler,
-                predecessorAuthorization=(
-                    retained_authorization.predecessor_authorization
+                predecessorEvidenceDigest=(
+                    retained_authorization.predecessor_evidence_digest
                     if isinstance(retained_authorization, ScaleGateReleaseAuthorization)
                     else None
                 ),
@@ -4137,6 +4293,12 @@ class HttpKubernetesModelClient:
             ),
         }
         expected_data[target_key] = expected_gate_value
+        if predecessor_evidence is not None:
+            evidence_key, evidence_value = _scale_gate_predecessor_evidence_update(
+                data,
+                predecessor_evidence,
+            )
+            expected_data[evidence_key] = evidence_value
         gate_change = any(
             (value is None and key in data) or (value is not None and data.get(key) != value)
             for key, value in expected_data.items()
@@ -4250,6 +4412,15 @@ class HttpKubernetesModelClient:
         data = _mapping(gate.get("data"))
         retained_gate_value = data.get(target_key)
         retained_authorization = _scale_gate_authorization(retained_gate_value, target)
+        predecessor_evidence: ScaleGateReleaseAuthorizationV2 | None = None
+        if isinstance(retained_authorization, ScaleGateReleaseAuthorizationV2):
+            predecessor_evidence = retained_authorization
+        elif isinstance(retained_authorization, ScaleGateReleaseAuthorization):
+            predecessor_evidence = _scale_gate_predecessor_evidence(data, retained_authorization)
+            retained_authorization = _normalized_scale_gate_predecessor_reference(
+                retained_authorization,
+                predecessor_evidence,
+            )
         if isinstance(retained_authorization, SCALE_GATE_RELEASE_AUTHORIZATION_TYPES):
             if (
                 retained_authorization.deployment_uid != current.observed.uid
@@ -4347,7 +4518,9 @@ class HttpKubernetesModelClient:
                     desiredScalerDigest=retained_authorization.desired_scaler_digest,
                     priorScaler=v2_prior,
                     appliedScaler=v2_applied,
-                    predecessorAuthorization=retained_authorization,
+                    predecessorEvidenceDigest=_scale_gate_predecessor_evidence_digest(
+                        retained_authorization
+                    ),
                     **preserved_mutation,
                     phase="closed",
                 )
@@ -4365,10 +4538,17 @@ class HttpKubernetesModelClient:
                 latest_gate = await self._scale_gate_config_map(resource.namespace)
                 if _mapping(latest_gate.get("data")).get(target_key) != retained_gate_value:
                     raise KubernetesConflictError("autoscaler allowance changed before fixed-mode closure")
+                closure_data = self._closed_scale_gate_data(resource, closure_value)
+                if predecessor_evidence is not None:
+                    evidence_key, evidence_value = _scale_gate_predecessor_evidence_update(
+                        _mapping(latest_gate.get("data")),
+                        predecessor_evidence
+                    )
+                    closure_data[evidence_key] = evidence_value
                 await self._patch_scale_gate_data(
                     namespace=resource.namespace,
                     config_map=latest_gate,
-                    data=self._closed_scale_gate_data(resource, closure_value),
+                    data=closure_data,
                 )
         elif (
             isinstance(receipt, ScaleHandoffReceipt)

@@ -42,8 +42,12 @@ from fs2_serve.model_deployment import (
 from fs2_serve.model_deployment_bridge import _normalize_keys
 from fs2_serve.model_deployment_controller import (
     FIXED_SCALE_FIELD_MANAGER,
+    KUBERNETES_CONFIG_MAP_MAX_BYTES,
     SCALE_GATE_CONFIG_MAP,
     SCALE_GATE_DENIAL_MESSAGE,
+    SCALE_GATE_AUTHORIZATION_MAX_BYTES,
+    SCALE_GATE_PREDECESSOR_EVIDENCE_MAX_BYTES,
+    SCALE_GATE_RECORD_MAX_BYTES,
     SCALE_GATE_MUTATION_ANNOTATION,
     SCALE_HANDOFF_RECEIPT_ANNOTATION,
     SCALE_HANDOFF_RECEIPT_FIELD_MANAGER,
@@ -87,6 +91,10 @@ from fs2_serve.model_deployment_controller import (
     _scale_gate_authorization,
     _scale_gate_companion_keys,
     _scale_gate_mutation_token,
+    _scale_gate_predecessor_evidence,
+    _scale_gate_predecessor_evidence_digest,
+    _scale_gate_predecessor_evidence_entry,
+    _scale_gate_predecessor_evidence_update,
     _scale_gate_scaler_checkpoint,
     _scale_gate_target,
     _scale_gate_target_key,
@@ -4633,20 +4641,35 @@ async def test_http_records_or_refreshes_a_minimal_controller_owned_transition_r
     patches: list[httpx.Request] = []
     wrote = False
     gate_data: dict[str, str] = {}
+    gate_resource_version = 91
 
     def handler(request: httpx.Request) -> httpx.Response:
-        nonlocal wrote
+        nonlocal gate_resource_version, wrote
         if request.url.path.endswith("/leases/fs2-model-controller"):
             return _lease_response()
         if request.url.path.endswith("/modeldeployments/qwen-live"):
             return httpx.Response(200, json=_handoff_model())
         if request.url.path.endswith(f"/configmaps/{SCALE_GATE_CONFIG_MAP}"):
             if request.method == "PATCH":
-                for name, value in json.loads(request.content).get("data", {}).items():
+                body = json.loads(request.content)
+                if body.get("metadata", {}).get("resourceVersion") != str(gate_resource_version):
+                    return httpx.Response(
+                        409,
+                        json={
+                            "apiVersion": "v1",
+                            "kind": "Status",
+                            "status": "Failure",
+                            "reason": "Conflict",
+                            "message": "ConfigMap resourceVersion changed",
+                            "code": 409,
+                        },
+                    )
+                for name, value in body.get("data", {}).items():
                     if value is None:
                         gate_data.pop(name, None)
                     else:
                         gate_data[name] = value
+                gate_resource_version += 1
             return httpx.Response(
                 200,
                 json={
@@ -4656,7 +4679,7 @@ async def test_http_records_or_refreshes_a_minimal_controller_owned_transition_r
                         "name": SCALE_GATE_CONFIG_MAP,
                         "namespace": "fs2-models",
                         "uid": "gate-uid",
-                        "resourceVersion": "91",
+                        "resourceVersion": str(gate_resource_version),
                     },
                     "data": copy.deepcopy(gate_data),
                 },
@@ -6988,7 +7011,10 @@ def test_protocol_v2_c574_provenance_is_validated_before_adoption() -> None:
     assert applied.applied_scaler == applied_checkpoint
     assert applied.prior_scaler == prior
     assert applied.mutation_model_generation == model_fence.generation
-    assert applied.predecessor_authorization == applied_predecessor
+    assert applied.predecessor_authorization is None
+    assert applied.predecessor_evidence_digest == _scale_gate_predecessor_evidence_digest(
+        applied_predecessor
+    )
     closed_predecessor = applied_predecessor.model_copy(update={"phase": "closed"})
     closed = HttpKubernetesModelClient._adopt_scale_release_authorization_v2(
         closed_predecessor,
@@ -7000,7 +7026,10 @@ def test_protocol_v2_c574_provenance_is_validated_before_adoption() -> None:
         model_fence=model_fence,
     )
     assert closed.phase == "closed"
-    assert closed.predecessor_authorization == closed_predecessor
+    assert closed.predecessor_authorization is None
+    assert closed.predecessor_evidence_digest == _scale_gate_predecessor_evidence_digest(
+        closed_predecessor
+    )
     assert closed.prior_scaler == prior
     assert closed.applied_scaler == applied_checkpoint
     assert closed.mutation_token == mutation_token
@@ -7014,6 +7043,96 @@ def test_protocol_v2_c574_provenance_is_validated_before_adoption() -> None:
             owner_uid="cr-uid-1",
             model_fence=model_fence,
         )
+
+
+def test_maximum_protocol_v2_predecessor_is_retained_once_by_bounded_canonical_digest() -> None:
+    """Every bounded v2 field fits without duplicating its bytes in the v3 gate record."""
+
+    # Non-BMP code points expand to two JSON surrogate escapes, exercising
+    # the schema's true worst-case canonical byte representation.
+    longest_identity = "\U0001f600" * 253
+    longest_resource_version = "\U0001f600" * 128
+    maximum_generation = 9_223_372_036_854_775_807
+    legacy_checkpoint = ScaleGateScalerCheckpointV2(
+        uid=longest_identity,
+        resourceVersion=longest_resource_version,
+        generation=maximum_generation,
+        digest=f"sha256:{'d' * 64}",
+        managedFieldsDigest=f"sha256:{'e' * 64}",
+    )
+    predecessor = ScaleGateReleaseAuthorizationV2(
+        version=2,
+        deploymentUID=longest_identity,
+        modelUID=longest_identity,
+        modelResourceVersion=longest_resource_version,
+        modelGeneration=maximum_generation,
+        modelSpecDigest=f"sha256:{'a' * 64}",
+        scalerAPIVersion=longest_identity,
+        scalerKind=longest_identity,
+        scalerNamespace=longest_identity,
+        scalerName=longest_identity,
+        desiredScalerDigest=f"sha256:{'b' * 64}",
+        expectedScalerGeneration=maximum_generation,
+        mutationToken=f"sha256:{'c' * 64}",
+        mutationOperation="Update",
+        priorScaler=legacy_checkpoint,
+        appliedScaler=legacy_checkpoint,
+        phase="applied",
+    )
+    evidence_key, evidence_value = _scale_gate_predecessor_evidence_entry(predecessor)
+    digest = _scale_gate_predecessor_evidence_digest(predecessor)
+    checkpoint = ScaleGateScalerCheckpoint.model_validate(
+        legacy_checkpoint.model_dump(mode="json", by_alias=True)
+    )
+    authorization = ScaleGateReleaseAuthorization(
+        version=3,
+        deploymentUID=longest_identity,
+        modelUID=longest_identity,
+        modelResourceVersion=longest_resource_version,
+        modelGeneration=maximum_generation,
+        modelSpecDigest=f"sha256:{'a' * 64}",
+        scalerAPIVersion=longest_identity,
+        scalerKind=longest_identity,
+        scalerNamespace=longest_identity,
+        scalerName=longest_identity,
+        desiredScalerDigest=f"sha256:{'b' * 64}",
+        expectedScalerGeneration=maximum_generation,
+        mutationToken=f"sha256:{'c' * 64}",
+        mutationOperation="Update",
+        mutationModelGeneration=maximum_generation,
+        mutationModelSpecDigest=f"sha256:{'a' * 64}",
+        priorScaler=checkpoint,
+        appliedScaler=checkpoint,
+        predecessorEvidenceDigest=digest,
+        phase="applied",
+    )
+    target = ScaleGateTargetIdentity(
+        apiVersion=longest_identity,
+        kind=longest_identity,
+        namespace=longest_identity,
+        name=longest_identity,
+    )
+    encoded = _encoded_scale_gate_value(target, authorization)
+    encoded_authorization = json.loads(encoded)["authorization"]
+
+    assert len(evidence_value.encode()) <= SCALE_GATE_PREDECESSOR_EVIDENCE_MAX_BYTES
+    assert len(encoded_authorization.encode()) <= SCALE_GATE_AUTHORIZATION_MAX_BYTES
+    assert len(encoded.encode()) <= SCALE_GATE_RECORD_MAX_BYTES
+    assert (
+        len(evidence_key.encode())
+        + len(evidence_value.encode())
+        + len(_scale_gate_target_key(target).encode())
+        + len(encoded.encode())
+        < KUBERNETES_CONFIG_MAP_MAX_BYTES
+    )
+    assert evidence_key.endswith(digest.removeprefix("sha256:"))
+    assert "predecessorAuthorization" not in encoded_authorization
+    assert _scale_gate_predecessor_evidence({evidence_key: evidence_value}, authorization) == predecessor
+    noncanonical_value = json.dumps(json.loads(evidence_value), indent=1)
+    with pytest.raises(KubernetesConflictError, match="canonical bytes changed"):
+        _scale_gate_predecessor_evidence({evidence_key: noncanonical_value}, authorization)
+    with pytest.raises(KubernetesConflictError, match="evidence slot changed"):
+        _scale_gate_predecessor_evidence_update({evidence_key: noncanonical_value}, predecessor)
 
 
 @pytest.mark.asyncio
@@ -7098,14 +7217,18 @@ async def test_fixed_generation_closes_crashed_older_autoscaler_allowance_withou
         model_fence=model_fence,
         fence=fence(),
     )
-    assert set(_TEST_SCALE_GATES) == {target_key}
+    evidence_key, evidence_value = _scale_gate_predecessor_evidence_entry(authorization)
+    assert set(_TEST_SCALE_GATES) == {target_key, evidence_key}
+    assert _TEST_SCALE_GATES[evidence_key] == evidence_value
     closed = _scale_gate_authorization(_TEST_SCALE_GATES[target_key], target)
     assert isinstance(closed, ScaleGateReleaseAuthorization)
     assert closed.phase == "closed"
     assert closed.model_generation == 4
     assert closed.model_resource_version == model_fence.resource_version
     assert closed.model_spec_digest == model_fence.spec_digest
-    assert closed.predecessor_authorization == authorization
+    assert closed.predecessor_authorization is None
+    assert closed.predecessor_evidence_digest == _scale_gate_predecessor_evidence_digest(authorization)
+    assert _scale_gate_predecessor_evidence(_TEST_SCALE_GATES, closed) == authorization
     assert closed.prior_scaler is None
     base_render = renderer().render(
         model_spec(),
@@ -7789,7 +7912,9 @@ async def test_c574_update_adoption_preserves_prior_and_survives_second_reconcil
     )
     assert refreshed.phase == "applied"
     assert refreshed.model_resource_version == model_fence.resource_version
-    assert refreshed.predecessor_authorization == retained
+    assert refreshed.predecessor_authorization is None
+    assert refreshed.predecessor_evidence_digest == _scale_gate_predecessor_evidence_digest(retained)
+    assert _scale_gate_predecessor_evidence(_TEST_SCALE_GATES, refreshed) == retained
     assert refreshed.prior_scaler == prior
     assert refreshed.mutation_token == mutation_token
     assert refreshed.applied_scaler == ScaleGateScalerCheckpoint(
@@ -7812,6 +7937,8 @@ async def test_c574_update_adoption_preserves_prior_and_survives_second_reconcil
         fence=fence(),
     )
     assert second == refreshed
+    evidence_key, evidence_value = _scale_gate_predecessor_evidence_entry(retained)
+    assert _TEST_SCALE_GATES[evidence_key] == evidence_value
     applied = await client.apply_autoscaler_resource(
         scaler,
         target=target_resource,
