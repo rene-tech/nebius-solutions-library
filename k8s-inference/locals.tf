@@ -527,6 +527,26 @@ locals {
     tenant_ids          = toset([])
     service_classes     = toset([])
   }
+  # The facade can enumerate explicit external tenants and the academic
+  # tenant. The workloads stage additionally adds the staged target-contract
+  # tenant once that authoritative handoff exists. Both stages derive the
+  # same deterministic queue name and exact tenant/model/class bindings.
+  root_scientific_enabled_tenant_ids = sort(distinct(concat(
+    local.root_academic_execution_enabled ? [var.academic_assets.tenant_id] : [],
+    tolist(var.deployment.scientific_batch.enabled_tenant_ids),
+  )))
+  root_scientific_gpu_tenant_local_queues = {
+    for tenant_id in local.root_scientific_enabled_tenant_ids :
+    format("gpu-%s", substr(sha256(tenant_id), 0, 20)) => {
+      namespace           = local.root_default_local_queue.namespace
+      cluster_queue       = local.root_default_local_queue.cluster_queue
+      fair_sharing_weight = 1
+      model_ids           = toset(keys(local.root_model_eligible_pool_ids))
+      tenant_ids          = toset([tenant_id])
+      service_classes     = toset(keys(var.deployment.scheduling.service_classes))
+    }
+    if !(local.root_academic_execution_enabled && tenant_id == var.academic_assets.tenant_id)
+  }
   root_scheduling_cluster_queues = merge(
     { (local.root_default_cluster_queue_name) = local.root_default_cluster_queue },
     var.deployment.scheduling.cluster_queues,
@@ -535,6 +555,7 @@ locals {
     for queue_name in concat(
       keys(local.root_academic_local_queues),
       keys(local.root_academic_cpu_local_queues),
+      keys(local.root_scientific_gpu_tenant_local_queues),
     ) : queue_name
     if contains(keys(var.deployment.scheduling.local_queues), queue_name)
   ])
@@ -543,6 +564,7 @@ locals {
     var.deployment.scheduling.local_queues,
     local.root_academic_local_queues,
     local.root_academic_cpu_local_queues,
+    local.root_scientific_gpu_tenant_local_queues,
   )
   root_referenceable_cluster_queues = sort(distinct(concat(
     keys(local.root_scheduling_cluster_queues),

@@ -13,6 +13,7 @@ import pytest
 from conftest import CONTROL_ROOT
 
 import fs2_serve.scientific_artifacts as scientific_artifacts
+import fs2_serve.scientific_batch.postgres_accounting as scientific_postgres_accounting
 from fs2_serve.postgres import SCIENTIFIC_RUNTIME_UPDATE_COLUMNS, PostgresStore
 from fs2_serve.postgresql_release import (
     EXPECTED_MIGRATIONS,
@@ -39,8 +40,8 @@ def test_committed_postgresql_contract_is_exact_emitted_release_receipt_input() 
         "first_migration_version": "0001_initial.sql",
         "last_migration_version": "0030_scientific_quota_settlement.sql",
         "migration_count": 30,
-        "migration_set_sha256": "03995d3e692306f95dc9bcf5a2c84ec6cdaeb360d69b90bd330bbfe7b85aea85",
-        "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
+        "migration_set_sha256": "714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22",
+        "namespace_role_ownership_sha256": "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580",
     }
     migrations = committed["migration_set"]["ordered_migrations"]
     assert len(migrations) == receipt["migration_count"]
@@ -75,10 +76,13 @@ def test_scientific_runtime_grant_repairs_are_additive_and_readiness_checked() -
     assert wait_source.count("fs2_scientific_artifact_quota_reservations','INSERT'") == 2
     assert wait_source.count("fs2_scientific_artifact_quota_reservations','state','UPDATE'") == 2
     assert wait_source.count("fs2_scientific_artifact_quota_events','INSERT'") == 2
+    assert wait_source.count("fs2_scientific_artifact_removal_evidence','SELECT'") == 2
+    assert wait_source.count("fs2_scientific_artifact_removal_evidence','INSERT'") == 2
+    assert wait_source.count("fs2_scientific_gpu_settlements','SELECT'") == 2
     assert wait_source.count("fs2_scientific_gpu_settlements','INSERT'") == 2
-    assert "GRANT INSERT ON fs2_scientific_gpu_settlements" in wait_source
     assert "GRANT SELECT,INSERT ON fs2_scientific_gpu_settlements" not in wait_source
-    assert "SELECT,INSERT" not in wait_source
+    assert "fs2_serve_artifact_verifier" in wait_source
+    assert "fs2_scientific_claim_artifact_verifications(integer)" in wait_source
     assert "database schema runtime privileges are incomplete" in wait_source
 
 
@@ -87,13 +91,32 @@ def test_scientific_quota_migration_retains_provenance_and_bounds_settlement() -
     normalized = " ".join(quota_sql.split())
     assert "fs2_scientific_artifact_quota_reservations" in normalized
     assert "fs2_scientific_artifact_quota_events" in normalized
+    assert "fs2_scientific_artifact_removal_evidence" in normalized
     assert "reserved_objects integer NOT NULL DEFAULT 1 CHECK (reserved_objects = 1)" in normalized
-    assert "event_type text NOT NULL CHECK (event_type IN ('reserved','retention_extended','released'))" in normalized
+    assert (
+        "event_type text NOT NULL CHECK "
+        "(event_type IN ('reserved','retention_extended','removal_claimed','released'))"
+    ) in normalized
     assert "CREATE TRIGGER fs2_scientific_artifact_quota_events_immutable" in normalized
+    assert "CREATE TRIGGER fs2_scientific_artifact_removal_evidence_immutable" in normalized
     assert "CREATE TRIGGER fs2_scientific_gpu_settlements_immutable" in normalized
+    assert "CREATE TRIGGER fs2_scientific_operations_settlement_guard" in normalized
     assert "charged_gpu_seconds <= reserved_gpu_seconds" in normalized
-    assert "CASE WHEN expires_at>migrated_at THEN 'active' ELSE 'released' END" in normalized
-    assert "artifact_id IS NOT NULL OR expires_at>migrated_at" not in normalized
+    assert "'active',reserved_at,expires_at,NULL,NULL" in normalized
+    assert "SET state='released',released_at=p_observed_at,release_reason='provider_removed'" in normalized
+    assert "p_evidence_kind<>'absence_confirmed'" in normalized
+    assert "p_removed_version_count<>0" in normalized
+    assert "p_observed_at<reservation.verification_claimed_at" in normalized
+    assert "NEW.release_reason<>'provider_removed'" in normalized
+    assert "artifact quota release lacks exact provider evidence" in normalized
+    assert normalized.count("row_number() OVER ( PARTITION BY reservation.tenant_id") == 2
+    assert "ORDER BY tenant_rank,expires_at,tenant_id,upload_id LIMIT p_limit" in normalized
+    assert normalized.count("LEAST(3600.0,30.0*power(2.0") == 2
+    assert "evidence_kind text NOT NULL CHECK (evidence_kind='absence_confirmed')" in normalized
+    assert "current_setting('fs2.scientific_settlement_operation',true)" in normalized
+    assert "terminal scientific operation is immutable" in normalized
+    assert "GRANT UPDATE ON fs2_tokens" not in normalized
+    assert "GRANT DELETE ON fs2_operations" not in normalized
     assert "operation_id uuid PRIMARY KEY REFERENCES" not in normalized
     assert "token_id uuid NOT NULL REFERENCES" not in normalized
 
@@ -124,6 +147,7 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
     """Fail closed when repository SQL grows beyond its restricted-role ACL."""
 
     batch_source = inspect.getsource(PostgresScientificBatchRepository)
+    settlement_source = inspect.getsource(scientific_postgres_accounting)
     artifact_source = inspect.getsource(scientific_artifacts)
     actual = {
         "fs2_scientific_stage_attempts": _updated_columns(artifact_source, "fs2_scientific_stage_attempts"),
@@ -132,7 +156,10 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
             artifact_source,
             "fs2_scientific_artifact_quota_reservations",
         ),
-        "fs2_scientific_batches": _updated_columns(batch_source, "fs2_scientific_batches"),
+        "fs2_scientific_batches": (
+            _updated_columns(batch_source, "fs2_scientific_batches")
+            | _updated_columns(settlement_source, "fs2_scientific_batches")
+        ),
     }
     assert actual == {table: set(columns) for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items()}
 
@@ -142,7 +169,7 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
     # grant because it is also deleted after materialization.
     locked_scientific_tables = {
         match.lower()
-        for source in (batch_source, artifact_source)
+        for source in (batch_source, settlement_source, artifact_source)
         for literal in _sql_literals(source)
         for match in re.findall(
             r"\bFROM\s+(fs2_scientific_[a-z0-9_]+)[^;]*?\bFOR\s+(?:UPDATE|SHARE)\b",
@@ -150,7 +177,9 @@ def test_scientific_runtime_update_grants_cover_every_repository_statement() -> 
             flags=re.IGNORECASE | re.DOTALL,
         )
     }
-    assert locked_scientific_tables == set(SCIENTIFIC_RUNTIME_UPDATE_COLUMNS)
+    assert locked_scientific_tables - {"fs2_scientific_gpu_settlements"} == set(
+        SCIENTIFIC_RUNTIME_UPDATE_COLUMNS
+    )
     assert "FOR SHARE" in inspect.getsource(PostgresStore._stage_scientific_admission)
 
 
@@ -224,6 +253,8 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
     secrets = {secret["purpose"]: secret for secret in ownership["credential_secrets"]}
     assert {purpose: (value["namespace"], value["name"], value["key"]) for purpose, value in secrets.items()} == {
         "activation": ("fs2-system", "fs2-serve-database-activation", "url"),
+        "artifact-removal": ("fs2-system", "fs2-serve-database-artifact-remover", "url"),
+        "artifact-verification": ("fs2-system", "fs2-serve-database-artifact-verifier", "url"),
         "maintenance": ("fs2-system", "fs2-serve-database-maintenance", "url"),
         "migrations": ("fs2-system", "fs2-serve-database-migrations", "url"),
         "reporting": ("fs2-observability", "fs2-serve-database-reporting", "url"),
@@ -231,6 +262,8 @@ def test_namespace_secret_and_role_ownership_is_one_closed_cross_lane_contract()
     }
     assert {role["name"] for role in ownership["database_group_roles"]} == {
         "fs2_serve_activation",
+        "fs2_serve_artifact_remover",
+        "fs2_serve_artifact_verifier",
         "fs2_serve_maintenance",
         "fs2_serve_reporting",
         "fs2_serve_runtime",

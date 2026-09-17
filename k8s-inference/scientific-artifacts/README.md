@@ -7,9 +7,9 @@ expensive to rebuild, this one holds tenant result bytes with a different
 retention window and a different blast radius. Neither store's bucket, policy
 or key is ever widened to serve the other.
 
-The store is independently deployable. Enabling it creates a bucket, an
-identity and a key and configures the control plane; it does not require, and
-does not enable, staged batch execution or academic execution.
+The store is independently deployable. Enabling it creates a bucket and three
+purpose-specific identities and keys and configures the control plane; it does
+not require, and does not enable, staged batch execution or academic execution.
 
 ## What Terraform creates
 
@@ -19,10 +19,10 @@ does not enable, staged batch execution or academic execution.
 | Resource | Purpose |
 | --- | --- |
 | `nebius_storage_v1_bucket` | Versioned, capacity-bounded, standard-class bucket in the cluster region |
-| `nebius_iam_v1_service_account` | The only identity that can write results |
-| `nebius_iam_v1_group` + membership | Carries the bucket-scoped grant |
-| bucket policy rule | `storage.object-editor` on `scientific/v1/*` and nothing else |
-| `nebius_iam_v2_access_key` | S3 key, `secret_delivery_mode = "MYSTERY_BOX"` |
+| three `nebius_iam_v1_service_account` resources | Separate runtime writer, expiry remover, and independent absence verifier |
+| three groups + memberships | Carry disjoint bucket-scoped grants |
+| bucket policy rules | Writer/remover `storage.object-editor`; verifier `storage.object-viewer`; all on `scientific/v1/*` only |
+| three `nebius_iam_v2_access_key` resources | Purpose-specific S3 keys, all `secret_delivery_mode = "MYSTERY_BOX"` |
 
 Retention is two mutually exclusive resources rather than one flag, because
 Terraform's `prevent_destroy` takes a literal and not an expression. The
@@ -46,16 +46,19 @@ output. `artifact_store.py` owns the builder, the parser and those rules, and
 
 ## Credential handling
 
-The S3 secret never exists in Terraform state, a plan file, generated tfvars, a
-Helm value, an output, a log or a receipt.
+The three S3 secrets never exist in Terraform state, a plan file, generated
+tfvars, a Helm value, an output, a log or a receipt.
 
-1. The infrastructure stage requests a MysteryBox key and exports only the
-   access-key ID, the opaque secret reference and a revision.
+1. The infrastructure stage requests writer, remover, and verifier MysteryBox
+   keys and exports only each access-key ID, opaque secret reference and
+   revision.
 2. `inference-stack` refuses a handoff that carries anything else and writes
    those three fields into the private workloads tfvars.
-3. The workloads stage resolves the secret through an ephemeral MysteryBox
+3. The workloads stage resolves each secret through an ephemeral MysteryBox
    entry and writes it with the Kubernetes provider's write-only argument into
-   `fs2-system/fs2-serve-artifact-store`, key `credentials.json`.
+   distinct `fs2-system` Secrets. Runtime receives only
+   `fs2-serve-artifact-store`; the remover and verifier CronJobs receive only
+   their corresponding store Secret.
 4. The workloads stage derives the rollout identity as
    `credential_generation * 2^24` plus the first 24 bits of a digest over the
    key's non-secret identifiers. That value drives both `data_wo_revision` and
@@ -71,8 +74,11 @@ access-key ID; `credential_generation` lets an operator force a rewrite without
 touching the key. Write-only Secret data needs Terraform 1.11 or newer, which
 the workloads stage now requires.
 
-Workers never mount that Secret. The control plane is its only consumer and
-hands workers short-lived signed handles bounded by `handle_ttl_seconds`.
+Workers never mount any of those Secrets. The control plane is the writer
+credential's only consumer and hands workers short-lived signed handles bounded
+by `handle_ttl_seconds`. The remover can delete but cannot release quota. The
+read-only verifier re-fetches exact-key list and HEAD absence and alone can call
+the database release routine.
 
 `egress_cidrs` accepts only exact host addresses, `/32` or `/128`. The control
 plane needs to reach the object-storage endpoint itself, not a subnet, and a
@@ -97,9 +103,10 @@ result record, which is why `retention_days` is passed to the control plane as
 
 `artifact-store-contract.json` is the written-down seam between the Terraform
 projection and the control-plane chart. The workloads stage emits canonical
-`scientificArtifacts` and `scientificBatch` values, `secrets.artifactStore`,
-`networkPolicy.artifactStoreCidrs` and the rotation pod annotation. The obsolete
-`artifactService` wiring is not revived.
+`scientificArtifacts` and `scientificBatch` values, the three artifact Secret
+references, separate maintenance schedules, `networkPolicy.artifactStoreCidrs`
+and the rotation pod annotation. The obsolete `artifactService` wiring is not
+revived.
 
 The chart's own declarations for `scientificArtifacts` and `scientificBatch`
 belong to the batch-controller workstream. Until they merge, Helm ignores the

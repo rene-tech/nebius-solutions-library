@@ -271,6 +271,20 @@ run "storage_only_projects_the_canonical_chart_values" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        remover = {
+          service_account_id = "serviceaccount-scientificremover"
+          group_id           = "group-scientificremovers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        verifier = {
+          service_account_id = "serviceaccount-scientificverifier"
+          group_id           = "group-scientificverifiers"
+          role               = "storage.object-viewer"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -302,6 +316,18 @@ run "storage_only_projects_the_canonical_chart_values" {
         key_id              = "accesskey-scientifictest"
         access_key_id       = "AJE000SCIENTIFICTEST"
         secret_reference_id = "mysteryboxsecret-scientifictest"
+        resource_version    = 0
+      }
+      artifact_remover_object_storage_access = {
+        key_id              = "accesskey-scientificremover"
+        access_key_id       = "AJE000SCIENTIFICREMOVE"
+        secret_reference_id = "mysteryboxsecret-scientificremover"
+        resource_version    = 0
+      }
+      artifact_verifier_object_storage_access = {
+        key_id              = "accesskey-scientificverifier"
+        access_key_id       = "AJE000SCIENTIFICVERIFY"
+        secret_reference_id = "mysteryboxsecret-scientificverifier"
         resource_version    = 0
       }
     }
@@ -344,10 +370,16 @@ run "storage_only_projects_the_canonical_chart_values" {
     condition = (
       terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactStore.name == "fs2-serve-artifact-store" &&
       terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactStore.key == "credentials.json" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactRemoverStore.name == "fs2-serve-artifact-remover-store" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.secrets.artifactVerifierStore.name == "fs2-serve-artifact-verifier-store" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.removalSchedule == "*/5 * * * *" &&
+      terraform_data.scientific_artifacts_contract.input.chart_values.artifactMaintenance.verificationSchedule == "2-59/5 * * * *" &&
       terraform_data.scientific_artifacts_contract.input.secret_name == "fs2-serve-artifact-store" &&
+      terraform_data.scientific_artifacts_contract.input.remover_secret_name == "fs2-serve-artifact-remover-store" &&
+      terraform_data.scientific_artifacts_contract.input.verifier_secret_name == "fs2-serve-artifact-verifier-store" &&
       terraform_data.scientific_artifacts_contract.input.namespace == "fs2-system"
     )
-    error_message = "The control plane must be pointed at the stable fs2-system/fs2-serve-artifact-store Secret."
+    error_message = "Writer, remover and independent verifier credentials and schedules must remain distinct."
   }
 
   assert {
@@ -405,6 +437,20 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        remover = {
+          service_account_id = "serviceaccount-scientificremover"
+          group_id           = "group-scientificremovers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        verifier = {
+          service_account_id = "serviceaccount-scientificverifier"
+          group_id           = "group-scientificverifiers"
+          role               = "storage.object-viewer"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -436,6 +482,18 @@ run "the_credential_revision_is_the_only_rotation_trigger" {
         key_id              = "accesskey-scientifictest"
         access_key_id       = "AJE000SCIENTIFICTEST"
         secret_reference_id = "mysteryboxsecret-scientifictest"
+        resource_version    = 0
+      }
+      artifact_remover_object_storage_access = {
+        key_id              = "accesskey-scientificremover"
+        access_key_id       = "AJE000SCIENTIFICREMOVE"
+        secret_reference_id = "mysteryboxsecret-scientificremover"
+        resource_version    = 0
+      }
+      artifact_verifier_object_storage_access = {
+        key_id              = "accesskey-scientificverifier"
+        access_key_id       = "AJE000SCIENTIFICVERIFY"
+        secret_reference_id = "mysteryboxsecret-scientificverifier"
         resource_version    = 0
       }
     }
@@ -567,6 +625,20 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        remover = {
+          service_account_id = "serviceaccount-scientificremover"
+          group_id           = "group-scientificremovers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        verifier = {
+          service_account_id = "serviceaccount-scientificverifier"
+          group_id           = "group-scientificverifiers"
+          role               = "storage.object-viewer"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -598,6 +670,18 @@ run "a_store_that_reuses_the_reference_data_bucket_is_refused" {
         key_id              = "accesskey-scientifictest"
         access_key_id       = "AJE000SCIENTIFICTEST"
         secret_reference_id = "mysteryboxsecret-scientifictest"
+        resource_version    = 0
+      }
+      artifact_remover_object_storage_access = {
+        key_id              = "accesskey-scientificremover"
+        access_key_id       = "AJE000SCIENTIFICREMOVE"
+        secret_reference_id = "mysteryboxsecret-scientificremover"
+        resource_version    = 0
+      }
+      artifact_verifier_object_storage_access = {
+        key_id              = "accesskey-scientificverifier"
+        access_key_id       = "AJE000SCIENTIFICVERIFY"
+        secret_reference_id = "mysteryboxsecret-scientificverifier"
         resource_version    = 0
       }
     }
@@ -747,6 +831,20 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        remover = {
+          service_account_id = "serviceaccount-scientificremover"
+          group_id           = "group-scientificremovers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        verifier = {
+          service_account_id = "serviceaccount-scientificverifier"
+          group_id           = "group-scientificverifiers"
+          role               = "storage.object-viewer"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -778,6 +876,18 @@ run "a_subnet_wide_egress_allowlist_is_refused" {
         key_id              = "accesskey-scientifictest"
         access_key_id       = "AJE000SCIENTIFICTEST"
         secret_reference_id = "mysteryboxsecret-scientifictest"
+        resource_version    = 0
+      }
+      artifact_remover_object_storage_access = {
+        key_id              = "accesskey-scientificremover"
+        access_key_id       = "AJE000SCIENTIFICREMOVE"
+        secret_reference_id = "mysteryboxsecret-scientificremover"
+        resource_version    = 0
+      }
+      artifact_verifier_object_storage_access = {
+        key_id              = "accesskey-scientificverifier"
+        access_key_id       = "AJE000SCIENTIFICVERIFY"
+        secret_reference_id = "mysteryboxsecret-scientificverifier"
         resource_version    = 0
       }
     }
@@ -823,6 +933,20 @@ run "an_out_of_region_bucket_is_refused" {
           paths              = ["scientific/v1/*"]
           secret_delivery    = "MYSTERY_BOX"
         }
+        remover = {
+          service_account_id = "serviceaccount-scientificremover"
+          group_id           = "group-scientificremovers"
+          role               = "storage.object-editor"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
+        verifier = {
+          service_account_id = "serviceaccount-scientificverifier"
+          group_id           = "group-scientificverifiers"
+          role               = "storage.object-viewer"
+          paths              = ["scientific/v1/*"]
+          secret_delivery    = "MYSTERY_BOX"
+        }
         layout = {
           root             = "scientific/v1"
           tenant_prefix    = "scientific/v1/tenants/<tenant>"
@@ -854,6 +978,18 @@ run "an_out_of_region_bucket_is_refused" {
         key_id              = "accesskey-scientifictest"
         access_key_id       = "AJE000SCIENTIFICTEST"
         secret_reference_id = "mysteryboxsecret-scientifictest"
+        resource_version    = 0
+      }
+      artifact_remover_object_storage_access = {
+        key_id              = "accesskey-scientificremover"
+        access_key_id       = "AJE000SCIENTIFICREMOVE"
+        secret_reference_id = "mysteryboxsecret-scientificremover"
+        resource_version    = 0
+      }
+      artifact_verifier_object_storage_access = {
+        key_id              = "accesskey-scientificverifier"
+        access_key_id       = "AJE000SCIENTIFICVERIFY"
+        secret_reference_id = "mysteryboxsecret-scientificverifier"
         resource_version    = 0
       }
     }

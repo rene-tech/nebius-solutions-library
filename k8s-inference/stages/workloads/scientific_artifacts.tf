@@ -17,6 +17,8 @@ locals {
   scientific_artifacts_enabled        = var.scientific_artifacts.enabled
   scientific_artifacts_secret_name    = "fs2-serve-artifact-store"
   scientific_artifacts_secret_key     = "credentials.json"
+  scientific_artifact_remover_secret_name = "fs2-serve-artifact-remover-store"
+  scientific_artifact_verifier_secret_name = "fs2-serve-artifact-verifier-store"
   scientific_runtime_cache_claim_name = "fs2-scientific-runtime-cache"
   scientific_runtime_cache_mount_path = "/cache"
   scientific_runtime_cache_mounts = flatten([
@@ -194,6 +196,26 @@ locals {
     var.scientific_artifacts.credential_generation * 16777216 +
     parseint(substr(sha256(local.scientific_artifacts_credential_identity), 0, 6), 16)
   ) : 0
+  scientific_artifact_remover_credential_identity = local.scientific_artifacts_enabled ? join("|", [
+    var.scientific_artifacts.artifact_remover_object_storage_access.key_id,
+    var.scientific_artifacts.artifact_remover_object_storage_access.access_key_id,
+    var.scientific_artifacts.artifact_remover_object_storage_access.secret_reference_id,
+    tostring(var.scientific_artifacts.artifact_remover_object_storage_access.resource_version),
+  ]) : ""
+  scientific_artifact_remover_revision = local.scientific_artifacts_enabled ? (
+    var.scientific_artifacts.credential_generation * 16777216 +
+    parseint(substr(sha256(local.scientific_artifact_remover_credential_identity), 0, 6), 16)
+  ) : 0
+  scientific_artifact_verifier_credential_identity = local.scientific_artifacts_enabled ? join("|", [
+    var.scientific_artifacts.artifact_verifier_object_storage_access.key_id,
+    var.scientific_artifacts.artifact_verifier_object_storage_access.access_key_id,
+    var.scientific_artifacts.artifact_verifier_object_storage_access.secret_reference_id,
+    tostring(var.scientific_artifacts.artifact_verifier_object_storage_access.resource_version),
+  ]) : ""
+  scientific_artifact_verifier_revision = local.scientific_artifacts_enabled ? (
+    var.scientific_artifacts.credential_generation * 16777216 +
+    parseint(substr(sha256(local.scientific_artifact_verifier_credential_identity), 0, 6), 16)
+  ) : 0
 
   # Zero-or-one comprehension so the disabled case yields an empty map rather
   # than an object Terraform cannot unify with the enabled one.
@@ -220,6 +242,19 @@ locals {
           name = local.scientific_artifacts_secret_name
           key  = local.scientific_artifacts_secret_key
         }
+        artifactRemoverStore = {
+          name = local.scientific_artifact_remover_secret_name
+          key  = local.scientific_artifacts_secret_key
+        }
+        artifactVerifierStore = {
+          name = local.scientific_artifact_verifier_secret_name
+          key  = local.scientific_artifacts_secret_key
+        }
+      }
+      artifactMaintenance = {
+        enabled              = true
+        removalSchedule      = "*/5 * * * *"
+        verificationSchedule = "2-59/5 * * * *"
       }
       networkPolicy = {
         artifactStoreCidrs = sort(var.scientific_artifacts.egress_cidrs)
@@ -270,6 +305,20 @@ ephemeral "nebius_mysterybox_v1_secret_payload_entry" "scientific_artifacts" {
   key       = "secret"
 }
 
+ephemeral "nebius_mysterybox_v1_secret_payload_entry" "scientific_artifact_remover" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  secret_id = var.scientific_artifacts.artifact_remover_object_storage_access.secret_reference_id
+  key       = "secret"
+}
+
+ephemeral "nebius_mysterybox_v1_secret_payload_entry" "scientific_artifact_verifier" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  secret_id = var.scientific_artifacts.artifact_verifier_object_storage_access.secret_reference_id
+  key       = "secret"
+}
+
 resource "kubernetes_secret_v1" "scientific_artifact_store" {
   count = local.scientific_artifacts_enabled ? 1 : 0
 
@@ -300,6 +349,62 @@ resource "kubernetes_secret_v1" "scientific_artifact_store" {
   # Monotonic with the cloud-side key version, so rotating the access key is the
   # only thing that rewrites the Secret.
   data_wo_revision = local.scientific_artifacts_revision
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_secret_v1" "scientific_artifact_remover_store" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  metadata {
+    name      = local.scientific_artifact_remover_secret_name
+    namespace = "fs2-system"
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose" = "scientific-artifact-removal"
+    })
+    annotations = {
+      "fs2.nebius.ai/artifact-remover-credential-revision"   = tostring(local.scientific_artifact_remover_revision)
+      "fs2.nebius.ai/artifact-remover-credential-generation" = tostring(var.scientific_artifacts.credential_generation)
+      "fs2.nebius.ai/artifact-remover-access-key-id"         = var.scientific_artifacts.artifact_remover_object_storage_access.access_key_id
+    }
+  }
+
+  type = "Opaque"
+  data_wo = {
+    (local.scientific_artifacts_secret_key) = jsonencode({
+      access_key_id     = var.scientific_artifacts.artifact_remover_object_storage_access.access_key_id
+      secret_access_key = ephemeral.nebius_mysterybox_v1_secret_payload_entry.scientific_artifact_remover[0].data.string_value
+    })
+  }
+  data_wo_revision = local.scientific_artifact_remover_revision
+
+  depends_on = [terraform_data.cluster_contract]
+}
+
+resource "kubernetes_secret_v1" "scientific_artifact_verifier_store" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  metadata {
+    name      = local.scientific_artifact_verifier_secret_name
+    namespace = "fs2-system"
+    labels = merge(local.common_labels, {
+      "fs2.nebius.ai/credential-purpose" = "scientific-artifact-absence-verification"
+    })
+    annotations = {
+      "fs2.nebius.ai/artifact-verifier-credential-revision"   = tostring(local.scientific_artifact_verifier_revision)
+      "fs2.nebius.ai/artifact-verifier-credential-generation" = tostring(var.scientific_artifacts.credential_generation)
+      "fs2.nebius.ai/artifact-verifier-access-key-id"         = var.scientific_artifacts.artifact_verifier_object_storage_access.access_key_id
+    }
+  }
+
+  type = "Opaque"
+  data_wo = {
+    (local.scientific_artifacts_secret_key) = jsonencode({
+      access_key_id     = var.scientific_artifacts.artifact_verifier_object_storage_access.access_key_id
+      secret_access_key = ephemeral.nebius_mysterybox_v1_secret_payload_entry.scientific_artifact_verifier[0].data.string_value
+    })
+  }
+  data_wo_revision = local.scientific_artifact_verifier_revision
 
   depends_on = [terraform_data.cluster_contract]
 }
@@ -628,6 +733,8 @@ resource "terraform_data" "scientific_artifacts_contract" {
     enabled     = local.scientific_artifacts_enabled
     secret_name = local.scientific_artifacts_secret_name
     secret_key  = local.scientific_artifacts_secret_key
+    remover_secret_name = local.scientific_artifact_remover_secret_name
+    verifier_secret_name = local.scientific_artifact_verifier_secret_name
     namespace   = "fs2-system"
     bucket_name = try(var.scientific_artifacts.storage_contract.object_storage.name, null)
     object_key  = try(var.scientific_artifacts.storage_contract.layout.object_key, null)
@@ -638,6 +745,10 @@ resource "terraform_data" "scientific_artifacts_contract" {
     # A digest of the non-secret key identity, so the receipt shows that a
     # replaced key really does move the rollout identity.
     credential_identity_sha256 = local.scientific_artifacts_enabled ? sha256(local.scientific_artifacts_credential_identity) : null
+    remover_credential_revision = local.scientific_artifact_remover_revision
+    remover_credential_identity_sha256 = local.scientific_artifacts_enabled ? sha256(local.scientific_artifact_remover_credential_identity) : null
+    verifier_credential_revision = local.scientific_artifact_verifier_revision
+    verifier_credential_identity_sha256 = local.scientific_artifacts_enabled ? sha256(local.scientific_artifact_verifier_credential_identity) : null
     chart_values               = local.scientific_chart_overrides
     batch = {
       enabled        = var.scientific_batch.enabled

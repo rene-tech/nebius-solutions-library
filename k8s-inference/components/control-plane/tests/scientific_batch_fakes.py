@@ -299,6 +299,16 @@ class FakeScientificBatchCluster:
         if ref not in self.delete_history:
             self.delete_history.append(ref)
 
+    async def resolve_owned(self, ref: WorkloadRef, *, attempt_id: UUID) -> WorkloadRef | None:
+        key = self.key(ref)
+        current = self.refs.get(key)
+        if current is None:
+            return None
+        resource = self.resources.get(key)
+        if resource is None or resource.attempt_id != attempt_id:
+            raise BatchRepositoryConflictError("deterministic workload name has different ownership")
+        return current
+
     async def absent(self, ref: WorkloadRef) -> bool:
         key = self.key(ref)
         self.absence_polls.append(ref)

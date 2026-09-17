@@ -2,6 +2,8 @@ locals {
   database_role_memberships = {
     runtime          = "fs2_serve_runtime"
     maintenance      = "fs2_serve_maintenance"
+    artifact_remover = "fs2_serve_artifact_remover"
+    artifact_verifier = "fs2_serve_artifact_verifier"
     activation       = "fs2_serve_activation"
     restore_verifier = "fs2_serve_restore_verifier"
     reporting        = "fs2_serve_reporting"
@@ -11,6 +13,8 @@ locals {
   database_group_roles = [
     "fs2_serve_runtime",
     "fs2_serve_maintenance",
+    "fs2_serve_artifact_remover",
+    "fs2_serve_artifact_verifier",
     "fs2_serve_activation",
     "fs2_serve_restore_verifier",
     "fs2_serve_reporting",

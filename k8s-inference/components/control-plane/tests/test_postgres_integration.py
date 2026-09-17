@@ -2227,6 +2227,10 @@ async def test_distinct_configured_roles_run_activation_and_retention_with_close
                 f"VALUES('{operation.id}','forged','failed',1)",
                 "UPDATE fs2_audit_events SET outcome='forged'",
                 "UPDATE fs2_usage_facts SET outcome='forged'",
+                "UPDATE fs2_tokens SET gpu_seconds_reserved=0",
+                "DELETE FROM fs2_tokens",
+                "UPDATE fs2_operations SET reserved_gpu_seconds=0",
+                "DELETE FROM fs2_operations",
                 "INSERT INTO fs2_audit_events(actor,action,target_type,target_id,outcome) "
                 "VALUES('forged','forged','forged','forged','forged')",
                 f'CREATE TABLE public."fs2_maintenance_forbidden_{suffix}" (id integer)',

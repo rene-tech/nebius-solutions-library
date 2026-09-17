@@ -24,6 +24,8 @@ locals {
   scientific_artifacts_root        = "scientific/v1"
   scientific_artifacts_path_scope  = "scientific/v1/*"
   scientific_artifacts_writer_role = "storage.object-editor"
+  scientific_artifacts_remover_role = "storage.object-editor"
+  scientific_artifacts_verifier_role = "storage.object-viewer"
 
   # Storage-side hygiene only. Expiring a *current* object is an application
   # decision made against the durable result record, so no rule here deletes
@@ -84,6 +86,10 @@ resource "terraform_data" "scientific_artifacts_contract" {
     object_root     = local.scientific_artifacts_root
     writer_role     = local.scientific_artifacts_writer_role
     writer_paths    = [local.scientific_artifacts_path_scope]
+    remover_role    = local.scientific_artifacts_remover_role
+    remover_paths   = [local.scientific_artifacts_path_scope]
+    verifier_role   = local.scientific_artifacts_verifier_role
+    verifier_paths  = [local.scientific_artifacts_path_scope]
     lifecycle_rules = [for rule in local.scientific_artifacts_lifecycle_rules : rule.id]
     secret_delivery = "MYSTERY_BOX"
   }
@@ -139,6 +145,74 @@ resource "nebius_iam_v1_group_membership" "scientific_artifacts_writer" {
   member_id = nebius_iam_v1_service_account.scientific_artifacts[0].id
 }
 
+resource "nebius_iam_v1_service_account" "scientific_artifact_remover" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-scientific-artifact-remover"
+  description = "Isolated provider-side remover for expired scientific artifacts"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-object-removal"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+
+  depends_on = [terraform_data.scientific_artifacts_contract]
+}
+
+resource "nebius_iam_v1_group" "scientific_artifact_removers" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id = var.project_id
+  name      = "${local.resource_name}-scientific-artifact-removers"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-object-removal"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+
+  depends_on = [terraform_data.scientific_artifacts_contract]
+}
+
+resource "nebius_iam_v1_group_membership" "scientific_artifact_remover" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id = nebius_iam_v1_group.scientific_artifact_removers[0].id
+  member_id = nebius_iam_v1_service_account.scientific_artifact_remover[0].id
+}
+
+resource "nebius_iam_v1_service_account" "scientific_artifact_verifier" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-scientific-artifact-verifier"
+  description = "Read-only independent verifier for expired scientific artifacts"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-absence-verification"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+
+  depends_on = [terraform_data.scientific_artifacts_contract]
+}
+
+resource "nebius_iam_v1_group" "scientific_artifact_verifiers" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id = var.project_id
+  name      = "${local.resource_name}-scientific-artifact-verifiers"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-absence-verification"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+
+  depends_on = [terraform_data.scientific_artifacts_contract]
+}
+
+resource "nebius_iam_v1_group_membership" "scientific_artifact_verifier" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id = nebius_iam_v1_group.scientific_artifact_verifiers[0].id
+  member_id = nebius_iam_v1_service_account.scientific_artifact_verifier[0].id
+}
+
 resource "nebius_storage_v1_bucket" "scientific_artifacts" {
   count = local.scientific_artifacts_retain ? 1 : 0
 
@@ -153,17 +227,33 @@ resource "nebius_storage_v1_bucket" "scientific_artifacts" {
     retention = "durable"
   })
   bucket_policy = {
-    rules = [{
-      group_id = nebius_iam_v1_group.scientific_artifacts_writers[0].id
-      paths    = [local.scientific_artifacts_path_scope]
-      roles    = [local.scientific_artifacts_writer_role]
-    }]
+    rules = [
+      {
+        group_id = nebius_iam_v1_group.scientific_artifacts_writers[0].id
+        paths    = [local.scientific_artifacts_path_scope]
+        roles    = [local.scientific_artifacts_writer_role]
+      },
+      {
+        group_id = nebius_iam_v1_group.scientific_artifact_removers[0].id
+        paths    = [local.scientific_artifacts_path_scope]
+        roles    = [local.scientific_artifacts_remover_role]
+      },
+      {
+        group_id = nebius_iam_v1_group.scientific_artifact_verifiers[0].id
+        paths    = [local.scientific_artifacts_path_scope]
+        roles    = [local.scientific_artifacts_verifier_role]
+      },
+    ]
   }
   lifecycle_configuration = {
     rules = local.scientific_artifacts_lifecycle_rules
   }
 
-  depends_on = [nebius_iam_v1_group_membership.scientific_artifacts_writer]
+  depends_on = [
+    nebius_iam_v1_group_membership.scientific_artifacts_writer,
+    nebius_iam_v1_group_membership.scientific_artifact_remover,
+    nebius_iam_v1_group_membership.scientific_artifact_verifier,
+  ]
 
   lifecycle {
     prevent_destroy = true
@@ -184,17 +274,33 @@ resource "nebius_storage_v1_bucket" "scientific_artifacts_disposable" {
     retention = "disposable-empty-only"
   })
   bucket_policy = {
-    rules = [{
-      group_id = nebius_iam_v1_group.scientific_artifacts_writers[0].id
-      paths    = [local.scientific_artifacts_path_scope]
-      roles    = [local.scientific_artifacts_writer_role]
-    }]
+    rules = [
+      {
+        group_id = nebius_iam_v1_group.scientific_artifacts_writers[0].id
+        paths    = [local.scientific_artifacts_path_scope]
+        roles    = [local.scientific_artifacts_writer_role]
+      },
+      {
+        group_id = nebius_iam_v1_group.scientific_artifact_removers[0].id
+        paths    = [local.scientific_artifacts_path_scope]
+        roles    = [local.scientific_artifacts_remover_role]
+      },
+      {
+        group_id = nebius_iam_v1_group.scientific_artifact_verifiers[0].id
+        paths    = [local.scientific_artifacts_path_scope]
+        roles    = [local.scientific_artifacts_verifier_role]
+      },
+    ]
   }
   lifecycle_configuration = {
     rules = local.scientific_artifacts_lifecycle_rules
   }
 
-  depends_on = [nebius_iam_v1_group_membership.scientific_artifacts_writer]
+  depends_on = [
+    nebius_iam_v1_group_membership.scientific_artifacts_writer,
+    nebius_iam_v1_group_membership.scientific_artifact_remover,
+    nebius_iam_v1_group_membership.scientific_artifact_verifier,
+  ]
 }
 
 resource "nebius_iam_v2_access_key" "scientific_artifacts" {
@@ -220,6 +326,52 @@ resource "nebius_iam_v2_access_key" "scientific_artifacts" {
   # The bucket policy is the only thing that authorizes this key, so it must
   # exist before the key does; otherwise the key is briefly valid for an
   # identity with no scope at all.
+  depends_on = [
+    nebius_storage_v1_bucket.scientific_artifacts,
+    nebius_storage_v1_bucket.scientific_artifacts_disposable,
+  ]
+}
+
+resource "nebius_iam_v2_access_key" "scientific_artifact_remover" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-scientific-artifact-remover"
+  description = "S3 access key isolated to the scientific artifact removal workflow"
+  secret_delivery_mode = "MYSTERY_BOX"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-object-removal"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+  account = {
+    service_account = {
+      id = nebius_iam_v1_service_account.scientific_artifact_remover[0].id
+    }
+  }
+
+  depends_on = [
+    nebius_storage_v1_bucket.scientific_artifacts,
+    nebius_storage_v1_bucket.scientific_artifacts_disposable,
+  ]
+}
+
+resource "nebius_iam_v2_access_key" "scientific_artifact_verifier" {
+  count = local.scientific_artifacts_enabled ? 1 : 0
+
+  parent_id   = var.project_id
+  name        = "${local.resource_name}-scientific-artifact-verifier"
+  description = "Read-only S3 access key for independent artifact absence verification"
+  secret_delivery_mode = "MYSTERY_BOX"
+  labels = merge(local.common_labels, {
+    purpose   = "scientific-artifact-absence-verification"
+    retention = local.scientific_artifacts_retain ? "durable" : "ephemeral"
+  })
+  account = {
+    service_account = {
+      id = nebius_iam_v1_service_account.scientific_artifact_verifier[0].id
+    }
+  }
+
   depends_on = [
     nebius_storage_v1_bucket.scientific_artifacts,
     nebius_storage_v1_bucket.scientific_artifacts_disposable,

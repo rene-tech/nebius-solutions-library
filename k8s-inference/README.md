@@ -444,12 +444,15 @@ scientific/v1/tenants/<tenant>/operations/<operation>/stages/<stage>/shards/<sha
 so tenant prefixes are disjoint and a retry that reproduces identical bytes
 writes the identical key.
 
-Terraform propagates only the access-key ID, an opaque MysteryBox reference and
-a revision. The workloads stage resolves the secret ephemerally and writes it
-with the provider's write-only argument into `fs2-system/fs2-serve-artifact-store`
-under `credentials.json`; the secret is absent from state, plans, generated
-tfvars, Helm values, outputs and receipts. A rotated key moves the revision,
-which rewrites the Secret and the non-secret
+Terraform propagates only each access-key ID, opaque MysteryBox reference and
+revision for three disjoint identities: runtime writer, delete-capable remover,
+and read-only absence verifier. The workloads stage resolves the secrets
+ephemerally and writes them with provider write-only arguments into distinct
+`fs2-system` Secrets; the values are absent from state, plans, generated tfvars,
+Helm values, outputs and receipts. The remover cannot release quota. The
+verifier independently re-fetches exact-key absence and alone receives the
+narrow database routine that appends release evidence. A rotated writer key
+moves the revision, which rewrites the Secret and the non-secret
 `fs2.nebius.ai/artifact-store-credential-revision` pod annotation so the control
 plane restarts. Workers receive short-lived signed handles, never a static
 credential.

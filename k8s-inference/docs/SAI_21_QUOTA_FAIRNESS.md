@@ -10,20 +10,30 @@ issued. `FS2_ARTIFACT_TENANT_QUOTA_BYTES` (Helm
 `scientificArtifacts.tenantQuotaBytes`) bounds the sum of retained upload
 intents for one tenant. `FS2_ARTIFACT_TENANT_QUOTA_OBJECTS` independently
 bounds active intent count, so a zero-byte object still consumes one slot.
-PostgreSQL serializes expiry, replay/reactivation, byte totals, object totals,
-and insertion under one transaction-scoped tenant advisory lock; the in-memory
+PostgreSQL serializes admission, replay, byte totals, object totals, and
+insertion under one transaction-scoped tenant advisory lock; the in-memory
 implementation uses its repository lock. A new reservation over either bound
 returns `artifact_quota_exceeded` with HTTP 429.
 
 Upload intents remain immutable. Their separate quota reservation has an
-active/released state and an append-only event ledger. An unfinished intent
-expires after `FS2_ARTIFACT_UPLOAD_RESERVATION_TTL_SECONDS`; closing an attempt
-also releases each unfinished reservation. Finalization extends the reservation
-through the artifact retention deadline; expiry releases it even when a
-standalone input never produces the run result used by the purge selector.
-Successful earlier retention purge also releases it. Released records and
-ledger events are retained. An exact replay of an expired intent may reactivate
-it only after the same locked byte/object admission check.
+`active -> removing -> released` state and an append-only event ledger. An
+unfinished intent becomes removal-eligible after
+`FS2_ARTIFACT_UPLOAD_RESERVATION_TTL_SECONDS`; finalization extends eligibility
+through the artifact retention deadline. Neither elapsed time, attempt close,
+logical purge, nor a remover's successful delete releases quota. The remover
+has a distinct delete-capable object-store identity and can only claim deletion
+work. A separately scheduled verifier has a read-only object-store identity,
+re-lists every exact-key version and performs an exact-key HEAD, then uses a
+verifier-only database routine to append provider request evidence and release
+the byte and object reservations. Runtime and remover roles cannot call that
+routine or insert evidence. The reservation, evidence, and ledger rows remain
+retained after release.
+
+Removal and verification claims use bounded exponential retry timestamps and
+tenant-rank-first ordering before the global limit. Each pass continues after
+one target fails, so one poisoned key or one tenant cannot occupy the bounded
+prefix forever. Zero-byte intents follow the identical path and remain charged
+as one object until independent absence is recorded.
 
 Scientific GPU submissions reserve this conservative upper bound at durable
 admission for every GPU stage:
@@ -36,12 +46,26 @@ The service-class execution bound is authoritative when present; otherwise the
 reviewed stage active deadline is required. A GPU stage without a bound is
 rejected. Admission increments `gpu_seconds_reserved`, not
 `gpu_seconds_used`, and idempotent replay does not reserve twice. The terminal
-batch projection takes the same token lock as admission, writes one immutable
-settlement, removes the full reservation, and charges conservative observed
-Kueue GPU occupancy. Cancellation before GPU admission, CPU-only failure, and
-materialization failure before GPU admission charge zero. Incomplete or
-inconsistent GPU lifecycle evidence retains only the bounded admitted maximum;
-the charge can never exceed the reservation.
+batch projection takes the same token lock as admission and calls one
+`SECURITY DEFINER` database routine. That routine derives the stored batch and
+attempt evidence, writes one immutable settlement, mutates token counters, and
+projects the terminal operation atomically. Direct settlement inserts and
+direct scientific terminal/reservation transitions are revoked or
+trigger-rejected; terminal scientific operations cannot be resurrected.
+
+Generic token rotation/revocation, deadline, payload-expiry, and stale-reaper
+paths only assert an idempotent `cancel_requested` handoff. They leave the
+reservation and public operation nonterminal. The scientific controller claims
+cancellation ahead of ordinary dispatch, resolves the deterministic external
+workload when an apply may have occurred before its UID was persisted, obtains
+UID-fenced deletion/absence evidence, persists `resource_released`, and only
+then terminalizes through the settlement routine. A persisted GPU attempt with
+missing scheduling admission, zero accelerator count, missing completion, or
+missing release evidence is not zero-use proof: it receives the bounded
+fail-safe full reservation charge. A batch with no GPU attempt at all may settle
+at zero. Complete lifecycle evidence charges conservative observed Kueue GPU
+occupancy and releases the unused reservation; the charge never exceeds the
+admitted bound.
 
 Every scientific stage, CPU or GPU, resolves through a LocalQueue whose
 `tenant_ids` is exactly the requesting tenant. GPU routing retains its model and
@@ -86,12 +110,24 @@ Exact candidate `3b35578e42e18264f68216eec6a430bb6959030e` / tree
 `04771da96571051c68f302283833dbfe4d414199` is preserved as rejected: it had no
 reservation expiry, no object count, charged the retry-complete estimate as
 usage at admission, and left CPU stages on shared queues. This additive
-successor authors regression coverage for expiry/release and retained ledger
-state, zero-byte object ceilings, locked PostgreSQL reservation races,
-reserve/settle GPU accounting, and exact CPU/GPU tenant routing.
+successor also preserves rejected direct child
+`cc4e02a02222b3aa9cdc838aa23d8fc3cd8f6134` / tree
+`8cab63505e178cb0e5112008a3667b6f944c2c8b`, which released quota without
+provider-confirmed removal and allowed generic terminalizers to bypass the
+scientific settlement path. The successor authors regression coverage for provider-confirmed release and
+retained ledger state, zero-byte object ceilings, tenant-fair backoff, disjoint
+remover/verifier identities, locked PostgreSQL reservation races, interruption
+handoff, missing-evidence fail-safe settlement, terminal immutability,
+restricted maintenance, reserve/settle GPU accounting, and exact CPU/GPU
+tenant routing.
 
 The coordinator prohibited execution of tests, builds, linters/formatters,
-package managers, Terraform, Helm, containers, scanners, and live probes. No
-auth, cluster, database, registry, credential, provider, or service was
-inspected or mutated. Therefore this is a source candidate only: it is not an
-integration, deployment, live-verification, or acceptance claim.
+package managers, Terraform, Helm, containers, scanners, and live probes. None
+were run. Before the final reminder, one local read-only Python contract-builder
+invocation ran with bytecode writes disabled and printed only the PostgreSQL
+contract hashes; it created, overwrote, and removed no artifact. A later
+read-only search accidentally asked Bash to execute literals `15` and `0015`;
+both failed as unknown commands and changed nothing. No auth, cluster, database,
+registry, credential, provider, or service was inspected or mutated. Therefore
+this is a source candidate only: it is not an integration, deployment,
+live-verification, or acceptance claim.

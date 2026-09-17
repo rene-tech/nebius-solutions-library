@@ -186,18 +186,18 @@ class ArtifactEventType(StrEnum):
 
 class ArtifactQuotaReservationState(StrEnum):
     ACTIVE = "active"
+    REMOVING = "removing"
     RELEASED = "released"
 
 
 class ArtifactQuotaReleaseReason(StrEnum):
-    EXPIRED = "expired"
-    ATTEMPT_CLOSED = "attempt_closed"
-    RETENTION_PURGED = "retention_purged"
+    PROVIDER_REMOVED = "provider_removed"
 
 
 class ArtifactQuotaEventType(StrEnum):
     RESERVED = "reserved"
     RETENTION_EXTENDED = "retention_extended"
+    REMOVAL_CLAIMED = "removal_claimed"
     RELEASED = "released"
 
 
@@ -514,6 +514,42 @@ class ArtifactQuotaEvent(ScientificArtifactModel):
         if released != (self.release_reason is not None):
             raise ValueError("artifact quota event release reason is inconsistent")
         return self
+
+
+class ArtifactRemovalEvidenceKind(StrEnum):
+    """Provider result that can authorize quota release."""
+
+    ABSENCE_CONFIRMED = "absence_confirmed"
+    ALL_VERSIONS_REMOVED = "all_versions_removed"
+
+
+class ArtifactRemovalEvidence(ScientificArtifactModel):
+    """Payload-free proof that no provider object version remains at one key."""
+
+    storage_key: str = Field(min_length=1, max_length=1024)
+    kind: ArtifactRemovalEvidenceKind
+    provider_request_id: str = Field(min_length=1, max_length=512)
+    removed_version_count: int = Field(ge=0, le=10000)
+    observed_at: AwareDatetime
+
+    @model_validator(mode="after")
+    def count_matches_kind(self) -> ArtifactRemovalEvidence:
+        if self.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED and self.removed_version_count != 0:
+            raise ValueError("absence evidence cannot report removed versions")
+        if self.kind is ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED and self.removed_version_count < 1:
+            raise ValueError("version-removal evidence requires at least one removed version")
+        return self
+
+
+class ArtifactRemovalTarget(ScientificArtifactModel):
+    """One quota-counted key durably fenced for provider removal."""
+
+    upload_id: UUID
+    operation_id: UUID
+    attempt_id: UUID
+    tenant_id: TenantId
+    storage_key: str = Field(min_length=1, max_length=1024)
+    eligible_at: AwareDatetime
 
 
 class ManifestEntryDraft(ScientificArtifactModel):
@@ -855,7 +891,9 @@ class ArtifactObjectStorePort(Protocol):
 
     async def inspect(self, storage_key: str, *, max_bytes: int | None = None) -> VerifiedStoredObject: ...
 
-    async def delete(self, storage_key: str) -> None: ...
+    async def delete(self, storage_key: str) -> ArtifactRemovalEvidence: ...
+
+    async def verify_absent(self, storage_key: str) -> ArtifactRemovalEvidence: ...
 
 
 class ArtifactRepository(Protocol):
@@ -885,6 +923,18 @@ class ArtifactRepository(Protocol):
     async def list_quota_events(
         self, *, tenant_id: str, after_id: int = 0, limit: int = 500
     ) -> list[ArtifactQuotaEvent]: ...
+
+    async def claim_expired_quota_removals(
+        self, *, now: datetime, limit: int
+    ) -> list[ArtifactRemovalTarget]: ...
+
+    async def claim_quota_verifications(
+        self, *, now: datetime, limit: int
+    ) -> list[ArtifactRemovalTarget]: ...
+
+    async def record_quota_removal(
+        self, target: ArtifactRemovalTarget, evidence: ArtifactRemovalEvidence
+    ) -> ArtifactQuotaReservation: ...
 
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent: ...
 
@@ -921,7 +971,7 @@ class ArtifactRepository(Protocol):
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge: ...
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]: ...
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactRemovalTarget]: ...
 
 
 class ScientificArtifactControllerPort(Protocol):
@@ -1384,18 +1434,11 @@ class ScientificArtifactService:
         return await self._repository.list_events(operation_id, tenant_id=tenant_id, after_id=after_id, limit=limit)
 
     async def purge_expired(self, *, limit: int = 50) -> list[RetentionPurge]:
-        """Delete retired objects, then their metadata, and record the evidence.
-
-        Object deletion is idempotent and runs before the durable rows are
-        removed, so an interrupted purge converges on the next pass instead of
-        leaving metadata that points at bytes which are already gone.
-        """
+        """Purge metadata only after independent provider absence released quota."""
 
         now = self._clock()
         purges: list[RetentionPurge] = []
         for operation_id, tenant_id, _ in await self._repository.claim_expired(now=now, limit=limit):
-            for storage_key in await self._repository.purge_keys(operation_id, tenant_id=tenant_id):
-                await self._store.delete(storage_key)
             try:
                 purges.append(await self._repository.purge_operation(operation_id, tenant_id=tenant_id, now=now))
             except ArtifactConflictError:
@@ -1403,6 +1446,39 @@ class ScientificArtifactService:
                 # delete. Its purge is authoritative, so skip rather than fail.
                 continue
         return purges
+
+    async def remove_expired_quota_objects(self, *, limit: int = 50) -> list[ArtifactRemovalEvidence]:
+        """Delete tenant-fair, backoff-fenced targets without releasing quota."""
+
+        now = self._clock()
+        removals: list[ArtifactRemovalEvidence] = []
+        targets = await self._repository.claim_expired_quota_removals(now=now, limit=limit)
+        for target in targets:
+            try:
+                removals.append(await self._store.delete(target.storage_key))
+            except ArtifactServiceError:
+                # The durable retry timestamp prevents a poison key from
+                # monopolising the next bounded pass. Continue other tenants.
+                continue
+        return removals
+
+    async def verify_expired_quota_absence(self, *, limit: int = 50) -> list[ArtifactRemovalEvidence]:
+        """Independently re-fetch absence and only then release retained quota."""
+
+        now = self._clock()
+        verified: list[ArtifactRemovalEvidence] = []
+        targets = await self._repository.claim_quota_verifications(now=now, limit=limit)
+        for target in targets:
+            try:
+                evidence = await self._store.verify_absent(target.storage_key)
+                await self._repository.record_quota_removal(target, evidence)
+            except ArtifactServiceError:
+                # Provider and database evidence failures are scoped to this
+                # claimed key. Its durable backoff prevents it from blocking
+                # later tenants or later ranks in the same bounded pass.
+                continue
+            verified.append(evidence)
+        return verified
 
 
 @dataclass
@@ -1425,6 +1501,12 @@ class MemoryArtifactRepository:
         self._uploads: dict[UUID, UploadIntent] = {}
         self._quota_reservations: dict[UUID, ArtifactQuotaReservation] = {}
         self._quota_events: list[ArtifactQuotaEvent] = []
+        self._removal_evidence: dict[UUID, ArtifactRemovalEvidence] = {}
+        self._removal_attempts: dict[UUID, int] = {}
+        self._removal_retry_at: dict[UUID, datetime] = {}
+        self._verification_attempts: dict[UUID, int] = {}
+        self._verification_claimed_at: dict[UUID, datetime] = {}
+        self._verification_retry_at: dict[UUID, datetime] = {}
         self._artifacts: dict[UUID, ArtifactRecord] = {}
         self._stage_commits: dict[tuple[UUID, str], StageCommitRecord] = {}
         self._run_results: dict[UUID, RunResultRecord] = {}
@@ -1516,17 +1598,25 @@ class MemoryArtifactRepository:
         self,
         upload_id: UUID,
         *,
-        reason: ArtifactQuotaReleaseReason,
+        evidence: ArtifactRemovalEvidence,
         now: datetime,
     ) -> None:
         reservation = self._quota_reservations.get(upload_id)
         if reservation is None or reservation.state is ArtifactQuotaReservationState.RELEASED:
             return
+        intent = self._uploads.get(upload_id)
+        if (
+            reservation.state is not ArtifactQuotaReservationState.REMOVING
+            or intent is None
+            or intent.storage_key != evidence.storage_key
+        ):
+            raise ArtifactConflictError("provider removal evidence does not match a fenced upload")
+        self._removal_evidence[upload_id] = evidence
         released = reservation.model_copy(
             update={
                 "state": ArtifactQuotaReservationState.RELEASED,
                 "released_at": now,
-                "release_reason": reason,
+                "release_reason": ArtifactQuotaReleaseReason.PROVIDER_REMOVED,
             }
         )
         ArtifactQuotaReservation.model_validate(released.model_dump())
@@ -1535,21 +1625,8 @@ class MemoryArtifactRepository:
             released,
             ArtifactQuotaEventType.RELEASED,
             occurred_at=now,
-            release_reason=reason,
+            release_reason=ArtifactQuotaReleaseReason.PROVIDER_REMOVED,
         )
-
-    def _release_expired_quota_reservations(self, tenant_id: str, *, now: datetime) -> None:
-        for upload_id, reservation in tuple(self._quota_reservations.items()):
-            if (
-                reservation.tenant_id == tenant_id
-                and reservation.state is ArtifactQuotaReservationState.ACTIVE
-                and reservation.expires_at <= now
-            ):
-                self._release_quota_reservation(
-                    upload_id,
-                    reason=ArtifactQuotaReleaseReason.EXPIRED,
-                    now=now,
-                )
 
     async def open_attempt(self, request: OpenStageAttempt, *, retention: timedelta) -> StageAttemptRecord:
         async with self._lock:
@@ -1634,13 +1711,6 @@ class MemoryArtifactRepository:
                 attempt_id=record.attempt_id,
                 occurred_at=request.completed_at,
             )
-            for upload_id, intent in tuple(self._uploads.items()):
-                if intent.attempt_id == record.attempt_id and intent.artifact_id is None:
-                    self._release_quota_reservation(
-                        upload_id,
-                        reason=ArtifactQuotaReleaseReason.ATTEMPT_CLOSED,
-                        now=self._clock(),
-                    )
             return record
 
     async def get_attempt(self, attempt_id: UUID, *, tenant_id: str) -> StageAttemptRecord:
@@ -1680,7 +1750,6 @@ class MemoryArtifactRepository:
                 raise ArtifactNotFoundError("attempt not found")
             self._assert_live_attempt(attempt)
             now = self._clock()
-            self._release_expired_quota_reservations(request.tenant_id, now=now)
             existing = self._uploads.get(request.upload_id)
             if existing is not None:
                 if not _same_upload_request(existing, request, storage_key):
@@ -1688,40 +1757,12 @@ class MemoryArtifactRepository:
                 reservation = self._quota_reservations[request.upload_id]
                 if reservation.state is ArtifactQuotaReservationState.ACTIVE:
                     return existing
-                active = [
-                    item
-                    for item in self._quota_reservations.values()
-                    if item.tenant_id == request.tenant_id
-                    and item.state is ArtifactQuotaReservationState.ACTIVE
-                ]
-                if (
-                    sum(item.reserved_bytes for item in active) + existing.expected_size_bytes
-                    > tenant_quota_bytes
-                    or sum(item.reserved_objects for item in active) + 1 > tenant_quota_objects
-                ):
-                    raise ArtifactQuotaExceededError("tenant artifact byte or object quota is exhausted")
-                reactivated = reservation.model_copy(
-                    update={
-                        "state": ArtifactQuotaReservationState.ACTIVE,
-                        "reserved_at": now,
-                        "expires_at": now + reservation_ttl,
-                        "released_at": None,
-                        "release_reason": None,
-                    }
-                )
-                ArtifactQuotaReservation.model_validate(reactivated.model_dump())
-                self._quota_reservations[request.upload_id] = reactivated
-                self._append_quota_event(
-                    reactivated,
-                    ArtifactQuotaEventType.RESERVED,
-                    occurred_at=now,
-                )
-                return existing
+                raise ArtifactConflictError("upload is fenced for or has completed provider removal")
             active = [
                 item
                 for item in self._quota_reservations.values()
                 if item.tenant_id == request.tenant_id
-                and item.state is ArtifactQuotaReservationState.ACTIVE
+                and item.state is not ArtifactQuotaReservationState.RELEASED
             ]
             if (
                 sum(item.reserved_bytes for item in active) + request.expected_size_bytes > tenant_quota_bytes
@@ -1783,17 +1824,13 @@ class MemoryArtifactRepository:
             intent = self._uploads.get(request.upload_id)
             if intent is None or intent.operation_id != request.operation_id or intent.tenant_id != request.tenant_id:
                 raise ArtifactNotFoundError("upload not found")
-            now = self._clock()
-            self._release_expired_quota_reservations(request.tenant_id, now=now)
             reservation = self._quota_reservations.get(request.upload_id)
             if reservation is None or reservation.state is not ArtifactQuotaReservationState.ACTIVE:
-                raise ArtifactConflictError("upload quota reservation expired; begin the upload again")
+                raise ArtifactConflictError("upload is fenced for or has completed provider removal")
             return intent
 
     async def quota_reservation(self, upload_id: UUID, *, tenant_id: str) -> ArtifactQuotaReservation:
         async with self._lock:
-            now = self._clock()
-            self._release_expired_quota_reservations(tenant_id, now=now)
             reservation = self._quota_reservations.get(upload_id)
             if reservation is None or reservation.tenant_id != tenant_id:
                 raise ArtifactNotFoundError("upload quota reservation not found")
@@ -1803,12 +1840,142 @@ class MemoryArtifactRepository:
         self, *, tenant_id: str, after_id: int = 0, limit: int = 500
     ) -> list[ArtifactQuotaEvent]:
         async with self._lock:
-            self._release_expired_quota_reservations(tenant_id, now=self._clock())
             return [
                 event
                 for event in self._quota_events
                 if event.tenant_id == tenant_id and event.event_id > after_id
             ][: max(1, min(limit, 1000))]
+
+    async def claim_expired_quota_removals(
+        self, *, now: datetime, limit: int
+    ) -> list[ArtifactRemovalTarget]:
+        async with self._lock:
+            targets: list[ArtifactRemovalTarget] = []
+            by_tenant: dict[str, list[ArtifactQuotaReservation]] = {}
+            for reservation in self._quota_reservations.values():
+                if reservation.state is ArtifactQuotaReservationState.RELEASED:
+                    continue
+                if reservation.state is ArtifactQuotaReservationState.ACTIVE and reservation.expires_at > now:
+                    continue
+                if reservation.state is ArtifactQuotaReservationState.REMOVING and self._removal_retry_at.get(
+                    reservation.upload_id, now
+                ) > now:
+                    continue
+                by_tenant.setdefault(reservation.tenant_id, []).append(reservation)
+            fair = sorted(
+                (
+                    rank,
+                    reservation.expires_at,
+                    reservation.tenant_id,
+                    reservation.upload_id.int,
+                    reservation,
+                )
+                for tenant_reservations in by_tenant.values()
+                for rank, reservation in enumerate(
+                    sorted(tenant_reservations, key=lambda item: (item.expires_at, item.upload_id.int)),
+                    start=1,
+                )
+            )
+            for _rank, _expires_at, _tenant_id, _upload_order, reservation in fair:
+                if len(targets) >= max(1, min(limit, 500)):
+                    break
+                if reservation.state is ArtifactQuotaReservationState.ACTIVE:
+                    reservation = reservation.model_copy(update={"state": ArtifactQuotaReservationState.REMOVING})
+                    self._quota_reservations[reservation.upload_id] = reservation
+                    self._verification_retry_at[reservation.upload_id] = now
+                    self._append_quota_event(
+                        reservation,
+                        ArtifactQuotaEventType.REMOVAL_CLAIMED,
+                        occurred_at=now,
+                    )
+                attempts = self._removal_attempts.get(reservation.upload_id, 0)
+                self._removal_attempts[reservation.upload_id] = attempts + 1
+                self._removal_retry_at[reservation.upload_id] = now + timedelta(
+                    seconds=min(3600, 30 * 2 ** min(attempts, 6))
+                )
+                intent = self._uploads[reservation.upload_id]
+                targets.append(
+                    ArtifactRemovalTarget(
+                        upload_id=reservation.upload_id,
+                        operation_id=reservation.operation_id,
+                        attempt_id=reservation.attempt_id,
+                        tenant_id=reservation.tenant_id,
+                        storage_key=intent.storage_key,
+                        eligible_at=reservation.expires_at,
+                    )
+                )
+            return targets
+
+    async def claim_quota_verifications(
+        self, *, now: datetime, limit: int
+    ) -> list[ArtifactRemovalTarget]:
+        async with self._lock:
+            targets: list[ArtifactRemovalTarget] = []
+            by_tenant: dict[str, list[ArtifactQuotaReservation]] = {}
+            for reservation in self._quota_reservations.values():
+                if reservation.state is not ArtifactQuotaReservationState.REMOVING:
+                    continue
+                if self._verification_retry_at.get(reservation.upload_id, now) > now:
+                    continue
+                by_tenant.setdefault(reservation.tenant_id, []).append(reservation)
+            fair = sorted(
+                (
+                    rank,
+                    reservation.expires_at,
+                    reservation.tenant_id,
+                    reservation.upload_id.int,
+                    reservation,
+                )
+                for tenant_reservations in by_tenant.values()
+                for rank, reservation in enumerate(
+                    sorted(tenant_reservations, key=lambda item: (item.expires_at, item.upload_id.int)),
+                    start=1,
+                )
+            )
+            for _rank, _expires_at, _tenant_id, _upload_order, reservation in fair:
+                if len(targets) >= max(1, min(limit, 500)):
+                    break
+                attempts = self._verification_attempts.get(reservation.upload_id, 0)
+                self._verification_attempts[reservation.upload_id] = attempts + 1
+                self._verification_claimed_at[reservation.upload_id] = now
+                self._verification_retry_at[reservation.upload_id] = now + timedelta(
+                    seconds=min(3600, 30 * 2 ** min(attempts, 6))
+                )
+                intent = self._uploads[reservation.upload_id]
+                targets.append(
+                    ArtifactRemovalTarget(
+                        upload_id=reservation.upload_id,
+                        operation_id=reservation.operation_id,
+                        attempt_id=reservation.attempt_id,
+                        tenant_id=reservation.tenant_id,
+                        storage_key=intent.storage_key,
+                        eligible_at=reservation.expires_at,
+                    )
+                )
+            return targets
+
+    async def record_quota_removal(
+        self, target: ArtifactRemovalTarget, evidence: ArtifactRemovalEvidence
+    ) -> ArtifactQuotaReservation:
+        async with self._lock:
+            if (
+                evidence.kind is not ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
+                or evidence.removed_version_count != 0
+            ):
+                raise ArtifactConflictError("quota release requires independent absence evidence")
+            claimed_at = self._verification_claimed_at.get(target.upload_id)
+            if claimed_at is None or evidence.observed_at < claimed_at:
+                raise ArtifactConflictError("quota release lacks a current verification claim")
+            reservation = self._quota_reservations.get(target.upload_id)
+            if reservation is None or reservation.tenant_id != target.tenant_id:
+                raise ArtifactNotFoundError("upload quota reservation not found")
+            existing = self._removal_evidence.get(target.upload_id)
+            if existing is not None:
+                if existing != evidence:
+                    raise ArtifactConflictError("provider removal evidence already differs")
+                return reservation
+            self._release_quota_reservation(target.upload_id, evidence=evidence, now=evidence.observed_at)
+            return self._quota_reservations[target.upload_id]
 
     async def finalize_upload(
         self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
@@ -1821,10 +1988,9 @@ class MemoryArtifactRepository:
             if intent.artifact_id is not None:
                 return self._artifacts[intent.artifact_id]
             now = self._clock()
-            self._release_expired_quota_reservations(request.tenant_id, now=now)
             reservation = self._quota_reservations.get(request.upload_id)
             if reservation is None or reservation.state is not ArtifactQuotaReservationState.ACTIVE:
-                raise ArtifactConflictError("upload quota reservation expired; begin the upload again")
+                raise ArtifactConflictError("upload is fenced for or has completed provider removal")
             attempt = self._attempts[intent.attempt_id]
             self._assert_live_attempt(attempt)
             _verify_object(intent, verified)
@@ -2018,13 +2184,36 @@ class MemoryArtifactRepository:
                 if record.retention_expires_at <= now and record.operation_id not in self._purged
             ][: max(1, limit)]
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]:
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactRemovalTarget]:
         async with self._lock:
-            return [
-                record.storage_key
-                for record in self._artifacts.values()
-                if record.operation_id == operation_id and record.tenant_id == tenant_id
-            ]
+            targets: list[ArtifactRemovalTarget] = []
+            now = self._clock()
+            for reservation in self._quota_reservations.values():
+                if (
+                    reservation.operation_id != operation_id
+                    or reservation.tenant_id != tenant_id
+                    or reservation.state is ArtifactQuotaReservationState.RELEASED
+                ):
+                    continue
+                if reservation.state is ArtifactQuotaReservationState.ACTIVE:
+                    reservation = reservation.model_copy(update={"state": ArtifactQuotaReservationState.REMOVING})
+                    self._quota_reservations[reservation.upload_id] = reservation
+                    self._append_quota_event(
+                        reservation,
+                        ArtifactQuotaEventType.REMOVAL_CLAIMED,
+                        occurred_at=now,
+                    )
+                targets.append(
+                    ArtifactRemovalTarget(
+                        upload_id=reservation.upload_id,
+                        operation_id=reservation.operation_id,
+                        attempt_id=reservation.attempt_id,
+                        tenant_id=reservation.tenant_id,
+                        storage_key=self._uploads[reservation.upload_id].storage_key,
+                        eligible_at=reservation.expires_at,
+                    )
+                )
+            return targets
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
         async with self._lock:
@@ -2033,6 +2222,13 @@ class MemoryArtifactRepository:
                 raise ArtifactNotFoundError("terminal result not found")
             if operation_id in self._purged:
                 raise ArtifactConflictError("this operation was already purged")
+            if any(
+                reservation.operation_id == operation_id
+                and reservation.tenant_id == tenant_id
+                and reservation.state is not ArtifactQuotaReservationState.RELEASED
+                for reservation in self._quota_reservations.values()
+            ):
+                raise ArtifactConflictError("provider removal evidence is incomplete")
             doomed = [
                 record
                 for record in self._artifacts.values()
@@ -2046,13 +2242,6 @@ class MemoryArtifactRepository:
                 retention_expired_at=result.retention_expires_at,
                 purged_at=now,
             )
-            for upload_id, reservation in tuple(self._quota_reservations.items()):
-                if reservation.operation_id == operation_id and reservation.tenant_id == tenant_id:
-                    self._release_quota_reservation(
-                        upload_id,
-                        reason=ArtifactQuotaReleaseReason.RETENTION_PURGED,
-                        now=now,
-                    )
             for record in doomed:
                 del self._artifacts[record.artifact_id]
             for upload_id in [key for key, item in self._uploads.items() if item.operation_id == operation_id]:
@@ -2318,70 +2507,6 @@ class PostgresArtifactRepository:
             tenant_id,
         )
 
-    @staticmethod
-    async def _release_quota_reservations(
-        connection: asyncpg.Connection[Any],
-        *,
-        tenant_id: str,
-        reason: ArtifactQuotaReleaseReason,
-        attempt_id: UUID | None = None,
-        operation_id: UUID | None = None,
-    ) -> None:
-        if (attempt_id is None) == (operation_id is None):
-            raise ValueError("one quota release scope is required")
-        unfinished = "AND upload.artifact_id IS NULL" if attempt_id is not None else ""
-        scope = "reservation.attempt_id=$2" if attempt_id is not None else "reservation.operation_id=$2"
-        identity = attempt_id if attempt_id is not None else operation_id
-        await connection.execute(
-            f"""
-            WITH released AS (
-                UPDATE fs2_scientific_artifact_quota_reservations reservation
-                SET state='released',released_at=clock_timestamp(),release_reason=$3
-                FROM fs2_scientific_uploads upload
-                WHERE reservation.upload_id=upload.id
-                  AND reservation.tenant_id=$1 AND {scope}
-                  AND reservation.state='active' {unfinished}
-                RETURNING reservation.*
-            )
-            INSERT INTO fs2_scientific_artifact_quota_events(
-                upload_id,operation_id,attempt_id,tenant_id,event_type,reserved_bytes,
-                reserved_objects,expires_at,release_reason,occurred_at
-            )
-            SELECT upload_id,operation_id,attempt_id,tenant_id,'released',reserved_bytes,
-                   reserved_objects,expires_at,release_reason,released_at
-            FROM released
-            """,  # noqa: S608 -- only closed internal fragments are interpolated.
-            tenant_id,
-            identity,
-            reason.value,
-        )
-
-    @staticmethod
-    async def _release_expired_quota_reservations(
-        connection: asyncpg.Connection[Any], tenant_id: str
-    ) -> None:
-        await connection.execute(
-            """
-            WITH released AS (
-                UPDATE fs2_scientific_artifact_quota_reservations reservation
-                SET state='released',released_at=clock_timestamp(),release_reason='expired'
-                FROM fs2_scientific_uploads upload
-                WHERE reservation.upload_id=upload.id
-                  AND reservation.tenant_id=$1 AND reservation.state='active'
-                  AND reservation.expires_at<=clock_timestamp()
-                RETURNING reservation.*
-            )
-            INSERT INTO fs2_scientific_artifact_quota_events(
-                upload_id,operation_id,attempt_id,tenant_id,event_type,reserved_bytes,
-                reserved_objects,expires_at,release_reason,occurred_at
-            )
-            SELECT upload_id,operation_id,attempt_id,tenant_id,'released',reserved_bytes,
-                   reserved_objects,expires_at,release_reason,released_at
-            FROM released
-            """,
-            tenant_id,
-        )
-
     async def open_attempt(self, request: OpenStageAttempt, *, retention: timedelta) -> StageAttemptRecord:
         admission = request.admission
         try:
@@ -2470,12 +2595,6 @@ class PostgresArtifactRepository:
                         attempt_id=request.attempt_id,
                         occurred_at=request.completed_at,
                     )
-                    await self._release_quota_reservations(
-                        connection,
-                        tenant_id=request.tenant_id,
-                        reason=ArtifactQuotaReleaseReason.ATTEMPT_CLOSED,
-                        attempt_id=request.attempt_id,
-                    )
                     return _attempt_from_row(row)
         except asyncpg.PostgresError as error:
             raise (self._translate(error) or ArtifactConflictError("attempt could not be closed")) from None
@@ -2518,7 +2637,6 @@ class PostgresArtifactRepository:
         try:
             async with self.pool.acquire() as connection, connection.transaction():
                 await self._tenant_quota_lock(connection, request.tenant_id)
-                await self._release_expired_quota_reservations(connection, request.tenant_id)
                 existing = await connection.fetchrow(
                     f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads WHERE id=$1 FOR UPDATE",  # noqa: S608
                     request.upload_id,
@@ -2539,47 +2657,7 @@ class PostgresArtifactRepository:
                     reservation = _quota_reservation_from_row(reservation_row)
                     if reservation.state is ArtifactQuotaReservationState.ACTIVE:
                         return intent
-                    totals = await connection.fetchrow(
-                        """
-                        SELECT COALESCE(sum(reserved_bytes),0)::bigint AS bytes,
-                               COALESCE(sum(reserved_objects),0)::bigint AS objects
-                        FROM fs2_scientific_artifact_quota_reservations
-                        WHERE tenant_id=$1 AND state='active'
-                        """,
-                        request.tenant_id,
-                    )
-                    assert totals is not None
-                    if (
-                        int(totals["bytes"]) + intent.expected_size_bytes > tenant_quota_bytes
-                        or int(totals["objects"]) + 1 > tenant_quota_objects
-                    ):
-                        raise ArtifactQuotaExceededError("tenant artifact byte or object quota is exhausted")
-                    reactivated = await connection.fetchrow(
-                        f"""
-                        UPDATE fs2_scientific_artifact_quota_reservations
-                        SET state='active',reserved_at=clock_timestamp(),
-                            expires_at=clock_timestamp()+$2,released_at=NULL,release_reason=NULL
-                        WHERE upload_id=$1 AND state='released'
-                        RETURNING {_QUOTA_RESERVATION_COLUMNS}
-                        """,  # noqa: S608
-                        request.upload_id,
-                        reservation_ttl,
-                    )
-                    if reactivated is None:
-                        raise ArtifactConflictError("upload quota reservation changed")
-                    await connection.execute(
-                        """
-                        INSERT INTO fs2_scientific_artifact_quota_events(
-                            upload_id,operation_id,attempt_id,tenant_id,event_type,reserved_bytes,
-                            reserved_objects,expires_at,occurred_at
-                        )
-                        SELECT upload_id,operation_id,attempt_id,tenant_id,'reserved',reserved_bytes,
-                               reserved_objects,expires_at,reserved_at
-                        FROM fs2_scientific_artifact_quota_reservations WHERE upload_id=$1
-                        """,
-                        request.upload_id,
-                    )
-                    return intent
+                    raise ArtifactConflictError("upload is fenced for or has completed provider removal")
                 attempt = await connection.fetchrow(
                     "SELECT stage_id,shard_id FROM fs2_scientific_stage_attempts "
                     "WHERE attempt_id=$1 AND operation_id=$2 AND tenant_id=$3",
@@ -2594,7 +2672,7 @@ class PostgresArtifactRepository:
                     SELECT COALESCE(sum(reserved_bytes),0)::bigint AS bytes,
                            COALESCE(sum(reserved_objects),0)::bigint AS objects
                     FROM fs2_scientific_artifact_quota_reservations
-                    WHERE tenant_id=$1 AND state='active'
+                    WHERE tenant_id=$1 AND state<>'released'
                     """,
                     request.tenant_id,
                 )
@@ -2686,7 +2764,6 @@ class PostgresArtifactRepository:
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent:
         async with self.pool.acquire() as connection, connection.transaction():
             await self._tenant_quota_lock(connection, request.tenant_id)
-            await self._release_expired_quota_reservations(connection, request.tenant_id)
             row = await connection.fetchrow(
                 "SELECT upload.* FROM fs2_scientific_uploads upload "
                 "JOIN fs2_scientific_artifact_quota_reservations reservation "
@@ -2705,14 +2782,13 @@ class PostgresArtifactRepository:
                     request.tenant_id,
                 )
                 if exists:
-                    raise ArtifactConflictError("upload quota reservation expired; begin the upload again")
+                    raise ArtifactConflictError("upload is fenced for or has completed provider removal")
                 raise ArtifactNotFoundError("upload not found")
             return _upload_from_row(row)
 
     async def quota_reservation(self, upload_id: UUID, *, tenant_id: str) -> ArtifactQuotaReservation:
         async with self.pool.acquire() as connection, connection.transaction():
             await self._tenant_quota_lock(connection, tenant_id)
-            await self._release_expired_quota_reservations(connection, tenant_id)
             row = await connection.fetchrow(
                 f"SELECT {_QUOTA_RESERVATION_COLUMNS} "  # noqa: S608
                 "FROM fs2_scientific_artifact_quota_reservations WHERE upload_id=$1 AND tenant_id=$2",
@@ -2728,7 +2804,6 @@ class PostgresArtifactRepository:
     ) -> list[ArtifactQuotaEvent]:
         async with self.pool.acquire() as connection, connection.transaction():
             await self._tenant_quota_lock(connection, tenant_id)
-            await self._release_expired_quota_reservations(connection, tenant_id)
             rows = await connection.fetch(
                 f"SELECT {_QUOTA_EVENT_COLUMNS} FROM fs2_scientific_artifact_quota_events "  # noqa: S608
                 "WHERE tenant_id=$1 AND id>$2 ORDER BY id LIMIT $3",
@@ -2738,13 +2813,82 @@ class PostgresArtifactRepository:
             )
             return [_quota_event_from_row(row) for row in rows]
 
+    async def claim_expired_quota_removals(
+        self, *, now: datetime, limit: int
+    ) -> list[ArtifactRemovalTarget]:
+        del now  # PostgreSQL is the eligibility clock authority.
+        rows = await self.pool.fetch(
+            """
+            SELECT * FROM fs2_scientific_claim_artifact_removals($1,NULL,NULL)
+            """,
+            min(max(1, limit), 500),
+        )
+        return [
+            ArtifactRemovalTarget(
+                upload_id=row["upload_id"],
+                operation_id=row["operation_id"],
+                attempt_id=row["attempt_id"],
+                tenant_id=row["tenant_id"],
+                storage_key=row["storage_key"],
+                eligible_at=row["eligible_at"],
+            )
+            for row in rows
+        ]
+
+    async def claim_quota_verifications(
+        self, *, now: datetime, limit: int
+    ) -> list[ArtifactRemovalTarget]:
+        del now  # PostgreSQL is the eligibility and retry clock authority.
+        rows = await self.pool.fetch(
+            "SELECT * FROM fs2_scientific_claim_artifact_verifications($1)",
+            min(max(1, limit), 500),
+        )
+        return [
+            ArtifactRemovalTarget(
+                upload_id=row["upload_id"],
+                operation_id=row["operation_id"],
+                attempt_id=row["attempt_id"],
+                tenant_id=row["tenant_id"],
+                storage_key=row["storage_key"],
+                eligible_at=row["eligible_at"],
+            )
+            for row in rows
+        ]
+
+    async def record_quota_removal(
+        self, target: ArtifactRemovalTarget, evidence: ArtifactRemovalEvidence
+    ) -> ArtifactQuotaReservation:
+        if target.storage_key != evidence.storage_key:
+            raise ArtifactConflictError("provider removal evidence addresses another key")
+        try:
+            row = await self.pool.fetchrow(
+                """
+                SELECT * FROM fs2_scientific_record_artifact_removal(
+                    $1,$2,$3,$4,$5,$6,$7,$8,$9
+                )
+                """,
+                target.upload_id,
+                target.operation_id,
+                target.attempt_id,
+                target.tenant_id,
+                target.storage_key,
+                evidence.kind.value,
+                evidence.provider_request_id,
+                evidence.removed_version_count,
+                evidence.observed_at,
+            )
+            if row is None:
+                raise ArtifactConflictError("quota removal routine returned no reservation")
+            return _quota_reservation_from_row(row)
+        except asyncpg.PostgresError as error:
+            raise (self._translate(error) or ArtifactConflictError("quota removal evidence was rejected")) from None
+
     async def finalize_upload(
         self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
     ) -> ArtifactRecord:
         try:
             async with self.pool.acquire() as connection, connection.transaction():
                 await self._tenant_quota_lock(connection, request.tenant_id)
-                await self._release_expired_quota_reservations(connection, request.tenant_id)
                 intent_row = await connection.fetchrow(
                     f"SELECT {_UPLOAD_COLUMNS} FROM fs2_scientific_uploads "  # noqa: S608
                     "WHERE id=$1 AND operation_id=$2 AND tenant_id=$3 FOR UPDATE",
@@ -2770,7 +2914,7 @@ class PostgresArtifactRepository:
                     request.tenant_id,
                 )
                 if reservation is None:
-                    raise ArtifactConflictError("upload quota reservation expired; begin the upload again")
+                    raise ArtifactConflictError("upload is fenced for or has completed provider removal")
                 _verify_object(intent, verified)
                 retention_row = await connection.fetchrow(
                     "SELECT retention_expires_at,started_at FROM fs2_scientific_stage_attempts WHERE attempt_id=$1",
@@ -3120,13 +3264,23 @@ class PostgresArtifactRepository:
         )
         return [(row["operation_id"], row["tenant_id"], row["retention_expires_at"]) for row in rows]
 
-    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[str]:
+    async def purge_keys(self, operation_id: UUID, *, tenant_id: str) -> list[ArtifactRemovalTarget]:
         rows = await self.pool.fetch(
-            "SELECT storage_key FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
+            "SELECT * FROM fs2_scientific_claim_artifact_removals(500,$1,$2)",
             operation_id,
             tenant_id,
         )
-        return [str(row["storage_key"]) for row in rows]
+        return [
+            ArtifactRemovalTarget(
+                upload_id=row["upload_id"],
+                operation_id=row["operation_id"],
+                attempt_id=row["attempt_id"],
+                tenant_id=row["tenant_id"],
+                storage_key=row["storage_key"],
+                eligible_at=row["eligible_at"],
+            )
+            for row in rows
+        ]
 
     async def purge_operation(self, operation_id: UUID, *, tenant_id: str, now: datetime) -> RetentionPurge:
         """Delete retired rows under the one session flag the triggers accept."""
@@ -3143,6 +3297,16 @@ class PostgresArtifactRepository:
                 )
                 if result is None:
                     raise ArtifactNotFoundError("terminal result not found")
+                pending_removals = await connection.fetchval(
+                    """
+                    SELECT count(*) FROM fs2_scientific_artifact_quota_reservations
+                    WHERE operation_id=$1 AND tenant_id=$2 AND state<>'released'
+                    """,
+                    operation_id,
+                    tenant_id,
+                )
+                if pending_removals:
+                    raise ArtifactConflictError("provider removal evidence is incomplete")
                 totals = await connection.fetchrow(
                     "SELECT count(*) AS artifacts,COALESCE(sum(size_bytes),0) AS bytes "
                     "FROM fs2_scientific_artifacts WHERE operation_id=$1 AND tenant_id=$2",
@@ -3171,12 +3335,6 @@ class PostgresArtifactRepository:
                 )
                 if claimed is None:
                     raise ArtifactConflictError("this operation was already purged")
-                await self._release_quota_reservations(
-                    connection,
-                    tenant_id=tenant_id,
-                    reason=ArtifactQuotaReleaseReason.RETENTION_PURGED,
-                    operation_id=operation_id,
-                )
                 for statement in (
                     "DELETE FROM fs2_scientific_artifact_events WHERE operation_id=$1 AND tenant_id=$2",
                     "DELETE FROM fs2_scientific_stage_commit_attempts WHERE operation_id=$1 AND $2::text IS NOT NULL",

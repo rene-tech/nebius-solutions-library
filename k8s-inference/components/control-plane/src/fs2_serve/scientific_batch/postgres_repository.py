@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping
 from dataclasses import replace
 from datetime import datetime
@@ -12,7 +11,6 @@ from uuid import UUID
 import asyncpg
 
 from ..postgres_retry import retry_serialization
-from .accounting import settle_scientific_gpu_reservation
 from .codec import state_from_value, state_to_json
 from .models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
@@ -30,6 +28,11 @@ from .models import (
     VerifiedInputManifest,
 )
 from .policy import ScientificDispatchHeldError
+from .postgres_accounting import (
+    lock_scientific_terminal_token,
+    process_scientific_interruption_requests,
+    project_terminal_scientific_operation,
+)
 from .protocols import BatchFenceLostError, BatchRepositoryConflictError
 
 SCIENTIFIC_BATCH_MIGRATION = "0020_scientific_atomic_admission.sql"
@@ -207,6 +210,7 @@ class PostgresScientificBatchRepository:
     ) -> BatchClaim | None:
         del now  # PostgreSQL is the lease clock authority.
         async with self.pool.acquire() as connection, connection.transaction():
+            await process_scientific_interruption_requests(connection)
             record = await connection.fetchrow(
                 """
                 WITH candidate AS (
@@ -233,7 +237,7 @@ class PostgresScientificBatchRepository:
                     -- admit it: frozen WorkloadPriorityClass value first, then
                     -- acceptance order. Everything else keeps acceptance order.
                     ORDER BY
-                        (batch.status='queued' AND NOT batch.cancel_requested) DESC,
+                        batch.cancel_requested DESC,
                         CASE WHEN batch.status='queued' AND NOT batch.cancel_requested
                              THEN COALESCE((batch.state#>>'{scheduling,stages,0,workload_priority_value}')::integer,0)
                         END DESC NULLS LAST,
@@ -324,6 +328,8 @@ class PostgresScientificBatchRepository:
         del now  # PostgreSQL is the event and transition clock authority.
         try:
             async with self.pool.acquire() as connection, connection.transaction():
+                if record.status.terminal:
+                    await lock_scientific_terminal_token(connection, claim.operation_id)
                 current_record = await self._claimed_record(connection, claim)
                 current = self._state(current_record)
                 if current.revision != expected_revision or record.revision != expected_revision + 1:
@@ -454,98 +460,7 @@ class PostgresScientificBatchRepository:
             return
         if not current.status.terminal:
             return
-        token_id = await connection.fetchval(
-            "SELECT token_id FROM fs2_operations WHERE id=$1",
-            current.operation_id,
-        )
-        if token_id is None:
-            return
-        token_lock = int.from_bytes(
-            hashlib.blake2b(token_id.bytes, digest_size=8).digest(),
-            "big",
-            signed=True,
-        )
-        await connection.execute("SELECT pg_advisory_xact_lock($1::bigint)", token_lock)
-        operation = await connection.fetchrow(
-            """
-            SELECT token_id,tenant_id,reserved_gpu_seconds,attempt
-            FROM fs2_operations
-            WHERE id=$1 AND protocol='scientific-batch-v1' AND status IN ('queued','running')
-            FOR UPDATE
-            """,
-            current.operation_id,
-        )
-        if operation is None:
-            return
-        settlement = settle_scientific_gpu_reservation(
-            current,
-            reserved_gpu_seconds=operation["reserved_gpu_seconds"],
-        )
-        token = await connection.fetchrow(
-            "SELECT gpu_seconds_reserved FROM fs2_tokens WHERE id=$1 FOR UPDATE",
-            operation["token_id"],
-        )
-        if token is None:
-            raise RuntimeError("scientific-batch token disappeared before GPU settlement")
-        if token["gpu_seconds_reserved"] + 0.000001 < settlement.reserved_gpu_seconds:
-            raise RuntimeError("scientific-batch token reservation is smaller than its operation")
-        await connection.execute(
-            """
-            INSERT INTO fs2_scientific_gpu_settlements(
-                operation_id,token_id,tenant_id,reserved_gpu_seconds,charged_gpu_seconds,
-                released_gpu_seconds,evidence_complete,reason
-            ) VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-            """,
-            current.operation_id,
-            operation["token_id"],
-            operation["tenant_id"],
-            settlement.reserved_gpu_seconds,
-            settlement.charged_gpu_seconds,
-            settlement.released_gpu_seconds,
-            settlement.evidence_complete,
-            settlement.reason,
-        )
-        semantic = "passed" if current.status is BatchStatus.SUCCEEDED else "failed"
-        http_status = (
-            200 if current.status is BatchStatus.SUCCEEDED else 409 if current.status is BatchStatus.CANCELLED else 422
-        )
-        operation = await connection.fetchrow(
-            """
-            UPDATE fs2_operations
-            SET status=$2::fs2_operation_status,completed_at=clock_timestamp(),outcome=$2::text,semantic_outcome=$3,
-                http_status=$4,error_code=$5,error_detail=NULL,worker_id=NULL,
-                heartbeat_at=NULL,lease_expires_at=NULL,reserved_gpu_seconds=0,
-                estimated_gpu_seconds=$6
-            WHERE id=$1 AND protocol='scientific-batch-v1' AND status IN ('queued','running')
-            RETURNING attempt
-            """,
-            current.operation_id,
-            current.status.value,
-            semantic,
-            http_status,
-            current.failure_code,
-            settlement.charged_gpu_seconds,
-        )
-        if operation is None:
-            raise RuntimeError("scientific-batch operation changed during GPU settlement")
-        await connection.execute(
-            """
-            UPDATE fs2_tokens
-            SET gpu_seconds_reserved=GREATEST(0,gpu_seconds_reserved-$2),
-                gpu_seconds_used=gpu_seconds_used+$3
-            WHERE id=$1
-            """,
-            token_id,
-            settlement.reserved_gpu_seconds,
-            settlement.charged_gpu_seconds,
-        )
-        await connection.execute(
-            "INSERT INTO fs2_operation_events(operation_id,event,status,attempt) VALUES($1,$2,$3,$4)",
-            current.operation_id,
-            f"scientific_batch_{current.status.value}",
-            current.status.value,
-            operation["attempt"],
-        )
+        await project_terminal_scientific_operation(connection, current)
 
     async def release(self, claim: BatchClaim) -> None:
         async with self.pool.acquire() as connection:

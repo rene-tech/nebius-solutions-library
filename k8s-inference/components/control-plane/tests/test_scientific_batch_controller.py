@@ -360,6 +360,49 @@ async def test_attempt_identity_is_durable_before_apply_and_recovered_after_cras
 
 
 @pytest.mark.asyncio
+async def test_cancel_after_apply_before_uid_write_resolves_and_releases_provider_workload() -> None:
+    class CrashAfterApplyRepository(FakeScientificBatchRepository):
+        writes = 0
+
+        async def replace(self, claim, **kwargs):
+            self.writes += 1
+            if self.writes == 2:
+                raise RuntimeError("injected UID persistence crash")
+            return await super().replace(claim, **kwargs)
+
+    repository = CrashAfterApplyRepository()
+    cluster = FakeScientificBatchCluster()
+    reconciler = controller(repository, cluster)
+    operation_id = uuid4()
+    batch_plan = ScientificBatchPlan(stages=(ScientificStagePlan(stage_id="fold"),))
+    await reconciler.admit(
+        operation_id=operation_id,
+        tenant_id="tenant-a",
+        model_id="protein-design",
+        plan=batch_plan,
+        scheduling=snapshot(batch_plan),
+    )
+
+    with pytest.raises(RuntimeError, match="UID persistence crash"):
+        await reconciler.reconcile_once()
+    stranded = repository.records[operation_id].stage("fold").attempts[0]
+    assert stranded.workload.uid is None
+    assert await cluster.resolve_owned(stranded.workload, attempt_id=stranded.attempt_id)
+
+    repository.force_cancel(operation_id)
+    for _ in range(3):
+        await reconciler.reconcile_once()
+
+    cancelled = repository.records[operation_id]
+    recovered = cancelled.stage("fold").attempts[0]
+    assert cancelled.status is BatchStatus.CANCELLED
+    assert recovered.workload.uid is not None
+    assert recovered.resource_released is True
+    assert len(cluster.apply_history) == 1
+    assert len(cluster.delete_history) == 1
+
+
+@pytest.mark.asyncio
 async def test_preemption_retries_with_new_attempt_and_stale_observation_is_fenced() -> None:
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()

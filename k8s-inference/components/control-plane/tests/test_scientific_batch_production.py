@@ -37,6 +37,9 @@ from fs2_serve.scientific_artifacts import (
     ArtifactDirection,
     ArtifactDownload,
     ArtifactRecord,
+    ArtifactRemovalEvidence,
+    ArtifactRemovalEvidenceKind,
+    ArtifactServiceError,
     AttemptStatus,
     BeginArtifactUpload,
     BeginUploadResult,
@@ -4415,7 +4418,29 @@ async def test_artifact_bridge_consumes_owned_records_and_emits_canonical_result
             )
 
         async def delete(self, storage_key):
-            self.objects.pop(storage_key, None)
+            existed = self.objects.pop(storage_key, None) is not None
+            return ArtifactRemovalEvidence(
+                storage_key=storage_key,
+                kind=(
+                    ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED
+                    if existed
+                    else ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
+                ),
+                provider_request_id="test-provider-removal",
+                removed_version_count=1 if existed else 0,
+                observed_at=now,
+            )
+
+        async def verify_absent(self, storage_key):
+            if storage_key in self.objects:
+                raise ArtifactServiceError("provider still reports stored-object versions")
+            return ArtifactRemovalEvidence(
+                storage_key=storage_key,
+                kind=ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED,
+                provider_request_id="test-provider-absence",
+                removed_version_count=0,
+                observed_at=now,
+            )
 
     class ContentReader:
         def __init__(self) -> None:

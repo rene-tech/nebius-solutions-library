@@ -1721,6 +1721,26 @@ def infrastructure_outputs(
         if scientific_artifacts_enabled
         else None
     )
+    scientific_artifact_remover_access = (
+        terraform_optional_json_output(
+            terraform,
+            INFRA_ROOT,
+            "scientific_artifact_remover_object_storage_access",
+            environment,
+        )
+        if scientific_artifacts_enabled
+        else None
+    )
+    scientific_artifact_verifier_access = (
+        terraform_optional_json_output(
+            terraform,
+            INFRA_ROOT,
+            "scientific_artifact_verifier_object_storage_access",
+            environment,
+        )
+        if scientific_artifacts_enabled
+        else None
+    )
     scientific_artifacts_lifecycle = (
         terraform_optional_json_output(
             terraform, INFRA_ROOT, "scientific_artifacts_lifecycle", environment
@@ -1764,6 +1784,8 @@ def infrastructure_outputs(
         "reference_data_lifecycle": reference_data_lifecycle,
         "scientific_artifacts_storage_contract": scientific_artifacts_storage,
         "scientific_artifacts_object_storage_access": scientific_artifacts_access,
+        "scientific_artifact_remover_object_storage_access": scientific_artifact_remover_access,
+        "scientific_artifact_verifier_object_storage_access": scientific_artifact_verifier_access,
         "scientific_artifacts_lifecycle": scientific_artifacts_lifecycle,
     }
 
@@ -1892,9 +1914,17 @@ def write_downstream_variables(
         enabled = scientific_artifacts.get("enabled") is True
         storage_contract = dynamic.get("scientific_artifacts_storage_contract")
         object_access = dynamic.get("scientific_artifacts_object_storage_access")
+        remover_access = dynamic.get(
+            "scientific_artifact_remover_object_storage_access"
+        )
+        verifier_access = dynamic.get(
+            "scientific_artifact_verifier_object_storage_access"
+        )
         if enabled and (
             not isinstance(storage_contract, Mapping)
             or not isinstance(object_access, Mapping)
+            or not isinstance(remover_access, Mapping)
+            or not isinstance(verifier_access, Mapping)
         ):
             raise DeploymentError(
                 "an enabled scientific artifact store requires complete infrastructure "
@@ -1911,10 +1941,45 @@ def write_downstream_variables(
                 "non-secret identifiers: resource ID, access-key ID, MysteryBox reference "
                 "and cloud resource version"
             )
+        if enabled and set(remover_access) != {
+            "key_id",
+            "access_key_id",
+            "secret_reference_id",
+            "resource_version",
+        }:
+            raise DeploymentError(
+                "the scientific artifact remover handoff must contain exactly the "
+                "isolated remover key's non-secret identifiers"
+            )
+        if enabled and set(verifier_access) != {
+            "key_id",
+            "access_key_id",
+            "secret_reference_id",
+            "resource_version",
+        }:
+            raise DeploymentError(
+                "the scientific artifact verifier handoff must contain exactly the "
+                "independent verifier key's non-secret identifiers"
+            )
+        identities = (object_access, remover_access, verifier_access)
+        if enabled and any(
+            identities[left][field] == identities[right][field]
+            for left, right in ((0, 1), (0, 2), (1, 2))
+            for field in ("key_id", "access_key_id", "secret_reference_id")
+        ):
+            raise DeploymentError(
+                "scientific artifact writer, remover and verifier credentials must be distinct"
+            )
         workloads["scientific_artifacts"] = {
             **scientific_artifacts,
             "storage_contract": storage_contract if enabled else None,
             "object_storage_access": object_access if enabled else None,
+            "artifact_remover_object_storage_access": (
+                remover_access if enabled else None
+            ),
+            "artifact_verifier_object_storage_access": (
+                verifier_access if enabled else None
+            ),
         }
     general_cpu_lane = workloads.get("general_cpu_lane")
     if isinstance(general_cpu_lane, Mapping):
@@ -2403,10 +2468,20 @@ def workload_access_bundle(
             not isinstance(lifecycle, dict)
             or lifecycle.get("retention_mode") not in {"retain", "disposable"}
             or scientific_artifacts.get("writer_role") != "storage.object-editor"
+            or scientific_artifacts.get("remover_role") != "storage.object-editor"
+            or scientific_artifacts.get("verifier_role") != "storage.object-viewer"
             or scientific_artifacts.get("credential_secret")
             != "fs2-system/fs2-serve-artifact-store"
+            or scientific_artifacts.get("remover_credential_secret")
+            != "fs2-system/fs2-serve-artifact-remover-store"
+            or scientific_artifacts.get("verifier_credential_secret")
+            != "fs2-system/fs2-serve-artifact-verifier-store"
             or not isinstance(scientific_artifacts.get("credential_revision"), int)
             or scientific_artifacts["credential_revision"] < 1
+            or not isinstance(scientific_artifacts.get("remover_credential_revision"), int)
+            or scientific_artifacts["remover_credential_revision"] < 1
+            or not isinstance(scientific_artifacts.get("verifier_credential_revision"), int)
+            or scientific_artifacts["verifier_credential_revision"] < 1
             or not isinstance(scientific_artifacts.get("batch_enabled"), bool)
         ):
             raise DeploymentError("the workloads access bundle is missing or malformed")

@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal
 
-from .models import AttemptOutcome, BatchStatus, ResourceClass, ScientificBatchState
+from .models import BatchStatus, ResourceClass, ScientificBatchState
 
 SettlementReason = Literal[
     "observed_execution",
@@ -32,17 +32,28 @@ def settle_scientific_gpu_reservation(
     """Settle a bounded admission reservation from terminal attempt evidence.
 
     Kueue quota reservation is the conservative start boundary and workload
-    completion is the end boundary. A cancelled or failed run with no observed
-    accelerator admission charges zero. Any accelerator attempt whose timing
+    completion is the end boundary. A cancelled or failed run with no attempt
+    charges zero. Any persisted accelerator attempt whose scheduling, timing
     or resource identity is incomplete makes the bounded admission estimate the
     fail-safe charge; it can never charge beyond the amount admitted up front.
     """
 
-    if (
-        not state.status.terminal
-        or not math.isfinite(reserved_gpu_seconds)
-        or reserved_gpu_seconds < 0
-    ):
+    if not state.status.terminal:
+        raise ValueError("scientific GPU settlement requires a terminal state and finite reservation")
+    return _settle_gpu_attempt_evidence(
+        state,
+        reserved_gpu_seconds=reserved_gpu_seconds,
+        terminal_status=state.status,
+    )
+
+
+def _settle_gpu_attempt_evidence(
+    state: ScientificBatchState,
+    *,
+    reserved_gpu_seconds: float,
+    terminal_status: BatchStatus,
+) -> ScientificGpuSettlement:
+    if not math.isfinite(reserved_gpu_seconds) or reserved_gpu_seconds < 0:
         raise ValueError("scientific GPU settlement requires a terminal state and finite reservation")
 
     resource_classes = {stage.stage_id: stage.resource_class for stage in state.plan.stages}
@@ -58,10 +69,10 @@ def settle_scientific_gpu_reservation(
         for attempt in stage.attempts:
             admission = attempt.scheduling_admission
             if admission is None or admission.accelerator_count == 0:
-                if (
-                    stage.stage_id in gpu_stage_ids
-                    and attempt.outcome is AttemptOutcome.SUCCEEDED
-                ):
+                # Attempt identity is persisted before external apply. Once a
+                # GPU attempt exists, a missing scheduling row cannot prove
+                # zero execution, regardless of the terminal outcome or UID.
+                if stage.stage_id in gpu_stage_ids:
                     missing_evidence = True
                 continue
             observed_gpu = True
@@ -83,7 +94,7 @@ def settle_scientific_gpu_reservation(
                 completed_at - started_at
             ).total_seconds()
 
-    if state.status is BatchStatus.SUCCEEDED and not gpu_stage_ids.issubset(observed_gpu_stage_ids):
+    if terminal_status is BatchStatus.SUCCEEDED and not gpu_stage_ids.issubset(observed_gpu_stage_ids):
         missing_evidence = True
 
     if missing_evidence or observed_gpu_seconds > reserved_gpu_seconds:

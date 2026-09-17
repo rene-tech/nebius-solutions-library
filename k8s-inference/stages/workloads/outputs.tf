@@ -181,8 +181,14 @@ output "access_bundle" {
       endpoint            = var.scientific_artifacts.storage_contract.object_storage.endpoint
       object_key          = var.scientific_artifacts.storage_contract.layout.object_key
       writer_role         = var.scientific_artifacts.storage_contract.writer.role
+      remover_role        = var.scientific_artifacts.storage_contract.remover.role
+      verifier_role       = var.scientific_artifacts.storage_contract.verifier.role
       credential_secret   = "fs2-system/${local.scientific_artifacts_secret_name}"
+      remover_credential_secret = "fs2-system/${local.scientific_artifact_remover_secret_name}"
+      verifier_credential_secret = "fs2-system/${local.scientific_artifact_verifier_secret_name}"
       credential_revision = local.scientific_artifacts_revision
+      remover_credential_revision = local.scientific_artifact_remover_revision
+      verifier_credential_revision = local.scientific_artifact_verifier_revision
       batch_enabled       = var.scientific_batch.enabled
     } : null
   }
@@ -353,11 +359,21 @@ output "scientific_artifacts_status" {
     writer_role         = var.scientific_artifacts.storage_contract.writer.role
     writer_paths        = var.scientific_artifacts.storage_contract.writer.paths
     secret_delivery     = var.scientific_artifacts.storage_contract.writer.secret_delivery
+    remover_role        = var.scientific_artifacts.storage_contract.remover.role
+    remover_paths       = var.scientific_artifacts.storage_contract.remover.paths
+    remover_secret_delivery = var.scientific_artifacts.storage_contract.remover.secret_delivery
+    verifier_role        = var.scientific_artifacts.storage_contract.verifier.role
+    verifier_paths       = var.scientific_artifacts.storage_contract.verifier.paths
+    verifier_secret_delivery = var.scientific_artifacts.storage_contract.verifier.secret_delivery
     lifecycle           = var.scientific_artifacts.storage_contract.lifecycle
     retention           = var.scientific_artifacts.storage_contract.retention
     credential_secret   = "fs2-system/${local.scientific_artifacts_secret_name}"
     credential_key      = local.scientific_artifacts_secret_key
     credential_revision = local.scientific_artifacts_revision
+    remover_credential_secret = "fs2-system/${local.scientific_artifact_remover_secret_name}"
+    remover_credential_revision = local.scientific_artifact_remover_revision
+    verifier_credential_secret = "fs2-system/${local.scientific_artifact_verifier_secret_name}"
+    verifier_credential_revision = local.scientific_artifact_verifier_revision
     handle_ttl_seconds  = var.scientific_artifacts.handle_ttl_seconds
     max_artifact_bytes  = var.scientific_artifacts.max_artifact_bytes
     tenant_quota_bytes  = var.scientific_artifacts.tenant_quota_bytes

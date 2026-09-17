@@ -88,6 +88,7 @@ locals {
     keys(local.academic_cpu_local_queues),
     keys(local.academic_general_cpu_local_queues),
     keys(local.model_reference_cpu_local_queues),
+    keys(local.scientific_gpu_tenant_local_queues),
     keys(local.scientific_cpu_tenant_local_queues),
   )
   managed_lane_queue_collisions = sort(distinct(concat(
@@ -412,6 +413,24 @@ locals {
     local.derived_model_eligible_pool_ids,
     var.scheduling.model_eligible_pool_ids,
   )
+  # The default GPU queue is retained for non-scientific serving, but every
+  # enabled scientific tenant receives a separate LocalQueue on the same
+  # namespace/ClusterQueue backing. LocalQueue fair sharing therefore meters
+  # tenant usage independently without changing accelerator capacity or
+  # borrowing policy. The licensed academic tenant keeps its namespace-owned
+  # queue and is never projected onto this ordinary lane.
+  scientific_gpu_tenant_local_queues = {
+    for tenant_id in local.scientific_enabled_tenant_ids :
+    format("gpu-%s", substr(sha256(tenant_id), 0, 20)) => {
+      namespace           = local.queue_default.namespace
+      cluster_queue       = local.queue_default.cluster_queue_name
+      fair_sharing_weight = 1
+      model_ids           = toset(keys(local.model_eligible_pool_ids))
+      tenant_ids          = toset([tenant_id])
+      service_classes     = toset(keys(var.scheduling.service_classes))
+    }
+    if !(local.academic_execution_enabled && tenant_id == var.academic_assets.tenant_id)
+  }
 
   scheduling_all_local_queues = merge(
     var.scheduling.local_queues,
@@ -419,6 +438,7 @@ locals {
     local.academic_cpu_local_queues,
     local.academic_general_cpu_local_queues,
     local.model_reference_cpu_local_queues,
+    local.scientific_gpu_tenant_local_queues,
     local.scientific_cpu_tenant_local_queues,
   )
 
@@ -560,6 +580,7 @@ module "kueue_scheduling" {
       local.academic_cpu_local_queues,
       local.academic_general_cpu_local_queues,
       local.model_reference_cpu_local_queues,
+      local.scientific_gpu_tenant_local_queues,
       local.scientific_cpu_tenant_local_queues,
     )
   })

@@ -302,6 +302,18 @@ class Settings(BaseSettings):
     maintenance_database_role: str = Field(
         default="fs2_serve_maintenance", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
     )
+    artifact_remover_database_role: str = Field(
+        default="fs2_serve_artifact_remover",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*$",
+    )
+    artifact_verifier_database_role: str = Field(
+        default="fs2_serve_artifact_verifier",
+        min_length=1,
+        max_length=63,
+        pattern=r"^[A-Za-z_][A-Za-z0-9_]*$",
+    )
     activation_database_role: str = Field(
         default="fs2_serve_activation", min_length=1, max_length=63, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$"
     )
@@ -394,10 +406,15 @@ class Settings(BaseSettings):
             self.reporting_database_role,
             self.runtime_database_role,
             self.maintenance_database_role,
+            self.artifact_remover_database_role,
+            self.artifact_verifier_database_role,
             self.activation_database_role,
         }
-        if len(database_roles) != 4:
-            raise ValueError("reporting, runtime, maintenance, and activation database roles must differ")
+        if len(database_roles) != 6:
+            raise ValueError(
+                "reporting, runtime, maintenance, artifact-remover, artifact-verifier, and activation "
+                "database roles must differ"
+            )
         context_identity = (self.admin_context_project, self.admin_context_cluster, self.admin_context_region)
         if any(value is not None for value in context_identity) and not all(
             value is not None for value in context_identity

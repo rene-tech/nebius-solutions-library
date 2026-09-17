@@ -6,6 +6,8 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+import pytest
+
 from fs2_serve.scientific_batch.accounting import settle_scientific_gpu_reservation
 from fs2_serve.scientific_batch.models import (
     AttemptOutcome,
@@ -145,6 +147,48 @@ def test_permanent_materialization_failure_before_gpu_admission_charges_zero() -
     assert settlement.evidence_complete is True
 
 
+@pytest.mark.parametrize("terminal_status", [BatchStatus.FAILED, BatchStatus.CANCELLED])
+def test_persisted_gpu_attempt_without_admission_or_uid_is_fail_safe_charged(
+    terminal_status: BatchStatus,
+) -> None:
+    state = admitted_state(admission=None)
+    attempt = ScientificAttemptState(
+        attempt_id=uuid4(),
+        stage_id="inference",
+        shard_id="main",
+        attempt_number=1,
+        workload=WorkloadRef(
+            namespace="fs2-models",
+            name="sai-21-apply-crash",
+            kind=WorkloadKind.JOB,
+            uid=None,
+        ),
+        started_at=NOW,
+        completed_at=NOW + timedelta(seconds=1),
+        outcome=AttemptOutcome.FAILED,
+        last_phase=LifecyclePhase.SCHEDULING,
+        scheduling_admission=None,
+    )
+    terminal = replace(
+        state,
+        status=terminal_status,
+        stages=(
+            replace(
+                state.stages[0],
+                status=(StageStatus.FAILED if terminal_status is BatchStatus.FAILED else StageStatus.CANCELLED),
+                attempts=(attempt,),
+            ),
+        ),
+    )
+
+    settlement = settle_scientific_gpu_reservation(terminal, reserved_gpu_seconds=7200)
+
+    assert settlement.charged_gpu_seconds == 7200
+    assert settlement.released_gpu_seconds == 0
+    assert settlement.reason == "missing_evidence_fail_safe"
+    assert settlement.evidence_complete is False
+
+
 def test_observed_kueue_gpu_occupancy_is_charged_and_the_remainder_released() -> None:
     settlement = settle_scientific_gpu_reservation(
         admitted_state(
@@ -204,3 +248,15 @@ def test_success_without_any_gpu_admission_is_bounded_missing_evidence() -> None
     assert settlement.released_gpu_seconds == 0
     assert settlement.reason == "missing_evidence_fail_safe"
     assert settlement.evidence_complete is False
+
+
+def test_nonterminal_interruption_cannot_settle_before_controller_cleanup() -> None:
+    cancelled = admitted_state(admission=None)
+    queued = replace(
+        cancelled,
+        status=BatchStatus.QUEUED,
+        stages=(replace(cancelled.stages[0], status=StageStatus.PENDING),),
+    )
+
+    with pytest.raises(ValueError, match="terminal state"):
+        settle_scientific_gpu_reservation(queued, reserved_gpu_seconds=7200)

@@ -85,6 +85,7 @@ from .models import (
 from .postgres_retry import retry_serialization
 from .postgresql_release import validate_migration_set
 from .runtime import sanitize_error_detail
+from .scientific_batch.postgres_accounting import account_interruption_and_request_cancel
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -115,11 +116,7 @@ SCIENTIFIC_RUNTIME_UPDATE_COLUMNS: Final[dict[str, tuple[str, ...]]] = {
     ),
     "fs2_scientific_uploads": ("artifact_id", "finalized_at"),
     "fs2_scientific_artifact_quota_reservations": (
-        "state",
-        "reserved_at",
         "expires_at",
-        "released_at",
-        "release_reason",
     ),
     "fs2_scientific_batches": (
         "status",
@@ -293,8 +290,32 @@ def _upgrade_legacy_model_deployment_status(value: dict[str, Any]) -> dict[str, 
 class PostgresStore:
     @staticmethod
     async def _token_lock(connection: asyncpg.Connection[Any], token_id: UUID) -> None:
-        key = int.from_bytes(hashlib.blake2b(token_id.bytes, digest_size=8).digest(), "big", signed=True)
-        await connection.execute("SELECT pg_advisory_xact_lock($1::bigint)", key)
+        await connection.execute(
+            "SELECT pg_advisory_xact_lock("
+            "hashtextextended('fs2-scientific-token' || chr(31) || $1::text,0))",
+            token_id,
+        )
+
+    @staticmethod
+    async def _account_scientific_interruptions(
+        connection: asyncpg.Connection[Any], token_id: UUID, *, cause: str
+    ) -> None:
+        operation_ids = await connection.fetch(
+            """
+            SELECT operation.id FROM fs2_operations operation
+            JOIN fs2_scientific_batches batch ON batch.operation_id=operation.id
+            WHERE operation.token_id=$1 AND operation.protocol='scientific-batch-v1'
+              AND operation.status IN ('queued','running') AND NOT batch.cancel_requested
+            ORDER BY operation.id
+            """,
+            token_id,
+        )
+        for operation in operation_ids:
+            await account_interruption_and_request_cancel(
+                connection,
+                operation["id"],
+                cause=cause,
+            )
 
     @staticmethod
     async def _configuration_lock(connection: asyncpg.Connection[Any]) -> None:
@@ -393,17 +414,33 @@ class PostgresStore:
         runtime_role: str = "fs2_serve_runtime",
         maintenance_role: str = "fs2_serve_maintenance",
         activation_role: str = "fs2_serve_activation",
+        artifact_remover_role: str = "fs2_serve_artifact_remover",
+        artifact_verifier_role: str = "fs2_serve_artifact_verifier",
     ) -> None:
         for label, role in (
             ("reporting", reporting_role),
             ("runtime", runtime_role),
             ("maintenance", maintenance_role),
             ("activation", activation_role),
+            ("artifact remover", artifact_remover_role),
+            ("artifact verifier", artifact_verifier_role),
         ):
             if not role.replace("_", "a").isalnum() or not 1 <= len(role) <= 63:
                 raise ValueError(f"{label} database role is invalid")
-        if len({reporting_role, runtime_role, maintenance_role, activation_role}) != 4:
-            raise ValueError("reporting, runtime, maintenance, and activation database roles must differ")
+        if len(
+            {
+                reporting_role,
+                runtime_role,
+                maintenance_role,
+                activation_role,
+                artifact_remover_role,
+                artifact_verifier_role,
+            }
+        ) != 6:
+            raise ValueError(
+                "reporting, runtime, maintenance, activation, artifact-remover, and artifact-verifier "
+                "database roles must differ"
+            )
         manifest = cls._migration_manifest(migrations_dir)
         async with pool.acquire() as connection, connection.transaction():
             await connection.execute("SELECT pg_advisory_xact_lock(727201920001)")
@@ -451,6 +488,8 @@ class PostgresStore:
                 ("runtime", runtime_role),
                 ("maintenance", maintenance_role),
                 ("activation", activation_role),
+                ("artifact remover", artifact_remover_role),
+                ("artifact verifier", artifact_verifier_role),
             ):
                 can_login = await connection.fetchval("SELECT rolcanlogin FROM pg_roles WHERE rolname=$1", role)
                 if can_login is None:
@@ -463,7 +502,16 @@ class PostgresStore:
             quoted_runtime = f'"{runtime_role}"'
             quoted_maintenance = f'"{maintenance_role}"'
             quoted_activation = f'"{activation_role}"'
-            all_roles = (quoted_reporting, quoted_runtime, quoted_maintenance, quoted_activation)
+            quoted_artifact_remover = f'"{artifact_remover_role}"'
+            quoted_artifact_verifier = f'"{artifact_verifier_role}"'
+            all_roles = (
+                quoted_reporting,
+                quoted_runtime,
+                quoted_maintenance,
+                quoted_activation,
+                quoted_artifact_remover,
+                quoted_artifact_verifier,
+            )
             for role in all_roles:
                 await connection.execute(
                     f"REVOKE ALL ON fs2_schema_migrations,fs2_tokens,fs2_operations,"
@@ -478,7 +526,9 @@ class PostgresStore:
                     f"fs2_scientific_run_results,fs2_scientific_artifact_events,"
                     f"fs2_scientific_retention_ledger,"
                     f"fs2_scientific_artifact_quota_reservations,"
-                    f"fs2_scientific_artifact_quota_events,fs2_scientific_gpu_settlements,"
+                    f"fs2_scientific_artifact_quota_events,"
+                    f"fs2_scientific_artifact_removal_evidence,fs2_scientific_gpu_settlements,"
+                    f"fs2_scientific_interruption_requests,"
                     f"fs2_scientific_batches,"
                     f"fs2_scientific_batch_events,fs2_scientific_admission_outbox,"
                     f"fs2_scientific_model_policies,"
@@ -509,6 +559,14 @@ class PostgresStore:
                     f"fs2_scientific_validate_attempt_transition(),"
                     f"fs2_scientific_validate_upload_transition(),"
                     f"fs2_scientific_validate_artifact_quota_transition(),"
+                    f"fs2_scientific_claim_artifact_removals(integer,uuid,text),"
+                    f"fs2_scientific_claim_artifact_verifications(integer),"
+                    f"fs2_scientific_record_artifact_removal(uuid,uuid,uuid,text,text,text,text,integer,timestamptz),"
+                    f"fs2_scientific_settle_terminal_operation(uuid),"
+                    f"fs2_maintenance_stage_payload_expiry(integer),"
+                    f"fs2_maintenance_purge_expired_payloads(integer),"
+                    f"fs2_maintenance_delete_expired_rows(integer,integer,integer,integer,integer),"
+                    f"fs2_scientific_guard_operation_settlement(),"
                     f"fs2_scientific_reject_mutation(),"
                     f"fs2_scientific_guard_retention_delete(),"
                     f"fs2_scientific_batch_state_immutable(),"
@@ -564,7 +622,14 @@ class PostgresStore:
                 f"fs2_scientific_artifact_quota_reservations,"
                 f"fs2_scientific_artifact_quota_events TO {quoted_runtime}"
             )
-            await connection.execute(f"GRANT INSERT ON fs2_scientific_gpu_settlements TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT SELECT ON fs2_scientific_artifact_removal_evidence,"
+                f"fs2_scientific_gpu_settlements TO {quoted_runtime}"
+            )
+            await connection.execute(f"GRANT SELECT ON fs2_scientific_interruption_requests TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_settle_terminal_operation(uuid) TO {quoted_runtime}"
+            )
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_scientific_batches TO {quoted_runtime}")
             for table, columns in SCIENTIFIC_RUNTIME_UPDATE_COLUMNS.items():
                 await connection.execute(f"GRANT UPDATE ({','.join(columns)}) ON {table} TO {quoted_runtime}")
@@ -619,22 +684,19 @@ class PostgresStore:
                 f"GRANT EXECUTE ON FUNCTION fs2_activation_model_lock_key(text) TO {quoted_runtime}"
             )
             await connection.execute(
-                f"GRANT SELECT (id,revoked_at,expires_at,gpu_seconds_reserved),"
-                f"UPDATE (gpu_seconds_reserved),DELETE ON fs2_tokens TO {quoted_maintenance}"
+                f"GRANT EXECUTE ON FUNCTION fs2_maintenance_stage_payload_expiry(integer),"
+                f"fs2_maintenance_purge_expired_payloads(integer),"
+                f"fs2_maintenance_delete_expired_rows(integer,integer,integer,integer,integer) "
+                f"TO {quoted_maintenance}"
             )
             await connection.execute(
-                f"GRANT SELECT (id,token_id,status,reserved_gpu_seconds,payload_expires_at,"
-                f"payload_purged_at,completed_at,outcome,error_code,fencing_token),"
-                f"UPDATE (request_key_id,request_nonce,request_ciphertext,response_key_id,response_nonce,"
-                f"response_ciphertext,payload_purged_at,status,completed_at,outcome,error_code,error_detail,"
-                f"worker_id,heartbeat_at,lease_expires_at,fencing_token,reserved_gpu_seconds),"
-                f"DELETE ON fs2_operations TO {quoted_maintenance}"
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_artifact_removals(integer,uuid,text) "
+                f"TO {quoted_artifact_remover}"
             )
             await connection.execute(
-                f"GRANT SELECT (id,occurred_at),DELETE ON fs2_audit_events TO {quoted_maintenance}"
-            )
-            await connection.execute(
-                f"GRANT SELECT (operation_id,occurred_at),DELETE ON fs2_usage_facts TO {quoted_maintenance}"
+                f"GRANT EXECUTE ON FUNCTION fs2_scientific_claim_artifact_verifications(integer),"
+                f"fs2_scientific_record_artifact_removal("
+                f"uuid,uuid,uuid,text,text,text,text,integer,timestamptz) TO {quoted_artifact_verifier}"
             )
             await connection.execute(
                 f"GRANT SELECT (id,model_id,model_revision,status,attempt,lease_expires_at,deadline_at) "
@@ -662,6 +724,8 @@ class PostgresStore:
         runtime_role: str = "fs2_serve_runtime",
         maintenance_role: str = "fs2_serve_maintenance",
         activation_role: str = "fs2_serve_activation",
+        artifact_remover_role: str = "fs2_serve_artifact_remover",
+        artifact_verifier_role: str = "fs2_serve_artifact_verifier",
     ) -> None:
         """Apply serialized DDL without loading any runtime cryptographic material."""
 
@@ -679,6 +743,8 @@ class PostgresStore:
                 runtime_role,
                 maintenance_role,
                 activation_role,
+                artifact_remover_role,
+                artifact_verifier_role,
             )
         finally:
             await pool.close()
@@ -761,21 +827,53 @@ class PostgresStore:
                             " AND has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_artifact_quota_reservations','INSERT')"
                             " AND has_column_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_quota_reservations','expires_at','UPDATE')"
+                            " AND NOT has_column_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_artifact_quota_reservations','state','UPDATE')"
                             " AND has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_artifact_quota_events','INSERT')"
                             " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_removal_evidence','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_artifact_removal_evidence','INSERT')"
+                            " AND has_table_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_gpu_settlements','SELECT')"
+                            " AND NOT has_table_privilege('fs2_serve_runtime',"
                             "'public.fs2_scientific_gpu_settlements','INSERT')"
+                            " AND has_function_privilege('fs2_serve_runtime',"
+                            "'public.fs2_scientific_settle_terminal_operation(uuid)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_remover',"
+                            "'public.fs2_scientific_claim_artifact_removals(integer,uuid,text)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_remover',"
+                            "'public.fs2_scientific_record_artifact_removal("
+                            "uuid,uuid,uuid,text,text,text,text,integer,timestamptz)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_claim_artifact_verifications(integer)','EXECUTE')"
+                            " AND has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_record_artifact_removal("
+                            "uuid,uuid,uuid,text,text,text,text,integer,timestamptz)','EXECUTE')"
+                            " AND NOT has_function_privilege('fs2_serve_artifact_verifier',"
+                            "'public.fs2_scientific_claim_artifact_removals(integer,uuid,text)','EXECUTE')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_reservations','SELECT')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_reservations','INSERT')"
                             " AND has_column_privilege(current_user,"
+                            "'public.fs2_scientific_artifact_quota_reservations','expires_at','UPDATE')"
+                            " AND NOT has_column_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_reservations','state','UPDATE')"
                             " AND has_table_privilege(current_user,"
                             "'public.fs2_scientific_artifact_quota_events','INSERT')"
                             " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_artifact_removal_evidence','SELECT')"
+                            " AND NOT has_table_privilege(current_user,"
+                            "'public.fs2_scientific_artifact_removal_evidence','INSERT')"
+                            " AND has_table_privilege(current_user,"
+                            "'public.fs2_scientific_gpu_settlements','SELECT')"
+                            " AND NOT has_table_privilege(current_user,"
                             "'public.fs2_scientific_gpu_settlements','INSERT')"
+                            " AND has_function_privilege(current_user,"
+                            "'public.fs2_scientific_settle_terminal_operation(uuid)','EXECUTE')"
                         )
                     if not runtime_privileges_ready:
                         raise RuntimeError("database schema runtime privileges are incomplete")
@@ -1139,6 +1237,27 @@ class PostgresStore:
         expires_at: datetime | None,
         actor: str,
     ) -> TokenView:
+        # Cancellation must commit independently: issuing a successor while an
+        # older scientific operation still owns a reservation would let the
+        # successor reuse that budget before controller cleanup settles it.
+        async with self.pool.acquire() as connection, connection.transaction():
+            await self._token_lock(connection, predecessor_id)
+            predecessor = await connection.fetchrow(
+                "SELECT * FROM fs2_tokens WHERE id=$1 FOR UPDATE",
+                predecessor_id,
+            )
+            now = await connection.fetchval("SELECT clock_timestamp()")
+            if predecessor is None:
+                raise NotFoundError("token not found")
+            if predecessor["revoked_at"] is not None or (
+                predecessor["expires_at"] is not None and predecessor["expires_at"] <= now
+            ):
+                raise ConflictError("token is already inactive")
+            await self._account_scientific_interruptions(
+                connection,
+                predecessor_id,
+                cause="token_rotated",
+            )
         async with self.pool.acquire() as connection, connection.transaction():
             await self._token_lock(connection, predecessor_id)
             await self._token_lock(connection, token_id)
@@ -1152,10 +1271,22 @@ class PostgresStore:
                 raise ConflictError("token is already inactive")
             if expires_at is not None and expires_at <= now:
                 raise ValueError("expires_at must be in the future")
+            pending_scientific = await connection.fetchval(
+                """
+                SELECT true FROM fs2_operations
+                WHERE token_id=$1 AND protocol='scientific-batch-v1'
+                  AND status IN ('queued','running')
+                LIMIT 1
+                """,
+                predecessor_id,
+            )
+            if pending_scientific:
+                raise ConflictError("token rotation is waiting for scientific cleanup and settlement")
             released = await connection.fetchval(
                 """
                 SELECT COALESCE(sum(reserved_gpu_seconds),0) FROM fs2_operations
                 WHERE token_id=$1 AND status IN ('queued','activating','running')
+                  AND protocol<>'scientific-batch-v1'
                 """,
                 predecessor_id,
             )
@@ -1216,6 +1347,7 @@ class PostgresStore:
                     worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,
                     fencing_token=fencing_token+1,reserved_gpu_seconds=0
                 WHERE token_id=$1 AND status IN ('queued','activating','running')
+                  AND protocol<>'scientific-batch-v1'
                 """,
                 predecessor_id,
                 now,
@@ -1243,10 +1375,16 @@ class PostgresStore:
             )
             if row is None:
                 raise NotFoundError("token not found")
+            await self._account_scientific_interruptions(
+                connection,
+                token_id,
+                cause="token_revoked",
+            )
             released = await connection.fetchval(
                 """
                 SELECT COALESCE(sum(reserved_gpu_seconds),0) FROM fs2_operations
                 WHERE token_id=$1 AND status IN ('queued','activating','running')
+                  AND protocol<>'scientific-batch-v1'
                 """,
                 token_id,
             )
@@ -1257,6 +1395,7 @@ class PostgresStore:
                     worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,
                     fencing_token=fencing_token+1,reserved_gpu_seconds=0
                 WHERE token_id=$1 AND status IN ('queued','activating','running')
+                  AND protocol<>'scientific-batch-v1'
                 """,
                 token_id,
             )
@@ -2805,11 +2944,13 @@ class PostgresStore:
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
-                SELECT o.id,o.token_id FROM fs2_operations o
+                SELECT o.id,o.token_id,o.protocol FROM fs2_operations o
                 JOIN fs2_tokens t ON t.id=o.token_id
+                LEFT JOIN fs2_scientific_batches batch ON batch.operation_id=o.id
                 WHERE o.status='queued'
                   AND (t.revoked_at IS NOT NULL
                        OR (t.expires_at IS NOT NULL AND t.expires_at<=clock_timestamp()))
+                  AND (o.protocol<>'scientific-batch-v1' OR NOT batch.cancel_requested)
                 ORDER BY o.available_at,o.accepted_at,o.id LIMIT $1
                 """,
                 _CLAIM_BATCH_SIZE,
@@ -2828,9 +2969,17 @@ class PostgresStore:
                 )
                 if token is None or token["active"]:
                     continue
+                if candidate["protocol"] == "scientific-batch-v1":
+                    await account_interruption_and_request_cancel(
+                        connection,
+                        candidate["id"],
+                        cause="token_inactive",
+                    )
+                    expired += 1
+                    continue
                 operation = await connection.fetchrow(
                     """
-                    SELECT id,token_id,reserved_gpu_seconds,attempt FROM fs2_operations
+                    SELECT id,token_id,protocol,reserved_gpu_seconds,attempt FROM fs2_operations
                     WHERE id=$1 AND token_id=$2 AND status='queued'
                     FOR UPDATE SKIP LOCKED
                     """,
@@ -2847,6 +2996,9 @@ class PostgresStore:
         self, connection: asyncpg.Connection[Any], operation: asyncpg.Record
     ) -> None:
         """Expire one locked queued operation and release its reservation atomically."""
+
+        if operation["protocol"] == "scientific-batch-v1":
+            raise RuntimeError("scientific batch must use interruption settlement")
 
         row = await connection.fetchrow(
             """
@@ -3317,9 +3469,15 @@ class PostgresStore:
         if not status.terminal:
             raise ValueError("completion status must be terminal")
         async with self.pool.acquire() as connection:
-            token_id = await connection.fetchval("SELECT token_id FROM fs2_operations WHERE id=$1", operation_id)
-            if token_id is None:
+            identity = await connection.fetchrow(
+                "SELECT token_id,protocol FROM fs2_operations WHERE id=$1",
+                operation_id,
+            )
+            if identity is None:
                 raise StaleLeaseError("operation lease is stale")
+            if identity["protocol"] == "scientific-batch-v1":
+                raise ConflictError("scientific batch completion is controller-owned")
+            token_id = identity["token_id"]
             async with connection.transaction():
                 await self._token_lock(connection, token_id)
                 await connection.fetchrow("SELECT id FROM fs2_tokens WHERE id=$1 FOR UPDATE", token_id)
@@ -3352,6 +3510,7 @@ class PostgresStore:
                             ELSE extract(epoch FROM ready_at-accepted_at) END,
                         input_tokens=$21,output_tokens=$22,modality_usage=$23::jsonb
                     WHERE id=$1 AND worker_id=$19 AND fencing_token=$20
+                      AND protocol<>'scientific-batch-v1'
                       AND status IN ('activating','running') AND lease_expires_at>clock_timestamp()
                       AND (deadline_at IS NULL OR deadline_at>clock_timestamp()) RETURNING *
                     """,
@@ -3430,6 +3589,7 @@ class PostgresStore:
                     worker_id=NULL,heartbeat_at=NULL,
                     lease_expires_at=NULL,fencing_token=fencing_token+1
                 WHERE id=$1 AND worker_id=$2 AND fencing_token=$3 AND attempt<max_attempts
+                  AND protocol<>'scientific-batch-v1'
                   AND lease_expires_at>clock_timestamp() AND (deadline_at IS NULL OR $4<deadline_at)
                 RETURNING *
                 """,
@@ -3448,9 +3608,15 @@ class PostgresStore:
     @retry_serialization
     async def release_operation(self, operation_id: UUID, *, worker_id: str, fencing_token: int) -> OperationView:
         async with self.pool.acquire() as connection:
-            token_id = await connection.fetchval("SELECT token_id FROM fs2_operations WHERE id=$1", operation_id)
-            if token_id is None:
+            identity = await connection.fetchrow(
+                "SELECT token_id,protocol FROM fs2_operations WHERE id=$1",
+                operation_id,
+            )
+            if identity is None:
                 raise StaleLeaseError("operation lease is stale")
+            if identity["protocol"] == "scientific-batch-v1":
+                raise ConflictError("scientific batch release is controller-owned")
+            token_id = identity["token_id"]
             async with connection.transaction():
                 await self._token_lock(connection, token_id)
                 token = await connection.fetchrow("SELECT * FROM fs2_tokens WHERE id=$1 FOR UPDATE", token_id)
@@ -3527,14 +3693,41 @@ class PostgresStore:
     @retry_serialization
     async def cancel_operation(self, operation_id: UUID, *, tenant_id: str, actor: str) -> OperationView:
         async with self.pool.acquire() as connection:
-            token_id = await connection.fetchval(
-                "SELECT token_id FROM fs2_operations WHERE id=$1 AND tenant_id=$2", operation_id, tenant_id
+            identity = await connection.fetchrow(
+                "SELECT token_id,protocol FROM fs2_operations WHERE id=$1 AND tenant_id=$2",
+                operation_id,
+                tenant_id,
             )
-            if token_id is None:
+            if identity is None:
                 raise NotFoundError("operation not found")
+            token_id = identity["token_id"]
             async with connection.transaction():
                 await self._token_lock(connection, token_id)
                 await connection.fetchrow("SELECT id FROM fs2_tokens WHERE id=$1 FOR UPDATE", token_id)
+                if identity["protocol"] == "scientific-batch-v1":
+                    await account_interruption_and_request_cancel(
+                        connection,
+                        operation_id,
+                        cause="cancelled_by_caller",
+                    )
+                    requested = await connection.fetchrow(
+                        "SELECT * FROM fs2_operations WHERE id=$1 AND tenant_id=$2",
+                        operation_id,
+                        tenant_id,
+                    )
+                    if requested is None:
+                        raise NotFoundError("operation not found")
+                    await self._audit(
+                        connection,
+                        actor=actor,
+                        tenant_id=tenant_id,
+                        token_id=requested["token_id"],
+                        action="operation.cancel",
+                        target_type="operation",
+                        target_id=str(operation_id),
+                        outcome="requested",
+                    )
+                    return self._operation(requested)
                 existing = await connection.fetchrow(
                     "SELECT * FROM fs2_operations WHERE id=$1 AND tenant_id=$2 FOR UPDATE",
                     operation_id,
@@ -3590,55 +3783,12 @@ class PostgresStore:
 
     @retry_serialization
     async def purge_expired_payloads(self) -> int:
-        async with self.pool.acquire() as connection:
-            candidates = await connection.fetch(
-                """
-                SELECT id,token_id FROM fs2_operations
-                WHERE payload_expires_at<=clock_timestamp()
-                  AND payload_purged_at IS NULL
-                ORDER BY payload_expires_at,id LIMIT 100
-                """
+        async with self.pool.acquire() as connection, connection.transaction():
+            return int(
+                await connection.fetchval(
+                    "SELECT fs2_maintenance_purge_expired_payloads(100)"
+                )
             )
-        count = 0
-        for candidate in candidates:
-            async with self.pool.acquire() as connection, connection.transaction():
-                await self._token_lock(connection, candidate["token_id"])
-                await connection.fetchrow("SELECT id FROM fs2_tokens WHERE id=$1 FOR UPDATE", candidate["token_id"])
-                row = await connection.fetchrow(
-                    """
-                    SELECT id,token_id,status,reserved_gpu_seconds FROM fs2_operations
-                    WHERE id=$1 AND payload_expires_at<=clock_timestamp() AND payload_purged_at IS NULL
-                    FOR UPDATE SKIP LOCKED
-                    """,
-                    candidate["id"],
-                )
-                if row is None:
-                    continue
-                if row["status"] not in _TERMINAL and row["reserved_gpu_seconds"]:
-                    await connection.execute(
-                        "UPDATE fs2_tokens SET gpu_seconds_reserved=GREATEST(0,gpu_seconds_reserved-$2) WHERE id=$1",
-                        row["token_id"],
-                        row["reserved_gpu_seconds"],
-                    )
-                await connection.execute(
-                    """
-                    UPDATE fs2_operations SET request_key_id=NULL,request_nonce=NULL,request_ciphertext=NULL,
-                        response_key_id=NULL,response_nonce=NULL,response_ciphertext=NULL,
-                        payload_purged_at=clock_timestamp(),
-                        status=CASE WHEN status IN ('queued','activating','running')
-                            THEN 'expired'::fs2_operation_status ELSE status END,
-                        completed_at=CASE WHEN status IN ('queued','activating','running')
-                            THEN clock_timestamp() ELSE completed_at END,
-                        outcome=CASE WHEN status IN ('queued','activating','running') THEN 'expired' ELSE outcome END,
-                        error_code=CASE WHEN status IN ('queued','activating','running')
-                            THEN 'payload_expired' ELSE error_code END,
-                        error_detail=NULL,worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,
-                        fencing_token=fencing_token+1,reserved_gpu_seconds=0 WHERE id=$1
-                    """,
-                    row["id"],
-                )
-                count += 1
-        return count
 
     @retry_serialization
     async def expire_deadline_operations(self) -> int:
@@ -3647,10 +3797,15 @@ class PostgresStore:
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
-                SELECT id,token_id FROM fs2_operations
-                WHERE status='queued' AND deadline_at IS NOT NULL
-                  AND deadline_at<=clock_timestamp()
-                ORDER BY deadline_at,id LIMIT 100
+                SELECT operation.id,operation.token_id,operation.protocol
+                FROM fs2_operations operation
+                LEFT JOIN fs2_scientific_batches batch ON batch.operation_id=operation.id
+                WHERE operation.status='queued' AND operation.deadline_at IS NOT NULL
+                  AND operation.deadline_at<=clock_timestamp()
+                  AND (
+                    operation.protocol<>'scientific-batch-v1' OR NOT batch.cancel_requested
+                  )
+                ORDER BY operation.deadline_at,operation.id LIMIT 100
                 """
             )
         count = 0
@@ -3661,6 +3816,14 @@ class PostgresStore:
                     "SELECT id FROM fs2_tokens WHERE id=$1 FOR UPDATE", candidate["token_id"]
                 )
                 if token is None:
+                    continue
+                if candidate["protocol"] == "scientific-batch-v1":
+                    await account_interruption_and_request_cancel(
+                        connection,
+                        candidate["id"],
+                        cause="deadline_exceeded",
+                    )
+                    count += 1
                     continue
                 operation = await connection.fetchrow(
                     """
@@ -3714,8 +3877,15 @@ class PostgresStore:
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
-                SELECT id,token_id FROM fs2_operations WHERE status IN ('activating','running')
-                  AND lease_expires_at<=clock_timestamp() ORDER BY lease_expires_at,id LIMIT 100
+                SELECT operation.id,operation.token_id,operation.protocol
+                FROM fs2_operations operation
+                LEFT JOIN fs2_scientific_batches batch ON batch.operation_id=operation.id
+                WHERE operation.status IN ('activating','running')
+                  AND operation.lease_expires_at<=clock_timestamp()
+                  AND (
+                    operation.protocol<>'scientific-batch-v1' OR NOT batch.cancel_requested
+                  )
+                ORDER BY operation.lease_expires_at,operation.id LIMIT 100
                 """
             )
         count = 0
@@ -3723,6 +3893,14 @@ class PostgresStore:
             async with self.pool.acquire() as connection, connection.transaction():
                 await self._token_lock(connection, candidate["token_id"])
                 await connection.fetchrow("SELECT id FROM fs2_tokens WHERE id=$1 FOR UPDATE", candidate["token_id"])
+                if candidate["protocol"] == "scientific-batch-v1":
+                    await account_interruption_and_request_cancel(
+                        connection,
+                        candidate["id"],
+                        cause="lease_recovery_exhausted",
+                    )
+                    count += 1
+                    continue
                 row = await connection.fetchrow(
                     """
                     SELECT id,token_id,reserved_gpu_seconds,attempt FROM fs2_operations
@@ -3770,91 +3948,17 @@ class PostgresStore:
         audit_retention_seconds: int = 2592000,
         usage_retention_seconds: int = 7776000,
     ) -> dict[str, int]:
-        # Keep operation deletion and token deletion in separate transactions.
-        # No transaction may lock an operation and then a token: all state
-        # transitions that need both use token -> operation ordering.
         async with self.pool.acquire() as connection, connection.transaction():
-            operations = await connection.fetch(
-                """
-                WITH candidates AS (
-                    SELECT id FROM fs2_operations
-                    WHERE status IN ('succeeded','failed','cancelled','preempted','expired')
-                      AND completed_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY completed_at,id FOR UPDATE SKIP LOCKED LIMIT 100
-                )
-                DELETE FROM fs2_operations o USING candidates c WHERE o.id=c.id RETURNING o.id
-                """,
+            result = await connection.fetchrow(
+                "SELECT * FROM fs2_maintenance_delete_expired_rows($1,$2,$3,$4,100)",
                 operation_retention_seconds,
-            )
-        async with self.pool.acquire() as connection:
-            candidates = await connection.fetch(
-                """
-                SELECT t.id FROM fs2_tokens t
-                WHERE ((t.revoked_at IS NOT NULL AND
-                          t.revoked_at < clock_timestamp()-make_interval(secs=>$1::double precision))
-                       OR (t.expires_at IS NOT NULL AND
-                          t.expires_at < clock_timestamp()-make_interval(secs=>$1::double precision)))
-                  AND NOT EXISTS (SELECT 1 FROM fs2_operations o WHERE o.token_id=t.id)
-                ORDER BY COALESCE(t.revoked_at,t.expires_at),t.id LIMIT 100
-                """,
                 token_retention_seconds,
-            )
-        deleted_tokens = 0
-        for candidate in candidates:
-            async with self.pool.acquire() as connection, connection.transaction():
-                await self._token_lock(connection, candidate["id"])
-                row = await connection.fetchrow(
-                    """
-                    SELECT id FROM fs2_tokens WHERE id=$1
-                      AND ((revoked_at IS NOT NULL AND
-                            revoked_at < clock_timestamp()-make_interval(secs=>$2::double precision))
-                           OR (expires_at IS NOT NULL AND
-                            expires_at < clock_timestamp()-make_interval(secs=>$2::double precision)))
-                    FOR UPDATE SKIP LOCKED
-                    """,
-                    candidate["id"],
-                    token_retention_seconds,
-                )
-                if row is None:
-                    continue
-                result = await connection.execute(
-                    """
-                    DELETE FROM fs2_tokens t WHERE t.id=$1
-                      AND NOT EXISTS (SELECT 1 FROM fs2_operations o WHERE o.token_id=t.id)
-                    """,
-                    candidate["id"],
-                )
-                deleted_tokens += result == "DELETE 1"
-        async with self.pool.acquire() as connection, connection.transaction():
-            audit = await connection.fetch(
-                """
-                WITH candidates AS (
-                    SELECT id FROM fs2_audit_events
-                    WHERE occurred_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY occurred_at,id LIMIT 100
-                )
-                DELETE FROM fs2_audit_events a USING candidates c WHERE a.id=c.id RETURNING a.id
-                """,
                 audit_retention_seconds,
-            )
-            usage = await connection.fetch(
-                """
-                WITH candidates AS (
-                    SELECT operation_id FROM fs2_usage_facts
-                    WHERE occurred_at < clock_timestamp()-make_interval(secs=>$1::double precision)
-                    ORDER BY occurred_at,operation_id LIMIT 100
-                )
-                DELETE FROM fs2_usage_facts f USING candidates c
-                WHERE f.operation_id=c.operation_id RETURNING f.operation_id
-                """,
                 usage_retention_seconds,
             )
-        return {
-            "operations": len(operations),
-            "tokens": deleted_tokens,
-            "audit": len(audit),
-            "usage": len(usage),
-        }
+        if result is None:
+            raise RuntimeError("maintenance retention routine returned no result")
+        return {name: int(result[name]) for name in ("operations", "tokens", "audit", "usage")}
 
     async def list_audit(self, *, tenant_id: str | None = None, limit: int = 100) -> list[AuditEvent]:
         async with self.pool.acquire() as connection:

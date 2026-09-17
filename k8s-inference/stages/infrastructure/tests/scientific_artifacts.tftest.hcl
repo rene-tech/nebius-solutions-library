@@ -109,6 +109,12 @@ run "disabled_creates_no_store" {
       nebius_iam_v1_service_account.scientific_artifacts,
       nebius_iam_v1_group.scientific_artifacts_writers,
       nebius_iam_v2_access_key.scientific_artifacts,
+      nebius_iam_v1_service_account.scientific_artifact_remover,
+      nebius_iam_v1_group.scientific_artifact_removers,
+      nebius_iam_v2_access_key.scientific_artifact_remover,
+      nebius_iam_v1_service_account.scientific_artifact_verifier,
+      nebius_iam_v1_group.scientific_artifact_verifiers,
+      nebius_iam_v2_access_key.scientific_artifact_verifier,
     ]
   }
 
@@ -132,7 +138,9 @@ run "disabled_creates_no_store" {
       length(nebius_storage_v1_bucket.scientific_artifacts_disposable) == 0 &&
       length(nebius_iam_v1_service_account.scientific_artifacts) == 0 &&
       length(nebius_iam_v1_group.scientific_artifacts_writers) == 0 &&
-      length(nebius_iam_v2_access_key.scientific_artifacts) == 0
+      length(nebius_iam_v2_access_key.scientific_artifacts) == 0 &&
+      length(nebius_iam_v1_service_account.scientific_artifact_remover) == 0 &&
+      length(nebius_iam_v1_service_account.scientific_artifact_verifier) == 0
     )
     error_message = "A disabled scientific artifact store must create no bucket, identity, group or key."
   }
@@ -152,6 +160,14 @@ run "storage_only_creates_one_disposable_versioned_bucket" {
       nebius_iam_v1_group.scientific_artifacts_writers,
       nebius_iam_v1_group_membership.scientific_artifacts_writer,
       nebius_iam_v2_access_key.scientific_artifacts,
+      nebius_iam_v1_service_account.scientific_artifact_remover,
+      nebius_iam_v1_group.scientific_artifact_removers,
+      nebius_iam_v1_group_membership.scientific_artifact_remover,
+      nebius_iam_v2_access_key.scientific_artifact_remover,
+      nebius_iam_v1_service_account.scientific_artifact_verifier,
+      nebius_iam_v1_group.scientific_artifact_verifiers,
+      nebius_iam_v1_group_membership.scientific_artifact_verifier,
+      nebius_iam_v2_access_key.scientific_artifact_verifier,
     ]
   }
 
@@ -175,11 +191,13 @@ run "storage_only_creates_one_disposable_versioned_bucket" {
 
   assert {
     condition = (
-      length(nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules) == 1 &&
+      length(nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules) == 3 &&
       join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[0].paths) == "scientific/v1/*" &&
-      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[0].roles) == "storage.object-editor"
+      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[0].roles) == "storage.object-editor" &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[1].roles) == "storage.object-editor" &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts_disposable[0].bucket_policy.rules[2].roles) == "storage.object-viewer"
     )
-    error_message = "The writer must hold exactly storage.object-editor on the canonical scientific/v1 prefix and nothing else."
+    error_message = "Writer, remover and independent read-only verifier must have exact canonical-prefix roles."
   }
 
   assert {
@@ -191,6 +209,17 @@ run "storage_only_creates_one_disposable_versioned_bucket" {
       nebius_iam_v1_group.scientific_artifacts_writers[0].name == "fs2-artifact-store-test-scientific-artifact-writers"
     )
     error_message = "The store must own a dedicated service account and writer group, distinct from every other identity."
+  }
+
+  assert {
+    condition = (
+      nebius_iam_v1_service_account.scientific_artifact_remover[0].id != nebius_iam_v1_service_account.scientific_artifact_verifier[0].id &&
+      nebius_iam_v1_group.scientific_artifact_removers[0].id != nebius_iam_v1_group.scientific_artifact_verifiers[0].id &&
+      nebius_iam_v2_access_key.scientific_artifact_remover[0].id != nebius_iam_v2_access_key.scientific_artifact_verifier[0].id &&
+      nebius_iam_v2_access_key.scientific_artifact_remover[0].secret_delivery_mode == "MYSTERY_BOX" &&
+      nebius_iam_v2_access_key.scientific_artifact_verifier[0].secret_delivery_mode == "MYSTERY_BOX"
+    )
+    error_message = "Removal and independent absence verification require distinct identities and keys."
   }
 
   assert {
@@ -288,6 +317,8 @@ run "retained_storage_uses_the_protected_bucket_resource" {
     condition = (
       nebius_storage_v1_bucket.scientific_artifacts[0].versioning_policy == "ENABLED" &&
       join(",", nebius_storage_v1_bucket.scientific_artifacts[0].bucket_policy.rules[0].roles) == "storage.object-editor" &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts[0].bucket_policy.rules[1].roles) == "storage.object-editor" &&
+      join(",", nebius_storage_v1_bucket.scientific_artifacts[0].bucket_policy.rules[2].roles) == "storage.object-viewer" &&
       nebius_storage_v1_bucket.scientific_artifacts[0].labels.retention == "durable"
     )
     error_message = "The retained bucket must keep the same versioning and writer scope and be labelled durable."
@@ -351,6 +382,8 @@ run "the_canonical_prefix_and_writer_scope_are_fixed" {
       terraform_data.scientific_artifacts_contract[0].input.object_root == "scientific/v1" &&
       join(",", terraform_data.scientific_artifacts_contract[0].input.writer_paths) == "scientific/v1/*" &&
       terraform_data.scientific_artifacts_contract[0].input.writer_role == "storage.object-editor" &&
+      terraform_data.scientific_artifacts_contract[0].input.remover_role == "storage.object-editor" &&
+      terraform_data.scientific_artifacts_contract[0].input.verifier_role == "storage.object-viewer" &&
       terraform_data.scientific_artifacts_contract[0].input.secret_delivery == "MYSTERY_BOX"
     )
     error_message = "The store contract must pin the canonical prefix, the bucket-scoped object-editor role and MysteryBox delivery."

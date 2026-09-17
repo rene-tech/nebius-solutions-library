@@ -265,19 +265,7 @@ def _artifact_service(
 
     if not settings.scientific_artifacts_enabled:
         return None
-    access_key, secret_key = settings.artifact_store_credentials()
-    object_store = S3ArtifactObjectStore(
-        ObjectStoreConfig(
-            endpoint_url=settings.artifact_store_endpoint,
-            bucket=settings.artifact_store_bucket,
-            region=settings.artifact_store_region,
-            access_key=access_key,
-            secret_key=secret_key,
-            addressing_style=settings.artifact_store_addressing_style,
-            verify_tls=settings.artifact_store_verify_tls,
-            max_stream_bytes=settings.artifact_max_bytes,
-        )
-    )
+    object_store = _artifact_object_store(settings)
     return ScientificArtifactService(
         repository=repository,
         object_store=object_store,
@@ -290,6 +278,24 @@ def _artifact_service(
         default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
         retention=timedelta(seconds=settings.artifact_retention_seconds),
         require_tls_handles=settings.artifact_store_verify_tls,
+    )
+
+
+def _artifact_object_store(settings: Settings) -> S3ArtifactObjectStore:
+    """Build one identity-bound object-store client without logging secrets."""
+
+    access_key, secret_key = settings.artifact_store_credentials()
+    return S3ArtifactObjectStore(
+        ObjectStoreConfig(
+            endpoint_url=settings.artifact_store_endpoint,
+            bucket=settings.artifact_store_bucket,
+            region=settings.artifact_store_region,
+            access_key=access_key,
+            secret_key=secret_key,
+            addressing_style=settings.artifact_store_addressing_style,
+            verify_tls=settings.artifact_store_verify_tls,
+            max_stream_bytes=settings.artifact_max_bytes,
+        )
     )
 
 
@@ -674,6 +680,75 @@ async def maintain(settings: Settings) -> None:
         await store.close()
 
 
+async def maintain_artifact_removal(settings: Settings) -> None:
+    """Remove quota-counted objects without authority to release quota."""
+
+    if not settings.scientific_artifacts_enabled:
+        raise RuntimeError("artifact maintenance requires scientific artifacts")
+    pool = await PostgresStore._connect_pool(
+        settings.database_url,
+        min_size=1,
+        max_size=2,
+        application_name="fs2-serve-artifact-remover",
+    )
+    object_store = _artifact_object_store(settings)
+    try:
+        service = ScientificArtifactService(
+            repository=PostgresArtifactRepository(pool),
+            object_store=object_store,
+            allowed_media_types=settings.artifact_media_types_set(),
+            max_artifact_bytes=settings.artifact_max_bytes,
+            tenant_quota_bytes=settings.artifact_tenant_quota_bytes,
+            tenant_quota_objects=settings.artifact_tenant_quota_objects,
+            upload_reservation_ttl=timedelta(seconds=settings.artifact_upload_reservation_ttl_seconds),
+            max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
+            default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
+            retention=timedelta(seconds=settings.artifact_retention_seconds),
+            require_tls_handles=settings.artifact_store_verify_tls,
+        )
+        await service.remove_expired_quota_objects(limit=50)
+    finally:
+        await object_store.close()
+        await pool.close()
+
+
+async def maintain_artifact_verification(settings: Settings) -> None:
+    """Independently re-fetch provider absence and release the retained quota."""
+
+    if not settings.scientific_artifacts_enabled:
+        raise RuntimeError("artifact verification requires scientific artifacts")
+    pool = await PostgresStore._connect_pool(
+        settings.database_url,
+        min_size=1,
+        max_size=2,
+        application_name="fs2-serve-artifact-verifier",
+    )
+    object_store = _artifact_object_store(settings)
+    try:
+        service = ScientificArtifactService(
+            repository=PostgresArtifactRepository(pool),
+            object_store=object_store,
+            allowed_media_types=settings.artifact_media_types_set(),
+            max_artifact_bytes=settings.artifact_max_bytes,
+            tenant_quota_bytes=settings.artifact_tenant_quota_bytes,
+            tenant_quota_objects=settings.artifact_tenant_quota_objects,
+            upload_reservation_ttl=timedelta(seconds=settings.artifact_upload_reservation_ttl_seconds),
+            max_inline_content_bytes=settings.artifact_inline_content_max_bytes,
+            default_handle_ttl=timedelta(seconds=settings.artifact_handle_ttl_seconds),
+            retention=timedelta(seconds=settings.artifact_retention_seconds),
+            require_tls_handles=settings.artifact_store_verify_tls,
+        )
+        await service.verify_expired_quota_absence(limit=50)
+    finally:
+        await object_store.close()
+        await pool.close()
+
+
+# Compatibility entrypoint: the former combined name is now removal-only and
+# therefore cannot release quota even if an older scheduler invokes it.
+maintain_artifacts = maintain_artifact_removal
+
+
 async def migrate(settings: Settings) -> None:
     await PostgresStore.migrate_database(
         settings.database_url,
@@ -682,6 +757,8 @@ async def migrate(settings: Settings) -> None:
         settings.runtime_database_role,
         settings.maintenance_database_role,
         settings.activation_database_role,
+        settings.artifact_remover_database_role,
+        settings.artifact_verifier_database_role,
     )
 
 
@@ -762,6 +839,9 @@ def main() -> None:
         choices=(
             "serve",
             "maintenance",
+            "artifact-maintenance",
+            "artifact-removal",
+            "artifact-verification",
             "migrate",
             "wait-schema",
             "bootstrap-access",
@@ -789,6 +869,9 @@ def main() -> None:
         action = {
             "serve": serve,
             "maintenance": maintain,
+            "artifact-maintenance": maintain_artifact_removal,
+            "artifact-removal": maintain_artifact_removal,
+            "artifact-verification": maintain_artifact_verification,
             "migrate": migrate,
             "wait-schema": wait_schema,
             "bootstrap-access": bootstrap_access,

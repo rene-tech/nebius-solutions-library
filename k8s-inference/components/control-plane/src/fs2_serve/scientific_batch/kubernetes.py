@@ -1532,3 +1532,24 @@ class HttpScientificBatchCluster:
         if ref.uid is None or metadata.get("uid") != ref.uid:
             raise BatchRepositoryConflictError("workload UID changed while deletion was pending")
         return False
+
+    async def resolve_owned(self, ref: WorkloadRef, *, attempt_id: UUID) -> WorkloadRef | None:
+        """Resolve a deterministic name to exact ownership, or prove absence."""
+
+        _, item = self._paths(ref)
+        current = await self._request("GET", item)
+        if current.status_code == 404:
+            return None
+        value = cast(dict[str, Any], current.json())
+        self._owned(value, ref, attempt_id)
+        metadata = _metadata(value)
+        uid = metadata.get("uid")
+        if not isinstance(uid, str) or not uid:
+            raise ScientificKubernetesError("Kubernetes workload UID is absent during cleanup resolution")
+        return WorkloadRef(
+            namespace=ref.namespace,
+            name=ref.name,
+            kind=ref.kind,
+            uid=uid,
+            route_namespace=ref.route_namespace,
+        )

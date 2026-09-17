@@ -169,15 +169,17 @@ units as the frozen `StageSchedulingDecision`, so a gang's immutable attempt
 evidence never depends on which side multiplied by `gang_size`. The aggregate
 is verified against Kueue but stays derivable rather than stored twice.
 
-Routes are filtered by service class, model, and tenant. A matching exact tenant
-route outranks a wildcard-tenant route; the explicitly unrestricted service-class
-default is used only when no selected route remains. Exact and wildcard routes
-may coexist, but two routes at the same rank are rejected. A namespace-bound
-model that would fall through outside its licensed-asset namespace, any selector
-mismatch, or an execution-map namespace different from the selected LocalQueue
-namespace fails before durable batch admission. The execution map contributes
-only the model's operator-owned workload namespace; it cannot supply or override
-the LocalQueue, ClusterQueue, priority, pool, flavor, or resource fields.
+Routes are filtered by service class, model, and tenant. Scientific admission
+accepts only a LocalQueue route whose `tenant_ids` contains exactly the
+requesting tenant; wildcard, cross-tenant, and unrestricted service-class
+fallbacks are refused. CPU stages resolve the same tenant singleton on the
+frozen CPU class namespace and ClusterQueue. Two routes at the same rank are
+rejected. A namespace-bound model that would fall through outside its licensed-
+asset namespace, any selector mismatch, or an execution-map namespace different
+from the selected LocalQueue namespace fails before durable batch admission.
+The execution map contributes only the model's operator-owned workload
+namespace; it cannot supply or override the LocalQueue, ClusterQueue, priority,
+pool, flavor, or resource fields.
 
 ## Catalog profile adapter boundary
 

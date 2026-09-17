@@ -284,6 +284,8 @@ resource "helm_release" "control_plane" {
     kubernetes_secret_v1.bootstrap_access,
     kubernetes_secret_v1.scientific_access,
     kubernetes_secret_v1.scientific_artifact_store,
+    kubernetes_secret_v1.scientific_artifact_remover_store,
+    kubernetes_secret_v1.scientific_artifact_verifier_store,
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache,
     kubernetes_persistent_volume_claim_v1.scientific_runtime_cache_additional,
     kubernetes_job_v1.scientific_runtime_cache_bootstrap,

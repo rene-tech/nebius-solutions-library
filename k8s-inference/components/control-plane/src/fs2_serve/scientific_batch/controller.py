@@ -996,6 +996,15 @@ class ScientificBatchController:
             return attempt, ()
         events: list[BatchEventDraft] = []
         if attempt.workload.uid is None:
+            resolved = await self.cluster.resolve_owned(
+                attempt.workload,
+                attempt_id=attempt.attempt_id,
+            )
+            if resolved is not None:
+                # Persist the provider identity before any delete. A crash
+                # after apply but before the original UID write can therefore
+                # never be mistaken for proof that no GPU workload existed.
+                return replace(attempt, workload=resolved), ()
             if attempt.last_phase is not LifecyclePhase.TEARDOWN:
                 events.append(self._lifecycle(record, attempt, LifecyclePhase.TEARDOWN))
             return replace(attempt, last_phase=LifecyclePhase.TEARDOWN, resource_released=True), tuple(events)

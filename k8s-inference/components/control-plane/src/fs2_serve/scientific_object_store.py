@@ -30,6 +30,8 @@ from .scientific_artifacts import (
     ArtifactCompression,
     ArtifactNotFoundError,
     ArtifactPolicyError,
+    ArtifactRemovalEvidence,
+    ArtifactRemovalEvidenceKind,
     ArtifactServiceError,
     ArtifactVerificationError,
     EphemeralHandle,
@@ -40,6 +42,7 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     from collections.abc import AsyncIterator, Iterator
 
 STREAM_CHUNK_BYTES = 8 * 1024 * 1024
+MAX_REMOVAL_VERSIONS = 10000
 _CONTENT_ENCODING = {"gzip": ArtifactCompression.GZIP, "zstd": ArtifactCompression.ZSTD}
 _MISSING_CODES = frozenset({"404", "NoSuchKey", "NoSuchBucket", "NotFound"})
 
@@ -285,20 +288,107 @@ class S3ArtifactObjectStore:
             compression=compression,
         )
 
-    def _delete(self, storage_key: str) -> None:
-        self._client.delete_object(Bucket=self._config.bucket, Key=storage_key)
+    @staticmethod
+    def _request_id(response: dict[str, Any]) -> str:
+        request_id = str((response.get("ResponseMetadata") or {}).get("RequestId") or "")
+        if not request_id:
+            raise ArtifactStorageUnavailableError("provider removal response omitted its request identity")
+        return request_id
 
-    async def delete(self, storage_key: str) -> None:
-        """Idempotently remove one retired object; absence is success."""
+    def _exact_versions(self, storage_key: str) -> tuple[list[tuple[str | None, bool]], str]:
+        versions: list[tuple[str | None, bool]] = []
+        request_id = ""
+        paginator = self._client.get_paginator("list_object_versions")
+        for page in paginator.paginate(Bucket=self._config.bucket, Prefix=storage_key):
+            request_id = self._request_id(page)
+            for entry in (*page.get("Versions", ()), *page.get("DeleteMarkers", ())):
+                if entry.get("Key") != storage_key:
+                    continue
+                version_id = str(entry.get("VersionId") or "") or None
+                versions.append((version_id, entry in page.get("DeleteMarkers", ())))
+                if len(versions) > MAX_REMOVAL_VERSIONS:
+                    raise ArtifactStorageUnavailableError(
+                        "stored object has too many provider versions to remove safely"
+                    )
+        return versions, request_id
 
+    def _head_absence_request_id(self, storage_key: str) -> str:
         try:
-            await asyncio.to_thread(self._delete, storage_key)
+            self._client.head_object(Bucket=self._config.bucket, Key=storage_key)
         except ClientError as error:
             if _is_missing(error):
-                return
+                return self._request_id(error.response or {})
+            raise
+        raise ArtifactStorageUnavailableError("provider did not confirm stored-object absence")
+
+    def _delete_all_versions(self, storage_key: str) -> tuple[int, str]:
+        versions, request_id = self._exact_versions(storage_key)
+        if not versions:
+            try:
+                request_id = self._head_absence_request_id(storage_key)
+                return 0, request_id
+            except ArtifactStorageUnavailableError:
+                versions = [(None, False)]
+        removed = 0
+        for version_id, _delete_marker in versions:
+            params: dict[str, Any] = {"Bucket": self._config.bucket, "Key": storage_key}
+            if version_id not in {None, "null"}:
+                params["VersionId"] = version_id
+            response = self._client.delete_object(**params)
+            request_id = self._request_id(response)
+            removed += 1
+        remaining, list_request_id = self._exact_versions(storage_key)
+        if remaining:
+            raise ArtifactStorageUnavailableError("provider still reports stored-object versions after removal")
+        absence_request_id = self._head_absence_request_id(storage_key)
+        return removed, absence_request_id or list_request_id or request_id
+
+    async def delete(self, storage_key: str) -> ArtifactRemovalEvidence:
+        """Remove every exact-key version without authorizing quota release."""
+
+        try:
+            removed, request_id = await asyncio.to_thread(self._delete_all_versions, storage_key)
+        except ClientError as error:
             raise ArtifactStorageUnavailableError("stored object could not be deleted") from error
         except BotoCoreError as error:
             raise ArtifactStorageUnavailableError("stored object could not be deleted") from error
+        return ArtifactRemovalEvidence(
+            storage_key=storage_key,
+            kind=(
+                ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED
+                if removed
+                else ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
+            ),
+            provider_request_id=request_id,
+            removed_version_count=removed,
+            observed_at=datetime.now(UTC),
+        )
+
+    def _verify_absent(self, storage_key: str) -> str:
+        """Re-fetch the exact key through list and HEAD without deleting it."""
+
+        versions, list_request_id = self._exact_versions(storage_key)
+        if versions:
+            raise ArtifactStorageUnavailableError("provider still reports stored-object versions")
+        head_request_id = self._head_absence_request_id(storage_key)
+        return head_request_id or list_request_id
+
+    async def verify_absent(self, storage_key: str) -> ArtifactRemovalEvidence:
+        """Return independent provider-bound absence evidence for one exact key."""
+
+        try:
+            request_id = await asyncio.to_thread(self._verify_absent, storage_key)
+        except ClientError as error:
+            raise ArtifactStorageUnavailableError("stored-object absence could not be verified") from error
+        except BotoCoreError as error:
+            raise ArtifactStorageUnavailableError("stored-object absence could not be verified") from error
+        return ArtifactRemovalEvidence(
+            storage_key=storage_key,
+            kind=ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED,
+            provider_request_id=request_id,
+            removed_version_count=0,
+            observed_at=datetime.now(UTC),
+        )
 
     async def close(self) -> None:
         await asyncio.to_thread(self._client.close)

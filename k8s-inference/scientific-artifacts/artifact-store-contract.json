@@ -26,6 +26,8 @@
     "addressing_style": "path",
     "verify_tls": true,
     "writer_role": "storage.object-editor",
+    "remover_role": "storage.object-editor",
+    "verifier_role": "storage.object-viewer",
     "writer_paths": [
       "scientific/v1/*"
     ],
@@ -41,6 +43,7 @@
     "current_object_expiration": "application-owned"
   },
   "credential": {
+    "purpose": "artifact-write",
     "namespace": "fs2-system",
     "secret_name": "fs2-serve-artifact-store",
     "secret_key": "credentials.json",
@@ -68,6 +71,29 @@
     ],
     "rollout_identity": "credential_generation * 2^24 + first 24 bits of sha256(key_id|access_key_id|secret_reference_id|resource_version). The cloud key's resource_version restarts at zero when the key is replaced, so it cannot carry rotation on its own."
   },
+  "remover_credential": {
+    "purpose": "artifact-removal-only",
+    "namespace": "fs2-system",
+    "secret_name": "fs2-serve-artifact-remover-store",
+    "secret_key": "credentials.json",
+    "provider_role": "storage.object-editor",
+    "database_secret_name": "fs2-serve-database-artifact-remover",
+    "database_role": "fs2_serve_artifact_remover",
+    "may_release_quota": false,
+    "write_only": true
+  },
+  "verifier_credential": {
+    "purpose": "provider-absence-verification-only",
+    "namespace": "fs2-system",
+    "secret_name": "fs2-serve-artifact-verifier-store",
+    "secret_key": "credentials.json",
+    "provider_role": "storage.object-viewer",
+    "database_secret_name": "fs2-serve-database-artifact-verifier",
+    "database_role": "fs2_serve_artifact_verifier",
+    "may_delete_objects": false,
+    "may_release_quota_after_provider_refetch": true,
+    "write_only": true
+  },
   "chart": {
     "scientificArtifacts": [
       "addressingStyle",
@@ -80,30 +106,46 @@
       "mediaTypes",
       "region",
       "retentionSeconds",
+      "tenantQuotaBytes",
+      "tenantQuotaObjects",
+      "uploadReservationTtlSeconds",
       "verifyTls"
     ],
-  "scientificBatch": [
-    "apiTimeoutSeconds",
-    "enabled",
-    "executionMap",
-    "executionMapConfigMapName",
-    "executionMapKey",
-    "kubernetesApiUrl",
-    "leaseSeconds",
-    "namespace",
-    "pollSeconds",
-    "schedulingContractConfigMapName",
-    "schedulingContractKey",
-    "schedulingContractNamespace",
-    "schedulingContractSchema",
-    "schedulingContractSha256",
-    "tokenExpirationSeconds",
-    "workers",
-    "writesEnabled"
-  ],
+    "scientificBatch": [
+      "apiTimeoutSeconds",
+      "enabled",
+      "executionMap",
+      "executionMapConfigMapName",
+      "executionMapKey",
+      "kubernetesApiUrl",
+      "leaseSeconds",
+      "namespace",
+      "pollSeconds",
+      "schedulingContractConfigMapName",
+      "schedulingContractKey",
+      "schedulingContractNamespace",
+      "schedulingContractSchema",
+      "schedulingContractSha256",
+      "tokenExpirationSeconds",
+      "workers",
+      "writesEnabled"
+    ],
     "secrets.artifactStore": [
       "key",
       "name"
+    ],
+    "secrets.artifactRemoverStore": [
+      "key",
+      "name"
+    ],
+    "secrets.artifactVerifierStore": [
+      "key",
+      "name"
+    ],
+    "artifactMaintenance": [
+      "enabled",
+      "removalSchedule",
+      "verificationSchedule"
     ],
     "networkPolicy": [
       "artifactStoreCidrs"
@@ -120,6 +162,9 @@
     "FS2_ARTIFACT_MAX_BYTES",
     "FS2_ARTIFACT_MEDIA_TYPES",
     "FS2_ARTIFACT_RETENTION_SECONDS",
+    "FS2_ARTIFACT_TENANT_QUOTA_BYTES",
+    "FS2_ARTIFACT_TENANT_QUOTA_OBJECTS",
+    "FS2_ARTIFACT_UPLOAD_RESERVATION_TTL_SECONDS",
     "FS2_ARTIFACT_STORE_ADDRESSING_STYLE",
     "FS2_ARTIFACT_STORE_BUCKET",
     "FS2_ARTIFACT_STORE_CREDENTIALS_FILE",
@@ -131,6 +176,7 @@
   "gates": {
     "scientific_batch.enabled": "storage.scientific_artifacts.enabled",
     "scientific_batch.writes_enabled": "scientific_batch.enabled",
+    "quota_release": "delete-capable remover followed by independent read-only exact-key absence verification",
     "storage_independently_deployable": true
   }
 }

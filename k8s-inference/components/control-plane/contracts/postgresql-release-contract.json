@@ -1,6 +1,6 @@
 {
   "canonicalization": "utf8-json-sort-keys-no-whitespace",
-  "contract_payload_sha256": "519ebb4f0697d4b05bda92a19b68a4c5af4e7c5edfe0a6189c10e21e6ec45df2",
+  "contract_payload_sha256": "df94dc4d76eb783d618aaecc1b9767a3896dc4bb93353cb0d786fa41f7312185",
   "migration_set": {
     "algorithm": "sha256",
     "ordered_migrations": [
@@ -151,11 +151,11 @@
       },
       {
         "ordinal": 30,
-        "sha256": "b47b5e12ceb507ab808a74a16eaae2672422cb9a4c70608cfc26a111a1e6a0bf",
+        "sha256": "66d7c443254945b82b1c8f36c32953292b5e5c7f5f1c7c70ee05dbb88040356b",
         "version": "0030_scientific_quota_settlement.sql"
       }
     ],
-    "sha256": "03995d3e692306f95dc9bcf5a2c84ec6cdaeb360d69b90bd330bbfe7b85aea85"
+    "sha256": "714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22"
   },
   "namespace_role_ownership": {
     "credential_secrets": [
@@ -168,6 +168,28 @@
         "name": "fs2-serve-database-activation",
         "namespace": "fs2-system",
         "purpose": "activation",
+        "writer_owner": "postgresql-platform-release"
+      },
+      {
+        "consumer_owners": [
+          "fs2-serve-control-plane-artifact-remover"
+        ],
+        "database_group_role": "fs2_serve_artifact_remover",
+        "key": "url",
+        "name": "fs2-serve-database-artifact-remover",
+        "namespace": "fs2-system",
+        "purpose": "artifact-removal",
+        "writer_owner": "postgresql-platform-release"
+      },
+      {
+        "consumer_owners": [
+          "fs2-serve-control-plane-artifact-verifier"
+        ],
+        "database_group_role": "fs2_serve_artifact_verifier",
+        "key": "url",
+        "name": "fs2-serve-database-artifact-verifier",
+        "namespace": "fs2-system",
+        "purpose": "artifact-verification",
         "writer_owner": "postgresql-platform-release"
       },
       {
@@ -235,6 +257,18 @@
       {
         "creation_and_grant_owner": "fs2-serve-control-plane-migration",
         "login": false,
+        "name": "fs2_serve_artifact_remover",
+        "purpose": "artifact-removal"
+      },
+      {
+        "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        "login": false,
+        "name": "fs2_serve_artifact_verifier",
+        "purpose": "artifact-verification"
+      },
+      {
+        "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        "login": false,
         "name": "fs2_serve_maintenance",
         "purpose": "maintenance"
       },
@@ -265,13 +299,13 @@
       "service_account_name": "fs2-serve-control-plane-migration"
     }
   },
-  "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca",
+  "namespace_role_ownership_sha256": "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580",
   "required_release_receipt_inputs": {
     "first_migration_version": "0001_initial.sql",
     "last_migration_version": "0030_scientific_quota_settlement.sql",
     "migration_count": 30,
-    "migration_set_sha256": "03995d3e692306f95dc9bcf5a2c84ec6cdaeb360d69b90bd330bbfe7b85aea85",
-    "namespace_role_ownership_sha256": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"
+    "migration_set_sha256": "714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22",
+    "namespace_role_ownership_sha256": "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580"
   },
   "schema": "fs2-serve.nebius.ai/postgresql-release-contract/v1"
 }

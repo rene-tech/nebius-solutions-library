@@ -311,23 +311,29 @@ terminal-accounting trigger. An existing eight-migration database applies only
 and typed usage fields; an existing nine-migration database applies only
 `0010`. No upgrade path changes an applied hash.
 
-The migration command validates four distinct configurable group-role names
-and creates missing reporting, runtime, maintenance, and activation roles as `NOLOGIN`; it
-rejects a pre-existing group role with login capability.
+The migration command validates six distinct configurable group-role names and
+creates missing reporting, runtime, maintenance, artifact-remover,
+artifact-verifier, and activation roles as `NOLOGIN`; it rejects a pre-existing
+group role with login capability.
 ExternalSecret-backed database users must be separate `LOGIN` members of only
 their corresponding group role. On every migration pass, the DDL owner revokes
 the complete application table, sequence, view, and function surface from all
-four limited roles before
+six limited roles before
 reapplying the closed grants. Runtime receives intent and controller-health
 `SELECT` plus `EXECUTE` on the exact operation-fenced enqueue and model-lock
 functions. It has no direct intent mutation, activation-event write, activation
 sequence, target-state, model-fence, or heartbeat mutation privilege.
 Runtime can append ordinary audit events but has no usage-fact access and no
 `UPDATE`/`DELETE` on audit or usage facts; it cannot delete operations or PATs.
-The maintenance role can erase expired ciphertext and delete bounded aged
-operations, PATs, audit rows, and usage rows through the maintenance process.
-Its column-level reads exclude ciphertext, principals, token digests, results,
-and audit detail, and it has no fact `INSERT`/`UPDATE` or schema authority.
+The maintenance role has no table privileges. It can invoke only fixed-search-
+path routines that append scientific payload-expiry handoffs and purge/delete
+bounded non-scientific or already-terminal retention targets. It cannot read or
+mutate scientific batch/accounting rows, tokens, operations, settlements, or
+evidence directly. The runtime/controller consumes each scientific handoff,
+requests cancellation, proves workload release, and invokes the single atomic
+settlement routine. The artifact-remover role can only claim expired exact-key
+deletions; the artifact-verifier role can only claim independent absence checks
+and append the corresponding provider-bound release evidence.
 The activation role receives intent, target-state, and controller-health
 `SELECT`/`INSERT`/`UPDATE`, activation-event `INSERT` plus sequence `USAGE`, and
 only operation columns `id`, `model_id`, `model_revision`, `status`, `attempt`,
@@ -346,7 +352,7 @@ fs2-serve postgresql-release-contract
 ```
 
 The emitter verifies that the migration directory contains exactly the ordered
-`0001` through `0015` set, no missing/extra/renamed/symlinked file, and the
+`0001` through `0030` set, no missing/extra/renamed/symlinked file, and the
 contracted SHA-256 for every file. The migrator and `wait-schema` use the same
 validator. They also require the applied migration ledger to be an exact
 ordered prefix while an upgrade is running and the exact full set before a
@@ -354,13 +360,13 @@ runtime becomes ready; extra or reordered database rows fail closed.
 
 The required final release-receipt inputs are the ordered full-manifest
 migration-set SHA-256
-`6926de8f73092cd53e0397a8b6f44e2a9e9a64e73ad4b273e08cc96b2a5c25dd`,
-count `15`, first version `0001_initial.sql`, last version
-`0015_scientific_batch_controller.sql`,
+`714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22`,
+count `30`, first version `0001_initial.sql`, last version
+`0030_scientific_quota_settlement.sql`,
 and namespace/role ownership SHA-256
-`47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca`.
+`cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580`.
 The whole logical contract payload is SHA-256
-`3e9cb0cf59dd28c74f94594ef20aa5aeaa87170f79d7f498b820fdf4a8c784af`.
+`df94dc4d76eb783d618aaecc1b9767a3896dc4bb93353cb0d786fa41f7312185`.
 The migration Job emits the payload, ordered-set digest, count, first/last
 version, and namespace/role digest as annotations. A later additive migration
 updates this one manifest contract; Helm and PostgreSQL code must not
@@ -371,7 +377,9 @@ Cluster `fs2-control-db`, its `fs2-control-db-rw` Service, database `fs2serve`,
 and owner role `fs2serve` belong to `fs2-data`; consuming credential Secrets
 belong to the workload namespace. Runtime Secret `fs2-system/fs2-serve-database`,
 migration-owner Secret `fs2-system/fs2-serve-database-migrations`, maintenance
-Secret `fs2-system/fs2-serve-database-maintenance`, and activation Secret
+Secret `fs2-system/fs2-serve-database-maintenance`, artifact-remover Secret
+`fs2-system/fs2-serve-database-artifact-remover`, artifact-verifier Secret
+`fs2-system/fs2-serve-database-artifact-verifier`, and activation Secret
 `fs2-system/fs2-serve-database-activation` all use key `url` and have distinct
 principals and single named consumers. Reporting uses
 `fs2-observability/fs2-serve-database-reporting`. The PostgreSQL platform release
@@ -379,9 +387,10 @@ owns Cluster/database-owner/Secret writes. Only
 `fs2-system/fs2-serve-control-plane-migrate`, running as
 `fs2-serve-control-plane-migration`, owns schema DDL and creation/grants for
 NOLOGIN groups `fs2_serve_runtime`, `fs2_serve_maintenance`,
+`fs2_serve_artifact_remover`, `fs2_serve_artifact_verifier`,
 `fs2_serve_activation`, and `fs2_serve_reporting`. Application, maintenance,
-controller, and Grafana workloads only consume their named Secret and group
-membership.
+artifact-remover, artifact-verifier, controller, and Grafana workloads only
+consume their named Secret and group membership.
 
 The PAT and principal that admitted an operation have an implicit capability
 to read its status/result, cancel it, and explicitly acknowledge its retained
@@ -414,8 +423,11 @@ the response once and does not decrypt it for metrics.
 
 Results survive repeated GET/invoke replays until explicit acknowledgement or
 `FS2_PAYLOAD_TTL_SECONDS`; first delivery does not purge them. The fixed-cadence
-maintenance CronJob independently purges expired envelopes, reaps stale leases,
-terminalizes queued work whose deadline elapsed, and deletes bounded batches.
+maintenance CronJob invokes narrowly scoped retention routines. Scientific
+payload expiry is staged as an append-only handoff and does not directly
+terminalize or settle a batch; runtime/controller reconciliation performs
+UID-fenced cleanup and atomic settlement. Ordinary runtime loops retain
+responsibility for stale leases and queued deadlines.
 Deadline finalization atomically releases the unclaimed GPU reservation and
 the token concurrency slot while the encrypted request remains retained only
 until its existing payload TTL. Terminal operation/idempotency rows are deleted

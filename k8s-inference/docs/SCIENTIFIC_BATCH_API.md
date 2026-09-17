@@ -75,10 +75,14 @@ a body that disagrees is rejected and stores nothing.
 Reservations also consume operator-configured per-tenant retained-byte and
 retained-object quotas. Zero-byte uploads consume one object slot. A request
 that exceeds either limit returns HTTP 429 with `artifact_quota_exceeded`.
-Retrying the same upload identity remains safe. Unfinished reservations release
-when the attempt closes or their bounded upload-reservation TTL expires;
-finalized artifacts retain capacity through their artifact-retention deadline,
-then release even when a standalone input never produces a run-result purge.
+Retrying the same upload identity remains safe. An unfinished reservation
+becomes removal-eligible at its bounded upload-reservation TTL; a finalized
+artifact becomes eligible at its artifact-retention deadline. Attempt close,
+elapsed time, logical purge, and the delete request itself do not release
+capacity. Bytes and the object slot remain charged until a separately
+credentialed, read-only verifier re-fetches exact-key provider absence after the
+delete-capable remover has run. Standalone inputs use the same durable path and
+do not depend on a run-result purge.
 
 ```bash
 SHA=$(sha256sum target.fasta | cut -d' ' -f1)

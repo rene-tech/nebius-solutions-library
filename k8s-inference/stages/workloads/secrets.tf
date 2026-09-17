@@ -9,6 +9,12 @@ locals {
     maintenance = {
       username = "fs2_serve_maintenance_login"
     }
+    artifact_remover = {
+      username = "fs2_serve_artifact_remover_login"
+    }
+    artifact_verifier = {
+      username = "fs2_serve_artifact_verifier_login"
+    }
     activation = {
       username = "fs2_serve_activation_login"
     }
@@ -38,6 +44,16 @@ locals {
       namespace   = "fs2-system"
       secret_name = "fs2-serve-database-maintenance"
       account     = "maintenance"
+    }
+    artifact_remover = {
+      namespace   = "fs2-system"
+      secret_name = "fs2-serve-database-artifact-remover"
+      account     = "artifact_remover"
+    }
+    artifact_verifier = {
+      namespace   = "fs2-system"
+      secret_name = "fs2-serve-database-artifact-verifier"
+      account     = "artifact_verifier"
     }
     activation = {
       namespace   = "fs2-system"

@@ -25,6 +25,7 @@
     "publicGateway",
     "publicLoadBalancer",
     "publicTls",
+    "artifactMaintenance",
     "scientificArtifacts"
   ],
   "properties": {
@@ -912,6 +913,8 @@
       "required": [
         "runtime",
         "maintenance",
+        "artifact-remover",
+        "artifact-verifier",
         "migration",
         "bootstrap",
         "controller",
@@ -922,6 +925,12 @@
           "$ref": "#/$defs/serviceAccount"
         },
         "maintenance": {
+          "$ref": "#/$defs/serviceAccount"
+        },
+        "artifact-remover": {
+          "$ref": "#/$defs/serviceAccount"
+        },
+        "artifact-verifier": {
           "$ref": "#/$defs/serviceAccount"
         },
         "migration": {
@@ -1145,12 +1154,16 @@
         "database",
         "migrationsDatabase",
         "maintenanceDatabase",
+        "artifactRemovalDatabase",
+        "artifactVerificationDatabase",
         "payloadKeyring",
         "ledgerHmacKeyring",
         "tokenPepper",
         "routeAttestors",
         "admin",
-        "artifactStore"
+        "artifactStore",
+        "artifactRemoverStore",
+        "artifactVerifierStore"
       ],
       "properties": {
         "database": {
@@ -1160,6 +1173,12 @@
           "$ref": "#/$defs/databaseSecretKeyReference"
         },
         "maintenanceDatabase": {
+          "$ref": "#/$defs/databaseSecretKeyReference"
+        },
+        "artifactRemovalDatabase": {
+          "$ref": "#/$defs/databaseSecretKeyReference"
+        },
+        "artifactVerificationDatabase": {
           "$ref": "#/$defs/databaseSecretKeyReference"
         },
         "payloadKeyring": {
@@ -1196,6 +1215,12 @@
               "maxLength": 253
             }
           }
+        },
+        "artifactRemoverStore": {
+          "$ref": "#/$defs/secretKeyReference"
+        },
+        "artifactVerifierStore": {
+          "$ref": "#/$defs/secretKeyReference"
         }
       },
       "additionalProperties": false
@@ -1529,6 +1554,8 @@
         "reportingDatabaseRole",
         "runtimeDatabaseRole",
         "maintenanceDatabaseRole",
+        "artifactRemoverDatabaseRole",
+        "artifactVerifierDatabaseRole",
         "activationDatabaseRole",
         "releaseContract",
         "resources"
@@ -1557,6 +1584,18 @@
           "maxLength": 63,
           "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
         },
+        "artifactRemoverDatabaseRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "artifactVerifierDatabaseRole": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
         "activationDatabaseRole": {
           "type": "string",
           "minLength": 1,
@@ -1576,12 +1615,12 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e"},
-            "migrationSetSha256": {"const": "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2"},
-            "migrationCount": {"const": 29},
+            "contractPayloadSha256": {"const": "df94dc4d76eb783d618aaecc1b9767a3896dc4bb93353cb0d786fa41f7312185"},
+            "migrationSetSha256": {"const": "714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22"},
+            "migrationCount": {"const": 30},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0029_request_debug.sql"},
-            "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
+            "lastMigrationVersion": {"const": "0030_scientific_quota_settlement.sql"},
+            "namespaceRoleOwnershipSha256": {"const": "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580"}
           },
           "additionalProperties": false
         },
@@ -2427,6 +2466,16 @@
             }
           }
         }
+      }
+    },
+    "artifactMaintenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "removalSchedule", "verificationSchedule"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "removalSchedule": {"type": "string", "minLength": 9, "maxLength": 100},
+        "verificationSchedule": {"type": "string", "minLength": 9, "maxLength": 100}
       }
     },
     "scientificArtifacts": {

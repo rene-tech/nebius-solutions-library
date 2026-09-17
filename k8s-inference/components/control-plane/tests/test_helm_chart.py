@@ -1775,6 +1775,54 @@ def test_maintenance_is_independent_fixed_cadence_and_network_egress_is_allowlis
     assert any(53 in [port["port"] for port in rule.get("ports", [])] for rule in policy["spec"]["egress"])
 
 
+def test_artifact_removal_and_absence_verification_use_disjoint_identities() -> None:
+    documents = render(
+        "--set",
+        "scientificArtifacts.enabled=true",
+        "--set-string",
+        "scientificArtifacts.endpoint=https://storage.unit.test",
+        "--set-string",
+        "scientificArtifacts.bucket=scientific-unit",
+        "--set-string",
+        "scientificArtifacts.region=unit-1",
+        "--set",
+        "scientificArtifacts.egressCidrs[0]=192.0.2.10/32",
+        "--set",
+        "artifactMaintenance.enabled=true",
+    )
+    jobs = {
+        document["metadata"]["name"]: document
+        for document in documents
+        if document["kind"] == "CronJob" and "artifact-" in document["metadata"]["name"]
+    }
+    remover = jobs["fs2-serve-control-plane-artifact-remover"]["spec"]["jobTemplate"]["spec"]["template"][
+        "spec"
+    ]
+    verifier = jobs["fs2-serve-control-plane-artifact-verifier"]["spec"]["jobTemplate"]["spec"]["template"][
+        "spec"
+    ]
+    assert remover["serviceAccountName"].endswith("-artifact-remover")
+    assert verifier["serviceAccountName"].endswith("-artifact-verifier")
+    assert remover["containers"][0]["args"] == ["artifact-removal"]
+    assert verifier["containers"][0]["args"] == ["artifact-verification"]
+    assert remover["containers"][0]["env"][0]["valueFrom"]["secretKeyRef"]["name"] == (
+        "fs2-serve-database-artifact-remover"
+    )
+    assert verifier["containers"][0]["env"][0]["valueFrom"]["secretKeyRef"]["name"] == (
+        "fs2-serve-database-artifact-verifier"
+    )
+    assert remover["volumes"][1]["secret"]["secretName"] == "fs2-serve-artifact-remover-store"
+    assert verifier["volumes"][1]["secret"]["secretName"] == "fs2-serve-artifact-verifier-store"
+    assert remover["volumes"][1]["secret"]["secretName"] != verifier["volumes"][1]["secret"]["secretName"]
+
+    accounts = {document["metadata"]["name"] for document in documents if document["kind"] == "ServiceAccount"}
+    assert "fs2-serve-control-plane-artifact-remover" in accounts
+    assert "fs2-serve-control-plane-artifact-verifier" in accounts
+    policies = {document["metadata"]["name"] for document in documents if document["kind"] == "NetworkPolicy"}
+    assert "fs2-serve-control-plane-artifact-remover" in policies
+    assert "fs2-serve-control-plane-artifact-verifier" in policies
+
+
 def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -> None:
     documents = render()
     policies = {document["metadata"]["name"]: document for document in documents if document["kind"] == "NetworkPolicy"}
@@ -2000,6 +2048,8 @@ def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_r
     assert database["group_roles"] == {
         "runtime": "fs2_serve_runtime",
         "maintenance": "fs2_serve_maintenance",
+        "artifact_remover": "fs2_serve_artifact_remover",
+        "artifact_verifier": "fs2_serve_artifact_verifier",
         "activation": "fs2_serve_activation",
         "reporting": "fs2_serve_reporting",
     }
@@ -2009,6 +2059,8 @@ def test_value_suppressed_dependency_contract_binds_catalog_database_roles_and_r
         "key": "url",
     }
     assert database["secret_refs"]["maintenance"]["name"] == "fs2-serve-database-maintenance"
+    assert database["secret_refs"]["artifact_remover"]["name"] == "fs2-serve-database-artifact-remover"
+    assert database["secret_refs"]["artifact_verifier"]["name"] == "fs2-serve-database-artifact-verifier"
     assert database["secret_refs"]["migrations"]["name"] == "fs2-serve-database-migrations"
     assert database["secret_refs"]["reporting"] == {
         "namespace": "fs2-observability",
@@ -2811,6 +2863,8 @@ def test_chart_does_not_accept_an_activation_database_secret() -> None:
         ("activationDatabaseRole", "fs2_serve_maintenance"),
         ("runtimeDatabaseRole", "fs2_serve_reporting"),
         ("maintenanceDatabaseRole", "fs2_serve_runtime"),
+        ("artifactRemoverDatabaseRole", "fs2_serve_runtime"),
+        ("artifactVerifierDatabaseRole", "fs2_serve_artifact_remover"),
     ],
 )
 def test_chart_rejects_database_role_reuse(field: str, value: str) -> None:
@@ -2885,6 +2939,11 @@ def test_chart_rejects_postgresql_namespace_secret_role_or_receipt_drift(
             "distinct service accounts",
         ),
         (
+            "serviceAccounts.artifact-remover.name=shared-artifact",
+            "serviceAccounts.artifact-verifier.name=shared-artifact",
+            "distinct service accounts",
+        ),
+        (
             "secrets.ledgerHmacKeyring.name=shared-secret",
             "secrets.payloadKeyring.name=shared-secret",
             "distinct Secret objects",
@@ -2893,6 +2952,11 @@ def test_chart_rejects_postgresql_namespace_secret_role_or_receipt_drift(
             "secrets.maintenanceDatabase.name=shared-db-secret",
             "secrets.database.name=shared-db-secret",
             "database Secret names and keys",
+        ),
+        (
+            "secrets.artifactRemoverStore.name=shared-artifact-secret",
+            "secrets.artifactVerifierStore.name=shared-artifact-secret",
+            "distinct Secret objects",
         ),
     ],
 )
@@ -3028,6 +3092,8 @@ def test_grafana_reporting_role_is_aggregate_only_and_provisioned_by_migration_j
     assert environment["FS2_REPORTING_DATABASE_ROLE"]["value"] == "fs2_serve_reporting"
     assert environment["FS2_RUNTIME_DATABASE_ROLE"]["value"] == "fs2_serve_runtime"
     assert environment["FS2_MAINTENANCE_DATABASE_ROLE"]["value"] == "fs2_serve_maintenance"
+    assert environment["FS2_ARTIFACT_REMOVER_DATABASE_ROLE"]["value"] == "fs2_serve_artifact_remover"
+    assert environment["FS2_ARTIFACT_VERIFIER_DATABASE_ROLE"]["value"] == "fs2_serve_artifact_verifier"
 
     store_source = (CONTROL_ROOT / "src" / "fs2_serve" / "postgres.py").read_text()
     assert "CREATE ROLE" in store_source and "NOLOGIN" in store_source
@@ -3035,8 +3101,10 @@ def test_grafana_reporting_role_is_aggregate_only_and_provisioned_by_migration_j
     assert "GRANT SELECT ON fs2_reporting_model_usage,fs2_reporting_principal_usage" in store_source
     assert "GRANT SELECT ON fs2_operations" not in store_source
     assert "GRANT SELECT,INSERT ON fs2_operation_events,fs2_audit_events" in store_source
-    assert "DELETE ON fs2_audit_events TO {quoted_maintenance}" in store_source
-    assert "DELETE ON fs2_usage_facts TO {quoted_maintenance}" in store_source
+    assert "DELETE ON fs2_audit_events TO {quoted_maintenance}" not in store_source
+    assert "DELETE ON fs2_usage_facts TO {quoted_maintenance}" not in store_source
+    assert "fs2_maintenance_purge_expired_payloads(integer)" in store_source
+    assert "fs2_maintenance_delete_expired_rows(integer,integer,integer,integer,integer)" in store_source
     assert "GRANT SELECT (id,model_id,model_revision,status,attempt,lease_expires_at,deadline_at) " in store_source
     assert "GRANT SELECT (id,model_id,model_revision,status,attempt,max_attempts,worker_id," not in store_source
 

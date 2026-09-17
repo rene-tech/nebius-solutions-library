@@ -41,23 +41,23 @@
 {{- if and (eq .Values.catalog.delivery "pvc") (eq .Values.catalog.persistentVolumeClaimName .Values.catalog.evidencePersistentVolumeClaimName) }}
 {{- fail "catalog and qualification evidence require distinct read-only PVCs" }}
 {{- end }}
-{{- if or (ne .Values.secrets.database.name "fs2-serve-database") (ne .Values.secrets.database.key "url") (ne .Values.secrets.migrationsDatabase.name "fs2-serve-database-migrations") (ne .Values.secrets.migrationsDatabase.key "url") (ne .Values.secrets.maintenanceDatabase.name "fs2-serve-database-maintenance") (ne .Values.secrets.maintenanceDatabase.key "url") }}
+{{- if or (ne .Values.secrets.database.name "fs2-serve-database") (ne .Values.secrets.database.key "url") (ne .Values.secrets.migrationsDatabase.name "fs2-serve-database-migrations") (ne .Values.secrets.migrationsDatabase.key "url") (ne .Values.secrets.maintenanceDatabase.name "fs2-serve-database-maintenance") (ne .Values.secrets.maintenanceDatabase.key "url") (ne .Values.secrets.artifactRemovalDatabase.name "fs2-serve-database-artifact-remover") (ne .Values.secrets.artifactRemovalDatabase.key "url") (ne .Values.secrets.artifactVerificationDatabase.name "fs2-serve-database-artifact-verifier") (ne .Values.secrets.artifactVerificationDatabase.key "url") }}
 {{- fail "database Secret names and keys must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.secrets.database.caKey "ca.crt") (ne .Values.secrets.migrationsDatabase.caKey "ca.crt") (ne .Values.secrets.maintenanceDatabase.caKey "ca.crt") }}
+{{- if or (ne .Values.secrets.database.caKey "ca.crt") (ne .Values.secrets.migrationsDatabase.caKey "ca.crt") (ne .Values.secrets.maintenanceDatabase.caKey "ca.crt") (ne .Values.secrets.artifactRemovalDatabase.caKey "ca.crt") (ne .Values.secrets.artifactVerificationDatabase.caKey "ca.crt") }}
 {{- fail "database Secret CA keys must match the canonical PostgreSQL release contract" }}
 {{- end }}
 {{- if and (eq .Values.catalog.delivery "image") (ne .Values.catalog.imagePath "/opt/fs2/catalog") }}
 {{- fail "image-delivered catalog path must be /opt/fs2/catalog" }}
 {{- end }}
-{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.activationDatabaseRole }}
+{{- $databaseRoles := list .Values.migration.runtimeDatabaseRole .Values.migration.reportingDatabaseRole .Values.migration.maintenanceDatabaseRole .Values.migration.artifactRemoverDatabaseRole .Values.migration.artifactVerifierDatabaseRole .Values.migration.activationDatabaseRole }}
 {{- if ne (len $databaseRoles) (len (uniq $databaseRoles)) }}
-{{- fail "migration runtime, reporting, maintenance, and activation database roles must differ" }}
+{{- fail "migration runtime, reporting, maintenance, artifact-remover, artifact-verifier, and activation database roles must differ" }}
 {{- end }}
-{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
+{{- if or (ne .Values.migration.runtimeDatabaseRole "fs2_serve_runtime") (ne .Values.migration.reportingDatabaseRole "fs2_serve_reporting") (ne .Values.migration.maintenanceDatabaseRole "fs2_serve_maintenance") (ne .Values.migration.artifactRemoverDatabaseRole "fs2_serve_artifact_remover") (ne .Values.migration.artifactVerifierDatabaseRole "fs2_serve_artifact_verifier") (ne .Values.migration.activationDatabaseRole "fs2_serve_activation") }}
 {{- fail "database group roles must match the canonical PostgreSQL release contract" }}
 {{- end }}
-{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "bb2a18a8132b0e65356b1c4960b7893ff601240b4ccd899e5d53e00bf1aff11e") (ne .Values.migration.releaseContract.migrationSetSha256 "9614eae993e7003ab3e4dd854bd4c5a7e7929e97256b6209899088c789af83d2") (ne (int .Values.migration.releaseContract.migrationCount) 29) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0029_request_debug.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca") }}
+{{- if or (ne .Values.migration.releaseContract.schema "fs2-serve.nebius.ai/postgresql-release-contract/v1") (ne .Values.migration.releaseContract.contractPayloadSha256 "df94dc4d76eb783d618aaecc1b9767a3896dc4bb93353cb0d786fa41f7312185") (ne .Values.migration.releaseContract.migrationSetSha256 "714d1456b60c8ccc74b0dca40d1f486bd116a85f586a258c386e5d9d5aae4c22") (ne (int .Values.migration.releaseContract.migrationCount) 30) (ne .Values.migration.releaseContract.firstMigrationVersion "0001_initial.sql") (ne .Values.migration.releaseContract.lastMigrationVersion "0030_scientific_quota_settlement.sql") (ne .Values.migration.releaseContract.namespaceRoleOwnershipSha256 "cb7c4b131acfc613c49fc0504dbd5ae9cfe3c3904aec55d1b5ff61ceb35d7580") }}
 {{- fail "migration release receipt inputs must match the canonical PostgreSQL contract" }}
 {{- end }}
 {{- if ne .Values.httpRoute.authorityMode .Values.config.publicAuthorityMode }}
@@ -81,7 +81,7 @@
 {{- fail "internal operator-proxy port must be from 1024 through 65535" }}
 {{- end }}
 {{- end }}
-{{- $secretNames := list .Values.secrets.database.name .Values.secrets.migrationsDatabase.name .Values.secrets.maintenanceDatabase.name .Values.secrets.payloadKeyring.name .Values.secrets.ledgerHmacKeyring.name .Values.secrets.tokenPepper.name .Values.secrets.routeAttestors.name .Values.secrets.admin.name .Values.federation.secretName }}
+{{- $secretNames := list .Values.secrets.database.name .Values.secrets.migrationsDatabase.name .Values.secrets.maintenanceDatabase.name .Values.secrets.artifactRemovalDatabase.name .Values.secrets.artifactVerificationDatabase.name .Values.secrets.artifactStore.name .Values.secrets.artifactRemoverStore.name .Values.secrets.artifactVerifierStore.name .Values.secrets.payloadKeyring.name .Values.secrets.ledgerHmacKeyring.name .Values.secrets.tokenPepper.name .Values.secrets.routeAttestors.name .Values.secrets.admin.name .Values.federation.secretName }}
 {{- if .Values.bootstrapAccess.enabled }}
 {{- $secretNames = append $secretNames .Values.bootstrapAccess.secretName }}
 {{- end }}
@@ -89,17 +89,19 @@
 {{- $secretNames = append $secretNames .Values.scientificAccess.secretName }}
 {{- end }}
 {{- if ne (len $secretNames) (len (uniq $secretNames)) }}
-{{- fail "runtime, migration, maintenance, cryptographic, admin, federation, bootstrap, and scientific credentials must use distinct Secret objects" }}
+{{- fail "runtime, migration, maintenance, artifact-removal, artifact-verification, cryptographic, admin, federation, bootstrap, and scientific credentials must use distinct Secret objects" }}
 {{- end }}
 {{- $runtimeServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "runtime") }}
 {{- $maintenanceServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "maintenance") }}
+{{- $artifactRemoverServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "artifact-remover") }}
+{{- $artifactVerifierServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "artifact-verifier") }}
 {{- $migrationServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "migration") }}
-{{- if or (eq $runtimeServiceAccount $maintenanceServiceAccount) (eq $runtimeServiceAccount $migrationServiceAccount) (eq $maintenanceServiceAccount $migrationServiceAccount) }}
-{{- fail "runtime, maintenance, and migration must use distinct service accounts" }}
+{{- if ne (len (list $runtimeServiceAccount $maintenanceServiceAccount $artifactRemoverServiceAccount $artifactVerifierServiceAccount $migrationServiceAccount)) (len (uniq (list $runtimeServiceAccount $maintenanceServiceAccount $artifactRemoverServiceAccount $artifactVerifierServiceAccount $migrationServiceAccount))) }}
+{{- fail "runtime, maintenance, artifact-remover, artifact-verifier, and migration must use distinct service accounts" }}
 {{- end }}
 {{- if or .Values.bootstrapAccess.enabled .Values.scientificAccess.enabled }}
 {{- $bootstrapServiceAccount := include "fs2-serve.serviceAccountName" (dict "root" . "component" "bootstrap") }}
-{{- if has $bootstrapServiceAccount (list $runtimeServiceAccount $maintenanceServiceAccount $migrationServiceAccount) }}
+{{- if has $bootstrapServiceAccount (list $runtimeServiceAccount $maintenanceServiceAccount $artifactRemoverServiceAccount $artifactVerifierServiceAccount $migrationServiceAccount) }}
 {{- fail "bootstrap access must use a distinct service account" }}
 {{- end }}
 {{- if not .Values.networkPolicy.enabled }}
@@ -131,6 +133,9 @@
 {{- end }}
 {{- if and .Values.scientificBatch.writesEnabled (not .Values.scientificBatch.enabled) }}
 {{- fail "scientificBatch.writesEnabled requires scientificBatch.enabled" }}
+{{- end }}
+{{- if and .Values.artifactMaintenance.enabled (not .Values.scientificArtifacts.enabled) }}
+{{- fail "artifactMaintenance requires scientificArtifacts.enabled" }}
 {{- end }}
 {{- if .Values.scientificBatch.enabled }}
 {{- if not .Values.scientificArtifacts.enabled }}

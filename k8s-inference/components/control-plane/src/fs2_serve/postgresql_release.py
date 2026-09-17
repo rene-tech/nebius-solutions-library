@@ -99,7 +99,7 @@ EXPECTED_MIGRATIONS: Final = (
     ("0029_request_debug.sql", "a02fe7eb59ea664c4cb4972158a59d52b5df22aa937eb83cd9a287939a90438a"),
     (
         "0030_scientific_quota_settlement.sql",
-        "b47b5e12ceb507ab808a74a16eaae2672422cb9a4c70608cfc26a111a1e6a0bf",
+        "66d7c443254945b82b1c8f36c32953292b5e5c7f5f1c7c70ee05dbb88040356b",
     ),
 )
 
@@ -129,6 +129,24 @@ NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
             "database_group_role": "fs2_serve_activation",
             "writer_owner": "postgresql-platform-release",
             "consumer_owners": ["fs2-model-activation-controller"],
+        },
+        {
+            "purpose": "artifact-removal",
+            "namespace": "fs2-system",
+            "name": "fs2-serve-database-artifact-remover",
+            "key": "url",
+            "database_group_role": "fs2_serve_artifact_remover",
+            "writer_owner": "postgresql-platform-release",
+            "consumer_owners": ["fs2-serve-control-plane-artifact-remover"],
+        },
+        {
+            "purpose": "artifact-verification",
+            "namespace": "fs2-system",
+            "name": "fs2-serve-database-artifact-verifier",
+            "key": "url",
+            "database_group_role": "fs2_serve_artifact_verifier",
+            "writer_owner": "postgresql-platform-release",
+            "consumer_owners": ["fs2-serve-control-plane-artifact-verifier"],
         },
         {
             "purpose": "maintenance",
@@ -172,6 +190,18 @@ NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {
         {
             "purpose": "activation",
             "name": "fs2_serve_activation",
+            "login": False,
+            "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        },
+        {
+            "purpose": "artifact-removal",
+            "name": "fs2_serve_artifact_remover",
+            "login": False,
+            "creation_and_grant_owner": "fs2-serve-control-plane-migration",
+        },
+        {
+            "purpose": "artifact-verification",
+            "name": "fs2_serve_artifact_verifier",
             "login": False,
             "creation_and_grant_owner": "fs2-serve-control-plane-migration",
         },

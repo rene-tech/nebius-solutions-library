@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -263,6 +263,264 @@ async def test_terminal_batch_atomically_releases_an_unexecuted_gpu_reservation(
             "SELECT count(*) FROM fs2_scientific_gpu_settlements WHERE operation_id=$1",
             operation_id,
         ) == 1
+        with pytest.raises(asyncpg.PostgresError, match="terminal scientific operation is immutable"):
+            await connection.execute(
+                "UPDATE fs2_operations SET status='queued',completed_at=NULL WHERE id=$1",
+                operation_id,
+            )
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "cause",
+    ["token_rotated", "token_revoked", "token_inactive", "payload_expired", "deadline_exceeded", "reaper"],
+)
+async def test_every_generic_terminal_cause_retains_reservation_and_requests_scientific_cleanup(
+    store: PostgresStore,
+    cause: str,
+) -> None:
+    principal = await principal_of(store, gpu_seconds_budget=120)
+    operation_id, batches = await admit_batch(
+        store,
+        principal,
+        idempotency_key=f"scientific-generic-terminal-{cause}",
+        reserved_gpu_seconds=120,
+    )
+    cluster = FakeScientificBatchCluster()
+    if cause == "reaper":
+        assert await controller_for(batches, cluster).reconcile_once() == operation_id
+        async with store.pool.acquire() as connection:
+            await connection.execute(
+                "UPDATE fs2_operations SET lease_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+                operation_id,
+            )
+        await store.reap_stale_operations()
+    elif cause == "token_rotated":
+        from fs2_serve.store import ConflictError
+
+        successor_id = uuid4()
+        with pytest.raises(ConflictError, match="scientific cleanup and settlement"):
+            await store.rotate_token(
+                principal.token_id,
+                token_id=successor_id,
+                prefix=f"fs2_pat_{successor_id.hex[:12]}",
+                pepper_key_id="pepper-v1",
+                digest="rotated-argon2-test-digest",
+                fingerprint=hashlib.sha256(successor_id.bytes).hexdigest(),
+                name=None,
+                expires_at=None,
+                actor="operator-ada",
+            )
+    elif cause == "token_revoked":
+        await store.revoke_token(principal.token_id, actor="operator-ada")
+    elif cause == "token_inactive":
+        async with store.pool.acquire() as connection:
+            await connection.execute(
+                "UPDATE fs2_tokens SET expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+                principal.token_id,
+            )
+        await store._expire_inactive_queued_batch()
+    elif cause == "payload_expired":
+        async with store.pool.acquire() as connection:
+            await connection.execute(
+                "UPDATE fs2_operations SET payload_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+                operation_id,
+            )
+        await store.purge_expired_payloads()
+    else:
+        async with store.pool.acquire() as connection:
+            await connection.execute(
+                "UPDATE fs2_operations SET deadline_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+                operation_id,
+            )
+        await store.expire_deadline_operations()
+
+    interrupted = await store.get_operation(operation_id, tenant_id=TENANT)
+    batch = await batches.get(operation_id, tenant_id=TENANT)
+    assert interrupted.status in {OperationStatus.QUEUED, OperationStatus.RUNNING}
+    assert interrupted.reserved_gpu_seconds == 120
+    assert batch.cancel_requested is True
+    assert not batch.status.terminal
+    async with store.pool.acquire() as connection:
+        settlement = await connection.fetchrow(
+            "SELECT * FROM fs2_scientific_gpu_settlements WHERE operation_id=$1",
+            operation_id,
+        )
+    assert settlement is None
+
+    assert await controller_for(batches, cluster).reconcile_once() == operation_id
+    assert (await store.get_operation(operation_id, tenant_id=TENANT)).status is OperationStatus.CANCELLED
+    async with store.pool.acquire() as connection:
+        settlement = await connection.fetchrow(
+            "SELECT * FROM fs2_scientific_gpu_settlements WHERE operation_id=$1",
+            operation_id,
+        )
+    assert settlement is not None
+    assert settlement["reserved_gpu_seconds"] == 120
+    assert settlement["charged_gpu_seconds"] + settlement["released_gpu_seconds"] == 120
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_database_rejects_direct_scientific_terminalization_without_settlement(
+    store: PostgresStore,
+) -> None:
+    principal = await principal_of(store, gpu_seconds_budget=120)
+    operation_id, _batches = await admit_batch(
+        store,
+        principal,
+        idempotency_key="scientific-direct-terminal-guard",
+        reserved_gpu_seconds=120,
+    )
+    with pytest.raises(asyncpg.PostgresError, match="only in settlement routine"):
+        async with store.pool.acquire() as connection:
+            await connection.execute(
+                """
+                UPDATE fs2_operations
+                SET status='cancelled',completed_at=clock_timestamp(),reserved_gpu_seconds=0
+                WHERE id=$1
+                """,
+                operation_id,
+            )
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_maintenance_role_can_only_stage_scientific_interruption(
+    store: PostgresStore,
+) -> None:
+    principal = await principal_of(store, gpu_seconds_budget=120)
+    operation_id, batches = await admit_batch(
+        store,
+        principal,
+        idempotency_key="scientific-restricted-maintenance",
+        reserved_gpu_seconds=120,
+    )
+    async with store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_operations SET payload_expires_at=clock_timestamp()-interval '1 second' WHERE id=$1",
+            operation_id,
+        )
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_maintenance")
+            staged = await connection.fetch("SELECT * FROM fs2_maintenance_stage_payload_expiry(100)")
+            assert staged == []
+            assert await connection.fetchval("SELECT fs2_maintenance_purge_expired_payloads(100)") == 0
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_maintenance")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.fetchval(
+                    "SELECT protocol FROM fs2_operations WHERE id=$1",
+                    operation_id,
+                )
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_maintenance")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.fetchval(
+                    "SELECT status FROM fs2_scientific_batches WHERE operation_id=$1",
+                    operation_id,
+                )
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_maintenance")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.execute(
+                    "SELECT fs2_scientific_settle_terminal_operation($1)",
+                    operation_id,
+                )
+        for statement in (
+            "UPDATE fs2_tokens SET gpu_seconds_reserved=0 WHERE id=$1",
+            "DELETE FROM fs2_tokens WHERE id=$1",
+            "UPDATE fs2_operations SET reserved_gpu_seconds=0 WHERE id=$1",
+            "DELETE FROM fs2_operations WHERE id=$1",
+        ):
+            async with connection.transaction():
+                await connection.execute("SET LOCAL ROLE fs2_serve_maintenance")
+                with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                    target_id = principal.token_id if "tokens" in statement else operation_id
+                    await connection.execute(statement, target_id)
+
+    async with store.pool.acquire() as connection:
+        assert await connection.fetchval(
+            "SELECT count(*) FROM fs2_scientific_interruption_requests WHERE operation_id=$1",
+            operation_id,
+        ) == 1
+    claim = await batches.claim_next(
+        controller_id="controller-a",
+        lease_seconds=30,
+        now=datetime.now(UTC),
+    )
+    assert claim is not None
+    try:
+        staged_batch = await batches.load(claim)
+        assert staged_batch.cancel_requested is True
+    finally:
+        await batches.release(claim)
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_runtime_cannot_forge_scientific_settlement_or_artifact_release(
+    store: PostgresStore,
+) -> None:
+    principal = await principal_of(store, gpu_seconds_budget=120)
+    operation_id, _batches = await admit_batch(
+        store,
+        principal,
+        idempotency_key="scientific-restricted-runtime-accounting",
+        reserved_gpu_seconds=120,
+    )
+    async with store.pool.acquire() as connection:
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_runtime")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.execute(
+                    """
+                    INSERT INTO fs2_scientific_gpu_settlements(
+                        operation_id,token_id,tenant_id,reserved_gpu_seconds,
+                        charged_gpu_seconds,released_gpu_seconds,evidence_complete,reason
+                    ) VALUES($1,$2,$3,120,0,120,true,'no_gpu_execution')
+                    """,
+                    operation_id,
+                    principal.token_id,
+                    TENANT,
+                )
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_runtime")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.execute(
+                    "INSERT INTO fs2_scientific_artifact_removal_evidence "
+                    "(upload_id,operation_id,attempt_id,tenant_id,storage_key,evidence_kind,"
+                    "provider_request_id,removed_version_count,observed_at) "
+                    "VALUES(gen_random_uuid(),$1,gen_random_uuid(),$2,'forbidden',"
+                    "'absence_confirmed','forged',0,clock_timestamp())",
+                    operation_id,
+                    TENANT,
+                )
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
+async def test_artifact_remover_and_verifier_roles_have_disjoint_routines(
+    store: PostgresStore,
+) -> None:
+    async with store.pool.acquire() as connection:
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_artifact_remover")
+            assert await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_removals(1,NULL,NULL)") == []
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications(1)")
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_artifact_verifier")
+            assert await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications(1)") == []
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.fetch(
+                    "SELECT * FROM fs2_scientific_claim_artifact_removals(1,NULL,NULL)"
+                )
+        async with connection.transaction():
+            await connection.execute("SET LOCAL ROLE fs2_serve_runtime")
+            with pytest.raises(asyncpg.InsufficientPrivilegeError):
+                await connection.fetch("SELECT * FROM fs2_scientific_claim_artifact_verifications(1)")
 
 
 def controller_for(

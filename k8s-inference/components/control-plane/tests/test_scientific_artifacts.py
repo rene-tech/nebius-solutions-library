@@ -43,7 +43,12 @@ from fs2_serve.scientific_artifacts import (
     ArtifactQuotaEventType,
     ArtifactQuotaExceededError,
     ArtifactQuotaReleaseReason,
+    ArtifactQuotaReservation,
     ArtifactQuotaReservationState,
+    ArtifactRemovalEvidence,
+    ArtifactRemovalEvidenceKind,
+    ArtifactRemovalTarget,
+    ArtifactServiceError,
     ArtifactVerificationError,
     AttemptStatus,
     BeginArtifactUpload,
@@ -182,9 +187,31 @@ class FakeObjectStore:
             compression=compression,
         )
 
-    async def delete(self, storage_key: str) -> None:
+    async def delete(self, storage_key: str) -> ArtifactRemovalEvidence:
         self.deleted.append(storage_key)
-        self.objects.pop(storage_key, None)
+        existed = self.objects.pop(storage_key, None) is not None
+        return ArtifactRemovalEvidence(
+            storage_key=storage_key,
+            kind=(
+                ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED
+                if existed
+                else ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
+            ),
+            provider_request_id=f"fake-removal-{len(self.deleted)}",
+            removed_version_count=1 if existed else 0,
+            observed_at=self._clock(),
+        )
+
+    async def verify_absent(self, storage_key: str) -> ArtifactRemovalEvidence:
+        if storage_key in self.objects:
+            raise ArtifactServiceError("provider still reports stored-object versions")
+        return ArtifactRemovalEvidence(
+            storage_key=storage_key,
+            kind=ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED,
+            provider_request_id=f"fake-absence-{len(self.deleted)}",
+            removed_version_count=0,
+            observed_at=self._clock(),
+        )
 
 
 def build_service(repository: Any, object_store: FakeObjectStore, **kwargs: Any) -> ScientificArtifactService:
@@ -790,7 +817,7 @@ async def test_zero_byte_uploads_consume_the_atomic_tenant_object_quota() -> Non
         await service.begin_upload(empty_upload())
 
 
-async def test_abandoned_upload_reservation_expires_without_deleting_its_provenance() -> None:
+async def test_abandoned_upload_remains_counted_until_provider_absence_evidence() -> None:
     current = [NOW]
     clock = lambda: current[0]
     repository = MemoryArtifactRepository(clock=clock)
@@ -830,12 +857,24 @@ async def test_abandoned_upload_reservation_expires_without_deleting_its_provena
         expected_size_bytes=8,
         media_type="chemical/x-pdb",
     )
+    with pytest.raises(ArtifactQuotaExceededError, match="quota"):
+        await service.begin_upload(successor)
+
+    removed = await service.remove_expired_quota_objects()
+    assert len(removed) == 1
+    reservation = await repository.quota_reservation(abandoned.upload_id, tenant_id=TENANT)
+    assert reservation.state is ArtifactQuotaReservationState.REMOVING
+    with pytest.raises(ArtifactQuotaExceededError, match="quota"):
+        await service.begin_upload(successor)
+    evidence = await service.verify_expired_quota_absence()
+    assert len(evidence) == 1
+    assert evidence[0].kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
     await service.begin_upload(successor)
 
     reservation = await repository.quota_reservation(abandoned.upload_id, tenant_id=TENANT)
     assert reservation.state is ArtifactQuotaReservationState.RELEASED
-    assert reservation.release_reason is ArtifactQuotaReleaseReason.EXPIRED
-    with pytest.raises(ArtifactConflictError, match="expired"):
+    assert reservation.release_reason is ArtifactQuotaReleaseReason.PROVIDER_REMOVED
+    with pytest.raises(ArtifactConflictError, match="provider removal"):
         await repository.get_upload(
             FinalizeArtifactUpload(
                 upload_id=abandoned.upload_id,
@@ -846,13 +885,14 @@ async def test_abandoned_upload_reservation_expires_without_deleting_its_provena
     events = await repository.list_quota_events(tenant_id=TENANT)
     assert [event.event_type for event in events] == [
         ArtifactQuotaEventType.RESERVED,
+        ArtifactQuotaEventType.REMOVAL_CLAIMED,
         ArtifactQuotaEventType.RELEASED,
         ArtifactQuotaEventType.RESERVED,
     ]
-    assert events[1].release_reason is ArtifactQuotaReleaseReason.EXPIRED
+    assert events[2].release_reason is ArtifactQuotaReleaseReason.PROVIDER_REMOVED
 
 
-async def test_closing_an_attempt_releases_only_unfinalized_reservations() -> None:
+async def test_closing_an_attempt_does_not_release_unverified_object_quota() -> None:
     repository = MemoryArtifactRepository()
     operation_id = uuid4()
     await repository.register_operation(operation_id, tenant_id=TENANT)
@@ -888,19 +928,19 @@ async def test_closing_an_attempt_releases_only_unfinalized_reservations() -> No
         )
     )
 
-    released = await repository.quota_reservation(unfinished.upload_id, tenant_id=TENANT)
+    unfinished_reservation = await repository.quota_reservation(unfinished.upload_id, tenant_id=TENANT)
     quota_events = await repository.list_quota_events(tenant_id=TENANT)
     retained = await repository.quota_reservation(
         quota_events[0].upload_id,
         tenant_id=TENANT,
     )
     assert finalized.artifact_id is not None
-    assert released.state is ArtifactQuotaReservationState.RELEASED
-    assert released.release_reason is ArtifactQuotaReleaseReason.ATTEMPT_CLOSED
+    assert unfinished_reservation.state is ArtifactQuotaReservationState.ACTIVE
+    assert unfinished_reservation.release_reason is None
     assert retained.state is ArtifactQuotaReservationState.ACTIVE
 
 
-async def test_finalized_standalone_object_releases_quota_at_retention_deadline() -> None:
+async def test_finalized_standalone_object_releases_only_after_verified_provider_removal() -> None:
     current = [NOW]
     clock = lambda: current[0]
     repository = MemoryArtifactRepository(clock=clock)
@@ -941,6 +981,18 @@ async def test_finalized_standalone_object_releases_quota_at_retention_deadline(
         await service.begin_upload(candidate)
 
     current[0] += timedelta(hours=2)
+    with pytest.raises(ArtifactQuotaExceededError, match="quota"):
+        await service.begin_upload(candidate)
+
+    removed = await service.remove_expired_quota_objects()
+    assert len(removed) == 1
+    assert removed[0].kind is ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED
+    assert finalized.storage_key in store.deleted
+    with pytest.raises(ArtifactQuotaExceededError, match="quota"):
+        await service.begin_upload(candidate)
+    evidence = await service.verify_expired_quota_absence()
+    assert len(evidence) == 1
+    assert evidence[0].kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
     await service.begin_upload(candidate)
 
     quota_events = await repository.list_quota_events(tenant_id=TENANT)
@@ -950,7 +1002,162 @@ async def test_finalized_standalone_object_releases_quota_at_retention_deadline(
     )
     assert finalized.artifact_id is not None
     assert finalized_reservation.state is ArtifactQuotaReservationState.RELEASED
-    assert finalized_reservation.release_reason is ArtifactQuotaReleaseReason.EXPIRED
+    assert finalized_reservation.release_reason is ArtifactQuotaReleaseReason.PROVIDER_REMOVED
+
+
+async def test_provider_removal_failure_keeps_expired_bytes_and_objects_counted() -> None:
+    current = [NOW]
+
+    class UnavailableRemovalStore(FakeObjectStore):
+        async def delete(self, storage_key: str) -> ArtifactRemovalEvidence:
+            raise ArtifactServiceError("provider removal unavailable")
+
+    repository = MemoryArtifactRepository(clock=lambda: current[0])
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    service = ScientificArtifactService(
+        repository=repository,
+        object_store=UnavailableRemovalStore(clock=lambda: current[0]),
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        max_artifact_bytes=8,
+        tenant_quota_bytes=8,
+        tenant_quota_objects=1,
+        upload_reservation_ttl=timedelta(hours=1),
+        clock=lambda: current[0],
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    request = BeginArtifactUpload(
+        upload_id=uuid4(),
+        attempt_id=attempt_id,
+        operation_id=operation_id,
+        tenant_id=TENANT,
+        direction=ArtifactDirection.OUTPUT,
+        expected_digest=digest(b"12345678"),
+        expected_size_bytes=8,
+        media_type="chemical/x-pdb",
+    )
+    await service.begin_upload(request)
+    current[0] += timedelta(hours=2)
+
+    assert await service.remove_expired_quota_objects() == []
+    reservation = await repository.quota_reservation(request.upload_id, tenant_id=TENANT)
+    assert reservation.state is ArtifactQuotaReservationState.REMOVING
+    with pytest.raises(ArtifactQuotaExceededError, match="quota"):
+        await service.begin_upload(
+            request.model_copy(update={"upload_id": uuid4(), "expected_digest": digest(b"abcdefgh")})
+        )
+
+
+async def test_poisoned_removal_target_does_not_block_later_targets_and_is_backed_off() -> None:
+    current = [NOW]
+
+    class SelectiveRemovalStore(FakeObjectStore):
+        failed_key: str | None = None
+
+        async def delete(self, storage_key: str) -> ArtifactRemovalEvidence:
+            if storage_key == self.failed_key:
+                raise ArtifactServiceError("provider removal unavailable")
+            return await super().delete(storage_key)
+
+    repository = MemoryArtifactRepository(clock=lambda: current[0])
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = SelectiveRemovalStore(clock=lambda: current[0])
+    service = ScientificArtifactService(
+        repository=repository,
+        object_store=store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        max_artifact_bytes=2,
+        tenant_quota_bytes=2,
+        tenant_quota_objects=2,
+        upload_reservation_ttl=timedelta(hours=1),
+        clock=lambda: current[0],
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    requests = [
+        BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(value),
+            expected_size_bytes=1,
+            media_type="chemical/x-pdb",
+        )
+        for value in (b"a", b"b")
+    ]
+    intents = [await service.begin_upload(request) for request in requests]
+    store.failed_key = intents[0].upload.storage_key
+    current[0] += timedelta(hours=2)
+
+    removed = await service.remove_expired_quota_objects(limit=2)
+
+    assert len(removed) == 1
+    assert removed[0].storage_key == intents[1].upload.storage_key
+    assert await service.remove_expired_quota_objects(limit=2) == []
+
+
+async def test_poisoned_verification_write_does_not_block_later_targets() -> None:
+    current = [NOW]
+
+    class SelectiveEvidenceRepository(MemoryArtifactRepository):
+        failed_once = False
+
+        async def record_quota_removal(
+            self,
+            target: ArtifactRemovalTarget,
+            evidence: ArtifactRemovalEvidence,
+        ) -> ArtifactQuotaReservation:
+            if not self.failed_once:
+                self.failed_once = True
+                raise ArtifactConflictError("evidence write unavailable")
+            return await super().record_quota_removal(target, evidence)
+
+    repository = SelectiveEvidenceRepository(clock=lambda: current[0])
+    operation_id = uuid4()
+    await repository.register_operation(operation_id, tenant_id=TENANT)
+    store = FakeObjectStore(clock=lambda: current[0])
+    service = ScientificArtifactService(
+        repository=repository,
+        object_store=store,
+        allowed_media_types=ALLOWED_MEDIA_TYPES,
+        max_artifact_bytes=2,
+        tenant_quota_bytes=2,
+        tenant_quota_objects=2,
+        upload_reservation_ttl=timedelta(hours=1),
+        clock=lambda: current[0],
+    )
+    attempt_id = await open_attempt(service, operation_id=operation_id)
+    requests = [
+        BeginArtifactUpload(
+            upload_id=uuid4(),
+            attempt_id=attempt_id,
+            operation_id=operation_id,
+            tenant_id=TENANT,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=digest(value),
+            expected_size_bytes=1,
+            media_type="chemical/x-pdb",
+        )
+        for value in (b"a", b"b")
+    ]
+    await service.begin_upload(requests[0])
+    await service.begin_upload(requests[1])
+    current[0] += timedelta(hours=2)
+    assert len(await service.remove_expired_quota_objects(limit=2)) == 2
+
+    verified = await service.verify_expired_quota_absence(limit=2)
+
+    assert len(verified) == 1
+    states = {
+        (await repository.quota_reservation(request.upload_id, tenant_id=TENANT)).state
+        for request in requests
+    }
+    assert states == {
+        ArtifactQuotaReservationState.REMOVING,
+        ArtifactQuotaReservationState.RELEASED,
+    }
 
 
 async def test_gated_artifacts_carry_a_receipt_and_project_academic_admission() -> None:
@@ -1392,6 +1599,10 @@ async def test_retention_deletes_objects_then_metadata_and_records_evidence() ->
         allowed_media_types=ALLOWED_MEDIA_TYPES,
         clock=lambda: NOW + timedelta(days=2),
     )
+    assert await expired.purge_expired() == []
+    assert len(await expired.remove_expired_quota_objects()) == 1
+    assert await expired.purge_expired() == []
+    assert len(await expired.verify_expired_quota_absence()) == 1
     purges = await expired.purge_expired()
     assert len(purges) == 1
     assert purges[0].artifact_count == 1
@@ -1407,7 +1618,8 @@ async def test_retention_deletes_objects_then_metadata_and_records_evidence() ->
 # --------------------------------------------------------------------------
 
 TRUNCATE = """
-TRUNCATE fs2_scientific_artifact_quota_events,fs2_scientific_artifact_quota_reservations,
+TRUNCATE fs2_scientific_artifact_quota_events,fs2_scientific_artifact_removal_evidence,
+    fs2_scientific_artifact_quota_reservations,
     fs2_scientific_retention_ledger,fs2_scientific_artifact_events,
     fs2_scientific_stage_commit_attempts,fs2_scientific_stage_commits,
     fs2_scientific_run_results,fs2_scientific_uploads,fs2_scientific_artifacts,

@@ -3,8 +3,10 @@
 Three separate files have to agree for the store to work at all: the
 infrastructure stage that creates the bucket and the key, the workloads stage
 that projects the credential and the chart values, and the control-plane chart
-that declares those values. A name that one side emits and another does not
-declare fails silently, so the seam is asserted here rather than trusted.
+that declares those values. The write, removal, and read-only verification
+identities are intentionally disjoint. A name that one side emits and another
+does not declare fails silently, so the seam is asserted here rather than
+trusted.
 
 `scientific-artifacts/artifact-store-contract.json` is that seam written down.
 """
@@ -23,6 +25,7 @@ INFRASTRUCTURE_OUTPUTS = DEPLOY_ROOT / "stages/infrastructure/outputs.tf"
 INFRASTRUCTURE_VARIABLES = DEPLOY_ROOT / "stages/infrastructure/variables.tf"
 WORKLOADS = DEPLOY_ROOT / "stages/workloads/scientific_artifacts.tf"
 WORKLOADS_VARIABLES = DEPLOY_ROOT / "stages/workloads/variables.tf"
+WORKLOADS_OUTPUTS = DEPLOY_ROOT / "stages/workloads/outputs.tf"
 CONTROL_PLANE = DEPLOY_ROOT / "stages/workloads/control_plane.tf"
 ROOT_VARIABLES = DEPLOY_ROOT / "variables.tf"
 ROOT_LOCALS = DEPLOY_ROOT / "locals.tf"
@@ -35,6 +38,7 @@ TERRAFORM_SOURCES = (
     INFRASTRUCTURE_OUTPUTS,
     WORKLOADS,
     WORKLOADS_VARIABLES,
+    WORKLOADS_OUTPUTS,
     CONTROL_PLANE,
     ROOT_VARIABLES,
     ROOT_LOCALS,
@@ -80,6 +84,7 @@ class ArtifactStoreContractTests(unittest.TestCase):
         cls.infrastructure_variables = INFRASTRUCTURE_VARIABLES.read_text(encoding="utf-8")
         cls.workloads = WORKLOADS.read_text(encoding="utf-8")
         cls.workloads_variables = WORKLOADS_VARIABLES.read_text(encoding="utf-8")
+        cls.workloads_outputs = WORKLOADS_OUTPUTS.read_text(encoding="utf-8")
         cls.control_plane = CONTROL_PLANE.read_text(encoding="utf-8")
         cls.root_variables = ROOT_VARIABLES.read_text(encoding="utf-8")
         cls.root_locals = ROOT_LOCALS.read_text(encoding="utf-8")
@@ -118,6 +123,16 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
             rf'scientific_artifacts_secret_key\s*=\s*"{re.escape(credential["secret_key"])}"',
         )
         self.assertIn(f'namespace = "{credential["namespace"]}"', self.workloads)
+        for contract_key, opening in (
+            ("remover_credential", "artifactRemoverStore = {"),
+            ("verifier_credential", "artifactVerifierStore = {"),
+        ):
+            with self.subTest(credential=contract_key):
+                expected = self.contract[contract_key]
+                identity = "remover" if contract_key == "remover_credential" else "verifier"
+                self.assertEqual(self.emitted(opening), {"key", "name"})
+                self.assertIn(f"name = local.scientific_artifact_{identity}_secret_name", self.workloads)
+                self.assertIn(expected["secret_name"], self.workloads)
 
     def test_the_egress_allowlist_and_rollout_annotation_reach_the_chart(self) -> None:
         self.assertIn("artifactStoreCidrs", self.workloads)
@@ -130,6 +145,8 @@ class ChartValueWiringTests(ArtifactStoreContractTests):
     def test_the_overrides_are_appended_to_the_control_plane_release(self) -> None:
         self.assertIn("yamlencode(local.scientific_chart_overrides)", self.control_plane)
         self.assertIn("kubernetes_secret_v1.scientific_artifact_store", self.control_plane)
+        self.assertIn("kubernetes_secret_v1.scientific_artifact_remover_store", self.control_plane)
+        self.assertIn("kubernetes_secret_v1.scientific_artifact_verifier_store", self.control_plane)
 
     def test_the_obsolete_artifact_service_wiring_is_not_revived(self) -> None:
         for forbidden in self.contract["chart"]["forbidden_values"]:
@@ -171,16 +188,19 @@ class SecretSafetyTests(ArtifactStoreContractTests):
         # The mode is a constant, not a knob: an INLINE key would land in state.
         self.assertNotIn('secret_delivery_mode = "INLINE"', self.infrastructure)
         self.assertNotIn("var.scientific_artifacts.secret_delivery_mode", self.infrastructure)
-        self.assertEqual(self.infrastructure.count("secret_delivery_mode"), 1)
+        self.assertEqual(self.infrastructure.count('secret_delivery_mode = "MYSTERY_BOX"'), 3)
 
     def test_only_identity_reference_and_revision_leave_the_infrastructure_stage(self) -> None:
-        body = block(
-            self.infrastructure_outputs,
-            'output "scientific_artifacts_object_storage_access" {',
-        )
-        self.assertIn("sensitive   = true", body)
-        emitted = assigned_names(block(body, "value = var.scientific_artifacts.enabled ? {"))
-        self.assertEqual(set(emitted), set(self.contract["credential"]["propagated_fields"]))
+        for output_name in (
+            "scientific_artifacts_object_storage_access",
+            "scientific_artifact_remover_object_storage_access",
+            "scientific_artifact_verifier_object_storage_access",
+        ):
+            with self.subTest(output=output_name):
+                body = block(self.infrastructure_outputs, f'output "{output_name}" {{')
+                self.assertIn("sensitive   = true", body)
+                emitted = assigned_names(block(body, "value = var.scientific_artifacts.enabled ? {"))
+                self.assertEqual(set(emitted), set(self.contract["credential"]["propagated_fields"]))
 
     def test_no_stage_variable_or_output_can_carry_the_object_store_secret(self) -> None:
         for forbidden in self.contract["credential"]["forbidden_fields"]:
@@ -196,19 +216,32 @@ class SecretSafetyTests(ArtifactStoreContractTests):
                     self.assertIsNone(pattern.search(source))
 
     def test_the_credential_is_written_write_only_and_never_persisted(self) -> None:
-        secret = block(self.workloads, 'resource "kubernetes_secret_v1" "scientific_artifact_store" {')
-        self.assertIn("data_wo = {", secret)
-        self.assertIn("data_wo_revision = local.scientific_artifacts_revision", secret)
-        # A plain `data` map would write the secret straight into workloads state.
-        self.assertNotIn("\n  data = {", secret)
-        self.assertIn(
-            'ephemeral "nebius_mysterybox_v1_secret_payload_entry" "scientific_artifacts"',
-            self.workloads,
-        )
-        self.assertIn(
-            "ephemeral.nebius_mysterybox_v1_secret_payload_entry.scientific_artifacts[0].data.string_value",
-            self.workloads,
-        )
+        for resource_name, revision, ephemeral_name in (
+            ("scientific_artifact_store", "scientific_artifacts_revision", "scientific_artifacts"),
+            (
+                "scientific_artifact_remover_store",
+                "scientific_artifact_remover_revision",
+                "scientific_artifact_remover",
+            ),
+            (
+                "scientific_artifact_verifier_store",
+                "scientific_artifact_verifier_revision",
+                "scientific_artifact_verifier",
+            ),
+        ):
+            with self.subTest(resource=resource_name):
+                secret = block(self.workloads, f'resource "kubernetes_secret_v1" "{resource_name}" {{')
+                self.assertIn("data_wo = {", secret)
+                self.assertIn(f"data_wo_revision = local.{revision}", secret)
+                self.assertNotIn("\n  data = {", secret)
+                self.assertIn(
+                    f'ephemeral "nebius_mysterybox_v1_secret_payload_entry" "{ephemeral_name}"',
+                    self.workloads,
+                )
+                self.assertIn(
+                    f"ephemeral.nebius_mysterybox_v1_secret_payload_entry.{ephemeral_name}[0].data.string_value",
+                    self.workloads,
+                )
 
     def test_the_secret_document_matches_what_the_control_plane_reads(self) -> None:
         for field in self.contract["credential"]["document_fields"]:
@@ -246,6 +279,21 @@ class SecretSafetyTests(ArtifactStoreContractTests):
             self.stack,
         )
 
+    def test_the_access_bundle_preserves_all_three_provider_roles(self) -> None:
+        access_bundle = block(self.workloads_outputs, 'output "access_bundle" {')
+        self.assertIn(
+            "writer_role         = var.scientific_artifacts.storage_contract.writer.role",
+            access_bundle,
+        )
+        self.assertIn(
+            "remover_role        = var.scientific_artifacts.storage_contract.remover.role",
+            access_bundle,
+        )
+        self.assertIn(
+            "verifier_role       = var.scientific_artifacts.storage_contract.verifier.role",
+            access_bundle,
+        )
+
 
 class BucketProvisioningTests(ArtifactStoreContractTests):
     def test_the_bucket_is_versioned_regional_and_dedicated(self) -> None:
@@ -273,10 +321,20 @@ class BucketProvisioningTests(ArtifactStoreContractTests):
             f'scientific_artifacts_path_scope  = "{storage["writer_paths"][0]}"',
             self.infrastructure,
         )
+        self.assertIn(
+            f'scientific_artifacts_remover_role = "{storage["remover_role"]}"',
+            self.infrastructure,
+        )
+        self.assertIn(
+            f'scientific_artifacts_verifier_role = "{storage["verifier_role"]}"',
+            self.infrastructure,
+        )
         for resource in ("scientific_artifacts", "scientific_artifacts_disposable"):
             body = block(self.infrastructure, f'resource "nebius_storage_v1_bucket" "{resource}" {{')
-            self.assertIn("paths    = [local.scientific_artifacts_path_scope]", body)
+            self.assertEqual(body.count("paths    = [local.scientific_artifacts_path_scope]"), 3)
             self.assertIn("roles    = [local.scientific_artifacts_writer_role]", body)
+            self.assertIn("roles    = [local.scientific_artifacts_remover_role]", body)
+            self.assertIn("roles    = [local.scientific_artifacts_verifier_role]", body)
         # Project-wide roles would let the key read the model cache and registry.
         self.assertNotIn('role        = "editor"', self.infrastructure)
         self.assertNotIn('role        = "viewer"', self.infrastructure)

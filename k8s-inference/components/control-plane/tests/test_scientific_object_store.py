@@ -23,6 +23,7 @@ from fs2_serve.scientific_artifacts import (
     ArtifactCompression,
     ArtifactNotFoundError,
     ArtifactPolicyError,
+    ArtifactRemovalEvidenceKind,
     ArtifactVerificationError,
 )
 from fs2_serve.scientific_object_store import ObjectStoreConfig, S3ArtifactObjectStore
@@ -239,8 +240,41 @@ async def test_absent_and_repeated_deletes_are_reported_faithfully(object_store)
     key = key_for("sha256:" + "0" * 64)
     with pytest.raises(ArtifactNotFoundError):
         await object_store.inspect(key)
-    await object_store.delete(key)
-    await object_store.delete(key)
+    first = await object_store.delete(key)
+    second = await object_store.delete(key)
+    assert first.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
+    assert second.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
+    assert first.removed_version_count == second.removed_version_count == 0
+    independently_verified = await object_store.verify_absent(key)
+    assert independently_verified.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
+    assert independently_verified.removed_version_count == 0
+
+
+async def test_delete_evidence_requires_every_exact_key_version_to_be_absent(object_store) -> None:
+    await asyncio.to_thread(
+        object_store._client.put_bucket_versioning,
+        Bucket=BUCKET,
+        VersioningConfiguration={"Status": "Enabled"},
+    )
+    key = key_for("sha256:" + "3" * 64)
+    for payload in (b"first-version", b"second-version"):
+        await object_store.put_object(
+            storage_key=key,
+            payload=payload,
+            media_type="application/json",
+            compression=None,
+        )
+
+    evidence = await object_store.delete(key)
+    assert evidence.kind is ArtifactRemovalEvidenceKind.ALL_VERSIONS_REMOVED
+    assert evidence.removed_version_count >= 2
+    with pytest.raises(ArtifactNotFoundError):
+        await object_store.inspect(key)
+    remaining, _request_id = await asyncio.to_thread(object_store._exact_versions, key)
+    assert remaining == []
+    independently_verified = await object_store.verify_absent(key)
+    assert independently_verified.kind is ArtifactRemovalEvidenceKind.ABSENCE_CONFIRMED
+    assert independently_verified.removed_version_count == 0
 
 
 async def test_a_non_positive_lifetime_is_refused(object_store) -> None:
@@ -478,8 +512,9 @@ async def test_the_production_wiring_runs_the_whole_lifecycle_on_real_infrastruc
         assert fetched.status_code == 200
         assert hashlib.sha256(fetched.content).hexdigest() == published[1].digest.removeprefix("sha256:")
 
-        keys = await service._repository.purge_keys(operation_id, tenant_id=tenant)
-        assert len(keys) == 2
+        removal_targets = await service._repository.purge_keys(operation_id, tenant_id=tenant)
+        assert len(removal_targets) == 2
+        assert {target.storage_key for target in removal_targets} == {record.storage_key for record in published}
     finally:
         async with store.pool.acquire() as connection:
             await connection.execute(TRUNCATE)

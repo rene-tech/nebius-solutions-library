@@ -50,6 +50,16 @@ app.kubernetes.io/component: admin-console
 app.kubernetes.io/component: maintenance
 {{- end -}}
 
+{{- define "fs2-serve.artifactRemoverSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: artifact-remover
+{{- end -}}
+
+{{- define "fs2-serve.artifactVerifierSelectorLabels" -}}
+{{ include "fs2-serve.selectorLabels" . }}
+app.kubernetes.io/component: artifact-verifier
+{{- end -}}
+
 {{- define "fs2-serve.migrationSelectorLabels" -}}
 {{ include "fs2-serve.selectorLabels" . }}
 app.kubernetes.io/component: migration
@@ -111,6 +121,22 @@ app.kubernetes.io/component: model-controller
     secretKeyRef:
       name: {{ .Values.secrets.maintenanceDatabase.name }}
       key: {{ .Values.secrets.maintenanceDatabase.key }}
+{{- end -}}
+
+{{- define "fs2-serve.artifactRemovalDatabaseEnv" -}}
+- name: FS2_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.secrets.artifactRemovalDatabase.name }}
+      key: {{ .Values.secrets.artifactRemovalDatabase.key }}
+{{- end -}}
+
+{{- define "fs2-serve.artifactVerificationDatabaseEnv" -}}
+- name: FS2_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ .Values.secrets.artifactVerificationDatabase.name }}
+      key: {{ .Values.secrets.artifactVerificationDatabase.key }}
 {{- end -}}
 
 {{- define "fs2-serve.scientificArtifactsEnv" -}}
@@ -402,6 +428,10 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.migration.runtimeDatabaseRole | quote }}
 - name: FS2_MAINTENANCE_DATABASE_ROLE
   value: {{ .Values.migration.maintenanceDatabaseRole | quote }}
+- name: FS2_ARTIFACT_REMOVER_DATABASE_ROLE
+  value: {{ .Values.migration.artifactRemoverDatabaseRole | quote }}
+- name: FS2_ARTIFACT_VERIFIER_DATABASE_ROLE
+  value: {{ .Values.migration.artifactVerifierDatabaseRole | quote }}
 - name: FS2_ACTIVATION_DATABASE_ROLE
   value: {{ .Values.migration.activationDatabaseRole | quote }}
 {{- end -}}
@@ -415,6 +445,16 @@ app.kubernetes.io/component: model-controller
 {{- define "fs2-serve.maintenanceEnv" -}}
 {{ include "fs2-serve.maintenanceDatabaseEnv" . }}
 {{ include "fs2-serve.retentionEnv" . }}
+{{- end -}}
+
+{{- define "fs2-serve.artifactRemovalEnv" -}}
+{{ include "fs2-serve.artifactRemovalDatabaseEnv" . }}
+{{ include "fs2-serve.scientificArtifactsEnv" . }}
+{{- end -}}
+
+{{- define "fs2-serve.artifactVerificationEnv" -}}
+{{ include "fs2-serve.artifactVerificationDatabaseEnv" . }}
+{{ include "fs2-serve.scientificArtifactsEnv" . }}
 {{- end -}}
 
 {{- define "fs2-serve.cryptoVolumeMounts" -}}

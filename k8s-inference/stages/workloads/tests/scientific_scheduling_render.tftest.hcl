@@ -519,6 +519,23 @@ run "licensed_lanes_and_cpu_class_are_rendered_by_the_stage" {
 
   assert {
     condition = (
+      length(local.scientific_gpu_tenant_local_queues) == 2 &&
+      toset(flatten([
+        for route in values(local.scientific_gpu_tenant_local_queues) : tolist(route.tenant_ids)
+      ])) == toset(["tenant-modelexpresstest", "tenant-external"]) &&
+      alltrue([
+        for queue_name, route in local.scientific_gpu_tenant_local_queues :
+        queue_name == format("gpu-%s", substr(sha256(one(route.tenant_ids)), 0, 20)) &&
+        length(route.tenant_ids) == 1 &&
+        route.namespace == "fs2-models" &&
+        route.cluster_queue == "inference-accelerators"
+      ])
+    )
+    error_message = "Every enabled non-academic scientific tenant must receive one exact accelerator LocalQueue."
+  }
+
+  assert {
+    condition = (
       module.kueue_scheduling.contract.cpu_classes["reference-data"].local_queue ==
       "academic-scientific-cpu" &&
       module.kueue_scheduling.contract.cpu_classes["reference-data"].cluster_queue ==

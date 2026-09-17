@@ -1,0 +1,135 @@
+{{- if and .Values.artifactMaintenance.enabled .Values.scientificArtifacts.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-artifact-remover
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: artifact-remover
+spec:
+  schedule: {{ .Values.artifactMaintenance.removalSchedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "fs2-serve.artifactRemoverSelectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "artifact-remover") }}
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: artifact-remover
+              image: {{ include "fs2-serve.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args: ["artifact-removal"]
+              env:
+                {{- include "fs2-serve.artifactRemovalEnv" . | nindent 16 }}
+              volumeMounts:
+                {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 16 }}
+                - name: artifact-remover-store
+                  mountPath: /var/run/secrets/fs2-serve/artifact-store
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.artifactRemovalDatabase) | nindent 12 }}
+            - name: artifact-remover-store
+              secret:
+                secretName: {{ .Values.secrets.artifactRemoverStore.name }}
+                defaultMode: 0400
+                items:
+                  - key: {{ .Values.secrets.artifactRemoverStore.key }}
+                    path: credentials.json
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "fs2-serve.fullname" . }}-artifact-verifier
+  labels:
+    {{- include "fs2-serve.labels" . | nindent 4 }}
+    app.kubernetes.io/component: artifact-verifier
+spec:
+  schedule: {{ .Values.artifactMaintenance.verificationSchedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 300
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          labels:
+            {{- include "fs2-serve.artifactVerifierSelectorLabels" . | nindent 12 }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "fs2-serve.serviceAccountName" (dict "root" . "component" "artifact-verifier") }}
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: artifact-verifier
+              image: {{ include "fs2-serve.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              args: ["artifact-verification"]
+              env:
+                {{- include "fs2-serve.artifactVerificationEnv" . | nindent 16 }}
+              volumeMounts:
+                {{- include "fs2-serve.databaseCaVolumeMount" . | nindent 16 }}
+                - name: artifact-verifier-store
+                  mountPath: /var/run/secrets/fs2-serve/artifact-store
+                  readOnly: true
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+          volumes:
+            {{- include "fs2-serve.databaseCaVolume" (dict "secret" .Values.secrets.artifactVerificationDatabase) | nindent 12 }}
+            - name: artifact-verifier-store
+              secret:
+                secretName: {{ .Values.secrets.artifactVerifierStore.name }}
+                defaultMode: 0400
+                items:
+                  - key: {{ .Values.secrets.artifactVerifierStore.key }}
+                    path: credentials.json
+{{- end }}
