@@ -5,6 +5,14 @@
 # receipt. Its four-hour bound accommodates the declared prerequisite Jobs and
 # waits; the mutation fence timestamps fresh provider/Node reads after those
 # prerequisites instead of incorrectly spending a five-minute window on them.
+locals {
+  public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-gate-launcher"
+  public_edge_gate_verifier_path = "${path.module}/scripts/verify-public-edge-node-eligibility.py"
+  public_edge_gate_verifier_sha256 = filesha256(local.public_edge_gate_verifier_path)
+  public_edge_membership_trust_sha256 = filesha256("${path.module}/trusted-public-edge-membership-issuers.json")
+  public_edge_provider_adapter_trust_sha256 = filesha256("${path.module}/trusted-public-edge-provider-adapters.json")
+}
+
 resource "terraform_data" "public_edge_apply_eligibility" {
   count = local.public_edge_enabled ? 1 : 0
 
@@ -19,7 +27,7 @@ resource "terraform_data" "public_edge_apply_eligibility" {
     expected_node_count       = var.public_edge_availability_contract.system_node_count
     minimum_hostname_domains  = var.public_edge_availability_contract.minimum_domains
     node_selector_sha256      = sha256(jsonencode(var.public_edge_availability_contract.node_selector))
-    verifier_sha256           = filesha256("${path.module}/scripts/verify-public-edge-node-eligibility.py")
+    verifier_sha256           = local.public_edge_gate_verifier_sha256
   }
 
   triggers_replace = {
@@ -28,21 +36,21 @@ resource "terraform_data" "public_edge_apply_eligibility" {
     kube_system_uid          = var.kube_system_uid
     system_node_group_id     = var.public_edge_availability_contract.system_node_group_id
     availability_contract_sha256 = local.public_edge_availability_contract_sha256
-    verifier_sha256          = filesha256("${path.module}/scripts/verify-public-edge-node-eligibility.py")
+    verifier_sha256          = local.public_edge_gate_verifier_sha256
   }
 
   # Creation-only and read-only: destroy removes only the Terraform receipt.
   # The verifier lists/gets the exact provider NodeGroup and Kubernetes Nodes;
   # it never creates, patches, labels, cordons, drains, or deletes an object.
   provisioner "local-exec" {
-    command = "/usr/bin/python3 -I -B \"${path.module}/scripts/verify-public-edge-node-eligibility.py\""
-    quiet   = true
+    command     = "--local-exec"
+    interpreter = [local.public_edge_gate_launcher_path, local.public_edge_gate_verifier_path, self.input.verifier_sha256]
+    quiet       = true
 
     environment = {
       FS2_EDGE_GATE_STAGE                  = self.input.stage
       FS2_EDGE_GATE_PLANNED_AT             = self.input.planned_at
       FS2_EDGE_GATE_MAX_PLAN_AGE_SECONDS   = tostring(self.input.maximum_plan_age_seconds)
-      FS2_EDGE_GATE_NEBIUS_PROFILE         = var.nebius_profile
       FS2_EDGE_GATE_RUN_ROOT               = abspath(var.run_root)
       FS2_EDGE_GATE_KUBECONFIG             = abspath(var.kubeconfig_path)
       FS2_EDGE_GATE_KUBE_CONTEXT           = var.kube_context
@@ -54,6 +62,11 @@ resource "terraform_data" "public_edge_apply_eligibility" {
       FS2_EDGE_GATE_EXPECTED_NODE_COUNT    = tostring(self.input.expected_node_count)
       FS2_EDGE_GATE_MINIMUM_DOMAINS        = tostring(self.input.minimum_hostname_domains)
       FS2_EDGE_GATE_NODE_SELECTOR_JSON     = jsonencode(var.public_edge_availability_contract.node_selector)
+      FS2_EDGE_GATE_VERIFIER_SHA256        = self.input.verifier_sha256
+      FS2_EDGE_GATE_POLICY_SHA256          = local.public_edge_node_authority_policy_sha256
+      FS2_EDGE_GATE_BINDING_SHA256         = local.public_edge_node_authority_binding_sha256
+      FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256 = local.public_edge_membership_trust_sha256
+      FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
     }
   }
 
@@ -80,20 +93,18 @@ data "external" "public_edge_mutation_fence" {
   count = local.public_edge_enabled ? 1 : 0
 
   program = [
-    "/usr/bin/python3",
-    "-I",
-    "-B",
-    "${path.module}/scripts/verify-public-edge-node-eligibility.py",
+    local.public_edge_gate_launcher_path,
+    local.public_edge_gate_verifier_path,
+    local.public_edge_gate_verifier_sha256,
     "--external",
   ]
 
   query = {
     gate_id                                  = terraform_data.public_edge_apply_eligibility[0].id
-    verifier_sha256                          = filesha256("${path.module}/scripts/verify-public-edge-node-eligibility.py")
+    verifier_sha256                          = local.public_edge_gate_verifier_sha256
     FS2_EDGE_GATE_STAGE                       = "foundation-mutation"
     FS2_EDGE_GATE_PLANNED_AT                  = terraform_data.public_edge_apply_eligibility[0].output.planned_at
     FS2_EDGE_GATE_MAX_PLAN_AGE_SECONDS        = tostring(terraform_data.public_edge_apply_eligibility[0].output.maximum_plan_age_seconds)
-    FS2_EDGE_GATE_NEBIUS_PROFILE              = var.nebius_profile
     FS2_EDGE_GATE_RUN_ROOT                    = abspath(var.run_root)
     FS2_EDGE_GATE_KUBECONFIG                  = abspath(var.kubeconfig_path)
     FS2_EDGE_GATE_KUBE_CONTEXT                = var.kube_context
@@ -105,6 +116,10 @@ data "external" "public_edge_mutation_fence" {
     FS2_EDGE_GATE_EXPECTED_NODE_COUNT         = tostring(terraform_data.public_edge_apply_eligibility[0].output.expected_node_count)
     FS2_EDGE_GATE_MINIMUM_DOMAINS             = tostring(terraform_data.public_edge_apply_eligibility[0].output.minimum_hostname_domains)
     FS2_EDGE_GATE_NODE_SELECTOR_JSON          = jsonencode(var.public_edge_availability_contract.node_selector)
+    FS2_EDGE_GATE_POLICY_SHA256                = local.public_edge_node_authority_policy_sha256
+    FS2_EDGE_GATE_BINDING_SHA256               = local.public_edge_node_authority_binding_sha256
+    FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256       = local.public_edge_membership_trust_sha256
+    FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256 = local.public_edge_provider_adapter_trust_sha256
   }
 
   depends_on = [

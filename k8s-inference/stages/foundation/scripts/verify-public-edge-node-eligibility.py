@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import fcntl
 import hashlib
 import json
 import os
@@ -24,16 +25,19 @@ from typing import Any, Mapping, Sequence
 
 
 MEMBERSHIP_RECEIPT_SCHEMA = (
-    "fs2-serve.nebius.ai/public-edge-membership-receipt/v1"
+    "fs2-serve.nebius.ai/public-edge-membership-receipt/v2"
 )
 MEMBERSHIP_PAYLOAD_SCHEMA = (
-    "fs2-serve.nebius.ai/public-edge-membership-evidence/v1"
+    "fs2-serve.nebius.ai/public-edge-membership-evidence/v2"
 )
 MEMBERSHIP_SUBJECT_SCHEMA = (
-    "fs2-serve.nebius.ai/public-edge-membership-terraform-subject/v1"
+    "fs2-serve.nebius.ai/public-edge-membership-terraform-subject/v2"
 )
 MEMBERSHIP_TRUST_SCHEMA = (
-    "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v1"
+    "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v2"
+)
+PROVIDER_ADAPTER_TRUST_SCHEMA = (
+    "fs2-serve.nebius.ai/trusted-public-edge-provider-adapters/v1"
 )
 MEMBERSHIP_ISSUER_ROLE = "platform-security-public-edge-membership"
 MEMBERSHIP_RECEIPT_FILENAME = "public-edge-node-group-membership-receipt.json"
@@ -41,6 +45,10 @@ MEMBERSHIP_EVIDENCE_FILENAME = "public-edge-provider-membership.json"
 MEMBERSHIP_TRUST_STORE = (
     Path(__file__).resolve().parents[1]
     / "trusted-public-edge-membership-issuers.json"
+)
+PROVIDER_ADAPTER_TRUST_STORE = (
+    Path(__file__).resolve().parents[1]
+    / "trusted-public-edge-provider-adapters.json"
 )
 MAX_RECEIPT_BYTES = 256 * 1024
 MAX_MEMBERSHIP_VALIDITY = timedelta(hours=24)
@@ -67,6 +75,18 @@ def canonical_bytes(value: object) -> bytes:
 
 def canonical_sha256(value: object) -> str:
     return hashlib.sha256(canonical_bytes(value)).hexdigest()
+
+
+def terraform_json_sha256(value: object) -> str:
+    """Hash the exact canonical escaping used by Terraform ``jsonencode``."""
+
+    encoded = canonical_bytes(value).decode("ascii")
+    encoded = (
+        encoded.replace("<", r"\u003c")
+        .replace(">", r"\u003e")
+        .replace("&", r"\u0026")
+    )
+    return hashlib.sha256(encoded.encode("ascii")).hexdigest()
 
 
 def exact_object(value: object, keys: set[str], label: str) -> dict[str, Any]:
@@ -204,9 +224,35 @@ def openssl_binary() -> str:
 def memfd(name: str, content: bytes) -> int:
     if not hasattr(os, "memfd_create"):
         fail("anonymous in-memory file descriptors are unavailable")
-    descriptor = os.memfd_create(name, os.MFD_CLOEXEC)
+    descriptor = os.memfd_create(
+        name,
+        os.MFD_CLOEXEC | getattr(os, "MFD_ALLOW_SEALING", 0),
+    )
     os.write(descriptor, content)
     os.lseek(descriptor, 0, os.SEEK_SET)
+    return descriptor
+
+
+def sealed_memfd(name: str, content: bytes) -> int:
+    descriptor = memfd(name, content)
+    required = (
+        getattr(fcntl, "F_SEAL_SEAL", 0)
+        | getattr(fcntl, "F_SEAL_SHRINK", 0)
+        | getattr(fcntl, "F_SEAL_GROW", 0)
+        | getattr(fcntl, "F_SEAL_WRITE", 0)
+    )
+    if not required or not hasattr(fcntl, "F_ADD_SEALS"):
+        os.close(descriptor)
+        fail("sealed anonymous file descriptors are unavailable")
+    os.fchmod(descriptor, 0o400)
+    try:
+        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, required)
+    except OSError as exc:
+        os.close(descriptor)
+        raise GateError("cannot seal the private file snapshot") from exc
+    if fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required != required:
+        os.close(descriptor)
+        fail("private file snapshot is not fully sealed")
     return descriptor
 
 
@@ -305,6 +351,116 @@ def trusted_membership_key(
             matches.append(key)
     if len(matches) != 1:
         fail("membership receipt issuer is not a unique source-trusted authority")
+    return matches[0]
+
+
+def trusted_provider_observer(
+    trust_store: object,
+    observer: object,
+    executable: object,
+    controller_identity: object,
+) -> dict[str, str]:
+    store = exact_object(
+        trust_store, {"schema", "adapters"}, "provider observer trust store"
+    )
+    if (
+        store["schema"] != PROVIDER_ADAPTER_TRUST_SCHEMA
+        or not isinstance(store["adapters"], list)
+    ):
+        fail("provider observer trust store has an unsupported schema")
+    expected = exact_object(
+        observer,
+        {
+            "id",
+            "provider",
+            "endpoint",
+            "credential_authority",
+            "credential_subject",
+            "audience",
+            "configuration_sha256",
+            "adapter_sha256",
+        },
+        "signed provider observer",
+    )
+    normalized = {
+        "id": string_value(expected["id"], "provider observer ID", r"[a-z][a-z0-9-]{7,127}"),
+        "provider": string_value(expected["provider"], "provider observer provider"),
+        "endpoint": string_value(
+            expected["endpoint"],
+            "provider observer endpoint",
+            r"https://[a-z0-9.-]+(?::[1-9][0-9]{0,4})?",
+        ),
+        "credential_authority": string_value(
+            expected["credential_authority"], "provider observer credential authority"
+        ),
+        "credential_subject": string_value(
+            expected["credential_subject"], "provider observer credential subject"
+        ),
+        "audience": string_value(expected["audience"], "provider observer audience"),
+        "configuration_sha256": digest(
+            expected["configuration_sha256"], "provider observer configuration digest"
+        ),
+        "adapter_sha256": digest(
+            expected["adapter_sha256"], "provider observer adapter digest"
+        ),
+    }
+    if normalized["provider"] != "nebius":
+        fail("provider observer must be enrolled for Nebius")
+    executable_item = exact_object(
+        executable,
+        {"path", "resolved_path", "sha256"},
+        "provider observer executable",
+    )
+    executable_sha256 = digest(
+        executable_item["sha256"], "provider observer executable digest"
+    )
+    matches = []
+    seen: set[str] = set()
+    for index, raw in enumerate(store["adapters"]):
+        item = exact_object(
+            raw,
+            {
+                "id",
+                "provider",
+                "endpoint",
+                "credential_authority",
+                "credential_subject",
+                "audience",
+                "configuration_sha256",
+                "adapter_sha256",
+                "executable_sha256",
+                "kubernetes_node_controller",
+            },
+            f"trusted provider observer {index}",
+        )
+        item_id = string_value(item["id"], f"trusted provider observer {index} ID")
+        if item_id in seen:
+            fail("provider observer trust store contains a duplicate authority")
+        seen.add(item_id)
+        candidate = {
+            key: item[key]
+            for key in normalized
+        }
+        for key in ("configuration_sha256", "adapter_sha256"):
+            digest(candidate[key], f"trusted provider observer {index} {key}")
+        enrolled_executable = digest(
+            item["executable_sha256"],
+            f"trusted provider observer {index} executable digest",
+        )
+        enrolled_controller = validate_controller_identity(
+            item["kubernetes_node_controller"]
+        )
+        if (
+            candidate == normalized
+            and enrolled_executable == executable_sha256
+            and enrolled_controller == controller_identity
+        ):
+            matches.append(normalized)
+    if len(matches) != 1:
+        fail(
+            "provider observer and controller identity are not one unique "
+            "source-enrolled adapter authority"
+        )
     return matches[0]
 
 
@@ -454,6 +610,7 @@ def validate_membership_subject(value: object) -> dict[str, Any]:
             "expected_node_count",
             "minimum_hostname_domains",
             "node_selector_sha256",
+            "kubeconfig_sha256",
         },
         "membership receipt subject",
     )
@@ -476,12 +633,69 @@ def validate_membership_subject(value: object) -> dict[str, Any]:
     ):
         fail("membership subject does not require public HA capacity")
     digest(subject["node_selector_sha256"], "membership selector digest")
+    digest(subject["kubeconfig_sha256"], "membership kubeconfig digest")
     return subject
+
+
+def validate_controller_identity(value: object) -> dict[str, object]:
+    identity = exact_object(
+        value,
+        {
+            "username",
+            "uid",
+            "groups",
+            "extra",
+            "authentication_authority",
+            "impersonation_prohibited",
+            "impersonation_review_sha256",
+        },
+        "signed Kubernetes Node controller identity",
+    )
+    groups = [
+        string_value(item, "controller group")
+        for item in list_value(identity["groups"], "controller groups")
+    ]
+    if not groups or groups != sorted(set(groups)):
+        fail("controller groups must be non-empty, sorted, and unique")
+    raw_extra = object_value(identity["extra"], "controller authentication extras")
+    extra: dict[str, list[str]] = {}
+    for key in sorted(raw_extra):
+        values = [
+            string_value(item, f"controller authentication extra {key}")
+            for item in list_value(
+                raw_extra[key], f"controller authentication extra {key}"
+            )
+        ]
+        if not values or values != sorted(set(values)):
+            fail("controller authentication extras must be sorted and unique")
+        extra[string_value(key, "controller authentication extra key")] = values
+    if not extra or identity["impersonation_prohibited"] is not True:
+        fail("controller identity requires exact authentication extras and impersonation closure")
+    return {
+        "username": string_value(
+            identity["username"],
+            "controller username",
+            r"[A-Za-z0-9:@._/-]{3,253}",
+        ),
+        "uid": string_value(identity["uid"], "controller UID"),
+        "groups": groups,
+        "extra": extra,
+        "authentication_authority": string_value(
+            identity["authentication_authority"],
+            "controller authentication authority",
+        ),
+        "impersonation_prohibited": True,
+        "impersonation_review_sha256": digest(
+            identity["impersonation_review_sha256"],
+            "controller impersonation review digest",
+        ),
+    }
 
 
 def validate_membership_receipt(
     receipt: object,
     trust_store: object,
+    provider_adapter_trust_store: object,
     expected_subject: object,
     evidence: object,
     evidence_raw_sha256: str,
@@ -551,7 +765,8 @@ def validate_membership_receipt(
             "relation_api",
             "node_group_resource_version",
             "member_instance_ids",
-            "kubernetes_node_controller_username",
+            "kubernetes_node_controller",
+            "provider_observer",
         },
         "signed provider membership",
     )
@@ -574,17 +789,23 @@ def validate_membership_receipt(
         or len(member_ids) != subject["expected_node_count"]
     ):
         fail("signed provider member IDs must be sorted, unique, and exact-count")
-    controller_username = string_value(
-        authority["kubernetes_node_controller_username"],
-        "signed Kubernetes Node controller username",
-        r"[A-Za-z0-9:@._/-]{3,253}",
+    controller_identity = validate_controller_identity(
+        authority["kubernetes_node_controller"]
     )
     toolchain = exact_object(
-        payload["toolchain"], {"python3", "nebius", "kubectl"}, "signed toolchain"
+        payload["toolchain"],
+        {"python3", "provider_observer", "kubectl"},
+        "signed toolchain",
+    )
+    provider_observer = trusted_provider_observer(
+        provider_adapter_trust_store,
+        authority["provider_observer"],
+        toolchain["provider_observer"],
+        controller_identity,
     )
     tools = {
         name: checked_executable(toolchain[name], name)
-        for name in ("python3", "nebius", "kubectl")
+        for name in ("python3", "provider_observer", "kubectl")
     }
     if Path(sys.executable).resolve(strict=True) != Path(tools["python3"]).resolve(strict=True):
         fail("running Python interpreter differs from the signed absolute executable")
@@ -608,6 +829,8 @@ def validate_membership_receipt(
             "node_group_resource_version",
             "relation_api",
             "member_instance_ids",
+            "kubernetes_node_controller",
+            "provider_observer",
             "collected_at",
             "adapter_sha256",
         },
@@ -624,8 +847,10 @@ def validate_membership_receipt(
         "node_group_resource_version": group_revision,
         "relation_api": authority["relation_api"],
         "member_instance_ids": member_ids,
+        "kubernetes_node_controller": controller_identity,
+        "provider_observer": provider_observer,
         "collected_at": evidence_object["collected_at"],
-        "adapter_sha256": evidence_object["adapter_sha256"],
+        "adapter_sha256": provider_observer["adapter_sha256"],
     }:
         fail("provider membership export does not bind the signed exact relation")
     collected_at = timestamp(
@@ -633,13 +858,15 @@ def validate_membership_receipt(
     )
     if collected_at < issued - MAX_CLOCK_SKEW or collected_at > issued + MAX_CLOCK_SKEW:
         fail("provider membership export was not collected with the signed receipt")
-    digest(evidence_object["adapter_sha256"], "provider membership adapter digest")
+    if evidence_object["adapter_sha256"] != provider_observer["adapter_sha256"]:
+        fail("provider membership export adapter is not source-enrolled")
     return {
         "payload_sha256": payload_digest,
         "issuer_key_id": payload["issuer"]["key_id"],
         "node_group_resource_version": group_revision,
         "member_instance_ids": member_ids,
-        "kubernetes_node_controller_username": controller_username,
+        "kubernetes_node_controller": controller_identity,
+        "provider_observer": provider_observer,
         "tools": tools,
         "toolchain": toolchain,
         "evidence_sha256": evidence_digest,
@@ -647,16 +874,36 @@ def validate_membership_receipt(
 
 
 def load_membership_contract(
-    run_root: Path, expected_subject: object, *, validation_time: datetime | None = None
+    run_root: Path,
+    expected_subject: object,
+    *,
+    membership_trust_sha256: str,
+    provider_adapter_trust_sha256: str,
+    validation_time: datetime | None = None,
 ) -> dict[str, object]:
     receipt_path = run_root / MEMBERSHIP_RECEIPT_FILENAME
     evidence_path = run_root / MEMBERSHIP_EVIDENCE_FILENAME
     receipt_raw = open_regular_file(receipt_path, private=True)
     evidence_raw = open_regular_file(evidence_path, private=True)
     trust_raw = open_regular_file(MEMBERSHIP_TRUST_STORE, private=False)
+    provider_adapter_trust_raw = open_regular_file(
+        PROVIDER_ADAPTER_TRUST_STORE, private=False
+    )
+    if hashlib.sha256(trust_raw).hexdigest() != digest(
+        membership_trust_sha256, "planned membership trust-store digest"
+    ):
+        fail("membership trust store differs from the planned source bytes")
+    if hashlib.sha256(provider_adapter_trust_raw).hexdigest() != digest(
+        provider_adapter_trust_sha256,
+        "planned provider-adapter trust-store digest",
+    ):
+        fail("provider-adapter trust store differs from the planned source bytes")
     result = validate_membership_receipt(
         decode_canonical_json(receipt_raw, MEMBERSHIP_RECEIPT_FILENAME),
         decode_canonical_json(trust_raw, MEMBERSHIP_TRUST_STORE.name),
+        decode_canonical_json(
+            provider_adapter_trust_raw, PROVIDER_ADAPTER_TRUST_STORE.name
+        ),
         expected_subject,
         decode_canonical_json(evidence_raw, MEMBERSHIP_EVIDENCE_FILENAME),
         hashlib.sha256(evidence_raw).hexdigest(),
@@ -699,6 +946,17 @@ def environment(name: str) -> str:
     return value
 
 
+def require_verified_source(expected: object) -> str:
+    expected_digest = digest(expected, "planned verifier digest")
+    if os.environ.get("FS2_PROTECTED_LAUNCHER") != "fs2-public-edge-static-v1":
+        fail("public-edge verifier was not started by the protected static launcher")
+    if os.environ.get("FS2_VERIFIED_SOURCE_SHA256") != expected_digest:
+        fail("executing verifier bytes differ from the planned digest")
+    if sys.flags.isolated != 1 or not sys.dont_write_bytecode:
+        fail("public-edge verifier Python is not isolated and no-bytecode")
+    return expected_digest
+
+
 def parse_plan_timestamp(value: str, *, now: datetime, maximum_age: int) -> int:
     try:
         planned_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -716,7 +974,7 @@ def parse_plan_timestamp(value: str, *, now: datetime, maximum_age: int) -> int:
     return max(age, 0)
 
 
-def checked_local_inputs(run_root: str, kubeconfig: str) -> tuple[Path, str, int]:
+def checked_local_inputs(run_root: str, kubeconfig: str) -> tuple[Path, str, int, str]:
     root = Path(run_root)
     config = Path(kubeconfig)
     if not root.is_absolute() or not config.is_absolute():
@@ -754,12 +1012,22 @@ def checked_local_inputs(run_root: str, kubeconfig: str) -> tuple[Path, str, int
     ):
         os.close(descriptor)
         fail("opened kubeconfig identity differs from the checked run-owned file")
-    return resolved_root, f"/proc/self/fd/{descriptor}", descriptor
+    try:
+        snapshot = read_descriptor(descriptor, "run-owned kubeconfig", private=True)
+    finally:
+        os.close(descriptor)
+    snapshot_descriptor = sealed_memfd("public-edge-kubeconfig", snapshot)
+    return (
+        resolved_root,
+        f"/proc/self/fd/{snapshot_descriptor}",
+        snapshot_descriptor,
+        hashlib.sha256(snapshot).hexdigest(),
+    )
 
 
 def run_json(command: Sequence[str], label: str) -> Mapping[str, Any]:
     try:
-        canonical_home = pwd.getpwuid(os.getuid()).pw_dir
+        pwd.getpwuid(os.getuid())
     except KeyError as exc:
         raise GateError("invoking user has no canonical passwd home") from exc
     try:
@@ -774,7 +1042,7 @@ def run_json(command: Sequence[str], label: str) -> Mapping[str, Any]:
             close_fds=True,
             pass_fds=PINNED_COMMAND_FDS,
             env={
-                "HOME": canonical_home,
+                "HOME": "/nonexistent",
                 "PATH": "/usr/bin:/bin",
                 "LANG": "C.UTF-8",
                 "LC_ALL": "C.UTF-8",
@@ -854,6 +1122,65 @@ def resource_revision(resource: Mapping[str, Any], label: str) -> str:
     if isinstance(value, int) and not isinstance(value, bool) and value > 0:
         return str(value)
     return string_value(value, f"{label}.metadata.resource_version", r"[1-9][0-9]*")
+
+
+def admission_contract_projection(
+    resource: Mapping[str, Any], *, kind: str
+) -> tuple[str, str, dict[str, object]]:
+    label = kind
+    if resource.get("apiVersion") != "admissionregistration.k8s.io/v1":
+        fail(f"{label} has the wrong API version")
+    if resource.get("kind") != kind:
+        fail(f"{label} has the wrong kind")
+    item_metadata = metadata(resource, label)
+    if item_metadata.get("name") != "fs2-public-edge-node-authority":
+        fail(f"{label} has the wrong name")
+    annotations = item_metadata.get("annotations", {})
+    if not isinstance(annotations, Mapping):
+        fail(f"{label} annotations must be an object")
+    contract = {
+        "apiVersion": resource["apiVersion"],
+        "kind": kind,
+        "metadata": {
+            "name": item_metadata["name"],
+            **({"annotations": dict(annotations)} if annotations else {}),
+        },
+        "spec": object_value(resource.get("spec"), f"{label}.spec"),
+    }
+    return (
+        string_value(
+            item_metadata.get("resourceVersion"),
+            f"{label}.metadata.resourceVersion",
+            r"[1-9][0-9]*",
+        ),
+        string_value(item_metadata.get("uid"), f"{label}.metadata.uid"),
+        contract,
+    )
+
+
+def validate_admission_contract(
+    before: Mapping[str, Any],
+    after: Mapping[str, Any],
+    *,
+    kind: str,
+    expected_sha256: str,
+) -> tuple[str, str, str]:
+    before_revision, before_uid, before_contract = admission_contract_projection(
+        before, kind=kind
+    )
+    after_revision, after_uid, after_contract = admission_contract_projection(
+        after, kind=kind
+    )
+    if (
+        before_revision != after_revision
+        or before_uid != after_uid
+        or before_contract != after_contract
+    ):
+        fail(f"{kind} changed during the final mutation observation")
+    contract_sha256 = terraform_json_sha256(after_contract)
+    if contract_sha256 != expected_sha256:
+        fail(f"{kind} differs from the exact Terraform admission contract")
+    return after_revision, after_uid, contract_sha256
 
 
 def node_group_revision(group: Mapping[str, Any], label: str) -> str:
@@ -1306,6 +1633,7 @@ def membership_subject(
     expected_count: int,
     minimum_domains: int,
     selector: Mapping[str, str],
+    kubeconfig_sha256: str,
 ) -> dict[str, object]:
     return {
         "schema": MEMBERSHIP_SUBJECT_SCHEMA,
@@ -1316,6 +1644,7 @@ def membership_subject(
         "expected_node_count": expected_count,
         "minimum_hostname_domains": minimum_domains,
         "node_selector_sha256": canonical_sha256(selector),
+        "kubeconfig_sha256": digest(kubeconfig_sha256, "kubeconfig snapshot digest"),
     }
 
 
@@ -1323,9 +1652,16 @@ def receipt_contract_main() -> int:
     query = json.load(sys.stdin, object_pairs_hook=no_duplicate_object)
     query = exact_object(
         query,
-        {"run_root", "expected_subject_json"},
+        {
+            "run_root",
+            "expected_subject_json",
+            "verifier_sha256",
+            "membership_trust_sha256",
+            "provider_adapter_trust_sha256",
+        },
         "Terraform membership query",
     )
+    require_verified_source(query["verifier_sha256"])
     run_root = Path(string_value(query["run_root"], "membership run root"))
     if not run_root.is_absolute() or run_root.is_symlink() or not run_root.is_dir():
         fail("membership run root must be an absolute existing non-symlink directory")
@@ -1336,7 +1672,17 @@ def receipt_contract_main() -> int:
         string_value(query["expected_subject_json"], "expected membership subject"),
         object_pairs_hook=no_duplicate_object,
     )
-    result = load_membership_contract(run_root.resolve(strict=True), expected_subject)
+    result = load_membership_contract(
+        run_root.resolve(strict=True),
+        expected_subject,
+        membership_trust_sha256=string_value(
+            query["membership_trust_sha256"], "membership trust-store digest"
+        ),
+        provider_adapter_trust_sha256=string_value(
+            query["provider_adapter_trust_sha256"],
+            "provider-adapter trust-store digest",
+        ),
+    )
     sys.stdout.write(
         json.dumps(
             {
@@ -1350,8 +1696,11 @@ def receipt_contract_main() -> int:
                 "member_instance_ids_json": json.dumps(
                     result["member_instance_ids"], separators=(",", ":")
                 ),
-                "kubernetes_node_controller_username": str(
-                    result["kubernetes_node_controller_username"]
+                "kubernetes_node_controller_json": json.dumps(
+                    result["kubernetes_node_controller"], separators=(",", ":")
+                ),
+                "provider_observer_json": json.dumps(
+                    result["provider_observer"], separators=(",", ":")
                 ),
             },
             sort_keys=True,
@@ -1364,6 +1713,11 @@ def receipt_contract_main() -> int:
 
 def main() -> int:
     global PINNED_COMMAND_FDS
+    require_verified_source(
+        EXTERNAL_QUERY["verifier_sha256"]
+        if EXTERNAL_QUERY is not None
+        else environment("FS2_EDGE_GATE_VERIFIER_SHA256")
+    )
     stage = string_value(
         environment("FS2_EDGE_GATE_STAGE"),
         "stage",
@@ -1379,9 +1733,6 @@ def main() -> int:
     )
     run_id = string_value(environment("FS2_EDGE_GATE_RUN_ID"), "run_id", r"[a-z][a-z0-9]{5,11}")
     context = environment("FS2_EDGE_GATE_KUBE_CONTEXT")
-    profile = string_value(
-        environment("FS2_EDGE_GATE_NEBIUS_PROFILE"), "nebius_profile", r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}"
-    )
     expected_project_id = string_value(
         environment("FS2_EDGE_GATE_PROJECT_ID"), "project_id", r"project-[a-z0-9]+"
     )
@@ -1408,7 +1759,7 @@ def main() -> int:
     if selector != expected_selector:
         fail("node selector is not the exact infrastructure-owned public-edge selector")
 
-    root, kubeconfig, kubeconfig_descriptor = checked_local_inputs(
+    root, kubeconfig, kubeconfig_descriptor, kubeconfig_sha256 = checked_local_inputs(
         environment("FS2_EDGE_GATE_RUN_ROOT"), environment("FS2_EDGE_GATE_KUBECONFIG")
     )
     plan_age = parse_plan_timestamp(
@@ -1418,6 +1769,12 @@ def main() -> int:
     )
     expected_namespace_uid = string_value(
         environment("FS2_EDGE_GATE_KUBE_SYSTEM_UID"), "kube_system_uid"
+    )
+    expected_policy_sha256 = digest(
+        environment("FS2_EDGE_GATE_POLICY_SHA256"), "admission policy digest"
+    )
+    expected_binding_sha256 = digest(
+        environment("FS2_EDGE_GATE_BINDING_SHA256"), "admission binding digest"
     )
     membership = load_membership_contract(
         root,
@@ -1429,6 +1786,13 @@ def main() -> int:
             expected_count=expected_count,
             minimum_domains=minimum_domains,
             selector=selector,
+            kubeconfig_sha256=kubeconfig_sha256,
+        ),
+        membership_trust_sha256=environment(
+            "FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256"
+        ),
+        provider_adapter_trust_sha256=environment(
+            "FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256"
         ),
     )
     signed_member_ids = [
@@ -1440,7 +1804,7 @@ def main() -> int:
     signed_toolchain = object_value(membership["toolchain"], "signed toolchain")
     pinned_tools = {
         name: pin_executable(signed_toolchain[name], name)
-        for name in ("python3", "nebius", "kubectl")
+        for name in ("python3", "provider_observer", "kubectl")
     }
     if pinned_tools["python3"][1] != str(Path(sys.executable).resolve(strict=True)):
         fail("running Python interpreter differs from the signed toolchain")
@@ -1448,19 +1812,27 @@ def main() -> int:
         kubeconfig_descriptor,
         *(details[2] for details in pinned_tools.values()),
     )
-    nebius = [
-        f"/proc/self/fd/{pinned_tools['nebius'][2]}",
-        "--profile",
-        profile,
-        "--no-browser",
-        "--no-check-update",
-        "--no-progress",
+    observer_authority = object_value(
+        membership["provider_observer"], "provider observer authority"
+    )
+    provider_observer = [
+        f"/proc/self/fd/{pinned_tools['provider_observer'][2]}",
+        "--endpoint",
+        str(observer_authority["endpoint"]),
+        "--credential-authority",
+        str(observer_authority["credential_authority"]),
+        "--credential-subject",
+        str(observer_authority["credential_subject"]),
+        "--audience",
+        str(observer_authority["audience"]),
+        "--configuration-sha256",
+        str(observer_authority["configuration_sha256"]),
         "--format",
         "json",
     ]
-    cluster_cli = [*nebius, "mk8s", "cluster"]
-    node_group_cli = [*nebius, "mk8s", "node-group"]
-    compute_instance_cli = [*nebius, "compute", "instance"]
+    cluster_cli = [*provider_observer, "mk8s", "cluster"]
+    node_group_cli = [*provider_observer, "mk8s", "node-group"]
+    compute_instance_cli = [*provider_observer, "compute", "instance"]
     kubectl = [
         f"/proc/self/fd/{pinned_tools['kubectl'][2]}",
         "--kubeconfig",
@@ -1469,6 +1841,29 @@ def main() -> int:
         context,
         "--request-timeout=15s",
     ]
+
+    policy_before = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicy",
+            "fs2-public-edge-node-authority",
+            "-o",
+            "json",
+        ],
+        "ValidatingAdmissionPolicy before",
+    )
+    binding_before = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicybinding",
+            "fs2-public-edge-node-authority",
+            "-o",
+            "json",
+        ],
+        "ValidatingAdmissionPolicyBinding before",
+    )
 
     cluster_before = run_json(
         [*cluster_cli, "get", "--id", cluster_id], "cluster before"
@@ -1543,6 +1938,28 @@ def main() -> int:
     cluster_after = run_json(
         [*cluster_cli, "get", "--id", cluster_id], "cluster after"
     )
+    policy_after = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicy",
+            "fs2-public-edge-node-authority",
+            "-o",
+            "json",
+        ],
+        "ValidatingAdmissionPolicy after",
+    )
+    binding_after = run_json(
+        [
+            *kubectl,
+            "get",
+            "validatingadmissionpolicybinding",
+            "fs2-public-edge-node-authority",
+            "-o",
+            "json",
+        ],
+        "ValidatingAdmissionPolicyBinding after",
+    )
 
     if metadata(namespace, "kube-system Namespace").get("uid") != expected_namespace_uid:
         fail("selected Kubernetes API has a different kube-system UID")
@@ -1585,6 +2002,18 @@ def main() -> int:
         expected_count=expected_count,
         minimum_domains=minimum_domains,
     )
+    policy_revision, policy_uid, policy_sha256 = validate_admission_contract(
+        policy_before,
+        policy_after,
+        kind="ValidatingAdmissionPolicy",
+        expected_sha256=expected_policy_sha256,
+    )
+    binding_revision, binding_uid, binding_sha256 = validate_admission_contract(
+        binding_before,
+        binding_after,
+        kind="ValidatingAdmissionPolicyBinding",
+        expected_sha256=expected_binding_sha256,
+    )
     # Re-evaluate the bounded saved-plan window after every provider and
     # Kubernetes read. The short-lived mutation observation is timestamped
     # here, after the prerequisites and fresh reads, rather than at plan time.
@@ -1613,6 +2042,13 @@ def main() -> int:
             "compute_instance_list_pagination": instances_after["pagination"],
             "node_list_resource_version": node_revision,
             "eligible_nodes_sha256": nodes_sha,
+            "kubeconfig_sha256": kubeconfig_sha256,
+            "admission_policy_resource_version": policy_revision,
+            "admission_policy_uid": policy_uid,
+            "admission_policy_sha256": policy_sha256,
+            "admission_binding_resource_version": binding_revision,
+            "admission_binding_uid": binding_uid,
+            "admission_binding_sha256": binding_sha256,
             "eligible_node_count": eligible_count,
             "distinct_hostname_count": domain_count,
             "observed_at": observed_at.isoformat().replace("+00:00", "Z"),
@@ -1626,6 +2062,13 @@ def main() -> int:
         "cluster_resource_version": cluster_revision,
         "node_group_resource_version": group_revision,
         "node_list_resource_version": node_revision,
+        "kubeconfig_sha256": kubeconfig_sha256,
+        "admission_policy_resource_version": policy_revision,
+        "admission_policy_uid": policy_uid,
+        "admission_policy_sha256": policy_sha256,
+        "admission_binding_resource_version": binding_revision,
+        "admission_binding_uid": binding_uid,
+        "admission_binding_sha256": binding_sha256,
         "provider_member_count": str(len(provider_ids)),
         "eligible_node_count": str(eligible_count),
         "hostname_domain_count": str(domain_count),
@@ -1663,7 +2106,6 @@ if __name__ == "__main__":
                 "FS2_EDGE_GATE_STAGE",
                 "FS2_EDGE_GATE_PLANNED_AT",
                 "FS2_EDGE_GATE_MAX_PLAN_AGE_SECONDS",
-                "FS2_EDGE_GATE_NEBIUS_PROFILE",
                 "FS2_EDGE_GATE_RUN_ROOT",
                 "FS2_EDGE_GATE_KUBECONFIG",
                 "FS2_EDGE_GATE_KUBE_CONTEXT",
@@ -1675,6 +2117,10 @@ if __name__ == "__main__":
                 "FS2_EDGE_GATE_EXPECTED_NODE_COUNT",
                 "FS2_EDGE_GATE_MINIMUM_DOMAINS",
                 "FS2_EDGE_GATE_NODE_SELECTOR_JSON",
+                "FS2_EDGE_GATE_POLICY_SHA256",
+                "FS2_EDGE_GATE_BINDING_SHA256",
+                "FS2_EDGE_GATE_MEMBERSHIP_TRUST_SHA256",
+                "FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256",
             }
             EXTERNAL_QUERY = exact_object(
                 external_query, required_query_keys, "external mutation fence query"

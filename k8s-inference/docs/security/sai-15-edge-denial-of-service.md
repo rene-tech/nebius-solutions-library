@@ -94,11 +94,15 @@ Kubernetes scheduler is the final live fence at every Pod bind and re-evaluates
 the exact selector, Ready/cordon/taint state, and required anti-affinity rather
 than trusting the receipt as a scheduling decision.
 
-At apply time both fences use the fixed Nebius profile to get the exact
-cluster, derive its exact provider project, explicitly page through every
-NodeGroup under the cluster and every Compute instance under the project, and
-get the exact cluster, NodeGroup, and candidate member instances before and
-after the Kubernetes observations. Enumeration uses bounded `page_size=100`
+At apply time both fences use only a source-enrolled provider observer. The
+signed observer authority binds the Nebius API endpoint, credential authority,
+credential subject, audience, immutable configuration digest, adapter digest,
+and executable digest. The observer gets the exact cluster, derives its exact
+provider project, explicitly pages through every NodeGroup under the cluster
+and every Compute instance under the project, and gets the exact cluster,
+NodeGroup, and candidate member instances before and after the Kubernetes
+observations. No CLI profile, caller `HOME`, or caller-supplied endpoint crosses
+this boundary. Enumeration uses bounded `page_size=100`
 requests, follows each unique continuation token, rejects repeated resources,
 tokens and empty continuation pages, and accepts only an observed terminal
 empty token. It never treats a one-page result or CLI `--all` convenience as
@@ -113,30 +117,56 @@ regexes confer no membership authority. Public planning first authenticates a
 canonical Ed25519 receipt from the source-owned membership issuer registry. The
 signed exact subject binds project, cluster, NodeGroup, run, expected count,
 minimum domains, and selector digest. Its provider relation binds the exact
-NodeGroup resource version, sorted Compute instance IDs, and managed Node
-controller username to the reopened bytes of an authoritative provider
-membership export. The production registry is intentionally empty until an
-independently approved provider adapter and issuer are enrolled, so caller
-inputs cannot manufacture this relation.
+NodeGroup resource version, sorted Compute instance IDs, full managed Node
+controller authentication tuple, and provider-observer authority to the
+reopened bytes of an authoritative provider membership export. Controller
+authorization includes exact username, UID, sorted groups, authentication
+extras, authentication authority, a positive impersonation-prohibited fact,
+and the digest of the independent impersonation review. The same exact
+controller tuple must be enrolled beside the adapter in source; the membership
+signer alone cannot introduce a new controller. Both the production adapter
+registry and membership-issuer registry are intentionally empty until an
+independently approved observer/controller contract and issuer are enrolled,
+so caller inputs cannot manufacture this relation.
 
-The receipt also binds the absolute path, resolved path, and SHA-256 of the
-Python interpreter, Nebius CLI, and kubectl used by the gate. The interpreter
-entrypoint is the fixed `/usr/bin/python3 -I -B`, so caller `PYTHONPATH`, user
-site packages, bytecode output, `env`, and caller `PATH` dispatch cannot alter
-the verifier. Each launcher and resolved binary must be root-owned, every
-parent directory must be owner-bound and not group/world writable, and each
-resolved regular file must be non-writable. The gate hashes each stable opened
-executable, retains that descriptor, and invokes Nebius and kubectl only through
-their inherited `/proc/self/fd/<n>` names. It refuses any signed identity
-mismatch and never closes then reopens a command by its mutable pathname.
-Provider subprocesses receive only the pinned command and kubeconfig
-descriptors plus a minimal fixed environment containing the canonical passwd
-home, `/usr/bin:/bin`, and the `C.UTF-8` locale, with `/` as the fixed working
-directory. The exact run-owned mode-0600
-kubeconfig is likewise opened once, inode-checked against its resolved path,
-retained, and supplied to kubectl only through its inherited descriptor. It
-then pages the complete project Compute inventory only to prove every signed
-member remains present;
+Terraform never launches a verifier source pathname directly. The only
+supported apply entrypoint is the fixed
+`/usr/local/libexec/fs2-public-edge-gate-launcher`, which integration must build
+as a static PIE from the checked-in C source, independently attest, install
+root-owned mode 0555, and place under a completely root-owned, non-writable
+directory chain. The launcher checks its fixed `/proc/self/exe` identity,
+rejects an ELF interpreter, clears the complete ambient environment before
+Python starts, sets only fixed locale/PATH/nonexistent-HOME values, and starts
+`/usr/bin/python3 -I -B`. It stable-reads the requested verifier, compares the
+in-memory bytes with Terraform's planned `filesha256`, and compiles only that
+verified snapshot. Consequently a source-path swap after hashing is not
+executed. Public `inference-stack apply` must itself enter through the same
+launcher in `--operator` mode before even the Terraform version probe; only the
+deployment contract's explicitly named secret references may be preserved.
+No ambient loader, Python, Terraform plugin/workspace, proxy, profile, or HOME
+state is inherited by Terraform or its provider children.
+The reviewed integration invocation has the following shape, where the source
+digest and every preserved name come from the accepted commit and deployment
+contract rather than ambient discovery:
+
+```text
+/usr/local/libexec/fs2-public-edge-gate-launcher /absolute/reviewed/inference-stack <sha256> --operator [--preserve-env=CONTRACT_SECRET_NAME ...] -- apply --var-file ... --run-root ... --nebius-profile ...
+```
+
+The membership receipt additionally binds the absolute path, resolved path,
+and SHA-256 of the running Python interpreter, provider observer, and kubectl.
+Each resolved binary and parent chain must be protected. The verifier stable-
+reads and hashes each opened executable, retains the descriptor, and invokes
+the observer and kubectl only through inherited `/proc/self/fd/<n>` names. It
+refuses any signed identity mismatch and never closes then reopens a command by
+its mutable pathname. Provider subprocesses receive only pinned descriptors
+plus `HOME=/nonexistent`, `/usr/bin:/bin`, `C.UTF-8`, and `/` as the fixed
+working directory. The exact run-owned mode-0600 kubeconfig is stable-read
+once, its SHA-256 is bound into the signed Terraform subject, and its bytes are
+copied into a read-only sealed memfd. Kubectl receives only that sealed
+snapshot; later in-place writes or path replacement cannot change its content
+or authentication configuration. The verifier then pages the complete project
+Compute inventory only to prove every signed member remains present;
 names are retained solely as change detectors. Both inventory observations and
 every signed exact-ID get must agree, and each member must have the exact project
 parent, stable positive resource version, and current `RUNNING`, non-reconciling,
@@ -165,6 +195,14 @@ only from the signed managed-node controller. Unrelated kubelet/status updates
 remain valid when protected values do not change. Membership transitions need a
 new signed receipt and policy update before a provider rollout; a mutable label
 cannot extend the accepted set during the read-to-mutation interval.
+Each mutation fence also reads the exact ValidatingAdmissionPolicy and binding
+before the provider/Node sandwich and again after the terminal provider reads.
+It requires stable UID and resourceVersion plus an exact canonical hash match
+with the Terraform manifest, including the membership, controller,
+impersonation-review, and provider-adapter digest annotations. Removing,
+weakening, replacing, or racing either admission object therefore fails the
+StatefulSet or Helm lifecycle precondition rather than leaving an unprotected
+TOCTOU interval.
 Redis/Sentinel, Envoy Gateway, RLS, and the Envoy proxy also receive required
 `metadata.name` node affinity over that exact signed instance-ID set, so the
 scheduler consumes provider membership directly as well as the protected
@@ -244,12 +282,25 @@ successor added an apply-time provider/Kubernetes revision sandwich but inferred
 provider membership from a Compute instance name convention, executed
 caller-`PATH` tools, left foundation reads separable from store prerequisites,
 and spent a five-minute plan TTL on waits that can legitimately take much
-longer. The corrected source requires a signed provider membership relation and
-attested absolute toolchain, uses a four-hour plan-identity bound plus a
-fence-time observation, orders both foundation reads after every store
-prerequisite, and continuously protects the signed member/providerID/selector
-set with fail-closed admission. The production membership and client-identity
-issuer registries remain intentionally empty.
+longer. Exact commit `28247f8640ddd9ce41daf70dd3eb842346572679`
+(tree `6fbab7694fbc03ce1367e6130a6fb4bb2803fc05`) is also preserved as rejected
+evidence. It materially fixed authoritative NodeGroup membership, pagination,
+the provider/Kubernetes sandwich, admission continuity, HA, and audio behavior,
+but still started mutable verifier bytes before checking their planned digest,
+reused a mutable kubeconfig file descriptor, inherited ambient startup state,
+did not terminally hash the policy and binding, did not source-enroll the
+provider adapter, and authorized the controller by username without complete
+authentication/impersonation closure.
+
+This direct additive successor uses the protected static launcher, a sealed
+kubeconfig content snapshot, an empty source-owned observer/controller
+registry, a full controller tuple, and terminal exact admission-object hashes.
+It retains the signed provider membership relation, four-hour plan-identity
+bound plus fence-time observation, prerequisite ordering, fail-closed
+admission, public three-domain HA, and exact audio timeouts. The production
+provider-adapter, membership-issuer, and client-identity issuer registries all
+remain intentionally empty. This is a SOURCE candidate only until independent
+exact-commit review; it makes no integration or live claim.
 
 The provider authority adapter is based on the current primary contracts:
 
@@ -291,11 +342,23 @@ this candidate. Its fixed role is
 `platform-security-public-edge-membership`. A receipt must reopen the exact
 mode-0600 `public-edge-provider-membership.json` bytes and bind the provider
 relation API, exact project/cluster/NodeGroup revision, member instance IDs,
-approved managed-node controller username, and attested toolchain. The fixed
+approved full managed-node controller identity, source-enrolled provider
+observer, sealed kubeconfig digest, and attested toolchain. The fixed
 mode-0600 receipt name is
 `public-edge-node-group-membership-receipt.json`. Neither path, trust key,
 member list, controller identity, executable digest, nor verification result is
 caller-configurable.
+
+Provider observation and controller identity have a separate source registry at
+`stages/foundation/trusted-public-edge-provider-adapters.json`, also empty in
+this candidate. Every future entry must bind exactly one observer ID, Nebius
+endpoint, credential authority and subject, audience, configuration digest,
+adapter digest, executable digest, and full Node-controller tuple including the
+impersonation-review digest. The gate compares the planned hash of these exact
+registry bytes before accepting a receipt. Populating it is an external
+enrollment action requiring owner-approved provenance and independent review;
+ordinary tfvars, environment, signed evidence, and saved plans cannot add an
+entry.
 
 The receipt is canonical JSON followed by one newline and contains exactly the
 receipt schema, `ed25519` algorithm, payload, recomputed payload SHA-256, and
@@ -333,11 +396,14 @@ the coordinator's static-only boundary. A later reviewed integration must:
    receipt and digest, both apply-time provider/Kubernetes rereads, the
    prerequisite-compatible four-hour plan bound and fence-time timestamp, both
    deferred mutation fences, complete explicit provider pagination, signed
-   provider membership export, isolated Python startup, attested executables
-   executed through retained descriptors, a retained-descriptor kubeconfig,
-   sanitized provider-command environment, stable
+   provider membership export, the root-owned/static/fixed-path launcher and
+   its independently attested binary digest, protected `inference-stack apply`
+   startup before Terraform, attested executables executed through retained
+   descriptors, a digest-bound sealed-memfd kubeconfig, a nonexistent-HOME
+   allowlisted provider-command environment, stable
    cluster/NodeGroup/instance and NodeList revisions, `spec.providerID` equality
-   with the exact signed Compute member set, fail-closed Node admission, rejection of
+   with the exact signed Compute member set, terminal before/after exact hashes
+   of the ValidatingAdmissionPolicy and binding, fail-closed Node admission, rejection of
    spoof-labeled/cordoned/hard-tainted Nodes, valid
    internal soft spread, the retained-capacity update strategy, and equality
    between the plan count and address allowlist.
@@ -348,7 +414,12 @@ the coordinator's static-only boundary. A later reviewed integration must:
    agreeing Sentinels, quorum failover, and RLS recovery before enabling policy;
    retain the previous Helm revision and state-backed plan for rollback.
 5. Onboard the exact Platform Security client-identity and provider-membership
-   evidence-signing public keys by reviewed source commit. Produce a fresh
+   evidence-signing public keys and the exact provider-observer/controller
+   registry entry by reviewed source commit. Bind the observer endpoint,
+   credential authority/subject/audience, immutable configuration, adapter and
+   executable digests, plus controller UID/groups/extras/authentication
+   authority and independently reviewed absence of an impersonation path.
+   Produce a fresh
    authoritative NodeGroup membership export and signed membership receipt,
    then produce a fresh signed client-identity receipt from independent provider/LB,
    listener, backend, SG, route-table, XFF-mutation, and direct-access captures;

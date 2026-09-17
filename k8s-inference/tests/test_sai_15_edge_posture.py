@@ -203,6 +203,15 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
             / "stages/foundation/trusted-public-edge-membership-issuers.json"
         ).read_text(encoding="utf-8")
     )
+    provider_adapter_trust_store = yaml.safe_load(
+        (
+            ROOT
+            / "stages/foundation/trusted-public-edge-provider-adapters.json"
+        ).read_text(encoding="utf-8")
+    )
+    protected_launcher = (
+        ROOT / "stages/foundation/scripts/public-edge-gate-launcher.c"
+    ).read_text(encoding="utf-8")
     node_authority = (
         ROOT / "stages/foundation/public_edge_node_authority.tf"
     ).read_text(encoding="utf-8")
@@ -238,6 +247,7 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         ROOT
         / "stages/foundation/scripts/verify-public-edge-node-eligibility.py"
     ).read_text(encoding="utf-8")
+    inference_stack = (ROOT / "inference-stack").read_text(encoding="utf-8")
     assert "client_identity = optional(any)" in root_variables
     assert "var.deployment.edge.client_identity == null" in root_variables
     assert "var.deployment.edge.client_identity.verified" not in root_variables
@@ -256,8 +266,12 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         "issuers": [],
     }
     assert membership_trust_store == {
-        "schema": "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v1",
+        "schema": "fs2-serve.nebius.ai/trusted-public-edge-membership-issuers/v2",
         "issuers": [],
+    }
+    assert provider_adapter_trust_store == {
+        "schema": "fs2-serve.nebius.ai/trusted-public-edge-provider-adapters/v1",
+        "adapters": [],
     }
     for identity in (
         "cluster_id",
@@ -331,10 +345,26 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
         assert "verify-public-edge-node-eligibility.py" in apply_gate
         assert '"--external"' in apply_gate
         assert "gate_id" in apply_gate
-        assert '"/usr/bin/python3"' in apply_gate
-        assert '"-I"' in apply_gate
-        assert '"-B"' in apply_gate
+        assert 'public_edge_gate_launcher_path = "/usr/local/libexec/fs2-public-edge-gate-launcher"' in apply_gate
+        assert "public_edge_gate_verifier_sha256" in apply_gate
+        assert "interpreter = [local.public_edge_gate_launcher_path" in apply_gate
+        assert "FS2_EDGE_GATE_POLICY_SHA256" in apply_gate
+        assert "FS2_EDGE_GATE_BINDING_SHA256" in apply_gate
+        assert "FS2_EDGE_GATE_PROVIDER_ADAPTER_TRUST_SHA256" in apply_gate
+        assert "FS2_EDGE_GATE_NEBIUS_PROFILE" not in apply_gate
         assert '"/usr/bin/env"' not in apply_gate
+    assert "launcher must be statically linked" in protected_launcher
+    assert "clearenv()" in protected_launcher
+    assert "verified source digest mismatch" in protected_launcher
+    assert 'child[output++] = "-I"' in protected_launcher
+    assert 'child[output++] = "-B"' in protected_launcher
+    assert protected_launcher.index("clearenv()") < protected_launcher.index(
+        "cannot restore explicit operator secret environment"
+    )
+    assert '"HOME": "/nonexistent"' in inference_stack
+    assert inference_stack.index('if args.command == "apply":') < inference_stack.index(
+        "require_terraform_version(args.terraform)"
+    )
     assert "terraform_data.public_edge_apply_eligibility" in terraform
     assert "terraform_data.public_edge_apply_eligibility" in workload_control_plane
     assert "data.external.public_edge_mutation_fence" in terraform
@@ -350,7 +380,7 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert '"Node.spec.providerID"' in apply_gate_verifier
     assert 'r"nebius://computeinstance-[a-z0-9]+"' in apply_gate_verifier
     assert '"node-group",' in apply_gate_verifier
-    assert 'compute_instance_cli = [*nebius, "compute", "instance"]' in apply_gate_verifier
+    assert 'compute_instance_cli = [*provider_observer, "compute", "instance"]' in apply_gate_verifier
     assert '"--all"' not in apply_gate_verifier
     assert '"--page-size", "100"' in apply_gate_verifier
     assert 'page_arguments.extend(("--page-token", page_token))' in apply_gate_verifier
@@ -373,12 +403,18 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert "executable changed between resolution and open" in apply_gate_verifier
     assert "running Python interpreter differs from the signed toolchain" in apply_gate_verifier
     assert "validate_parent_chain(path" in apply_gate_verifier
-    assert 'f"/proc/self/fd/{pinned_tools[\'nebius\'][2]}"' in apply_gate_verifier
+    assert 'f"/proc/self/fd/{pinned_tools[\'provider_observer\'][2]}"' in apply_gate_verifier
     assert 'f"/proc/self/fd/{pinned_tools[\'kubectl\'][2]}"' in apply_gate_verifier
-    assert 'return resolved_root, f"/proc/self/fd/{descriptor}", descriptor' in apply_gate_verifier
+    assert 'f"/proc/self/fd/{snapshot_descriptor}"' in apply_gate_verifier
     assert "pass_fds=PINNED_COMMAND_FDS" in apply_gate_verifier
     assert 'cwd="/"' in apply_gate_verifier
     assert '"PATH": "/usr/bin:/bin"' in apply_gate_verifier
+    assert '"HOME": "/nonexistent"' in apply_gate_verifier
+    assert "sealed_memfd(\"public-edge-kubeconfig\"" in apply_gate_verifier
+    assert "FS2_VERIFIED_SOURCE_SHA256" in apply_gate_verifier
+    assert '"ValidatingAdmissionPolicy after"' in apply_gate_verifier
+    assert '"ValidatingAdmissionPolicyBinding after"' in apply_gate_verifier
+    assert "terraform_json_sha256(after_contract)" in apply_gate_verifier
     assert apply_gate_verifier.index("nodes_after = run_json") < apply_gate_verifier.index(
         "group_list_after = paginated_list"
     )
@@ -386,10 +422,19 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     assert 'resource "kubernetes_manifest" "public_edge_node_authority_policy"' in node_authority
     assert 'resource "kubernetes_manifest" "public_edge_node_authority_binding"' in node_authority
     assert 'failurePolicy = "Fail"' in node_authority
+    assert node_authority.count('matchPolicy = "Equivalent"') == 2
     assert 'operations  = ["CREATE", "UPDATE"]' in node_authority
     assert "object.spec.providerID == 'nebius://' + object.metadata.name" in node_authority
     assert "public_edge_protected_labels_unchanged_cel" in node_authority
-    assert "kubernetes_node_controller_username" in node_authority
+    assert "public_edge_controller_identity_cel" in node_authority
+    assert "request.userInfo.uid" in node_authority
+    assert "request.userInfo.groups" in node_authority
+    assert "request.userInfo.extra" in node_authority
+    assert "impersonation_review_sha256" in node_authority
+    assert "controller identity are not one unique" in apply_gate_verifier
+    assert '"kubernetes_node_controller",' in apply_gate_verifier
+    assert "public_edge_node_authority_policy_sha256" in node_authority
+    assert "public_edge_node_authority_binding_sha256" in node_authority
     for prerequisite in (
         "kubernetes_config_map_v1.edge_rate_limit_redis",
         "kubernetes_service_v1.edge_rate_limit_redis_headless",

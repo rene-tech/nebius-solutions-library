@@ -8,6 +8,7 @@ import fcntl
 import hashlib
 import json
 import os
+import pwd
 import re
 import subprocess
 import sys
@@ -116,15 +117,60 @@ def private_text(path: Path, value: str) -> None:
 
 
 def clean_environment() -> dict[str, str]:
-    # Stage inputs are generated explicitly. Inherited TF_VAR values could
-    # otherwise make the same customer file produce a different deployment.
+    """Return the complete, explicit environment for every child process.
+
+    No ambient loader, Python, Terraform, proxy, plugin, credential, profile,
+    or caller HOME variable crosses this boundary. Stage-specific secret values
+    are copied individually by ``stage_environment`` only after the deployment
+    contract names them.
+    """
+
     return {
-        key: value
-        for key, value in os.environ.items()
-        if not key.startswith("TF_VAR_")
-        and not key.startswith("TF_CLI_ARGS")
-        and key not in {"TF_DATA_DIR", "TF_WORKSPACE"}
+        "HOME": "/nonexistent",
+        "PATH": "/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
     }
+
+
+def require_protected_apply_start() -> None:
+    """Reject an apply unless this source started behind the static gate."""
+
+    source_bytes = Path(__file__).read_bytes()
+    source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+    forbidden = sorted(
+        key
+        for key in os.environ
+        if key.startswith(("LD_", "DYLD_", "PYTHON", "TF_CLI_ARGS"))
+        or key
+        in {
+            "TF_PLUGIN_CACHE_DIR",
+            "TF_REATTACH_PROVIDERS",
+            "TF_WORKSPACE",
+        }
+    )
+    if (
+        os.environ.get("FS2_PROTECTED_LAUNCHER") != "fs2-public-edge-static-v1"
+        or os.environ.get("FS2_VERIFIED_SOURCE_SHA256") != source_sha256
+        or sys.flags.isolated != 1
+        or not sys.dont_write_bytecode
+        or forbidden
+    ):
+        raise DeploymentError(
+            "apply requires the fixed root-owned static launcher, exact "
+            "verified inference-stack bytes, isolated/no-bytecode Python, and "
+            "no ambient loader/Python/Terraform plugin controls"
+        )
+
+
+def require_public_edge_protected_start(contract: Mapping[str, Any]) -> None:
+    """Retain an explicit contract-local guard for the public edge path."""
+
+    infrastructure = contract.get("stages", {}).get("infrastructure", {})
+    if isinstance(infrastructure, Mapping) and infrastructure.get(
+        "public_edge_mode"
+    ) == "public":
+        require_protected_apply_start()
 
 
 # Write-only Secret arguments (`data_wo`) are a Terraform 1.11 feature. On an
@@ -339,7 +385,11 @@ def source_commit() -> str:
 def default_run_root(variable_file: Path) -> Path:
     identity = hashlib.sha256(str(variable_file.resolve()).encode()).hexdigest()[:12]
     state_home = os.environ.get("XDG_STATE_HOME")
-    base = Path(state_home) if state_home else Path.home() / ".local" / "state"
+    try:
+        account_home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError as error:
+        raise DeploymentError("invoking user has no canonical passwd home") from error
+    base = Path(state_home) if state_home else account_home / ".local" / "state"
     return base / "nebius-k8s-inference" / identity
 
 
@@ -1862,11 +1912,7 @@ def write_downstream_variables(
         "public_edge_availability_contract",
     )
     identity = {key: dynamic[key] for key in identity_keys}
-    foundation = {
-        **contract["stages"]["foundation"],
-        **identity,
-        "nebius_profile": dynamic.get("nebius_profile", "sandbox"),
-    }
+    foundation = {**contract["stages"]["foundation"], **identity}
     workloads = {
         **rewritten_workloads(contract, dynamic),
         **identity,
@@ -2486,6 +2532,7 @@ def apply_stack(
     commit: str,
     configuration_environment: Mapping[str, str],
 ) -> None:
+    require_public_edge_protected_start(contract)
     infrastructure_variables = write_infrastructure_variables(
         run_root, contract, commit, args.nebius_profile
     )
@@ -3231,6 +3278,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     os.umask(0o077)
     args = parse_args(argv)
+    # This runs before Terraform, configuration parsing, provider startup, or
+    # any run-root mutation. Public mode is learned from that later plan, so
+    # every apply takes the same protected path and public mode checks it again.
+    if args.command == "apply":
+        require_protected_apply_start()
     require_terraform_version(args.terraform)
     variable_file = args.var_file.expanduser().resolve()
     if not variable_file.is_file():

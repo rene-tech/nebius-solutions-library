@@ -372,6 +372,8 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
           data.external.public_edge_mutation_fence[0].result.verdict == "PASS" &&
           data.external.public_edge_mutation_fence[0].result.membership_payload_sha256 == local.public_edge_membership_authority.payload_sha256 &&
           data.external.public_edge_mutation_fence[0].result.membership_receipt_sha256 == local.public_edge_membership_authority.receipt_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_policy_sha256 == local.public_edge_node_authority_policy_sha256 &&
+          data.external.public_edge_mutation_fence[0].result.admission_binding_sha256 == local.public_edge_node_authority_binding_sha256 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.provider_member_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.eligible_node_count) >= 3 &&
           tonumber(data.external.public_edge_mutation_fence[0].result.hostname_domain_count) >= 3,

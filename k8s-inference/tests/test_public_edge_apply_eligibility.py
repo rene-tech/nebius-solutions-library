@@ -35,6 +35,7 @@ SELECTOR = {
     "lifecycle.fs2.nebius/run": RUN_ID,
     "nebius.com/node-group-id": GROUP_ID,
 }
+KUBECONFIG_SHA256 = "d" * 64
 
 
 def node_group(resource_version: str = "11") -> dict[str, object]:
@@ -120,10 +121,38 @@ def membership_subject() -> dict[str, object]:
         expected_count=3,
         minimum_domains=3,
         selector=SELECTOR,
+        kubeconfig_sha256=KUBECONFIG_SHA256,
     )
 
 
-def membership_receipt() -> tuple[dict[str, object], dict[str, object], bytes]:
+def membership_receipt() -> tuple[
+    dict[str, object], dict[str, object], dict[str, object], bytes
+]:
+    controller = {
+        "username": "system:serviceaccount:provider:node-controller",
+        "uid": "00000000-0000-4000-8000-000000000099",
+        "groups": [
+            "system:authenticated",
+            "system:serviceaccounts",
+            "system:serviceaccounts:provider",
+        ],
+        "extra": {
+            "authentication.kubernetes.io/credential-id": ["JTI=controller-test"]
+        },
+        "authentication_authority": "provider-managed-node-controller",
+        "impersonation_prohibited": True,
+        "impersonation_review_sha256": "e" * 64,
+    }
+    observer = {
+        "id": "provider-observer-test",
+        "provider": "nebius",
+        "endpoint": "https://api.nebius.cloud",
+        "credential_authority": "nebius-workload-identity",
+        "credential_subject": "serviceaccount-observer123",
+        "audience": "public-edge-membership",
+        "configuration_sha256": "f" * 64,
+        "adapter_sha256": "a" * 64,
+    }
     evidence = {
         "schema": "fs2-serve.nebius.ai/provider-node-group-membership-export/v1",
         "provider": "nebius",
@@ -133,6 +162,8 @@ def membership_receipt() -> tuple[dict[str, object], dict[str, object], bytes]:
         "node_group_resource_version": "11",
         "relation_api": "nebius-managed-kubernetes-node-group-membership/v1",
         "member_instance_ids": sorted(provider_member_set()),
+        "kubernetes_node_controller": controller,
+        "provider_observer": observer,
         "collected_at": "2026-09-17T12:00:00Z",
         "adapter_sha256": "a" * 64,
     }
@@ -145,7 +176,7 @@ def membership_receipt() -> tuple[dict[str, object], dict[str, object], bytes]:
             "resolved_path": f"/usr/bin/{name}",
             "sha256": "b" * 64,
         }
-        for name in ("python3", "nebius", "kubectl")
+        for name in ("python3", "provider_observer", "kubectl")
     }
     payload = {
         "schema": GATE.MEMBERSHIP_PAYLOAD_SCHEMA,
@@ -162,7 +193,8 @@ def membership_receipt() -> tuple[dict[str, object], dict[str, object], bytes]:
             "relation_api": "nebius-managed-kubernetes-node-group-membership/v1",
             "node_group_resource_version": "11",
             "member_instance_ids": sorted(provider_member_set()),
-            "kubernetes_node_controller_username": "system:serviceaccount:provider:node-controller",
+            "kubernetes_node_controller": controller,
+            "provider_observer": observer,
         },
         "toolchain": toolchain,
         "evidence": {
@@ -187,7 +219,17 @@ def membership_receipt() -> tuple[dict[str, object], dict[str, object], bytes]:
             }
         ],
     }
-    return receipt, trust, evidence_raw
+    adapter_trust = {
+        "schema": GATE.PROVIDER_ADAPTER_TRUST_SCHEMA,
+        "adapters": [
+            {
+                **observer,
+                "executable_sha256": "b" * 64,
+                "kubernetes_node_controller": controller,
+            }
+        ],
+    }
+    return receipt, trust, adapter_trust, evidence_raw
 
 
 def node(ordinal: int) -> dict[str, object]:
@@ -271,7 +313,7 @@ def test_provider_members_are_enumerated_from_compute_and_exact_gets() -> None:
 
 
 def test_signed_provider_relation_is_the_only_membership_authority(monkeypatch) -> None:
-    receipt, trust, evidence_raw = membership_receipt()
+    receipt, trust, adapter_trust, evidence_raw = membership_receipt()
     evidence = json.loads(evidence_raw)
     monkeypatch.setattr(GATE, "verify_ed25519", lambda *_args: None)
     monkeypatch.setattr(
@@ -283,6 +325,7 @@ def test_signed_provider_relation_is_the_only_membership_authority(monkeypatch) 
     result = GATE.validate_membership_receipt(
         receipt,
         trust,
+        adapter_trust,
         membership_subject(),
         evidence,
         hashlib.sha256(evidence_raw).hexdigest(),
@@ -291,15 +334,59 @@ def test_signed_provider_relation_is_the_only_membership_authority(monkeypatch) 
 
     assert result["member_instance_ids"] == sorted(provider_member_set())
     assert result["node_group_resource_version"] == "11"
-    assert result["kubernetes_node_controller_username"].endswith("node-controller")
+    assert result["kubernetes_node_controller"]["username"].endswith("node-controller")
+    assert result["provider_observer"]["adapter_sha256"] == "a" * 64
 
 
 def test_empty_source_issuer_registry_fails_closed() -> None:
-    receipt, _trust, evidence_raw = membership_receipt()
+    receipt, _trust, adapter_trust, evidence_raw = membership_receipt()
     with pytest.raises(GATE.GateError, match="source-trusted authority"):
         GATE.validate_membership_receipt(
             receipt,
             {"schema": GATE.MEMBERSHIP_TRUST_SCHEMA, "issuers": []},
+            adapter_trust,
+            membership_subject(),
+            json.loads(evidence_raw),
+            hashlib.sha256(evidence_raw).hexdigest(),
+            validation_time=datetime(2026, 9, 17, 12, 1, tzinfo=timezone.utc),
+        )
+
+
+def test_empty_provider_adapter_registry_fails_closed(monkeypatch) -> None:
+    receipt, trust, _adapter_trust, evidence_raw = membership_receipt()
+    monkeypatch.setattr(GATE, "verify_ed25519", lambda *_args: None)
+    with pytest.raises(GATE.GateError, match="source-enrolled adapter authority"):
+        GATE.validate_membership_receipt(
+            receipt,
+            trust,
+            {"schema": GATE.PROVIDER_ADAPTER_TRUST_SCHEMA, "adapters": []},
+            membership_subject(),
+            json.loads(evidence_raw),
+            hashlib.sha256(evidence_raw).hexdigest(),
+            validation_time=datetime(2026, 9, 17, 12, 1, tzinfo=timezone.utc),
+        )
+
+
+def test_controller_identity_must_match_source_enrolled_adapter(monkeypatch) -> None:
+    receipt, trust, adapter_trust, evidence_raw = membership_receipt()
+    adapter_trust = copy.deepcopy(adapter_trust)
+    receipt["payload"]["provider_membership"]["kubernetes_node_controller"][
+        "uid"
+    ] = "00000000-0000-4000-8000-000000000100"
+    receipt["payload_sha256"] = hashlib.sha256(
+        GATE.canonical_bytes(receipt["payload"])
+    ).hexdigest()
+    monkeypatch.setattr(GATE, "verify_ed25519", lambda *_args: None)
+    monkeypatch.setattr(
+        GATE,
+        "checked_executable",
+        lambda _record, name: sys.executable if name == "python3" else f"/usr/bin/{name}",
+    )
+    with pytest.raises(GATE.GateError, match="source-enrolled adapter authority"):
+        GATE.validate_membership_receipt(
+            receipt,
+            trust,
+            adapter_trust,
             membership_subject(),
             json.loads(evidence_raw),
             hashlib.sha256(evidence_raw).hexdigest(),
@@ -308,7 +395,7 @@ def test_empty_source_issuer_registry_fails_closed() -> None:
 
 
 def test_signed_relation_cannot_be_replaced_by_a_name_derived_member(monkeypatch) -> None:
-    receipt, trust, evidence_raw = membership_receipt()
+    receipt, trust, adapter_trust, evidence_raw = membership_receipt()
     receipt["payload"]["provider_membership"]["member_instance_ids"][0] = (
         "computeinstance-attacker"
     )
@@ -326,6 +413,7 @@ def test_signed_relation_cannot_be_replaced_by_a_name_derived_member(monkeypatch
         GATE.validate_membership_receipt(
             receipt,
             trust,
+            adapter_trust,
             membership_subject(),
             json.loads(evidence_raw),
             hashlib.sha256(evidence_raw).hexdigest(),
@@ -347,7 +435,7 @@ def test_checked_executable_uses_and_closes_the_pinned_descriptor(monkeypatch) -
         os.fstat(read_descriptor)
 
 
-def test_checked_kubeconfig_is_reused_only_through_retained_descriptor(
+def test_checked_kubeconfig_is_reused_only_through_sealed_snapshot(
     monkeypatch, tmp_path: Path
 ) -> None:
     run_root = tmp_path / "run"
@@ -357,13 +445,15 @@ def test_checked_kubeconfig_is_reused_only_through_retained_descriptor(
     kubeconfig.chmod(0o600)
     monkeypatch.setattr(GATE, "validate_parent_chain", lambda *_args: None)
 
-    resolved_root, pinned_path, descriptor = GATE.checked_local_inputs(
+    resolved_root, pinned_path, descriptor, snapshot_sha256 = GATE.checked_local_inputs(
         str(run_root), str(kubeconfig)
     )
     try:
         assert resolved_root == run_root.resolve()
         assert pinned_path == f"/proc/self/fd/{descriptor}"
-        assert os.fstat(descriptor).st_ino == kubeconfig.stat().st_ino
+        assert snapshot_sha256 == hashlib.sha256(b"apiVersion: v1\n").hexdigest()
+        with pytest.raises(OSError):
+            os.write(descriptor, b"changed")
     finally:
         os.close(descriptor)
 
@@ -393,7 +483,7 @@ def test_provider_reads_receive_only_pinned_fds_and_sanitized_environment(
     assert observed["stdin"] is subprocess.DEVNULL
     assert observed["cwd"] == "/"
     assert observed["env"] == {
-        "HOME": "/home/exact-user",
+        "HOME": "/nonexistent",
         "PATH": "/usr/bin:/bin",
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
@@ -594,4 +684,41 @@ def test_no_schedule_taint_removes_node_from_current_eligible_capacity() -> None
             provider_member_ids=provider_member_set(),
             expected_count=3,
             minimum_domains=3,
+        )
+
+
+def test_final_admission_contract_is_stable_and_matches_exact_source_hash() -> None:
+    policy = {
+        "apiVersion": "admissionregistration.k8s.io/v1",
+        "kind": "ValidatingAdmissionPolicy",
+        "metadata": {
+            "name": "fs2-public-edge-node-authority",
+            "uid": "00000000-0000-4000-8000-000000000777",
+            "resourceVersion": "700",
+            "annotations": {"fs2.nebius.ai/controller-identity-sha256": "a" * 64},
+        },
+        "spec": {"failurePolicy": "Fail", "validations": [{"expression": "true"}]},
+    }
+    _revision, _uid, projection = GATE.admission_contract_projection(
+        policy, kind="ValidatingAdmissionPolicy"
+    )
+    expected_sha256 = GATE.terraform_json_sha256(projection)
+    revision, uid, observed_sha256 = GATE.validate_admission_contract(
+        policy,
+        copy.deepcopy(policy),
+        kind="ValidatingAdmissionPolicy",
+        expected_sha256=expected_sha256,
+    )
+    assert revision == "700"
+    assert uid.endswith("777")
+    assert observed_sha256 == expected_sha256
+
+    changed = copy.deepcopy(policy)
+    changed["spec"]["failurePolicy"] = "Ignore"
+    with pytest.raises(GATE.GateError, match="changed during"):
+        GATE.validate_admission_contract(
+            policy,
+            changed,
+            kind="ValidatingAdmissionPolicy",
+            expected_sha256=expected_sha256,
         )

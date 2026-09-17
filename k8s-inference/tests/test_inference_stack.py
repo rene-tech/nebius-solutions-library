@@ -390,8 +390,6 @@ class InferenceStackTests(unittest.TestCase):
             )
             paths = (infrastructure_path, foundation_path, workloads_path)
             first_bytes = {path.name: path.read_bytes() for path in paths}
-            generated_foundation = json.loads(foundation_path.read_text(encoding="utf-8"))
-            self.assertEqual(generated_foundation["nebius_profile"], "sandbox")
 
             with mock.patch.dict(os.environ, secret_values, clear=False):
                 foundation_environment = STACK.stage_environment(
@@ -492,6 +490,77 @@ class InferenceStackTests(unittest.TestCase):
             cleaned = STACK.clean_environment()
         self.assertNotIn("TF_VAR_project_id", cleaned)
         self.assertNotIn("TF_DATA_DIR", cleaned)
+
+    def test_clean_environment_drops_loader_home_profile_and_proxy_state(self) -> None:
+        with mock.patch.dict(
+            os.environ,
+            {
+                "LD_PRELOAD": "/tmp/attacker.so",
+                "LD_LIBRARY_PATH": "/tmp/lib",
+                "PYTHONPATH": "/tmp/python",
+                "HOME": "/tmp/home",
+                "NEBIUS_PROFILE": "ambient-profile",
+                "HTTPS_PROXY": "http://proxy.invalid",
+                "TF_PLUGIN_CACHE_DIR": "/tmp/plugins",
+            },
+            clear=False,
+        ):
+            cleaned = STACK.clean_environment()
+        self.assertEqual(cleaned["PATH"], "/usr/bin:/bin")
+        self.assertEqual(cleaned["LANG"], "C.UTF-8")
+        self.assertEqual(cleaned["LC_ALL"], "C.UTF-8")
+        self.assertEqual(cleaned["HOME"], "/nonexistent")
+        for key in (
+            "LD_PRELOAD",
+            "LD_LIBRARY_PATH",
+            "PYTHONPATH",
+            "NEBIUS_PROFILE",
+            "HTTPS_PROXY",
+            "TF_PLUGIN_CACHE_DIR",
+        ):
+            self.assertNotIn(key, cleaned)
+
+    def test_public_apply_requires_protected_verified_process_start(self) -> None:
+        configuration = contract()
+        configuration["stages"]["infrastructure"]["public_edge_mode"] = "public"
+        with (
+            mock.patch.dict(os.environ, {}, clear=True),
+            self.assertRaisesRegex(STACK.DeploymentError, "static launcher"),
+        ):
+            STACK.require_public_edge_protected_start(configuration)
+
+    def test_apply_start_gate_runs_before_terraform_version_probe(self) -> None:
+        events: list[str] = []
+        with (
+            mock.patch.object(
+                STACK,
+                "parse_args",
+                return_value=Namespace(command="apply", terraform="terraform-test"),
+            ),
+            mock.patch.object(
+                STACK,
+                "require_protected_apply_start",
+                side_effect=lambda: events.append("protected-start"),
+            ),
+            mock.patch.object(
+                STACK,
+                "require_terraform_version",
+                side_effect=lambda _terraform: events.append("terraform"),
+            ),
+            self.assertRaises(AttributeError),
+        ):
+            STACK.main([])
+        self.assertEqual(events, ["protected-start", "terraform"])
+
+    def test_internal_apply_does_not_claim_public_launcher_authority(self) -> None:
+        configuration = contract()
+        configuration["stages"]["infrastructure"]["public_edge_mode"] = (
+            "internal-only"
+        )
+        with mock.patch.dict(
+            os.environ, {"LD_PRELOAD": "/tmp/not-loaded-by-child.so"}, clear=True
+        ):
+            STACK.require_public_edge_protected_start(configuration)
 
     def test_admin_baseline_is_derived_from_selected_tfvars_and_live_pool_contract(
         self,
