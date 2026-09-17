@@ -13,7 +13,7 @@ from test_request_debug import NOW, row
 from test_users_apps_postgres import database, operation, token  # noqa: F401
 
 from fs2_serve.postgres import PostgresStore
-from fs2_serve.request_debug import PostgresDebugStore, body_capture
+from fs2_serve.request_debug import _MAX_SANITIZE_BODY, DebugBody, PostgresDebugStore, body_capture
 
 pytestmark = pytest.mark.postgres
 
@@ -29,7 +29,7 @@ async def debug_database(database):  # noqa: F811
 
 async def test_actual_encrypted_detail_pagination_unauthenticated_and_same_tenant_enrichment(debug_database):
     db = debug_database
-    store = PostgresDebugStore(db.pool, db.cipher)
+    store = PostgresDebugStore(db.pool, db.cipher, max_body_bytes=64 * 1024)  # production-like cap wired
     key = await token(db)
     operation_id = await operation(db, key, model="boltz2")
     first = row(
@@ -50,9 +50,11 @@ async def test_actual_encrypted_detail_pagination_unauthenticated_and_same_tenan
     assert "PRIVATE_KEY" not in str(dict(raw)) and "PRIVATE_QUERY" not in str(dict(raw))
     assert not {"request_body", "request_headers", "error_detail", "query_string"} & set(raw.keys())
     detail = await store.get(first.id, "tenant-a")
+    # first is BOUNDED (small bodies within the cap): decrypted + egress-sanitized, so the request is
+    # served re-scrubbed while the stored free-text error_detail is failed closed to the generic marker.
     assert detail.model_id == "boltz2" and detail.request_body.data == "model-request-content"
     assert detail.request_headers == [("x-api-key", "[REDACTED]")]
-    assert detail.error_detail == "useful upstream error"
+    assert detail.error_detail == "[detail withheld on read]"
     assert await store.get(first.id, "tenant-b") is None
     assert await store.get(unauthenticated.id, "tenant-a") is None
     assert await store.get(unauthenticated.id) is not None
@@ -66,6 +68,43 @@ async def test_actual_encrypted_detail_pagination_unauthenticated_and_same_tenan
     await db.pool.execute("UPDATE fs2_request_debug SET tenant_id='tampered' WHERE id=$1", first.id)
     with pytest.raises(InvalidTag):
         await store.get(first.id)
+
+
+async def test_oversized_legacy_row_is_metadata_only_on_detail_and_list_without_decrypt(debug_database):
+    """SAI-01 regression: even under a DEFAULT cap=None, a NON-bounded row (a body over the hard per-row
+    ceiling) must be served METADATA-ONLY on BOTH detail and list, WITHOUT fetching/decrypting its
+    payload. Proven by corrupting the ciphertext: if either path decrypted, it would raise InvalidTag;
+    instead both return the withheld, clear-column view. This covers the unsafe-default-cap, detail-path
+    ceiling, and two-phase (no-decrypt-for-non-bounded) gaps. Postgres-marked; run by CI."""
+    db = debug_database
+    store = PostgresDebugStore(db.pool, db.cipher)  # cap=None: the hard ceiling must still bound the read
+    big = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data="x",  # tiny actual ciphertext; the CLEAR observed size marks it over the ceiling
+            content_type="text/plain",
+            observed_bytes=_MAX_SANITIZE_BODY + 1,
+            complete=True,
+            redacted=False,
+            truncated=False,
+        ),
+        error_detail="raw upstream detail with sk-OVERSIZE-LEAK",
+    )
+    await store.record(big)
+    # Corrupt the ciphertext so ANY decrypt attempt raises — proving neither detail nor list decrypts a
+    # non-bounded row.
+    await db.pool.execute("UPDATE fs2_request_debug SET ciphertext=$2 WHERE id=$1", big.id, b"\x00" * 16)
+    detail = await store.get(big.id, "tenant-a")
+    assert detail is not None  # did NOT raise InvalidTag => never decrypted
+    assert detail.request_body.data == "[REDACTED]" and detail.request_body.redacted is True
+    assert detail.request_body.observed_bytes == _MAX_SANITIZE_BODY + 1  # factual size preserved
+    assert detail.response_body.data == "[REDACTED]"
+    assert detail.request_headers == [] and detail.response_headers == [] and detail.query_string == ""
+    assert "OVERSIZE-LEAK" not in (detail.error_detail or "")  # raw stored detail never disclosed
+    summary = (await store.list(tenant_id="tenant-a")).items[0]
+    assert summary.id == big.id
+    assert summary.request_redacted is True and summary.response_redacted is True  # agrees with detail
+    assert summary.request_observed_bytes == _MAX_SANITIZE_BODY + 1
 
 
 async def test_actual_generated_runtime_role_can_insert_list_and_decrypt(debug_database):

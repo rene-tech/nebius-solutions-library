@@ -509,20 +509,24 @@ _READ_WITHHELD_DETAIL = "[detail withheld on read]"
 def _request_withheld_on_read(
     *, complete: bool, truncated: bool, observed_bytes: int, max_body_bytes: int | None
 ) -> bool:
-    """THE single predicate deciding whether a stored REQUEST body is withheld on the read/serve path.
-
-    Shared by BOTH the detail/list-bounded sanitizer (``normalize_exchange_for_read``) and the list
-    CONSERVATIVE summary (``_conservative_summary``) so one derivation governs every path: a row can
-    never be judged withheld on one and served on the other. A request is withheld when it is
-    wire-incomplete, a legacy stored prefix (``truncated``), or over the CURRENT cap.
+    """Withhold predicate for the BOUNDED read path (``normalize_exchange_for_read``): even a decrypted,
+    within-ceiling request is withheld when it is wire-incomplete, a legacy stored prefix (``truncated``),
+    or over the CURRENT cap; otherwise it is re-scrubbed and served. NON-bounded rows never reach here —
+    they are withheld wholesale by ``_conservative_exchange`` without decryption — so detail and the list
+    summary agree on both paths (bounded via this predicate, non-bounded via the metadata-only view).
     """
     return (not complete) or truncated or (max_body_bytes is not None and observed_bytes > max_body_bytes)
 
 
 def normalize_exchange_for_read(exchange: DebugExchange, max_body_bytes: int | None = None) -> DebugExchange:
-    """Full current-contract EGRESS SANITIZER for a stored exchange, applied on EVERY serve path
-    (detail read, the list-derived summary — computed from this sanitized exchange — UI render, copy,
-    export/download) WITHOUT mutating or deleting the stored row.
+    """Full current-contract EGRESS SANITIZER for a decrypted, BOUNDED stored exchange, applied on the
+    read path (detail read and the list-derived summary — computed from this sanitized exchange — UI
+    render, copy, export/download) WITHOUT mutating or deleting the stored row.
+
+    This runs ONLY for BOUNDED rows (wire-complete, both bodies within the effective ceiling); it is the
+    exact-truth branch of ``_read_view``. A NON-bounded row is NOT normalized — it is never decrypted;
+    ``_conservative_exchange`` renders it metadata-only from clear columns on both detail and list, so
+    those paths do NOT all normalize the full exchange.
 
     The no-delete retention preserves rows for 90 days, INCLUDING legacy rows captured under an
     earlier, narrower contract. Serving those verbatim would disclose what the current contract
@@ -806,53 +810,92 @@ def _summary(exchange: DebugExchange) -> DebugExchangeSummary:
     )
 
 
-# Hard upper bound on the per-row payload the LIST will decrypt/sanitize, independent of the
-# configured withhold cap. It equals the settings cap ceiling; even if max_body_bytes is None or set
-# huge, the list never bound-decrypts a row whose stored bodies exceed this, so a mis/unconfigured cap
-# can never turn the read-time summary into a load-everything memory/event-loop DoS.
+# Hard upper bound on the per-row payload the read path (BOTH detail and list) will fetch, decrypt,
+# sanitize or serve, independent of the configured withhold cap. Even if max_body_bytes is None or set
+# huge, no read path bound-decrypts a row whose stored bodies exceed this, so a mis/unconfigured cap
+# can never turn a read into a load-everything memory/event-loop DoS or serve an arbitrary legacy body.
 _MAX_SANITIZE_BODY = 256 * 1024
+
+
+def _effective_cap(max_body_bytes: int | None) -> int:
+    """The hard per-row read ceiling, applied EVERYWHERE a body is fetched/decrypted/sanitized/served
+    (detail AND list): the smaller of the configured cap and the fixed ceiling, and the fixed ceiling
+    alone when no cap is configured. So a default/unset cap (max_body_bytes=None) can never let ANY read
+    path — detail included — touch an arbitrarily large legacy payload."""
+    return _MAX_SANITIZE_BODY if max_body_bytes is None else min(max_body_bytes, _MAX_SANITIZE_BODY)
 
 
 def _bounded_for_summary(
     request_observed: int, response_observed: int, request_complete: bool, max_body_bytes: int | None
 ) -> bool:
-    """True when a row's read-time truncation/redaction truth can be derived by a BOUNDED read: the
-    request is wire-complete AND both bodies are within a HARD per-row limit, so the stored payload is
-    small and cheap to decrypt off the event loop. The limit is the smaller of the configured cap and
-    the hard ceiling (and the hard ceiling alone when the cap is None), so an unset/oversized cap can
-    never treat an arbitrarily large legacy row as bounded. A row failing this is withheld on detail
-    anyway (incomplete, or a body over the cap) and is summarized CONSERVATIVELY from clear columns
-    WITHOUT loading its (possibly huge, up to the legacy cap) payload — no memory / event-loop DoS."""
+    """True when a row's read-time truth can be derived by a BOUNDED read: the request is wire-complete
+    AND both bodies are within the effective ceiling, so the stored payload is small and cheap to fetch
+    and decrypt. Bounded rows are decrypted and fully egress-sanitized (exact truncation/redaction truth
+    on BOTH detail and list); a row failing this is NON-bounded and is rendered METADATA-ONLY on both
+    paths WITHOUT fetching/decrypting its (possibly huge) payload — no memory/event-loop DoS and no
+    arbitrary-body disclosure on detail."""
     if not request_complete:
         return False
-    limit = _MAX_SANITIZE_BODY if max_body_bytes is None else min(max_body_bytes, _MAX_SANITIZE_BODY)
+    limit = _effective_cap(max_body_bytes)
     return request_observed <= limit and response_observed <= limit
 
 
-def _conservative_summary(summary: DebugExchangeSummary, max_body_bytes: int | None) -> DebugExchangeSummary:
-    """Summary for a row NOT decrypted (a body too large to bound-decrypt cheaply). The RESPONSE is
-    always withheld. The REQUEST flag is derived from the request-side CLEAR signals ONLY — its stored
-    redacted flag, wire-incompleteness, or its OWN over-cap size — never blanket-True: a small clean
-    request in a row that is unbounded only because its RESPONSE is oversized is therefore NOT falsely
-    marked redacted (which would contradict detail, where that request is served). This is truthful,
-    not merely conservative: a non-bounded row's request is either over its cap (withheld) or small,
-    and a small request cannot be size-truncated — so its clear redacted/complete flags capture every
-    withholding case. Factual fields (observed lengths, completeness) are unchanged."""
-    return summary.model_copy(
-        update={
-            "response_redacted": True,
-            # SAME withhold predicate the detail sanitizer uses, so summary and detail agree. The
-            # summary has no truncated column, but a truncated legacy body was stored as a withheld
-            # marker (redacted True), so the `summary.request_redacted` OR already covers that case.
-            "request_redacted": summary.request_redacted
-            or _request_withheld_on_read(
-                complete=summary.request_complete,
-                truncated=False,
-                observed_bytes=summary.request_observed_bytes,
-                max_body_bytes=max_body_bytes,
-            ),
-        }
+def _conservative_exchange(meta: DebugExchangeSummary) -> DebugExchange:
+    """The METADATA-ONLY read view for a NON-bounded row (wire-incomplete, or a body over the effective
+    ceiling), built from CLEAR columns WITHOUT decrypting the (possibly huge) stored payload.
+
+    Every sensitive disclosure field is withheld: both bodies suppressed (true observed sizes and
+    wire-completeness preserved, redacted/truncated markers set), headers and query string dropped,
+    error_detail replaced with the generic marker when an error was recorded (never the stored
+    free-text), and the MCP failure signal (which rides in the encrypted payload) left None. This is the
+    SINGLE derivation for a non-bounded row used by BOTH detail (get) and the list summary
+    (_conservative_summary is just _summary() of this), so a legacy row can never render one truth on
+    detail and another in the list — and neither path fetches/decrypts/serves its payload. Legacy
+    truncated/newly-redacted requests are therefore withheld identically on both paths (no impossible
+    exactness claim), while BOUNDED rows still get exact, decrypted truth via normalize_exchange_for_read.
+    """
+    return DebugExchange(
+        **{field: getattr(meta, field) for field in DebugMetadata.model_fields},
+        request_body=suppressed_body(None, meta.request_observed_bytes, meta.request_complete),
+        response_body=suppressed_body(None, meta.response_observed_bytes, meta.response_complete),
+        request_headers=[],
+        response_headers=[],
+        query_string="",
+        error_detail=_READ_WITHHELD_DETAIL if meta.error_type is not None else None,
     )
+
+
+def _conservative_summary(meta: DebugExchangeSummary) -> DebugExchangeSummary:
+    """The list summary for a NON-bounded row: literally _summary() of the metadata-only detail view,
+    so the list and the detail are ONE derivation and cannot disagree (both fully withhold the payload).
+    """
+    return _summary(_conservative_exchange(meta))
+
+
+def _read_view(
+    meta: DebugExchangeSummary, decrypt: Callable[[], DebugExchange], max_body_bytes: int | None
+) -> DebugExchange:
+    """THE single per-row read derivation shared by detail (get) and the list summary.
+
+    A BOUNDED row (complete + both bodies within the effective ceiling) is decrypted (``decrypt()``,
+    invoked ONLY here) and fully egress-sanitized for exact truncation/redaction truth. A NON-bounded
+    row is rendered metadata-only WITHOUT decrypting. So detail and the list summary agree by
+    construction, and no read path fetches/decrypts/serves a body past the ceiling."""
+    if _bounded_for_summary(
+        meta.request_observed_bytes, meta.response_observed_bytes, meta.request_complete, max_body_bytes
+    ):
+        return normalize_exchange_for_read(decrypt(), max_body_bytes)
+    return _conservative_exchange(meta)
+
+
+def _const_exchange(exchange: DebugExchange) -> Callable[[], DebugExchange]:
+    """A zero-arg ``decrypt`` for ``_read_view`` that returns an already-in-memory exchange verbatim —
+    the in-memory store's rows are plaintext, so ``_read_view``'s bounded branch just re-sanitizes them."""
+
+    def _decrypt() -> DebugExchange:
+        return exchange
+
+    return _decrypt
 
 
 def _cursor(summary: DebugExchangeSummary) -> str:
@@ -901,55 +944,47 @@ class InMemoryDebugStore:
         cursor: str | None = None,
     ) -> DebugExchangeList:
         after = _pagination(limit, cursor)
-        rows = sorted(
-            (
-                row
-                for row in self.exchanges.values()
-                if (model_id is None or row.model_id == model_id)
-                and (operation_id is None or row.operation_id == operation_id)
-                and (tenant_id is None or row.tenant_id == tenant_id)
-                and (from_at is None or row.started_at >= from_at)
-                and (to_at is None or row.started_at < to_at)
-                and (after is None or (row.started_at, row.id) < after)
-            ),
-            key=lambda row: (row.started_at, row.id),
-            reverse=True,
-        )
-        # Read-time truthful summaries, BOUNDED and OFF the event loop to match the Postgres store's
-        # memory-safe behaviour (SAME shared derivation, so the two stores and the detail path agree):
-        # a bounded row (complete + both bodies within cap) is sanitized for exact truncation/redaction
-        # truth; a larger/incomplete row (withheld on detail anyway) is summarized conservatively from
-        # its stored flags WITHOUT treating its full body as list-view content. Stored rows are only
-        # inserted (never mutated) by record() and normalize_exchange_for_read returns a copy, so the
-        # worker thread reads them without racing a concurrent writer.
         cap = self._max_body_bytes
-        page = rows[:limit]
+        # A point-in-time snapshot of the values, taken on the loop (cheap ref copy); record() only ever
+        # INSERTS (never mutates an existing row), so the snapshot is a stable, race-free view. ALL O(N)
+        # work — filter, sort, paginate AND per-row summary derivation — then runs OFF the event loop in
+        # one worker thread, so a large in-memory set can never block the loop (mirrors the Postgres
+        # store's bounded, off-loop behaviour via the SAME shared derivation).
+        snapshot = list(self.exchanges.values())
 
-        def _derive() -> list[DebugExchangeSummary]:
-            out: list[DebugExchangeSummary] = []
-            for row in page:
-                if _bounded_for_summary(
-                    row.request_body.observed_bytes,
-                    row.response_body.observed_bytes,
-                    row.request_body.complete,
-                    cap,
-                ):
-                    out.append(_summary(normalize_exchange_for_read(row, cap)))
-                else:
-                    out.append(_conservative_summary(_summary(row), cap))
-            return out
+        def _derive() -> tuple[list[DebugExchangeSummary], bool]:
+            rows = sorted(
+                (
+                    row
+                    for row in snapshot
+                    if (model_id is None or row.model_id == model_id)
+                    and (operation_id is None or row.operation_id == operation_id)
+                    and (tenant_id is None or row.tenant_id == tenant_id)
+                    and (from_at is None or row.started_at >= from_at)
+                    and (to_at is None or row.started_at < to_at)
+                    and (after is None or (row.started_at, row.id) < after)
+                ),
+                key=lambda row: (row.started_at, row.id),
+                reverse=True,
+            )
+            out = [_summary(_read_view(_summary(row), _const_exchange(row), cap)) for row in rows[:limit]]
+            return out, len(rows) > limit
 
-        items = await asyncio.to_thread(_derive)
-        return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
+        items, has_more = await asyncio.to_thread(_derive)
+        return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if has_more else None)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
         row = self.exchanges.get(exchange_id)
         if row is None or (tenant_id is not None and row.tenant_id != tenant_id):
             return None
-        # Egress-sanitize on read: apply the current contract so a preserved (possibly legacy) row
-        # never discloses a stored response/incomplete/over-cap body, raw error_detail, broad headers,
-        # or under-scrubbed query/headers. Deep-copy first so the stored row is never mutated.
-        return normalize_exchange_for_read(row.model_copy(deep=True), self._max_body_bytes)
+        # Egress-sanitize on read via the SHARED per-row derivation, so detail and the list summary agree
+        # and the hard ceiling applies here too: a BOUNDED row (complete + both bodies within the
+        # effective ceiling) is fully re-sanitized; a NON-bounded row (incomplete or a body over the
+        # ceiling) is rendered metadata-only WITHOUT serving its stored payload — even under a default
+        # cap=None, an oversized legacy body is never disclosed on detail. Sanitizing a bounded (<=256KiB)
+        # row for a single detail read is offloaded to keep the loop free. normalize returns a copy, so
+        # the stored row is never mutated.
+        return await asyncio.to_thread(_read_view, _summary(row), _const_exchange(row), self._max_body_bytes)
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Cutoff is fixed at the 90-day TTL, never caller-supplied. tenant_id (when set)
@@ -1063,7 +1098,7 @@ class PostgresDebugStore:
         items = [
             truthful[row["id"]]
             if row["id"] in truthful
-            else _conservative_summary(DebugExchangeSummary.model_validate(dict(row)), cap)
+            else _conservative_summary(DebugExchangeSummary.model_validate(dict(row)))
             for row in page
         ]
         return DebugExchangeList(items=items, next_cursor=_cursor(items[-1]) if len(rows) > limit else None)
@@ -1077,18 +1112,36 @@ class PostgresDebugStore:
         return DebugExchange.model_validate_json(raw)
 
     async def get(self, exchange_id: UUID, tenant_id: str | None = None) -> DebugExchange | None:
+        # Phase 1: fetch ONLY the clear summary columns (never the ciphertext), so a NON-bounded row's
+        # (possibly huge) payload is never even fetched — let alone decrypted — on the detail path.
         async with self.pool.acquire() as connection:
-            row = await connection.fetchrow(
+            meta_row = await connection.fetchrow(
+                f"SELECT {','.join(DebugExchangeSummary.model_fields)} FROM fs2_request_debug "  # noqa: S608 - fixed columns
+                "WHERE id=$1 AND ($2::text IS NULL OR tenant_id=$2)",
+                exchange_id,
+                tenant_id,
+            )
+        if meta_row is None:
+            return None
+        meta = DebugExchangeSummary.model_validate(dict(meta_row))
+        if not _bounded_for_summary(
+            meta.request_observed_bytes, meta.response_observed_bytes, meta.request_complete, self._max_body_bytes
+        ):
+            # NON-bounded (incomplete or a body over the effective ceiling): metadata-only view, NO
+            # ciphertext fetch/decrypt — identical to this row's list summary (one shared derivation),
+            # and safe even under a default cap=None (an oversized legacy body is never disclosed).
+            return _conservative_exchange(meta)
+        # Phase 2 (BOUNDED only): fetch + decrypt the small (<= ceiling) payload and fully egress-sanitize
+        # OFF the event loop via the SAME shared derivation the list uses, so detail and list agree.
+        async with self.pool.acquire() as connection:
+            cipher_row = await connection.fetchrow(
                 "SELECT * FROM fs2_request_debug WHERE id=$1 AND ($2::text IS NULL OR tenant_id=$2)",
                 exchange_id,
                 tenant_id,
             )
-        if row is None:
-            return None
-        # Egress-sanitize on read: apply the current contract so a preserved (possibly legacy) row
-        # never discloses a stored response/incomplete/over-cap body, raw error_detail, broad headers,
-        # or under-scrubbed query/headers. The stored ciphertext is never rewritten.
-        return normalize_exchange_for_read(self._decode(row), self._max_body_bytes)
+        if cipher_row is None:
+            return None  # raced a concurrent retention purge between the two phases
+        return await asyncio.to_thread(_read_view, meta, lambda: self._decode(cipher_row), self._max_body_bytes)
 
     async def retention_preflight(self, *, now: datetime, tenant_id: str | None = None) -> RetentionPreflight:
         # Payload-free: aggregates over the clear started_at column only. No ciphertext is
@@ -1376,6 +1429,12 @@ class DebugPersistQueue:
                         self._idle.set()
                     await self._wake.wait()
                     continue
+                # SELF-CORRECT the idle latch: we have work, so clear _idle here regardless of whether
+                # _commit's guarded notification managed to clear it. This closes the window where a
+                # failed/raced _idle.clear() in _commit would leave _idle set while an item is in flight
+                # (which could let drain() return early or busy-spin). The worker owns the latch while it
+                # has work; only the truly-idle branch above and the exit finally set it.
+                self._idle.clear()
                 builder, token = self._pending.popleft()
                 self._processing += 1
                 built: DebugExchange | None = None
@@ -1393,8 +1452,16 @@ class DebugPersistQueue:
                     # id (Postgres ON CONFLICT(id) DO NOTHING; in-memory skips a present id), so an
                     # ambiguous mid-persist cancel can never double-write. If it was not yet built,
                     # nothing was persisted, so re-queuing the original builder (a fresh build) is safe.
-                    retry = builder if built is None else _const_builder(built)
-                    self._pending.appendleft((retry, token))
+                    # FAULT-ATOMIC: if BUILDING the retry closure or the appendleft itself fails (e.g.
+                    # MemoryError), do NOT strand the slot — free the committed token so the in-flight
+                    # bound can't leak. Either the item is re-queued (token stays committed, count
+                    # balanced) or it is dropped (token freed, count balanced) — never left in limbo.
+                    try:
+                        retry = builder if built is None else _const_builder(built)
+                        self._pending.appendleft((retry, token))
+                    except Exception:
+                        LOGGER.warning("request debug re-queue after cancellation failed; dropping capture")
+                        self._complete(token)
                     self._processing -= 1
                     raise
                 except Exception as error:

@@ -1577,6 +1577,7 @@ async def test_read_withholds_preserved_legacy_response_and_incomplete_request_w
             truncated=False,
         ),
         # Legacy disclosure fields the old contract retained more broadly / scrubbed narrowly.
+        error_type="ValueError",
         error_detail="upstream raised ValueError: secret token sk-LEGACYDETAILLEAK in prompt",
         query_string="authorization=QUERYLEAK&ok=1",
         request_headers=[("authorization", "Bearer REQHEADERLEAK"), ("content-type", "application/json")],
@@ -1585,31 +1586,35 @@ async def test_read_withholds_preserved_legacy_response_and_incomplete_request_w
     await store.record(legacy)
     got = await store.get(legacy.id)
     assert got is not None
-    # Response body is served withheld regardless of what was stored.
+    # The request is wire-INCOMPLETE => the row is NON-bounded => it is served METADATA-ONLY, without
+    # decrypting/serving ANY sensitive field (bodies, headers, query, detail all withheld).
     assert got.response_body.truncated and got.response_body.redacted
     assert "LEGACY-RESPONSE-LEAK" not in got.response_body.data and got.response_body.data == "[REDACTED]"
-    # Wire-incomplete request body is served withheld (whole-or-withhold), true length preserved.
     assert got.request_body.truncated and "partial-legacy-INPUT" not in got.request_body.data
     assert got.request_body.data == "[REDACTED]" and got.request_body.observed_bytes == 64
-    # error_detail is failed closed to a generic marker (never the raw stored free-text).
+    # error_detail is failed closed to the generic marker when an error was recorded (never raw free-text).
     assert got.error_detail == "[detail withheld on read]" and "LEGACYDETAILLEAK" not in (got.error_detail or "")
-    # query + request-auth headers are re-scrubbed under current rules; response headers are structural-only.
-    assert "QUERYLEAK" not in got.query_string
-    assert ["authorization", "[REDACTED]"] in [list(pair) for pair in got.request_headers]
+    # Headers and query are WITHHELD wholesale for a non-bounded row (not re-scrubbed) — nothing decrypted.
+    assert got.query_string == "" and got.request_headers == [] and got.response_headers == []
     dumped = got.model_dump_json()
-    assert "REQHEADERLEAK" not in dumped and "RESPHEADERLEAK" not in dumped
+    assert "REQHEADERLEAK" not in dumped and "RESPHEADERLEAK" not in dumped and "QUERYLEAK" not in dumped
     # The stored row itself is NOT rewritten or deleted (a separately owned purge handles TTL).
     assert len(store.exchanges) == 1
     stored = store.exchanges[legacy.id]
     assert stored.response_body.data == '{"secret":"LEGACY-RESPONSE-LEAK"}' and not stored.response_body.truncated
     assert "LEGACYDETAILLEAK" in (stored.error_detail or "")  # stored ciphertext content is preserved
-    # A wire-COMPLETE request body (the debugging target, redacted at capture) is served as stored.
-    fresh = row()
+    # A wire-COMPLETE, within-ceiling request (BOUNDED) is decrypted, re-scrubbed and served as stored;
+    # its headers/query ARE re-scrubbed under current rules, and normalize is idempotent on that path.
+    fresh = row(
+        query_string="authorization=FRESHLEAK&ok=1",
+        request_headers=[("authorization", "Bearer FRESHREQLEAK"), ("content-type", "application/json")],
+    )
     await store.record(fresh)
     got_fresh = await store.get(fresh.id)
     assert got_fresh is not None and got_fresh.request_body.data == fresh.request_body.data
-    # normalize_exchange_for_read is idempotent on an already-normalized exchange.
-    assert normalize_exchange_for_read(got) == got
+    assert "FRESHLEAK" not in got_fresh.query_string
+    assert ["authorization", "[REDACTED]"] in [list(pair) for pair in got_fresh.request_headers]
+    assert normalize_exchange_for_read(got_fresh) == got_fresh
 
 
 async def test_read_and_list_withhold_legacy_over_cap_request_and_normalize_flags():
@@ -1846,11 +1851,12 @@ async def test_mid_persist_cancel_reprocesses_idempotently_without_double_write(
     await queue.aclose()
 
 
-async def test_list_conservative_summary_matches_detail_for_oversized_response_row():
-    """SAI-01 regression (one shared derivation): a small, CLEAN request in a row that is non-bounded
-    ONLY because its RESPONSE is oversized is SERVED on detail (re-scrubbed, not withheld). The list
-    conservative summary must AGREE — it must NOT falsely mark the request redacted just because the
-    response is oversized — while the response is withheld on both. Authored; not executed here."""
+async def test_list_and_detail_agree_metadata_only_for_oversized_response_row():
+    """SAI-01 regression (one shared derivation, no arbitrary decrypt on detail): a row that is
+    non-bounded because its RESPONSE is oversized is NOT decrypted on EITHER path — decrypting to serve
+    the small request would require reading the whole oversized payload, which the read path refuses.
+    Detail and the list summary therefore agree by construction: BOTH withhold the request (and the
+    response), rendered metadata-only from clear columns. Authored; not executed here."""
     cap = 1024
     store = InMemoryDebugStore(max_body_bytes=cap)
     legacy = row(
@@ -1860,13 +1866,15 @@ async def test_list_conservative_summary_matches_detail_for_oversized_response_r
     await store.record(legacy)
     detail = await store.get(legacy.id)
     assert detail is not None
-    assert _stored_bytes(detail.request_body) != b"[REDACTED]"  # request SERVED on detail (not withheld)
-    assert detail.request_body.redacted is False
-    assert _stored_bytes(detail.response_body) == b"[REDACTED]"  # response withheld on detail
+    # Non-bounded by the oversized response => metadata-only detail: request withheld too (not decrypted).
+    assert _stored_bytes(detail.request_body) == b"[REDACTED]" and detail.request_body.redacted is True
+    assert _stored_bytes(detail.response_body) == b"[REDACTED]"
+    assert detail.request_headers == [] and detail.query_string == ""
     listing = await store.list()
     summary = listing.items[0]
-    assert summary.response_redacted is True  # response withheld on read (agrees with detail)
-    assert summary.request_redacted is False  # small clean request NOT falsely redacted (agrees with detail)
+    # The list summary is _summary() of the SAME metadata-only view, so it agrees exactly with detail.
+    assert summary.response_redacted is True and summary.request_redacted is True
+    assert summary.request_observed_bytes == detail.request_body.observed_bytes
 
 
 async def test_list_summarizes_oversized_row_from_metadata_without_sanitizing_its_body(monkeypatch):
@@ -1898,6 +1906,126 @@ async def test_list_summarizes_oversized_row_from_metadata_without_sanitizing_it
     listing = await store.list()
     assert len(listing.items) == 2
     assert calls == [bounded.id]  # only the bounded row was sanitized; the oversized row was metadata-only
+
+
+async def test_bounded_legacy_row_rescrubbed_on_read_agrees_between_detail_and_list():
+    """SAI-01 regression (legacy-row summary/detail agreement): a BOUNDED legacy row stored under
+    older/narrower rules (redacted=False) but carrying a credential is re-scrubbed on read; detail and
+    the list summary both decrypt + normalize identically, so they AGREE (both redacted=True). This is
+    the bounded counterpart to the metadata-only agreement for non-bounded rows. Authored; not run."""
+    store = InMemoryDebugStore(max_body_bytes=64 * 1024)
+    legacy = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data='{"authorization":"Bearer sk-LEGACYNEWREDACT"}',
+            content_type="application/json",
+            observed_bytes=45,
+            complete=True,
+            redacted=False,  # legacy stored it unredacted under older, narrower rules
+            truncated=False,
+        ),
+    )
+    await store.record(legacy)
+    detail = await store.get(legacy.id)
+    assert detail is not None
+    assert "LEGACYNEWREDACT" not in detail.request_body.data  # re-scrubbed on read under CURRENT rules
+    assert detail.request_body.redacted is True
+    summary = (await store.list()).items[0]
+    assert summary.request_redacted is True  # list agrees with detail (both decrypt + normalize the row)
+
+
+async def test_in_memory_list_runs_filter_sort_and_derivation_off_the_event_loop(monkeypatch):
+    """SAI-01 regression (O(N) off the loop): the in-memory list() must run its filter/sort/paginate AND
+    per-row derivation OFF the event loop (asyncio.to_thread), so a large set can't block the loop. Proven
+    by asserting to_thread is used while results stay correct and paginated. Authored; not executed."""
+    store = InMemoryDebugStore(max_body_bytes=64 * 1024)
+    for index in range(5):
+        await store.record(row(started_at=NOW + timedelta(seconds=index)))
+    used = {"thread": False}
+    real_to_thread = asyncio.to_thread
+
+    async def _spy(func, /, *args, **kwargs):
+        used["thread"] = True
+        return await real_to_thread(func, *args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "to_thread", _spy)
+    page = await store.list(limit=2)
+    assert used["thread"] is True  # the O(N) work was offloaded
+    assert len(page.items) == 2 and page.next_cursor is not None
+    assert page.items[0].started_at >= page.items[1].started_at  # newest-first ordering preserved
+
+
+async def test_in_memory_detail_applies_hard_ceiling_even_with_default_cap_none():
+    """SAI-01 regression (detail-path/default-cap ceiling): with a DEFAULT cap=None, the DETAIL path must
+    still apply the hard per-row ceiling — an over-ceiling legacy request is withheld on detail, never
+    served — and the list summary agrees. Authored; not executed here."""
+    from fs2_serve.request_debug import _MAX_SANITIZE_BODY
+
+    store = InMemoryDebugStore()  # cap=None default
+    big = row(
+        request_body=DebugBody(
+            encoding="utf-8",
+            data='{"input":"legacy body; only the observed size matters for the ceiling"}',
+            content_type="application/json",
+            observed_bytes=_MAX_SANITIZE_BODY + 1,
+            complete=True,
+            redacted=False,
+            truncated=False,
+        ),
+    )
+    await store.record(big)
+    detail = await store.get(big.id)
+    assert detail is not None
+    assert detail.request_body.data == "[REDACTED]" and detail.request_body.redacted is True
+    assert detail.request_body.observed_bytes == _MAX_SANITIZE_BODY + 1  # true size preserved
+    summary = (await store.list()).items[0]
+    assert summary.request_redacted is True  # detail and list agree under the default cap
+
+
+async def test_mid_item_cancel_requeue_failure_frees_token_and_does_not_strand(monkeypatch):
+    """SAI-01 regression (fault-atomic notify/requeue): if the re-queue itself fails during a mid-item
+    cancellation, the committed token must be FREED (no slot leak / undercount) and drain must not hang —
+    at most one best-effort capture is dropped. Deterministic via a blocking store + a deque whose
+    appendleft raises. Authored; not executed here."""
+    import collections
+
+    from fs2_serve.request_debug import DebugPersistQueue
+
+    entered = asyncio.Event()
+    gate = asyncio.Event()
+
+    class _BlockingStore(InMemoryDebugStore):
+        async def record(self, exchange: DebugExchange) -> None:
+            entered.set()
+            await gate.wait()
+            await super().record(exchange)
+
+    class _BadDeque(collections.deque):  # type: ignore[type-arg]
+        def appendleft(self, item: object) -> None:
+            raise MemoryError("simulated re-queue allocation failure")
+
+    store = _BlockingStore()
+    queue = DebugPersistQueue(store, maxsize=8, max_inflight=8)
+    reservation = queue.reserve()
+    assert reservation is not None
+    with reservation:
+        assert reservation.submit(lambda: row(id=uuid4())) is True
+    await entered.wait()  # worker blocked mid-persist; the item is popped and in flight
+    # Swap the (now-empty) pending deque for one whose appendleft fails, so the cancel re-queue raises.
+    monkeypatch.setattr(queue, "_pending", _BadDeque())
+    worker = queue._worker
+    assert worker is not None
+    worker.cancel()
+    try:
+        await worker
+    except asyncio.CancelledError:
+        pass
+    # Re-queue failed => item dropped, but the token is FREED and the count balanced (no leak/undercount).
+    assert queue._inflight() == 0 and len(queue._pending) == 0
+    gate.set()
+    await queue.drain()  # must return promptly (nothing pending), not hang
+    assert queue._inflight() == 0
+    await queue.aclose()
 
 
 async def test_read_and_list_withhold_legacy_complete_truncated_request_under_cap():

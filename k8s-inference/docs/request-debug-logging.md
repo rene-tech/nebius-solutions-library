@@ -264,13 +264,18 @@ HTTP 0 or success.
   recognizable token forms are redacted. The retained request INPUT is debugging data (redacted),
   not anonymized data; the response/upstream OUTPUT is never retained — it is withheld.
   `redacted=true` means the retained representation differs; it is not an exact unredacted byte replay.
-- Reads are egress-sanitized: because the 90-day no-delete retention preserves rows (including legacy
-  rows captured under an earlier, narrower contract), every serve path (detail read, list summary
-  flags, UI render, copy, export/download) re-applies the CURRENT contract on the way out via
-  `normalize_exchange_for_read` — response withheld; a wire-incomplete, legacy-prefixed, or over-cap
-  request body withheld; `error_detail` replaced with a generic marker; response headers reduced to
-  structural-only; request headers/query re-scrubbed. The stored ciphertext is never rewritten or
-  deleted (the separately owned purge handles TTL), so this is redaction on the way out only.
+- Reads are egress-sanitized, and both the detail and the list summary come from ONE shared per-row
+  derivation so they can never disagree. Because the 90-day no-delete retention preserves rows
+  (including legacy rows captured under an earlier, narrower contract), a read applies the CURRENT
+  contract on the way out. A per-row hard ceiling governs BOTH paths: a BOUNDED row (wire-complete and
+  both bodies within the ceiling) is decrypted and re-sanitized via `normalize_exchange_for_read` —
+  response withheld; a wire-incomplete, legacy-prefixed, or over-cap request body withheld;
+  `error_detail` replaced with a generic marker; response headers reduced to structural-only; request
+  headers/query re-scrubbed. A NON-bounded row (wire-incomplete, or a body over the ceiling) is NOT
+  decrypted or normalized at all: it is rendered metadata-only (every body/header/query/error field
+  withheld) from its clear columns on both detail and list, so an arbitrarily large legacy payload is
+  never fetched, decrypted, or served — even under an unset cap. The stored ciphertext is never
+  rewritten or deleted (the separately owned purge handles TTL), so this is redaction on the way out only.
 - Full detail documents are encrypted in PostgreSQL using the existing payload
   cipher/keyring. Searchable summary metadata is stored separately. Preserve the
   existing keyring needed to decrypt historical records; no key material enters
