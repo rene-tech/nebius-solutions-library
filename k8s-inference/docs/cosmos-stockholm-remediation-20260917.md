@@ -1,10 +1,80 @@
 # Cosmos and Stockholm remediation — 17 September 2026
 
-Release status: **not deployed; not customer-qualified**. The implementation is
-being integrated on `agent/fs2-cosmos-stockholm-remediation-r20260917`, based on
+Release status: **Helm 143 deployed; public workflow validation in progress;
+not customer-qualified**.
+The implementation is integrated on `agent/fs2-cosmos-stockholm-remediation-r20260917`, based on
 `bad3f9cba9cac2762ddbe0b62f8c6ab3a780a6d7`. This baseline preserves the newer
 speech, tenant storage, and workshop APIs. The old dirty `main` checkout was not
 reset or overwritten. This document is not a replacement for live evidence.
+
+## Latest deployed state
+
+The explicit `sandbox2` profile restored authorized access. The original global
+profile is unchanged. Helm release 143 deploys the corrected CP/controller
+`sha256:624763c6141a990125c37b71fccc0a8d7ba5371a4efd5be325336cbc58d54020`
+and admin `sha256:6428b3500d2dd6784c0ff2308335b3d2962f725434cc5e7ea8fd5098dbf21659`.
+The complete additive model contract retains 20 model identities and all 22 old
+template revisions, adding only the new Cosmos template. It does not drop the
+five live speech models absent from the older Terraform state.
+
+The owner API drained Cosmos and applied template
+`cosmos3-nano.stockholm-v2`, digest
+`sha256:a4c96a343622a0e809e61f132c71032dd6e845c9ea7d846563cdb0ce36cf0fab`.
+Generation 16 was observed `Cold`, with lifecycle restored to `Enabled`.
+Minimum 0, maximum 4, idle/cooldown 30 seconds and all other original settings
+were preserved. Runtime image, model revision and r7 GPU snapshot are unchanged.
+The isolated snapshot preview and its ConfigMap/port-forward were removed;
+media and receipts remain protected. The LeRobot CPU image is published, but its
+App remains unrouted and is not claimed ready.
+
+Gateway 3/3, admin 2/2 and controller 2/2 were ready on release 143 at 14:57 UTC.
+Nine public/admin read APIs returned HTTP 200 at 14:57:48 UTC and retained 34 Apps.
+These are availability checks, not inference qualification. On release 142 all three metrics
+endpoints returned HTTP 200 and were actually scraped by Prometheus; all 13 rules
+loaded with healthy evaluation at 14:29 UTC. Existing lifecycle and certificate
+alerts remain open. GPU observer coverage was 13/15 ready at that instant, not
+complete cluster telemetry.
+
+Helm 141's global watcher waited on unchanged GPU observers on unavailable nodes
+after the application rollout had finished. Only the task-owned local Helm wait
+was interrupted. Forward release 142 used `--wait=hookOnly` with the exact same
+desired resources and explicit application/controller/metrics verification.
+The failed/cancelled 141 receipt is retained; no rollback or further node removal
+was used to make it appear successful.
+
+Source and reproducible release helpers through `7b7411a68` are pushed to the
+integration branch. See the [complete contract handoff](../acceptance/cosmos-stockholm-deployment-20260917/CONTRACT-HANDOFF.md)
+for hashes, preservation proof, owner API cutover and rollback ordering.
+The final bounded public cohorts are separate from these deployment checks.
+
+### Public Cosmos failure found after rollout
+
+The first real cold operation `bb49f4b9-7226-4d83-903f-668383b9a0b6` failed with
+`runtime_protocol_error` / HTTP 502 on release 142. Its normal autoscaler added
+preemptible capacity; the r7 snapshot restored, and the adapter generated HTTP
+200 MP4 responses on all three built-in attempts. `RuntimeClient` then tried to
+JSON-decode the binary result before artifact externalization. This is a gateway
+defect, not a passing video workflow; subsequent public media submissions were
+paused while the narrow fix and regression tests were prepared.
+
+Recorded activation/cold time was 443.976 seconds, including the new-node path;
+this failed operation is not a successful cold-start benchmark. No output
+artifact or output-video decode passed. Its runtime identity fields were empty
+because trusted placement observation occurs after semantic decoding. Do not
+interpret the empty identity/zero GPU-count field as zero GPU work, or its
+10,800 reserved GPU-seconds as measured consumption. The actual observed Pod,
+node, GPU and restore/adapter logs are retained in the separate failure receipt.
+
+Correction `c7f99b46fcd22f8ee3d63b8603715eb52a58ac4c` preserves validated native
+Cosmos PNG/MP4 bytes until the existing artifact publisher stores them. Other
+native/LLM JSON validation, Magpie WAV behavior, legacy Cosmos JSON responses,
+size limits and usage handling remain unchanged. Structural validation is not a
+visual-quality or full-decoder claim; public acceptance still downloads and
+decodes the output. The focused regression suite passed 157 tests, including the
+real operation worker and artifact service. The validator also accepted the
+actual r7 GPU preview MP4/PNG files. Release 143 contains this correction; new
+public cohorts started after all three gateways were Ready on its digest. The
+failed release-142 operation remains in the evidence and is not overwritten.
 
 ## What changed
 
@@ -56,21 +126,73 @@ fully successful HTTP transport series. A separate real-PostgreSQL test proves
 terminal facts survive missing operation detail. These are local tests, not
 evidence that the production scraper or alert receiver saw this release.
 
-## Deployment block and exact resume sequence
+## Access restored and deployment resumed
 
-The authorized kubeconfig for `project-e00rene`, cluster
+The user selected `sandbox2` on 17 September. It authenticates and has authorized
+access to `project-e00rene` and the intended cluster. The global default profile
+is unchanged. The isolated kubeconfig is
+`/home/tux/secure-handoff/cosmos-stockholm-sandbox2-20260917.kubeconfig`, context
+`fs2-remediation-sandbox2`; do not commit its contents.
+
+Source `b33d73149d5f8be96cac70711b17d039927cea2a` was built and published with
+provenance. Migration 32 and the new gateway, admin and controller were deployed
+through the existing Helm release, preserving its complete live configuration.
+The nine supported public readiness/admin read APIs returned HTTP 200; the UI
+lists 34 Apps. These checks do not qualify model inference.
+
+Live validation found that the new terminal-operation metrics need five additional
+read-only column grants on `fs2_usage_facts`. Source `d586613f1` corrected those
+grants without granting table-wide reads or ledger writes. Helm revision 140
+completed successfully with CP image `sha256:f96d890a19fb917322f5986d1ee81b1d5911643e35b62d76a46503c5f35654f8`.
+All three gateway replicas returned `/metrics` HTTP 200 and Prometheus scraped
+them successfully. The first image's HTTP 500 is retained as a failed release
+attempt, not a passing observability check. The PrometheusRule also lacked the
+installed Prometheus release selector; source `471f3fcf6` fixes chart/Terraform
+labels. The live label was corrected and all 13 rules loaded with healthy
+evaluation; Helm 142 now persists that correction.
+
+On the corrected image, the first bounded Stockholm cohort passed named,
+generic, legacy-nested and HTTP OpenFold2/Boltz2 results, idempotent replay and
+five outstanding mixed operations. Its ESMFold2 batch reached a successful
+terminal result, but the runner then failed during output-artifact readback.
+This is not yet a complete clean cohort or a LibreChat qualification.
+
+The GPU-observer rollouts were blocked by five stale node registrations across
+two batches. All five corresponding Nebius VMs were independently confirmed `STOPPED`, their
+kubelets were unresponsive, and only node/DaemonSet system pods remained.
+Their Kubernetes registrations were removed on 17 September; no VM, node group,
+quota, capacity setting, or customer application was deleted. The stopped VMs
+remain intact and kubelets can re-register if restarted. Exact metadata is
+retained privately in `cosmos-stockholm-rollout-20260917`.
+
+The last canonical Terraform state predates the live storage/speech changes.
+This scoped application release uses the repository Helm chart and a tracked
+[release delta](../acceptance/cosmos-stockholm-deployment-20260917/release.values.yaml)
+over retained live values. H100 `terraform.tfvars` image/provenance pins were
+updated, but **no Terraform apply or zero-drift claim is made**. A later broad
+Terraform apply must first reconcile the previously documented storage provisioner
+state and retained overlays; do not create duplicate IAM resources.
+
+Rollback caveat: the old 31-migration image rejects a 32-entry schema at startup.
+The additive migration does not make a blind Helm rollback safe. Recover forward
+with a verified 32-compatible image; do not remove migration ledger entries or
+customer data.
+
+## Historical deployment block and acceptance sequence
+
+Before the explicit `sandbox2` selection, the authorized kubeconfig for `project-e00rene`, cluster
 `mk8scluster-e00j5z9te7x5dd9g6a`, region `eu-north1`, context `fs2-storage-h100`,
-is rejected with `JwtKeyNotExists`. The configured public key ID is
-`publickey-i00xt9sw5qagz124ja`. A working authorized profile/kubeconfig must be
-restored by the owner. No quota increase, replacement identity, unrelated project
+was rejected with `JwtKeyNotExists`. The configured public key ID was
+`publickey-i00xt9sw5qagz124ja`. This historical authentication block is resolved
+through the user-selected profile. No quota increase, replacement identity, unrelated project
 credentials, or production deployment was attempted to bypass this.
 
-The last documented CP release is Helm 138 / image
+The pre-resume CP release was Helm 138 / image
 `sha256:d0b3b02e201d8dc34ca7368e8ad34fece02e15841595de8bb970748c3dc300d6`
 from source `1f745bf18`. **Re-read the actual deployment before changing it**;
 this historical receipt cannot prove that no later release occurred.
 
-After access is restored:
+Remaining sequence (access and initial image deployment are now complete):
 
 1. Read actual CP/admin/runtime images, release values, database contract,
    public discovery, customer grants and installed LibreChat/skill build. Retain
@@ -103,7 +225,9 @@ After access is restored:
 
 ## Local resources and evidence
 
-No cloud capacity, tenant keys, models or workloads were changed during this work.
+Before the sandbox2 resume, no cloud capacity, tenant keys, models or workloads
+had been changed. The live resume changes and limitations are documented above;
+only disposable acceptance principals may be created, not changes to real team keys.
 Task-owned local PostgreSQL 16 container `fs2-stockholm-retention-pg-20260917`
 listens only on `127.0.0.1:33474`; isolated databases `stockholm_retention`,
 `cosmos_delegation`, `mindguard_usage` and `semantic_outcomes` hold synthetic
@@ -119,5 +243,5 @@ Detailed component evidence and known negative attempts:
 
 Final local integration test totals and exact limitations are recorded in the
 [verification summary](cosmos-stockholm-local-verification-20260917.md).
-Task cards remain blocked/review,
+Task cards remain running/review,
 not done, while deployment and customer-shaped evidence are missing.

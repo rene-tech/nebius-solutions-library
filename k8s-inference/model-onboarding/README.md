@@ -44,6 +44,17 @@ acceptance step. Do not call a model onboarding complete until this check and
 the existing model-specific inference acceptance pass. Direct manual Kubernetes
 changes bypass GitHub CI, so operators must run this command before those changes.
 
+For native media or large outputs, test the complete gateway path with the real
+`RuntimeClient`, output artifact publication and public download, not only a
+direct runtime request or a stub returning JSON. Exercise every advertised
+response type (for example PNG, MP4 and WAV), then verify output hashes and
+decode the downloaded artifact. Inline JSON and artifact delivery are distinct
+paths and need separate evidence. On September 17, Cosmos produced valid MP4
+responses but the gateway attempted JSON decoding before artifactization; the
+direct runtime checks had not exercised that boundary. See
+[`CUSTOMER_RELEASE_POLICY.md`](../CUSTOMER_RELEASE_POLICY.md) for the full
+customer-client and release-identity requirements.
+
 ### Compile the model declaration
 
 The checked-in example deliberately uses `.invalid` model/image identities. It

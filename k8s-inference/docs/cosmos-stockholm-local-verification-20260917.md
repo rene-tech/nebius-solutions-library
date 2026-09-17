@@ -6,7 +6,9 @@ workers froze their changes before the final focused checks below. The final
 source is identified by this document's enclosing Git commit/history; no cloud
 image is represented by that source identity.
 
-**Not deployed or customer-qualified.** See the
+**Historical local-test receipt, recorded before access was restored.**
+Deployment subsequently resumed with the user-selected `sandbox2` profile;
+these local counts are not customer qualification. See the current
 [implementation and deployment handoff](cosmos-stockholm-remediation-20260917.md).
 
 ## Test results
@@ -27,6 +29,13 @@ Counts overlap where a focused suite repeats the full sweep; do not sum them
 into a claim about independent scenarios. The 16 full-sweep skips and unselected
 PostgreSQL tests are not passes. Existing Starlette and websockets deprecation
 warnings remain; no failure was hidden by disabling those warnings.
+
+After access was restored, the Helm, restored-media preview, Stockholm verifier
+and live-preparation regression suite passed **191 tests in 40.35 seconds**.
+An earlier invocation named a nonexistent test file and ran no tests; it was
+corrected before this result. Pytest again warned about unrelated old PostgreSQL
+socket cleanup permissions; those resources were not changed. This additional
+local run does not replace the separately recorded public acceptance checks.
 
 ## Reproduce the final focused suites
 
@@ -61,7 +70,8 @@ The [local LeRobot image receipt](../models/general-media/lerobot-augmentation/a
 records config ID `sha256:e8af3b9c347104418d726042a18af3e25e972b57338ea11d1fb3853cadbbae4d`,
 the source file hashes, offline steps and retained upstream fixture-encoder
 warning. This ID is **not** a registry manifest digest and must not be used as
-a model promotion receipt. The registry remains unchanged.
+a model promotion receipt. The registry was unchanged at this local-test stage;
+subsequent publication is recorded in the separate registry receipt.
 
 ## Task Deck / remaining work
 
@@ -77,7 +87,7 @@ local evidence and missing live proof. Scope:
   operation-outcome-observability, operational-cleanup,
   customer-shaped-release-gate (same prefix/date).
 
-Cloud deployment is blocked by `JwtKeyNotExists` for the configured authorized
+At the time of this local-test receipt, cloud deployment was blocked by `JwtKeyNotExists` for the configured authorized
 `project-e00rene` credential. One typed, idempotent Task Deck input request was
 sent to Rene's requested Slack DM on 2026-09-17; no progress-message spam or
 completion notification was sent.
