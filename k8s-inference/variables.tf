@@ -170,7 +170,27 @@ variable "deployment" {
         source_image      = string
         mirror_image      = string
         provenance_sha256 = string
+        authorization_id  = string
         binding_sha256    = string
+      })), {})
+      runtime_security_trust = optional(object({
+        # Deprecated and rejected. The independent authority contract has a
+        # fixed root-owned path outside deployment input control.
+        trusted_attestors_path   = string
+        trusted_attestors_sha256 = string
+        session_id               = string
+      }))
+      # Authorization records dereference separately reviewed evidence bytes;
+      # the promotion/compatibility records cannot authorize themselves.
+      runtime_security_authorizations = optional(map(object({
+        kind               = string
+        model_id           = string
+        subject_schema     = string
+        subject_sha256     = string
+        evidence_path      = string
+        evidence_sha256    = string
+        attestation_path   = string
+        attestation_sha256 = string
       })), {})
       # Per-final-container compatibility is reviewed independently from image
       # promotion. A read-only root is never enabled from a generic image
@@ -185,7 +205,15 @@ variable "deployment" {
         run_as_group         = number
         tmp_size_limit       = string
         writable_paths       = map(string)
+        writable_mounts = map(object({
+          kind      = string
+          reference = string
+          sub_path  = optional(string)
+        }))
+        capability_profile  = optional(string, "none")
+        allowed_capabilities = optional(list(string), [])
         review_sha256        = string
+        authorization_id     = string
         compatibility_sha256 = string
       })), {})
       pool_overrides  = optional(map(string), {})
@@ -615,6 +643,19 @@ variable "deployment" {
         enabled            = optional(bool, false)
         storage_class_name = optional(string, "csi-mounted-fs-path-sc")
         size_gib           = optional(number, 128)
+        migration_quiescence = optional(object({
+          lease_name      = string
+          lease_uid       = string
+          zero_writers    = bool
+          writer_admission_fenced = bool
+          active_writer_count = number
+          activation_id   = string
+          observed_at     = string
+          expires_at      = string
+          evidence_sha256 = string
+          authorization_id = string
+          quiescence_sha256 = string
+        }))
       }), {})
 
       execution_map = optional(any)
@@ -1307,10 +1348,24 @@ variable "deployment" {
       length(var.deployment.scientific_batch.runtime_cache.storage_class_name) <= 253 &&
       floor(var.deployment.scientific_batch.runtime_cache.size_gib) == var.deployment.scientific_batch.runtime_cache.size_gib &&
       var.deployment.scientific_batch.runtime_cache.size_gib >= 1 &&
-      var.deployment.scientific_batch.runtime_cache.size_gib <= 65536,
+      var.deployment.scientific_batch.runtime_cache.size_gib <= 65536 &&
+      (!var.deployment.scientific_batch.runtime_cache.enabled || try(
+        can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.lease_name)) &&
+        can(regex("^[a-f0-9]{64}$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.lease_uid)) &&
+        var.deployment.scientific_batch.runtime_cache.migration_quiescence.zero_writers == true &&
+        var.deployment.scientific_batch.runtime_cache.migration_quiescence.writer_admission_fenced == true &&
+        var.deployment.scientific_batch.runtime_cache.migration_quiescence.active_writer_count == 0 &&
+        can(regex("^[a-f0-9]{64}$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.activation_id)) &&
+        can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.observed_at)) &&
+        can(regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.expires_at)) &&
+        can(regex("^[a-f0-9]{64}$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.evidence_sha256)) &&
+        can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.authorization_id)) &&
+        can(regex("^[a-f0-9]{64}$", var.deployment.scientific_batch.runtime_cache.migration_quiescence.quiescence_sha256)),
+        false,
+      )),
       false,
     )
-    error_message = "scientific_batch.runtime_cache requires scientific batch execution, a DNS-style storage class, and a whole 1-65536 GiB cache size."
+    error_message = "scientific_batch.runtime_cache requires scientific batch execution, bounded storage, and an exact externally evidenced zero-writer migration lease."
   }
 
   validation {
@@ -1607,6 +1662,30 @@ variable "deployment" {
 
   validation {
     condition = try(
+      var.deployment.models.runtime_security_trust == null &&
+      alltrue([
+        for authorization_id, authorization in var.deployment.models.runtime_security_authorizations :
+        can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", authorization_id)) &&
+        contains(["image-promotion", "runtime-compatibility", "scientific-image", "cache-boundary", "cache-migration-quiescence"], authorization.kind) &&
+        can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", authorization.model_id)) &&
+        can(regex("^fs2-serve\\.nebius\\.ai/[a-z0-9-]+/v[0-9]+$", authorization.subject_schema)) &&
+        can(regex("^[0-9a-f]{64}$", authorization.subject_sha256)) &&
+        can(regex("^catalog/runtime/evidence/runtime-security/[a-zA-Z0-9._/-]+\\.json$", authorization.evidence_path)) &&
+        !strcontains(authorization.evidence_path, "..") &&
+        fileexists("${path.module}/${authorization.evidence_path}") &&
+        filesha256("${path.module}/${authorization.evidence_path}") == authorization.evidence_sha256 &&
+        can(regex("^catalog/runtime/evidence/runtime-security/[a-zA-Z0-9._/-]+\\.json$", authorization.attestation_path)) &&
+        !strcontains(authorization.attestation_path, "..") &&
+        fileexists("${path.module}/${authorization.attestation_path}") &&
+        filesha256("${path.module}/${authorization.attestation_path}") == authorization.attestation_sha256
+      ]),
+      false,
+    )
+    error_message = "models.runtime_security_authorizations require the fixed root-owned platform-security authority; caller-selected trust roots are rejected."
+  }
+
+  validation {
+    condition = try(
       alltrue([
         for promotion_id, promotion in var.deployment.models.image_promotions :
         can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", promotion_id)) &&
@@ -1621,13 +1700,18 @@ variable "deployment" {
         can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", promotion.mirror_image)) &&
         split("@", promotion.source_image)[1] == split("@", promotion.mirror_image)[1] &&
         can(regex("^[0-9a-f]{64}$", promotion.provenance_sha256)) &&
+        contains(keys(var.deployment.models.runtime_security_authorizations), promotion.authorization_id) &&
         promotion.binding_sha256 == sha256(jsonencode({
           schema            = "fs2-serve.nebius.ai/model-image-promotion/v1"
           model_id          = promotion.model_id
           source_image      = promotion.source_image
           mirror_image      = promotion.mirror_image
           provenance_sha256 = promotion.provenance_sha256
-        }))
+        })) &&
+        var.deployment.models.runtime_security_authorizations[promotion.authorization_id].kind == "image-promotion" &&
+        var.deployment.models.runtime_security_authorizations[promotion.authorization_id].model_id == promotion.model_id &&
+        var.deployment.models.runtime_security_authorizations[promotion.authorization_id].subject_schema == "fs2-serve.nebius.ai/model-image-promotion/v1" &&
+        var.deployment.models.runtime_security_authorizations[promotion.authorization_id].subject_sha256 == promotion.binding_sha256
       ]),
       false,
     )
@@ -1662,15 +1746,41 @@ variable "deployment" {
         ]) &&
         alltrue([
           for path in values(compatibility.writable_paths) :
-          (path == "/tmp" || can(regex("^/tmp/[A-Za-z0-9._/-]+$", path))) &&
+          can(regex("^/[A-Za-z0-9._/-]+$", path)) &&
           alltrue([
             for segment in split("/", trimprefix(path, "/")) :
             !contains(["", ".", ".."], segment)
+          ]) && anytrue([
+            for mount_path in keys(compatibility.writable_mounts) :
+            path == mount_path || startswith(path, "${trimsuffix(mount_path, "/")}/")
           ])
         ]) &&
+        contains(keys(compatibility.writable_mounts), "/tmp") &&
+        compatibility.writable_mounts["/tmp"].kind == "emptyDir" &&
+        compatibility.writable_mounts["/tmp"].reference == compatibility.tmp_size_limit &&
+        try(compatibility.writable_mounts["/tmp"].sub_path, null) == null &&
+        alltrue([
+          for mount_path, mount in compatibility.writable_mounts :
+          can(regex("^/[A-Za-z0-9._/-]+$", mount_path)) &&
+          !strcontains(mount_path, "..") &&
+          contains(["emptyDir", "persistentVolumeClaim"], mount.kind) &&
+          (mount.kind == "emptyDir" ? can(regex("^[1-9][0-9]*(?:Ki|Mi|Gi|Ti)$", mount.reference)) : can(regex("^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$", mount.reference))) &&
+          (
+            try(mount.sub_path, null) == null || (
+              can(regex("^[A-Za-z0-9._/-]+$", mount.sub_path)) && !strcontains(mount.sub_path, "..")
+            )
+          )
+        ]) &&
+        contains(["none", "modelexpress-nixl-rdma"], compatibility.capability_profile) &&
+        (
+          compatibility.capability_profile == "none" ?
+          length(compatibility.allowed_capabilities) == 0 :
+          compatibility.container_class == "containers" && compatibility.allowed_capabilities == ["IPC_LOCK"]
+        ) &&
         can(regex("^[0-9a-f]{64}$", compatibility.review_sha256)) &&
+        contains(keys(var.deployment.models.runtime_security_authorizations), compatibility.authorization_id) &&
         compatibility.compatibility_sha256 == sha256(jsonencode({
-          schema           = "fs2-serve.nebius.ai/runtime-security-compatibility/v1"
+          schema           = "fs2-serve.nebius.ai/runtime-security-compatibility/v2"
           model_id         = compatibility.model_id
           container_class  = compatibility.container_class
           container_name   = compatibility.container_name
@@ -1679,8 +1789,15 @@ variable "deployment" {
           run_as_group     = compatibility.run_as_group
           tmp_size_limit   = compatibility.tmp_size_limit
           writable_paths   = compatibility.writable_paths
+          writable_mounts  = compatibility.writable_mounts
+          capability_profile = compatibility.capability_profile
+          allowed_capabilities = compatibility.allowed_capabilities
           review_sha256    = compatibility.review_sha256
-        }))
+        })) &&
+        var.deployment.models.runtime_security_authorizations[compatibility.authorization_id].kind == "runtime-compatibility" &&
+        var.deployment.models.runtime_security_authorizations[compatibility.authorization_id].model_id == compatibility.model_id &&
+        var.deployment.models.runtime_security_authorizations[compatibility.authorization_id].subject_schema == "fs2-serve.nebius.ai/runtime-security-compatibility/v2" &&
+        var.deployment.models.runtime_security_authorizations[compatibility.authorization_id].subject_sha256 == compatibility.compatibility_sha256
       ]),
       false,
     )

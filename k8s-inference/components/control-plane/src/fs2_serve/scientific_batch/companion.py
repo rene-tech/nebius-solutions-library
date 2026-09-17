@@ -59,14 +59,17 @@ _STAGE_RUNNER_SOURCE = f'''#!/usr/bin/env python3
 from __future__ import annotations
 
 import hashlib
+import fcntl
 import json
 import os
 import signal
+import stat
 import subprocess
 import sys
 from pathlib import Path
 
 SCHEMA = {STAGE_COMPLETION_SCHEMA!r}
+WRITER_LOCK_PATH = "/var/run/fs2-cache-writer-admission.lock"
 
 
 def main() -> int:
@@ -78,6 +81,27 @@ def main() -> int:
         raise SystemExit("stage completion marker already exists")
     process = None
     termination_signal = None
+    writer_lock = os.environ.get("FS2_RUNTIME_CACHE_WRITER_LOCK_PATH")
+    activation_id = os.environ.get("FS2_RUNTIME_CACHE_ACTIVATION_ID")
+    if (writer_lock is None) != (activation_id is None):
+        raise SystemExit("runtime cache writer lock binding is incomplete")
+    writer_lock_fd = None
+    if writer_lock is not None:
+        if writer_lock != WRITER_LOCK_PATH or len(activation_id or "") != 64 or any(
+            character not in "0123456789abcdef" for character in activation_id or ""
+        ):
+            raise SystemExit("runtime cache writer activation is invalid")
+        writer_lock_fd = os.open(
+            writer_lock,
+            os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW,
+        )
+        lock_status = os.fstat(writer_lock_fd)
+        if not stat.S_ISREG(lock_status.st_mode) or lock_status.st_nlink != 1:
+            raise SystemExit("runtime cache writer lock is not one regular inode")
+        try:
+            fcntl.flock(writer_lock_fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise SystemExit("runtime cache migration fence is active") from error
 
     def terminate(signum, _frame):
         nonlocal termination_signal
@@ -95,10 +119,15 @@ def main() -> int:
         signal.signal(signum, terminate)
     if termination_signal is not None:
         return 128 + termination_signal
-    process = subprocess.Popen(command, start_new_session=True)
-    if termination_signal is not None:
-        terminate(termination_signal, None)
-    returncode = process.wait()
+    try:
+        process = subprocess.Popen(command, start_new_session=True)
+        if termination_signal is not None:
+            terminate(termination_signal, None)
+        returncode = process.wait()
+    finally:
+        if writer_lock_fd is not None:
+            fcntl.flock(writer_lock_fd, fcntl.LOCK_UN)
+            os.close(writer_lock_fd)
     if termination_signal is not None:
         return 128 + termination_signal
     if returncode != 0:

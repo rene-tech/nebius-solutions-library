@@ -336,6 +336,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         controller_files = ControllerFiles.load(
             settings.model_controller_envelope_file,
             settings.model_controller_bundles_file,
+            trusted_attestors=settings.trusted_route_attestors(),
         )
         serving_snapshot_bundles = {
             bundle.bundle_id: bundle.model_dump(mode="json", by_alias=True)
@@ -411,6 +412,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             capability_authority=scientific_capabilities,
             academic_tenant_id=settings.scientific_batch_academic_tenant_id,
             academic_authorization_receipt_sha256=(settings.scientific_batch_academic_authorization_receipt_sha256),
+            trusted_attestors=settings.trusted_route_attestors(),
         )
         scientific_scheduling = SchedulingContractResolver.load(
             settings.scientific_batch_scheduling_contract_file,

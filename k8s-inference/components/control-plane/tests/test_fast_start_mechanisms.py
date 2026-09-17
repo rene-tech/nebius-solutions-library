@@ -10,11 +10,20 @@ import os
 import subprocess
 import sys
 import threading
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest import mock
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+
+from fs2_serve_catalog.artifacts import canonical_bytes
+from fs2_serve_catalog.attestations import (
+    create_signed_attestation,
+    public_key_id,
+    public_key_value,
+)
 
 from fs2_serve import residency_agent
 from fs2_serve.fast_start_identity import mechanism_config_digest
@@ -126,6 +135,76 @@ def test_terraform_accepted_mechanism_envelope_loads_through_the_controller(tmp_
     envelope_file = tmp_path / "infrastructure-envelope.json"
     bundles_file = tmp_path / "renderer-bundles.json"
     envelope_file.write_text(json.dumps(envelope_document), encoding="utf-8")
+    writable_paths = {
+        "CUDA_CACHE_PATH": "/tmp/fs2-cache/cuda",
+        "HF_HOME": "/tmp/fs2-cache/huggingface",
+        "HOME": "/tmp/fs2-home",
+        "JAX_COMPILATION_CACHE_DIR": "/tmp/fs2-cache/jax",
+        "MPLCONFIGDIR": "/tmp/fs2-cache/matplotlib",
+        "NUMBA_CACHE_DIR": "/tmp/fs2-cache/numba",
+        "PYTHONPYCACHEPREFIX": "/tmp/fs2-cache/python",
+        "TMPDIR": "/tmp",
+        "TORCH_EXTENSIONS_DIR": "/tmp/fs2-cache/torch-extensions",
+        "TORCHINDUCTOR_CACHE_DIR": "/tmp/fs2-cache/torch-inductor",
+        "TRANSFORMERS_CACHE": "/tmp/fs2-cache/transformers",
+        "TRITON_CACHE_DIR": "/tmp/fs2-cache/triton",
+        "VLLM_CACHE_ROOT": "/tmp/fs2-cache/vllm",
+        "XDG_CACHE_HOME": "/tmp/fs2-cache/xdg",
+    }
+    compatibility = {
+        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+        "model_id": "qwen3-8b",
+        "container_class": "containers",
+        "container_name": "vllm",
+        "image": QWEN_IMAGE,
+        "run_as_user": 1000,
+        "run_as_group": 1000,
+        "tmp_size_limit": "8Gi",
+        "writable_paths": writable_paths,
+        "writable_mounts": {
+            "/tmp": {"kind": "emptyDir", "reference": "8Gi", "sub_path": None}
+        },
+        "capability_profile": "none",
+        "allowed_capabilities": [],
+        "review_sha256": "55" * 32,
+    }
+    compatibility_sha256 = hashlib.sha256(
+        json.dumps(compatibility, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    authorization_id = "qwen-runtime-review"
+    evidence = {
+        "schema": "fs2-serve.nebius.ai/runtime-security-evidence/v1",
+        "authorization_id": authorization_id,
+        "kind": "runtime-compatibility",
+        "model_id": "qwen3-8b",
+        "subject_schema": compatibility["schema"],
+        "subject_sha256": compatibility_sha256,
+        "decision": "accepted",
+        "reviewer_role": "independent-platform-security",
+    }
+    evidence_sha256 = hashlib.sha256(canonical_bytes(evidence)).hexdigest()
+    private_key = Ed25519PrivateKey.generate()
+    key_id = public_key_id(private_key.public_key())
+    session_id = "sha256:" + hashlib.sha256(b"controller-file-session").hexdigest()
+    now = datetime.now(UTC).replace(microsecond=0)
+    attestation = create_signed_attestation(
+        private_key=private_key,
+        session_id=session_id,
+        nonce="sha256:" + hashlib.sha256(b"controller-file-nonce").hexdigest(),
+        issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        expires_at=(now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        kind="runtime-compatibility",
+        subject_schema=str(compatibility["schema"]),
+        subject_digest="sha256:" + compatibility_sha256,
+        model_id="qwen3-8b",
+        claims={
+            "authorization_id": authorization_id,
+            "decision": "accepted",
+            "reviewer_role": "independent-platform-security",
+            "evidence_sha256": evidence_sha256,
+        },
+    )
+    attestation_sha256 = hashlib.sha256(canonical_bytes(attestation)).hexdigest()
     bundles_file.write_text(
         json.dumps(
             [
@@ -137,6 +216,23 @@ def test_terraform_accepted_mechanism_envelope_loads_through_the_controller(tmp_
                     "runtimeContainerName": "vllm",
                     "primaryServiceName": "qwen3-8b-runtime",
                     "primaryServicePort": 8000,
+                    "runtimeSecurityCompatibilities": [
+                        {
+                            **{
+                                key: value
+                                for key, value in compatibility.items()
+                                if key != "schema"
+                            },
+                            "authorizationId": authorization_id,
+                            "authorizationSha256": attestation_sha256,
+                            "authorizationEvidenceSha256": evidence_sha256,
+                            "authorizationSessionId": session_id,
+                            "authorizationVerifiedKeyId": key_id,
+                            "authorizationEvidence": evidence,
+                            "authorizationAttestation": attestation,
+                            "compatibilitySha256": compatibility_sha256,
+                        }
+                    ],
                     "resources": [
                         {
                             "apiVersion": "v1",
@@ -150,7 +246,11 @@ def test_terraform_accepted_mechanism_envelope_loads_through_the_controller(tmp_
         encoding="utf-8",
     )
 
-    loaded = ControllerFiles.load(envelope_file, bundles_file)
+    loaded = ControllerFiles.load(
+        envelope_file,
+        bundles_file,
+        trusted_attestors={key_id: public_key_value(private_key.public_key())},
+    )
     assert loaded.infrastructure_envelope == expected
     assert loaded.renderer().name == "legacy-manifest-v1"
 

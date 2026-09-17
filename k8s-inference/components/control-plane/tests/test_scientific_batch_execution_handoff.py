@@ -5,13 +5,14 @@ import io
 import json
 import tarfile
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
 import pytest
 from conftest import CATALOG_ROOT, SOLUTION_ROOT
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from jsonschema import Draft202012Validator
 from scientific_batch_fakes import FakeScientificBatchCluster, FakeScientificBatchRepository
 
@@ -76,6 +77,12 @@ from fs2_serve.scientific_batch.profile_catalog import (
     ScientificProfileCatalog,
     ScientificWorkloadProfile,
 )
+from fs2_serve_catalog.artifacts import canonical_bytes
+from fs2_serve_catalog.attestations import (
+    create_signed_attestation,
+    public_key_id,
+    public_key_value,
+)
 
 NOW = datetime(2026, 9, 2, 21, tzinfo=UTC)
 
@@ -83,6 +90,150 @@ NOW = datetime(2026, 9, 2, 21, tzinfo=UTC)
 def sha(value: bytes | str) -> str:
     raw = value.encode() if isinstance(value, str) else value
     return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def authorize_runtime_security(
+    value: dict[str, object],
+    *,
+    tools_image: str | None = None,
+    cache_boundary: dict[str, object] | None = None,
+) -> dict[str, str]:
+    """Add externally signed, runtime-reverified authorizations to a test map."""
+
+    private_key = Ed25519PrivateKey.generate()
+    key_id = public_key_id(private_key.public_key())
+    trusted = {key_id: public_key_value(private_key.public_key())}
+    session_id = sha("runtime-security-test-session")
+    now = datetime.now(UTC).replace(microsecond=0)
+    authorizations: dict[str, dict[str, object]] = {}
+
+    def authorize(
+        authorization_id: str,
+        *,
+        kind: str,
+        model_id: str,
+        subject_schema: str,
+        subject_sha256: str,
+    ) -> None:
+        evidence = {
+            "schema": "fs2-serve.nebius.ai/runtime-security-evidence/v1",
+            "authorization_id": authorization_id,
+            "kind": kind,
+            "model_id": model_id,
+            "subject_schema": subject_schema,
+            "subject_sha256": subject_sha256,
+            "decision": "accepted",
+            "reviewer_role": "independent-platform-security",
+        }
+        evidence_sha256 = hashlib.sha256(canonical_bytes(evidence)).hexdigest()
+        attestation = create_signed_attestation(
+            private_key=private_key,
+            session_id=session_id,
+            nonce=sha(f"{authorization_id}-nonce"),
+            issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            expires_at=(now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            kind=kind,
+            subject_schema=subject_schema,
+            subject_digest="sha256:" + subject_sha256,
+            model_id=model_id,
+            claims={
+                "authorization_id": authorization_id,
+                "decision": "accepted",
+                "reviewer_role": "independent-platform-security",
+                "evidence_sha256": evidence_sha256,
+            },
+        )
+        authorizations[authorization_id] = {
+            "kind": kind,
+            "model_id": model_id,
+            "subject_schema": subject_schema,
+            "subject_sha256": subject_sha256,
+            "evidence_sha256": evidence_sha256,
+            "evidence": evidence,
+            "attestation_sha256": hashlib.sha256(canonical_bytes(attestation)).hexdigest(),
+            "attestation": attestation,
+            "verified_key_id": key_id,
+        }
+
+    models = value.get("models")
+    assert isinstance(models, list)
+    seen_images: set[tuple[str, str]] = set()
+    for raw_model in models:
+        assert isinstance(raw_model, dict)
+        model_id = raw_model["model_id"]
+        assert isinstance(model_id, str)
+        stages = raw_model["stages"]
+        assert isinstance(stages, list)
+        for raw_stage in stages:
+            assert isinstance(raw_stage, dict)
+            image = raw_stage["image"]
+            assert isinstance(image, str)
+            if (model_id, image) in seen_images:
+                continue
+            seen_images.add((model_id, image))
+            subject_sha256 = hashlib.sha256(
+                json.dumps(
+                    {
+                        "schema": "fs2-serve.nebius.ai/scientific-image-subject/v1",
+                        "image": image,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+            authorize(
+                f"scientific-image-{len(authorizations)}",
+                kind="scientific-image",
+                model_id=model_id,
+                subject_schema="fs2-serve.nebius.ai/scientific-image-subject/v1",
+                subject_sha256=subject_sha256,
+            )
+    if tools_image is not None and all(image != tools_image for _, image in seen_images):
+        tools_subject = hashlib.sha256(
+            json.dumps(
+                {
+                    "schema": "fs2-serve.nebius.ai/scientific-image-subject/v1",
+                    "image": tools_image,
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        authorize(
+            f"scientific-image-{len(authorizations)}",
+            kind="scientific-image",
+            model_id="scientific-tools",
+            subject_schema="fs2-serve.nebius.ai/scientific-image-subject/v1",
+            subject_sha256=tools_subject,
+        )
+    boundaries: list[dict[str, object]] = []
+    if cache_boundary is not None:
+        subject = {
+            "schema": "fs2-serve.nebius.ai/scientific-runtime-cache-boundary/v1",
+            **cache_boundary,
+        }
+        subject_sha256 = hashlib.sha256(
+            json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        authorization_id = "cache-boundary-test"
+        authorize(
+            authorization_id,
+            kind="cache-boundary",
+            model_id=str(cache_boundary["model_id"]),
+            subject_schema="fs2-serve.nebius.ai/scientific-runtime-cache-boundary/v1",
+            subject_sha256=subject_sha256,
+        )
+        boundaries.append(
+            {
+                **cache_boundary,
+                "authorization_id": authorization_id,
+                "boundary_sha256": subject_sha256,
+            }
+        )
+    value["runtime_security_trust"] = {"session_id": session_id}
+    value["runtime_security_authorizations"] = authorizations
+    value["runtime_cache_boundaries"] = boundaries
+    return trusted
 
 
 def prepare_invocation_json(stage_id: str) -> str:
@@ -459,6 +610,31 @@ def runtime_execution_map(
     }
     if prepare_image_role is not None:
         value["models"][0]["stages"][0]["image_role"] = prepare_image_role
+    tools_image = "registry.test/control@sha256:" + "9" * 64
+    trusted_attestors = authorize_runtime_security(
+        value,
+        tools_image=tools_image,
+        cache_boundary=(
+            {
+                "tenant_id": "tenant-a",
+                "model_id": "protenix-v2",
+                "workload_namespace": "fs2-models",
+                "directory": (
+                    runtime_cache_sub_path
+                    if "/" not in runtime_cache_sub_path and ".." not in runtime_cache_sub_path
+                    else "protenix-v2"
+                ),
+                "run_as_user": 11003,
+                "run_as_group": 11003,
+                "legacy_uid": 10001,
+                "legacy_gid": 10001,
+                "origin": "legacy-existing",
+                "activation_id": "7" * 64,
+            }
+            if runtime_cache
+            else None
+        ),
+    )
     path = tmp_path / ("missing.json" if omit_file else "complete.json")
     path.write_text(json.dumps(value))
     catalog = ScientificProfileCatalog(
@@ -468,11 +644,12 @@ def runtime_execution_map(
     return FileScientificManifestRenderer(
         path=path,
         profiles=catalog,
-        tools_image="registry.test/control@sha256:" + "9" * 64,
+        tools_image=tools_image,
         internal_api_url="http://control.fs2.svc:8080",
         capability_authority=ScientificWorkloadCapabilityAuthority(
             KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
         ),
+        trusted_attestors=trusted_attestors,
     )
 
 
@@ -486,6 +663,7 @@ def test_tools_role_rejects_gpu_stages_and_unpinned_tools_image(tmp_path: Path) 
     path = tmp_path / "complete.json"
     document = json.loads(path.read_text())
     document["models"][0]["stages"][1]["image_role"] = "scientific-tools"
+    trusted_attestors = authorize_runtime_security(document)
     path.write_text(json.dumps(document))
     profile = runtime_profile()
     catalog = ScientificProfileCatalog(
@@ -493,7 +671,11 @@ def test_tools_role_rejects_gpu_stages_and_unpinned_tools_image(tmp_path: Path) 
         validators=ScientificProfileCatalog.load(CATALOG_ROOT)._validators,
     )
     with pytest.raises(ScientificExecutionMapError, match="only available to CPU"):
-        FileScientificManifestRenderer(path=path, profiles=catalog)
+        FileScientificManifestRenderer(
+            path=path,
+            profiles=catalog,
+            trusted_attestors=trusted_attestors,
+        )
 
 
 def runtime_plan() -> AdapterExecutionPlan:
@@ -889,7 +1071,12 @@ def test_runtime_binding_emits_only_the_selected_exact_variant_source(
             renderer.render(resource)
         return
 
-    pod = renderer.render(resource)["spec"]["template"]["spec"]  # type: ignore[index]
+    rendered = renderer.render(resource)
+    template = rendered["spec"]["template"]  # type: ignore[index]
+    pod = template["spec"]
+    assert template["metadata"]["annotations"][  # type: ignore[index]
+        "fs2-serve.nebius.ai/runtime-cache-activation"
+    ] == "7" * 64
     assert "unused-variant" not in {item["name"] for item in pod["volumes"]}
     for container in (*pod["initContainers"], *pod["containers"]):
         assert "unused-variant" not in {item["name"] for item in container["volumeMounts"]}
@@ -928,13 +1115,21 @@ def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursiv
     )
     pod = renderer.render(resource)["spec"]["template"]["spec"]  # type: ignore[index]
     model = pod["containers"][0]
-    mounts = {item["name"]: item for item in model["volumeMounts"]}
-    assert mounts["runtime-cache"] == {
+    cache_mounts = [
+        item for item in model["volumeMounts"] if item["name"] == "runtime-cache"
+    ]
+    assert {
         "name": "runtime-cache",
         "mountPath": "/cache",
         "subPath": "protenix-v2",
         "readOnly": False,
-    }
+    } in cache_mounts
+    assert {
+        "name": "runtime-cache",
+        "mountPath": "/var/run/fs2-cache-writer-admission.lock",
+        "subPath": ".fs2-cache-writer-admission.lock",
+        "readOnly": True,
+    } in cache_mounts
     volumes = {item["name"]: item for item in pod["volumes"]}
     assert volumes["runtime-cache"]["persistentVolumeClaim"] == {
         "claimName": "fs2-scientific-runtime-cache",
@@ -950,6 +1145,18 @@ def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursiv
         "name": "runtime-tmp",
         "emptyDir": {"sizeLimit": "8Gi"},
     }
+    assert pod["volumes"][0]["emptyDir"]["sizeLimit"] == "20Gi"
+    model_environment = {item["name"]: item["value"] for item in model["env"]}
+    assert model_environment["FS2_RUNTIME_CACHE_WRITER_LOCK_PATH"] == (
+        "/var/run/fs2-cache-writer-admission.lock"
+    )
+    assert model_environment["FS2_RUNTIME_CACHE_ACTIVATION_ID"] == "7" * 64
+    assert model["command"][:3] == [
+        "python",
+        "/mnt/fs2-scientific/work/prepare/main/.fs2/stage-runner.py",
+        "--",
+    ]
+    assert model["command"][3:] == list(resource.invocation.argv)
     for container in (*pod["initContainers"], *pod["containers"]):
         assert container["securityContext"]["readOnlyRootFilesystem"] is True
         assert container["securityContext"]["runAsUser"] == 11003
@@ -957,7 +1164,7 @@ def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursiv
     assert pod["securityContext"]["supplementalGroups"] == [10001]
     assert pod["securityContext"]["supplementalGroupsPolicy"] == "Strict"
     renderer.tools_image = "foreign.registry.test/control@sha256:" + "9" * 64
-    with pytest.raises(ScientificExecutionMapError, match="same approved private registry"):
+    with pytest.raises(ScientificExecutionMapError, match="lacks an accepted dereferenced authorization"):
         renderer.render(resource)
     renderer.tools_image = "registry.test/control@sha256:" + "9" * 64
     renderer.runtime_cache_gid_owners = {10001: "protenix-v2", 11002: "openfold3-openbind"}  # type: ignore[assignment]
@@ -985,6 +1192,35 @@ def test_runtime_cache_is_terraform_owned_model_only_and_never_triggers_recursiv
 def test_runtime_cache_refuses_a_non_terraform_claim(tmp_path: Path) -> None:
     with pytest.raises(ScientificExecutionMapError, match="Terraform-owned claim at /cache"):
         runtime_execution_map(tmp_path, runtime_cache=True, runtime_cache_claim="tenant-supplied-cache")
+
+
+def test_execution_map_rejects_same_document_self_authorization(tmp_path: Path) -> None:
+    document = json.loads(
+        (CATALOG_ROOT / "contracts/scientific-execution-map.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    document["runtime_security_trust"] = {"session_id": sha("review-session")}
+    document["runtime_security_authorizations"] = {
+        "same-author-record": {
+            "kind": "scientific-image",
+            "subject_sha256": "1" * 64,
+            "evidence_path": "same-document.json",
+            "evidence_sha256": "2" * 64,
+            "decision": "accepted",
+            "reviewer_role": "independent-platform-security",
+            "authorization_sha256": "3" * 64,
+        }
+    }
+    path = tmp_path / "self-authorized-execution-map.json"
+    path.write_text(json.dumps(document), encoding="utf-8")
+
+    with pytest.raises(ScientificExecutionMapError, match="authorization fields differ"):
+        FileScientificManifestRenderer(
+            path=path,
+            profiles=ScientificProfileCatalog.load(CATALOG_ROOT),
+            trusted_attestors={sha("unrelated-key"): "A" * 43},
+        )
 
 
 def test_runtime_cache_refuses_an_unsafe_or_cross_model_subpath(tmp_path: Path) -> None:
@@ -1018,6 +1254,7 @@ def test_runtime_cache_refuses_cross_model_uid_gid_reuse(tmp_path: Path) -> None
     )
     for stage in by_model["mosaic"]["stages"]:
         stage["workspace_uid"], stage["workspace_gid"] = openfold_identity
+    trusted_attestors = authorize_runtime_security(document)
     path = tmp_path / "cross-model-cache-identity-reuse.json"
     path.write_text(json.dumps(document), encoding="utf-8")
 
@@ -1025,6 +1262,7 @@ def test_runtime_cache_refuses_cross_model_uid_gid_reuse(tmp_path: Path) -> None
         FileScientificManifestRenderer(
             path=path,
             profiles=ScientificProfileCatalog.load(CATALOG_ROOT),
+            trusted_attestors=trusted_attestors,
         )
 
 
@@ -1040,6 +1278,7 @@ def test_runtime_cache_refuses_cross_model_directory_reuse(tmp_path: Path) -> No
             name: value.replace("/cache/mosaic/", "/cache/openfold3/")
             for name, value in stage["environment"].items()
         }
+    trusted_attestors = authorize_runtime_security(document)
     path = tmp_path / "cross-model-cache-directory-reuse.json"
     path.write_text(json.dumps(document), encoding="utf-8")
 
@@ -1047,6 +1286,7 @@ def test_runtime_cache_refuses_cross_model_directory_reuse(tmp_path: Path) -> No
         FileScientificManifestRenderer(
             path=path,
             profiles=ScientificProfileCatalog.load(CATALOG_ROOT),
+            trusted_attestors=trusted_attestors,
         )
 
 
@@ -1319,6 +1559,11 @@ def _bindcraft_renderer(
             }
         ],
     }
+    tools_image = "registry.test/control@sha256:" + "9" * 64
+    trusted_attestors = authorize_runtime_security(
+        execution_map,
+        tools_image=tools_image,
+    )
     path = tmp_path / "bindcraft-execution-map.json"
     path.write_text(json.dumps(execution_map))
     catalog = ScientificProfileCatalog(
@@ -1328,11 +1573,12 @@ def _bindcraft_renderer(
     renderer = FileScientificManifestRenderer(
         path=path,
         profiles=catalog,
-        tools_image="registry.test/control@sha256:" + "9" * 64,
+        tools_image=tools_image,
         internal_api_url="http://control.fs2.svc:8080",
         capability_authority=ScientificWorkloadCapabilityAuthority(
             KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
         ),
+        trusted_attestors=trusted_attestors,
     )
     marker = "/mnt/fs2-scientific/work/design/main/.fs2/runtime-localization.json"
     mounts = (
@@ -1692,6 +1938,11 @@ def _academic_af3_renderer(
             }
         ],
     }
+    tools_image = "registry.test/control@sha256:" + "9" * 64
+    trusted_attestors = authorize_runtime_security(
+        value,
+        tools_image=tools_image,
+    )
     path = tmp_path / f"af3-{hashlib.sha256(database_sub_path.encode()).hexdigest()[:12]}.json"
     path.write_text(json.dumps(value))
 
@@ -1708,11 +1959,12 @@ def _academic_af3_renderer(
     renderer = FileScientificManifestRenderer(
         path=path,
         profiles=catalog,
-        tools_image="registry.test/control@sha256:" + "9" * 64,
+        tools_image=tools_image,
         internal_api_url="http://control.fs2.svc:8080",
         capability_authority=ScientificWorkloadCapabilityAuthority(
             KeyedHasher(active_key_id="ledger-v1", keys={"ledger-v1": b"k" * 32})
         ),
+        trusted_attestors=trusted_attestors,
     )
     preprocessing = StageInvocation(
         stage_id="data-pipeline",

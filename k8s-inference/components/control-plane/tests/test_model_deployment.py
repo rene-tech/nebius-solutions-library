@@ -3,14 +3,21 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import pytest
 import yaml
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
+from fs2_serve_catalog.artifacts import canonical_bytes
+from fs2_serve_catalog.attestations import (
+    create_signed_attestation,
+    public_key_id,
+    public_key_value,
+)
 from pydantic import ValidationError
 
 from fs2_serve.access_models import OperatorPrincipal, OperatorRole, PrincipalKind
@@ -121,9 +128,15 @@ def runtime_security_compatibility(
     uid: int = 1000,
     gid: int = 1000,
     tmp_size_limit: str = "8Gi",
+    writable_mounts: dict[str, dict[str, str | None]] | None = None,
+    capability_profile: str = "none",
+    allowed_capabilities: list[str] | None = None,
 ) -> RuntimeSecurityCompatibility:
+    reviewed_mounts = writable_mounts or {
+        "/tmp": {"kind": "emptyDir", "reference": tmp_size_limit, "sub_path": None}
+    }
     payload = {
-        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v1",
+        "schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v2",
         "model_id": model_id,
         "container_class": container_class,
         "container_name": container_name,
@@ -132,14 +145,80 @@ def runtime_security_compatibility(
         "run_as_group": gid,
         "tmp_size_limit": tmp_size_limit,
         "writable_paths": WRITABLE_RUNTIME_PATHS,
+        "writable_mounts": reviewed_mounts,
+        "capability_profile": capability_profile,
+        "allowed_capabilities": allowed_capabilities or [],
         "review_sha256": "f" * 64,
     }
     binding = hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("ascii")
     ).hexdigest()
     return RuntimeSecurityCompatibility.model_validate(
-        {**payload, "compatibility_sha256": binding}
+        {
+            **{key: value for key, value in payload.items() if key != "schema"},
+            "authorization_id": "independent-runtime-review",
+            "authorization_sha256": "a" * 64,
+            "authorization_evidence_sha256": "b" * 64,
+            "compatibility_sha256": binding,
+        }
     )
+
+
+def test_runtime_security_compatibility_reverifies_external_authority() -> None:
+    compatibility = runtime_security_compatibility(
+        model_id="qwen.3-8b",
+        container_class="containers",
+        container_name="runtime",
+        image=f"registry.example/fs2/vllm@{digest('b')}",
+    )
+    evidence = {
+        "schema": "fs2-serve.nebius.ai/runtime-security-evidence/v1",
+        "authorization_id": compatibility.authorization_id,
+        "kind": "runtime-compatibility",
+        "model_id": compatibility.model_id,
+        "subject_schema": "fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+        "subject_sha256": compatibility.compatibility_sha256,
+        "decision": "accepted",
+        "reviewer_role": "independent-platform-security",
+    }
+    evidence_sha256 = hashlib.sha256(canonical_bytes(evidence)).hexdigest()
+    private_key = Ed25519PrivateKey.generate()
+    session_id = "sha256:" + hashlib.sha256(b"runtime-security-session").hexdigest()
+    now = datetime.now(UTC).replace(microsecond=0)
+    attestation = create_signed_attestation(
+        private_key=private_key,
+        session_id=session_id,
+        nonce="sha256:" + hashlib.sha256(b"runtime-security-nonce").hexdigest(),
+        issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        expires_at=(now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        kind="runtime-compatibility",
+        subject_schema="fs2-serve.nebius.ai/runtime-security-compatibility/v2",
+        subject_digest="sha256:" + compatibility.compatibility_sha256,
+        model_id=compatibility.model_id,
+        claims={
+            "authorization_id": compatibility.authorization_id,
+            "decision": "accepted",
+            "reviewer_role": "independent-platform-security",
+            "evidence_sha256": evidence_sha256,
+        },
+    )
+    attestation_sha256 = hashlib.sha256(canonical_bytes(attestation)).hexdigest()
+    key_id = public_key_id(private_key.public_key())
+    signed = compatibility.model_copy(
+        update={
+            "authorization_evidence_sha256": evidence_sha256,
+            "authorization_sha256": attestation_sha256,
+            "authorization_session_id": session_id,
+            "authorization_verified_key_id": key_id,
+            "authorization_evidence": evidence,
+            "authorization_attestation": attestation,
+        }
+    )
+    signed.verify_external_authorization(
+        {key_id: public_key_value(private_key.public_key())}
+    )
+    with pytest.raises(ValueError, match="signature is invalid"):
+        signed.verify_external_authorization({digest("9"): "A" * 43})
 
 
 def model_spec(
@@ -295,11 +374,44 @@ def renderer(*, runtime_memory_request: str | None = None) -> LegacyManifestRend
                 container_class=container_class,
                 container_name=container_name,
                 image=final_image,
+                writable_mounts=(
+                    {
+                        "/runtime-cache": {
+                            "kind": "emptyDir",
+                            "reference": "16Gi",
+                            "sub_path": None,
+                        },
+                        "/tmp": {
+                            "kind": "emptyDir",
+                            "reference": "8Gi",
+                            "sub_path": None,
+                        },
+                    }
+                    if (container_class, container_name) == ("containers", "runtime")
+                    else None
+                ),
             )
             for container_class, container_name in (
                 ("containers", "runtime"),
                 ("initContainers", "fs2-warm-page-cache"),
                 ("initContainers", "fs2-verify-host-memory-residency"),
+            )
+        ] + [
+            runtime_security_compatibility(
+                model_id="qwen.3-8b",
+                container_class="containers",
+                container_name="runtime",
+                image=final_image,
+                writable_mounts={
+                    "/runtime-cache": {
+                        "kind": "emptyDir",
+                        "reference": "16Gi",
+                        "sub_path": None,
+                    },
+                    "/tmp": {"kind": "emptyDir", "reference": "8Gi", "sub_path": None},
+                },
+                capability_profile="modelexpress-nixl-rdma",
+                allowed_capabilities=["IPC_LOCK"],
             )
         ],
         resources=[
@@ -793,6 +905,7 @@ def test_renderer_uses_selected_pool_resource_and_safe_derived_metadata() -> Non
         "allowPrivilegeEscalation": False,
         "runAsNonRoot": True,
         "runAsUser": 1000,
+        "runAsGroup": 1000,
         "readOnlyRootFilesystem": True,
         "capabilities": {"drop": ["ALL"], "add": []},
     }
@@ -930,6 +1043,19 @@ def test_final_render_rejects_unreviewed_container_identity_image_and_writable_p
     assert disabled_deployment["spec"]["replicas"] == 0
 
 
+def test_final_render_rejects_unbounded_writable_block_devices() -> None:
+    base_renderer = renderer()
+    source = next(iter(base_renderer._bundles.values())).model_copy(deep=True)  # type: ignore[attr-defined]
+    deployment = next(item for item in source.resources if item["kind"] == "Deployment")
+    deployment["spec"]["template"]["spec"]["containers"][0]["volumeDevices"] = [
+        {"name": "runtime-cache", "devicePath": "/dev/fs2-cache"}
+    ]
+
+    rejected = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
+    with pytest.raises(ValueError, match="volumeDevices are not permitted"):
+        rejected.render(model_spec(), render_context())
+
+
 def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_level() -> None:
     spec = model_spec().model_copy(
         update={"placement": model_spec().placement.model_copy(update={"pool_refs": ["pool-a"]})}
@@ -1027,7 +1153,7 @@ def test_renderer_injects_exact_modelexpress_vllm_client_without_claiming_a_leve
     assert any(issue.code == "modelexpress_pool_unqualified" for issue in rejected.issues)
 
 
-def test_renderer_requests_only_the_explicit_modelexpress_rdma_resource() -> None:
+def test_renderer_allows_only_exact_modelexpress_rdma_ipc_lock() -> None:
     transport = ModelExpressPoolTransport(
         mode="nixl-rdma",
         rdma_resource_name="example.com/rdma_shared_device_a",
@@ -1060,7 +1186,10 @@ def test_renderer_requests_only_the_explicit_modelexpress_rdma_resource() -> Non
 
     assert container["resources"]["requests"]["example.com/rdma_shared_device_a"] == 4
     assert container["resources"]["limits"]["example.com/rdma_shared_device_a"] == 4
-    assert container["securityContext"]["capabilities"] == {"drop": ["ALL"], "add": []}
+    assert container["securityContext"]["capabilities"] == {
+        "drop": ["ALL"],
+        "add": ["IPC_LOCK"],
+    }
     assert container["securityContext"]["readOnlyRootFilesystem"] is True
     assert environment["MX_RDMA_NIC_PIN"] == "auto"
     assert environment["UCX_RNDV_SCHEME"] == "get_zcopy"
@@ -1073,6 +1202,18 @@ def test_renderer_requests_only_the_explicit_modelexpress_rdma_resource() -> Non
 
     with pytest.raises(ValidationError, match="requires one qualified extended resource"):
         ModelExpressPoolTransport(mode="nixl-rdma", rdma_resource_name=None)
+
+
+def test_renderer_rejects_ipc_lock_outside_exact_rdma_runtime_container() -> None:
+    base_renderer = renderer()
+    source = next(iter(base_renderer._bundles.values())).model_copy(deep=True)  # type: ignore[attr-defined]
+    deployment = next(item for item in source.resources if item["kind"] == "Deployment")
+    deployment["spec"]["template"]["spec"]["containers"][0]["securityContext"] = {
+        "capabilities": {"add": ["IPC_LOCK"]}
+    }
+    rejected = LegacyManifestRenderer({(source.model_ref, source.template_digest): source})
+    with pytest.raises(ValueError, match="exact transport compatibility"):
+        rejected.render(model_spec(), render_context())
 
 
 def test_modelexpress_same_accelerator_hot_and_burst_share_only_compatible_transfer_groups() -> None:

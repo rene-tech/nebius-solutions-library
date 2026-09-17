@@ -148,11 +148,17 @@ resource "kubernetes_secret_v1" "route_attestors" {
   }
   type = "Opaque"
   data = {
-    "attestors.json" = jsonencode({
-      "sha256:${sha256(random_password.key_material["attestor"].result)}" = trimsuffix(replace(replace(base64encode(random_password.key_material["attestor"].result), "+", "-"), "/", "_"), "=")
-    })
+    "attestors.json" = jsonencode(merge(
+      {
+        "sha256:${sha256(random_password.key_material["attestor"].result)}" = trimsuffix(replace(replace(base64encode(random_password.key_material["attestor"].result), "+", "-"), "/", "_"), "=")
+      },
+      local.runtime_security_trusted_attestors,
+    ))
   }
-  depends_on = [terraform_data.cluster_contract]
+  depends_on = [
+    terraform_data.cluster_contract,
+    terraform_data.runtime_security_authority,
+  ]
 }
 
 resource "kubernetes_secret_v1" "admin" {

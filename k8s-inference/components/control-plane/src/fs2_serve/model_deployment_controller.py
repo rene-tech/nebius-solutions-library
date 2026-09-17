@@ -120,15 +120,27 @@ class ControllerFiles(StrictModel):
     bundles: list[LegacyTemplateBundle] = Field(min_length=1, max_length=512)
 
     @classmethod
-    def load(cls, envelope_file: Path, bundles_file: Path) -> ControllerFiles:
+    def load(
+        cls,
+        envelope_file: Path,
+        bundles_file: Path,
+        *,
+        trusted_attestors: Mapping[str, str] | None = None,
+    ) -> ControllerFiles:
         envelope = InfrastructureEnvelope.model_validate_json(envelope_file.read_bytes())
         raw_bundles = json.loads(bundles_file.read_bytes())
         if not isinstance(raw_bundles, list):
             raise ValueError("model controller bundle file must contain a JSON array")
-        return cls(
+        loaded = cls(
             infrastructure_envelope=envelope,
             bundles=[LegacyTemplateBundle.model_validate(item) for item in raw_bundles],
         )
+        if not trusted_attestors:
+            raise ValueError("model controller runtime security lacks an external trust root")
+        for bundle in loaded.bundles:
+            for compatibility in bundle.runtime_security_compatibilities:
+                compatibility.verify_external_authorization(trusted_attestors)
+        return loaded
 
     def renderer(self) -> LegacyManifestRenderer:
         indexed = {(item.model_ref, item.template_digest): item for item in self.bundles}
@@ -2790,6 +2802,7 @@ async def run_model_controller(settings: Settings) -> None:
     files = ControllerFiles.load(
         settings.model_controller_envelope_file,
         settings.model_controller_bundles_file,
+        trusted_attestors=settings.trusted_route_attestors(),
     )
     api = HttpKubernetesModelClient(
         base_url=settings.model_controller_api_url,

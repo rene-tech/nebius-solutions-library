@@ -5,13 +5,14 @@ import json
 import hashlib
 import unittest
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from fs2_serve_catalog.capabilities import (
+    BackendCapability,
     GPU_TOLERATION,
     bind_backend_capability,
 )
@@ -46,6 +47,8 @@ from fs2_serve_catalog.workloads import (
     render_native_http_workload,
     render_nim_operator_cache,
     render_nim_operator_service,
+    validate_nim_operator_admission_review,
+    validate_nim_operator_descendant,
 )
 from tests.test_ngc_fixtures import make_ngc_materialization
 
@@ -107,6 +110,109 @@ class KubernetesAdapterTests(unittest.TestCase):
     def digest(label: str, *, image: bool = False) -> str:
         value = hashlib.sha256(label.encode()).hexdigest()
         return "sha256:" + value if image else value
+
+    def nim_security_envelope(
+        self,
+        record: ModelRecord,
+        resource_kind: str,
+        backend_capability: BackendCapability,
+    ) -> tuple[dict[str, object], dict[str, str], str]:
+        image = record.to_dict()["runtime"]["image"]
+        descendant_image = f"registry.test/private/nim/{record.model_id}@{image['digest']}"
+        nim_image = backend_capability.nim_image
+        self.assertIsNotNone(nim_image)
+        assert nim_image is not None
+        custom_resource_image = (
+            {
+                "repository": descendant_image.rsplit("@", 1)[0],
+                "tag": nim_image["tag"],
+            }
+            if resource_kind == "NIMService"
+            else {"modelPuller": descendant_image}
+        )
+        container_security = {
+            "allowPrivilegeEscalation": False,
+            "capabilities": {"add": [], "drop": ["ALL"]},
+            "privileged": False,
+            "readOnlyRootFilesystem": True,
+            "runAsNonRoot": True,
+            "runAsUser": 1000,
+            "runAsGroup": 1000,
+        }
+        companion_security = {
+            **container_security,
+            "runAsUser": 1001,
+            "runAsGroup": 1001,
+        }
+        companion_image = (
+            "registry.test/private/nim/security-proxy@sha256:"
+            + self.digest("nim-security-proxy")
+        )
+        subject: dict[str, object] = {
+            "schema": "fs2-serve.nebius.ai/nim-operator-security-subject/v2",
+            "model_id": record.model_id,
+            "resource_kind": resource_kind,
+            "operator_image_digest": self.digest("nim-operator-image"),
+            "private_registry": "registry.test",
+            "descendant_image": descendant_image,
+            "custom_resource_image": custom_resource_image,
+            "runtime_container_name": "model",
+            "admission_policy": "fs2-nim-operator-restricted",
+            "admission_policy_sha256": self.digest("nim-admission-policy"),
+            "pod_security_context": {
+                "runAsNonRoot": True,
+                "seccompProfile": {"type": "RuntimeDefault"},
+                "supplementalGroupsPolicy": "Strict",
+            },
+            "containers": {
+                "model": {
+                    "image": descendant_image,
+                    "security_context": container_security,
+                    "writable_mounts": {
+                        "/tmp": {"kind": "emptyDir", "reference": "8Gi", "sub_path": None}
+                    },
+                },
+                "security-proxy": {
+                    "image": companion_image,
+                    "security_context": companion_security,
+                    "writable_mounts": {
+                        "/var/run/fs2": {
+                            "kind": "emptyDir",
+                            "reference": "64Mi",
+                            "sub_path": None,
+                        }
+                    },
+                },
+            },
+            "volume_devices": "forbidden",
+        }
+        subject_sha256 = hashlib.sha256(canonical_bytes(subject)).hexdigest()
+        private_key = Ed25519PrivateKey.generate()
+        trusted = {public_key_id(private_key.public_key()): public_key_value(private_key.public_key())}
+        session_id = self.digest(f"nim-security-{resource_kind}-session", image=True)
+        now = datetime.now(timezone.utc).replace(microsecond=0)
+        attestation = create_signed_attestation(
+            private_key=private_key,
+            session_id=session_id,
+            nonce=self.digest(f"nim-security-{resource_kind}-nonce", image=True),
+            issued_at=now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            expires_at=(now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            kind="nim-operator-descendant-admission",
+            subject_schema=subject["schema"],
+            subject_digest="sha256:" + subject_sha256,
+            model_id=record.model_id,
+            claims={
+                "decision": "accepted",
+                "reviewer_role": "independent-platform-security",
+                "admission_policy_sha256": subject["admission_policy_sha256"],
+            },
+        )
+        return {
+            "subject": subject,
+            "subject_sha256": subject_sha256,
+            "attestation": attestation,
+            "attestation_sha256": hashlib.sha256(canonical_bytes(attestation)).hexdigest(),
+        }, trusted, session_id
 
     def resolved_qwen(self) -> ModelRecord:
         original = self.catalog.model("qwen3-8b")
@@ -1082,11 +1188,17 @@ class KubernetesAdapterTests(unittest.TestCase):
         self.assertTrue(cxr_container["securityContext"]["allowPrivilegeEscalation"] is False)
         boltz = self.catalog.model("boltz2")
         nim_capability = self.capability(boltz, storage_mode="nimcache-pvc")
+        cache_envelope, cache_attestors, cache_session = self.nim_security_envelope(
+            boltz, "NIMCache", nim_capability
+        )
         cache = render_nim_operator_cache(
             boltz,
             prerequisites=self.prerequisites,
             namespace="fs2-models",
             backend_capability=nim_capability,
+            security_envelope=cache_envelope,
+            trusted_attestors=cache_attestors,
+            security_session_id=cache_session,
         )
         self.assertFalse(cache["spec"]["storage"]["pvc"]["create"])
         self.assertEqual([GPU_TOLERATION], cache["spec"]["tolerations"])
@@ -1100,11 +1212,43 @@ class KubernetesAdapterTests(unittest.TestCase):
             "nim-operator-nimcache",
             cache["metadata"]["annotations"]["fs2-serve.nebius.ai/cache-owner"],
         )
+        cache_resource_response = validate_nim_operator_admission_review(
+            {
+                "apiVersion": "admission.k8s.io/v1",
+                "kind": "AdmissionReview",
+                "request": {
+                    "uid": "admission-unit-cache-cr-1",
+                    "operation": "CREATE",
+                    "namespace": "fs2-models",
+                    "resource": {
+                        "group": "apps.nvidia.com",
+                        "version": "v1alpha1",
+                        "resource": "nimcaches",
+                    },
+                    "object": cache,
+                },
+            },
+            security_envelope=cache_envelope,
+            trusted_attestors=cache_attestors,
+            security_session_id=cache_session,
+            resource_kind="NIMCache",
+            record=boltz,
+        )
+        self.assertEqual(
+            {"uid": "admission-unit-cache-cr-1", "allowed": True},
+            cache_resource_response["response"],
+        )
+        service_envelope, service_attestors, service_session = self.nim_security_envelope(
+            boltz, "NIMService", nim_capability
+        )
         service = render_nim_operator_service(
             boltz,
             prerequisites=self.prerequisites,
             namespace="fs2-models",
             backend_capability=nim_capability,
+            security_envelope=service_envelope,
+            trusted_attestors=service_attestors,
+            security_session_id=service_session,
         )
         self.assertEqual("NIMService", service["kind"])
         self.assertEqual(0, service["spec"]["replicas"])
@@ -1118,6 +1262,119 @@ class KubernetesAdapterTests(unittest.TestCase):
         self.assertEqual([GPU_TOLERATION], service["spec"]["tolerations"])
         self.assertIn("disabled-pending-pod-imageid", json.dumps(service))
         self.assertNotIn("hostPath", json.dumps(service))
+        custom_resource_response = validate_nim_operator_admission_review(
+            {
+                "apiVersion": "admission.k8s.io/v1",
+                "kind": "AdmissionReview",
+                "request": {
+                    "uid": "admission-unit-cr-1",
+                    "operation": "CREATE",
+                    "namespace": "fs2-models",
+                    "resource": {
+                        "group": "apps.nvidia.com",
+                        "version": "v1alpha1",
+                        "resource": "nimservices",
+                    },
+                    "object": service,
+                },
+            },
+            security_envelope=service_envelope,
+            trusted_attestors=service_attestors,
+            security_session_id=service_session,
+            resource_kind="NIMService",
+            record=boltz,
+        )
+        self.assertEqual(
+            {"uid": "admission-unit-cr-1", "allowed": True},
+            custom_resource_response["response"],
+        )
+        subject = service_envelope["subject"]
+        descendant = {
+            "metadata": {
+                "annotations": {
+                    "fs2-serve.nebius.ai/operator-security-envelope-sha256": service_envelope[
+                        "subject_sha256"
+                    ]
+                }
+            },
+            "spec": {
+                "securityContext": subject["pod_security_context"],
+                "containers": [
+                    {
+                        "name": "model",
+                        "image": subject["descendant_image"],
+                        "securityContext": subject["containers"]["model"]["security_context"],
+                        "volumeMounts": [
+                            {"name": "tmp", "mountPath": "/tmp", "readOnly": False}
+                        ],
+                    },
+                    {
+                        "name": "security-proxy",
+                        "image": subject["containers"]["security-proxy"]["image"],
+                        "securityContext": subject["containers"]["security-proxy"][
+                            "security_context"
+                        ],
+                        "volumeMounts": [
+                            {
+                                "name": "security-proxy-tmp",
+                                "mountPath": "/var/run/fs2",
+                                "readOnly": False,
+                            }
+                        ],
+                    },
+                ],
+                "volumes": [
+                    {"name": "tmp", "emptyDir": {"sizeLimit": "8Gi"}},
+                    {
+                        "name": "security-proxy-tmp",
+                        "emptyDir": {"sizeLimit": "64Mi"},
+                    },
+                ],
+            },
+        }
+        validate_nim_operator_descendant(
+            descendant,
+            security_envelope=service_envelope,
+            trusted_attestors=service_attestors,
+            security_session_id=service_session,
+            resource_kind="NIMService",
+            record=boltz,
+        )
+        admission_response = validate_nim_operator_admission_review(
+            {
+                "apiVersion": "admission.k8s.io/v1",
+                "kind": "AdmissionReview",
+                "request": {
+                    "uid": "admission-unit-1",
+                    "operation": "CREATE",
+                    "namespace": "fs2-models",
+                    "resource": {"group": "", "version": "v1", "resource": "pods"},
+                    "object": {"apiVersion": "v1", "kind": "Pod", **descendant},
+                },
+            },
+            security_envelope=service_envelope,
+            trusted_attestors=service_attestors,
+            security_session_id=service_session,
+            resource_kind="NIMService",
+            record=boltz,
+        )
+        self.assertEqual(
+            {"uid": "admission-unit-1", "allowed": True},
+            admission_response["response"],
+        )
+        poisoned = copy.deepcopy(descendant)
+        poisoned["spec"]["containers"][0]["volumeDevices"] = [
+            {"name": "shared-cache", "devicePath": "/dev/cache"}
+        ]
+        with self.assertRaisesRegex(CatalogError, "writable block device"):
+            validate_nim_operator_descendant(
+                poisoned,
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+                resource_kind="NIMService",
+                record=boltz,
+            )
         with self.assertRaisesRegex(CatalogError, "cache identity differs"):
             render_nim_operator_service(
                 boltz,
@@ -1125,6 +1382,16 @@ class KubernetesAdapterTests(unittest.TestCase):
                 namespace="fs2-models",
                 backend_capability=nim_capability,
                 nim_cache_name="substituted-cache",
+                security_envelope=service_envelope,
+                trusted_attestors=service_attestors,
+                security_session_id=service_session,
+            )
+        with self.assertRaisesRegex(CatalogError, "lacks a signed external-trust"):
+            render_nim_operator_service(
+                boltz,
+                prerequisites=self.prerequisites,
+                namespace="fs2-models",
+                backend_capability=nim_capability,
             )
         with self.assertRaisesRegex(CatalogError, "NIM runtimes must use"):
             render_native_http_workload(

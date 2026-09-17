@@ -3104,6 +3104,8 @@ class DeploymentContractTests(unittest.TestCase):
             workload_variables,
         )
         self.assertIn("provenance_sha256", workload_variables)
+        self.assertIn('variable "model_runtime_security_authorizations"', workload_variables)
+        self.assertIn("caller-configurable", workload_variables)
         self.assertIn("binding_sha256", workload_variables)
         self.assertIn("source_image", workload_variables)
         self.assertIn("mirror_image", workload_variables)
@@ -3113,6 +3115,9 @@ class DeploymentContractTests(unittest.TestCase):
         )
         self.assertIn("security_hardened_model_documents", workload_locals)
         self.assertIn("model_runtime_security_validations", workload_locals)
+        self.assertIn("model_runtime_security_none_compatibilities_by_key", workload_locals)
+        self.assertIn("try(container.securityContext.capabilities.add, []) == []", workload_locals)
+        self.assertIn("for mount in record.container.volumeMounts : mount if can(mount.subPathExpr)", workload_locals)
         self.assertIn("supplementalGroupsPolicy = \"Strict\"", workload_locals)
         self.assertIn("keeper_image_supply_validations", workload_locals)
         self.assertNotIn(
@@ -3131,6 +3136,24 @@ class DeploymentContractTests(unittest.TestCase):
             "model_runtime_security_validations_by_model",
             controller_source,
         )
+        self.assertIn("authorizationAttestation", controller_source)
+
+        authorization_source = (
+            DEPLOY_ROOT / "stages" / "workloads" / "runtime_security_authorizations.tf"
+        ).read_text(encoding="utf-8")
+        verifier_source = (
+            DEPLOY_ROOT
+            / "stages"
+            / "workloads"
+            / "scripts"
+            / "verify_runtime_security_authorization.py"
+        ).read_text(encoding="utf-8")
+        self.assertIn("runtime_security_authority_consistent", authorization_source)
+        self.assertIn(
+            '/run/fs2-runtime-security/platform-security/authority.json',
+            verifier_source,
+        )
+        self.assertNotIn('query["trust_roots_path"]', verifier_source)
 
         scientific_source = (
             DEPLOY_ROOT / "stages" / "workloads" / "scientific_artifacts.tf"

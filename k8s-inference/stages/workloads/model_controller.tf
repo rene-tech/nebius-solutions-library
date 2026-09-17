@@ -607,7 +607,17 @@ locals {
         runAsGroup          = compatibility.run_as_group
         tmpSizeLimit        = compatibility.tmp_size_limit
         writablePaths       = compatibility.writable_paths
+        writableMounts      = compatibility.writable_mounts
+        capabilityProfile   = compatibility.capability_profile
+        allowedCapabilities = compatibility.allowed_capabilities
         reviewSha256        = compatibility.review_sha256
+        authorizationId     = compatibility.authorization_id
+        authorizationSha256 = local.verified_runtime_security_authorizations[compatibility.authorization_id].attestation_sha256
+        authorizationEvidenceSha256 = local.verified_runtime_security_authorizations[compatibility.authorization_id].evidence_sha256
+        authorizationSessionId = local.verified_runtime_security_authorizations[compatibility.authorization_id].session_id
+        authorizationVerifiedKeyId = local.verified_runtime_security_authorizations[compatibility.authorization_id].verified_key_id
+        authorizationEvidence = local.verified_runtime_security_authorizations[compatibility.authorization_id].evidence
+        authorizationAttestation = local.verified_runtime_security_authorizations[compatibility.authorization_id].attestation
         compatibilitySha256 = compatibility.compatibility_sha256
       }
       if compatibility.model_id == model_id

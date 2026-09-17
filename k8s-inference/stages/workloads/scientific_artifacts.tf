@@ -19,15 +19,6 @@ locals {
   scientific_artifacts_secret_key     = "credentials.json"
   scientific_runtime_cache_claim_name = "fs2-scientific-runtime-cache"
   scientific_runtime_cache_mount_path = "/cache"
-  # Dual-access is the only authorized UID/GID transition in this source
-  # candidate. The legacy group remains on every cache entry for rollback;
-  # final Pods receive only their model's legacy group and an isolated subPath.
-  scientific_runtime_cache_legacy_identities = {
-    mosaic                 = { uid = 10001, gid = 10001 }
-    openfold3-openbind     = { uid = 10001, gid = 10001 }
-    protenix-v2            = { uid = 10001, gid = 10001 }
-    alphafold3             = { uid = 1001, gid = 1001 }
-  }
   scientific_model_runtime_images = sort(distinct(flatten([
     for model in try(var.scientific_batch.execution_map.models, []) : [
       for stage in try(model.stages, []) : try(stage.image, "")
@@ -41,6 +32,16 @@ locals {
     for image in local.scientific_final_container_images :
     can(regex("^[^\\s@]+@sha256:[0-9a-f]{64}$", image)) &&
     startswith(image, "${var.accelerator_pool_contract.artifact_source.registry.fqdn}/")
+  ])
+  scientific_image_authorizations_valid = alltrue([
+    for image in local.scientific_final_container_images : anytrue([
+      for authorization in values(local.verified_runtime_security_authorizations) :
+      authorization.kind == "scientific-image" &&
+      authorization.subject_sha256 == sha256(jsonencode({
+        schema = "fs2-serve.nebius.ai/scientific-image-subject/v1"
+        image  = image
+      }))
+    ])
   ])
   scientific_runtime_cache_mounts = flatten([
     for model in try(var.scientific_batch.execution_map.models, []) : [
@@ -90,30 +91,24 @@ locals {
       ]) == 1
     ]
   ])
-  scientific_runtime_cache_identities_by_model = {
-    for consumer in local.scientific_runtime_cache_consumers : consumer.model_id => {
-      uid = consumer.workspace_uid
-      gid = consumer.workspace_gid
-    }...
-  }
-  scientific_runtime_cache_models_by_uid = {
-    for consumer in local.scientific_runtime_cache_consumers : tostring(consumer.workspace_uid) => consumer.model_id...
-  }
-  scientific_runtime_cache_models_by_gid = {
-    for consumer in local.scientific_runtime_cache_consumers : tostring(consumer.workspace_gid) => consumer.model_id...
-  }
-  scientific_runtime_cache_directory_claims = flatten([
-    for consumer in local.scientific_runtime_cache_consumers : [
-      {
-        name               = consumer.cache_sub_path
-        uid                = consumer.workspace_uid
-        gid                = consumer.workspace_gid
-        model_id           = consumer.model_id
-        stage_id           = consumer.stage_id
-        workload_namespace = consumer.workload_namespace
-      }
-    ]
-  ])
+  scientific_runtime_cache_boundaries = try(var.scientific_batch.execution_map.runtime_cache_boundaries, [])
+  scientific_runtime_cache_directory_claims = [
+    for boundary in local.scientific_runtime_cache_boundaries : {
+      name               = try(boundary.directory, "")
+      uid                = try(boundary.run_as_user, null)
+      gid                = try(boundary.run_as_group, null)
+      legacy_uid         = try(boundary.legacy_uid, null)
+      legacy_gid         = try(boundary.legacy_gid, null)
+      tenant_id          = try(boundary.tenant_id, "")
+      model_id           = try(boundary.model_id, "")
+      stage_id           = "tenant-boundary"
+      workload_namespace = try(boundary.workload_namespace, "")
+      origin             = try(boundary.origin, "")
+      activation_id      = try(boundary.activation_id, "")
+      authorization_id   = try(boundary.authorization_id, "")
+      boundary_sha256    = try(boundary.boundary_sha256, "")
+    }
+  ]
   scientific_runtime_cache_directory_claims_by_name = {
     for claim in local.scientific_runtime_cache_directory_claims : claim.name => claim...
   }
@@ -126,17 +121,44 @@ locals {
       name            = name
       uid             = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].uid
       gid             = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].gid
-      legacy_uid      = local.scientific_runtime_cache_legacy_identities[local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].model_id].uid
-      legacy_gid      = local.scientific_runtime_cache_legacy_identities[local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].model_id].gid
-      migration_phase = "dual-access-legacy-group"
+      legacy_uid      = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].legacy_uid
+      legacy_gid      = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].legacy_gid
+      tenant_id       = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].tenant_id
+      model_id        = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].model_id
+      origin          = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].origin
+      boundary_sha256 = local.scientific_runtime_cache_primary_directory_claims_by_name[name][0].boundary_sha256
+      migration_phase = "journaled-dual-access-legacy-group"
       mode            = "2770"
     }
   ]
   scientific_runtime_cache_ownership_contract = {
-    schema      = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v2"
-    root        = local.scientific_runtime_cache_mount_path
-    directories = local.scientific_runtime_cache_directories
+    schema             = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v3"
+    root               = local.scientific_runtime_cache_mount_path
+    writer_quiescence  = var.scientific_batch.runtime_cache.migration_quiescence
+    directories        = local.scientific_runtime_cache_directories
   }
+  scientific_runtime_cache_quiescence_valid = try(
+    var.scientific_batch.runtime_cache.migration_quiescence.quiescence_sha256 == sha256(jsonencode({
+      schema          = "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v1"
+      lease_name      = var.scientific_batch.runtime_cache.migration_quiescence.lease_name
+      lease_uid       = var.scientific_batch.runtime_cache.migration_quiescence.lease_uid
+      zero_writers    = var.scientific_batch.runtime_cache.migration_quiescence.zero_writers
+      writer_admission_fenced = var.scientific_batch.runtime_cache.migration_quiescence.writer_admission_fenced
+      active_writer_count = var.scientific_batch.runtime_cache.migration_quiescence.active_writer_count
+      activation_id   = var.scientific_batch.runtime_cache.migration_quiescence.activation_id
+      observed_at     = var.scientific_batch.runtime_cache.migration_quiescence.observed_at
+      expires_at      = var.scientific_batch.runtime_cache.migration_quiescence.expires_at
+      evidence_sha256 = var.scientific_batch.runtime_cache.migration_quiescence.evidence_sha256
+    })) &&
+    contains(
+      keys(local.verified_runtime_security_authorizations),
+      var.scientific_batch.runtime_cache.migration_quiescence.authorization_id,
+    ) &&
+    local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].kind == "cache-migration-quiescence" &&
+    local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].subject_schema == "fs2-serve.nebius.ai/scientific-runtime-cache-quiescence/v1" &&
+    local.verified_runtime_security_authorizations[var.scientific_batch.runtime_cache.migration_quiescence.authorization_id].subject_sha256 == var.scientific_batch.runtime_cache.migration_quiescence.quiescence_sha256,
+    false,
+  )
   scientific_runtime_cache_ownership_sha256 = sha256(jsonencode(
     local.scientific_runtime_cache_ownership_contract
   ))
@@ -173,18 +195,23 @@ locals {
         name            = name
         uid             = claims_by_name[name][0].uid
         gid             = claims_by_name[name][0].gid
-        legacy_uid      = local.scientific_runtime_cache_legacy_identities[claims_by_name[name][0].model_id].uid
-        legacy_gid      = local.scientific_runtime_cache_legacy_identities[claims_by_name[name][0].model_id].gid
-        migration_phase = "dual-access-legacy-group"
+        legacy_uid      = claims_by_name[name][0].legacy_uid
+        legacy_gid      = claims_by_name[name][0].legacy_gid
+        tenant_id       = claims_by_name[name][0].tenant_id
+        model_id        = claims_by_name[name][0].model_id
+        origin          = claims_by_name[name][0].origin
+        boundary_sha256 = claims_by_name[name][0].boundary_sha256
+        migration_phase = "journaled-dual-access-legacy-group"
         mode            = "2770"
       }
     ]
   }
   scientific_runtime_cache_additional_ownership_contracts = {
     for namespace, directories in local.scientific_runtime_cache_additional_directories : namespace => {
-      schema      = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v2"
-      root        = local.scientific_runtime_cache_mount_path
-      directories = directories
+      schema            = "fs2-serve.nebius.ai/scientific-runtime-cache-ownership/v3"
+      root              = local.scientific_runtime_cache_mount_path
+      writer_quiescence = var.scientific_batch.runtime_cache.migration_quiescence
+      directories       = directories
     }
   }
   scientific_runtime_cache_additional_ownership_sha256 = {
@@ -294,6 +321,25 @@ locals {
       executionMapConfigMapName       = "fs2-${var.run_id}-scientific-execution"
       executionMapKey                 = "execution-map.json"
       executionMap = merge(var.scientific_batch.execution_map,
+        {
+          runtime_security_trust = {
+            session_id = local.runtime_security_authority_session_id
+          }
+          runtime_security_authorizations = {
+            for authorization_id, authorization in local.verified_runtime_security_authorizations :
+            authorization_id => {
+              kind               = authorization.kind
+              model_id           = authorization.model_id
+              subject_schema     = authorization.subject_schema
+              subject_sha256     = authorization.subject_sha256
+              evidence_sha256    = authorization.evidence_sha256
+              evidence           = authorization.evidence
+              attestation_sha256 = authorization.attestation_sha256
+              attestation        = authorization.attestation
+              verified_key_id    = authorization.verified_key_id
+            }
+          }
+        },
         length(var.scientific_batch.gpu_snapshots.bundles) == 0 ? {} : {
           snapshot_bundles = var.scientific_batch.gpu_snapshots.bundles
       })
@@ -479,8 +525,9 @@ resource "kubernetes_service_account_v1" "scientific_runtime_cache_bootstrap_add
 # container sees no credential, service-account token, network requirement or
 # other writable volume. Its checked-in program refuses nested/traversing names
 # and uses descriptor-relative, no-follow traversal. The dual-access phase
-# preserves every byte and owning UID while moving the model subtree to its
-# legacy group and mirroring owner permissions to that group for rollback.
+# preserves every byte, journals the former UID/GID/mode, moves the subtree to
+# its signed tenant/model UID plus legacy group, and mirrors owner permissions
+# to that group for rollback.
 resource "kubernetes_job_v1" "scientific_runtime_cache_bootstrap" {
   count = var.scientific_batch.runtime_cache.enabled ? 1 : 0
 
@@ -753,8 +800,8 @@ resource "terraform_data" "scientific_artifacts_contract" {
       error_message = "staged scientific batch execution requires the dedicated artifact store; a batch cannot commit an immutable result manifest without it."
     }
     precondition {
-      condition     = !var.scientific_batch.enabled || local.scientific_image_supply_valid
-      error_message = "Every scientific stage, init, and companion image must be digest-pinned beneath the accelerator contract's approved private registry."
+      condition     = !var.scientific_batch.enabled || (local.scientific_image_supply_valid && local.scientific_image_authorizations_valid)
+      error_message = "Every scientific stage, init, and companion image must be digest-pinned beneath the approved private registry and dereference an accepted independent scientific-image attestation."
     }
     precondition {
       condition     = !var.scientific_batch.writes_enabled || var.scientific_batch.enabled
@@ -780,6 +827,7 @@ resource "terraform_data" "scientific_artifacts_contract" {
     precondition {
       condition = (
         !var.scientific_batch.runtime_cache.enabled || (
+          local.scientific_runtime_cache_quiescence_valid &&
           length(local.scientific_runtime_cache_consumers) > 0 &&
           alltrue([
             for consumer in local.scientific_runtime_cache_consumers :
@@ -796,39 +844,59 @@ resource "terraform_data" "scientific_artifacts_contract" {
           alltrue([
             for claim in local.scientific_runtime_cache_directory_claims :
             can(regex("^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$", claim.name)) &&
+            can(regex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$", claim.tenant_id)) &&
+            can(regex("^[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?$", claim.model_id)) &&
             try(claim.uid >= 1 && claim.uid <= 2147483647, false) &&
             try(claim.gid >= 1 && claim.gid <= 2147483647, false) &&
-            contains(keys(local.scientific_runtime_cache_legacy_identities), claim.model_id) &&
-            try(local.scientific_runtime_cache_legacy_identities[claim.model_id].uid >= 1, false) &&
-            try(local.scientific_runtime_cache_legacy_identities[claim.model_id].gid >= 1, false) &&
-            try(local.scientific_runtime_cache_legacy_identities[claim.model_id].uid != claim.uid, false) &&
-            try(local.scientific_runtime_cache_legacy_identities[claim.model_id].gid != claim.gid, false)
+            try(claim.legacy_uid >= 1 && claim.legacy_uid <= 2147483647, false) &&
+            try(claim.legacy_gid >= 1 && claim.legacy_gid <= 2147483647, false) &&
+            claim.legacy_uid != claim.uid && claim.legacy_gid != claim.gid &&
+            contains(["legacy-existing", "new-empty"], claim.origin) &&
+            claim.activation_id == var.scientific_batch.runtime_cache.migration_quiescence.activation_id &&
+            claim.boundary_sha256 == sha256(jsonencode({
+              schema             = "fs2-serve.nebius.ai/scientific-runtime-cache-boundary/v1"
+              tenant_id          = claim.tenant_id
+              model_id           = claim.model_id
+              workload_namespace = claim.workload_namespace
+              directory          = claim.name
+              run_as_user        = claim.uid
+              run_as_group       = claim.gid
+              legacy_uid         = claim.legacy_uid
+              legacy_gid         = claim.legacy_gid
+              origin             = claim.origin
+              activation_id      = claim.activation_id
+            })) &&
+            contains(keys(local.verified_runtime_security_authorizations), claim.authorization_id) &&
+            local.verified_runtime_security_authorizations[claim.authorization_id].kind == "cache-boundary" &&
+            local.verified_runtime_security_authorizations[claim.authorization_id].model_id == claim.model_id &&
+            local.verified_runtime_security_authorizations[claim.authorization_id].subject_sha256 == claim.boundary_sha256
           ]) &&
-          length(setsubtract(
-            toset(keys(local.scientific_runtime_cache_legacy_identities)),
-            toset([for claim in local.scientific_runtime_cache_directory_claims : claim.model_id]),
-          )) == 0 &&
+          alltrue([
+            for consumer in local.scientific_runtime_cache_consumers :
+            length([
+              for claim in local.scientific_runtime_cache_directory_claims : claim
+              if claim.model_id == consumer.model_id && claim.workload_namespace == consumer.workload_namespace
+            ]) >= 1
+          ]) &&
+          length(local.scientific_runtime_cache_directory_claims) == length(distinct([
+            for claim in local.scientific_runtime_cache_directory_claims : "${claim.tenant_id}|${claim.model_id}"
+          ])) &&
+          length(local.scientific_runtime_cache_directory_claims) == length(distinct([
+            for claim in local.scientific_runtime_cache_directory_claims : "${claim.workload_namespace}|${claim.name}"
+          ])) &&
+          length(local.scientific_runtime_cache_directory_claims) == length(distinct([
+            for claim in local.scientific_runtime_cache_directory_claims : tostring(claim.uid)
+          ])) &&
+          length(local.scientific_runtime_cache_directory_claims) == length(distinct([
+            for claim in local.scientific_runtime_cache_directory_claims : tostring(claim.gid)
+          ])) &&
           alltrue([
             for claims in values(local.scientific_runtime_cache_directory_claims_by_name) :
-            length(distinct([for claim in claims : claim.uid])) == 1 &&
-            length(distinct([for claim in claims : claim.gid])) == 1
-          ]) &&
-          alltrue([
-            for identities in values(local.scientific_runtime_cache_identities_by_model) :
-            length(distinct([for identity in identities : identity.uid])) == 1 &&
-            length(distinct([for identity in identities : identity.gid])) == 1
-          ]) &&
-          alltrue([
-            for model_ids in values(local.scientific_runtime_cache_models_by_uid) :
-            length(distinct(model_ids)) == 1
-          ]) &&
-          alltrue([
-            for model_ids in values(local.scientific_runtime_cache_models_by_gid) :
-            length(distinct(model_ids)) == 1
+            length(claims) == 1
           ])
         )
       )
-      error_message = "Every runtime-cache stage must derive one safe first-level /cache directory for its final subPath, use one stable unique current UID/GID, and bind the reviewed legacy identity required for non-destructive dual-access migration and rollback."
+      error_message = "Every runtime-cache consumer requires accepted, unique tenant+model directory and UID/GID boundaries plus an exact reversible legacy/new origin contract."
     }
     precondition {
       condition = (

@@ -19,6 +19,10 @@ from types import MappingProxyType
 from typing import Any, cast
 from uuid import UUID
 
+from fs2_serve_catalog.artifacts import canonical_bytes
+from fs2_serve_catalog.attestations import verify_signed_attestation
+from fs2_serve_catalog.loader import CatalogError
+
 from .adapters.primitives import ScientificParameterError
 from .capability import ScientificWorkloadCapabilityAuthority
 from .catalog_adapter import CatalogProfileAdapterError
@@ -45,18 +49,13 @@ from .profile_catalog import ScientificProfileCatalog, ScientificRequestError, S
 from .startup import StageStartupPolicy, apply_startup_policy, select_startup_policy, validate_bundle
 
 EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v3"
+SCIENTIFIC_IMAGE_SUBJECT_SCHEMA = "fs2-serve.nebius.ai/scientific-image-subject/v1"
 PACKAGED_TOOLS_CATALOG_DIR = "/opt/fs2/catalog"
 MOUNT_KINDS = {"artifact-workspace", "reference", "private", "runtime-cache"}
 RUNTIME_CACHE_CLAIM_NAME = "fs2-scientific-runtime-cache"
 RUNTIME_CACHE_MOUNT_PATH = "/cache"
-RUNTIME_CACHE_LEGACY_IDENTITIES = MappingProxyType(
-    {
-        "mosaic": (10001, 10001),
-        "openfold3-openbind": (10001, 10001),
-        "protenix-v2": (10001, 10001),
-        "alphafold3": (1001, 1001),
-    }
-)
+RUNTIME_CACHE_WRITER_LOCK_FILE = ".fs2-cache-writer-admission.lock"
+RUNTIME_CACHE_WRITER_LOCK_PATH = "/var/run/fs2-cache-writer-admission.lock"
 REFERENCE_DATASETS_HOST_PATH = "/mnt/fs2-reference-data/data"
 REFERENCE_DATA_STORAGE_LABEL = "storage.fs2.nebius/reference-data"
 REFERENCE_DATA_GID = 1000
@@ -174,6 +173,16 @@ def _immutable_image_registry(image: str, label: str) -> str:
     return image.split("/", 1)[0]
 
 
+def _scientific_image_subject(image: str) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            {"schema": SCIENTIFIC_IMAGE_SUBJECT_SCHEMA, "image": image},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+
+
 @dataclass(frozen=True, slots=True)
 class StageMount:
     name: str
@@ -183,6 +192,21 @@ class StageMount:
     mount_path: str
     sub_path: str | None
     read_only: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RuntimeCacheBoundary:
+    tenant_id: str
+    model_id: str
+    workload_namespace: str
+    directory: str
+    run_as_user: int
+    run_as_group: int
+    legacy_uid: int
+    legacy_gid: int
+    origin: str
+    activation_id: str
+    boundary_sha256: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -290,6 +314,7 @@ class FileScientificManifestRenderer:
         capability_authority: ScientificWorkloadCapabilityAuthority | None = None,
         academic_tenant_id: str | None = None,
         academic_authorization_receipt_sha256: str | None = None,
+        trusted_attestors: Mapping[str, str] | None = None,
     ) -> None:
         try:
             raw = path.read_bytes()
@@ -301,10 +326,213 @@ class FileScientificManifestRenderer:
         root = _object(value, "scientific execution map")
         if (
             not {"schema", "models"}.issubset(root)
-            or set(root) - {"schema", "models", "snapshot_bundles"}
+            or set(root) - {
+                "schema",
+                "models",
+                "snapshot_bundles",
+                "runtime_security_trust",
+                "runtime_security_authorizations",
+                "runtime_cache_boundaries",
+            }
             or root["schema"] != EXECUTION_SCHEMA
         ):
             raise ScientificExecutionMapError("scientific execution map schema is unsupported")
+        raw_trust = _object(root.get("runtime_security_trust", {}), "runtime security trust binding")
+        if set(raw_trust) != {"session_id"} or not isinstance(raw_trust["session_id"], str):
+            raise ScientificExecutionMapError("runtime security trust binding fields differ")
+        trust_session_id = cast(str, raw_trust["session_id"])
+        if re.fullmatch(r"sha256:[a-f0-9]{64}", trust_session_id) is None:
+            raise ScientificExecutionMapError("runtime security trust session is invalid")
+        if not trusted_attestors:
+            raise ScientificExecutionMapError("runtime security authorizations lack an external trust root")
+        raw_authorizations = _object(
+            root.get("runtime_security_authorizations", {}),
+            "runtime security authorizations",
+        )
+        authorized_scientific_subjects: set[str] = set()
+        accepted_authorizations: dict[str, tuple[str, str]] = {}
+        for authorization_id, raw_authorization in raw_authorizations.items():
+            authorization = _object(
+                raw_authorization,
+                f"runtime security authorization {authorization_id}",
+            )
+            if set(authorization) != {
+                "kind",
+                "model_id",
+                "subject_schema",
+                "subject_sha256",
+                "evidence_sha256",
+                "evidence",
+                "attestation_sha256",
+                "attestation",
+                "verified_key_id",
+            }:
+                raise ScientificExecutionMapError("runtime security authorization fields differ")
+            kind = _bounded_string(authorization["kind"], "runtime security authorization kind", maximum=64)
+            model_id = _bounded_string(authorization["model_id"], "runtime security authorization model", maximum=128)
+            subject_schema = _bounded_string(
+                authorization["subject_schema"], "runtime security authorization subject schema", maximum=128
+            )
+            subject = _bounded_string(
+                authorization["subject_sha256"], "runtime security authorization subject", maximum=64
+            )
+            evidence_sha256 = _bounded_string(
+                authorization["evidence_sha256"], "runtime security evidence digest", maximum=64
+            )
+            attestation_sha256 = _bounded_string(
+                authorization["attestation_sha256"], "runtime security attestation digest", maximum=64
+            )
+            evidence = _object(authorization["evidence"], "runtime security evidence")
+            attestation = _object(authorization["attestation"], "runtime security signed attestation")
+            if (
+                re.fullmatch(r"[a-f0-9]{64}", subject) is None
+                or re.fullmatch(r"[a-f0-9]{64}", evidence_sha256) is None
+                or re.fullmatch(r"[a-f0-9]{64}", attestation_sha256) is None
+                or hashlib.sha256(canonical_bytes(evidence)).hexdigest() != evidence_sha256
+                or hashlib.sha256(canonical_bytes(attestation)).hexdigest() != attestation_sha256
+                or evidence != {
+                    "schema": "fs2-serve.nebius.ai/runtime-security-evidence/v1",
+                    "authorization_id": authorization_id,
+                    "kind": kind,
+                    "model_id": model_id,
+                    "subject_schema": subject_schema,
+                    "subject_sha256": subject,
+                    "decision": "accepted",
+                    "reviewer_role": "independent-platform-security",
+                }
+            ):
+                raise ScientificExecutionMapError("runtime security evidence is not exact")
+            try:
+                verified = verify_signed_attestation(
+                    attestation,
+                    trusted_attestors=trusted_attestors,
+                    expected_session_id=trust_session_id,
+                    expected_kind=kind,
+                    expected_schema=subject_schema,
+                    expected_digest=f"sha256:{subject}",
+                    expected_model_id=model_id,
+                )
+            except CatalogError as error:
+                raise ScientificExecutionMapError("runtime security signed authorization is invalid") from error
+            if (
+                verified["key_id"] != authorization["verified_key_id"]
+                or verified["claims"]
+                != {
+                    "authorization_id": authorization_id,
+                    "decision": "accepted",
+                    "reviewer_role": "independent-platform-security",
+                    "evidence_sha256": evidence_sha256,
+                }
+            ):
+                raise ScientificExecutionMapError("runtime security authorization claims differ")
+            if authorization["kind"] == "scientific-image":
+                authorized_scientific_subjects.add(subject)
+            accepted_authorizations[authorization_id] = (
+                kind,
+                subject,
+            )
+        self.authorized_scientific_subjects = frozenset(authorized_scientific_subjects)
+        raw_boundaries = root.get("runtime_cache_boundaries", [])
+        if not isinstance(raw_boundaries, list) or len(raw_boundaries) > 4096:
+            raise ScientificExecutionMapError("runtime cache boundaries are not a bounded array")
+        runtime_cache_boundaries: dict[tuple[str, str], RuntimeCacheBoundary] = {}
+        boundary_directories: set[tuple[str, str]] = set()
+        boundary_uids: set[int] = set()
+        boundary_gids: set[int] = set()
+        for raw_boundary in raw_boundaries:
+            boundary = _object(raw_boundary, "runtime cache boundary")
+            if set(boundary) != {
+                "tenant_id",
+                "model_id",
+                "workload_namespace",
+                "directory",
+                "run_as_user",
+                "run_as_group",
+                "legacy_uid",
+                "legacy_gid",
+                "origin",
+                "activation_id",
+                "authorization_id",
+                "boundary_sha256",
+            }:
+                raise ScientificExecutionMapError("runtime cache boundary fields differ")
+            tenant_id = _bounded_string(boundary["tenant_id"], "cache tenant ID", maximum=120)
+            model_id = _bounded_string(boundary["model_id"], "cache model ID", maximum=128)
+            namespace = _bounded_string(
+                boundary["workload_namespace"], "cache workload namespace", maximum=63
+            )
+            directory = _bounded_string(boundary["directory"], "cache directory", maximum=63)
+            if (
+                re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,119}", tenant_id) is None
+                or re.fullmatch(r"[a-z0-9](?:[-a-z0-9.]{0,126}[a-z0-9])?", model_id) is None
+                or re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", namespace) is None
+                or re.fullmatch(r"[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?", directory) is None
+            ):
+                raise ScientificExecutionMapError("runtime cache boundary identity is invalid")
+            run_as_user = _positive_integer(boundary["run_as_user"], "cache UID", maximum=2_147_483_647)
+            run_as_group = _positive_integer(boundary["run_as_group"], "cache GID", maximum=2_147_483_647)
+            legacy_uid = _positive_integer(boundary["legacy_uid"], "cache legacy UID", maximum=2_147_483_647)
+            legacy_gid = _positive_integer(boundary["legacy_gid"], "cache legacy GID", maximum=2_147_483_647)
+            if run_as_user == legacy_uid or run_as_group == legacy_gid:
+                raise ScientificExecutionMapError("runtime cache current and legacy identities overlap")
+            origin = boundary["origin"]
+            if origin not in {"legacy-existing", "new-empty"}:
+                raise ScientificExecutionMapError("runtime cache boundary origin is invalid")
+            activation_id = boundary["activation_id"]
+            if not isinstance(activation_id, str) or re.fullmatch(
+                r"[a-f0-9]{64}", activation_id
+            ) is None:
+                raise ScientificExecutionMapError("runtime cache activation identity is invalid")
+            subject = {
+                "schema": "fs2-serve.nebius.ai/scientific-runtime-cache-boundary/v1",
+                "tenant_id": tenant_id,
+                "model_id": model_id,
+                "workload_namespace": namespace,
+                "directory": directory,
+                "run_as_user": run_as_user,
+                "run_as_group": run_as_group,
+                "legacy_uid": legacy_uid,
+                "legacy_gid": legacy_gid,
+                "origin": origin,
+                "activation_id": activation_id,
+            }
+            subject_sha256 = hashlib.sha256(
+                json.dumps(subject, sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            authorization_id = boundary["authorization_id"]
+            if (
+                boundary["boundary_sha256"] != subject_sha256
+                or not isinstance(authorization_id, str)
+                or accepted_authorizations.get(authorization_id)
+                != ("cache-boundary", subject_sha256)
+            ):
+                raise ScientificExecutionMapError("runtime cache boundary lacks exact accepted evidence")
+            key = (tenant_id, model_id)
+            directory_key = (namespace, directory)
+            if (
+                key in runtime_cache_boundaries
+                or directory_key in boundary_directories
+                or run_as_user in boundary_uids
+                or run_as_group in boundary_gids
+            ):
+                raise ScientificExecutionMapError("runtime cache tenant/model boundary is duplicated")
+            runtime_cache_boundaries[key] = RuntimeCacheBoundary(
+                tenant_id=tenant_id,
+                model_id=model_id,
+                workload_namespace=namespace,
+                directory=directory,
+                run_as_user=run_as_user,
+                run_as_group=run_as_group,
+                legacy_uid=legacy_uid,
+                legacy_gid=legacy_gid,
+                origin=cast(str, origin),
+                activation_id=activation_id,
+                boundary_sha256=subject_sha256,
+            )
+            boundary_directories.add(directory_key)
+            boundary_uids.add(run_as_user)
+            boundary_gids.add(run_as_group)
+        self.runtime_cache_boundaries = MappingProxyType(runtime_cache_boundaries)
         try:
             self.snapshot_bundles = MappingProxyType(
                 {
@@ -318,11 +546,17 @@ class FileScientificManifestRenderer:
         # A registry alone does not change the measured normal-load recipe.
         # Helm serializes the qualified map canonically. Keep that baseline
         # identity while freezing the complete selected bundle separately.
+        overlay_keys = {
+            "snapshot_bundles",
+            "runtime_security_trust",
+            "runtime_security_authorizations",
+            "runtime_cache_boundaries",
+        }
         qualified_raw = (
             raw
-            if "snapshot_bundles" not in root
+            if not overlay_keys.intersection(root)
             else json.dumps(
-                {key: value for key, value in root.items() if key != "snapshot_bundles"},
+                {key: value for key, value in root.items() if key not in overlay_keys},
                 sort_keys=True,
                 separators=(",", ":"),
                 allow_nan=False,
@@ -338,9 +572,6 @@ class FileScientificManifestRenderer:
         workload_namespaces: dict[str, str] = {}
         access_profiles: dict[str, str] = {}
         plan_adapters: dict[str, tuple[str, str]] = {}
-        runtime_cache_identities: dict[str, tuple[int, int]] = {}
-        runtime_cache_uid_owners: dict[int, str] = {}
-        runtime_cache_gid_owners: dict[int, str] = {}
         runtime_cache_directories: dict[str, str] = {}
         runtime_cache_directory_owners: dict[str, str] = {}
         for raw_model in models:
@@ -542,6 +773,10 @@ class FileScientificManifestRenderer:
                     or not image.endswith(f"@{image_digest}")
                 ):
                     raise ScientificExecutionMapError("execution image is not the profile's immutable digest")
+                if _scientific_image_subject(image) not in self.authorized_scientific_subjects:
+                    raise ScientificExecutionMapError(
+                        "scientific stage image lacks an accepted dereferenced authorization"
+                    )
                 image_role = stage.get("image_role", "model-runtime")
                 if image_role not in {"model-runtime", "scientific-tools"}:
                     raise ScientificExecutionMapError("scientific stage image role is unsupported")
@@ -780,24 +1015,6 @@ class FileScientificManifestRenderer:
                 workspace_gid = _positive_integer(
                     stage["workspace_gid"], "scientific workspace GID", maximum=2_147_483_647
                 )
-                if "runtime-cache" in kinds:
-                    identity = (workspace_uid, workspace_gid)
-                    legacy_identity = RUNTIME_CACHE_LEGACY_IDENTITIES.get(model_id)
-                    if legacy_identity is None or legacy_identity == identity:
-                        raise ScientificExecutionMapError(
-                            "scientific runtime-cache model lacks a distinct reviewed legacy identity"
-                        )
-                    prior_identity = runtime_cache_identities.setdefault(model_id, identity)
-                    if prior_identity != identity:
-                        raise ScientificExecutionMapError(
-                            "one model must use one stable runtime-cache UID/GID across every stage"
-                        )
-                    prior_uid_owner = runtime_cache_uid_owners.setdefault(workspace_uid, model_id)
-                    prior_gid_owner = runtime_cache_gid_owners.setdefault(workspace_gid, model_id)
-                    if prior_uid_owner != model_id or prior_gid_owner != model_id:
-                        raise ScientificExecutionMapError(
-                            "scientific runtime-cache UID/GID identities must be unique per model"
-                        )
                 if model_id == "bindcraft":
                     by_path = {mount.mount_path: mount for mount in mounts}
                     required_paths = {"/models/alphafold2", BINDCRAFT_PYROSETTA_PATH}
@@ -875,11 +1092,8 @@ class FileScientificManifestRenderer:
         self.access_profiles = MappingProxyType(access_profiles)
         self.plan_adapters = MappingProxyType(plan_adapters)
         self.runtime_artifacts = MappingProxyType(runtime_artifacts)
-        self.runtime_cache_identities = MappingProxyType(runtime_cache_identities)
-        self.runtime_cache_gid_owners = MappingProxyType(runtime_cache_gid_owners)
         self.runtime_cache_directories = MappingProxyType(runtime_cache_directories)
         self.runtime_cache_directory_owners = MappingProxyType(runtime_cache_directory_owners)
-        self.runtime_cache_legacy_identities = RUNTIME_CACHE_LEGACY_IDENTITIES
         self.tools_image = tools_image
         self.internal_api_url = internal_api_url
         self.capability_authority = capability_authority
@@ -1514,6 +1728,31 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("scientific workload has no canonical stage invocation")
         if invocation.collector_id != execution.collector_id or invocation.validator_id != execution.validator_id:
             raise ScientificExecutionMapError("scientific workload collector or validator binding changed")
+        runtime_cache = next((mount for mount in execution.mounts if mount.kind == "runtime-cache"), None)
+        cache_boundary = (
+            None
+            if runtime_cache is None
+            else self.runtime_cache_boundaries.get((resource.tenant_id, resource.model_id))
+        )
+        if runtime_cache is not None and (
+            cache_boundary is None or cache_boundary.workload_namespace != resource.namespace
+        ):
+            raise ScientificExecutionMapError(
+                "scientific runtime cache lacks its accepted tenant+model boundary"
+            )
+        expected_runner = f"{invocation.working_directory}/{STAGE_RUNNER_RELATIVE_PATH}"
+        stage_command = list(invocation.argv)
+        if cache_boundary is not None and invocation.argv[:3] != (
+            "python",
+            expected_runner,
+            "--",
+        ):
+            # The trusted prepare init always installs this fixed runner. Wrap
+            # legacy direct argv instead of disabling an otherwise valid model;
+            # the wrapper holds the cache-writer lock for the child lifetime.
+            stage_command = ["python", expected_runner, "--", *invocation.argv]
+        effective_uid = execution.workspace_uid if cache_boundary is None else cache_boundary.run_as_user
+        effective_gid = execution.workspace_gid if cache_boundary is None else cache_boundary.run_as_group
         localized = {item.logical_artifact_id: item for item in resource.runtime_artifacts}
         binding_ids = {item.artifact_id for item in invocation.runtime_mounts}
         if set(localized) != set(invocation.runtime_artifacts) or binding_ids != set(invocation.runtime_artifacts):
@@ -1635,6 +1874,19 @@ class FileScientificManifestRenderer:
                 }.items()
             )
         ]
+        if cache_boundary is not None:
+            env.extend(
+                [
+                    {
+                        "name": "FS2_RUNTIME_CACHE_WRITER_LOCK_PATH",
+                        "value": RUNTIME_CACHE_WRITER_LOCK_PATH,
+                    },
+                    {
+                        "name": "FS2_RUNTIME_CACHE_ACTIVATION_ID",
+                        "value": cache_boundary.activation_id,
+                    },
+                ]
+            )
         workspace = next((mount for mount in execution.mounts if mount.kind == "artifact-workspace"), None)
         if workspace is None:
             raise ScientificExecutionMapError("scientific stage has no attempt-local artifact workspace")
@@ -1644,7 +1896,10 @@ class FileScientificManifestRenderer:
         scratch_mount = {"name": "runtime-tmp", "mountPath": "/tmp", "readOnly": False}
         volume_mounts.append(scratch_mount)
         volumes: list[dict[str, Any]] = [
-            {"name": workspace.name, "emptyDir": {}},
+            {
+                "name": workspace.name,
+                "emptyDir": {"sizeLimit": execution.limit_ephemeral_storage},
+            },
             {"name": "runtime-tmp", "emptyDir": {"sizeLimit": "8Gi"}},
         ]
         volume_names = {workspace.name}
@@ -1732,6 +1987,10 @@ class FileScientificManifestRenderer:
         if self.tools_image is None or self.internal_api_url is None or self.capability_authority is None:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")
         approved_registry = _immutable_image_registry(self.tools_image, "scientific tools image")
+        if _scientific_image_subject(self.tools_image) not in self.authorized_scientific_subjects:
+            raise ScientificExecutionMapError(
+                "scientific companion image lacks an accepted dereferenced authorization"
+            )
         if _immutable_image_registry(execution.image, "scientific stage image") != approved_registry:
             raise ScientificExecutionMapError(
                 "scientific stage and companion images must use the same approved private registry"
@@ -1756,8 +2015,8 @@ class FileScientificManifestRenderer:
             "capabilities": {"drop": ["ALL"]},
             "readOnlyRootFilesystem": True,
             "runAsNonRoot": True,
-            "runAsUser": execution.workspace_uid,
-            "runAsGroup": execution.workspace_gid,
+            "runAsUser": effective_uid,
+            "runAsGroup": effective_gid,
         }
         init_containers = [
             {
@@ -1897,18 +2156,23 @@ class FileScientificManifestRenderer:
             },
             "securityContext": companion_security,
         }
-        runtime_cache = next((mount for mount in execution.mounts if mount.kind == "runtime-cache"), None)
         if runtime_cache is not None:
             assert runtime_cache.claim_name is not None
-            cache_directory = self.runtime_cache_directories.get(resource.model_id)
-            if cache_directory is None:
-                raise ScientificExecutionMapError("scientific runtime-cache directory is not bound to its model")
+            assert cache_boundary is not None
             volume_mounts.append(
                 {
                     "name": runtime_cache.name,
                     "mountPath": runtime_cache.mount_path,
-                    "subPath": cache_directory,
+                    "subPath": cache_boundary.directory,
                     "readOnly": False,
+                }
+            )
+            volume_mounts.append(
+                {
+                    "name": runtime_cache.name,
+                    "mountPath": RUNTIME_CACHE_WRITER_LOCK_PATH,
+                    "subPath": RUNTIME_CACHE_WRITER_LOCK_FILE,
+                    "readOnly": True,
                 }
             )
             volumes.append(
@@ -1923,36 +2187,31 @@ class FileScientificManifestRenderer:
         supplemental_groups = {
             group for mount in invocation.runtime_mounts for group in mount.supplemental_groups
         }
-        cache_identity = self.runtime_cache_identities.get(resource.model_id)
+        all_cache_groups = {
+            boundary.run_as_group for boundary in self.runtime_cache_boundaries.values()
+        }
         foreign_cache_groups = {
             group
             for group in supplemental_groups
-            if group in self.runtime_cache_gid_owners
-            and (cache_identity is None or group != cache_identity[1])
+            if group in all_cache_groups and group != effective_gid
         }
         if foreign_cache_groups:
             raise ScientificExecutionMapError(
                 "scientific Pod supplemental groups include another model's runtime-cache identity"
             )
-        if runtime_cache is not None and cache_identity != (execution.workspace_uid, execution.workspace_gid):
-            raise ScientificExecutionMapError("scientific runtime-cache identity differs from its model owner")
         if runtime_cache is not None:
-            legacy_identity = self.runtime_cache_legacy_identities.get(resource.model_id)
-            if legacy_identity is None:
-                raise ScientificExecutionMapError(
-                    "scientific runtime-cache has no reviewed legacy identity"
-                )
+            assert cache_boundary is not None
             known_legacy_groups = {
-                identity[1] for identity in self.runtime_cache_legacy_identities.values()
+                boundary.legacy_gid for boundary in self.runtime_cache_boundaries.values()
             }
             foreign_legacy_groups = supplemental_groups.intersection(
-                known_legacy_groups - {legacy_identity[1]}
+                known_legacy_groups - {cache_boundary.legacy_gid}
             )
             if foreign_legacy_groups:
                 raise ScientificExecutionMapError(
                     "scientific Pod supplemental groups include a foreign legacy cache identity"
                 )
-            supplemental_groups.add(legacy_identity[1])
+            supplemental_groups.add(cache_boundary.legacy_gid)
         pod_security: dict[str, Any] = {
             "runAsNonRoot": True,
             "seccompProfile": {"type": "RuntimeDefault"},
@@ -1997,7 +2256,7 @@ class FileScientificManifestRenderer:
                     "name": STAGE_CONTAINER_NAME,
                     "image": execution.image,
                     "imagePullPolicy": "IfNotPresent",
-                    "command": list(invocation.argv),
+                    "command": stage_command,
                     "workingDir": invocation.working_directory,
                     "env": env,
                     "volumeMounts": volume_mounts,
@@ -2007,8 +2266,8 @@ class FileScientificManifestRenderer:
                         "capabilities": {"drop": ["ALL"]},
                         "readOnlyRootFilesystem": True,
                         "runAsNonRoot": True,
-                        "runAsUser": execution.workspace_uid,
-                        "runAsGroup": execution.workspace_gid,
+                        "runAsUser": effective_uid,
+                        "runAsGroup": effective_gid,
                     },
                 },
                 collector,
@@ -2034,11 +2293,216 @@ class FileScientificManifestRenderer:
             ]
         if affinity is not None:
             pod_spec["affinity"] = affinity
-        return apply_startup_policy(
-            {"metadata": {}, "spec": pod_spec},
+        volumes_by_name = {volume["name"]: volume for volume in volumes}
+        for container_class in ("initContainers", "containers", "ephemeralContainers"):
+            for final_container in pod_spec.get(container_class, []):
+                if final_container.get("volumeDevices"):
+                    raise ScientificExecutionMapError(
+                        "scientific final containers may not expose writable block devices"
+                    )
+                security = _object(
+                    final_container.get("securityContext"),
+                    "scientific final container security context",
+                )
+                if (
+                    security.get("allowPrivilegeEscalation") is not False
+                    or security.get("readOnlyRootFilesystem") is not True
+                    or security.get("runAsNonRoot") is not True
+                    or security.get("runAsUser") != effective_uid
+                    or security.get("runAsGroup") != effective_gid
+                    or security.get("capabilities") != {"drop": ["ALL"]}
+                ):
+                    raise ScientificExecutionMapError(
+                        "scientific final container differs from the restricted security envelope"
+                    )
+                for final_mount in final_container.get("volumeMounts", []):
+                    if not isinstance(final_mount, Mapping) or not isinstance(
+                        final_mount.get("readOnly", False), bool
+                    ):
+                        raise ScientificExecutionMapError(
+                            "scientific final container mount inventory is invalid"
+                        )
+                    backing = volumes_by_name.get(final_mount.get("name"), {})
+                    empty_dir = backing.get("emptyDir")
+                    claim = backing.get("persistentVolumeClaim")
+                    cache_mount_is_exact = (
+                        container_class == "containers"
+                        and final_container.get("name") == STAGE_CONTAINER_NAME
+                        and cache_boundary is not None
+                        and final_mount.get("mountPath") == RUNTIME_CACHE_MOUNT_PATH
+                        and final_mount.get("subPath") == cache_boundary.directory
+                        and isinstance(claim, Mapping)
+                        and claim.get("claimName") == RUNTIME_CACHE_CLAIM_NAME
+                        and claim.get("readOnly", False) is False
+                    )
+                    cache_lock_is_exact = (
+                        container_class == "containers"
+                        and final_container.get("name") == STAGE_CONTAINER_NAME
+                        and cache_boundary is not None
+                        and final_mount.get("mountPath") == RUNTIME_CACHE_WRITER_LOCK_PATH
+                        and final_mount.get("subPath") == RUNTIME_CACHE_WRITER_LOCK_FILE
+                        and final_mount.get("readOnly", False) is True
+                        and isinstance(claim, Mapping)
+                        and claim.get("claimName") == RUNTIME_CACHE_CLAIM_NAME
+                        and claim.get("readOnly", False) is False
+                    )
+                    if isinstance(claim, Mapping) and claim.get("claimName") == RUNTIME_CACHE_CLAIM_NAME and not (
+                        cache_mount_is_exact or cache_lock_is_exact
+                    ):
+                        raise ScientificExecutionMapError(
+                            "scientific runtime-cache projection exceeds its tenant+model boundary"
+                        )
+                    if final_mount.get("readOnly", False) is True:
+                        continue
+                    if not isinstance(empty_dir, Mapping) and not cache_mount_is_exact:
+                        raise ScientificExecutionMapError(
+                            "scientific writable mount is outside bounded scratch or its tenant+model cache"
+                        )
+        pod_metadata: dict[str, Any] = {}
+        if cache_boundary is not None:
+            pod_metadata["annotations"] = {
+                "fs2-serve.nebius.ai/runtime-cache-activation": cache_boundary.activation_id,
+                "fs2-serve.nebius.ai/runtime-cache-boundary": cache_boundary.boundary_sha256,
+            }
+        effective_pod = apply_startup_policy(
+            {"metadata": pod_metadata, "spec": pod_spec},
             execution.startup_policy,
-            request_uid=execution.workspace_uid,
+            request_uid=effective_uid,
         )
+        # Startup adapters are security-relevant Pod renderers. Validate the
+        # effective Pod after the last adapter: legacy CUDA/CRIU bundles add a
+        # root runtime, root init containers, powerful capabilities, and
+        # unconfined profiles, so they fail closed until a separately signed
+        # restricted-compatible startup contract exists.
+        effective_spec = _object(effective_pod.get("spec"), "effective scientific Pod spec")
+        if effective_spec.get("securityContext") != pod_security:
+            raise ScientificExecutionMapError(
+                "scientific startup adapter changed the final Pod security context"
+            )
+        effective_volumes = {
+            volume.get("name"): volume
+            for volume in effective_spec.get("volumes", [])
+            if isinstance(volume, Mapping) and isinstance(volume.get("name"), str)
+        }
+        if len(effective_volumes) != len(effective_spec.get("volumes", [])):
+            raise ScientificExecutionMapError(
+                "scientific startup adapter produced duplicate or invalid volume identities"
+            )
+        approved_registry = _immutable_image_registry(
+            execution.image,
+            "scientific runtime image",
+        )
+        for container_class in ("initContainers", "containers", "ephemeralContainers"):
+            final_containers = effective_spec.get(container_class, [])
+            if not isinstance(final_containers, list):
+                raise ScientificExecutionMapError(
+                    "scientific startup adapter changed the final container inventory"
+                )
+            for final_container in final_containers:
+                if not isinstance(final_container, Mapping) or final_container.get("volumeDevices"):
+                    raise ScientificExecutionMapError(
+                        "scientific startup adapter added an invalid container or block device"
+                    )
+                image = final_container.get("image")
+                if (
+                    not isinstance(image, str)
+                    or _immutable_image_registry(image, "scientific final image")
+                    != approved_registry
+                    or _scientific_image_subject(image)
+                    not in self.authorized_scientific_subjects
+                ):
+                    raise ScientificExecutionMapError(
+                        "scientific startup adapter added an unauthorized final image"
+                    )
+                security = final_container.get("securityContext")
+                seccomp = security.get("seccompProfile") if isinstance(security, Mapping) else None
+                if not isinstance(security, Mapping) or (
+                    security.get("allowPrivilegeEscalation") is not False
+                    or security.get("readOnlyRootFilesystem") is not True
+                    or security.get("runAsNonRoot") is not True
+                    or security.get("runAsUser") != effective_uid
+                    or security.get("runAsGroup") != effective_gid
+                    or security.get("capabilities") != {"drop": ["ALL"]}
+                    or security.get("privileged", False) is not False
+                    or seccomp is not None
+                    and (
+                        not isinstance(seccomp, Mapping)
+                        or seccomp.get("type") != "RuntimeDefault"
+                    )
+                ):
+                    raise ScientificExecutionMapError(
+                        "scientific startup adapter weakened the final container security envelope"
+                    )
+                final_mounts = final_container.get("volumeMounts", [])
+                if not isinstance(final_mounts, list):
+                    raise ScientificExecutionMapError(
+                        "scientific startup adapter changed the final mount inventory"
+                    )
+                for final_mount in final_mounts:
+                    if (
+                        not isinstance(final_mount, Mapping)
+                        or not isinstance(final_mount.get("readOnly", False), bool)
+                        or "subPathExpr" in final_mount
+                    ):
+                        raise ScientificExecutionMapError(
+                            "scientific startup adapter added an unsafe mount projection"
+                        )
+                    sub_path = final_mount.get("subPath")
+                    if sub_path is not None and (
+                        not isinstance(sub_path, str)
+                        or sub_path.startswith("/")
+                        or any(part in {"", ".", ".."} for part in sub_path.split("/"))
+                    ):
+                        raise ScientificExecutionMapError(
+                            "scientific startup adapter added an unsafe mount subPath"
+                        )
+                    backing = effective_volumes.get(final_mount.get("name"), {})
+                    empty_dir = backing.get("emptyDir") if isinstance(backing, Mapping) else None
+                    claim = (
+                        backing.get("persistentVolumeClaim")
+                        if isinstance(backing, Mapping)
+                        else None
+                    )
+                    cache_mount_is_exact = (
+                        container_class == "containers"
+                        and final_container.get("name") == STAGE_CONTAINER_NAME
+                        and cache_boundary is not None
+                        and final_mount.get("mountPath") == RUNTIME_CACHE_MOUNT_PATH
+                        and final_mount.get("subPath") == cache_boundary.directory
+                        and isinstance(claim, Mapping)
+                        and claim.get("claimName") == RUNTIME_CACHE_CLAIM_NAME
+                        and claim.get("readOnly", False) is False
+                    )
+                    cache_lock_is_exact = (
+                        container_class == "containers"
+                        and final_container.get("name") == STAGE_CONTAINER_NAME
+                        and cache_boundary is not None
+                        and final_mount.get("mountPath") == RUNTIME_CACHE_WRITER_LOCK_PATH
+                        and final_mount.get("subPath") == RUNTIME_CACHE_WRITER_LOCK_FILE
+                        and final_mount.get("readOnly", False) is True
+                        and isinstance(claim, Mapping)
+                        and claim.get("claimName") == RUNTIME_CACHE_CLAIM_NAME
+                        and claim.get("readOnly", False) is False
+                    )
+                    if isinstance(claim, Mapping) and claim.get("claimName") == RUNTIME_CACHE_CLAIM_NAME and not (
+                        cache_mount_is_exact or cache_lock_is_exact
+                    ):
+                        raise ScientificExecutionMapError(
+                            "scientific startup adapter widened the runtime-cache projection"
+                        )
+                    if final_mount.get("readOnly", False) is True:
+                        continue
+                    if isinstance(empty_dir, Mapping) and not isinstance(
+                        empty_dir.get("sizeLimit"), str
+                    ):
+                        raise ScientificExecutionMapError(
+                            "scientific startup adapter added an unbounded writable emptyDir"
+                        )
+                    if not isinstance(empty_dir, Mapping) and not cache_mount_is_exact:
+                        raise ScientificExecutionMapError(
+                            "scientific startup adapter added an unreviewed writable mount"
+                        )
+        return effective_pod
 
     def render(self, resource: WorkloadResource) -> Mapping[str, Any]:
         expected_namespace = resource.scheduling.workload_namespace or self.workload_namespace(resource.model_id)
