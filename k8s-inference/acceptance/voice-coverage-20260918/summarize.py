@@ -67,7 +67,9 @@ def main():
             data = audio.read_bytes()
             readbacks.append({"case_id": "asr-proxy-"+case["id"], "model_id": "nemotron-speech-multilingual-0-6b",
                               "tool": "infer_nemotron_speech_multilingual_0_6b_native", "mode": "native",
-                              "arguments": {}, "preparation": {"artifact_fields": [{"field": "audio", "transport": "artifact",
+                              "arguments": {"options": {"model": "nemotron-speech-multilingual-0.6b",
+                                            "language": case["arguments"]["language"], "output_granularity": "word"}},
+                              "preparation": {"artifact_fields": [{"field": "audio", "transport": "artifact",
                               "local_path": str(audio), "media_type": "audio/wav", "compression": "none",
                               "sha256": sha(data), "size_bytes": len(data)}]},
                               "expected": {"evaluator": "speech_transcription", "reference_text": case["arguments"]["text"],
