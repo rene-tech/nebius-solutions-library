@@ -31,6 +31,20 @@ artifact ownership; resources belonging to another customer remain inaccessible.
 
 ## 1. Discover the profiles your token can submit
 
+First, `GET /v1/me` describes the authenticated caller's effective model/scopes
+and `max_concurrency`. It is a per-key limit shared by admitted non-terminal
+native, artifact-upload and scientific operations, not a count of free GPUs.
+Queued, activating and running operations count; delegated children count with
+their parent. The endpoint does not reserve capacity or change policy.
+
+For a sequential multi-model study, persist each operation ID and wait until
+that operation reaches a terminal state before starting the next stage. A
+polling timeout or a helper returning after its wait budget is **not** a
+completed operation. Resume the same receipt/idempotency key. Handle
+`concurrency_exceeded` by waiting for known active work; do not mint a fresh
+idempotency key or claim an unaccepted run started. Existing servers without
+`/v1/me` still require the same admission/error handling.
+
 ```bash
 curl -sS "$BASE/scientific-models" -H "Authorization: Bearer $TOKEN" | jq '.data[] | {model_id, operations, service_classes, parameter_schema}'
 ```

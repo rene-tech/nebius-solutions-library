@@ -1059,6 +1059,34 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         runtime.metrics.set_lifecycle_rollups(await runtime.lifecycle.rollup_metric_rows())
         return Response(runtime.metrics.render(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
+    @app.get("/v1/me")
+    async def caller_policy(identity: Annotated[Principal, Depends(principal)]) -> Response:
+        """Describe this authenticated caller's effective policy, not free capacity.
+
+        A client can plan a durable batch without guessing its key's limit.
+        Concurrent admissions can still race, so this is not a reservation or
+        permission to skip normal admission/error handling.
+        """
+        return JSONResponse(
+            {
+                "object": "caller",
+                "tenant_id": identity.tenant_id,
+                "principal_id": identity.principal_id,
+                "scopes": sorted(identity.scopes),
+                "models": sorted(identity.models),
+                "max_concurrency": identity.max_concurrency,
+                "concurrency_scope": "api_key",
+                "concurrency_counted_states": ["queued", "activating", "running"],
+                "available_slots": None,
+                "admission_note": (
+                    "Non-terminal native, upload, and scientific operations share this key's limit. "
+                    "Delegated child operations count with their parent. This policy is not a capacity reservation; "
+                    "preserve operation IDs and handle concurrency_exceeded without duplicate submission."
+                ),
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
+
     @app.get("/v1/models")
     async def models(identity: Annotated[Principal, Depends(principal)]) -> dict[str, Any]:
         identity.require(Scope.CATALOG_READ)
