@@ -856,6 +856,21 @@
           "required": ["schema", "models"],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/scientific-execution-map/v3"},
+            "qualification_baselines": {
+              "description": "Historical ordered model sets. The renderer accepts their receipts only when current rows reconstruct the exact original digest.",
+              "type": "object",
+              "maxProperties": 32,
+              "patternProperties": {
+                "^[a-f0-9]{64}$": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "items": {"type": "string", "minLength": 1, "maxLength": 63}
+                }
+              },
+              "additionalProperties": false
+            },
             "snapshot_bundles": {
               "description": "Optional qualified startup bundles; the scientific renderer validates each complete runtime-specific bundle.",
               "type": "object",

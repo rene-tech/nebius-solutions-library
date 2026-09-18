@@ -8,8 +8,36 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from jsonschema import Draft202012Validator, ValidationError
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.mark.parametrize("invalid", [None, "digest", "duplicate", "empty"])
+def test_helm_accepts_only_well_formed_qualification_baselines(invalid):
+    schema = json.loads(
+        (
+            ROOT / "charts/control-plane/fs2-serve-control-plane/values.schema.json"
+        ).read_text()
+    )
+    contract = schema["properties"]["scientificBatch"]["properties"]["executionMap"]
+    baseline = {"a" * 64: ["old-model"]}
+    if invalid == "digest":
+        baseline = {"not-a-digest": ["old-model"]}
+    elif invalid == "duplicate":
+        baseline = {"a" * 64: ["old-model", "old-model"]}
+    elif invalid == "empty":
+        baseline = {"a" * 64: []}
+    value = {
+        "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
+        "models": [],
+        "qualification_baselines": baseline,
+    }
+    if invalid:
+        with pytest.raises(ValidationError):
+            Draft202012Validator(contract).validate(value)
+    else:
+        Draft202012Validator(contract).validate(value)
 
 
 def digest(value):
