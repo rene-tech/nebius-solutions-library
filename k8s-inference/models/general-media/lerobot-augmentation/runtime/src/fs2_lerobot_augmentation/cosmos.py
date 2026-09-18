@@ -110,7 +110,9 @@ def _object(value: object, *, label: str) -> Mapping[str, Any]:
 
 
 def _operation_id(value: Mapping[str, Any]) -> str:
-    candidate = value.get("operation", value)
+    nested = value.get("operation")
+    # Bare OperationView has an operation *name*, not an envelope object.
+    candidate = nested if isinstance(nested, Mapping) else value
     operation = _object(candidate, label="operation response")
     raw = operation.get("id", operation.get("operation_id"))
     try:
@@ -234,7 +236,13 @@ class CosmosClient:
             json={"operation": "generate-media", "payload": payload},
         )
         self._check(response, action="Cosmos admission", expected={200, 202})
-        return _operation_id(_object(response.json(), label="Cosmos admission"))
+        try:
+            admitted = response.json()
+        except ValueError as error:
+            raise CosmosError(
+                "PLATFORM_RESPONSE_INVALID", "Cosmos admission is not valid JSON", retryable=False
+            ) from error
+        return _operation_id(_object(admitted, label="Cosmos admission"))
 
     def _cancel(self, client: Any, operation_id: str) -> None:
         try:

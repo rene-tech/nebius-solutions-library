@@ -7,16 +7,18 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "runtime" / "src"))
 
 from fs2_lerobot_augmentation.contracts import AugmentationRequest  # noqa: E402
-from fs2_lerobot_augmentation.cosmos import CosmosClient  # noqa: E402
+from fs2_lerobot_augmentation.cosmos import CosmosClient, CosmosError, _operation_id  # noqa: E402
 
 
+@pytest.mark.parametrize("admission_shape", ["bare", "envelope", "invalid-id", "invalid-json"])
 def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path, monkeypatch: Any, admission_shape: str
 ) -> None:
     source_bytes = b"\x00\x00\x00\x18ftypisom-source"
     output_bytes = b"\x00\x00\x00\x18ftypisom-generated"
@@ -37,8 +39,7 @@ def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
         observed.append((request.method, request.url.path))
         if (
             request.method == "POST"
-            and request.url.path
-            == "/internal/scientific-workloads/cosmos/v1/scientific-artifacts/uploads"
+            and request.url.path == "/internal/scientific-workloads/cosmos/v1/scientific-artifacts/uploads"
         ):
             assert request.headers["idempotency-key"].startswith("lr-")
             return httpx.Response(
@@ -46,7 +47,10 @@ def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
                 json={
                     "operation_id": upload_operation,
                     "upload_id": upload_id,
-                    "content_path": f"/internal/scientific-workloads/cosmos/v1/scientific-artifacts/uploads/{upload_id}/content?operation_id={upload_operation}",
+                    "content_path": (
+                        f"/internal/scientific-workloads/cosmos/v1/scientific-artifacts/uploads/{upload_id}"
+                        f"/content?operation_id={upload_operation}"
+                    ),
                     "max_content_bytes": 1024,
                     "handle": {
                         "method": "PUT",
@@ -57,9 +61,7 @@ def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
                     },
                 },
             )
-        if request.method == "PUT" and request.url.path.endswith(
-            f"/{upload_id}/content"
-        ):
+        if request.method == "PUT" and request.url.path.endswith(f"/{upload_id}/content"):
             assert request.read() == source_bytes
             return httpx.Response(
                 200,
@@ -72,9 +74,7 @@ def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
                     "finalized": False,
                 },
             )
-        if request.method == "POST" and request.url.path.endswith(
-            f"/{upload_id}:finalize"
-        ):
+        if request.method == "POST" and request.url.path.endswith(f"/{upload_id}:finalize"):
             return httpx.Response(
                 200,
                 json={
@@ -87,26 +87,32 @@ def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
             )
         if (
             request.method == "POST"
-            and request.url.path
-            == "/internal/scientific-workloads/cosmos/v1/models/cosmos3-nano:invoke"
+            and request.url.path == "/internal/scientific-workloads/cosmos/v1/models/cosmos3-nano:invoke"
         ):
             invocation.update(json.loads(request.content))
             assert request.headers["idempotency-key"].startswith("lr-")
-            return httpx.Response(
-                202, json={"id": inference_operation, "status": "queued"}
-            )
+            operation = {"id": inference_operation, "operation": "generate-media", "status": "queued"}
+            if admission_shape == "invalid-json":
+                return httpx.Response(202, content=b"not-json")
+            if admission_shape == "invalid-id":
+                operation["id"] = "invalid"
+            return httpx.Response(202, json={"operation": operation} if admission_shape == "envelope" else operation)
         if (
             request.method == "GET"
-            and request.url.path
-            == f"/internal/scientific-workloads/cosmos/v1/operations/{inference_operation}"
+            and request.url.path == f"/internal/scientific-workloads/cosmos/v1/operations/{inference_operation}"
         ):
+            polls = sum(method == "GET" and path == request.url.path for method, path in observed)
             return httpx.Response(
-                200, json={"id": inference_operation, "status": "succeeded"}
+                200,
+                json={
+                    "id": inference_operation,
+                    "operation": "generate-media",
+                    "status": "activating" if polls == 1 else "succeeded",
+                },
             )
         if (
             request.method == "GET"
-            and request.url.path
-            == f"/internal/scientific-workloads/cosmos/v1/operations/{inference_operation}/result"
+            and request.url.path == f"/internal/scientific-workloads/cosmos/v1/operations/{inference_operation}/result"
         ):
             return httpx.Response(
                 200,
@@ -117,24 +123,19 @@ def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
                         "artifact_id": output_artifact,
                         "sha256": output_sha,
                         "size_bytes": len(output_bytes),
-                        "media_type": "video/mp4",
+                        "media_type": "application/octet-stream",
                         "compression": "none",
                     },
                 },
             )
         if (
             request.method == "GET"
-            and request.url.path
-            == f"/internal/scientific-workloads/cosmos/v1/artifacts/{output_artifact}/content"
+            and request.url.path == f"/internal/scientific-workloads/cosmos/v1/artifacts/{output_artifact}/content"
         ):
-            return httpx.Response(
-                200, content=output_bytes, headers={"content-type": "video/mp4"}
-            )
+            return httpx.Response(200, content=output_bytes, headers={"content-type": "video/mp4"})
         return httpx.Response(404)
 
-    parsed = AugmentationRequest.parse(
-        json.loads((ROOT / "fixtures" / "fixture-request.json").read_text())
-    )
+    parsed = AugmentationRequest.parse(json.loads((ROOT / "fixtures" / "fixture-request.json").read_text()))
     client = CosmosClient(
         "https://platform.invalid",
         workload_capability="test-secret",
@@ -149,6 +150,27 @@ def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
             transport=httpx.MockTransport(handler),
         ),
     )
+    monkeypatch.setattr("fs2_lerobot_augmentation.cosmos.time.sleep", lambda seconds: None)
+    if admission_shape.startswith("invalid"):
+        with pytest.raises(CosmosError) as caught:
+            client.generate(
+                reference=source,
+                output=output,
+                prompt="Lighting",
+                width=256,
+                height=256,
+                frames=16,
+                fps=8,
+                seed=20260915,
+                augmentation=parsed.augmentation,
+                unit_key="v0/e0/front/s20260915",
+                cancelled=lambda: False,
+            )
+        assert caught.value.code == "PLATFORM_RESPONSE_INVALID" and not caught.value.retryable
+        assert sum(method == "POST" and path.endswith(":invoke") for method, path in observed) == 1
+        assert not any(method == "GET" for method, path in observed)
+        assert not output.exists()
+        return
     result = client.generate(
         reference=source,
         output=output,
@@ -167,7 +189,13 @@ def test_cosmos_client_uses_attributed_platform_operations_and_artifacts(
     assert invocation["operation"] == "generate-media"
     assert invocation["payload"]["mode"] == "video-to-video"
     assert invocation["payload"]["input_reference"]["artifact_id"] == input_artifact
-    assert all(
-        not path.startswith("/internal/scientific-workloads/cosmos/v1/videos")
-        for _, path in observed
-    )
+    assert sum(method == "POST" and path.endswith(":invoke") for method, path in observed) == 1
+    assert sum(method == "GET" and path.endswith(inference_operation) for method, path in observed) == 2
+    assert all(not path.startswith("/internal/scientific-workloads/cosmos/v1/videos") for _, path in observed)
+
+
+@pytest.mark.parametrize("envelope", [False, True])
+def test_operation_parser_keeps_bare_upload_id_and_nested_operations(envelope):
+    operation_id = "00000000-0000-4000-8000-000000000021"
+    body = {"operation_id": operation_id}
+    assert _operation_id({"operation": body} if envelope else body) == operation_id

@@ -41,6 +41,14 @@ rewrites and publication stages. Cancellation after the final child does not
 publish a successful dataset. An individual network or codec call may finish
 before a pending cancellation is observed; this is not instantaneous preemption.
 
+Known terminal worker errors emit the same bounded static JSON to stderr and
+`/dev/termination-log` (`fs2-serve.nebius.ai/lerobot-worker-error/v1`, at most
+1024 bytes). Only allowlisted codes and operator-actionable static descriptions
+are included, never exception payloads, paths or credentials. The control plane
+must explicitly recognize this schema; other workers retain their normal
+Kubernetes termination handling. Invalid child-admission response shapes/JSON
+fail without retrying an operation whose admission may already have succeeded.
+
 ## Appearance augmentation and evidence boundary
 
 Use constrained `transfer` with edge conditioning for modest lighting or
