@@ -225,7 +225,7 @@ async def probes(args, state, token, successful, previous=None):
         client.check(
             journal["concurrency"]["status"] == 429, "concurrency_contract_was_not_429"
         )
-        code = journal["concurrency"]["body"].get("error", {}).get("code")
+        code = journal["concurrency"]["body"].get("error", {}).get("type")
         client.check(code == "concurrency_exceeded", "429_was_not_concurrency_limit")
         client.check(
             journal["cancelled_running_stage"], "running_cancellation_not_exercised"

@@ -61,12 +61,12 @@ def test_public_negative_contract_and_cancellation(
             calls.append(("POST", path, kwargs))
             if kwargs["json"]["parameters"]["variants"]["count"] == 0:
                 return httpx2.Response(
-                    invalid_status, json={"error": {"code": "invalid_request"}}
+                    invalid_status, json={"error": {"type": "invalid_request"}}
                 )
             value = (
                 {"operation": {"id": SECOND}}
                 if second_status == 202
-                else {"error": {"code": "concurrency_exceeded"}}
+                else {"error": {"type": "concurrency_exceeded"}}
             )
             return httpx2.Response(second_status, json=value)
 
