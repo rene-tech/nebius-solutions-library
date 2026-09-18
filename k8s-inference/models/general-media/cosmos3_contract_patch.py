@@ -27,15 +27,32 @@ REPLACEMENT = (
 """
     + ANCHOR
 )
+PREPROCESS_ANCHOR = '''        extra = _extra_args(request)
+        resolution = extra.get("resolution", extra.get("image_size", 720))
+        target_w, target_h = find_closest_target_size(image.height, image.width, resolution)
+        request.sampling_params.height = target_h
+        request.sampling_params.width = target_w
+        return int(target_h), int(target_w)
+'''
+PREPROCESS_REPLACEMENT = '''        extra = _extra_args(request)
+        if not extra.get("use_resolution_template", True):
+            sp = request.sampling_params
+            height, width = int(sp.height or 0), int(sp.width or 0)
+            if height <= 0 or width <= 0 or height % 16 or width % 16:
+                raise ValueError("Explicit Cosmos3 transfer dimensions must be positive multiples of 16.")
+            return height, width
+''' + PREPROCESS_ANCHOR.removeprefix("        extra = _extra_args(request)\n")
 
 
 def patch_source(raw: bytes) -> bytes:
     if hashlib.sha256(raw).hexdigest() != UPSTREAM_SHA256:
         raise ValueError("Cosmos3 upstream source differs from the reviewed pinned image")
     text = raw.decode()
-    if text.count(ANCHOR) != 1:
-        raise ValueError("Cosmos3 transfer sizing patch anchor is not unique")
-    result = text.replace(ANCHOR, REPLACEMENT, 1)
+    result = text
+    for anchor, replacement in ((ANCHOR, REPLACEMENT), (PREPROCESS_ANCHOR, PREPROCESS_REPLACEMENT)):
+        if result.count(anchor) != 1:
+            raise ValueError("Cosmos3 transfer sizing patch anchor is not unique")
+        result = result.replace(anchor, replacement, 1)
     compile(result, str(TARGET), "exec")
     return result.encode()
 
