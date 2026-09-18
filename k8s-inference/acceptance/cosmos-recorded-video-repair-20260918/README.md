@@ -127,6 +127,14 @@ The historical `cosmos3-nano-bundle.json`, old r7 files and owner policy remain
 unchanged. The new package is optional input to the existing GPU snapshot
 registry; it is not automatically included by a global Terraform default.
 
+Reproducibility is scoped precisely: all four restores reproduce their retained
+warmed donor byte-for-byte. The public fresh V4 output instead matches three
+earlier fresh V4 runs. Those two retained outputs use the same scientific input,
+seed and settings but have decoded SSIM 0.979943, not byte identity. The cause of
+this fresh-process/warm-up difference is not established. Do not advertise
+seed-exact equivalence across arbitrary initialization states, or interpret
+SSIM between two generated outputs as scientific or robotics-task accuracy.
+
 The broader run exposed an independent adapter bug: explicitly requested
 derived edge/blur presets were dropped when `control_weight` remained its
 default 1.0. A separately versioned adapter candidate preserves those supplied
