@@ -44,6 +44,12 @@ def measure(folder):
         result["stream_error_codes"] = [e.get("code") for e in events if e["type"] == "error"]
         if chunks:
             result["max_inter_chunk_seconds"] = max((b["received_seconds"]-a["received_seconds"] for a,b in zip(chunks,chunks[1:])), default=0)
+            sent_bytes, deficit = 0, 0.
+            for chunk in chunks:
+                deficit = max(deficit, chunk["received_seconds"]-chunks[0]["received_seconds"]-sent_bytes/44100)
+                sent_bytes += chunk["bytes"]
+            result["immediate_playback_max_delivery_deficit_seconds"] = deficit
+            result["playback_scope"] = "hypothetical immediate PCM playback from observed arrivals; no browser/audio-device test"
     if (folder / "evaluation.json").exists():
         result["evaluation"] = json.loads((folder / "evaluation.json").read_text())
     return result
