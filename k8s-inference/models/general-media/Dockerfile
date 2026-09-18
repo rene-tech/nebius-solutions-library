@@ -7,6 +7,11 @@ ARG MONAI_VERSION=1.5.1
 ARG NIBABEL_VERSION=5.3.2
 ARG PILLOW_VERSION=11.3.0
 ARG TRANSFORMERS_VERSION=4.57.1
+ARG SCIKIT_IMAGE_VERSION=0.25.2
+ARG SCIPY_VERSION=1.15.3
+ARG IMAGEIO_VERSION=2.37.0
+ARG TIFFFILE_VERSION=2025.6.11
+ARG LAZY_LOADER_VERSION=0.4
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -21,10 +26,16 @@ RUN python3 -m venv --system-site-packages /opt/fs2-media-venv \
        "nibabel==${NIBABEL_VERSION}" \
        "Pillow==${PILLOW_VERSION}" \
        "transformers==${TRANSFORMERS_VERSION}" \
+       "scikit-image==${SCIKIT_IMAGE_VERSION}" \
+       "scipy==${SCIPY_VERSION}" \
+       "imageio==${IMAGEIO_VERSION}" \
+       "tifffile==${TIFFFILE_VERSION}" \
+       "lazy-loader==${LAZY_LOADER_VERSION}" \
     && /opt/fs2-media-venv/bin/python -c \
        'import diffusers, huggingface_hub, monai, nibabel, PIL, torch, transformers; from diffusers import StableDiffusionXLPipeline; assert diffusers.__version__ == "0.35.1"; assert huggingface_hub.__version__ == "0.36.0"; assert monai.__version__ == "1.5.1"; assert nibabel.__version__ == "5.3.2"; assert PIL.__version__ == "11.3.0"; assert transformers.__version__ == "4.57.1"; print(torch.__version__, torch.version.cuda, StableDiffusionXLPipeline.__name__)'
 
-COPY sdxl_server.py nv_segment_ct_server.py vista_compat.py /opt/fs2-media/
+COPY sdxl_server.py nv_segment_ct_server.py vista_compat.py verify_vista_dependencies.py /opt/fs2-media/
+RUN /opt/fs2-media-venv/bin/python /opt/fs2-media/verify_vista_dependencies.py
 
 LABEL org.opencontainers.image.title="FS2 general and medical media runtime" \
       org.opencontainers.image.source="https://github.com/nebius/nebius-solutions-library" \
