@@ -58,6 +58,21 @@ for an identical intended submission. Serving tools also accept bounded
 `wait_seconds`; zero returns after durable acceptance without waiting for model
 execution. An accepted operation is **not** the final prediction.
 
+### GenMol mask length is not molecular size
+
+GenMol's `smiles` mask, for example `[*{10-20}]`, does **not** constrain the
+output to 10–20 heavy atoms. The hosted adapter takes the integer midpoint
+`floor((minimum + maximum) / 2)` and passes it as upstream `min_add_len`;
+this example reports `minimum_mask_tokens: 15`. The pinned sampler draws a
+SAFE-token length from its empirical distribution with that minimum. The mask's
+second endpoint is not a maximum token count or molecular-size limit. This is
+the existing sampler behavior, not a new generation setting.
+
+If your workflow requires a heavy-atom range, calculate it from the returned
+SMILES and filter explicitly; do not treat the requested mask as proof of that
+property. Retain the original requested and returned molecule counts separately
+from any post-filter count. See the [pinned NVIDIA sampler](https://github.com/NVIDIA-BioNeMo/genmol/blob/add09fc83b7255bd09c797e527c0f4b51f5fb7c1/src/genmol/sampler.py).
+
 ### Cosmos media workflows
 
 Cosmos publishes separate tools for text-to-image, text-to-video,

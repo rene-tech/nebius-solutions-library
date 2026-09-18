@@ -32,6 +32,14 @@ _PROTEIN = "ACDEFGHIKLMNPQRSTVWY"
 _SEQUENCE = "ACDEFGHIKLMNPQRSTVWY"
 _ARTIFACT_ID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
 _SHA256_PATTERN = r"^[0-9a-f]{64}$"
+_GENMOL_MASK_DESCRIPTION = (
+    "De-novo mask [*{minimum-maximum}], with 1 <= minimum <= maximum <= 512. "
+    "The adapter passes floor((minimum + maximum) / 2) as upstream min_add_len, a minimum number of "
+    "SAFE mask tokens; [*{10-20}] therefore reports minimum_mask_tokens=15. "
+    "Upstream samples token length from its empirical distribution above that minimum. "
+    "Neither endpoint is a heavy-atom bound, and maximum is not a maximum token or molecular-size limit. "
+    "Measure and filter heavy-atom counts on returned SMILES separately if required."
+)
 
 
 class InputContractUnavailable(ValueError):  # noqa: N818 - published adapter interface
@@ -246,7 +254,10 @@ _PURPOSES = {
     "openfold3": "Predict a protein assembly from chains and optional supplied A3M; returns CIF structure results.",
     "diffdock": "Dock a SMILES ligand into a receptor PDB; returns ranked poses and docking confidence.",
     "proteinmpnn": "Design sequences compatible with a protein backbone PDB; returns sampled sequences and scores.",
-    "genmol": "Generate de-novo molecules from a length mask; returns generated SMILES and property scores.",
+    "genmol": (
+        "Generate de-novo molecules using a SAFE mask-token minimum, not heavy-atom bounds; "
+        "returns generated SMILES and property scores."
+    ),
     "molmim": (
         "Run bounded CMA-ES/QED search from a SMILES molecule; returns distinct changed molecules or explicit "
         "GENERATION_EXHAUSTED when the requested count is not found. Property improvement is not guaranteed."
@@ -312,11 +323,12 @@ def _pydantic_contract(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
         schema["description"] = "Local MMseqs2 search against the pinned PDB70_220313 database."
     elif model_ref == "genmol":
         props["smiles"]["pattern"] = r"^\[\*\{[0-9]+-[0-9]+\}\]$"
+        props["smiles"]["description"] = _GENMOL_MASK_DESCRIPTION
         props["scoring"]["pattern"] = r"^(?:[Qq][Ee][Dd]|[Ll][Oo][Gg][Pp])$"
         props["temperature"]["anyOf"][0]["exclusiveMinimum"] = 0
         props["noise"]["anyOf"][0]["minimum"] = 0
         schema["description"] = (
-            "GenMol de-novo mask generation. Range order and finite numeric strings are checked by the runtime."
+            _GENMOL_MASK_DESCRIPTION + " Range order and finite numeric strings are checked by the runtime."
         )
     elif model_ref == "molmim":
         schema["description"] = (
@@ -1327,6 +1339,11 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
         refs += (_resource("native-examples.json")[model_ref]["source"],)
     if model_ref == "altumage":
         refs += ("k8s-inference/models/aging/fixtures.py#methylation_payload",)
+    if model_ref == "genmol":
+        refs += (
+            "https://github.com/NVIDIA-BioNeMo/genmol/blob/"
+            "add09fc83b7255bd09c797e527c0f4b51f5fb7c1/src/genmol/sampler.py",
+        )
     if model_ref == "nv-segment-ct":
         refs += ("k8s-inference/catalog/runtime/validators/validate_nv_segment_ct.py",)
     return ModelInputContract(schema, examples, refs, model_ref, protocol)
