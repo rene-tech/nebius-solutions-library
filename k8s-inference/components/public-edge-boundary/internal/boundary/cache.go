@@ -322,17 +322,59 @@ func (p *Provider) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRu
 func (p *Provider) verifyLegacyRuntimeSelection(selectionRaw []byte, envelopeRaw []byte, now time.Time) error {
 	selectionSHA256 := digestHex(selectionRaw)
 	runtimeRoot := filepath.Dir(p.selectionPath)
-	bootstrapPath := filepath.Join(runtimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-for-"+selectionSHA256+".json")
-	bootstrapRaw, err := readProtectedRegular(bootstrapPath, maxTrustBytes)
-	if errors.Is(err, os.ErrNotExist) && p.legacyBootstrap != nil {
-		bootstrapRaw, _, err = p.legacyBootstrap.EnvelopeGeneration()
+	var enrolledRaw []byte
+	var enrolled *LegacyRuntimeBootstrap
+	var err error
+	if p.legacyBootstrap != nil {
+		enrolledRaw, _, err = p.legacyBootstrap.EnvelopeGeneration()
+		if err == nil {
+			enrolled, err = p.verifyLegacyBootstrapCandidate(enrolledRaw, selectionSHA256, now)
+		}
+		if err == nil && enrolled.Generation > 1 {
+			predecessorRaw, predecessorErr := p.legacyBootstrapGeneration(enrolled.PredecessorBootstrapEnvelopeSHA256, selectionSHA256)
+			if predecessorErr != nil {
+				return predecessorErr
+			}
+			predecessor, predecessorErr := p.verifyLegacyBootstrapCandidate(predecessorRaw, selectionSHA256, now)
+			if predecessorErr != nil || enrolled.SuccessorOf(*predecessor, digestHex(predecessorRaw)) != nil {
+				return errors.New("legacy runtime bootstrap renewal lacks its exact retained predecessor")
+			}
+		}
 	}
-	if err != nil {
+	stored, storedRaw, storedErr := p.storedLegacyBootstrapHead(selectionSHA256, now)
+	if enrolled == nil && storedErr != nil {
 		return errors.New("legacy runtime selection lacks its signed bootstrap generation")
 	}
-	acceptanceTrustSHA256, err := InspectLegacyRuntimeBootstrapTrustSHA256(bootstrapRaw)
+	bootstrap := enrolled
+	bootstrapRaw := enrolledRaw
+	if bootstrap == nil || storedErr == nil && stored.Generation > bootstrap.Generation {
+		bootstrap = stored
+		bootstrapRaw = storedRaw
+	} else if storedErr == nil && stored.Generation == bootstrap.Generation && digestHex(storedRaw) != digestHex(bootstrapRaw) {
+		return errors.New("legacy runtime bootstrap chain has two generations at the same sequence")
+	}
+	legacyTrustRaw, err := readProtectedRegular(
+		filepath.Join(runtimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
+		maxTrustBytes,
+	)
+	if errors.Is(err, os.ErrNotExist) {
+		legacyTrustRaw, err = readProtectedRegular(p.trustPath, maxTrustBytes)
+	}
 	if err != nil {
 		return err
+	}
+	return VerifyLegacyRuntimeAnchor(*bootstrap, selectionRaw, legacyTrustRaw, envelopeRaw)
+}
+
+func (p *Provider) verifyLegacyBootstrapCandidate(
+	bootstrapRaw []byte,
+	selectionSHA256 string,
+	now time.Time,
+) (*LegacyRuntimeBootstrap, error) {
+	runtimeRoot := filepath.Dir(p.selectionPath)
+	acceptanceTrustSHA256, err := InspectLegacyRuntimeBootstrapTrustSHA256(bootstrapRaw)
+	if err != nil {
+		return nil, err
 	}
 	acceptanceTrustRaw, err := readProtectedRegular(
 		filepath.Join(runtimeRoot, "acceptance-trust-generations", "acceptance-trust-"+acceptanceTrustSHA256+".json"),
@@ -346,33 +388,76 @@ func (p *Provider) verifyLegacyRuntimeSelection(selectionRaw []byte, envelopeRaw
 		}
 	}
 	if err != nil || digestHex(acceptanceTrustRaw) != acceptanceTrustSHA256 {
-		return errors.New("legacy bootstrap acceptance trust generation is missing")
+		return nil, errors.New("legacy bootstrap acceptance trust generation is missing")
 	}
 	bootstrap, err := VerifyLegacyRuntimeBootstrap(acceptanceTrustRaw, bootstrapRaw, now, false)
 	if err != nil || bootstrap.LegacySelectionSHA256 != selectionSHA256 {
-		return errors.New("legacy bootstrap does not bind the exact retained selector")
+		return nil, errors.New("legacy bootstrap does not bind the exact retained selector")
 	}
 	accepted, err := p.acceptanceGeneration(
 		bootstrap.SuccessorAcceptanceEnvelopeSHA256,
 		bootstrap.SuccessorAcceptanceTrustSHA256,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := AcceptanceGenerationsRelated(p.acceptance, accepted, p.acceptanceGeneration); err != nil {
-		return err
+		return nil, err
 	}
-	legacyTrustRaw, err := readProtectedRegular(
-		filepath.Join(runtimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
+	return bootstrap, nil
+}
+
+func (p *Provider) storedLegacyBootstrapHead(
+	selectionSHA256 string,
+	now time.Time,
+) (*LegacyRuntimeBootstrap, []byte, error) {
+	root := filepath.Join(filepath.Dir(p.selectionPath), "legacy-bootstrap-generations")
+	raw, err := readProtectedRegular(
+		filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+"-successor-of-genesis.json"),
 		maxTrustBytes,
 	)
 	if errors.Is(err, os.ErrNotExist) {
-		legacyTrustRaw, err = readProtectedRegular(p.trustPath, maxTrustBytes)
+		raw, err = readProtectedRegular(filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+".json"), maxTrustBytes)
 	}
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	return VerifyLegacyRuntimeAnchor(*bootstrap, selectionRaw, legacyTrustRaw, envelopeRaw)
+	current, err := p.verifyLegacyBootstrapCandidate(raw, selectionSHA256, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	for depth := 0; depth < 64; depth++ {
+		nextPath := filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+"-successor-of-"+digestHex(raw)+".json")
+		nextRaw, readErr := readProtectedRegular(nextPath, maxTrustBytes)
+		if errors.Is(readErr, os.ErrNotExist) {
+			return current, raw, nil
+		}
+		if readErr != nil {
+			return nil, nil, readErr
+		}
+		next, verifyErr := p.verifyLegacyBootstrapCandidate(nextRaw, selectionSHA256, now)
+		if verifyErr != nil || next.SuccessorOf(*current, digestHex(raw)) != nil {
+			return nil, nil, errors.New("retained legacy bootstrap successor chain is invalid")
+		}
+		current = next
+		raw = nextRaw
+	}
+	return nil, nil, errors.New("legacy bootstrap renewal chain exceeds its bounded depth")
+}
+
+func (p *Provider) legacyBootstrapGeneration(envelopeSHA256 string, selectionSHA256 string) ([]byte, error) {
+	if !isSHA256(envelopeSHA256) || !isSHA256(selectionSHA256) {
+		return nil, errors.New("legacy bootstrap generation locator is invalid")
+	}
+	root := filepath.Join(filepath.Dir(p.selectionPath), "legacy-bootstrap-generations")
+	raw, err := readProtectedRegular(filepath.Join(root, "legacy-bootstrap-"+envelopeSHA256+".json"), maxTrustBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		raw, err = readProtectedRegular(filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+".json"), maxTrustBytes)
+	}
+	if err != nil || digestHex(raw) != envelopeSHA256 {
+		return nil, errors.New("legacy bootstrap predecessor generation is missing or changed")
+	}
+	return raw, nil
 }
 
 func (p *Provider) acceptanceGeneration(envelopeDigest string, trustDigest string) (Acceptance, error) {

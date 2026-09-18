@@ -12,7 +12,8 @@ import (
 
 const (
 	LegacyRuntimeBootstrapEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-legacy-runtime-bootstrap-envelope/v1"
-	LegacyRuntimeBootstrapPayloadSchema  = "fs2-serve.nebius.ai/public-edge-legacy-runtime-bootstrap/v1"
+	PreviousLegacyRuntimeBootstrapPayloadSchema = "fs2-serve.nebius.ai/public-edge-legacy-runtime-bootstrap/v1"
+	LegacyRuntimeBootstrapPayloadSchema  = "fs2-serve.nebius.ai/public-edge-legacy-runtime-bootstrap/v2"
 	legacyRuntimeBootstrapIssuerRole     = "platform-security-public-edge-boundary-legacy-bootstrap"
 	maximumLegacyRuntimeBootstrapLifetime = 7 * 24 * time.Hour
 )
@@ -32,9 +33,26 @@ type LegacyRuntimeBootstrap struct {
 	LegacySnapshotPayloadSchema string `json:"legacy_snapshot_payload_schema"`
 	SuccessorAcceptanceEnvelopeSHA256 string `json:"successor_acceptance_envelope_sha256"`
 	SuccessorAcceptanceTrustSHA256 string `json:"successor_acceptance_trust_sha256"`
+	Generation uint64 `json:"generation"`
+	PredecessorBootstrapEnvelopeSHA256 string `json:"predecessor_bootstrap_envelope_sha256"`
 	IssuedAt string `json:"issued_at"`
 	ExpiresAt string `json:"expires_at"`
 	envelopeRaw []byte
+}
+
+type legacyRuntimeBootstrapV1 struct {
+	Schema string `json:"schema"`
+	ClusterID string `json:"cluster_id"`
+	DeploymentID string `json:"deployment_id"`
+	LegacySelectionSHA256 string `json:"legacy_selection_sha256"`
+	LegacySnapshotEnvelopeSHA256 string `json:"legacy_snapshot_envelope_sha256"`
+	LegacySnapshotTrustSHA256 string `json:"legacy_snapshot_trust_sha256"`
+	LegacySnapshotEnvelopeSchema string `json:"legacy_snapshot_envelope_schema"`
+	LegacySnapshotPayloadSchema string `json:"legacy_snapshot_payload_schema"`
+	SuccessorAcceptanceEnvelopeSHA256 string `json:"successor_acceptance_envelope_sha256"`
+	SuccessorAcceptanceTrustSHA256 string `json:"successor_acceptance_trust_sha256"`
+	IssuedAt string `json:"issued_at"`
+	ExpiresAt string `json:"expires_at"`
 }
 
 func LoadLegacyRuntimeBootstrap(
@@ -98,27 +116,72 @@ func VerifyLegacyRuntimeBootstrap(
 	if err != nil {
 		return nil, err
 	}
-	var bootstrap LegacyRuntimeBootstrap
-	if err := decodeExactJSON(payloadRaw, &bootstrap); err != nil {
-		return nil, fmt.Errorf("decode legacy runtime bootstrap: %w", err)
+	var schemaOnly struct {
+		Schema string `json:"schema"`
 	}
-	canonical, err := json.Marshal(bootstrap)
+	if err := rejectDuplicateKeys(payloadRaw); err != nil || json.Unmarshal(payloadRaw, &schemaOnly) != nil {
+		return nil, errors.New("legacy runtime bootstrap schema cannot be decoded exactly")
+	}
+	var bootstrap LegacyRuntimeBootstrap
+	var canonical []byte
+	var err error
+	if schemaOnly.Schema == PreviousLegacyRuntimeBootstrapPayloadSchema {
+		var previous legacyRuntimeBootstrapV1
+		if err := decodeExactJSON(payloadRaw, &previous); err != nil {
+			return nil, fmt.Errorf("decode legacy runtime bootstrap v1: %w", err)
+		}
+		canonical, err = json.Marshal(previous)
+		bootstrap = LegacyRuntimeBootstrap{
+			Schema: previous.Schema, ClusterID: previous.ClusterID, DeploymentID: previous.DeploymentID,
+			LegacySelectionSHA256: previous.LegacySelectionSHA256,
+			LegacySnapshotEnvelopeSHA256: previous.LegacySnapshotEnvelopeSHA256,
+			LegacySnapshotTrustSHA256: previous.LegacySnapshotTrustSHA256,
+			LegacySnapshotEnvelopeSchema: previous.LegacySnapshotEnvelopeSchema,
+			LegacySnapshotPayloadSchema: previous.LegacySnapshotPayloadSchema,
+			SuccessorAcceptanceEnvelopeSHA256: previous.SuccessorAcceptanceEnvelopeSHA256,
+			SuccessorAcceptanceTrustSHA256: previous.SuccessorAcceptanceTrustSHA256,
+			Generation: 1, IssuedAt: previous.IssuedAt, ExpiresAt: previous.ExpiresAt,
+		}
+	} else {
+		if err := decodeExactJSON(payloadRaw, &bootstrap); err != nil {
+			return nil, fmt.Errorf("decode legacy runtime bootstrap: %w", err)
+		}
+		canonical, err = json.Marshal(bootstrap)
+	}
 	issuedAt, issueErr := parseWholeUTC(bootstrap.IssuedAt)
 	expiresAt, expiryErr := parseWholeUTC(bootstrap.ExpiresAt)
 	now = now.UTC().Truncate(time.Second)
-	if err != nil || !bytes.Equal(canonical, payloadRaw) || bootstrap.Schema != LegacyRuntimeBootstrapPayloadSchema ||
+	if err != nil || !bytes.Equal(canonical, payloadRaw) ||
+		(bootstrap.Schema != LegacyRuntimeBootstrapPayloadSchema && bootstrap.Schema != PreviousLegacyRuntimeBootstrapPayloadSchema) ||
 		!safeText(bootstrap.ClusterID, false) || len(bootstrap.ClusterID) > maximumAcceptanceClusterIDBytes ||
 		!safeText(bootstrap.DeploymentID, false) || len(bootstrap.DeploymentID) > maximumAcceptanceDeploymentIDBytes ||
 		!isSHA256(bootstrap.LegacySelectionSHA256) || !isSHA256(bootstrap.LegacySnapshotEnvelopeSHA256) ||
 		!isSHA256(bootstrap.LegacySnapshotTrustSHA256) || !isSHA256(bootstrap.SuccessorAcceptanceEnvelopeSHA256) ||
 		!isSHA256(bootstrap.SuccessorAcceptanceTrustSHA256) || issueErr != nil || expiryErr != nil ||
 		!legacySnapshotSchemaPair(bootstrap.LegacySnapshotEnvelopeSchema, bootstrap.LegacySnapshotPayloadSchema) ||
+		bootstrap.Generation < 1 ||
+		(bootstrap.Generation == 1 && bootstrap.PredecessorBootstrapEnvelopeSHA256 != "") ||
+		(bootstrap.Generation > 1 && !isSHA256(bootstrap.PredecessorBootstrapEnvelopeSHA256)) ||
 		!expiresAt.After(issuedAt) || expiresAt.Sub(issuedAt) > maximumLegacyRuntimeBootstrapLifetime ||
 		issuedAt.After(now.Add(30*time.Second)) || requireCurrent && !expiresAt.After(now) {
 		return nil, errors.New("legacy runtime bootstrap is non-canonical, expired or incomplete")
 	}
 	bootstrap.envelopeRaw = append([]byte(nil), envelopeRaw...)
 	return &bootstrap, nil
+}
+
+func (bootstrap LegacyRuntimeBootstrap) SuccessorOf(predecessor LegacyRuntimeBootstrap, predecessorEnvelopeSHA256 string) error {
+	if !isSHA256(predecessorEnvelopeSHA256) || bootstrap.Generation != predecessor.Generation+1 ||
+		bootstrap.PredecessorBootstrapEnvelopeSHA256 != predecessorEnvelopeSHA256 ||
+		bootstrap.ClusterID != predecessor.ClusterID || bootstrap.DeploymentID != predecessor.DeploymentID ||
+		bootstrap.LegacySelectionSHA256 != predecessor.LegacySelectionSHA256 ||
+		bootstrap.LegacySnapshotEnvelopeSHA256 != predecessor.LegacySnapshotEnvelopeSHA256 ||
+		bootstrap.LegacySnapshotTrustSHA256 != predecessor.LegacySnapshotTrustSHA256 ||
+		bootstrap.LegacySnapshotEnvelopeSchema != predecessor.LegacySnapshotEnvelopeSchema ||
+		bootstrap.LegacySnapshotPayloadSchema != predecessor.LegacySnapshotPayloadSchema {
+		return errors.New("legacy runtime bootstrap renewal does not bind its exact predecessor and legacy anchor")
+	}
+	return nil
 }
 
 func (bootstrap LegacyRuntimeBootstrap) RequireExactAcceptance(acceptance Acceptance) error {

@@ -127,3 +127,15 @@ func CanonicalJSON(raw []byte, destination any) ([]byte, error) {
 	}
 	return canonical, nil
 }
+
+// InspectSignedEnvelopeSchema performs the same exact duplicate/unknown-field
+// parsing as signature verification without interpreting a versioned payload.
+// Callers use it only after the relevant trust path has authenticated the
+// envelope bytes.
+func InspectSignedEnvelopeSchema(raw []byte) (string, error) {
+	var envelope SignedEnvelope
+	if err := decodeExactJSON(raw, &envelope); err != nil {
+		return "", err
+	}
+	return envelope.Schema, nil
+}

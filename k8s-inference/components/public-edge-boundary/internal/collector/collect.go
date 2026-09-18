@@ -35,6 +35,7 @@ const (
 	maximumCollectorCycleBytes = 256 * 1024
 	maximumSnapshotActivationReceiptBytes = 4 * 1024
 	maximumSnapshotRuntimeSelectionBytes = 16 * 1024
+	maximumLegacyBootstrapRenewalDepth = 64
 	snapshotCycleSettlementSchema = "fs2-serve.nebius.ai/public-edge-snapshot-cycle-settlement/v2"
 	snapshotActivationReceiptSchema = "fs2-serve.nebius.ai/public-edge-snapshot-activation-receipt/v1"
 	legacySnapshotRuntimeSelectionSchema = "fs2-serve.nebius.ai/public-edge-snapshot-runtime-selection/v1"
@@ -135,6 +136,8 @@ type snapshotActivationPlan struct {
 	acceptanceTrustSHA256 string
 	acceptanceEnvelopeName string
 	acceptanceEnvelopeSHA256 string
+	legacyBootstrapEnvelopeSHA256 string
+	legacyBootstrapExpiresAt string
 }
 
 func (r *Runner) AcceptedCycle(now time.Time) (CollectorCycle, error) {
@@ -891,8 +894,17 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 		return plan, errors.New("collector acceptance generation is not the exact current or directly signed next generation")
 	}
 	if activeExists && selected.Schema == legacySnapshotRuntimeSelectionSchema {
-		if err := r.retainLegacyRuntimeBootstrap(predecessorSelectionSHA256, activeRaw, now); err != nil {
+		requiresBootstrap, err := legacySelectorRequiresBootstrap(activeRaw)
+		if err != nil {
 			return plan, err
+		}
+		if requiresBootstrap {
+			bootstrap, bootstrapSHA256, err := r.retainLegacyRuntimeBootstrap(predecessorSelectionSHA256, activeRaw, now)
+			if err != nil {
+				return plan, err
+			}
+			plan.legacyBootstrapEnvelopeSHA256 = bootstrapSHA256
+			plan.legacyBootstrapExpiresAt = bootstrap.ExpiresAt
 		}
 	}
 	if err := r.prepareRuntimeAuthorityGenerations(&plan, snapshotTrustRaw); err != nil {
@@ -1028,8 +1040,14 @@ func (r *Runner) loadRuntimeSelection(now time.Time) (snapshotRuntimeSelection, 
 			if decodeErr != nil {
 				return snapshotRuntimeSelection{}, nil, "", false, decodeErr
 			}
-			if err := r.retainLegacyRuntimeBootstrap(digest(raw), envelopeRaw, now); err != nil {
-				return snapshotRuntimeSelection{}, nil, "", false, err
+			requiresBootstrap, schemaErr := legacySelectorRequiresBootstrap(envelopeRaw)
+			if schemaErr != nil {
+				return snapshotRuntimeSelection{}, nil, "", false, schemaErr
+			}
+			if requiresBootstrap {
+				if _, _, err := r.retainLegacyRuntimeBootstrap(digest(raw), envelopeRaw, now); err != nil {
+					return snapshotRuntimeSelection{}, nil, "", false, err
+				}
 			}
 			if err := r.appendRuntimeOrMatch(committedPath, raw, 0o444); err != nil {
 				return snapshotRuntimeSelection{}, nil, "", false, err
@@ -1137,22 +1155,119 @@ func (r *Runner) verifyLegacyRuntimeSelection(selectionRaw []byte, envelopeRaw [
 	return boundary.VerifyLegacyRuntimeAnchor(*bootstrap, selectionRaw, legacyTrustRaw, envelopeRaw)
 }
 
+func legacySelectorRequiresBootstrap(envelopeRaw []byte) (bool, error) {
+	schema, err := boundary.InspectSignedEnvelopeSchema(envelopeRaw)
+	if err != nil {
+		return false, errors.New("legacy selector snapshot envelope cannot be decoded exactly")
+	}
+	switch schema {
+	case boundary.EnvelopeSchema:
+		return false, nil
+	case boundary.LegacyEnvelopeSchema, boundary.PreviousEnvelopeSchema:
+		return true, nil
+	default:
+		return false, errors.New("legacy selector references an unsupported snapshot envelope schema")
+	}
+}
+
 func (r *Runner) legacyRuntimeBootstrap(
 	selectionRaw []byte,
 	now time.Time,
 ) (*boundary.LegacyRuntimeBootstrap, []byte, []byte, error) {
 	selectionSHA256 := digest(selectionRaw)
-	bootstrapPath := filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-for-"+selectionSHA256+".json")
-	bootstrapRaw, err := readRootRegular(bootstrapPath, maximumConfigBytes)
-	if errors.Is(err, os.ErrNotExist) && r.legacyBootstrap != nil {
-		bootstrapRaw, _, err = r.legacyBootstrap.EnvelopeGeneration()
+	var enrolledRaw []byte
+	var enrolled *boundary.LegacyRuntimeBootstrap
+	var err error
+	if r.legacyBootstrap != nil {
+		enrolledRaw, _, err = r.legacyBootstrap.EnvelopeGeneration()
+		if err == nil {
+			enrolled, err = r.verifyLegacyBootstrapCandidate(enrolledRaw, selectionSHA256, now)
+		}
+		if err == nil && enrolled.Generation > 1 {
+			predecessorRaw, predecessorErr := r.legacyBootstrapGeneration(
+				enrolled.PredecessorBootstrapEnvelopeSHA256,
+				selectionSHA256,
+			)
+			if predecessorErr != nil {
+				return nil, nil, nil, predecessorErr
+			}
+			predecessor, predecessorErr := r.verifyLegacyBootstrapCandidate(predecessorRaw, selectionSHA256, now)
+			if predecessorErr != nil || enrolled.SuccessorOf(*predecessor, digest(predecessorRaw)) != nil {
+				return nil, nil, nil, errors.New("legacy runtime bootstrap renewal lacks its exact retained predecessor")
+			}
+		}
 	}
-	if err != nil {
+	stored, storedRaw, storedErr := r.storedLegacyBootstrapHead(selectionSHA256, now)
+	if enrolled == nil && storedErr != nil {
 		return nil, nil, nil, errors.New("legacy runtime selection lacks its signed bootstrap generation")
 	}
-	acceptanceTrustSHA256, err := boundary.InspectLegacyRuntimeBootstrapTrustSHA256(bootstrapRaw)
+	bootstrap := enrolled
+	bootstrapRaw := enrolledRaw
+	if bootstrap == nil || storedErr == nil && stored.Generation > bootstrap.Generation {
+		bootstrap = stored
+		bootstrapRaw = storedRaw
+	} else if storedErr == nil && stored.Generation == bootstrap.Generation && digest(storedRaw) != digest(bootstrapRaw) {
+		return nil, nil, nil, errors.New("legacy runtime bootstrap chain has two generations at the same sequence")
+	}
+	legacyTrustRaw, err := readRootRegular(
+		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
+		maximumConfigBytes,
+	)
+	if errors.Is(err, os.ErrNotExist) {
+		legacyTrustRaw, err = readRootRegular(filepath.Join(r.Config.RuntimeRoot, "snapshot-trust.json"), maximumConfigBytes)
+	}
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	return bootstrap, bootstrapRaw, legacyTrustRaw, nil
+}
+
+func (r *Runner) storedLegacyBootstrapHead(
+	selectionSHA256 string,
+	now time.Time,
+) (*boundary.LegacyRuntimeBootstrap, []byte, error) {
+	root := filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations")
+	raw, err := readRootRegular(
+		filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+"-successor-of-genesis.json"),
+		maximumConfigBytes,
+	)
+	if errors.Is(err, os.ErrNotExist) {
+		raw, err = readRootRegular(filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+".json"), maximumConfigBytes)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	current, err := r.verifyLegacyBootstrapCandidate(raw, selectionSHA256, now)
+	if err != nil {
+		return nil, nil, err
+	}
+	for depth := 0; depth < maximumLegacyBootstrapRenewalDepth; depth++ {
+		nextPath := filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+"-successor-of-"+digest(raw)+".json")
+		nextRaw, readErr := readRootRegular(nextPath, maximumConfigBytes)
+		if errors.Is(readErr, os.ErrNotExist) {
+			return current, raw, nil
+		}
+		if readErr != nil {
+			return nil, nil, readErr
+		}
+		next, verifyErr := r.verifyLegacyBootstrapCandidate(nextRaw, selectionSHA256, now)
+		if verifyErr != nil || next.SuccessorOf(*current, digest(raw)) != nil {
+			return nil, nil, errors.New("retained legacy bootstrap successor chain is invalid")
+		}
+		current = next
+		raw = nextRaw
+	}
+	return nil, nil, errors.New("legacy bootstrap renewal chain exceeds its bounded depth")
+}
+
+func (r *Runner) verifyLegacyBootstrapCandidate(
+	bootstrapRaw []byte,
+	selectionSHA256 string,
+	now time.Time,
+) (*boundary.LegacyRuntimeBootstrap, error) {
+	acceptanceTrustSHA256, err := boundary.InspectLegacyRuntimeBootstrapTrustSHA256(bootstrapRaw)
+	if err != nil {
+		return nil, err
 	}
 	acceptanceTrustRaw, err := readRootRegular(
 		filepath.Join(r.Config.RuntimeRoot, "acceptance-trust-generations", "acceptance-trust-"+acceptanceTrustSHA256+".json"),
@@ -1166,33 +1281,42 @@ func (r *Runner) legacyRuntimeBootstrap(
 		}
 	}
 	if err != nil || digest(acceptanceTrustRaw) != acceptanceTrustSHA256 {
-		return nil, nil, nil, errors.New("legacy bootstrap acceptance trust generation is missing")
+		return nil, errors.New("legacy bootstrap acceptance trust generation is missing")
 	}
 	bootstrap, err := boundary.VerifyLegacyRuntimeBootstrap(acceptanceTrustRaw, bootstrapRaw, now, false)
 	if err != nil || bootstrap.LegacySelectionSHA256 != selectionSHA256 {
-		return nil, nil, nil, errors.New("legacy bootstrap does not bind the exact retained selector")
+		return nil, errors.New("legacy bootstrap does not bind the exact retained selector")
 	}
 	accepted, err := r.acceptanceGeneration(
 		bootstrap.SuccessorAcceptanceEnvelopeSHA256,
 		bootstrap.SuccessorAcceptanceTrustSHA256,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
 	if err := boundary.AcceptanceGenerationsRelated(r.Acceptance, accepted, r.acceptanceGeneration); err != nil {
-		return nil, nil, nil, err
+		return nil, err
 	}
-	legacyTrustRaw, err := readRootRegular(
-		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
-		maximumConfigBytes,
-	)
+	return bootstrap, nil
+}
+
+func (r *Runner) legacyBootstrapGeneration(
+	envelopeSHA256 string,
+	selectionSHA256 string,
+) ([]byte, error) {
+	if !isDigest(envelopeSHA256) || !isDigest(selectionSHA256) {
+		return nil, errors.New("legacy bootstrap generation locator is invalid")
+	}
+	path := filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-"+envelopeSHA256+".json")
+	raw, err := readRootRegular(path, maximumConfigBytes)
 	if errors.Is(err, os.ErrNotExist) {
-		legacyTrustRaw, err = readRootRegular(filepath.Join(r.Config.RuntimeRoot, "snapshot-trust.json"), maximumConfigBytes)
+		legacyPath := filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-for-"+selectionSHA256+".json")
+		raw, err = readRootRegular(legacyPath, maximumConfigBytes)
 	}
-	if err != nil {
-		return nil, nil, nil, err
+	if err != nil || digest(raw) != envelopeSHA256 {
+		return nil, errors.New("legacy bootstrap predecessor generation is missing or changed")
 	}
-	return bootstrap, bootstrapRaw, legacyTrustRaw, nil
+	return raw, nil
 }
 
 func (r *Runner) acceptanceGeneration(envelopeDigest string, trustDigest string) (boundary.Acceptance, error) {
@@ -1218,44 +1342,76 @@ func (r *Runner) acceptanceGeneration(envelopeDigest string, trustDigest string)
 	return boundary.VerifyAcceptanceGeneration(trustRaw, envelopeRaw)
 }
 
-func (r *Runner) retainLegacyRuntimeBootstrap(selectionSHA256 string, envelopeRaw []byte, now time.Time) error {
+func (r *Runner) retainLegacyRuntimeBootstrap(
+	selectionSHA256 string,
+	envelopeRaw []byte,
+	now time.Time,
+) (*boundary.LegacyRuntimeBootstrap, string, error) {
 	if !isDigest(selectionSHA256) {
-		return errors.New("legacy runtime selection digest is invalid")
+		return nil, "", errors.New("legacy runtime selection digest is invalid")
 	}
 	selectionRaw, err := readRootRegular(filepath.Join(r.Config.RuntimeRoot, "snapshot-runtime-selection.json"), maximumSnapshotRuntimeSelectionBytes)
 	if err != nil || digest(selectionRaw) != selectionSHA256 {
-		return errors.New("legacy runtime selector changed before bootstrap retention")
+		return nil, "", errors.New("legacy runtime selector changed before bootstrap retention")
 	}
 	bootstrap, bootstrapRaw, legacyTrustRaw, err := r.legacyRuntimeBootstrap(selectionRaw, now)
 	if err != nil {
-		return err
+		return nil, "", err
 	}
 	if !bootstrap.Current(now) {
-		return errors.New("legacy runtime bootstrap expired before the migration successor was committed")
+		return nil, "", errors.New("legacy runtime bootstrap expired before the migration successor was committed")
 	}
 	if err := bootstrap.RequireExactAcceptance(r.Acceptance); err != nil {
-		return err
+		return nil, "", err
 	}
 	if err := boundary.VerifyLegacyRuntimeAnchor(*bootstrap, selectionRaw, legacyTrustRaw, envelopeRaw); err != nil {
-		return err
+		return nil, "", err
 	}
 	for _, name := range []string{"legacy-bootstrap-generations", "snapshot-trust-generations"} {
 		if err := r.ensureRuntimeChildDirectory(name); err != nil {
-			return err
+			return nil, "", err
+		}
+	}
+	bootstrapSHA256 := digest(bootstrapRaw)
+	if bootstrap.Generation > 1 {
+		predecessorRaw, err := r.legacyBootstrapGeneration(bootstrap.PredecessorBootstrapEnvelopeSHA256, selectionSHA256)
+		if err != nil {
+			return nil, "", err
+		}
+		if err := r.appendRuntimeOrMatch(
+			filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-"+digest(predecessorRaw)+".json"),
+			predecessorRaw,
+			0o444,
+		); err != nil {
+			return nil, "", err
 		}
 	}
 	if err := r.appendRuntimeOrMatch(
-		filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-for-"+selectionSHA256+".json"),
+		filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-"+bootstrapSHA256+".json"),
 		bootstrapRaw,
 		0o444,
 	); err != nil {
-		return err
+		return nil, "", err
 	}
-	return r.appendRuntimeOrMatch(
+	predecessorKey := bootstrap.PredecessorBootstrapEnvelopeSHA256
+	if predecessorKey == "" {
+		predecessorKey = "genesis"
+	}
+	if err := r.appendRuntimeOrMatch(
+		filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-for-"+selectionSHA256+"-successor-of-"+predecessorKey+".json"),
+		bootstrapRaw,
+		0o444,
+	); err != nil {
+		return nil, "", err
+	}
+	if err := r.appendRuntimeOrMatch(
 		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
 		legacyTrustRaw,
 		0o444,
-	)
+	); err != nil {
+		return nil, "", err
+	}
+	return bootstrap, bootstrapSHA256, nil
 }
 
 func (r *Runner) runtimeSelectionAuthority(selection snapshotRuntimeSelection) ([]byte, string, string, error) {
@@ -1552,6 +1708,9 @@ func (r *Runner) publishSnapshotActivationReceipt(plan snapshotActivationPlan, d
 	} else if readErr != nil || digest(currentRaw) != plan.predecessorSelectionSHA256 {
 		return errors.New("snapshot selection predecessor changed before atomic commit")
 	}
+	if err := r.revalidateLegacyBootstrapForCommit(plan, currentRaw, time.Now().UTC().Truncate(time.Second)); err != nil {
+		return err
+	}
 	if err := validateRuntimeCapacity(r.Config, 0, 0); err != nil {
 		return err
 	}
@@ -1584,6 +1743,31 @@ func (r *Runner) publishSnapshotActivationReceipt(plan snapshotActivationPlan, d
 	}
 	if err := fsyncDirectory(r.Config.RuntimeRoot); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (r *Runner) revalidateLegacyBootstrapForCommit(
+	plan snapshotActivationPlan,
+	predecessorRaw []byte,
+	now time.Time,
+) error {
+	if plan.legacyBootstrapEnvelopeSHA256 == "" && plan.legacyBootstrapExpiresAt == "" {
+		return nil
+	}
+	if !isDigest(plan.legacyBootstrapEnvelopeSHA256) || plan.legacyBootstrapExpiresAt == "" ||
+		digest(predecessorRaw) != plan.predecessorSelectionSHA256 {
+		return errors.New("snapshot activation plan lost its exact legacy bootstrap authorization")
+	}
+	bootstrap, bootstrapRaw, _, err := r.legacyRuntimeBootstrap(predecessorRaw, now)
+	if err != nil || digest(bootstrapRaw) != plan.legacyBootstrapEnvelopeSHA256 ||
+		bootstrap.ExpiresAt != plan.legacyBootstrapExpiresAt || !bootstrap.Current(now) ||
+		bootstrap.RequireExactAcceptance(r.Acceptance) != nil {
+		return errors.New("legacy bootstrap changed or expired before atomic successor publication")
+	}
+	expiresAt, err := time.Parse(time.RFC3339, bootstrap.ExpiresAt)
+	if err != nil || expiresAt.Sub(now) <= snapshotActivationSafetyMargin {
+		return errors.New("legacy bootstrap cannot cover the atomic successor publication safety margin")
 	}
 	return nil
 }
@@ -1885,7 +2069,8 @@ func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	bootstrapBytes, ok := checkedMultiply(trustBytes, 3)
+	bootstrapObjects := uint64(2*maximumLegacyBootstrapRenewalDepth + 2)
+	bootstrapBytes, ok := checkedMultiply(trustBytes, bootstrapObjects)
 	if !ok {
 		return 0, 0, errors.New("native runtime bootstrap byte bound overflows")
 	}
@@ -1895,7 +2080,8 @@ func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
 	// acceptance-envelope generation directories plus their private attempt
 	// directories. Extra directory blocks conservatively cover their root
 	// entries and the immutable successor namespace.
-	fixedDirectoryBytes, ok := checkedMultiply(config.RuntimeFilesystemBlockBytes, 20)
+	fixedDirectoryEntries := uint64(20 + 2*maximumLegacyBootstrapRenewalDepth)
+	fixedDirectoryBytes, ok := checkedMultiply(config.RuntimeFilesystemBlockBytes, fixedDirectoryEntries)
 	if !ok {
 		return 0, 0, errors.New("native runtime fixed directory bound overflows")
 	}
@@ -1904,10 +2090,11 @@ func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
 		return 0, 0, errors.New("native runtime fixed byte bound overflows")
 	}
 	horizonBytes, ok = checkedAdd(horizonBytes, fixedBytes)
-	if !ok || horizonInodes > ^uint64(0)-16 {
+	fixedInodes := uint64(16 + 2*maximumLegacyBootstrapRenewalDepth)
+	if !ok || horizonInodes > ^uint64(0)-fixedInodes {
 		return 0, 0, errors.New("native runtime fixed horizon overflows")
 	}
-	return horizonBytes, horizonInodes + 16, nil
+	return horizonBytes, horizonInodes + fixedInodes, nil
 }
 
 func runtimeAllocatedBytes(size int, block uint64) (uint64, error) {
@@ -2457,7 +2644,10 @@ func (r *Runner) appendRuntimeOrMatch(path string, raw []byte, mode os.FileMode)
 		if !bytes.Equal(existing, raw) {
 			return errors.New("runtime append target contains different retained bytes")
 		}
-		return validateRuntimeCapacity(r.Config, 0, 0)
+		if err := validateRuntimeCapacity(r.Config, 0, 0); err != nil {
+			return err
+		}
+		return fsyncDirectory(parent)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -2628,7 +2818,7 @@ func publishStagedAttempt(path string, attemptPath string, raw []byte, mode os.F
 		if readErr != nil || !bytes.Equal(existing, raw) {
 			return errors.New("append-only evidence publication raced with different bytes")
 		}
-		return nil
+		return fsyncDirectory(filepath.Dir(path))
 	}
 	return fsyncDirectory(filepath.Dir(path))
 }
