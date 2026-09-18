@@ -25,7 +25,7 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
 
-def build_overlay(values, scheduling_raw: bytes, execution):
+def build_overlay(values, scheduling_raw: bytes, execution, *, replace_lerobot=False):
     current = values["scientificBatch"]
     if hashlib.sha256(scheduling_raw).hexdigest() != current["schedulingContractSha256"]:
         raise ValueError("scheduler bytes differ from the captured Helm identity")
@@ -41,8 +41,25 @@ def build_overlay(values, scheduling_raw: bytes, execution):
         raise ValueError("duplicate model identity")
     if set(new_rows) != set(live_rows) | {MODEL} or live["schema"] != desired["schema"]:
         raise ValueError("activation must append only LeRobot and preserve every existing model")
-    if any(new_rows[key] != value for key, value in live_rows.items()):
-        raise ValueError("activation changes an existing scientific execution row")
+    for key, value in live_rows.items():
+        if new_rows[key] == value:
+            continue
+        if key != MODEL or not replace_lerobot:
+            raise ValueError("activation changes an existing scientific execution row")
+        # An explicit successor upgrade may replace only this coordinator's
+        # immutable image and execution identity. It cannot alter resources,
+        # placement, mounts, stage structure, or any sibling scientific row.
+        prior, successor = copy.deepcopy(value), copy.deepcopy(new_rows[key])
+        for candidate in (prior, successor):
+            if not candidate.get("execution_identity_sha256"):
+                raise ValueError("LeRobot replacement requires an execution identity")
+            candidate.pop("execution_identity_sha256")
+            stages = candidate.get("stages", [])
+            if len(stages) != 1 or not isinstance(stages[0], dict) or not stages[0].get("image"):
+                raise ValueError("LeRobot replacement requires one pinned coordinator stage")
+            stages[0].pop("image")
+        if prior != successor:
+            raise ValueError("LeRobot replacement changes fields beyond image and execution identity")
     if "snapshot_bundles" in live:
         desired["snapshot_bundles"] = copy.deepcopy(live["snapshot_bundles"])
     for digest, ids in live.get("qualification_baselines", {}).items():
@@ -84,10 +101,17 @@ def main():
     parser.add_argument("--baseline-values", type=Path, required=True)
     parser.add_argument("--baseline-scheduling", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--replace-lerobot", action="store_true",
+        help="Explicitly allow only the existing LeRobot image/execution-identity replacement",
+    )
     args = parser.parse_args()
     values = yaml.safe_load(args.baseline_values.read_text())
     execution = json.loads((ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text())
-    overlay, cm = build_overlay(values, args.baseline_scheduling.read_bytes(), execution)
+    overlay, cm = build_overlay(
+        values, args.baseline_scheduling.read_bytes(), execution,
+        replace_lerobot=args.replace_lerobot,
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for name, value in (("scientific-activation.values.json", overlay), ("scientific-scheduling.configmap.json", cm)):
         path = args.output_dir / name

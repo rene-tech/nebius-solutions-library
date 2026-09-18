@@ -13,6 +13,11 @@ action alignment. Two unchanged final-release cohorts are a separate acceptance
 step. Use the [ordinary-key directory client](../../../acceptance/lerobot-customer-20260917/README.md)
 to run a local dataset without manually constructing artifact manifests.
 
+Release149 passed four single-variant HTTP/MCP dataset-reader cases, then its
+two-variant blur case failed on repeated upload content PUT after finalization.
+The [negative receipt](activation/debug-failure-r149.json) retains that failure;
+the corrected successor requires its own public proof and unchanged cohorts.
+
 ## Frozen compatibility
 
 - LeRobot dataset format: v3.0.
@@ -56,6 +61,11 @@ robot telemetry. Review generated trajectories, objects and contacts for the
 intended use before treating preserved action arrays as valid labels. No output
 mode guarantees their physical consistency with the generated imagery.
 
+The release149 environment samples did not visibly achieve the requested clean
+laboratory/pale-blue background and showed arm trajectory/contact and wrist-pose
+changes. Their successful full-reader checks establish dataset integrity, not
+successful prompt intent, synchronized multi-view edits or action alignment.
+
 ## Input references
 
 The request schema accepts exactly three source kinds:
@@ -91,9 +101,10 @@ See `fixtures/scientific-run-request.json`.
 
 The [additive activation procedure](activation/README.md) packages the canonical
 profile/schema and preserves the complete existing deployment. Bootstrap
-`active` discovery was explicitly unqualified. The new qualified profile binds
-the actual release148 public completion and scheduler receipts; its limitations
-remain part of the contract. A caller needs
+`active` discovery is explicitly unqualified. The historical qualified profile
+binds the actual release148 public completion and scheduler receipts. The
+upload-reuse successor clears those current proof pointers until its own public
+run succeeds; historical receipts and limitations remain retained. A caller needs
 both model grants plus `artifacts.write`, `operations.result`, `inference.invoke`,
 `operations.read` and `catalog.read`; cancellation additionally requires
 `operations.cancel`. The parent and its sequential delegated child share the
@@ -168,6 +179,11 @@ routes: upload/finalize the episode MP4, admit generation, poll its durable
 operation, then download the resulting artifact. The same serving admission,
 model grants, request budgets, GPU reservations, queues, and usage records apply.
 The initial coordinator processes variants and cameras sequentially.
+
+Operationally, this coordinator is CPU-only and is not GPU-snapshotted. GPU
+snapshot restore, hot-replica counts, idle timeout and scaling settings belong
+to the existing `cosmos3-nano` App that its delegated calls use. Changing the
+dataset App's CPU resources does not change that Cosmos serving policy.
 
 After terminal success, fetch the scientific result and its finalized
 `output_manifest`. Download the public artifact UUIDs in that manifest. Worker

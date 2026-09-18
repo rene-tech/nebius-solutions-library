@@ -4,17 +4,49 @@ The canonical scientific profile, request schema and execution row are packaged
 in the control-plane image. The CPU worker is separately pinned by its registry
 manifest digest. `active` enables ordinary HTTP and typed MCP admission for keys
 with both the LeRobot and Cosmos model grants; it does **not** mean qualified.
-During onboarding the public-completion and scheduler-eligibility receipts stay
-null. Admin discovery explicitly reports incomplete qualification.
+During onboarding the public-completion and scheduler-eligibility receipts stayed
+null. The historical qualified projection binds the actual release148
+[public completion](qualification/public-completion-r148.json) and
+[scoped evidence index](qualification/evidence-index-r148.json), with the exact
+scheduler receipt addressed by its SHA-256 in `workload-profile.json`. This
+proves dataset/media mechanics only; final customer cohorts are separate.
+The upload-reuse successor starts `active` with null public/scheduler proof;
+historical receipts remain intact but cannot qualify its new image identity.
+
+Scientific recipe qualification and the generic Admin **Last qualification**
+badge are separate projections. This release does not mount the optional
+customer-readiness verdict index, so that header still says **No recorded
+qualification** even though the scientific proof and actual cohort receipts
+exist. It is an unpopulated UI evidence projection, not evidence that these
+tests did not run. The existing optional integration uses
+`catalog.customerReadinessConfigMapName` / `customerReadinessKey` and gate output
+from `acceptance/customer-readiness/capability_gate.py`; wiring a new mount is a
+separate coordinated rollout, not part of this frozen acceptance release.
 
 The first release147 public MCP dataset attempt is retained as a
 [failed integration receipt](debug-failure-r147.json), not qualification. Its
 attempt-scoped upload succeeded and generation was admitted under the parent's
 concurrency-one policy, but the worker misread the bare operation response and
 failed before polling. Parent fencing cancelled the activating child; no GPU
-generation or output dataset completed. Corrected worker publication, another
-real public dataset result and pinned-reader validation are required before
-promotion.
+generation or output dataset completed. Corrected worker `df364675…` then passed
+the real public dataset path, both idempotent replays, and the independent
+LeRobot 0.6.1 reader: two episodes/two cameras, 128 decoded camera frames and 2,304
+exact nonvideo values. Warm lighting appeared, but fruit appearance and fine
+gripper details also changed. Strictly lighting-only edits and physical/action
+fidelity are not qualified.
+
+Release149 then passed four single-variant public HTTP/MCP dataset-reader cases,
+but its supplemental two-variant blur run failed: the second variant attempted
+to PUT bytes into the first variant's finalized input upload and received HTTP
+409. The first generation succeeded; no second generation was admitted. The
+[negative receipt](debug-failure-r149.json) preserves the actual worker log,
+parent and child identities. Further admissions stopped before the negative and
+cancellation probes. These partial cohorts do not complete final acceptance;
+the corrected successor must start active/unqualified and acquire its own proof.
+Independent environment review also found that requested laboratory background
+replacement did not visibly succeed and robot trajectories changed. Successful
+dataset mechanics must not be described as semantic-intent or action-fidelity
+qualification.
 
 The CPU parent requests 2 CPUs, 16 GiB RAM and 32 GiB ephemeral storage, with
 4 CPU/24 GiB RAM/32 GiB storage limits. Its ordinary scientific companion and
@@ -22,6 +54,9 @@ existing general-CPU queue remain unchanged. The worker rejects source bundles
 over 5 GiB, expanded datasets over 8 GiB, and requests whose conservative
 workspace estimate cannot fit 32 GiB before contacting Cosmos. Each output is
 bounded to 5 GiB. See the [worker limits](../runtime/README.md).
+The coordinator is CPU-only, not a GPU-snapshot workload. The existing
+`cosmos3-nano` App owns the delegated GPU runtime's snapshot, hot replicas and
+autoscaling policy; those settings are independent of this CPU execution row.
 
 Existing ten scientific profile receipts are retained unchanged. Their original
 whole-map digest is represented by `qualification_baselines`: the ordered set of
@@ -48,6 +83,10 @@ new content-addressed scheduler ConfigMap plus a `scientificBatch`-only Helm
 overlay. Apply neither an old whole values file nor an older reduced model map:
 the live speech, storage and serving catalog must remain intact. The owner
 applies the new ConfigMap and rolls out the matching control-plane image.
+For a reviewed successor, capture the current full baseline and add
+`--replace-lerobot`: this permits only the existing LeRobot image and execution
+identity to change. Resource, mount, placement or sibling-row changes still
+fail. An unchanged scheduler ConfigMap is reused, not rewritten.
 
 The Terraform facade uses the same strict baseline reconstruction in
 `scientific-execution.tf`; it keeps the raw Helm map hash separate from the
