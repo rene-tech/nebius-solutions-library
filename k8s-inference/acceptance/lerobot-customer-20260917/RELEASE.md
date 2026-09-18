@@ -191,4 +191,60 @@ all three gateways, two controllers, two unchanged admin replicas and15 GPU
 observers were ready on their expected images. The settled check at01:26:33
 passed all three Prometheus targets/13 rules and the separate nine public/admin
 reads returned HTTP200. The targeted two-variant and negative probes are now
-running before a new final qualification/acceptance promotion.
+complete, ahead of a new final qualification/acceptance promotion.
+
+Targeted blur parent `f1f19593-c3ac-4b20-bfb4-360be62d76b2` passed both output
+datasets and both replays. It used one finalized input upload and two successful
+generation children, each on attempt one. First GPU activation was37.856754s;
+the second reused the same Pod/GPU and reported0.373011s warm activation, not a
+new cold start. Both outputs fully reopened and preserved all nonvideo values.
+The32 selected frames differ across seeds; unselected streams retain the
+documented codec tolerance. Visual review still found geometry/style drift,
+not faithful isolated relighting or physical action alignment.
+
+The malformed request returned422 without admission. Deliberate out-of-range
+selection `14856e69-1ea7-4812-8ed5-3683f4688a48` failed with the correct static
+`INVALID_REQUEST`, released CPU resources and created zero children. The harness
+initially expected `DATASET_INVALID`; source inspection confirmed this is a
+request-selection `ContractError`, not a `DatasetError`. A second harness
+assertion read `error.code`, while the actual429 contract carries
+`error.type=concurrency_exceeded`. Both expectations and regressions were fixed;
+neither correction changed the service or retried the existing generation.
+
+Cancellation parent `91500592-e8a4-4c89-8c2b-b201531a3b23` reached CPU
+`active_compute`, was explicitly cancelled and released its resources. It had
+zero child operations: this proves running CPU-stage cancellation, not
+GPU-kernel/active-child cancellation. The overlapping admission returned the
+expected429. The original two failed harness aggregates remain unchanged;
+`targeted-evaluation-r150.json` links their exact receipts and evaluates the
+observed results with corrected assertions (SHA256
+`5f81569bdc8a695a17e8158b23bdcd532b213621ee5402b4cb54b22906375e90`).
+No extra blur/invalid-selection admissions were made. The corrected acceptance
+suite passes35 local tests plus Ruff; the complete final cohorts remain pending.
+
+## Frozen final release151
+
+Helm151 deploys control-plane source
+`440d7c6079a820f6f73b8d6dca2b351ee2ab6832`, index
+`sha256:ab2f802727b29b60a301870771610ec5b9851e2d92f837ee422c52b7fd78f214`.
+The dataset worker remains
+`sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1`,
+from source `4dc1ef4850c1d794a5f4cd2a941f12d11b3f7718`. This promotion attaches
+the actual150 scoped completion/scheduler qualification; historical148 and
+failed149 receipts remain separate. It does not change the150 execution map,
+scheduler, native Cosmos image/model/r7 snapshot, capacity, or scaling policy.
+
+The settled deployment verifier at01:45:27 confirmed three gateways, two
+controllers, two unchanged admin replicas, all15 eligible GPU observers,
+three Prometheus scrape targets and13 rules. Nine public/operator read checks
+returned HTTP200, including35 Apps. Immutable build/publication receipts are
+private under `cp-build-r151/`; the deployed values are in
+`release.values.yaml`. H100 `terraform.tfvars` pins the same digest and passes
+`terraform fmt -check`; no broad apply against older unrelated state was made.
+
+Fresh `final-cohorts-r151/` acceptance started at01:48:04. The first parent is
+`18c1bb2a-dcd5-4489-a35b-63c1f8da2d6a`. The release is frozen while both customer
+cohorts and the multi-variant/negative probes run. This subsection records the
+rollout, not a final acceptance verdict. Existing Timothy grants are unchanged
+until the full suite passes; the disposable test key is still needed for that
+suite and will be revoked after settlement.

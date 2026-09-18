@@ -1,6 +1,6 @@
 # Apply after captured current Helm values and scientific-activation.values.json.
 # Dataset API/catalog activation. No model, capacity, or admin image changes.
-# Source: 7aa37722bd4989c983aa8c5aaedab5310da90049
+# Source: 440d7c6079a820f6f73b8d6dca2b351ee2ab6832
 image:
   repository: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane
-  digest: sha256:e240fb81a208df7517df8ee7ae3f0fa47d4544b7399f68f02db933d16fed9b6c
+  digest: sha256:ab2f802727b29b60a301870771610ec5b9851e2d92f837ee422c52b7fd78f214
