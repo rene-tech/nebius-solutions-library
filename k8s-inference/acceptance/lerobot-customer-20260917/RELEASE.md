@@ -43,10 +43,84 @@ operator evidence is under
 `/home/tux/secure-handoff/lerobot-release-20260917/`; the customer run journal is
 `debug-lighting-mcp/run.json`. The failed cohort remains preserved there.
 
-## Final result
+## Release149 acceptance — multi-variant failure, not a final pass
 
-Pending corrected deployment and public dataset acceptance. Exact action-array
-preservation must not be described as proof of physically action-aligned video.
+Customer cohorts ran on frozen Helm revision **149**, deployed
+from source `8fe42b85fc6e6d7f3cfca7128d65888bca7e4951`:
+
+- Control-plane index:
+  `sha256:da50219255ae4af4975bba74c0221890cce1eaad4b28ac114d89ceb087e624e4`.
+- Dataset worker:
+  `sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042`.
+- Native Cosmos model, serving image, r7 GPU snapshot and scaling configuration
+  are unchanged. GPU snapshotting applies to the delegated Cosmos runtime,
+  not the CPU-only dataset coordinator.
+- All three control-plane, two controller and two admin replicas were ready;
+  nine public/operator read checks returned HTTP 200 before admission.
+- The first final lighting parent `6068f623-0263-4e34-9e18-68989b78411d`
+  passed the complete client workflow. Its delegated generation measured
+  42.92455 s cold activation on reused preemptible H100 capacity. This is not
+  a newly provisioned node benchmark.
+
+Four single-variant parents passed full download, reader comparison and both
+replays: lighting and all-episode/all-camera environment generation, each once
+through HTTP and once through named MCP. The fifth parent,
+`dc708f87-d0a2-4021-b645-7540cf0f4837`, failed its **second blur variant** with
+public `PLATFORM_UPSTREAM_ERROR`. Its first generation child
+`6b963566-dbf0-4423-9e35-67dc628a19a4` succeeded. Live worker logs show
+`fs2 artifact content upload returned HTTP 409` when the second variant tried to
+upload the same already-finalized reference. No second generation was admitted.
+The CPU resources were released and the runner stopped new admissions; the
+negative/concurrency/cancellation probes were not run. This release is **not a
+complete acceptance pass**. Its private `final-cohorts-r149` directory name does
+not change that failed outcome.
+
+Read-only cleanup subsequently confirmed desired Cosmos replicas zero, no native
+Cosmos Pods, and no Jobs/Pods for any of the five exact dataset attempts. The
+canary remains intentionally valid for the corrected acceptance run. The second
+environment parent's four child rows still lacked Pod/node/GPU identities on a
+delayed recheck; these are unavailable observations, not measured zero usage.
+Its operation IDs, timings, successful outputs and parent attribution remain
+recorded. This known GPU-observer coverage gap was not hidden or filled with
+guessed identities.
+
+The worker fix must reuse a verified finalized reference without overwriting
+it or creating duplicate GPU work. Pending: the corrected multi-variant run and
+negative probes, a fresh unchanged-release full acceptance set, real-customer
+grants and disposable-key cleanup.
+
+Exact action-array preservation must not be described as proof of physically
+action-aligned video. The `strength` value is prompt guidance, not a calibrated
+native denoising control. Visual review of both environment runs found that the
+requested laboratory/pale-blue-panel appearance was not visibly achieved and
+robot motion diverged. The exact prompts survive the exercised worker/adapter
+mapping; this does not prove native conditioning behaviour. Lighting produced a
+warm appearance but changed object/robot details. These are model-output
+limitations, separate from passing dataset integrity.
+
+### Admin and accounting observations
+
+The final149 browser displayed the dataset App, successful parent, actual
+HTTP/MCP exchanges, CPU attempt, phase timings and downloadable artifacts. The
+first final parent displayed 0.12 s queueing and 83.01 s operation duration;
+the client additionally spends time preparing uploads and validating downloads.
+CPU-parent startup is unavailable, not a fabricated zero. GPU cold-start and
+GPU usage belong to the delegated `cosmos3-nano` child records. Join by parent
+and tenant/principal when analysing the complete workflow; do not interpret the
+CPU coordinator's zero GPU use as free generation.
+
+Both Apps' Runs, Usage, Settings, Containers, Metrics and Logs APIs returned
+HTTP 200 during the final cohorts. App-wide usage includes the explicitly
+retained earlier failed147 and successful148 integration runs; it is not an
+isolated final-cohort counter.
+
+The generic Admin "Last qualification" badge remains unpopulated because its
+separate customer-readiness verdict file is not mounted. The scientific recipe
+qualification and these acceptance receipts are distinct evidence sources.
+Wiring that generic badge would require another rollout; it is not silently
+claimed to have been updated. One browser App-detail HTTP503 occurred on147 at
+00:27:31 before the corrected releases and is retained in the private browser
+log. No recurrence has been observed in final149 checks so far.
 
 ## Corrected integration run (not the final release cohorts)
 
