@@ -308,6 +308,9 @@ func (r *Runner) CollectAndInstall(ctx context.Context, now time.Time) error {
 	if err != nil || int64(len(bundleRaw)) > r.Config.MaximumBundleBytes {
 		return errors.New("native evidence bundle exceeds its canonical bound")
 	}
+	if _, err := VerifyEvidenceBundle(bundleRaw, r.Config, r.Acceptance, r.nativeTrust, time.Now().UTC()); err != nil {
+		return fmt.Errorf("reopen exact native evidence before snapshot authority handoff: %w", err)
+	}
 	if err := r.appendEvidence("native-bundle-"+digest(bundleRaw)+".json", bundleRaw); err != nil {
 		return err
 	}
