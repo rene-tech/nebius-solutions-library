@@ -57,7 +57,6 @@ def prepare(original, fixtures, image, output, name, pool=None):
     spec["securityContext"]["fsGroup"] = 10001
     spec["tolerations"] = copy.deepcopy(original["spec"].get("tolerations", []))
     spec["activeDeadlineSeconds"] = 7200
-    spec["preemptionPolicy"] = "Never"
     for volume in spec["volumes"]:
         if volume.get("configMap"):
             volume["configMap"]["name"] = config["metadata"]["name"]
