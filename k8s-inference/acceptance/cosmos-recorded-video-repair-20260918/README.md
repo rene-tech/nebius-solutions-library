@@ -156,6 +156,15 @@ unchanged. The helper performs no apply; the release coordinator must rebase
 on the latest stable maps, preserve sibling records, and run ordinary public
 acceptance after selecting the successor.
 
+For a coordinated combined release, `prepare_optional.py` accepts a hash-bound
+stable release capture and adds the preset template plus the optional warmed
+bundle to the infrastructure envelope. It emits only the changed envelope and
+renderer maps; routes, admin configuration and scientific execution maps are
+not rewritten. The normal owner proposal retains `snapshotPreference: Never`.
+A clearly separate `strict-qualification-proposal-not-applied.json` is only for
+the subsequent controlled public restore test. Neither proposal is applied by
+the helper, and public snapshot qualification is never inferred from registration.
+
 The public V4 native replay completed on 18 September at 22:49:53 UTC, operation
 `a3bd2106-64f6-4dda-b7b5-8d0d53c2e532`. The original request produced a hash-verified
 2,085,126-byte MP4 with 64 decoded frames, 640×480 and 25 FPS. Inference was
