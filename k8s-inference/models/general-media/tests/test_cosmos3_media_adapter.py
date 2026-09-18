@@ -140,6 +140,52 @@ async def test_transfer_control_is_shared_with_upstream_and_removed(adapter, tmp
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kind,field,preset,upstream_field",
+    [
+        ("edge", "edge_threshold", "medium", "preset_edge_threshold"),
+        ("blur", "blur_strength", "high", "preset_blur_strength"),
+    ],
+)
+async def test_derived_control_preserves_explicit_preset_at_default_weight(
+    adapter, kind, field, preset, upstream_field
+):
+    request = TypeAdapter(adapter.GenerateRequest).validate_python(
+        {
+            "mode": "transfer-video",
+            "prompt": "Preserve the supplied camera and recorded movement.",
+            "input_reference": _data_url("video/mp4", MP4),
+            "controls": [{"control_type": kind, field: preset}],
+        }
+    )
+    client = _VideoClient(adapter)
+
+    await adapter.generate_video(client, request)
+
+    assert client.calls[0]["extra_params"][kind] == {
+        "control_weight": 1.0,
+        upstream_field: preset,
+    }
+
+
+@pytest.mark.asyncio
+async def test_default_derived_control_retains_upstream_default_behavior(adapter):
+    request = TypeAdapter(adapter.GenerateRequest).validate_python(
+        {
+            "mode": "transfer-video",
+            "prompt": "Preserve the supplied camera and recorded movement.",
+            "input_reference": _data_url("video/mp4", MP4),
+            "controls": [{"control_type": "edge"}],
+        }
+    )
+    client = _VideoClient(adapter)
+
+    await adapter.generate_video(client, request)
+
+    assert client.calls[0]["extra_params"]["edge"] is True
+
+
+@pytest.mark.asyncio
 async def test_inverse_dynamics_returns_validated_compact_action_json(adapter, monkeypatch):
     request = TypeAdapter(adapter.GenerateRequest).validate_python(
         {

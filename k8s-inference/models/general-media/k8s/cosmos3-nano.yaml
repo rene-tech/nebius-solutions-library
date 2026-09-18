@@ -1549,7 +1549,9 @@ data:
                         local_path, upstream_path = _write_control_file(raw, media_type)
                         cleanup_paths.append(local_path)
                         value = {"control_path": upstream_path, "control_weight": control.control_weight}
-                    elif control.control_weight != 1.0:
+                    elif (control.control_weight != 1.0
+                            or control.edge_threshold is not None
+                            or control.blur_strength is not None):
                         value = {"control_weight": control.control_weight}
                     if isinstance(value, dict) and control.edge_threshold is not None:
                         value["preset_edge_threshold"] = control.edge_threshold

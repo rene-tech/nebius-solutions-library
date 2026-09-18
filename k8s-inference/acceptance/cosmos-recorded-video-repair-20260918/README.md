@@ -60,13 +60,48 @@ not sufficient to infer final output timing. No FPS patch was necessary.
 Receipts, decoded metadata and pinned encoder source identity are in
 `isolated-fresh-v5`.
 
-A separately warmed V4 snapshot capture is **not qualified**: CUDA checkpoint
+A first separately warmed V4 snapshot capture failed: CUDA checkpoint
 completed in 15.31 s, but CRIU reached the existing 600 s dump timeout after writing
 approximately 42 GiB to shared storage. The helper recovered the donor and the
 isolated Pod was removed. Original r7 and the failed new directory are preserved;
-neither is a valid snapshot for this successor. A private warning-level CRIU
-logging experiment retains the same timeout, resource bounds and runtime.
-Fresh inference and this capture failure are independent acceptance results.
+neither is a valid snapshot for this successor. Fresh inference and this capture
+failure remain independent acceptance results.
+
+A second capture of the fully exercised runtime changed only CRIU dump logging
+from debug (`-v4`) to warning (`-v2`), leaving the same 600-second timeout,
+resource bounds, precision, weights and checkpoint flags. The approximately
+42-GiB capture completed: CUDA 15.78 s, CRIU 133.65 s, flush 2.37 s,
+153.73 s total command/transport time. Required shared-memory files were then
+captured separately with their hashes. The original r7 remains unselected;
+neither an incomplete directory nor a CUDA-only checkpoint is publishable.
+
+Two subsequent isolated Pod lifecycles restored that checkpoint with
+`fallback=fail`. On the original physical H100, CRIU restore took 30.40 s and
+CUDA restore 5.61 s. Pod creation to Ready was 54 s, including 14 s of scheduling
+wait; container start to Ready was approximately 37 s. This is a same-GPU,
+warm-host-cache experiment, **not an empty-node cold-start measurement**.
+The frozen recorded request and ten broader successful video outputs were
+byte-identical to the donor, and two previously unseen shapes/seeds passed.
+A different-node/GPU restore is a separate gate, not implied by these results.
+
+The broader run exposed an independent adapter bug: explicitly requested
+derived edge/blur presets were dropped when `control_weight` remained its
+default 1.0. A separately versioned adapter candidate preserves those supplied
+presets, while retaining the original boolean shorthand when no preset is
+provided. CPU tests cover both paths. On a second strict restored lifecycle,
+edge `very_low` versus `very_high` and blur `low` versus `high` each produced
+distinct, valid outputs; exact repeated low-preset requests were byte-identical.
+These six calls took 48.4–54.0 s at 640×480, 25 frames, 25 FPS. This is evidence
+that these controls reach the model, not a robotics-task accuracy claim.
+This successor adapter is **not** the immutable V4 adapter in the first public
+promotion package. It must receive its own digest/template and live acceptance.
+
+The public V4 native replay completed on 18 September at 22:49:53 UTC, operation
+`a3bd2106-64f6-4dda-b7b5-8d0d53c2e532`. The original request produced a hash-verified
+2,085,126-byte MP4 with 64 decoded frames, 640×480 and 25 FPS. Inference was
+15.66 s after activation; admission-to-completion was approximately 464 s,
+including capacity wait, new-node image preparation and runtime startup.
+The dataset-level LeRobot workflow remains a separate acceptance gate.
 
 First-frame V2V changed robot pose/motion. Edge transfer better followed the
 recorded pose in visual inspection, but altered materials and details. Neither
