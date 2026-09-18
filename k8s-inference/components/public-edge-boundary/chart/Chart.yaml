@@ -1,0 +1,6 @@
+apiVersion: v2
+name: public-edge-boundary
+description: Fail-closed SAI-15 public-edge evidence, semantic authority, and admission boundary
+type: application
+version: 0.1.0
+appVersion: "v3"

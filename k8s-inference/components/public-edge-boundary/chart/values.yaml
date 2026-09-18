@@ -1,0 +1,82 @@
+image:
+  repository: ""
+  digest: ""
+  pullPolicy: IfNotPresent
+
+namespace: fs2-system
+runtimeClassName: ""
+priorityClassName: system-cluster-critical
+
+identity:
+  webhookUID: 65532
+  webhookGID: 65532
+  runtimeReaderGID: 65533
+  snapshotAuthorityUID: 65530
+  snapshotAuthorityGID: 65530
+  settlementCustodianUID: 65531
+  settlementCustodianGID: 65531
+
+replicas:
+  webhook: 3
+  collector: 2
+  nativeAuthority: 2
+  snapshotAuthority: 2
+
+serviceAccounts:
+  webhook: fs2-public-edge-boundary
+  collector: fs2-public-edge-collector
+  nativeAuthority: fs2-public-edge-native-authority
+  snapshotAuthority: fs2-public-edge-snapshot-authority
+
+inputSecrets:
+  webhook: ""
+  collector: ""
+  nativeAuthority: ""
+  snapshotAuthority: ""
+  settlementCustodian: ""
+
+storage:
+  runtimeClaim: ""
+  evidenceClaim: ""
+  nativeLedgerClaim: ""
+  settlementLedgerClaim: ""
+
+# Each envelope is an owner-produced canonical v3 custody plan signed under
+# the independently baked acceptance registry. The chart deliberately has no
+# runnable default enrollment and cannot select its own trust root.
+custody:
+  webhook:
+    enrollmentEnvelope: ""
+  collector:
+    enrollmentEnvelope: ""
+  nativeAuthority:
+    enrollmentEnvelope: ""
+  snapshotAuthority:
+    enrollmentEnvelope: ""
+  settlementCustodian:
+    enrollmentEnvelope: ""
+
+webhook:
+  caBundle: ""
+  failurePolicy: Fail
+  timeoutSeconds: 5
+  clientConfigEvidenceSHA256: ""
+
+resources:
+  webhook: {requests: {cpu: 200m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+  collector: {requests: {cpu: 500m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+  nativeAuthority: {requests: {cpu: 500m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+  snapshotAuthority: {requests: {cpu: 500m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+  settlementCustodian: {requests: {cpu: 250m, memory: 256Mi}, limits: {cpu: "1", memory: 1Gi}}
+
+controlPlaneHandoff:
+  admissionConfigurationSHA256: ""
+  webhookKubeconfigSHA256: ""
+  apiServerClientSPKISHA256Current: ""
+  apiServerClientSPKISHA256Next: ""
+
+network:
+  apiServerCIDRs: []
+  providerControlPlaneCIDRs: []
+  dnsNamespace: kube-system
+  dnsPodLabels: {k8s-app: kube-dns}

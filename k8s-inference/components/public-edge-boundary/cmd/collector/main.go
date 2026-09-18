@@ -15,9 +15,9 @@ import (
 const acceptanceTrustPath = "/usr/local/share/fs2-boundary/trusted-acceptance-issuers.json"
 const acceptanceEnvelopePath = "/var/run/fs2-boundary/acceptance/accepted-boundary-envelope.json"
 const legacyRuntimeBootstrapEnvelopePath = "/var/run/fs2-boundary/acceptance/legacy-runtime-bootstrap-envelope.json"
-const collectorConfigPath = "/usr/local/share/fs2-boundary/native-collector.json"
-const nativeTrustPath = "/usr/local/share/fs2-boundary/trusted-native-response-issuers.json"
-const snapshotTrustPath = "/usr/local/share/fs2-boundary/trusted-snapshot-issuers.json"
+const collectorConfigPath = "/var/run/fs2-boundary/config/native-collector.json"
+const nativeTrustPath = "/var/run/fs2-boundary/trust/trusted-native-response-issuers.json"
+const snapshotTrustPath = "/var/run/fs2-boundary/trust/trusted-snapshot-issuers.json"
 
 func main() {
 	if os.Geteuid() != 0 {

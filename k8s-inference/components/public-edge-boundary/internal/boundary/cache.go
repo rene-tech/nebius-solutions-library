@@ -149,7 +149,7 @@ func (p *Provider) Runtime(now time.Time) (*Runtime, error) {
 		return nil, p.failedErr
 	}
 
-	trustRaw, authoritySnapshotID, authorityClosureSHA256, err := p.runtimeSelectionAuthority(selection)
+	trustRaw, authoritySnapshotID, authorityClosureSHA256, acceptanceSchema, err := p.runtimeSelectionAuthority(selection)
 	if err != nil {
 		if p.current != nil && p.current.Current(now) {
 			return p.current, nil
@@ -164,6 +164,7 @@ func (p *Provider) Runtime(now time.Time) (*Runtime, error) {
 		p.expectedDeploymentID,
 		authoritySnapshotID,
 		authorityClosureSHA256,
+		acceptanceSchema,
 		now,
 	)
 	if err != nil {
@@ -284,7 +285,7 @@ func (p *Provider) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRu
 	if err != nil || digestHex(envelopeRaw) != selection.SnapshotEnvelopeSHA256 {
 		return snapshotRuntimeSelection{}, errors.New("historical runtime selector lacks its exact immutable envelope")
 	}
-	trustRaw, authoritySnapshotID, authorityClosureSHA256, err := p.runtimeSelectionAuthority(selection)
+	trustRaw, authoritySnapshotID, authorityClosureSHA256, acceptanceSchema, err := p.runtimeSelectionAuthority(selection)
 	if err != nil {
 		if selection.Schema == legacySnapshotRuntimeSelectionSchema {
 			if bootstrapErr := p.verifyLegacyRuntimeSelection(raw, envelopeRaw, now); bootstrapErr == nil {
@@ -301,6 +302,7 @@ func (p *Provider) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRu
 		p.expectedDeploymentID,
 		authoritySnapshotID,
 		authorityClosureSHA256,
+		acceptanceSchema,
 		now,
 	)
 	if err != nil && selection.Schema == legacySnapshotRuntimeSelectionSchema {
@@ -478,13 +480,13 @@ func (p *Provider) acceptanceGeneration(envelopeDigest string, trustDigest strin
 	return VerifyAcceptanceGeneration(trustRaw, envelopeRaw)
 }
 
-func (p *Provider) runtimeSelectionAuthority(selection snapshotRuntimeSelection) ([]byte, string, string, error) {
+func (p *Provider) runtimeSelectionAuthority(selection snapshotRuntimeSelection) ([]byte, string, string, string, error) {
 	if selection.Schema == legacySnapshotRuntimeSelectionSchema {
 		trustRaw, err := readProtectedRegular(p.trustPath, maxTrustBytes)
 		if err != nil || digestHex(trustRaw) != p.expectedTrustSHA256 {
-			return nil, "", "", errors.New("legacy runtime selector trust differs from current accepted bytes")
+			return nil, "", "", "", errors.New("legacy runtime selector trust differs from current accepted bytes")
 		}
-		return trustRaw, p.expectedAuthoritySnapshotID, p.expectedAuthorityClosureSHA256, nil
+		return trustRaw, p.expectedAuthoritySnapshotID, p.expectedAuthorityClosureSHA256, p.acceptance.Schema, nil
 	}
 	if selection.Schema != snapshotRuntimeSelectionSchema || !isSHA256(selection.SnapshotTrustSHA256) ||
 		!isSHA256(selection.AcceptanceTrustSHA256) || !isSHA256(selection.AcceptanceEnvelopeSHA256) ||
@@ -492,7 +494,7 @@ func (p *Provider) runtimeSelectionAuthority(selection snapshotRuntimeSelection)
 		selection.SnapshotTrustName != "snapshot-trust-"+selection.SnapshotTrustSHA256+".json" ||
 		selection.AcceptanceTrustName != "acceptance-trust-"+selection.AcceptanceTrustSHA256+".json" ||
 		selection.AcceptanceEnvelopeName != "acceptance-envelope-"+selection.AcceptanceEnvelopeSHA256+".json" {
-		return nil, "", "", errors.New("runtime selector authority generation references are invalid")
+		return nil, "", "", "", errors.New("runtime selector authority generation references are invalid")
 	}
 	runtimeRoot := filepath.Dir(p.selectionPath)
 	snapshotTrustRaw, err := readProtectedRegular(
@@ -500,32 +502,32 @@ func (p *Provider) runtimeSelectionAuthority(selection snapshotRuntimeSelection)
 		maxTrustBytes,
 	)
 	if err != nil || digestHex(snapshotTrustRaw) != selection.SnapshotTrustSHA256 {
-		return nil, "", "", errors.New("runtime selector snapshot trust generation is missing or changed")
+		return nil, "", "", "", errors.New("runtime selector snapshot trust generation is missing or changed")
 	}
 	acceptanceTrustRaw, err := readProtectedRegular(
 		filepath.Join(runtimeRoot, "acceptance-trust-generations", selection.AcceptanceTrustName),
 		maxTrustBytes,
 	)
 	if err != nil || digestHex(acceptanceTrustRaw) != selection.AcceptanceTrustSHA256 {
-		return nil, "", "", errors.New("runtime selector acceptance trust generation is missing or changed")
+		return nil, "", "", "", errors.New("runtime selector acceptance trust generation is missing or changed")
 	}
 	acceptanceRaw, err := readProtectedRegular(
 		filepath.Join(runtimeRoot, "acceptance-envelope-generations", selection.AcceptanceEnvelopeName),
 		maxTrustBytes,
 	)
 	if err != nil || digestHex(acceptanceRaw) != selection.AcceptanceEnvelopeSHA256 {
-		return nil, "", "", errors.New("runtime selector acceptance envelope generation is missing or changed")
+		return nil, "", "", "", errors.New("runtime selector acceptance envelope generation is missing or changed")
 	}
 	accepted, err := VerifyAcceptanceGeneration(acceptanceTrustRaw, acceptanceRaw)
 	if err != nil || accepted.ClusterID != p.expectedClusterID || accepted.DeploymentID != p.expectedDeploymentID ||
 		accepted.SnapshotTrustSHA256 != selection.SnapshotTrustSHA256 ||
 		accepted.AuthoritySnapshotID != selection.AuthoritySnapshotID || accepted.AuthorityClosureSHA256 != selection.AuthorityClosureSHA256 {
-		return nil, "", "", errors.New("runtime selector authority pins differ from its signed acceptance generation")
+		return nil, "", "", "", errors.New("runtime selector authority pins differ from its signed acceptance generation")
 	}
 	if err := AcceptanceGenerationsRelated(p.acceptance, accepted, p.acceptanceGeneration); err != nil {
-		return nil, "", "", err
+		return nil, "", "", "", err
 	}
-	return snapshotTrustRaw, selection.AuthoritySnapshotID, selection.AuthorityClosureSHA256, nil
+	return snapshotTrustRaw, selection.AuthoritySnapshotID, selection.AuthorityClosureSHA256, accepted.Schema, nil
 }
 
 func decodeSnapshotRuntimeSelection(raw []byte) (snapshotRuntimeSelection, error) {
@@ -579,6 +581,7 @@ func (p *Provider) loadPrevious(now time.Time, currentErr error) (*Runtime, erro
 		p.expectedDeploymentID,
 		p.expectedAuthoritySnapshotID,
 		p.expectedAuthorityClosureSHA256,
+		p.acceptance.Schema,
 		now,
 	)
 	if err != nil {

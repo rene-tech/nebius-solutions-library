@@ -4,7 +4,8 @@ import "strings"
 
 const (
 	LegacyConfigSchema      = "fs2-serve.nebius.ai/public-edge-native-collector-config/v1"
-	ConfigSchema            = "fs2-serve.nebius.ai/public-edge-native-collector-config/v2"
+	PreviousConfigSchema    = "fs2-serve.nebius.ai/public-edge-native-collector-config/v2"
+	ConfigSchema            = "fs2-serve.nebius.ai/public-edge-native-collector-config/v3"
 	NativeTrustSchema       = "fs2-serve.nebius.ai/public-edge-native-response-trust/v1"
 	NativeEnvelopeSchema    = "fs2-serve.nebius.ai/public-edge-native-response-envelope/v1"
 	NativePageSchema        = "fs2-serve.nebius.ai/public-edge-native-response/v2"

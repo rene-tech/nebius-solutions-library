@@ -24,7 +24,7 @@ const runtimeSnapshotPath = "/var/run/fs2-boundary/snapshot-envelope.json"
 const tlsCertificatePath = "/var/run/fs2-boundary/tls/tls.crt"
 const tlsPrivateKeyPath = "/var/run/fs2-boundary/tls/tls.key"
 const admissionClientTrustPath = "/var/run/fs2-boundary/admission-client-trust.json"
-const transitionSettlementConfigPath = "/usr/local/share/fs2-boundary/transition-settlement.json"
+const transitionSettlementConfigPath = "/var/run/fs2-boundary/config/transition-settlement.json"
 
 type config struct {
 	listenAddress       string

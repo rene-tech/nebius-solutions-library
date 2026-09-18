@@ -1,0 +1,31 @@
+{{- include "fs2-boundary.requiredInputs" . -}}
+{{- range $component, $contract := .Values.custody }}
+{{- $_ := required (printf "custody.%s.enrollmentEnvelope must be independently signed" $component) $contract.enrollmentEnvelope }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-public-edge-{{ $component | lower }}-custody
+  namespace: {{ $.Values.namespace }}
+  labels: {app.kubernetes.io/part-of: fs2-public-edge-boundary}
+immutable: true
+data:
+  install-envelope.json: |-
+{{ $contract.enrollmentEnvelope | nindent 4 }}
+{{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fs2-public-edge-control-plane-handoff
+  namespace: {{ .Values.namespace }}
+  labels: {app.kubernetes.io/part-of: fs2-public-edge-boundary}
+immutable: true
+data:
+  schema: fs2-serve.nebius.ai/public-edge-admission-control-plane-handoff/v1
+  service-host: fs2-public-edge-boundary.{{ .Values.namespace }}.svc:8443
+  admission-configuration-sha256: {{ .Values.controlPlaneHandoff.admissionConfigurationSHA256 | quote }}
+  webhook-kubeconfig-sha256: {{ .Values.controlPlaneHandoff.webhookKubeconfigSHA256 | quote }}
+  apiserver-client-spki-current: {{ .Values.controlPlaneHandoff.apiServerClientSPKISHA256Current | quote }}
+  apiserver-client-spki-next: {{ .Values.controlPlaneHandoff.apiServerClientSPKISHA256Next | quote }}
+  client-config-evidence-sha256: {{ .Values.webhook.clientConfigEvidenceSHA256 | quote }}

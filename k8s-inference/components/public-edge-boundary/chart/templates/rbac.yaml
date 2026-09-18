@@ -1,0 +1,15 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: fs2-public-edge-no-kubernetes-api, namespace: {{ .Values.namespace }}}
+rules: []
+{{- range $component, $name := .Values.serviceAccounts }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: fs2-public-edge-no-api-{{ $component | lower }}
+  namespace: {{ $.Values.namespace }}
+subjects:
+  - {kind: ServiceAccount, name: {{ $name }}, namespace: {{ $.Values.namespace }}}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: fs2-public-edge-no-kubernetes-api}
+{{- end }}

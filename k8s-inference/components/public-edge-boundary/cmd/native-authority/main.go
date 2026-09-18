@@ -15,7 +15,7 @@ import (
 
 const acceptanceTrustPath = "/usr/local/share/fs2-boundary/trusted-acceptance-issuers.json"
 const acceptanceEnvelopePath = "/var/run/fs2-boundary/acceptance/accepted-boundary-envelope.json"
-const authorityConfigPath = "/usr/local/share/fs2-boundary/native-authority.json"
+const authorityConfigPath = "/var/run/fs2-boundary/config/native-authority.json"
 
 func main() {
 	acceptance, err := boundary.LoadAcceptance(acceptanceTrustPath, acceptanceEnvelopePath, "native-authority")

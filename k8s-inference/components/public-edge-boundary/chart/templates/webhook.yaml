@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fs2-public-edge-boundary
+  namespace: {{ .Values.namespace }}
+  labels: &webhookLabels {app.kubernetes.io/name: fs2-public-edge-boundary, app.kubernetes.io/part-of: fs2-public-edge-boundary}
+spec:
+  replicas: {{ .Values.replicas.webhook }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: *webhookLabels}
+  template:
+    metadata: {labels: *webhookLabels}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccounts.webhook }}
+      automountServiceAccountToken: false
+      priorityClassName: {{ .Values.priorityClassName }}
+{{- with .Values.runtimeClassName }}
+      runtimeClassName: {{ . }}
+{{- end }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.identity.webhookUID }}
+        runAsGroup: {{ .Values.identity.webhookGID }}
+        supplementalGroups: [{{ .Values.identity.runtimeReaderGID }}]
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints: {{ include "fs2-boundary.spread" "fs2-public-edge-boundary" | nindent 8 }}
+      initContainers:
+        - name: custody-installer
+          image: {{ include "fs2-boundary.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [/usr/local/bin/public-edge-custody-installer, /projected/manifest/install-envelope.json, webhook]
+          securityContext: {runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"], add: ["CHOWN", "FOWNER"]}, seccompProfile: {type: RuntimeDefault}}
+          volumeMounts:
+            - {name: inputs, mountPath: /projected/inputs, readOnly: true}
+            - {name: manifest, mountPath: /projected/manifest, readOnly: true}
+            - {name: custody, mountPath: /custody}
+      containers:
+        - name: webhook
+          image: {{ include "fs2-boundary.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: [/usr/local/bin/public-edge-boundary]
+          ports: [{name: https, containerPort: 8443, protocol: TCP}]
+          securityContext: {{ include "fs2-boundary.podSecurity" . | nindent 12 }}
+          resources: {{ toYaml .Values.resources.webhook | nindent 12 }}
+          readinessProbe: {httpGet: {path: /readyz, port: https, scheme: HTTPS}, periodSeconds: 5, timeoutSeconds: 2, failureThreshold: 2}
+          livenessProbe: {httpGet: {path: /healthz, port: https, scheme: HTTPS}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
+          volumeMounts:
+            - {name: custody, mountPath: /var/run/fs2-boundary, subPath: run, readOnly: true}
+            - {name: runtime, mountPath: /var/lib/fs2-boundary-runtime, readOnly: true}
+      volumes:
+        - {name: inputs, secret: {secretName: {{ .Values.inputSecrets.webhook }}, optional: false}}
+        - {name: manifest, configMap: {name: fs2-public-edge-webhook-custody, optional: false}}
+        - {name: custody, emptyDir: {medium: Memory, sizeLimit: 32Mi}}
+        - {name: runtime, persistentVolumeClaim: {claimName: {{ .Values.storage.runtimeClaim }}}}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fs2-public-edge-boundary
+  namespace: {{ .Values.namespace }}
+  labels: {app.kubernetes.io/name: fs2-public-edge-boundary, app.kubernetes.io/part-of: fs2-public-edge-boundary}
+spec:
+  selector: {app.kubernetes.io/name: fs2-public-edge-boundary, app.kubernetes.io/part-of: fs2-public-edge-boundary}
+  ports: [{name: https, port: 8443, targetPort: https, protocol: TCP}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: fs2-public-edge-boundary, namespace: {{ .Values.namespace }}}
+spec:
+  minAvailable: 2
+  selector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-boundary, app.kubernetes.io/part-of: fs2-public-edge-boundary}}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: fs2-public-edge-boundary
+  labels: {app.kubernetes.io/part-of: fs2-public-edge-boundary}
+  annotations:
+    security.fs2.nebius.ai/control-plane-client-config-sha256: {{ .Values.webhook.clientConfigEvidenceSHA256 | quote }}
+webhooks:
+  - name: public-edge-boundary.security.fs2.nebius.ai
+    admissionReviewVersions: [v1]
+    sideEffects: None
+    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    matchPolicy: Equivalent
+    timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
+    clientConfig:
+      service: {namespace: {{ .Values.namespace }}, name: fs2-public-edge-boundary, path: /validate, port: 8443}
+      caBundle: {{ .Values.webhook.caBundle | quote }}
+    rules:
+      - operations: [CREATE, UPDATE, DELETE, CONNECT]
+        apiGroups: ["*", ""]
+        apiVersions: ["*"]
+        resources: ["*"]
+        scope: "*"

@@ -46,6 +46,7 @@ func LoadRuntime(
 	expectedDeploymentID string,
 	expectedAuthoritySnapshotID string,
 	expectedAuthorityClosureSHA256 string,
+	expectedAcceptanceSchema string,
 	now time.Time,
 ) (*Runtime, error) {
 	trustRaw, err := readProtectedRegular(trustPath, maxTrustBytes)
@@ -64,6 +65,7 @@ func LoadRuntime(
 		expectedDeploymentID,
 		expectedAuthoritySnapshotID,
 		expectedAuthorityClosureSHA256,
+		expectedAcceptanceSchema,
 		now,
 	)
 }
@@ -80,6 +82,7 @@ func LoadRuntimeFromBytes(
 	expectedDeploymentID string,
 	expectedAuthoritySnapshotID string,
 	expectedAuthorityClosureSHA256 string,
+	expectedAcceptanceSchema string,
 	now time.Time,
 ) (*Runtime, error) {
 	return loadRuntimeFromBytes(
@@ -90,6 +93,7 @@ func LoadRuntimeFromBytes(
 		expectedDeploymentID,
 		expectedAuthoritySnapshotID,
 		expectedAuthorityClosureSHA256,
+		expectedAcceptanceSchema,
 		now,
 		true,
 	)
@@ -108,6 +112,7 @@ func LoadRuntimeFromBytesForChainRecovery(
 	expectedDeploymentID string,
 	expectedAuthoritySnapshotID string,
 	expectedAuthorityClosureSHA256 string,
+	expectedAcceptanceSchema string,
 	now time.Time,
 ) (*Runtime, error) {
 	return loadRuntimeFromBytes(
@@ -118,6 +123,7 @@ func LoadRuntimeFromBytesForChainRecovery(
 		expectedDeploymentID,
 		expectedAuthoritySnapshotID,
 		expectedAuthorityClosureSHA256,
+		expectedAcceptanceSchema,
 		now,
 		false,
 	)
@@ -131,6 +137,7 @@ func loadRuntimeFromBytes(
 	expectedDeploymentID string,
 	expectedAuthoritySnapshotID string,
 	expectedAuthorityClosureSHA256 string,
+	expectedAcceptanceSchema string,
 	now time.Time,
 	requireCurrent bool,
 ) (*Runtime, error) {
@@ -154,7 +161,7 @@ func loadRuntimeFromBytes(
 	if envelope.Schema == PreviousEnvelopeSchema {
 		return nil, errors.New("snapshot envelope v2 is retained evidence but requires explicit read-only bootstrap before activation-chain v3")
 	}
-	if envelope.Schema != EnvelopeSchema || envelope.Algorithm != "ed25519" {
+	if (envelope.Schema != EnvelopeSchema && envelope.Schema != ActivationChainEnvelopeSchema) || envelope.Algorithm != "ed25519" {
 		return nil, errors.New("boundary snapshot envelope uses an unsupported signature contract")
 	}
 	payloadRaw, err := decodeCanonicalBase64(envelope.PayloadBase64)
@@ -174,7 +181,7 @@ func loadRuntimeFromBytes(
 	}
 	message := bytes.Join(
 		[][]byte{
-			[]byte(EnvelopeSchema),
+			[]byte(envelope.Schema),
 			[]byte(envelope.Issuer),
 			[]byte(envelope.KeyID),
 			[]byte(envelope.PayloadSHA256),
@@ -185,8 +192,8 @@ func loadRuntimeFromBytes(
 	if !ed25519.Verify(key, message, signature) {
 		return nil, errors.New("boundary snapshot Ed25519 signature verification failed")
 	}
-	var snapshot Snapshot
-	if err := decodeExactJSON(payloadRaw, &snapshot); err != nil {
+	snapshot, err := decodeSnapshotPayload(payloadRaw)
+	if err != nil {
 		return nil, fmt.Errorf("decode signed boundary payload: %w", err)
 	}
 	if snapshot.Schema == LegacySnapshotSchema {
@@ -195,9 +202,16 @@ func loadRuntimeFromBytes(
 	if snapshot.Schema == PreviousSnapshotSchema {
 		return nil, errors.New("snapshot payload v2 is retained evidence but cannot be reinterpreted as activation-chain v3")
 	}
-	canonicalPayload, err := json.Marshal(snapshot)
-	if err != nil || !bytes.Equal(canonicalPayload, payloadRaw) {
-		return nil, errors.New("signed boundary payload is not canonical JSON")
+	if envelope.Schema == EnvelopeSchema && snapshot.Schema != SnapshotSchema ||
+		envelope.Schema == ActivationChainEnvelopeSchema && snapshot.Schema != ActivationChainSnapshotSchema {
+		return nil, errors.New("snapshot envelope and payload schemas are not an exact version pair")
+	}
+	if expectedAcceptanceSchema == AcceptancePayloadSchema {
+		if envelope.Schema != EnvelopeSchema {
+			return nil, errors.New("acceptance v5 requires the static-policy/dynamic-closure snapshot v4 contract")
+		}
+	} else if envelope.Schema != ActivationChainEnvelopeSchema {
+		return nil, errors.New("historical acceptance generation cannot reinterpret snapshot v4 semantics")
 	}
 	return newRuntime(
 		snapshot,
@@ -208,6 +222,65 @@ func loadRuntimeFromBytes(
 		now,
 		requireCurrent,
 	)
+}
+
+// DecodeSnapshotPayload authenticates the exact canonical payload shape after
+// its containing envelope has been signature verified. V3 is retained under
+// its original point-in-time closure semantics; v4 carries the separate
+// dynamic closure digest.
+func DecodeSnapshotPayload(payloadRaw []byte) (Snapshot, error) {
+	return decodeSnapshotPayload(payloadRaw)
+}
+
+func decodeSnapshotPayload(payloadRaw []byte) (Snapshot, error) {
+	var discriminator struct {
+		Schema string `json:"schema"`
+	}
+	if err := rejectDuplicateKeys(payloadRaw); err != nil || json.Unmarshal(payloadRaw, &discriminator) != nil {
+		return Snapshot{}, errors.New("snapshot payload schema cannot be decoded exactly")
+	}
+	var snapshot Snapshot
+	if discriminator.Schema == ActivationChainSnapshotSchema {
+		var previous snapshotV3
+		if err := decodeExactJSON(payloadRaw, &previous); err != nil {
+			return Snapshot{}, err
+		}
+		canonical, err := json.Marshal(previous)
+		if err != nil || !bytes.Equal(canonical, payloadRaw) || json.Unmarshal(payloadRaw, &snapshot) != nil {
+			return Snapshot{}, errors.New("activation-chain v3 snapshot is not canonical JSON")
+		}
+	} else {
+		if err := decodeExactJSON(payloadRaw, &snapshot); err != nil {
+			return Snapshot{}, err
+		}
+		canonical, err := json.Marshal(snapshot)
+		if err != nil || !bytes.Equal(canonical, payloadRaw) {
+			return Snapshot{}, errors.New("snapshot payload is not canonical JSON")
+		}
+	}
+	return snapshot, nil
+}
+
+func canonicalSnapshotPayload(snapshot Snapshot) ([]byte, error) {
+	if snapshot.Schema != ActivationChainSnapshotSchema {
+		return json.Marshal(snapshot)
+	}
+	return json.Marshal(snapshotV3{
+		Schema: snapshot.Schema, ClusterID: snapshot.ClusterID, DeploymentID: snapshot.DeploymentID,
+		AuthoritySnapshotID: snapshot.AuthoritySnapshotID, AuthorityClosureSHA256: snapshot.AuthorityClosureSHA256,
+		EvidenceBundleSHA256: snapshot.EvidenceBundleSHA256,
+		ActivationCycleContractSHA256: snapshot.ActivationCycleContractSHA256,
+		ActivationCycleID: snapshot.ActivationCycleID, ActivationCycleIssuedAt: snapshot.ActivationCycleIssuedAt,
+		ActivationCycleDeadlineAt: snapshot.ActivationCycleDeadlineAt,
+		ActivationPredecessorSelectionSHA256: snapshot.ActivationPredecessorSelectionSHA256,
+		SnapshotID: snapshot.SnapshotID, IssuedAt: snapshot.IssuedAt, ExpiresAt: snapshot.ExpiresAt,
+		MaximumAgeSeconds: snapshot.MaximumAgeSeconds, Controller: snapshot.Controller,
+		CredentialNamespaces: snapshot.CredentialNamespaces, CredentialSecrets: snapshot.CredentialSecrets,
+		ControllerServiceAccounts: snapshot.ControllerServiceAccounts, CredentialWorkloads: snapshot.CredentialWorkloads,
+		ProtectedRoots: snapshot.ProtectedRoots, AdmissionParameterRoots: snapshot.AdmissionParameterRoots,
+		EdgeProtectionRoots: snapshot.EdgeProtectionRoots, ResourceGuards: snapshot.ResourceGuards,
+		Transitions: snapshot.Transitions,
+	})
 }
 
 func newRuntime(
@@ -230,7 +303,8 @@ func newRuntime(
 	now = now.UTC().Truncate(time.Second)
 	activationIssuedAt, activationIssueErr := parseWholeUTC(snapshot.ActivationCycleIssuedAt)
 	activationDeadlineAt, activationDeadlineErr := parseWholeUTC(snapshot.ActivationCycleDeadlineAt)
-	if snapshot.Schema != SnapshotSchema || snapshot.ClusterID != expectedClusterID || snapshot.DeploymentID != expectedDeploymentID ||
+	if (snapshot.Schema != SnapshotSchema && snapshot.Schema != ActivationChainSnapshotSchema) ||
+		snapshot.ClusterID != expectedClusterID || snapshot.DeploymentID != expectedDeploymentID ||
 		snapshot.AuthoritySnapshotID != expectedAuthoritySnapshotID {
 		return nil, errors.New("snapshot does not bind this exact cluster and deployment")
 	}
@@ -239,7 +313,7 @@ func newRuntime(
 		(snapshot.ActivationPredecessorSelectionSHA256 != "" && !isSHA256(snapshot.ActivationPredecessorSelectionSHA256)) ||
 		activationIssueErr != nil || activationDeadlineErr != nil || !activationDeadlineAt.After(activationIssuedAt) ||
 		issuedAt.Before(activationIssuedAt) || !issuedAt.Before(activationDeadlineAt) ||
-		!isSHA256(snapshot.AuthorityClosureSHA256) || snapshot.AuthorityClosureSHA256 != expectedAuthorityClosureSHA256 ||
+		!isSHA256(snapshot.AuthorityClosureSHA256) ||
 		snapshot.MaximumAgeSeconds < 1 || snapshot.MaximumAgeSeconds > 300 {
 		return nil, errors.New("snapshot identity or maximum age is invalid")
 	}
@@ -254,12 +328,19 @@ func newRuntime(
 		EdgeProtectionRoots:       snapshot.EdgeProtectionRoots,
 		ResourceGuards:            snapshot.ResourceGuards,
 	})
-	if digestHex(closureRaw) != snapshot.AuthorityClosureSHA256 {
-		return nil, errors.New("snapshot authority closure differs from the independently pinned four-export evidence")
+	derivedClosureSHA256 := digestHex(closureRaw)
+	if snapshot.Schema == SnapshotSchema {
+		if snapshot.AuthorityClosureSHA256 != expectedAuthorityClosureSHA256 ||
+			!isSHA256(snapshot.DerivedAuthorityClosureSHA256) || snapshot.DerivedAuthorityClosureSHA256 != derivedClosureSHA256 {
+			return nil, errors.New("snapshot dynamic authority closure differs from its accepted static closure policy")
+		}
+	} else if snapshot.AuthorityClosureSHA256 != expectedAuthorityClosureSHA256 ||
+		snapshot.DerivedAuthorityClosureSHA256 != "" || derivedClosureSHA256 != snapshot.AuthorityClosureSHA256 {
+		return nil, errors.New("activation-chain v3 closure differs from its exact historical acceptance pin")
 	}
 	normalizedSnapshot := snapshot
 	normalizedSnapshot.SnapshotID = ""
-	normalizedRaw, _ := json.Marshal(normalizedSnapshot)
+	normalizedRaw, _ := canonicalSnapshotPayload(normalizedSnapshot)
 	if digestHex(normalizedRaw) != snapshot.SnapshotID {
 		return nil, errors.New("snapshot_id does not identify the canonical normalized snapshot")
 	}
@@ -406,12 +487,17 @@ func requireEdgeProtectionRoots(roots []ObjectIdentity, protected map[string]Obj
 		"gateway.envoyproxy.io/clienttrafficpolicies":    false,
 	}
 	allowed := map[string]struct{}{
+		"/services":                                         {},
+		"apps/deployments":                                  {},
+		"apps/statefulsets":                                  {},
 		"policy/poddisruptionbudgets":                    {},
 		"gateway.envoyproxy.io/backendtrafficpolicies":   {},
 		"gateway.envoyproxy.io/clienttrafficpolicies":    {},
 		"gateway.envoyproxy.io/securitypolicies":         {},
 		"gateway.envoyproxy.io/backends":                 {},
 		"gateway.envoyproxy.io/envoyextensionpolicies":   {},
+		"gateway.envoyproxy.io/envoyproxies":             {},
+		"gateway.networking.k8s.io/gateways":              {},
 		"gateway.networking.k8s.io/backendtlspolicies":   {},
 	}
 	seen := map[string]struct{}{}
@@ -743,18 +829,30 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 
 func trustedKey(registry TrustRegistry, issuer string, keyID string, expectedRole string) (ed25519.PublicKey, error) {
 	var match ed25519.PublicKey
-	seen := map[string]struct{}{}
+	seenIdentities := map[string]struct{}{}
+	seenKeys := map[string]struct{}{}
+	previousIdentity := ""
+	if !trustRoleAllowed(registry.Schema, expectedRole) {
+		return nil, errors.New("requested trust role is not allowed by this registry schema")
+	}
 	for _, candidate := range registry.Issuers {
-		identity := candidate.ID + "\x00" + candidate.KeyID
-		if _, exists := seen[identity]; exists {
-			return nil, errors.New("trust registry contains a duplicate issuer key")
+		identity := candidate.Role + "\x00" + candidate.ID + "\x00" + candidate.KeyID
+		if _, exists := seenIdentities[identity]; exists || previousIdentity != "" && identity <= previousIdentity {
+			return nil, errors.New("trust registry issuer identities are duplicated or non-canonical")
 		}
-		seen[identity] = struct{}{}
+		seenIdentities[identity] = struct{}{}
+		previousIdentity = identity
 		key, err := decodeCanonicalBase64URL(candidate.PublicKey, ed25519.PublicKeySize)
-		if err != nil || candidate.KeyID != "sha256:"+digestHex(key) || candidate.Role != expectedRole {
+		keyDigest := "sha256:" + digestHex(key)
+		if err != nil || !safeText(candidate.ID, false) || len(candidate.ID) > 256 ||
+			!trustRoleAllowed(registry.Schema, candidate.Role) || candidate.KeyID != keyDigest {
 			return nil, errors.New("trust registry contains an invalid boundary authority")
 		}
-		if candidate.ID == issuer && candidate.KeyID == keyID {
+		if _, reused := seenKeys[candidate.PublicKey]; reused {
+			return nil, errors.New("trust registry reuses one public key across authority identities or roles")
+		}
+		seenKeys[candidate.PublicKey] = struct{}{}
+		if candidate.Role == expectedRole && candidate.ID == issuer && candidate.KeyID == keyID {
 			if match != nil {
 				return nil, errors.New("snapshot issuer is not unique")
 			}
@@ -765,6 +863,19 @@ func trustedKey(registry TrustRegistry, issuer string, keyID string, expectedRol
 		return nil, errors.New("snapshot issuer is not independently enrolled")
 	}
 	return match, nil
+}
+
+func trustRoleAllowed(schema string, role string) bool {
+	switch schema {
+	case AcceptanceTrustSchema:
+		return role == acceptanceIssuerRole || role == custodyEnrollmentIssuerRole || role == legacyRuntimeBootstrapIssuerRole
+	case TrustSchema:
+		return role == issuerRole
+	case "fs2-serve.nebius.ai/public-edge-native-response-trust/v1":
+		return role == "provider-control-plane-native-response-authority"
+	default:
+		return false
+	}
 }
 
 func validateActor(actor Actor) error {

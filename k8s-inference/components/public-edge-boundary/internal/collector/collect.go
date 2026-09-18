@@ -3,7 +3,11 @@ package collector
 import (
 	"bytes"
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -13,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -42,7 +47,28 @@ const (
 	snapshotSelectionCommitSchema = "fs2-serve.nebius.ai/public-edge-snapshot-selection-commit/v1"
 	snapshotCyclePredecessorSchema = "fs2-serve.nebius.ai/public-edge-snapshot-cycle-predecessor/v1"
 	snapshotActivationSafetyMargin = 5 * time.Second
+	collectorPossessionHeader = "X-FS2-Collector-Possession"
+	collectorExporterLabel = "EXPORTER-fs2-public-edge-snapshot-collector-v1"
+	collectorPossessionProofSchema = "fs2-serve.nebius.ai/public-edge-snapshot-collector-possession/v1"
 )
+
+type collectorPossessionStatement struct {
+	Schema string `json:"schema"`
+	EvidenceBundleSHA256 string `json:"evidence_bundle_sha256"`
+	TLSExporterSHA256 string `json:"tls_exporter_sha256"`
+	Nonce string `json:"nonce"`
+	ObservedAt string `json:"observed_at"`
+}
+
+type collectorPossessionProof struct {
+	Schema string `json:"schema"`
+	EvidenceBundleSHA256 string `json:"evidence_bundle_sha256"`
+	TLSExporterSHA256 string `json:"tls_exporter_sha256"`
+	Nonce string `json:"nonce"`
+	ObservedAt string `json:"observed_at"`
+	SignatureAlgorithm string `json:"signature_algorithm"`
+	Signature string `json:"signature"`
+}
 
 type snapshotCycleSettlement struct {
 	Schema string `json:"schema"`
@@ -767,6 +793,7 @@ func (r *Runner) requestSnapshot(ctx context.Context, bundleRaw []byte) ([]byte,
 	}
 	request.Header.Set("Content-Type", "application/fs2-native-evidence-bundle+json")
 	request.Header.Set("Accept", "application/fs2-public-edge-boundary-envelope+json")
+	if err := bindCollectorPossessionProof(client, request, digest(bundleRaw)); err != nil { return nil, err }
 	response, err := client.Do(request)
 	if err != nil {
 		return nil, err
@@ -780,6 +807,61 @@ func (r *Runner) requestSnapshot(ctx context.Context, bundleRaw []byte) ([]byte,
 		return nil, err
 	}
 	return envelopeRaw, nil
+}
+
+func bindCollectorPossessionProof(client *http.Client, request *http.Request, bundleSHA256 string) error {
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok || transport.TLSClientConfig == nil || len(transport.TLSClientConfig.Certificates) != 1 || !isDigest(bundleSHA256) {
+		return errors.New("snapshot collector proof lacks its exact TLS identity or bundle digest")
+	}
+	tlsConfiguration := transport.TLSClientConfig.Clone()
+	certificate := tlsConfiguration.Certificates[0]
+	signer, ok := certificate.PrivateKey.(crypto.Signer)
+	if !ok { return errors.New("snapshot collector TLS private key cannot sign proof of possession") }
+	transport.DisableKeepAlives = true
+	transport.MaxIdleConns = 0
+	transport.MaxIdleConnsPerHost = 0
+	transport.MaxConnsPerHost = 1
+	transport.DialTLSContext = func(ctx context.Context, network string, address string) (net.Conn, error) {
+		raw, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, network, address)
+		if err != nil { return nil, err }
+		connection := tls.Client(raw, tlsConfiguration.Clone())
+		if err := connection.HandshakeContext(ctx); err != nil { _ = raw.Close(); return nil, err }
+		state := connection.ConnectionState()
+		exporter, err := state.ExportKeyingMaterial(collectorExporterLabel, []byte(bundleSHA256), 32)
+		if err != nil { _ = connection.Close(); return nil, err }
+		proof, err := signCollectorPossessionProof(signer, bundleSHA256, digest(exporter), time.Now().UTC())
+		if err != nil { _ = connection.Close(); return nil, err }
+		request.Header.Set(collectorPossessionHeader, base64.RawURLEncoding.EncodeToString(proof))
+		return connection, nil
+	}
+	return nil
+}
+
+func signCollectorPossessionProof(signer crypto.Signer, bundleSHA256 string, exporterSHA256 string, now time.Time) ([]byte, error) {
+	nonce := make([]byte, 32)
+	if _, err := rand.Read(nonce); err != nil { return nil, err }
+	statement := collectorPossessionStatement{Schema: collectorPossessionProofSchema, EvidenceBundleSHA256: bundleSHA256, TLSExporterSHA256: exporterSHA256, Nonce: base64.RawURLEncoding.EncodeToString(nonce), ObservedAt: now.UTC().Truncate(time.Second).Format(time.RFC3339)}
+	statementRaw, err := json.Marshal(statement)
+	if err != nil { return nil, err }
+	signatureAlgorithm := ""
+	var signingInput []byte
+	var options crypto.SignerOpts
+	switch signer.Public().(type) {
+	case ed25519.PublicKey:
+		signatureAlgorithm, signingInput, options = "ed25519", statementRaw, crypto.Hash(0)
+	case *ecdsa.PublicKey:
+		digestValue := sha256.Sum256(statementRaw)
+		signatureAlgorithm, signingInput, options = "ecdsa-sha256", digestValue[:], crypto.SHA256
+	case *rsa.PublicKey:
+		digestValue := sha256.Sum256(statementRaw)
+		signatureAlgorithm, signingInput, options = "rsa-pkcs1-sha256", digestValue[:], crypto.SHA256
+	default:
+		return nil, errors.New("snapshot collector TLS key algorithm cannot produce the accepted possession proof")
+	}
+	signature, err := signer.Sign(rand.Reader, signingInput, options)
+	if err != nil { return nil, err }
+	return json.Marshal(collectorPossessionProof{Schema: statement.Schema, EvidenceBundleSHA256: statement.EvidenceBundleSHA256, TLSExporterSHA256: statement.TLSExporterSHA256, Nonce: statement.Nonce, ObservedAt: statement.ObservedAt, SignatureAlgorithm: signatureAlgorithm, Signature: base64.RawURLEncoding.EncodeToString(signature)})
 }
 
 func (r *Runner) verifySnapshotEnvelope(bundleRaw []byte, envelopeRaw []byte, now time.Time, requireFreshIssuance bool) error {
@@ -803,16 +885,25 @@ func (r *Runner) verifySnapshotEnvelope(bundleRaw []byte, envelopeRaw []byte, no
 		!bytes.Equal(expectedCycleRaw, actualCycleRaw) {
 		return errors.New("snapshot evidence bundle cycle differs from the independently accepted config and source plan")
 	}
+	envelopeSchema, err := boundary.InspectSignedEnvelopeSchema(envelopeRaw)
+	if err != nil || (envelopeSchema != boundary.EnvelopeSchema && envelopeSchema != boundary.ActivationChainEnvelopeSchema) {
+		return errors.New("snapshot response envelope schema is unsupported")
+	}
+	if r.Acceptance.Schema == boundary.AcceptancePayloadSchema && envelopeSchema != boundary.EnvelopeSchema ||
+		r.Acceptance.Schema != boundary.AcceptancePayloadSchema && envelopeSchema != boundary.ActivationChainEnvelopeSchema {
+		return errors.New("snapshot response version differs from the exact accepted semantic contract generation")
+	}
 	payloadRaw, err := r.snapshotTrust.VerifyEnvelope(
-		boundary.EnvelopeSchema,
+		envelopeSchema,
 		SnapshotIssuerRole,
 		envelopeRaw,
 	)
 	if err != nil {
 		return err
 	}
-	var snapshot boundary.Snapshot
-	if _, err := boundary.CanonicalJSON(payloadRaw, &snapshot); err != nil || snapshot.Schema != boundary.SnapshotSchema ||
+	snapshot, snapshotErr := boundary.DecodeSnapshotPayload(payloadRaw)
+	if snapshotErr != nil || envelopeSchema == boundary.EnvelopeSchema && snapshot.Schema != boundary.SnapshotSchema ||
+		envelopeSchema == boundary.ActivationChainEnvelopeSchema && snapshot.Schema != boundary.ActivationChainSnapshotSchema ||
 		snapshot.EvidenceBundleSHA256 != digest(bundleRaw) ||
 		snapshot.ActivationCycleContractSHA256 != bundle.CycleContractSHA256 ||
 		snapshot.ActivationCycleID != bundle.CycleID || snapshot.ActivationCycleIssuedAt != bundle.CycleIssuedAt ||
@@ -869,7 +960,7 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 		return plan, err
 	}
 	if activeExists && bytes.Equal(activeRaw, envelopeRaw) {
-		selectedTrustRaw, selectedAuthoritySnapshotID, selectedAuthorityClosureSHA256, authorityErr := r.runtimeSelectionAuthority(selected)
+		selectedTrustRaw, selectedAuthoritySnapshotID, selectedAuthorityClosureSHA256, selectedAcceptanceSchema, authorityErr := r.runtimeSelectionAuthority(selected)
 		if authorityErr != nil {
 			return plan, authorityErr
 		}
@@ -881,6 +972,7 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 			r.Acceptance.DeploymentID,
 			selectedAuthoritySnapshotID,
 			selectedAuthorityClosureSHA256,
+			selectedAcceptanceSchema,
 			now,
 		); err != nil {
 			return plan, fmt.Errorf("verify identical selected snapshot before no-op: %w", err)
@@ -933,13 +1025,14 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 		r.Acceptance.DeploymentID,
 		r.Acceptance.AuthoritySnapshotID,
 		r.Acceptance.AuthorityClosureSHA256,
+		r.Acceptance.Schema,
 		now,
 	)
 	if err != nil {
 		return plan, fmt.Errorf("verify candidate snapshot before activation: %w", err)
 	}
 	if activeExists && selected.Schema != legacySnapshotRuntimeSelectionSchema {
-		activeTrustRaw, activeAuthoritySnapshotID, activeAuthorityClosureSHA256, authorityErr := r.runtimeSelectionAuthority(selected)
+		activeTrustRaw, activeAuthoritySnapshotID, activeAuthorityClosureSHA256, activeAcceptanceSchema, authorityErr := r.runtimeSelectionAuthority(selected)
 		if authorityErr != nil {
 			return plan, authorityErr
 		}
@@ -951,6 +1044,7 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 			r.Acceptance.DeploymentID,
 			activeAuthoritySnapshotID,
 			activeAuthorityClosureSHA256,
+			activeAcceptanceSchema,
 			now,
 		)
 		if err != nil {
@@ -1125,7 +1219,7 @@ func (r *Runner) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRunt
 		activatedAt.Before(issuedAt) || now.Before(activatedAt.Add(-30*time.Second)) {
 		return snapshotRuntimeSelection{}, nil, errors.New("runtime selection activation receipt is invalid")
 	}
-	snapshotTrustRaw, authoritySnapshotID, authorityClosureSHA256, trustErr := r.runtimeSelectionAuthority(selection)
+	snapshotTrustRaw, authoritySnapshotID, authorityClosureSHA256, acceptanceSchema, trustErr := r.runtimeSelectionAuthority(selection)
 	if trustErr != nil {
 		if selection.Schema == legacySnapshotRuntimeSelectionSchema {
 			if bootstrapErr := r.verifyLegacyRuntimeSelection(raw, envelopeRaw, now); bootstrapErr == nil {
@@ -1136,7 +1230,7 @@ func (r *Runner) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRunt
 	}
 	runtime, runtimeErr := boundary.LoadRuntimeFromBytesForChainRecovery(
 		snapshotTrustRaw, envelopeRaw, digest(snapshotTrustRaw), r.Acceptance.ClusterID,
-		r.Acceptance.DeploymentID, authoritySnapshotID, authorityClosureSHA256, now,
+		r.Acceptance.DeploymentID, authoritySnapshotID, authorityClosureSHA256, acceptanceSchema, now,
 	)
 	if runtimeErr != nil && selection.Schema == legacySnapshotRuntimeSelectionSchema {
 		if bootstrapErr := r.verifyLegacyRuntimeSelection(raw, envelopeRaw, now); bootstrapErr == nil {
@@ -1168,7 +1262,7 @@ func legacySelectorRequiresBootstrap(envelopeRaw []byte) (bool, error) {
 		return false, errors.New("legacy selector snapshot envelope cannot be decoded exactly")
 	}
 	switch schema {
-	case boundary.EnvelopeSchema:
+	case boundary.EnvelopeSchema, boundary.ActivationChainEnvelopeSchema:
 		return false, nil
 	case boundary.LegacyEnvelopeSchema, boundary.PreviousEnvelopeSchema:
 		return true, nil
@@ -1462,10 +1556,10 @@ func (r *Runner) retainLegacyRuntimeBootstrap(
 	return bootstrap, bootstrapSHA256, nil
 }
 
-func (r *Runner) runtimeSelectionAuthority(selection snapshotRuntimeSelection) ([]byte, string, string, error) {
+func (r *Runner) runtimeSelectionAuthority(selection snapshotRuntimeSelection) ([]byte, string, string, string, error) {
 	if selection.Schema == legacySnapshotRuntimeSelectionSchema {
 		trustRaw, err := r.snapshotTrust.CanonicalBytes()
-		return trustRaw, r.Acceptance.AuthoritySnapshotID, r.Acceptance.AuthorityClosureSHA256, err
+		return trustRaw, r.Acceptance.AuthoritySnapshotID, r.Acceptance.AuthorityClosureSHA256, r.Acceptance.Schema, err
 	}
 	if selection.Schema != snapshotRuntimeSelectionSchema || !isDigest(selection.SnapshotTrustSHA256) ||
 		!isDigest(selection.AcceptanceTrustSHA256) || !isDigest(selection.AcceptanceEnvelopeSHA256) ||
@@ -1473,39 +1567,39 @@ func (r *Runner) runtimeSelectionAuthority(selection snapshotRuntimeSelection) (
 		selection.SnapshotTrustName != "snapshot-trust-"+selection.SnapshotTrustSHA256+".json" ||
 		selection.AcceptanceTrustName != "acceptance-trust-"+selection.AcceptanceTrustSHA256+".json" ||
 		selection.AcceptanceEnvelopeName != "acceptance-envelope-"+selection.AcceptanceEnvelopeSHA256+".json" {
-		return nil, "", "", errors.New("runtime selector authority generation references are invalid")
+		return nil, "", "", "", errors.New("runtime selector authority generation references are invalid")
 	}
 	snapshotTrustRaw, err := readRootRegular(
 		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust-generations", selection.SnapshotTrustName),
 		maximumConfigBytes,
 	)
 	if err != nil || digest(snapshotTrustRaw) != selection.SnapshotTrustSHA256 {
-		return nil, "", "", errors.New("runtime selector snapshot trust generation is missing or changed")
+		return nil, "", "", "", errors.New("runtime selector snapshot trust generation is missing or changed")
 	}
 	acceptanceTrustRaw, err := readRootRegular(
 		filepath.Join(r.Config.RuntimeRoot, "acceptance-trust-generations", selection.AcceptanceTrustName),
 		maximumConfigBytes,
 	)
 	if err != nil || digest(acceptanceTrustRaw) != selection.AcceptanceTrustSHA256 {
-		return nil, "", "", errors.New("runtime selector acceptance trust generation is missing or changed")
+		return nil, "", "", "", errors.New("runtime selector acceptance trust generation is missing or changed")
 	}
 	acceptanceRaw, err := readRootRegular(
 		filepath.Join(r.Config.RuntimeRoot, "acceptance-envelope-generations", selection.AcceptanceEnvelopeName),
 		maximumConfigBytes,
 	)
 	if err != nil || digest(acceptanceRaw) != selection.AcceptanceEnvelopeSHA256 {
-		return nil, "", "", errors.New("runtime selector acceptance envelope generation is missing or changed")
+		return nil, "", "", "", errors.New("runtime selector acceptance envelope generation is missing or changed")
 	}
 	accepted, err := boundary.VerifyAcceptanceGeneration(acceptanceTrustRaw, acceptanceRaw)
 	if err != nil || accepted.ClusterID != r.Config.ClusterID || accepted.DeploymentID != r.Config.DeploymentID ||
 		accepted.SnapshotTrustSHA256 != selection.SnapshotTrustSHA256 ||
 		accepted.AuthoritySnapshotID != selection.AuthoritySnapshotID || accepted.AuthorityClosureSHA256 != selection.AuthorityClosureSHA256 {
-		return nil, "", "", errors.New("runtime selector authority pins differ from its signed acceptance generation")
+		return nil, "", "", "", errors.New("runtime selector authority pins differ from its signed acceptance generation")
 	}
 	if err := boundary.AcceptanceGenerationsRelated(r.Acceptance, accepted, r.acceptanceGeneration); err != nil {
-		return nil, "", "", err
+		return nil, "", "", "", err
 	}
-	return snapshotTrustRaw, selection.AuthoritySnapshotID, selection.AuthorityClosureSHA256, nil
+	return snapshotTrustRaw, selection.AuthoritySnapshotID, selection.AuthorityClosureSHA256, accepted.Schema, nil
 }
 
 func (r *Runner) selectionUsesCurrentAcceptance(selection snapshotRuntimeSelection) bool {
@@ -1868,7 +1962,9 @@ func (r *Runner) archiveRuntimeSnapshotLink(slot string, path string) (string, e
 }
 
 func validateConfig(config Config, acceptance boundary.Acceptance) error {
-	if config.Schema != ConfigSchema || config.ClusterID != acceptance.ClusterID || config.DeploymentID != acceptance.DeploymentID ||
+	if (config.Schema != ConfigSchema && config.Schema != PreviousConfigSchema) ||
+		(config.Schema == ConfigSchema) != (acceptance.Schema == boundary.AcceptancePayloadSchema) ||
+		config.ClusterID != acceptance.ClusterID || config.DeploymentID != acceptance.DeploymentID ||
 		!boundedProtocolText(config.ClusterID, maximumClusterIDBytes, false) || !boundedProtocolText(config.DeploymentID, maximumDeploymentIDBytes, false) ||
 		!boundedProtocolText(config.SnapshotAuthorityURL, maximumNativeURLBytes, false) ||
 		!boundedProtocolText(config.SnapshotAuthorityName, maximumServerNameBytes, false) ||
@@ -1897,7 +1993,7 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 	if err := requireHTTPS(config.SnapshotAuthorityURL, config.SnapshotAuthorityName); err != nil {
 		return err
 	}
-	requiredCollections := mandatorySemanticCollections()
+	requiredCollections := mandatorySemanticCollectionsForSchema(config.Schema)
 	collections := []string{}
 	ids := map[string]struct{}{}
 	type laneBinding struct {
@@ -1960,6 +2056,9 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 		}
 		if source.Kind == "ca-revocation" && source.Pagination != "none" {
 			return errors.New("native CRL collection must be exact and non-paginated")
+		}
+		if config.Schema == ConfigSchema && source.Pagination != mandatoryPaginationForSemanticCollection(source.SemanticCollection) {
+			return errors.New("native source pagination differs from the additive semantic collection contract")
 		}
 		if _, exists := ids[source.ID]; exists {
 			return errors.New("native collector config repeats a source ID")
@@ -2024,6 +2123,17 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 		return errors.New("native runtime store cannot retain its source-derived byte and inode operating horizon")
 	}
 	return nil
+}
+
+func mandatoryPaginationForSemanticCollection(collection string) string {
+	if collection == "apiserver-authentication-configuration" || collection == "apiserver-authorization-configuration" ||
+		collection == "ca-revocation-status" {
+		return "none"
+	}
+	if strings.HasPrefix(collection, "apiserver-") {
+		return "kubernetes-continue"
+	}
+	return "provider-page-token"
 }
 
 func derivedEvidenceDailyBounds(config Config) (uint64, uint64, error) {
@@ -2190,8 +2300,8 @@ func maximumEvidenceManifestBytes(config Config) (uint64, error) {
 	return bound, nil
 }
 
-func mandatorySemanticCollections() []string {
-	return []string{
+func mandatorySemanticCollectionsForSchema(schema string) []string {
+	collections := []string{
 		"apiserver-admission-mutating-policies",
 		"apiserver-admission-mutating-policy-bindings",
 		"apiserver-admission-validating-policies",
@@ -2214,6 +2324,7 @@ func mandatorySemanticCollections() []string {
 		"apiserver-endpointslices",
 		"apiserver-envoy-backends",
 		"apiserver-envoy-extension-policies",
+		"apiserver-envoyproxies",
 		"apiserver-gatewayclasses",
 		"apiserver-gateways",
 		"apiserver-grpcroutes",
@@ -2256,6 +2367,16 @@ func mandatorySemanticCollections() []string {
 		"provider-nodegroup-membership",
 		"secret-kms-classification",
 	}
+	if schema == PreviousConfigSchema {
+		legacy := collections[:0]
+		for _, collection := range collections {
+			if collection != "apiserver-envoyproxies" {
+				legacy = append(legacy, collection)
+			}
+		}
+		return legacy
+	}
+	return collections
 }
 
 func containsAllStrings(values []string, required []string) bool {
@@ -2755,13 +2876,7 @@ func (r *Runner) ensureRuntimeChildDirectory(name string) error {
 		if err := validateRuntimeCapacity(r.Config, r.Config.RuntimeFilesystemBlockBytes, 1); err != nil {
 			return err
 		}
-		if err := os.Mkdir(path, os.FileMode(r.Config.RuntimeDirectoryMode)); err != nil && !errors.Is(err, os.ErrExist) {
-			return err
-		}
-		if err := os.Chown(path, 0, int(r.Config.RuntimeReaderGID)); err != nil {
-			return err
-		}
-		if err := os.Chmod(path, os.FileMode(r.Config.RuntimeDirectoryMode)|os.ModeSetgid); err != nil {
+		if err := os.Mkdir(path, os.FileMode(r.Config.RuntimeDirectoryMode)|os.ModeSetgid); err != nil && !errors.Is(err, os.ErrExist) {
 			return err
 		}
 	} else if err != nil {

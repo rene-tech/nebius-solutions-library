@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fs2-public-edge-native-authority
+  namespace: {{ .Values.namespace }}
+  labels: &nativeLabels {app.kubernetes.io/name: fs2-public-edge-native-authority, app.kubernetes.io/part-of: fs2-public-edge-boundary}
+spec:
+  replicas: {{ .Values.replicas.nativeAuthority }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: *nativeLabels}
+  template:
+    metadata: {labels: *nativeLabels}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccounts.nativeAuthority }}
+      automountServiceAccountToken: false
+      priorityClassName: {{ .Values.priorityClassName }}
+      securityContext: {runAsUser: 0, runAsGroup: 0, seccompProfile: {type: RuntimeDefault}}
+      topologySpreadConstraints: {{ include "fs2-boundary.spread" "fs2-public-edge-native-authority" | nindent 8 }}
+      initContainers:
+        - name: custody-installer
+          image: {{ include "fs2-boundary.image" . }}
+          command: [/usr/local/bin/public-edge-custody-installer, /projected/manifest/install-envelope.json, native-authority]
+          securityContext: {runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"], add: ["CHOWN", "FOWNER"]}, seccompProfile: {type: RuntimeDefault}}
+          volumeMounts:
+            - {name: inputs, mountPath: /projected/inputs, readOnly: true}
+            - {name: manifest, mountPath: /projected/manifest, readOnly: true}
+            - {name: custody, mountPath: /custody}
+            - {name: ledger, mountPath: /custody/ledger-volume}
+      containers:
+        - name: native-authority
+          image: {{ include "fs2-boundary.image" . }}
+          command: [/usr/local/bin/public-edge-native-authority]
+          ports: [{name: https, containerPort: 8444, protocol: TCP}]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+{{ include "fs2-boundary.podSecurity" . | nindent 12 }}
+          resources: {{ toYaml .Values.resources.nativeAuthority | nindent 12 }}
+          readinessProbe:
+            exec: {command: [/usr/local/bin/public-edge-mtls-probe, /var/run/fs2-boundary/readiness/probe.json]}
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          volumeMounts:
+            - {name: custody, mountPath: /var/run/fs2-boundary, subPath: run, readOnly: true}
+            - {name: ledger, mountPath: /var/lib/fs2-native-authority-ledger}
+      volumes:
+        - {name: inputs, secret: {secretName: {{ .Values.inputSecrets.nativeAuthority }}, optional: false}}
+        - {name: manifest, configMap: {name: fs2-public-edge-nativeauthority-custody, optional: false}}
+        - {name: custody, emptyDir: {medium: Memory, sizeLimit: 64Mi}}
+        - {name: ledger, persistentVolumeClaim: {claimName: {{ .Values.storage.nativeLedgerClaim }}}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: fs2-public-edge-native-authority, namespace: {{ .Values.namespace }}, labels: {app.kubernetes.io/name: fs2-public-edge-native-authority, app.kubernetes.io/part-of: fs2-public-edge-boundary}}
+spec:
+  selector: {app.kubernetes.io/name: fs2-public-edge-native-authority, app.kubernetes.io/part-of: fs2-public-edge-boundary}
+  ports: [{name: https, port: 8444, targetPort: https, protocol: TCP}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: fs2-public-edge-native-authority, namespace: {{ .Values.namespace }}}
+spec: {minAvailable: 1, selector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-native-authority, app.kubernetes.io/part-of: fs2-public-edge-boundary}}}

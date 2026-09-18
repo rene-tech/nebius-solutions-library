@@ -1,0 +1,87 @@
+{{- include "fs2-boundary.requiredInputs" . -}}
+{{- if eq (len .Values.network.apiServerCIDRs) 0 }}{{ fail "network.apiServerCIDRs must be owner-enrolled" }}{{- end }}
+{{- if eq (len .Values.network.providerControlPlaneCIDRs) 0 }}{{ fail "network.providerControlPlaneCIDRs must be owner-enrolled" }}{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fs2-public-edge-default-deny, namespace: {{ .Values.namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/part-of: fs2-public-edge-boundary}}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fs2-public-edge-webhook-apiserver, namespace: {{ .Values.namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-boundary}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+{{- range .Values.network.apiServerCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+{{- end }}
+      ports: [{protocol: TCP, port: 8443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fs2-public-edge-collector-authorities, namespace: {{ .Values.namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-collector}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-native-authority}}
+      ports: [{protocol: TCP, port: 8444}]
+    - to:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-snapshot-authority}}
+      ports: [{protocol: TCP, port: 8445}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fs2-public-edge-native-authority-collector, namespace: {{ .Values.namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-native-authority}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-collector}}
+      ports: [{protocol: TCP, port: 8444}]
+  egress:
+    - to:
+{{- range .Values.network.apiServerCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+{{- end }}
+      ports: [{protocol: TCP, port: 443}]
+    - to:
+{{- range .Values.network.providerControlPlaneCIDRs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+{{- end }}
+      ports: [{protocol: TCP, port: 443}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fs2-public-edge-authority-dns, namespace: {{ .Values.namespace }}}
+spec:
+  podSelector:
+    matchExpressions:
+      - {key: app.kubernetes.io/name, operator: In, values: [fs2-public-edge-collector, fs2-public-edge-native-authority]}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: {{ .Values.network.dnsNamespace | quote }}}}
+          podSelector: {matchLabels: {{ toJson .Values.network.dnsPodLabels }}}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: fs2-public-edge-snapshot-authority-collector, namespace: {{ .Values.namespace }}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-snapshot-authority}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-collector}}
+      ports: [{protocol: TCP, port: 8445}]

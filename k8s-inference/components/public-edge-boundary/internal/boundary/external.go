@@ -3,10 +3,15 @@ package boundary
 import (
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 )
+
+const CustodyEnrollmentEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-custody-enrollment-envelope/v1"
+const custodyEnrollmentIssuerRole = "platform-security-public-edge-boundary-custody-enrollment"
 
 // ExternalTrust is an immutable in-process copy of one independently accepted
 // trust registry. Loading it once prevents a mutable pathname from becoming an
@@ -128,6 +133,22 @@ func CanonicalJSON(raw []byte, destination any) ([]byte, error) {
 	return canonical, nil
 }
 
+// DecodeExactJSON rejects duplicate keys, unknown struct fields and trailing
+// content without requiring the untrusted source bytes to use Go's canonical
+// object-key order. Native API responses use this before deriving their own
+// canonical content-addressed projections.
+func DecodeExactJSON(raw []byte, destination any) error {
+	return decodeExactJSON(raw, destination)
+}
+
+// CanonicalObjectSHA256 applies the same duplicate-key rejection, JSON-number
+// preservation and canonical encoding used for AdmissionRequest object
+// bindings. Snapshot authorities use it so inventory identities and admission
+// transitions cannot disagree about an object's digest.
+func CanonicalObjectSHA256(raw []byte) (string, error) {
+	return canonicalObjectSHA256(raw)
+}
+
 // InspectSignedEnvelopeSchema performs the same exact duplicate/unknown-field
 // parsing as signature verification without interpreting a versioned payload.
 // Callers use it only after the relevant trust path has authenticated the
@@ -138,4 +159,30 @@ func InspectSignedEnvelopeSchema(raw []byte) (string, error) {
 		return "", err
 	}
 	return envelope.Schema, nil
+}
+
+// VerifyCustodyEnrollment authenticates one projected installation plan under
+// the independently baked acceptance registry. The projected envelope can be
+// replaced by Kubernetes, but neither it nor its payload selects the trust
+// root used for verification.
+func VerifyCustodyEnrollment(trustRaw []byte, envelopeRaw []byte) ([]byte, error) {
+	var trust TrustRegistry
+	if err := decodeExactJSON(trustRaw, &trust); err != nil || trust.Schema != AcceptanceTrustSchema || len(trust.Issuers) == 0 {
+		return nil, errors.New("custody enrollment trust registry is invalid or empty")
+	}
+	var envelope SignedEnvelope
+	if err := decodeExactJSON(envelopeRaw, &envelope); err != nil || envelope.Schema != CustodyEnrollmentEnvelopeSchema || envelope.Algorithm != "ed25519" {
+		return nil, errors.New("custody enrollment envelope is invalid")
+	}
+	payloadRaw, err := decodeCanonicalBase64(envelope.PayloadBase64)
+	if err != nil { return nil, err }
+	digest := sha256.Sum256(payloadRaw)
+	if hex.EncodeToString(digest[:]) != envelope.PayloadSHA256 { return nil, errors.New("custody enrollment payload digest is invalid") }
+	key, err := trustedKey(trust, envelope.Issuer, envelope.KeyID, custodyEnrollmentIssuerRole)
+	if err != nil { return nil, err }
+	signature, err := decodeCanonicalBase64URL(envelope.Signature, ed25519.SignatureSize)
+	if err != nil { return nil, err }
+	message := bytes.Join([][]byte{[]byte(envelope.Schema), []byte(envelope.Issuer), []byte(envelope.KeyID), []byte(envelope.PayloadSHA256), payloadRaw}, []byte("\n"))
+	if !ed25519.Verify(key, message, signature) { return nil, errors.New("custody enrollment signature is invalid") }
+	return payloadRaw, nil
 }

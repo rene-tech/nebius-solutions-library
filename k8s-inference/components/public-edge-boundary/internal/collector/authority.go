@@ -341,6 +341,9 @@ func LoadAuthority(configPath string, acceptance boundary.Acceptance) (*Authorit
 			!isDigest(source.RevocationIssuerBundleSHA256) || source.MaximumRevocationAgeSeconds < 1 || source.MaximumRevocationAgeSeconds > 86400) {
 			return nil, errors.New("native CRL source lacks its exact non-paginated issuer and freshness contract")
 		}
+		if acceptance.Schema == boundary.AcceptancePayloadSchema && source.Pagination != mandatoryPaginationForSemanticCollection(source.SemanticCollection) {
+			return nil, errors.New("native authority source pagination differs from the additive v5 semantic collection contract")
+		}
 		if source.BearerTokenPath == "" {
 			if source.BearerTokenIssuer != "" || source.BearerTokenAudience != "" || source.BearerTokenSubject != "" ||
 				source.BearerTokenAlgorithm != "" || source.BearerTokenKeyID != "" || source.BearerTokenJWKSPath != "" ||
@@ -559,7 +562,7 @@ func (a *Authority) Serve(ctx context.Context) error {
 }
 
 func (a *Authority) handleReady(response http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet || request.TLS == nil || len(request.TLS.VerifiedChains) == 0 {
+	if request.Method != http.MethodGet || !a.authorizedCollector(request.TLS) {
 		response.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -2654,6 +2657,12 @@ func (a *Authority) collect(ctx context.Context, source AuthoritySourceSpec, dir
 	if err != nil {
 		return NativePage{}, err
 	}
+	if source.Kind == "kubernetes-secret-metadata-projection" {
+		responseRaw, err = projectSecretMetadataList(responseRaw)
+		if err != nil {
+			return NativePage{}, err
+		}
+	}
 	return NativePage{
 		Schema:                   NativePageSchema,
 		SourceID:                 source.ID,
@@ -2681,6 +2690,67 @@ func (a *Authority) collect(ctx context.Context, source AuthoritySourceSpec, dir
 		NextToken:                nextToken,
 		NextURL:                  nextURL,
 	}, nil
+}
+
+type secretMetadataProjection struct {
+	Schema     string                   `json:"schema"`
+	APIVersion string                   `json:"apiVersion"`
+	Kind       string                   `json:"kind"`
+	Metadata   map[string]json.RawMessage `json:"metadata"`
+	Items      []secretMetadataObject   `json:"items"`
+}
+
+type secretMetadataObject struct {
+	APIVersion string                     `json:"apiVersion"`
+	Kind       string                     `json:"kind"`
+	Metadata   map[string]json.RawMessage `json:"metadata"`
+	Type       string                     `json:"type,omitempty"`
+}
+
+func projectSecretMetadataList(raw []byte) ([]byte, error) {
+	var fields map[string]json.RawMessage
+	if err := boundary.DecodeExactJSON(raw, &fields); err != nil {
+		return nil, errors.New("Kubernetes Secret response is not exact JSON")
+	}
+	var apiVersion string
+	var kind string
+	var metadata map[string]json.RawMessage
+	var items []json.RawMessage
+	if json.Unmarshal(fields["apiVersion"], &apiVersion) != nil || json.Unmarshal(fields["kind"], &kind) != nil ||
+		json.Unmarshal(fields["metadata"], &metadata) != nil || json.Unmarshal(fields["items"], &items) != nil ||
+		apiVersion != "v1" || kind != "SecretList" || metadata == nil || items == nil {
+		return nil, errors.New("Kubernetes Secret response is not an exact v1 SecretList")
+	}
+	projection := secretMetadataProjection{
+		Schema: "fs2-serve.nebius.ai/kubernetes-secret-metadata-projection/v1",
+		APIVersion: apiVersion,
+		Kind: kind,
+		Metadata: metadata,
+		Items: make([]secretMetadataObject, 0, len(items)),
+	}
+	for _, itemRaw := range items {
+		var itemFields map[string]json.RawMessage
+		if err := boundary.DecodeExactJSON(itemRaw, &itemFields); err != nil {
+			return nil, errors.New("Kubernetes Secret item is not exact JSON")
+		}
+		var itemAPIVersion string
+		var itemKind string
+		var itemMetadata map[string]json.RawMessage
+		var secretType string
+		if json.Unmarshal(itemFields["apiVersion"], &itemAPIVersion) != nil || json.Unmarshal(itemFields["kind"], &itemKind) != nil ||
+			json.Unmarshal(itemFields["metadata"], &itemMetadata) != nil || itemAPIVersion != "v1" || itemKind != "Secret" || itemMetadata == nil {
+			return nil, errors.New("Kubernetes Secret item lacks exact type and metadata")
+		}
+		if typeRaw, exists := itemFields["type"]; exists && json.Unmarshal(typeRaw, &secretType) != nil {
+			return nil, errors.New("Kubernetes Secret type is malformed")
+		}
+		projection.Items = append(projection.Items, secretMetadataObject{APIVersion: itemAPIVersion, Kind: itemKind, Metadata: itemMetadata, Type: secretType})
+	}
+	projected, err := json.Marshal(projection)
+	if err != nil {
+		return nil, err
+	}
+	return projected, nil
 }
 
 func (a *Authority) signPage(page NativePage) ([]byte, error) {

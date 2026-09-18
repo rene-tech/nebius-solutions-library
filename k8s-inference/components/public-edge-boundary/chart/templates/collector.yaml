@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fs2-public-edge-collector
+  namespace: {{ .Values.namespace }}
+  labels: &collectorLabels {app.kubernetes.io/name: fs2-public-edge-collector, app.kubernetes.io/part-of: fs2-public-edge-boundary}
+spec:
+  replicas: {{ .Values.replicas.collector }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: *collectorLabels}
+  template:
+    metadata: {labels: *collectorLabels}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccounts.collector }}
+      automountServiceAccountToken: false
+      priorityClassName: {{ .Values.priorityClassName }}
+      securityContext: {runAsUser: 0, runAsGroup: 0, seccompProfile: {type: RuntimeDefault}}
+      topologySpreadConstraints: {{ include "fs2-boundary.spread" "fs2-public-edge-collector" | nindent 8 }}
+      initContainers:
+        - name: custody-installer
+          image: {{ include "fs2-boundary.image" . }}
+          command: [/usr/local/bin/public-edge-custody-installer, /projected/manifest/install-envelope.json, collector]
+          securityContext: {runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"], add: ["CHOWN", "FOWNER"]}, seccompProfile: {type: RuntimeDefault}}
+          volumeMounts:
+            - {name: inputs, mountPath: /projected/inputs, readOnly: true}
+            - {name: manifest, mountPath: /projected/manifest, readOnly: true}
+            - {name: custody, mountPath: /custody}
+            - {name: runtime, mountPath: /custody/runtime-volume}
+            - {name: evidence, mountPath: /custody/evidence-volume}
+      containers:
+        - name: collector
+          image: {{ include "fs2-boundary.image" . }}
+          command: [/usr/local/bin/public-edge-collector]
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            runAsGroup: 0
+{{ include "fs2-boundary.podSecurity" . | nindent 12 }}
+          resources: {{ toYaml .Values.resources.collector | nindent 12 }}
+          volumeMounts:
+            - {name: custody, mountPath: /var/run/fs2-boundary, subPath: run, readOnly: true}
+            - {name: runtime, mountPath: /var/lib/fs2-boundary-runtime}
+            - {name: evidence, mountPath: /var/lib/fs2-boundary-evidence}
+      volumes:
+        - {name: inputs, secret: {secretName: {{ .Values.inputSecrets.collector }}, optional: false}}
+        - {name: manifest, configMap: {name: fs2-public-edge-collector-custody, optional: false}}
+        - {name: custody, emptyDir: {medium: Memory, sizeLimit: 32Mi}}
+        - {name: runtime, persistentVolumeClaim: {claimName: {{ .Values.storage.runtimeClaim }}}}
+        - {name: evidence, persistentVolumeClaim: {claimName: {{ .Values.storage.evidenceClaim }}}}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: fs2-public-edge-collector, namespace: {{ .Values.namespace }}}
+spec: {minAvailable: 1, selector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-collector, app.kubernetes.io/part-of: fs2-public-edge-boundary}}}

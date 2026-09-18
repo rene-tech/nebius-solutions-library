@@ -18,7 +18,8 @@ const (
 	LegacyAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v1"
 	PreviousAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v2"
 	RotatingAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v3"
-	AcceptancePayloadSchema  = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v4"
+	IndependentAuthorityAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v4"
+	AcceptancePayloadSchema  = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v5"
 	acceptanceIssuerRole     = "platform-security-public-edge-boundary-acceptance"
 	maximumAcceptanceClusterIDBytes = 128
 	maximumAcceptanceDeploymentIDBytes = 128
@@ -84,6 +85,13 @@ type acceptanceV3 struct {
 	SourceTree                string `json:"source_tree"`
 }
 
+// acceptanceV4 preserves the exact signed v4 wire contract. V5 deliberately
+// changes the meaning of AuthoritySnapshotID and AuthorityClosureSHA256 from
+// point-in-time inventory pins to static semantic-scope and closure-policy
+// identities. Retained v4 bytes must therefore never be decoded under v5
+// semantics.
+type acceptanceV4 Acceptance
+
 type acceptanceV2 struct {
 	Schema                    string `json:"schema"`
 	ClusterID                 string `json:"cluster_id"`
@@ -135,12 +143,12 @@ func LoadAcceptance(trustPath string, envelopePath string, executableRole string
 		expectedExecutableSHA256 = acceptance.NativeAuthorityExecutableSHA256
 	case "snapshot-authority":
 		if acceptance.Schema != AcceptancePayloadSchema {
-			return Acceptance{}, errors.New("snapshot authority requires an additive acceptance v4 generation")
+			return Acceptance{}, errors.New("snapshot authority requires an additive acceptance v5 generation")
 		}
 		expectedExecutableSHA256 = acceptance.SnapshotAuthorityExecutableSHA256
 	case "transition-authority":
 		if acceptance.Schema != AcceptancePayloadSchema {
-			return Acceptance{}, errors.New("transition authority requires an additive acceptance v4 generation")
+			return Acceptance{}, errors.New("transition authority requires an additive acceptance v5 generation")
 		}
 		expectedExecutableSHA256 = acceptance.TransitionAuthorityExecutableSHA256
 	default:
@@ -190,6 +198,15 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 		if marshalErr != nil || !bytes.Equal(canonical, payloadRaw) || json.Unmarshal(payloadRaw, &acceptance) != nil {
 			return Acceptance{}, errors.New("acceptance v3 payload is not canonical JSON")
 		}
+	} else if schemaOnly.Schema == IndependentAuthorityAcceptancePayloadSchema {
+		var previous acceptanceV4
+		if err := decodeExactJSON(payloadRaw, &previous); err != nil {
+			return Acceptance{}, fmt.Errorf("decode acceptance v4 payload: %w", err)
+		}
+		canonical, marshalErr := json.Marshal(previous)
+		if marshalErr != nil || !bytes.Equal(canonical, payloadRaw) || json.Unmarshal(payloadRaw, &acceptance) != nil {
+			return Acceptance{}, errors.New("acceptance v4 payload is not canonical JSON")
+		}
 	} else {
 		if err := decodeExactJSON(payloadRaw, &acceptance); err != nil {
 			return Acceptance{}, fmt.Errorf("decode acceptance payload: %w", err)
@@ -199,7 +216,8 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 			return Acceptance{}, errors.New("acceptance payload is not canonical JSON")
 		}
 	}
-	if acceptance.Schema != AcceptancePayloadSchema && acceptance.Schema != RotatingAcceptancePayloadSchema &&
+	if acceptance.Schema != AcceptancePayloadSchema && acceptance.Schema != IndependentAuthorityAcceptancePayloadSchema &&
+		acceptance.Schema != RotatingAcceptancePayloadSchema &&
 		acceptance.Schema != PreviousAcceptancePayloadSchema {
 		return Acceptance{}, errors.New("acceptance payload schema is unsupported")
 	}
@@ -216,10 +234,10 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 			!isSHA256(acceptance.BoundaryTLSCertificateSHA256) || !isSHA256(acceptance.BoundaryTLSPrivateKeySHA256) ||
 			!isSHA256(acceptance.BoundaryTLSSPKISHA256) || !isSHA256(acceptance.BoundaryAdmissionClientTrustSHA256) ||
 			!isSHA256(acceptance.TransitionSettlementConfigSHA256) || acceptance.BoundaryRuntimeReaderGID == 0 ||
-			(acceptance.Schema == AcceptancePayloadSchema &&
+		((acceptance.Schema == AcceptancePayloadSchema || acceptance.Schema == IndependentAuthorityAcceptancePayloadSchema) &&
 				(!isSHA256(acceptance.SnapshotAuthorityConfigSHA256) || !isSHA256(acceptance.SnapshotAuthorityExecutableSHA256) ||
 					!isSHA256(acceptance.TransitionAuthorityConfigSHA256) || !isSHA256(acceptance.TransitionAuthorityExecutableSHA256))) ||
-			(acceptance.Schema != AcceptancePayloadSchema && newAuthorityFieldsPresent) ||
+			(acceptance.Schema != AcceptancePayloadSchema && acceptance.Schema != IndependentAuthorityAcceptancePayloadSchema && newAuthorityFieldsPresent) ||
 			(rotatingSchema && acceptance.AcceptanceTrustSHA256 != trustSHA256) ||
 			(rotatingSchema && predecessorPresent &&
 				(!isSHA256(acceptance.PredecessorAcceptanceEnvelopeSHA256) || !isSHA256(acceptance.PredecessorAcceptanceTrustSHA256))) ||
@@ -238,7 +256,7 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 // readable historical evidence but cannot be reinterpreted as a rotatable
 // authority generation.
 func AcceptanceSupportsRotation(schema string) bool {
-	return schema == RotatingAcceptancePayloadSchema || schema == AcceptancePayloadSchema
+	return schema == RotatingAcceptancePayloadSchema || schema == IndependentAuthorityAcceptancePayloadSchema || schema == AcceptancePayloadSchema
 }
 
 func canonicalRotatingAcceptancePayload(acceptance Acceptance) ([]byte, error) {
@@ -272,6 +290,9 @@ func canonicalRotatingAcceptancePayload(acceptance Acceptance) ([]byte, error) {
 	}
 	if acceptance.Schema == AcceptancePayloadSchema {
 		return json.Marshal(acceptance)
+	}
+	if acceptance.Schema == IndependentAuthorityAcceptancePayloadSchema {
+		return json.Marshal(acceptanceV4(acceptance))
 	}
 	return nil, errors.New("acceptance payload is not a rotatable generation")
 }

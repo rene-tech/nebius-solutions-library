@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fs2-public-edge-snapshot-authority
+  namespace: {{ .Values.namespace }}
+  labels: &snapshotLabels {app.kubernetes.io/name: fs2-public-edge-snapshot-authority, app.kubernetes.io/part-of: fs2-public-edge-boundary}
+spec:
+  replicas: {{ .Values.replicas.snapshotAuthority }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: *snapshotLabels}
+  template:
+    metadata: {labels: *snapshotLabels}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccounts.snapshotAuthority }}
+      automountServiceAccountToken: false
+      priorityClassName: {{ .Values.priorityClassName }}
+      securityContext: {seccompProfile: {type: RuntimeDefault}}
+      topologySpreadConstraints: {{ include "fs2-boundary.spread" "fs2-public-edge-snapshot-authority" | nindent 8 }}
+      initContainers:
+        - name: frontend-custody-installer
+          image: {{ include "fs2-boundary.image" . }}
+          command: [/usr/local/bin/public-edge-custody-installer, /projected/manifest/install-envelope.json, snapshot-authority]
+          securityContext: {runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"], add: ["CHOWN", "FOWNER"]}, seccompProfile: {type: RuntimeDefault}}
+          volumeMounts: [{name: frontend-inputs, mountPath: /projected/inputs, readOnly: true}, {name: frontend-manifest, mountPath: /projected/manifest, readOnly: true}, {name: frontend-custody, mountPath: /custody}]
+        - name: settlement-custody-installer
+          image: {{ include "fs2-boundary.image" . }}
+          command: [/usr/local/bin/public-edge-custody-installer, /projected/manifest/install-envelope.json, settlement-custodian]
+          securityContext: {runAsNonRoot: false, runAsUser: 0, runAsGroup: 0, allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: ["ALL"], add: ["CHOWN", "FOWNER"]}, seccompProfile: {type: RuntimeDefault}}
+          volumeMounts: [{name: settlement-inputs, mountPath: /projected/inputs, readOnly: true}, {name: settlement-manifest, mountPath: /projected/manifest, readOnly: true}, {name: settlement-custody, mountPath: /custody}, {name: settlement-ledger, mountPath: /custody/ledger}]
+      containers:
+        - name: authority
+          image: {{ include "fs2-boundary.image" . }}
+          command: [/usr/local/bin/public-edge-snapshot-authority, authority]
+          ports: [{name: https, containerPort: 8445, protocol: TCP}]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ .Values.identity.snapshotAuthorityUID }}
+            runAsGroup: {{ .Values.identity.snapshotAuthorityGID }}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+            seccompProfile: {type: RuntimeDefault}
+          resources: {{ toYaml .Values.resources.snapshotAuthority | nindent 12 }}
+          readinessProbe: {httpGet: {path: /readyz, port: https, scheme: HTTPS}, periodSeconds: 5, timeoutSeconds: 2, failureThreshold: 2}
+          livenessProbe: {httpGet: {path: /healthz, port: https, scheme: HTTPS}, periodSeconds: 10, timeoutSeconds: 2, failureThreshold: 3}
+          volumeMounts:
+            - {name: frontend-custody, mountPath: /var/run/fs2-boundary, subPath: run, readOnly: true}
+        - name: settlement-custodian
+          image: {{ include "fs2-boundary.image" . }}
+          command: [/usr/local/bin/public-edge-snapshot-authority, settlement-custodian]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ .Values.identity.settlementCustodianUID }}
+            runAsGroup: {{ .Values.identity.settlementCustodianGID }}
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+            seccompProfile: {type: RuntimeDefault}
+          resources: {{ toYaml .Values.resources.settlementCustodian | nindent 12 }}
+          volumeMounts:
+            - {name: settlement-custody, mountPath: /var/run/fs2-boundary, subPath: run, readOnly: true}
+            - {name: settlement-ledger, mountPath: /var/lib/fs2-snapshot-settlement-volume}
+      volumes:
+        - {name: frontend-inputs, secret: {secretName: {{ .Values.inputSecrets.snapshotAuthority }}, optional: false}}
+        - {name: frontend-manifest, configMap: {name: fs2-public-edge-snapshotauthority-custody, optional: false}}
+        - {name: frontend-custody, emptyDir: {medium: Memory, sizeLimit: 64Mi}}
+        - {name: settlement-inputs, secret: {secretName: {{ .Values.inputSecrets.settlementCustodian }}, optional: false}}
+        - {name: settlement-manifest, configMap: {name: fs2-public-edge-settlementcustodian-custody, optional: false}}
+        - {name: settlement-custody, emptyDir: {medium: Memory, sizeLimit: 64Mi}}
+        - {name: settlement-ledger, persistentVolumeClaim: {claimName: {{ .Values.storage.settlementLedgerClaim }}}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: fs2-public-edge-snapshot-authority, namespace: {{ .Values.namespace }}, labels: {app.kubernetes.io/name: fs2-public-edge-snapshot-authority, app.kubernetes.io/part-of: fs2-public-edge-boundary}}
+spec:
+  selector: {app.kubernetes.io/name: fs2-public-edge-snapshot-authority, app.kubernetes.io/part-of: fs2-public-edge-boundary}
+  ports: [{name: https, port: 8445, targetPort: https, protocol: TCP}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: fs2-public-edge-snapshot-authority, namespace: {{ .Values.namespace }}}
+spec: {minAvailable: 1, selector: {matchLabels: {app.kubernetes.io/name: fs2-public-edge-snapshot-authority, app.kubernetes.io/part-of: fs2-public-edge-boundary}}}

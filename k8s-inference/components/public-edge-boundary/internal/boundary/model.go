@@ -6,10 +6,12 @@ const (
 	TrustSchema    = "fs2-serve.nebius.ai/public-edge-boundary-trust/v1"
 	LegacyEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v1"
 	PreviousEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v2"
-	EnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v3"
+	ActivationChainEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v3"
+	EnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v4"
 	LegacySnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v1"
 	PreviousSnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v2"
-	SnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v3"
+	ActivationChainSnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v3"
+	SnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v4"
 )
 
 type TrustRegistry struct {
@@ -35,6 +37,38 @@ type SignedEnvelope struct {
 }
 
 type Snapshot struct {
+	Schema                    string           `json:"schema"`
+	ClusterID                 string           `json:"cluster_id"`
+	DeploymentID              string           `json:"deployment_id"`
+	AuthoritySnapshotID       string           `json:"authority_snapshot_id"`
+	AuthorityClosureSHA256    string           `json:"authority_closure_sha256"`
+	DerivedAuthorityClosureSHA256 string        `json:"derived_authority_closure_sha256"`
+	EvidenceBundleSHA256      string           `json:"evidence_bundle_sha256"`
+	ActivationCycleContractSHA256 string        `json:"activation_cycle_contract_sha256"`
+	ActivationCycleID          string           `json:"activation_cycle_id"`
+	ActivationCycleIssuedAt    string           `json:"activation_cycle_issued_at"`
+	ActivationCycleDeadlineAt  string           `json:"activation_cycle_deadline_at"`
+	ActivationPredecessorSelectionSHA256 string `json:"activation_predecessor_selection_sha256"`
+	SnapshotID                string           `json:"snapshot_id"`
+	IssuedAt                  string           `json:"issued_at"`
+	ExpiresAt                 string           `json:"expires_at"`
+	MaximumAgeSeconds         int              `json:"maximum_age_seconds"`
+	Controller                Actor            `json:"controller"`
+	CredentialNamespaces      []string         `json:"credential_namespaces"`
+	CredentialSecrets         []ObjectIdentity `json:"credential_secrets"`
+	ControllerServiceAccounts []ObjectIdentity `json:"controller_service_accounts"`
+	CredentialWorkloads       []ObjectIdentity `json:"credential_workloads"`
+	ProtectedRoots            []ObjectIdentity `json:"protected_roots"`
+	AdmissionParameterRoots   []ObjectIdentity `json:"admission_parameter_roots"`
+	EdgeProtectionRoots       []ObjectIdentity `json:"edge_protection_roots"`
+	ResourceGuards            []ResourceGuard  `json:"resource_guards"`
+	Transitions               []Transition     `json:"transitions"`
+}
+
+// snapshotV3 preserves the exact activation-chain v3 wire representation. V4
+// separates the static accepted closure-policy identity from the dynamic
+// content-addressed closure derived from each native evidence cycle.
+type snapshotV3 struct {
 	Schema                    string           `json:"schema"`
 	ClusterID                 string           `json:"cluster_id"`
 	DeploymentID              string           `json:"deployment_id"`

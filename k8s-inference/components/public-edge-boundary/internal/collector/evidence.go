@@ -11,6 +11,45 @@ import (
 	"github.com/rene-tech/nebius-solutions-library/k8s-inference/components/public-edge-boundary/internal/boundary"
 )
 
+// LoadEvidenceVerificationContract loads only the immutable source plan and
+// native-response trust needed by a separately custodied snapshot authority.
+// It intentionally does not open the collector's writable evidence/runtime
+// stores or its client credentials.
+func LoadEvidenceVerificationContract(
+	configPath string,
+	nativeTrustPath string,
+	acceptance boundary.Acceptance,
+) (Config, *boundary.ExternalTrust, error) {
+	configRaw, err := readRootRegular(configPath, maximumConfigBytes)
+	if err != nil {
+		return Config{}, nil, fmt.Errorf("read native collector verification config: %w", err)
+	}
+	if digest(configRaw) != acceptance.NativeCollectorConfigSHA256 {
+		return Config{}, nil, errors.New("native collector verification config differs from independently accepted bytes")
+	}
+	if err := rejectClosedIntegrationGate(configRaw, "native-collector"); err != nil {
+		return Config{}, nil, err
+	}
+	var discriminator struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(configRaw, &discriminator); err == nil && discriminator.Schema != ConfigSchema {
+		return Config{}, nil, errors.New("only additive native collector config v3 can authorize semantic snapshot evidence verification")
+	}
+	var config Config
+	if err := canonicalJSON(configRaw, &config); err != nil {
+		return Config{}, nil, err
+	}
+	if err := validateConfig(config, acceptance); err != nil {
+		return Config{}, nil, err
+	}
+	trust, err := boundary.LoadExternalTrust(nativeTrustPath, acceptance.NativeResponseTrustSHA256, NativeTrustSchema)
+	if err != nil {
+		return Config{}, nil, err
+	}
+	return config, trust, nil
+}
+
 // VerifiedEvidenceBundle contains only pages reconstructed from exact signed
 // native envelopes. The collector and the separately custodied snapshot
 // authority share this verifier so a manifest digest can never replace
@@ -33,10 +72,13 @@ func VerifyEvidenceBundle(
 	now time.Time,
 ) (*VerifiedEvidenceBundle, error) {
 	if len(bundleRaw) < 1 || int64(len(bundleRaw)) > config.MaximumBundleBytes || nativeTrust == nil ||
-		config.Schema != ConfigSchema || config.ClusterID != acceptance.ClusterID ||
+		(config.Schema != ConfigSchema && config.Schema != PreviousConfigSchema) || config.ClusterID != acceptance.ClusterID ||
 		config.DeploymentID != acceptance.DeploymentID || config.EvidenceStoreID == "" ||
 		digestJSON(config.MandatoryCollections) != acceptance.MandatoryCollectionsSHA256 {
 		return nil, errors.New("native evidence verifier inputs differ from the accepted collector contract")
+	}
+	if err := validateConfig(config, acceptance); err != nil {
+		return nil, fmt.Errorf("validate exact versioned native collector contract: %w", err)
 	}
 	var bundle EvidenceBundle
 	if err := canonicalJSON(bundleRaw, &bundle); err != nil || bundle.Schema != EvidenceBundleSchema ||
