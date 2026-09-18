@@ -6,47 +6,19 @@ follows durable progress, downloads every output, safely unpacks it, and fully
 reopens it with **LeRobot 0.6.1**. Local paths are interpreted only by this client;
 they are never sent to Cosmos as remote paths. The input directory is unchanged.
 
-Current status (2026-09-18): release150's targeted two-variant blur run passed
-full LeRobot0.6.1 reader checks and both replays. Malformed input returned422;
-out-of-range episode selection returned the expected static `INVALID_REQUEST`
-with zero children and released resources; overlapping admission returned429
-`error.type="concurrency_exceeded"`; active CPU-stage cancellation completed
-with resources released and no child admission. GPU-child cancellation was not
-exercised. This is targeted debugging, **not final unchanged-release cohorts**.
+Release151 (2026-09-18) passed the bounded public suite: two lighting/environment
+cohorts plus two-variant blur, **five successful parent workflows and six
+validated datasets**, both replays, malformed422, worker-invalid selection,
+concurrency429 and CPU-stage cancellation. A separate operator-assisted probe
+also cancelled a publicly confirmed running child through its parent. All
+admitted work settled; no GPU-kernel interruption claim is made.
 
-Two harness errors are retained: the initial helper expected `DATASET_INVALID`
-instead of `INVALID_REQUEST`, and its continuation looked for `error.code`
-instead of the actual public `error.type`. Both original failed aggregates stay
-unchanged. A separate offline evaluation binds their exact hashes and operator
-proofs at `/home/tux/secure-handoff/lerobot-release-20260917/targeted-evaluation-r150.json`.
-Neither blur nor invalid selection was resubmitted; final-run assertions are
-corrected and tested. CP index `e240fb81`, source `7aa37722b`, worker `1eeb26e2`;
-full identities and historical debug details are in [release evidence](RELEASE.md).
-
-Historical release149 completed **four dataset-mechanics
-passes**: lighting edge-transfer and all-camera/all-episode environment V2V in
-each of two cohorts, swapping HTTP and named MCP. Every output passed the full
-pinned reader and both idempotent replays. The fifth, two-variant blur parent
-`dc708f87-d0a2-4021-b645-7540cf0f4837` failed with public HTTP422 /
-`PLATFORM_UPSTREAM_ERROR`; its static detail is “The control plane rejected or
-could not process a delegated Cosmos request.” Its worker resources are
-released. The runner stopped: malformed-input, worker-invalid-selection,
-concurrency and cancellation probes **did not run**. This is not a passing
-complete suite. No blind retry or further admission followed.
-
-The unchanged release was CP source `8fe42b85f`, index `sha256:da50219255ae4af4975bba74c0221890cce1eaad4b28ac114d89ceb087e624e4`,
-worker `df364675`. Original journals and all four outputs remain private under
-`/home/tux/secure-handoff/lerobot-release-20260917/final-cohorts-r149/`.
-[Run a local directory](#run-a-local-directory) for the usable CLI; see
-[release evidence](RELEASE.md) for exact identities, observations and retained
-release147 failure / release148 corrected debug history.
-
-Mechanics are not semantic or physical qualification: visual review observed
-object and trajectory drift, and the requested environment change was not
-visibly achieved. Exact action/timestamp arrays and changed pixels do not prove
-action-aligned imagery or suitable training data. Actual hosted LibreChat also
-remains unqualified. A corrected-release follow-up requires explicit operator
-GO; the original failed suite is never relabelled as a pass.
+Use the ordinary-key CLI below. Dataset mechanics are not semantic or physical
+qualification: representative visual review found object/trajectory drift and
+the requested environment change was not visibly achieved. Exact action arrays
+do not prove action-aligned imagery or training suitability. Hosted LibreChat
+remains unqualified. See [release evidence](RELEASE.md) for the scoped verdict,
+exact images, retained negative attempts and operator grant/cleanup receipts.
 
 ## Run a local directory
 
@@ -192,9 +164,58 @@ Native V2V can change trajectories and scene content. Even constrained transfer
 can change fine details. Inspect every generated clip before training: exact
 action arrays are **not proof of physically action-aligned augmented imagery**.
 
+## Release151 evidence and operator-only cancellation
+
+The base suite ran01:48:03.898–01:59:50.046 UTC on unchanged CP source
+`440d7c607`, index
+`sha256:ab2f802727b29b60a301870771610ec5b9851e2d92f837ee422c52b7fd78f214`,
+worker `sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1`.
+Its private `final-cohorts-r151/acceptance.json` has SHA256
+`dc70d3199bcb00ff1cfb62573a53df466b7f0fc42b55a347811c7a4628ea8f58`.
+Twelve delegated generations produced the six fully checked datasets. Nine of
+those generation records lack exact per-operation GPU identity; unavailable
+identity is not measured zero or evidence of complete GPU accounting.
+
+The base client was the source at `440d7c607` (including corrected assertions
+from `109025990`/`cf30ce185`). After that suite, helper-only commit `3e49468a6`
+fixed parsing of bare native `OperationView.operation="generate-media"` versus
+the scientific dict envelope. The server/runtime/config did not change, and no
+new full cohort is claimed for this client-only correction. Its actual server
+DTO regression and the complete local acceptance suite passed38 tests.
+
+Extra cancellation evidence remains separate from the pure-public base suite.
+The first extra parent completed before its late observer began. The second
+captured a running child, but the private helper's native-DTO error delayed
+cancellation until all children had finished. Both failed/inconclusive receipts
+remain untouched. A newly authorized probe after the tested parser fix used a
+watcher-ready handshake before admission: parent
+`13bcffd2-d8c5-45c9-9608-921e85c10881`, child
+`9e82e652-f7f4-44e4-b405-42957d3f67f8`. The same ordinary key GET-verified that
+child running immediately before parent cancel at02:10:30.162142 UTC; both then
+became cancelled and the CPU attempt released resources. Child discovery was
+operator-assisted; immediate GPU-kernel preemption is unverified.
+
+The retained private final command, run from `k8s-inference`, was:
+
+```sh
+components/control-plane/.venv/bin/python \
+  /home/tux/secure-handoff/lerobot-release-20260917/run_active_child_cancel_dto_fixed.py
+```
+
+That helper's source SHA256 is
+`e550bf369155b6739da6faedc8f1c81154fc65b568901ddfdfe9d5b99fb97603`.
+It requires a prior watcher-ready receipt and refuses an already-used output
+directory; this is an operator evidence pointer, **not another customer command
+or authorization to rerun it**. Its final receipt is
+`active-child-cancellation-r151-dto-fixed/run.json`, SHA256
+`e83bf5ad6c953dd41cfe27d5fbb0fda32fb95e349fad14b8003110b830e19a71`,
+under the same owner-only handoff directory. No keys or raw private receipts
+are committed. Earlier release147/149 backend failures and both release150
+harness-error aggregates remain linked from [release history](RELEASE.md).
+
 ## Local evidence
 
-Client/cohort/targeted-debug/continuation suite: **35 passed**. Real pinned-reader tests:
+Client/cohort/targeted-debug/continuation suite: **38 passed**. Real pinned-reader tests:
 **2 passed** on the
 two-episode/two-view fixture, including a full pack/unpack/rewrite/reopen loop
 and all-camera/all-episode preparation. The rewrite test uses an explicitly
@@ -229,5 +250,6 @@ The follow-up CP source adds a bounded static worker-error projection: only a
 recognized LeRobot scientific-stage termination message is accepted; received
 text is never copied into public detail. OOM/preemption/infrastructure/timeout
 classification stays unchanged. Its new focused suite passed52 tests; existing
-production observer plus the initial51 new cases passed116. The actual worker
-negative case above must still verify this on the new deployed image.
+production observer plus the initial51 new cases passed116. Release151's admitted
+invalid-selection case verified the actual static `INVALID_REQUEST` detail and
+released resources; the operator independently confirmed zero child operations.
