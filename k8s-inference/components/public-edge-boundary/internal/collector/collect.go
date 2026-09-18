@@ -1365,8 +1365,65 @@ func (r *Runner) retainLegacyRuntimeBootstrap(
 	if err := boundary.VerifyLegacyRuntimeAnchor(*bootstrap, selectionRaw, legacyTrustRaw, envelopeRaw); err != nil {
 		return nil, "", err
 	}
-	for _, name := range []string{"legacy-bootstrap-generations", "snapshot-trust-generations"} {
+	accepted, err := r.acceptanceGeneration(
+		bootstrap.SuccessorAcceptanceEnvelopeSHA256,
+		bootstrap.SuccessorAcceptanceTrustSHA256,
+	)
+	if err != nil {
+		return nil, "", err
+	}
+	acceptanceTrustRaw, acceptanceTrustSHA256, err := accepted.TrustGeneration()
+	if err != nil || acceptanceTrustSHA256 != bootstrap.SuccessorAcceptanceTrustSHA256 {
+		return nil, "", errors.New("legacy bootstrap successor acceptance trust generation is unavailable")
+	}
+	acceptanceEnvelopeRaw, acceptanceEnvelopeSHA256, err := accepted.EnvelopeGeneration()
+	if err != nil || acceptanceEnvelopeSHA256 != bootstrap.SuccessorAcceptanceEnvelopeSHA256 {
+		return nil, "", errors.New("legacy bootstrap successor acceptance envelope generation is unavailable")
+	}
+	if digest(legacyTrustRaw) != bootstrap.LegacySnapshotTrustSHA256 {
+		return nil, "", errors.New("legacy bootstrap snapshot trust generation differs from its signed digest")
+	}
+	for _, name := range []string{
+		"legacy-bootstrap-generations",
+		"snapshot-trust-generations",
+		"acceptance-trust-generations",
+		"acceptance-envelope-generations",
+	} {
 		if err := r.ensureRuntimeChildDirectory(name); err != nil {
+			return nil, "", err
+		}
+	}
+	// Publish and fsync every byte needed to authenticate this renewal before
+	// making the renewal reachable from its immutable successor-head link. A
+	// crash can therefore leave only harmless, content-addressed dependencies;
+	// it can never expose a head whose trust or acceptance generation is absent.
+	dependencies := []struct {
+		directory string
+		name      string
+		raw       []byte
+	}{
+		{
+			"snapshot-trust-generations",
+			"snapshot-trust-" + bootstrap.LegacySnapshotTrustSHA256 + ".json",
+			legacyTrustRaw,
+		},
+		{
+			"acceptance-trust-generations",
+			"acceptance-trust-" + bootstrap.SuccessorAcceptanceTrustSHA256 + ".json",
+			acceptanceTrustRaw,
+		},
+		{
+			"acceptance-envelope-generations",
+			"acceptance-envelope-" + bootstrap.SuccessorAcceptanceEnvelopeSHA256 + ".json",
+			acceptanceEnvelopeRaw,
+		},
+	}
+	for _, dependency := range dependencies {
+		if err := r.appendRuntimeOrMatch(
+			filepath.Join(r.Config.RuntimeRoot, dependency.directory, dependency.name),
+			dependency.raw,
+			0o444,
+		); err != nil {
 			return nil, "", err
 		}
 	}
@@ -1398,13 +1455,6 @@ func (r *Runner) retainLegacyRuntimeBootstrap(
 	if err := r.appendRuntimeOrMatch(
 		filepath.Join(r.Config.RuntimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-for-"+selectionSHA256+"-successor-of-"+predecessorKey+".json"),
 		bootstrapRaw,
-		0o444,
-	); err != nil {
-		return nil, "", err
-	}
-	if err := r.appendRuntimeOrMatch(
-		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
-		legacyTrustRaw,
 		0o444,
 	); err != nil {
 		return nil, "", err
