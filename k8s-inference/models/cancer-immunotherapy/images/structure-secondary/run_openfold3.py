@@ -128,6 +128,19 @@ def _validate_runner_seeds(path: Path, seeds: list[int]) -> None:
 
 def _write_seeded_runner(base: Path, destination: Path, seeds: list[int]) -> None:
     runner_document = _load_yaml(base, "base-runner-yaml")
+    # Each batch stage handles one query, not a training dataset. Upstream's
+    # experiment default starts ten DataLoader workers and transfers the full
+    # tensor feature tree through POSIX shared memory. Large heteromers exceed
+    # the container's default /dev/shm; a background queue-feeder exception then
+    # leaves prediction waiting forever. Inline loading needs no IPC allocation
+    # and propagates preprocessing exceptions to the main stage process.
+    # Keep the same model, features, seed list and container resource limits.
+    data_module = runner_document.setdefault("data_module_args", {})
+    if not isinstance(data_module, dict):
+        raise SystemExit("base-runner-yaml data_module_args must be a mapping")
+    data_module.update(
+        {"num_workers": 0, "prefetch_factor": None, "persistent_workers": False}
+    )
     settings = runner_document.setdefault("experiment_settings", {})
     if not isinstance(settings, dict):
         raise SystemExit("base-runner-yaml experiment_settings must be a mapping")

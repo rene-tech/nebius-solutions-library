@@ -1,0 +1,5 @@
+# Thin runtime successor: preserve upstream dependencies, weights, and base
+# runner provenance; change only the single-query adapter's DataLoader policy.
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4
+COPY --chmod=0444 run_openfold3.py /opt/fs2/run_openfold3.py
+LABEL ai.nebius.fs2.runtime.successor="single-query-inline-loader-20260918"
