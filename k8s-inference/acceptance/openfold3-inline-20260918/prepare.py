@@ -22,7 +22,7 @@ def load_renderer():
     return module
 
 
-def prepare(original, fixtures, image, output, name):
+def prepare(original, fixtures, image, output, name, pool=None):
     base = load_renderer()
     old = original["spec"]["containers"][0]
     marker = json.loads(next(e["value"] for e in old["env"] if e["name"] == "FS2_RUNTIME_ARTIFACTS_JSON"))
@@ -50,11 +50,14 @@ def prepare(original, fixtures, image, output, name):
     config["data"].pop("raw-input.json")
     spec = job["spec"]["template"]["spec"]
     spec["nodeSelector"] = copy.deepcopy(original["spec"]["nodeSelector"])
+    if pool:
+        spec["nodeSelector"]["accelerator.fs2.nebius/pool-id"] = pool
     spec["securityContext"] = copy.deepcopy(original["spec"]["securityContext"])
     # The task-owned emptyDir volumes need the same non-root writer UID.
     spec["securityContext"]["fsGroup"] = 10001
     spec["tolerations"] = copy.deepcopy(original["spec"].get("tolerations", []))
     spec["activeDeadlineSeconds"] = 7200
+    spec["preemptionPolicy"] = "Never"
     for volume in spec["volumes"]:
         if volume.get("configMap"):
             volume["configMap"]["name"] = config["metadata"]["name"]
@@ -111,6 +114,8 @@ df -B1 /dev/shm > /outputs/shm.txt
     (output / "cases.json").write_text(json.dumps({"source": SOURCE, "image": image,
         "cases": records, "scope": "isolated model compatibility; not public owner/API qualification",
         "shm_bytes": 67108864, "original_resources": old["resources"],
+        "original_pool": original["spec"]["nodeSelector"].get("accelerator.fs2.nebius/pool-id"),
+        "qualification_pool": spec["nodeSelector"].get("accelerator.fs2.nebius/pool-id"),
         "changes": ["candidate image", "inline DataLoader", "task-only input/output/cache volumes", "sequential fixture commands", "fsGroup10001 for emptyDir ownership"]}, indent=2)+"\n")
     return result
 
@@ -122,8 +127,9 @@ def main():
     parser.add_argument("--image", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--name", default="fs2-openfold3-inline-20260918")
+    parser.add_argument("--pool", choices=("h100-1x", "h100-ondemand-1x", "h100-reserved-8x"))
     args = parser.parse_args()
-    prepare(json.loads(args.original_pod.read_text()), args.fixtures, args.image, args.output, args.name)
+    prepare(json.loads(args.original_pod.read_text()), args.fixtures, args.image, args.output, args.name, args.pool)
 
 
 if __name__ == "__main__":

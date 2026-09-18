@@ -34,6 +34,7 @@ def test_preserves_original_envelope_and_default_shm(tmp_path):
     config, pod = data["items"]
     assert pod["kind"] == "Pod" and len(data["items"]) == 2
     assert pod["spec"]["nodeSelector"] == source["spec"]["nodeSelector"]
+    assert pod["spec"]["preemptionPolicy"] == "Never"
     container = pod["spec"]["containers"][0]
     assert container["resources"] == source["spec"]["containers"][0]["resources"]
     assert container["securityContext"] == source["spec"]["containers"][0]["securityContext"]
