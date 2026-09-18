@@ -94,27 +94,91 @@ def deployment_runtime_configuration_identity(entry: Mapping[str, Any]) -> dict[
     }
 
 
-def _record(value: Any, model_id: str, variant_id: str, catalog: Catalog, schema: dict[str, Any]) -> dict[str, Any]:
+def _canonical_service_contract(catalog: Catalog, catalog_dir: Path, model_id: str) -> dict[str, Any]:
+    """Read an explicit, archival-identity-bound service declaration, not a route.
+
+    Some canonical non-NIM models have no fallback variant or static binding.
+    Their existing managed Service is recorded separately so a new image cannot
+    choose its own service identity or mutate archival catalog evidence.
+    """
+    path = catalog_dir / "contracts/canonical-runtime-services.json"
+    if not path.is_file():
+        raise DeploymentRuntimeError("canonical runtime successor has no reviewed service contract")
+    document = _exact(_load_json(path), {"schema", "models"}, "canonical runtime services")
+    if document["schema"] != "fs2-serve.nebius.ai/canonical-runtime-services/v1" or not isinstance(
+        document["models"], dict
+    ):
+        raise DeploymentRuntimeError("canonical runtime service contract schema is invalid")
+    if model_id not in document["models"]:
+        raise DeploymentRuntimeError("canonical runtime successor has no reviewed service contract")
+    contract = _exact(document["models"][model_id], {"model_digest", "source", "service"}, "canonical service contract")
+    original = catalog.model(model_id)
+    record = original.to_dict()
+    source = record["model"]["source"]
+    if (
+        contract["model_digest"] != original.digest
+        or contract["source"] != {key: source[key] for key in ("kind", "repository", "revision")}
+        or record["runtime"]["kind"] in {"nim", "unresolved"}
+        or source["kind"] == "ngc-nim"
+    ):
+        raise DeploymentRuntimeError("canonical service contract differs from its non-NIM archival identity")
+    service = _exact(contract["service"], {"namespace", "name", "port"}, "canonical runtime service")
+    if (
+        service["namespace"] != "fs2-models"
+        or service["name"] not in {model_id, model_id + "-b300"}
+        or type(service["port"]) is not int
+        or not 1 <= service["port"] <= 65535
+    ):
+        raise DeploymentRuntimeError("canonical service contract is not a model-owned Service")
+    return copy.deepcopy(contract)
+
+
+def _record(
+    value: Any,
+    model_id: str,
+    variant_id: str | None,
+    catalog: Catalog,
+    schema: dict[str, Any],
+    *,
+    canonical_contract: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     try:
         Draft202012Validator(schema).validate(value)
     except ValidationError as exc:
         raise DeploymentRuntimeError("deployment runtime record violates model/v1 structure") from exc
     record: dict[str, Any] = copy.deepcopy(value)
-    variant = catalog.model_variant(variant_id)
-    subject = variant.to_dict()
-    if (
-        model_id not in catalog.records
-        or variant.base_model_id != model_id
-        or variant.exposed_model_id != model_id
-        or variant.relationship != "exact-model"
-        or subject["relationship"]["reference_model_id"] != model_id
-        or subject["relationship"]["subject_model_id"] != model_id
-        or subject["relationship"]["distinct_base_record_required"]
-        or record["model"]["id"] != model_id
-    ):
-        raise DeploymentRuntimeError(
-            "deployment runtime must identify one canonical exact-model variant without aliasing"
-        )
+    if variant_id is None:
+        original = catalog.model(model_id)
+        canonical = original.to_dict()
+        if canonical_contract is None or canonical_contract["model_digest"] != original.digest:
+            raise DeploymentRuntimeError("canonical runtime successor requires its reviewed archival contract")
+        if (
+            record["model"]["id"] != model_id
+            or canonical["runtime"]["kind"] in {"nim", "unresolved"}
+            or canonical["model"]["source"]["kind"] == "ngc-nim"
+            or record["model"]["source"] != canonical["model"]["source"]
+            or record["cache"]["artifact"] != canonical["cache"]["artifact"]
+            or record["cache"]["owner"] != canonical["cache"]["owner"]
+            or record["interface"]["policy"] != canonical["interface"]["policy"]
+        ):
+            raise DeploymentRuntimeError("canonical runtime successor changed model, source, weights or policy")
+        subject = {"source": canonical["model"]["source"]}
+    else:
+        variant = catalog.model_variant(variant_id)
+        subject = variant.to_dict()
+        if (
+            model_id not in catalog.records
+            or variant.base_model_id != model_id
+            or variant.exposed_model_id != model_id
+            or variant.relationship != "exact-model"
+            or subject["relationship"]["reference_model_id"] != model_id
+            or subject["relationship"]["subject_model_id"] != model_id
+            or subject["relationship"]["distinct_base_record_required"]
+            or record["model"]["id"] != model_id
+        ):
+            raise DeploymentRuntimeError(
+                "deployment runtime must identify one canonical exact-model variant without aliasing"
+            )
     source = record["model"]["source"]
     if any(source[key] != subject["source"][key] for key in ("kind", "repository", "revision")):
         raise DeploymentRuntimeError("deployment runtime source differs from exact canonical variant")
@@ -230,9 +294,14 @@ def bind_deployment_runtimes(
             base = gateway.model(model_id)
             if base.routable or (base.binding is not None and base.binding.enabled):
                 raise DeploymentRuntimeError("deployment runtime cannot replace an already-routable static binding")
-            if not isinstance(item["variant_id"], str):
+            if item["variant_id"] is not None and not isinstance(item["variant_id"], str):
                 raise DeploymentRuntimeError("deployment runtime variant ID must be explicit")
-            value = _record(item["record"], model_id, item["variant_id"], catalog, schema)
+            canonical_contract = (
+                _canonical_service_contract(catalog, catalog_dir, model_id) if item["variant_id"] is None else None
+            )
+            value = _record(
+                item["record"], model_id, item["variant_id"], catalog, schema, canonical_contract=canonical_contract
+            )
             digest = hashlib.sha256(_canonical_bytes(value)).hexdigest()
             records[model_id] = ModelRecord(model_id, path, digest, value)
             selected[model_id] = item
@@ -247,10 +316,15 @@ def bind_deployment_runtimes(
             )
             value = records[model_id].to_dict()
             service = row["active_runtime"].get("service") if isinstance(row["active_runtime"], dict) else None
-            if service not in (
-                {"namespace": "fs2-models", "name": model_id, "port": 8000},
-                {"namespace": "fs2-models", "name": model_id + "-b300", "port": 8000},
-            ):
+            allowed_services = (
+                (
+                    {"namespace": "fs2-models", "name": model_id, "port": 8000},
+                    {"namespace": "fs2-models", "name": model_id + "-b300", "port": 8000},
+                )
+                if item["variant_id"] is not None
+                else (_canonical_service_contract(catalog, catalog_dir, model_id)["service"],)
+            )
+            if service not in allowed_services:
                 raise DeploymentRuntimeError("deployment qualification service aliases another model")
             expected_runtime = {
                 "model_revision": value["model"]["source"]["revision"],
