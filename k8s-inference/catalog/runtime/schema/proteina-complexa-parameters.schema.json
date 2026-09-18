@@ -22,6 +22,7 @@
     },
     "target_id": {
       "type": "string",
+      "description": "Exact pinned scientific target configuration ID for the selected variant, not a PDB filename. Call get_model_schema for proteina-complexa and inspect target_catalog for residue ranges, hotspots, binder lengths and the required bundle_path before choosing. For example 02_PDL1 and 03_PDL1_AAV use the same PDB but different design constraints. Custom target configurations are not yet supported by this hosted API.",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
     },
     "run_name": {

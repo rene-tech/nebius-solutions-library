@@ -49,6 +49,7 @@ from .common import (
     strict_object,
     structure_atom_count,
 )
+from .proteina_targets import target_configuration
 from .staged_workspace import (
     collect_workspace_handoff,
     completion_marker,
@@ -235,6 +236,7 @@ class ProteinaParameters:
             )
         ):
             raise ScientificAdapterError("target_id must be a logical target name, never a path")
+        target_configuration(raw_variant, target_id)
         return cls(
             variant=VARIANTS[raw_variant],
             target_id=target_id,
@@ -279,15 +281,11 @@ def _argv(parameters: ProteinaParameters, stage_id: str) -> tuple[str, ...]:
     values = [
         "complexa",
         stage_id,
+        # Without verbose the pinned CLI saves child stderr only in an
+        # ephemeral file and reports an unhelpful exit code to pod logs.
+        # argparse requires options before the config/overrides positionals.
+        "--verbose",
     ]
-    if stage_id == "filter":
-        # The upstream CLI otherwise suppresses the subprocess traceback, and
-        # its implicit workspace setup asserts that CUDA is available. Point
-        # the CPU-only filter at the deterministic workspace produced by the
-        # generate stage so it skips that accelerator-only setup path. argparse
-        # cannot resume the trailing ``overrides`` nargs="*" positional after
-        # an optional follows ``config``, so --verbose must precede config.
-        values.append("--verbose")
     values.append(variant.config)
     values.extend(
         (

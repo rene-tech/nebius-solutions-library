@@ -53,6 +53,15 @@ class ScientificArtifactAccess(Protocol):
 
     async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission: ...
 
+    async def validate_model_input(
+        self,
+        model_id: str,
+        parameters: Mapping[str, Any],
+        admission: ScientificInputAdmission,
+        *,
+        tenant_id: str,
+    ) -> None: ...
+
     async def artifact_response(self, artifact_id: UUID, *, tenant_id: str) -> Mapping[str, Any]: ...
 
     async def result_response(self, operation_id: UUID, *, tenant_id: str) -> Mapping[str, Any]: ...
@@ -529,6 +538,10 @@ class ScientificBatchService:
             )
         except CatalogProfileAdapterError as error:
             raise ScientificProfileError("scientific workload profile cannot form an execution plan") from error
+        if model_id == "proteina-complexa":
+            await self.artifacts.validate_model_input(
+                model_id, validated["parameters"], input_admission, tenant_id=principal.tenant_id
+            )
         plan = preflight.controller_plan if isinstance(preflight, AdapterExecutionPlan) else preflight
         try:
             runtime_artifacts = (

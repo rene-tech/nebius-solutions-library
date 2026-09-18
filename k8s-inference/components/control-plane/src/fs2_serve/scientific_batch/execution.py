@@ -938,7 +938,9 @@ class FileScientificManifestRenderer:
                 input_artifacts=input_artifacts,
             )
         except ScientificParameterError as error:
-            raise ScientificRequestError("model parameters violate the executable scientific contract") from error
+            raise ScientificRequestError(
+                "model parameters violate the executable scientific contract", public_detail=error.public_detail
+            ) from error
         except (AttributeError, ImportError, KeyError, TypeError, ValueError) as error:
             raise ScientificExecutionMapError(
                 "scientific plan adapter is unavailable or rejected the request"

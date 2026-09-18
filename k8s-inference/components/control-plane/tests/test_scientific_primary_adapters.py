@@ -502,10 +502,8 @@ def test_proteina_commands_and_artifact_handoffs_are_exact_and_shell_free() -> N
             "--",
         )
         assert invocation.argv[3:5] == ("complexa", stage_id)
-        config_index = 5
-        if stage_id == "filter":
-            assert invocation.argv[5] == "--verbose"
-            config_index = 6
+        assert invocation.argv[5] == "--verbose"
+        config_index = 6
         assert invocation.argv[config_index] == "/opt/fs2/source/configs/search_ligand_binder_local_pipeline.yaml"
         assert invocation.argv[0] not in {"sh", "bash"}
         assert invocation.consumes == (previous,)
@@ -552,6 +550,11 @@ def test_proteina_filter_reuses_generated_workspace_without_a_gpu(
 ) -> None:
     request = fixture("proteina-complexa", "positive-protein.json")
     request["parameters"]["variant"] = variant
+    request["parameters"]["target_id"] = {
+        "protein-target": "02_PDL1",
+        "ligand-target": "39_7V11_LIGAND",
+        "ame": "M0024_1nzy_og",
+    }[variant]
     parameters = request["parameters"]
     result = proteina_complexa.compile_run(
         profile("proteina-complexa"),
@@ -578,8 +581,8 @@ def test_proteina_filter_reuses_generated_workspace_without_a_gpu(
     assert result.controller_plan.stage("filter").resource_class is ResourceClass.CPU
 
     for invocation in (result.invocations[0], *result.invocations[2:]):
-        assert invocation.argv[6:11] == common_overrides
-        assert "--verbose" not in invocation.argv
+        assert invocation.argv[7:12] == common_overrides
+        assert invocation.argv[5] == "--verbose"
         assert not any(argument.startswith("++root_path=") for argument in invocation.argv)
 
 
@@ -592,6 +595,11 @@ def test_proteina_runtime_dependencies_are_variant_specific_and_operation_isolat
     for variant, weight_artifact, folding_artifact in cases:
         request = fixture("proteina-complexa", "positive-protein.json")
         request["parameters"]["variant"] = variant
+        request["parameters"]["target_id"] = {
+            "protein-target": "02_PDL1",
+            "ligand-target": "39_7V11_LIGAND",
+            "ame": "M0024_1nzy_og",
+        }[variant]
         first = proteina_complexa.compile_run(profile("proteina-complexa"), request, operation_id=f"op-{variant}-one")
         second = proteina_complexa.compile_run(profile("proteina-complexa"), request, operation_id=f"op-{variant}-two")
         assert first.invocations[0].working_directory != second.invocations[0].working_directory

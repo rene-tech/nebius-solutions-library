@@ -40,6 +40,10 @@ class ScientificProfileError(RuntimeError):
 class ScientificRequestError(ValueError):
     """A public request does not satisfy the canonical catalog contracts."""
 
+    def __init__(self, message: str, *, public_detail: str | None = None) -> None:
+        super().__init__(message)
+        self.public_detail = public_detail
+
 
 def _object_schema(value: object, label: str) -> Mapping[str, Any]:
     if not isinstance(value, Mapping) or not all(isinstance(key, str) for key in value):

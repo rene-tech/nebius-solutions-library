@@ -21,7 +21,7 @@ into four dependent `ScientificStagePlan` objects:
 3. `evaluate` (GPU), after `filter`
 4. `analyze` (CPU), after `evaluate`
 
-Every stage has exec-form `complexa <stage> <config> ...` argv and consumes the
+Every stage has exec-form `complexa <stage> --verbose <config> ...` argv and consumes the
 previous stage's logical artifact. The controller materializes each immutable
 tar handoff into an operation-isolated campaign workspace; no stage reads another job's
 mutable directory. Configs come from the image's exact `/opt/fs2/source/configs`
@@ -33,6 +33,52 @@ image's `/opt/venv/bin/rf3` plus the exact Foundry checkpoint filename. Optional
 ESM2, ESMFold, and MPNN metrics are explicitly disabled until their immutable
 artifacts pass the target cache/readiness gate. No NGC-only gate or nonexistent
 release is represented.
+
+## Target selection and early input validation
+
+`target_id` selects a scientific configuration in the pinned upstream target
+dictionary, **not a PDB filename**. Call MCP
+`get_model_schema(model_id="proteina-complexa")` and inspect `target_catalog`.
+It supplies 44 protein-target, four ligand-target and 44 AME configurations,
+their exact bundle member paths, binder lengths, residue ranges, hotspots and
+ligand/motif constraints. This metadata is returned only on explicit schema
+discovery, not copied into every tool definition. These are upstream-supported
+configurations, not a claim that all 92 have been scientifically qualified on
+this deployment.
+
+For example, both `02_PDL1` and `03_PDL1_AAV` read
+`assets/target_data/bindcraft_targets/PD-L1.pdb`, but the former uses four
+hotspots and binder lengths 64–155, while the latter uses seven hotspots and
+lengths 75–115. `PD-L1` alone is ambiguous and is rejected before durable/GPU
+admission, with those choices and their differences. The API never silently
+changes a scientist's configuration. Upstream's custom-target YAML/CLI feature
+is **not yet exposed by the hosted API**; uploading a new PDB does not register
+a new target configuration.
+
+After pointer authorization and plan parsing, the control plane reads the
+tenant-owned target bundle within the existing 64 MiB bound, verifies its
+content hash and inspects the selected nonempty PDB member without extracting
+it. A missing or wrong variant-specific path returns actionable HTTP 422/MCP
+invalid-parameters guidance before allocating an operation or GPU. Storage
+transport/authentication errors retain their distinct error types. Other Apps
+are unchanged. This is layout validation, not a claim of biologically correct
+coordinates or matching experimental identity.
+
+All four stages pass the pinned CLI's `--verbose` option, so child traceback
+output reaches normal pod logs instead of only an ephemeral workspace log.
+The September 18 actual-customer `PD-L1` failure demonstrated both gaps: target
+dictionary lookup cannot resolve that name, and the original generic exit-1
+event did not retain its underlying subprocess exception. Its failed receipt
+is preserved; no corrected request is substituted into its history.
+
+`adapters/proteina_target_catalog.json` is a reviewed projection of
+`configs/targets/targets_dict.yaml`, `configs/targets/ligand_targets_dict.yaml`
+and `configs/design_tasks/ame_dict_v2.yaml` at the adapter source revision. Each
+source URL and SHA-256 is retained. Explicit `target_path` becomes `bundle_path`
+relative to the workspace. The two AME entries lacking it preserve the pinned
+pipeline's fallback `target_data/<source>/<target_filename>.pdb`, not an invented
+`assets` prefix. Update this projection and its tests when changing the pinned
+runtime source; do not broaden accepted names independently of runtime support.
 
 The collector consumes upstream `RAW_*binder*_results_*_combined.csv` (falling
 back to `binder_results_*.csv`) and both PDBs referenced by each result row:

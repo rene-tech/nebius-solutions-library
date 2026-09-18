@@ -145,6 +145,11 @@ def test_semantic_validator_rejects_valid_hashes_with_broken_scientific_join(tmp
 def test_sampler_metadata_is_consistent_in_every_stage(variant: str) -> None:
     request = fixture("proteina-complexa", "positive-protein.json")
     request["parameters"].update(variant=variant, diffusion_steps=100, num_samples=3)
+    request["parameters"]["target_id"] = {
+        "protein-target": "02_PDL1",
+        "ligand-target": "39_7V11_LIGAND",
+        "ame": "M0024_1nzy_og",
+    }[variant]
     plan = adapter.compile_run(profile("proteina-complexa"), request, operation_id="metadata-regression")
     for stage in plan.invocations:
         assert "++generation.args.nsteps=100" in stage.argv

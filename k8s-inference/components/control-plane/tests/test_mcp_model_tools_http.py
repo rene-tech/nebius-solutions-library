@@ -3,6 +3,7 @@
 import json
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from types import SimpleNamespace
 from uuid import UUID
 
 import httpx2
@@ -13,13 +14,14 @@ from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 from test_api_mcp import bound_model_registry, build_runtime
-from test_scientific_batch_production import scientific_runtime
+from test_scientific_batch_production import profile_catalog_for, scientific_runtime
 
 from fs2_serve.api import _model_view, create_app
 from fs2_serve.mcp_server import CLIENT_ONLY_TOOLS, CORE_TOOLS, MCP_HTTP_PATH, mount_mcp
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.registry import Registry
 from fs2_serve.request_debug import InMemoryDebugStore
+from fs2_serve.scientific_batch.profile_catalog import ScientificRequestError
 
 
 async def _key(runtime, *, tenant="tenant-a", models=("qwen3-8b",), catalog=True, max_concurrency=4):
@@ -298,10 +300,17 @@ async def test_cosmos_typed_tools_preserve_mode_specific_runtime_defaults(regist
                 assert len(runtime.store.operations) == 1
 
             # The legacy opaque route remains compatible with the same valid T2I request.
-            generic = _data(await client.call_tool(
-                "invoke_model", {"model_id": "cosmos3-nano", "protocol": "native", "payload": payload,
-                           "idempotency_key": "cosmos-t2i-generic-valid-0001"},
-            ))
+            generic = _data(
+                await client.call_tool(
+                    "invoke_model",
+                    {
+                        "model_id": "cosmos3-nano",
+                        "protocol": "native",
+                        "payload": payload,
+                        "idempotency_key": "cosmos-t2i-generic-valid-0001",
+                    },
+                )
+            )
             assert generic["status"] == "queued"
 
         with pytest.raises(MCPError) as missing_reference:
@@ -481,3 +490,69 @@ async def test_http_scientific_flat_manifest_and_legacy_wrapper_share_one_run(re
         assert len(repository.records) == 1
         status = _data(await client.call_tool("get_scientific_status", {"operation_id": submitted["operation"]["id"]}))
         assert status["batch"]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_proteina_target_catalog_is_explicit_caller_scoped_discovery_not_tool_bloat(
+    registry,
+    cipher,
+    hasher,
+    monkeypatch,
+):
+    runtime, *_ = scientific_runtime(registry, cipher, hasher)
+    runtime.scientific_batches.profiles = profile_catalog_for("proteina-complexa")
+    # Reuse the synthetic profile fixture's qualified discovery seam. Production
+    # target catalog publication remains behind the same authorized model loop.
+    monkeypatch.setattr(
+        "fs2_serve.mcp_server._scientific_tool_profiles",
+        lambda _runtime, principal: (
+            (SimpleNamespace(model_id="proteina-complexa", mcp_tool_name="submit_protein_design"),)
+            if "proteina-complexa" in principal.models
+            else ()
+        ),
+    )
+    app = _app(runtime)
+    key = await _key(runtime, models=("proteina-complexa",))
+    restricted = await _key(runtime, tenant="other", models=("qwen3-8b",))
+    async with app.router.lifespan_context(app):
+        async with _connection(runtime, app, key) as client:
+            tools = await client.list_tools()
+            assert "M0024_1nzy_og" not in json.dumps([tool.model_dump() for tool in tools.tools])
+            found = _data(await client.call_tool("get_model_schema", {"model_id": "proteina-complexa"}))
+            targets = found["target_catalog"]["variants"]["protein-target"]["targets"]
+            assert targets["02_PDL1"]["bundle_path"] == targets["03_PDL1_AAV"]["bundle_path"]
+            assert targets["02_PDL1"]["description"] != targets["03_PDL1_AAV"]["description"]
+        async with _connection(runtime, app, restricted) as client:
+            with pytest.raises(MCPError, match="outside token policy"):
+                await client.call_tool("get_model_schema", {"model_id": "proteina-complexa"})
+
+
+@pytest.mark.asyncio
+async def test_scientific_mcp_exposes_only_explicit_public_parameter_detail(registry, cipher, hasher, monkeypatch):
+    runtime, _, repository, _, pointer = scientific_runtime(registry, cipher, hasher)
+    public_detail = "Choose 02_PDL1 or 03_PDL1_AAV from target_catalog; these have different hotspots."
+
+    async def reject(**kwargs):
+        raise ScientificRequestError("INTERNAL_PATH_MUST_NOT_LEAK", public_detail=public_detail)
+
+    monkeypatch.setattr(runtime.scientific_batches, "submit", reject)
+    app = _app(runtime)
+    key = await _key(runtime, models=("protein-design",))
+    request = {
+        "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "operation": "design",
+        "service_class": "customer-batch",
+        "input_manifest": pointer,
+        "parameters": {},
+    }
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        for tool, args in (
+            ("submit_scientific_run", {"model_id": "protein-design", "request": request}),
+            ("submit_protein_design", request),
+        ):
+            with pytest.raises(MCPError) as caught:
+                await client.call_tool(tool, args)
+            assert caught.value.error.code == -32602
+            assert public_detail in str(caught.value)
+            assert "INTERNAL_PATH_MUST_NOT_LEAK" not in str(caught.value)
+        assert repository.records == {}

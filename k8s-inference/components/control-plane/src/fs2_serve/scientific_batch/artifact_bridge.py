@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -43,7 +44,7 @@ from .models import (
     WorkloadResource,
     accelerator_admission_projection,
 )
-from .profile_catalog import ScientificProfileCatalog, ScientificProfileError
+from .profile_catalog import ScientificProfileCatalog, ScientificProfileError, ScientificRequestError
 
 _ERROR = re.compile(r"[^A-Z0-9_]+")
 _MAX_MANIFEST_BYTES = 8 * 1024 * 1024
@@ -202,6 +203,44 @@ class ArtifactServiceBridge:
             ),
             access_context=access,
         )
+
+    async def validate_model_input(
+        self,
+        model_id: str,
+        parameters: Mapping[str, Any],
+        admission: ScientificInputAdmission,
+        *,
+        tenant_id: str,
+    ) -> None:
+        """CPU-only model content checks after pointer authorization and plan parsing."""
+        if model_id != "proteina-complexa":
+            return
+        from .adapters.primitives import ScientificParameterError
+        from .adapters.proteina_complexa import MAX_INPUT_BYTES, TARGET_BUNDLE_ID
+        from .adapters.proteina_targets import validate_target_bundle
+
+        if self.content_reader is None:
+            raise ScientificProfileError("scientific input content reader is unavailable")
+        bundle = next(entry for entry in admission.manifest.entries if entry.logical_artifact_id == TARGET_BUNDLE_ID)
+        # The prior admission proved ownership and exact metadata. Reuse its
+        # authorized reader; transport/authorization failures keep their own
+        # exception class rather than becoming a scientific-input rejection.
+        payload = await self.content_reader.read(bundle.artifact_id, tenant_id=tenant_id, maximum_bytes=MAX_INPUT_BYTES)
+        if len(payload) != bundle.size_bytes or hashlib.sha256(payload).hexdigest() != _raw_digest(bundle.digest):
+            raise ArtifactNotFoundError("target bundle bytes differ from verified metadata")
+        try:
+            await asyncio.to_thread(
+                validate_target_bundle,
+                payload,
+                variant=str(parameters["variant"]),
+                target_id=str(parameters["target_id"]),
+                compression=bundle.compression,
+                maximum_bytes=MAX_INPUT_BYTES,
+            )
+        except ScientificParameterError as error:
+            raise ScientificRequestError(
+                "scientific target bundle is invalid", public_detail=error.public_detail
+            ) from error
 
     async def artifact_response(self, artifact_id: UUID, *, tenant_id: str) -> Mapping[str, Any]:
         artifact = await self.artifacts.get_artifact(artifact_id, tenant_id=tenant_id)

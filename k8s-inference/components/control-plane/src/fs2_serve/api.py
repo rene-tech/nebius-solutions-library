@@ -881,8 +881,12 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         return _error(503, "route_unavailable", "model route is unavailable")
 
     @app.exception_handler(ScientificRequestError)
-    async def scientific_request_error(_: Request, __: ScientificRequestError) -> JSONResponse:
-        return _error(422, "scientific_request_invalid", "request violates the canonical scientific contract")
+    async def scientific_request_error(_: Request, error: ScientificRequestError) -> JSONResponse:
+        return _error(
+            422,
+            "scientific_request_invalid",
+            error.public_detail or "request violates the canonical scientific contract",
+        )
 
     @app.exception_handler(ScientificBatchNotFoundError)
     async def scientific_not_found(_: Request, __: ScientificBatchNotFoundError) -> JSONResponse:

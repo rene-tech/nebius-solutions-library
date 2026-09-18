@@ -69,7 +69,8 @@ from .request_telemetry import (
 )
 from .runtime import RuntimeOperationError
 from .scientific_artifacts import ArtifactNotFoundError, ArtifactServiceError
-from .scientific_batch.profile_catalog import ScientificProfileError
+from .scientific_batch.adapters.proteina_targets import public_target_catalog
+from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
 from .scientific_batch.service import ScientificProfileDiscovery
 from .scientific_input_uploads import ScientificInputUploadRequest
 from .scientific_run_result import ScientificArtifactManifest
@@ -856,10 +857,13 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                     catalog = runtime.scientific_batches.profiles
                     profile = catalog.get(model_id)
                     contract = scientific_contract_for(profile, catalog=catalog)
-                    return {
+                    response: dict[str, Any] = {
                         "model_id": model_id,
                         "contracts": [contract_view(contract, profile.mcp_tool_name, scientific=True)],
                     }
+                    if model_id == "proteina-complexa":
+                        response["target_catalog"] = public_target_catalog()
+                    return response
         raise MCPError(code=INVALID_PARAMS, message="model or protocol is outside token policy")
 
     async def invoke_model(
@@ -991,14 +995,19 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             traceparent = (ctx.headers or {}).get("traceparent")
         except ValueError:
             traceparent = None
-        result = await runtime.scientific_batches.submit(
-            principal=principal,
-            model_id=model_id,
-            request=request,
-            idempotency_key=idempotency_key or f"mcp-scientific-{uuid4()}",
-            traceparent=traceparent,
-            require_mcp_invocable=True,
-        )
+        try:
+            result = await runtime.scientific_batches.submit(
+                principal=principal,
+                model_id=model_id,
+                request=request,
+                idempotency_key=idempotency_key or f"mcp-scientific-{uuid4()}",
+                traceparent=traceparent,
+                require_mcp_invocable=True,
+            )
+        except ScientificRequestError as error:
+            if error.public_detail is None:
+                raise
+            raise MCPError(code=INVALID_PARAMS, message=error.public_detail) from None
         observe_mcp_result(result)
         return result
 
