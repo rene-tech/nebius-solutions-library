@@ -27,16 +27,10 @@ resource "terraform_data" "deployment_contract" {
       error_message = "Enabled scientific batch requires a non-empty schema-v3 execution map with one unique entry per model. Omit deployment.scientific_batch.execution_map to use the committed generated map."
     }
 
-    # A map is one qualified unit: Helm hashes its exact compact JSON bytes and
-    # every included profile binds that whole digest. Checking the same bytes at
-    # the facade prevents a plausible-looking override from reaching the stage
-    # with stale profile or execution identities.
+    # Preserve old qualification only for byte-equivalent historical model
+    # sets, while newly added models bind the current execution recipe.
     precondition {
-      condition = !var.deployment.scientific_batch.enabled || try(alltrue([
-        for model in local.scientific_execution_map.models :
-        local.scientific_workload_profiles_by_model_id[model.model_id].qualification.execution_map_sha256 == local.scientific_execution_map_sha256 &&
-        local.scientific_workload_profiles_by_model_id[model.model_id].execution_identity.execution_identity_sha256 == model.execution_identity_sha256
-      ]), false)
+      condition     = !var.deployment.scientific_batch.enabled || local.scientific_execution_identities_valid
       error_message = "The effective scientific execution map does not match the committed workload-profile qualification digest and execution identities. Regenerate and review the map and profiles together; do not paste or edit generated map fields independently."
     }
 

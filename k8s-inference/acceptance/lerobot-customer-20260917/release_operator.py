@@ -69,6 +69,10 @@ def main() -> None:
         rows = successful(client.get("/admin/api/v1/keys", params={"tenant_id": "robotics"}))["data"]["items"]
         check(isinstance(rows, list), "invalid_token_list")
         source = source_policy(rows)
+        users = successful(client.get("/admin/api/v1/users", params={"tenant_id": "robotics"}))["data"]["items"]
+        owners = [row for row in users if row["principal_id"] == source["principal_id"]]
+        check(len(owners) == 1 and owners[0]["enabled"], "enabled_customer_owner_required")
+        owner = owners[0]
         intended = dict(
             policy(source), models=sorted(MODELS), scopes=sorted(set(source["scopes"]) | {"artifacts.write"})
         )
@@ -77,6 +81,7 @@ def main() -> None:
             "action": args.action,
             "source_token_id": source["id"],
             "before_policy": policy(source),
+            "owner": {field: owner[field] for field in ("id", "principal_id", "enabled", "app_ids")},
         }
         if args.action == "inspect":
             receipt["intended_canary_policy"] = intended
@@ -98,7 +103,27 @@ def main() -> None:
                     "policy": intended,
                 },
             )
+            apps = successful(client.get("/admin/api/v1/apps"))["data"]["items"]
+            selected_apps = [app["app_id"] for app in apps if app["public_model_id"] in MODELS]
+            check(len(selected_apps) == 2, "both_canary_apps_required")
+            canary_users = successful(client.get("/admin/api/v1/users", params={"tenant_id": "robotics"}))["data"][
+                "items"
+            ]
+            canary_rows = [row for row in canary_users if row["principal_id"] == name]
+            check(len(canary_rows) == 1, "canary_owner_missing")
+            canary_owner = successful(
+                client.patch(
+                    "/admin/api/v1/users/" + canary_rows[0]["id"],
+                    json={
+                        "display_name": name,
+                        "kind": "service",
+                        "enabled": True,
+                        "app_ids": sorted(selected_apps) if owner["app_ids"] is not None else None,
+                    },
+                )
+            )["data"]
             receipt.update(token_id=issued["key"]["id"], policy=intended, existing_keys_changed=False)
+            receipt["canary_owner"] = {field: canary_owner[field] for field in ("id", "enabled", "app_ids")}
         elif args.action == "revoke":
             key = private_json(args.key_file)
             check(key.get("disposable") is True, "disposable_key_required")
@@ -109,8 +134,27 @@ def main() -> None:
             # Expected authentication failure is the acceptance assertion here.
             response = client.get("/v1/models", headers={"authorization": "Bearer " + key["secret"]})
             check(response.status_code == 401, "revoked_key_still_usable")
+            canary_owners = [row for row in users if row["principal_id"] == key["principal_id"]]
+            if len(canary_owners) == 1 and canary_owners[0]["source"] == "configured":
+                disabled = successful(
+                    client.patch("/admin/api/v1/users/" + canary_owners[0]["id"], json={"enabled": False})
+                )["data"]
+                check(not disabled["enabled"], "canary_owner_not_disabled")
+                receipt["canary_owner_disabled"] = True
             receipt.update(token_id=key["token_id"], revoked_at=revoked["revoked_at"], public_status=401)
         else:
+            # Some users have an additional explicit App restriction. Extend
+            # only that list, never clear it or change unrelated user settings.
+            if owner["app_ids"] is not None:
+                apps = successful(client.get("/admin/api/v1/apps"))["data"]["items"]
+                matches = [app for app in apps if app["public_model_id"] == APP]
+                check(len(matches) == 1, "exact_dataset_app_required")
+                app_ids = sorted(set(owner["app_ids"]) | {matches[0]["app_id"]})
+                updated = successful(client.patch("/admin/api/v1/users/" + owner["id"], json={"app_ids": app_ids}))[
+                    "data"
+                ]
+                check(updated["app_ids"] == app_ids and updated["enabled"], "owner_grant_mismatch")
+                receipt["owner_app_ids_after"] = app_ids
             successful(
                 client.patch(
                     "/admin/api/v1/keys/" + source["id"],
