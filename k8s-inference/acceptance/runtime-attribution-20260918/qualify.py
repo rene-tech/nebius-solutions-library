@@ -26,6 +26,7 @@ from fs2_serve.runtime import RuntimeClient
 from fs2_serve.runtime_kubernetes import KubernetesRuntimeMetadataProvider
 
 MODEL = "nv-reason-cxr-3b"
+TEST_MODEL = "fs2-cxr-attribution-20260918"
 IMAGE = "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
 REVISION = "056bd0383b35226554da9dc5866e095df174ae19"
 SERVICE = "fs2-cxr-attribution-20260918"
@@ -80,7 +81,7 @@ def operation():
         tenant_id="isolated-qualification",
         principal_id="local-candidate-probe",
         token_id=uuid4(),
-        model_id=MODEL,
+        model_id=TEST_MODEL,
         model_revision=REVISION,
         protocol="openai-chat",
         operation="chat",
@@ -102,7 +103,7 @@ def model(origin):
     # Explicit harness binding to the isolated Service, not a fabricated response
     # or a published catalog qualification. Production registry is not mutated.
     return SimpleNamespace(
-        id=MODEL,
+        id=TEST_MODEL,
         dynamic_policy=None,
         gateway=SimpleNamespace(model_revision=REVISION),
         binding=SimpleNamespace(

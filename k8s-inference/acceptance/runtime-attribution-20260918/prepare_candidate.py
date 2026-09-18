@@ -13,6 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL = "nv-reason-cxr-3b"
+TEST_MODEL = "fs2-cxr-attribution-20260918"
 TEMPLATE_NAME = MODEL + ".response-identity-20260918"
 MODULE = "fs2_runtime_identity.RuntimeIdentityMiddleware"
 IMAGE = "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
@@ -105,7 +106,7 @@ def isolated(template, nodes):
             "name": f"fs2-cxr-attribution-{index}-20260918",
             "namespace": "fs2-models",
             "annotations": pod["metadata"]["annotations"],
-            "labels": {**selector, "fs2-serve.nebius.ai/model-id": MODEL},
+            "labels": {**selector, "fs2-serve.nebius.ai/model-id": TEST_MODEL},
         }
         spec = pod["spec"]
         spec.update(

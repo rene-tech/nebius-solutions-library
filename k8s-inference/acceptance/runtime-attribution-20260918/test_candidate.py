@@ -81,6 +81,7 @@ def test_isolated_pods_cannot_join_production_service_and_preserve_resources():
         "spec"
     ]["template"]["spec"]
     for pod in [r for r in bundle["items"] if r["kind"] == "Pod"]:
+        assert pod["metadata"]["labels"]["fs2-serve.nebius.ai/model-id"] != MODEL
         assert not all(
             pod["metadata"]["labels"].get(k) == v
             for k, v in production["spec"]["selector"].items()
