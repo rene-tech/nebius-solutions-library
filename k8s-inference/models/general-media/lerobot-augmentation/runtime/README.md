@@ -15,6 +15,17 @@ not ordered by first occurrence are rejected before GPU work, rather than being
 silently normalized by the pinned writer. Output automatic-feature dtypes are
 retained from source metadata.
 
+The pinned reader stores singleton numeric features (for example the recorded
+ALOHA `next.done` boolean) as scalar Arrow values, while its writer requires an
+array of shape `(1,)`. The rewrite explicitly reshapes only that exact scalar /
+declared-singleton combination without changing dtype or bytes. All auxiliary
+numeric shapes are checked during source validation before generation; other
+shape/dtype mismatches are rejected, never flattened, padded or silently cast.
+Regression coverage includes all 128 frames and both recorded ALOHA episodes,
+comparing every nonvideo value after a full write/reload. This source repair
+requires a new worker image and public acceptance; it does not retroactively
+make the earlier failed customer operation successful.
+
 ## Practical limits
 
 - Uploaded compressed source and each compressed output artifact: 5 GiB.

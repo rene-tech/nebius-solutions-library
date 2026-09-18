@@ -287,6 +287,29 @@ def source_row(dataset: Any, index: int, *, rows: Any = None) -> Mapping[str, An
     return row
 
 
+def _writer_feature(name: str, value: object, feature: Mapping[str, Any]) -> object:
+    """Bridge the pinned reader's scalar storage to the writer's singleton shape.
+
+    LeRobot stores declared ``shape=(1,)`` numeric columns as scalar Arrow
+    values. The writer nevertheless requires a one-element ndarray. Only this
+    representation change is permitted; no values, dtypes or other dimensions
+    are changed, flattened, padded or discarded.
+    """
+    import numpy as np
+
+    if feature["dtype"] in {"video", "image", "string", "language"}:
+        return value
+    array = np.asarray(value)
+    expected = tuple(feature["shape"])
+    if array.dtype != np.dtype(feature["dtype"]):
+        raise DatasetError(f"feature {name} dtype differs from info.json before dataset writing")
+    if array.shape == () and expected == (1,):
+        return array.reshape(1)
+    if array.shape != expected:
+        raise DatasetError(f"feature {name} shape differs from info.json before dataset writing")
+    return array
+
+
 def open_and_validate(
     root: Path,
     *,
@@ -430,6 +453,11 @@ def open_and_validate(
             for key in ("action", *states):
                 if not np.isfinite(np.asarray(raw[key])).all():
                     raise DatasetError(f"episode {index} {key} contains non-finite values")
+            # Check auxiliary numeric features too, before any GPU generation.
+            # In particular, recorded datasets may include scalar next.done.
+            for key, feature in features.items():
+                if key not in AUTO_FEATURES and key not in cameras:
+                    _writer_feature(key, raw[key], feature)
             decoded_row = dataset[row_index]
             for camera in cameras:
                 expected_shape = tuple(int(part) for part in cast(list[int], features[camera]["shape"]))
@@ -613,7 +641,7 @@ def rewrite_variant(
                 original = source_row(source, row_index, rows=raw_rows)
                 frame.update(
                     {
-                        key: value
+                        key: _writer_feature(key, value, source.features[key])
                         for key, value in original.items()
                         if key not in AUTO_FEATURES and key not in inspection.cameras
                     }
