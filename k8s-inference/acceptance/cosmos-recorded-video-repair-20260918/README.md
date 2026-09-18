@@ -104,6 +104,29 @@ recorded digest, allowing the separately frozen quiet helper while preserving
 the original source bytes and all historical bundles. These packaging changes
 do not select a snapshot, change a customer cache policy or qualify other GPUs.
 
+The final optional package is in `warmed-snapshot/`: a bound qualification
+report, `bundle.json`, and the exact isolated `renderer-pod.json` used for the
+fourth strict restore lifecycle. Its read-only inventory covers
+44,626,867,078 bytes, 487 files and 563 filesystem entries (including modes and
+ownership), with manifest SHA256
+`573bf6acacb90461ca0cc06f850f550dc48e34579d79f866da2b1691097ff120`.
+`prepare_snapshot.py` checks the immutable inventory, successful capture,
+exact runtime identity, decoded outputs and cross-GPU content hashes before
+constructing the package. It never applies resources or selects a cache level.
+
+The real production renderer was then exercised against the unchanged V4
+template, using its native resource bounds and probes, with `fallback=fail`.
+The original recorded request and two unseen shapes succeeded and matched
+the prior outputs byte-for-byte. That Pod reached Ready 35 seconds after
+container start (approximately 40 seconds from scheduling, with image/cache
+already present). It has been deleted. This verifies the optional bundle's
+storage-path and wrapper integration, not public request routing or cold-image
+latency. Its report remains `production_selectable: false` until coordinated
+registry publication and an ordinary public request verify that path.
+The historical `cosmos3-nano-bundle.json`, old r7 files and owner policy remain
+unchanged. The new package is optional input to the existing GPU snapshot
+registry; it is not automatically included by a global Terraform default.
+
 The broader run exposed an independent adapter bug: explicitly requested
 derived edge/blur presets were dropped when `control_weight` remained its
 default 1.0. A separately versioned adapter candidate preserves those supplied

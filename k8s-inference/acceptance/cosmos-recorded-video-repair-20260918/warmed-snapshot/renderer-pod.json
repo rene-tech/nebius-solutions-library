@@ -1,0 +1,611 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "name": "fs2-cosmos-rendered-snapshot-20260918",
+    "namespace": "fs2-models",
+    "labels": {
+      "qualification.fs2.nebius/task": "cosmos-recorded-video-20260918"
+    }
+  },
+  "spec": {
+    "automountServiceAccountToken": false,
+    "containers": [
+      {
+        "command": [
+          "python3",
+          "/snapshot-entrypoint/serving_entrypoint.py",
+          "--directory",
+          "/checkpoints/cosmos-r7",
+          "--source-directory",
+          "/checkpoints/cosmos-r7/restore-source",
+          "--request-mode",
+          "server",
+          "--fallback",
+          "fail",
+          "--allow-device-remap",
+          "restore",
+          "--",
+          "python3",
+          "/snapshot-source/serving_launcher.py",
+          "vllm",
+          "serve",
+          "/model-cache/cosmos3-nano/sha256/dfa7b03382ba78d7f80703652706c3cfa777cefac48634df49345c4302af2c95/payload",
+          "--omni",
+          "--served-model-name",
+          "nvidia/Cosmos3-Nano",
+          "--revision",
+          "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+          "--host",
+          "0.0.0.0",
+          "--port",
+          "8000",
+          "--init-timeout",
+          "1800",
+          "--no-guardrails",
+          "--model-class-name",
+          "Cosmos3OmniDiffusersPipeline"
+        ],
+        "env": [
+          {
+            "name": "DO_NOT_TRACK",
+            "value": "1"
+          },
+          {
+            "name": "FS2_MODEL_PRECISION",
+            "value": "bfloat16"
+          },
+          {
+            "name": "HF_HUB_DISABLE_TELEMETRY",
+            "value": "1"
+          },
+          {
+            "name": "HF_HUB_OFFLINE",
+            "value": "1"
+          },
+          {
+            "name": "HF_HOME",
+            "value": "/runtime-cache/huggingface"
+          },
+          {
+            "name": "HOME",
+            "value": "/runtime-cache/home"
+          },
+          {
+            "name": "VLLM_NO_USAGE_STATS",
+            "value": "1"
+          },
+          {
+            "name": "XDG_CACHE_HOME",
+            "value": "/runtime-cache/xdg"
+          },
+          {
+            "name": "TRANSFORMERS_OFFLINE",
+            "value": "1"
+          },
+          {
+            "name": "FS2_SNAPSHOT_RUNTIME_IMAGE",
+            "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32"
+          },
+          {
+            "name": "FS2_SNAPSHOT_TOOLS_IMAGE",
+            "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4"
+          },
+          {
+            "name": "FS2_MODEL_REVISION",
+            "value": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
+          },
+          {
+            "name": "FS2_RUNTIME_ID",
+            "value": "cosmos3-nano"
+          },
+          {
+            "name": "FS2_SNAPSHOT_READY_FILE",
+            "value": "/checkpoints/cosmos-r7/runtime-ready.json"
+          },
+          {
+            "name": "USE_LIBUV",
+            "value": "0"
+          },
+          {
+            "name": "FLASHINFER_WORKSPACE_BASE",
+            "value": "/checkpoints/cosmos-r7/cache/flashinfer-workspace"
+          },
+          {
+            "name": "PATH",
+            "value": "/tools/usr/sbin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+          }
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+        "imagePullPolicy": "IfNotPresent",
+        "livenessProbe": {
+          "failureThreshold": 4,
+          "periodSeconds": 15,
+          "tcpSocket": {
+            "port": "upstream"
+          },
+          "timeoutSeconds": 3
+        },
+        "name": "vllm-omni",
+        "ports": [
+          {
+            "containerPort": 8000,
+            "name": "upstream",
+            "protocol": "TCP"
+          }
+        ],
+        "readinessProbe": {
+          "failureThreshold": 3,
+          "periodSeconds": 5,
+          "timeoutSeconds": 3,
+          "exec": {
+            "command": [
+              "python3",
+              "/snapshot-entrypoint/serving_entrypoint.py",
+              "ready"
+            ]
+          }
+        },
+        "resources": {
+          "limits": {
+            "cpu": "32",
+            "ephemeral-storage": "32Gi",
+            "memory": "256Gi",
+            "nvidia.com/gpu": "1"
+          },
+          "requests": {
+            "cpu": "8",
+            "ephemeral-storage": "8Gi",
+            "memory": "128Gi",
+            "nvidia.com/gpu": "1"
+          }
+        },
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "runAsNonRoot": false,
+          "capabilities": {
+            "add": [
+              "SYS_ADMIN",
+              "SYS_PTRACE",
+              "CHECKPOINT_RESTORE",
+              "NET_ADMIN",
+              "SYS_TIME"
+            ]
+          },
+          "seccompProfile": {
+            "type": "Unconfined"
+          },
+          "appArmorProfile": {
+            "type": "Unconfined"
+          }
+        },
+        "startupProbe": {
+          "failureThreshold": 240,
+          "periodSeconds": 10,
+          "timeoutSeconds": 5,
+          "exec": {
+            "command": [
+              "python3",
+              "/snapshot-entrypoint/serving_entrypoint.py",
+              "ready"
+            ]
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/model-cache",
+            "name": "model-cache",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/runtime-cache",
+            "name": "snapshot-checkpoints",
+            "subPath": "cosmos-r7/runtime-cache"
+          },
+          {
+            "mountPath": "/tmp",
+            "name": "snapshot-checkpoints",
+            "subPath": "cosmos-r7/tmp"
+          },
+          {
+            "mountPath": "/cosmos-control-tmp",
+            "name": "cosmos-control-tmp"
+          },
+          {
+            "mountPath": "/dev/shm",
+            "name": "runtime-shm"
+          },
+          {
+            "name": "snapshot-tools",
+            "mountPath": "/tools"
+          },
+          {
+            "name": "snapshot-source",
+            "mountPath": "/snapshot-source",
+            "readOnly": true
+          },
+          {
+            "name": "snapshot-entrypoint",
+            "mountPath": "/snapshot-entrypoint",
+            "readOnly": true
+          },
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/checkpoints"
+          },
+          {
+            "name": "snapshot-bundle",
+            "mountPath": "/snapshot-bundle",
+            "subPath": "science-cosmos-warmed-20260918-v4-quiet/cosmos-r7",
+            "readOnly": true
+          },
+          {
+            "name": "snapshot-bundle",
+            "mountPath": "/checkpoints/cosmos-r7/images",
+            "subPath": "science-cosmos-warmed-20260918-v4-quiet/cosmos-r7/images",
+            "readOnly": true
+          }
+        ]
+      },
+      {
+        "command": [
+          "python3",
+          "/adapter/adapter.py"
+        ],
+        "env": [
+          {
+            "name": "HOME",
+            "value": "/tmp/home"
+          },
+          {
+            "name": "POD_NAME",
+            "valueFrom": {
+              "fieldRef": {
+                "fieldPath": "metadata.name"
+              }
+            }
+          },
+          {
+            "name": "PYTHONDONTWRITEBYTECODE",
+            "value": "1"
+          }
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+        "imagePullPolicy": "IfNotPresent",
+        "livenessProbe": {
+          "failureThreshold": 4,
+          "httpGet": {
+            "path": "/healthz",
+            "port": "adapter"
+          },
+          "periodSeconds": 15,
+          "timeoutSeconds": 3
+        },
+        "name": "bounded-json-adapter",
+        "ports": [
+          {
+            "containerPort": 8080,
+            "name": "adapter",
+            "protocol": "TCP"
+          }
+        ],
+        "readinessProbe": {
+          "failureThreshold": 3,
+          "httpGet": {
+            "path": "/readyz",
+            "port": "adapter"
+          },
+          "periodSeconds": 5,
+          "timeoutSeconds": 3
+        },
+        "resources": {
+          "limits": {
+            "cpu": "2",
+            "ephemeral-storage": "1Gi",
+            "memory": "2Gi"
+          },
+          "requests": {
+            "cpu": "250m",
+            "ephemeral-storage": "128Mi",
+            "memory": "512Mi"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          },
+          "readOnlyRootFilesystem": true
+        },
+        "startupProbe": {
+          "failureThreshold": 30,
+          "httpGet": {
+            "path": "/healthz",
+            "port": "adapter"
+          },
+          "periodSeconds": 2,
+          "timeoutSeconds": 2
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/adapter",
+            "name": "adapter",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/tmp",
+            "name": "adapter-tmp"
+          },
+          {
+            "mountPath": "/cosmos-control-tmp",
+            "name": "cosmos-control-tmp"
+          }
+        ]
+      }
+    ],
+    "enableServiceLinks": false,
+    "initContainers": [
+      {
+        "name": "snapshot-local-address",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+        "command": [
+          "python3",
+          "/snapshot-address/restore_loopback_address.py",
+          "10.6.46.187"
+        ],
+        "env": [
+          {
+            "name": "NVIDIA_VISIBLE_DEVICES",
+            "value": "void"
+          }
+        ],
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "runAsNonRoot": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ],
+            "add": [
+              "NET_ADMIN"
+            ]
+          }
+        },
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "64Mi"
+          },
+          "limits": {
+            "cpu": "1",
+            "memory": "128Mi"
+          }
+        },
+        "volumeMounts": [
+          {
+            "name": "snapshot-address-source",
+            "mountPath": "/snapshot-address",
+            "readOnly": true
+          }
+        ]
+      },
+      {
+        "name": "snapshot-tools",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+        "command": [
+          "/bin/sh",
+          "-c",
+          "cp -a /snapshot-binaries/. /tools/ && cp -L /lib/x86_64-linux-gnu/libc.so.6 /lib/x86_64-linux-gnu/libm.so.6 /lib/x86_64-linux-gnu/ld-linux-x86-64.so.2 /tools/lib/ && mkdir -p \"$1/runtime-cache\" \"$1/tmp\" && for part in runtime-cache tmp; do if [ -d \"/snapshot-bundle/$part\" ]; then { fs2_copy_archive=$(mktemp /tmp/fs2-snapshot-copy.XXXXXX) && tar --format=pax --no-acls --no-xattrs --numeric-owner -C \"/snapshot-bundle/$part\" -cf \"$fs2_copy_archive\" . && tar --no-acls --no-xattrs --numeric-owner --same-owner --same-permissions -C \"$1/$part\" -xf \"$fs2_copy_archive\"; fs2_copy_status=$?; rm -f \"$fs2_copy_archive\"; (exit \"$fs2_copy_status\"); } || exit $?; fi; done && mkdir -p /tools/usr/sbin /tools/usr/lib/x86_64-linux-gnu && cp -L /usr/sbin/xtables-nft-multi /tools/usr/sbin/ && cp -L /usr/lib/x86_64-linux-gnu/libxtables.so.12 /usr/lib/x86_64-linux-gnu/libmnl.so.0 /usr/lib/x86_64-linux-gnu/libnftnl.so.11 /tools/usr/lib/x86_64-linux-gnu/ && cp -a /usr/lib/x86_64-linux-gnu/xtables /tools/usr/lib/x86_64-linux-gnu/ && for tool in iptables ip6tables; do cp /snapshot-network-source/iptables /tools/usr/sbin/$tool; chmod 0555 /tools/usr/sbin/$tool; done && { mkdir -p \"${2}\"; ln -s /snapshot-bundle/images \"${2}/images\"; ln -s /snapshot-bundle/filesystem \"${2}/filesystem\"; if { fs2_copy_archive=$(mktemp /tmp/fs2-snapshot-copy.XXXXXX) && tar --format=pax --no-acls --no-xattrs --numeric-owner -C \"/snapshot-bundle\" -cf \"$fs2_copy_archive\" cache worker.log && tar --no-acls --no-xattrs --numeric-owner --same-owner --same-permissions -C \"${2}\" -xf \"$fs2_copy_archive\"; fs2_copy_status=$?; rm -f \"$fs2_copy_archive\"; (exit \"$fs2_copy_status\"); }; then if printf \"%s  %s\\n\" \"${3}\" \"${2}/worker.log\" | sha256sum -c -; then chmod \"${4}\" \"${2}/worker.log\" && chown \"${5}:${6}\" \"${2}/worker.log\"; else mv \"${2}/worker.log\" \"${2}/worker.log.invalid\"; fi; fi; true; }",
+          "snapshot-tools",
+          "/checkpoints/cosmos-r7",
+          "/checkpoints/cosmos-r7/restore-source",
+          "9170d79175cdc01859a597f7a1fccce10eae27b2bb8735f750e5f3974e315f07",
+          "0644",
+          "0",
+          "1000"
+        ],
+        "securityContext": {
+          "runAsUser": 0,
+          "runAsGroup": 0,
+          "runAsNonRoot": false
+        },
+        "volumeMounts": [
+          {
+            "name": "snapshot-tools",
+            "mountPath": "/tools"
+          },
+          {
+            "name": "snapshot-checkpoints",
+            "mountPath": "/checkpoints"
+          },
+          {
+            "name": "snapshot-bundle",
+            "mountPath": "/snapshot-bundle",
+            "subPath": "science-cosmos-warmed-20260918-v4-quiet/cosmos-r7",
+            "readOnly": true
+          },
+          {
+            "name": "snapshot-network-source",
+            "mountPath": "/snapshot-network-source",
+            "readOnly": true
+          }
+        ]
+      },
+      {
+        "command": [
+          "python3",
+          "/contract/localize.py"
+        ],
+        "env": [
+          {
+            "name": "FS2_CACHE_ROOT",
+            "value": "/model-cache"
+          },
+          {
+            "name": "FS2_LOCALIZATION_WORKERS",
+            "value": "16"
+          },
+          {
+            "name": "HF_HUB_DISABLE_TELEMETRY",
+            "value": "1"
+          },
+          {
+            "name": "HF_HOME",
+            "value": "/model-cache/huggingface"
+          }
+        ],
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+        "imagePullPolicy": "IfNotPresent",
+        "name": "localize-model",
+        "resources": {
+          "limits": {
+            "cpu": "16",
+            "ephemeral-storage": "8Gi",
+            "memory": "32Gi"
+          },
+          "requests": {
+            "cpu": "4",
+            "ephemeral-storage": "1Gi",
+            "memory": "8Gi"
+          }
+        },
+        "securityContext": {
+          "allowPrivilegeEscalation": false,
+          "capabilities": {
+            "drop": [
+              "ALL"
+            ]
+          }
+        },
+        "volumeMounts": [
+          {
+            "mountPath": "/contract",
+            "name": "adapter",
+            "readOnly": true
+          },
+          {
+            "mountPath": "/model-cache",
+            "name": "model-cache"
+          }
+        ]
+      }
+    ],
+    "nodeSelector": {
+      "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+      "accelerator.fs2.nebius/pool-id": "h100-reserved-8x",
+      "kubernetes.io/arch": "amd64"
+    },
+    "securityContext": {
+      "seccompProfile": {
+        "type": "RuntimeDefault"
+      },
+      "supplementalGroups": [
+        1000
+      ]
+    },
+    "serviceAccountName": "cosmos3-nano",
+    "terminationGracePeriodSeconds": 300,
+    "tolerations": [
+      {
+        "effect": "NoSchedule",
+        "key": "dedicated",
+        "operator": "Equal",
+        "value": "fs2-inference"
+      }
+    ],
+    "volumes": [
+      {
+        "configMap": {
+          "defaultMode": 292,
+          "name": "cosmos3-nano-adapter-8a6c2aab56dc"
+        },
+        "name": "adapter"
+      },
+      {
+        "emptyDir": {
+          "sizeLimit": "2Gi"
+        },
+        "name": "adapter-tmp"
+      },
+      {
+        "name": "model-cache",
+        "persistentVolumeClaim": {
+          "claimName": "cosmos3-nano-cache-rwx-8d453c7f"
+        }
+      },
+      {
+        "emptyDir": {
+          "sizeLimit": "16Gi"
+        },
+        "name": "runtime-cache"
+      },
+      {
+        "emptyDir": {
+          "sizeLimit": "32Gi"
+        },
+        "name": "tmp"
+      },
+      {
+        "emptyDir": {
+          "sizeLimit": "512Mi"
+        },
+        "name": "cosmos-control-tmp"
+      },
+      {
+        "emptyDir": {
+          "medium": "Memory",
+          "sizeLimit": "2Gi"
+        },
+        "name": "runtime-shm"
+      },
+      {
+        "name": "snapshot-tools",
+        "emptyDir": {}
+      },
+      {
+        "name": "snapshot-checkpoints",
+        "emptyDir": {}
+      },
+      {
+        "name": "snapshot-source",
+        "configMap": {
+          "name": "fs2-cosmos-quiet-capture-diagnostic-20260918",
+          "defaultMode": 292
+        }
+      },
+      {
+        "name": "snapshot-entrypoint",
+        "configMap": {
+          "name": "fs2-cosmos-log-bridge-diagnostic-20260918",
+          "defaultMode": 292
+        }
+      },
+      {
+        "name": "snapshot-network-source",
+        "configMap": {
+          "name": "fs2-fleet-snapshot-net-tools-v1",
+          "defaultMode": 365
+        }
+      },
+      {
+        "name": "snapshot-address-source",
+        "configMap": {
+          "name": "fs2-fleet-snapshot-address-v1",
+          "defaultMode": 292
+        }
+      },
+      {
+        "name": "snapshot-bundle",
+        "persistentVolumeClaim": {
+          "claimName": "fs2-fleet-snapshots-rwx-r20260907",
+          "readOnly": true
+        }
+      }
+    ],
+    "restartPolicy": "Never"
+  }
+}
