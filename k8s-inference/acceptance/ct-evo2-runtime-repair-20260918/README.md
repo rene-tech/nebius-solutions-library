@@ -51,3 +51,21 @@ The output includes candidate maps/Helm values, both proposed owner specs,
 original rollback values/specs, evidence hashes, successor runtime entries and
 validation results. Recapture/rebase instead of applying over a changed release
 or owner. A successful preparation is not a deployment or customer-ready verdict.
+
+## Desired-state persistence
+
+The exact reviewed successor descriptors from `ct-evo2-candidate162` are retained
+in `catalog/runtime/deployment-runtimes/{evo2-40b,nv-segment-ct}-scientific-h100-20260918.json`.
+The historical descriptors and canonical catalog records remain unchanged.
+Terraform selects a descriptor by an operator's immutable image override
+(`deployment.models.image_overrides` at the root, `model_image_overrides` in the
+workloads stage); merely adding a candidate file changes no default or live App.
+The deployed CT/Evo image digests must therefore also be retained in the release
+owner's intended tfvars/desired-state handoff. No live Terraform values were
+changed by this persistence step.
+
+Dynamic ModelDeployment owners retain customer scaling, placement and other
+runtime settings. A promotion creates proposals based on freshly captured owner
+specs, never replaces them with catalog defaults. Archive the accepted proposal
+and API update receipt; do not replay stale owner specs over subsequent admin
+changes. GPU snapshots for either changed image remain independently unqualified.

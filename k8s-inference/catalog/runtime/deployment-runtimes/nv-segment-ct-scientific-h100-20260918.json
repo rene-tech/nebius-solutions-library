@@ -1,0 +1,215 @@
+{
+  "model_id": "nv-segment-ct",
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "afb51518689f71e6abb367ee6301b2cd0225c66a",
+      "runtime_image_digest": "sha256:7018f64b933638412120b780ef9f45bd9239af3c45f27ab6885b55ee12c1b626",
+      "service": {
+        "name": "nv-segment-ct",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "36222c86357ef1ce7efbb5c6e2246fe37583456fd7323cd282bac1463b55cf74",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "12d1834c1971adc1fa143acea635e23f945aeab8e426ca8aca31657cbeffe99b"
+    },
+    "model_id": "nv-segment-ct",
+    "policy": {
+      "commercial_use": "license-dependent",
+      "license_id": "NVIDIA-Open-Model-License",
+      "non_clinical": true
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "nim_artifact_parity": "unverified",
+      "relationship": "exact-model",
+      "repository": "nvidia/NV-Segment-CT",
+      "source_kind": "huggingface",
+      "variant_id": "nv-segment-ct-upstream-portable"
+    },
+    "states": {
+      "cold_start_qualified": false,
+      "elasticity_qualified": false,
+      "http_mcp_qualified": false,
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true
+    },
+    "variant_id": "nv-segment-ct-upstream-portable"
+  },
+  "record": {
+    "cache": {
+      "artifact": {
+        "capacity_bound_bytes": 17179869184,
+        "expanded_bytes": 2616027239,
+        "kind": "weights",
+        "manifest_digest": "db63f463f5b7882b4bf99c235b8d96ca6cd22284ba3b72f0b4bef4be1ec645b0",
+        "minimum_bytes": 2616027239,
+        "staged": false,
+        "state": "platform-verified"
+      },
+      "local_path": "/var/lib/fs2-serve/cache/models/nv-segment-ct",
+      "owner": "fs2-serve-localizer",
+      "pre_pull_image": true,
+      "shared_path": "/mnt/fs2-serve-cache/models/nv-segment-ct"
+    },
+    "evidence": [
+      {
+        "classification": "blocked",
+        "hardware": null,
+        "outcome": "no-live-lane",
+        "source_commit": "897e7c7aef499d8a1e5a96bf419ec97e9ff95f88",
+        "summary": "The historical NIM-only lane was blocked by health-AI entitlement."
+      },
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA B300 SXM6 288GB",
+        "outcome": "live-qualified",
+        "source_commit": "3b919a2579c11d79e492b2e997add2e31cbbf14a",
+        "summary": "The exact public Hugging Face revision and exact CUDA 13 image passed two distinct safe synthetic CT label-prompt segmentations on fs2-serve-usn1."
+      },
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3; driver580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "10aa18eb9c7f35deeda1f67b3acc458930291137",
+        "summary": "Isolated exact-image acceptance SHA256 12d1834c1971adc1fa143acea635e23f945aeab8e426ca8aca31657cbeffe99b. Research-only, non-clinical NV-Segment-CT on one H100; label, point and combined prompts tested. 54 requests cover nine expert-labelled spleen scans twice per prompt mode. Point prompts are derived from those masks, not independent clinical validation. Historical lightweight health validators remain available; new public MCP, cold-start, elasticity and GPU-snapshot qualification are not inherited."
+      }
+    ],
+    "interface": {
+      "endpoints": {
+        "native": "/segment"
+      },
+      "execution_mode": "http",
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      },
+      "policy": {
+        "commercial_use": "license-dependent",
+        "license_enforced": true,
+        "non_clinical": true,
+        "operations": [
+          "segment-ct"
+        ]
+      },
+      "protocols": [
+        "native"
+      ],
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/readyz",
+        "timeout_seconds": 1200
+      },
+      "warmup": null
+    },
+    "model": {
+      "display_name": "NV-Segment-CT",
+      "family": "medical-imaging",
+      "id": "nv-segment-ct",
+      "source": {
+        "entitlement": {
+          "credential_contract": null,
+          "notes": "The exact pinned Hugging Face weights are public and do not require the unavailable health-AI NIM entitlement.",
+          "required": false,
+          "state": "not-required"
+        },
+        "kind": "huggingface",
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "notes": "The exact public revision includes LICENSE SHA-256 f3929a4d10b3918310d171d625fc40afb54122a394493797ec5b24fac34b12d9.",
+          "state": "verified"
+        },
+        "repository": "nvidia/NV-Segment-CT",
+        "revision": "afb51518689f71e6abb367ee6301b2cd0225c66a"
+      },
+      "tested_lane": true
+    },
+    "provenance": [
+      {
+        "classification": "negative-evidence",
+        "commit": "897e7c7aef499d8a1e5a96bf419ec97e9ff95f88",
+        "path": "docs/fs2/fs2-medical-imaging-nims/RESULTS.md",
+        "tree": "7ae9dace8f193c031586b7eed5c0ceb8168e4aa2"
+      }
+    ],
+    "resources": {
+      "cpu_millis": 8000,
+      "gpu": {
+        "alternatives": [],
+        "b300_state": "unverified",
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "placement": null,
+        "topology": "single-gpu"
+      },
+      "host_ram_min_bytes": null,
+      "memory_bytes": 68719476736,
+      "scaler_owner": "nebius-managed-node-group-autoscaler"
+    },
+    "runtime": {
+      "command": [
+        "/opt/fs2-media-venv/bin/python",
+        "/opt/fs2-media/nv_segment_ct_server.py"
+      ],
+      "image": {
+        "digest": "sha256:7018f64b933638412120b780ef9f45bd9239af3c45f27ab6885b55ee12c1b626",
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/nv-segment-ct@sha256:7018f64b933638412120b780ef9f45bd9239af3c45f27ab6885b55ee12c1b626",
+        "state": "resolved"
+      },
+      "kind": "custom",
+      "version": "h100-scientific-repair-20260918-v2"
+    },
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "semantic_validator": {
+      "contract": "two-distinct-synthetic-ct-segmentations-nonclinical/v1",
+      "distinct_requests": true,
+      "distinct_responses": true,
+      "fixture_path": "k8s-inference/catalog/runtime/validators/assets/nv-segment-ct.json",
+      "fixture_sha256": "47fe531772361fb441a0a5a635ecc9108270d3e0b1475a1ebec2b11b6315f6be",
+      "kind": "repository-command",
+      "request_count": 2,
+      "source_path": "k8s-inference/catalog/runtime/validators/validate_nv_segment_ct.py",
+      "source_sha256": "26b0a5a2f35d567ea4b98ca525c614fee6489e20a663b38653088547e54f3d68"
+    },
+    "startup": {
+      "default": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "gate": null,
+          "mechanism": "snapshot",
+          "reason": "No portable snapshot donor is qualified; retained exact weights and conventional startup remain authoritative.",
+          "state": "disabled-negative-evidence"
+        }
+      ],
+      "fallback": "conventional",
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "support": {
+      "limitations": [
+        "Research-only, non-clinical NV-Segment-CT on one H100; label, point and combined prompts tested.",
+        "54 requests cover nine expert-labelled spleen scans twice per prompt mode. Point prompts are derived from those masks, not independent clinical validation.",
+        "Historical lightweight health validators remain available; new public MCP, cold-start, elasticity and GPU-snapshot qualification are not inherited."
+      ],
+      "non_clinical": true,
+      "route_exposed": false,
+      "state": "qualified"
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "variant_id": "nv-segment-ct-upstream-portable"
+}

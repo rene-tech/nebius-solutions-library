@@ -1,0 +1,216 @@
+{
+  "model_id": "evo2-40b",
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7",
+      "runtime_image_digest": "sha256:8c1a5dca0c32b497e04afaf93215809499a5736666540f4eb5b344dd84b709ee",
+      "service": {
+        "name": "evo2-40b",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "c77df36d784dd1cddbb8cb046f4aa403dd4d98bbbf1736538964abbe9a03a6ae",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "97079b8c20148c52fca6411a848325857ab6ad8bb463aebaf43bdcc1e5712782"
+    },
+    "model_id": "evo2-40b",
+    "policy": {
+      "commercial_use": "allowed",
+      "license_id": "Apache-2.0",
+      "non_clinical": false
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "nim_artifact_parity": "unverified",
+      "relationship": "exact-model",
+      "repository": "arcinstitute/evo2_40b",
+      "source_kind": "huggingface",
+      "variant_id": "evo2-40b-upstream-portable"
+    },
+    "states": {
+      "cold_start_qualified": false,
+      "elasticity_qualified": false,
+      "http_mcp_qualified": false,
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true
+    },
+    "variant_id": "evo2-40b-upstream-portable"
+  },
+  "record": {
+    "cache": {
+      "artifact": {
+        "capacity_bound_bytes": 206158430208,
+        "expanded_bytes": 82253491694,
+        "kind": "weights",
+        "manifest_digest": "4eaa1aebdb64a170fdb0b7f20432fc8624ab2ca84ffa37ec81033bf8d362a8b4",
+        "minimum_bytes": 82253491694,
+        "staged": false,
+        "state": "platform-verified"
+      },
+      "local_path": "/var/lib/fs2-serve/cache/models/evo2-40b",
+      "owner": "fs2-serve-localizer",
+      "pre_pull_image": true,
+      "shared_path": "/mnt/fs2-serve-cache/models/evo2-40b"
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "2 x NVIDIA H100 SXM5 80GB; SM90; driver 580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "b42c475e48a7b448e2395de0b871b48fd3276d73",
+        "summary": "Working-tree successor image v5 is digest-bound. Three cached fresh processes (r06-r08) pass six original semantic outputs, with six additional first-compile/stress outputs. Container-to-ready median 23.547983 seconds. See acceptance/h100-fleet/medical-media/evo2-qualification.json."
+      },
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3; driver580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "8b2da90804a945cf2299b1f775a37bce6d44574a",
+        "summary": "Isolated exact-image acceptance SHA256 97079b8c20148c52fca6411a848325857ab6ad8bb463aebaf43bdcc1e5712782. Same Evo2 checkpoint and native precision; bounded modal FFT and responsive health on two H100s. 96 exact-image plant requests, full-state/logit comparison and production-timing health observations are the isolated promotion gate. Historical lightweight health validators remain available; new public MCP, cold-start, elasticity and GPU-snapshot qualification are not inherited."
+      }
+    ],
+    "interface": {
+      "endpoints": {
+        "native": "/biology/arc/evo2/generate"
+      },
+      "execution_mode": "http",
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "license_enforced": true,
+        "non_clinical": false,
+        "operations": [
+          "generate-sequence"
+        ]
+      },
+      "protocols": [
+        "native"
+      ],
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "timeout_seconds": 1800
+      },
+      "warmup": null
+    },
+    "model": {
+      "display_name": "Evo2-40B",
+      "family": "bionemo-nim",
+      "id": "evo2-40b",
+      "source": {
+        "entitlement": {
+          "credential_contract": null,
+          "notes": "Public upstream checkpoint, exact two shards merged and SHA256 verified.",
+          "required": false,
+          "state": "not-required"
+        },
+        "kind": "huggingface",
+        "license": {
+          "artifact": {
+            "sha256": "b39cc7f28cca98b868aa2e9a8bcb93b11c13937e45f330f616070d8a2545e180",
+            "url": "https://huggingface.co/arcinstitute/evo2_40b/raw/d529aa57c30771814217ad89baaeaf6e2315c7d7/README.md"
+          },
+          "id": "Apache-2.0",
+          "notes": "Exact pinned upstream README license artifact already retained in canonical Evo2 source inventory; independent H100 runtime, not NVIDIA NIM packaging.",
+          "state": "verified"
+        },
+        "repository": "arcinstitute/evo2_40b",
+        "revision": "d529aa57c30771814217ad89baaeaf6e2315c7d7"
+      },
+      "tested_lane": true
+    },
+    "provenance": [
+      {
+        "classification": "measured-handoff",
+        "commit": "b42c475e48a7b448e2395de0b871b48fd3276d73",
+        "path": "k8s-inference/acceptance/h100-fleet/medical-media/evo2-qualification.json",
+        "tree": "4bda8f44c58e7d9632f453d2be6e2f3f45cd8673"
+      }
+    ],
+    "resources": {
+      "cpu_millis": 16000,
+      "gpu": {
+        "alternatives": [],
+        "b300_state": "unverified",
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 2,
+        "placement": null,
+        "topology": "single-node-multi-gpu"
+      },
+      "host_ram_min_bytes": 137438953472,
+      "memory_bytes": 137438953472,
+      "scaler_owner": "nebius-managed-node-group-autoscaler"
+    },
+    "runtime": {
+      "command": [
+        "python3",
+        "/opt/fs2-evo2/evo2_serve.py",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8001"
+      ],
+      "image": {
+        "digest": "sha256:8c1a5dca0c32b497e04afaf93215809499a5736666540f4eb5b344dd84b709ee",
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/evo2-runtime@sha256:8c1a5dca0c32b497e04afaf93215809499a5736666540f4eb5b344dd84b709ee",
+        "state": "resolved"
+      },
+      "kind": "custom",
+      "version": "h100-scientific-repair-20260918-v2"
+    },
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "semantic_validator": {
+      "contract": "two-distinct-evo2-sequence-responses/historical-hopper-v1",
+      "distinct_requests": true,
+      "distinct_responses": true,
+      "fixture_path": "k8s-inference/acceptance/h100-fleet/medical-media/evo2-hopper-oracle.json",
+      "fixture_sha256": "a68351e5cabd721d61da15a31fe32e7250c069123c238bda6d62a586863cd146",
+      "kind": "repository-command",
+      "request_count": 2,
+      "source_path": "k8s-inference/acceptance/h100-fleet/medical-media/evo2_hopper_validate.py",
+      "source_sha256": "ef47b5995f874edc63543cb08fc353d6e310adf972cd2c0fedc2b10aba66a37f"
+    },
+    "startup": {
+      "default": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "gate": "fresh-pod-restore-with-original-semantic-output",
+          "mechanism": "snapshot",
+          "reason": "This exact two-H100 runtime has no qualified GPU process restore. Conventional fresh-process qualification does not imply snapshot support.",
+          "state": "gated"
+        }
+      ],
+      "fallback": "conventional",
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "support": {
+      "limitations": [
+        "Same Evo2 checkpoint and native precision; bounded modal FFT and responsive health on two H100s.",
+        "96 exact-image plant requests, full-state/logit comparison and production-timing health observations are the isolated promotion gate.",
+        "Historical lightweight health validators remain available; new public MCP, cold-start, elasticity and GPU-snapshot qualification are not inherited."
+      ],
+      "non_clinical": false,
+      "route_exposed": false,
+      "state": "qualified"
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "variant_id": "evo2-40b-upstream-portable"
+}

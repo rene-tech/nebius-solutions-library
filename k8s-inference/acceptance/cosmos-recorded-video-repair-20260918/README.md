@@ -85,3 +85,11 @@ Protected evidence (no credentials committed):
 The `isolated-fresh-v4` receipts include output hashes, ffprobe metadata,
 runtime/GPU identity and source hashes. `native-replay-r1-after160` retains the
 customer-scoped restore failure and actual worker stderr.
+
+The approved candidate descriptor is persisted separately as
+`catalog/runtime/deployment-runtimes/cosmos3-nano-recorded-h100-20260918.json`.
+Terraform selects it only when the operator's immutable image override matches
+its digest; it does not replace a global default. The release owner must retain
+that image selection alongside the accepted dynamic owner proposal. Later admin
+scaling/placement edits remain authoritative and must not be overwritten by an
+old promotion capture. This step changes no live Terraform values.
