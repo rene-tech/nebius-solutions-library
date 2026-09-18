@@ -20,6 +20,7 @@ from pathlib import Path
 from uuid import uuid4
 
 import client
+from fs2_serve.scientific_batch.worker_errors import ERROR_DETAILS
 
 HERE = Path(__file__).resolve().parent
 
@@ -133,13 +134,17 @@ async def probes(args, state, token, successful):
         public.persist()
         client.check(response.status_code == 422, "invalid_input_not_public_422")
 
+        await worker_failure_probe(public, args, request)
+
         journal["cancellation_idempotency_key"] = journal["run_id"] + "-cancel"
         public.persist()
         accepted = await public.submit(
             request, journal["cancellation_idempotency_key"], "http"
         )
         journal.update(
-            operation_id=client.harness.operation_id(accepted), accepted=accepted
+            operation_id=client.harness.operation_id(accepted),
+            accepted=accepted,
+            cancellation_parent_id=client.harness.operation_id(accepted),
         )
         journal["parent_ids"].append(journal["operation_id"])
         public.persist()
@@ -176,7 +181,7 @@ async def probes(args, state, token, successful):
             journal["unexpected_second_terminal"] = await public.wait_existing(
                 args.timeout_seconds, "cancelled"
             )
-            journal["operation_id"] = journal["parent_ids"][0]
+            journal["operation_id"] = journal["cancellation_parent_id"]
         public.persist()
 
         # Reach actual worker-stage execution, not just an admitted queue record.
@@ -222,6 +227,41 @@ async def probes(args, state, token, successful):
         public.persist()
     state["probes"] = journal
     client.save(args.output / "acceptance.json", state, token)
+
+
+async def worker_failure_probe(public, args, request):
+    """One admitted invalid selection proves worker→public static diagnostics."""
+    journal = public.state
+    invalid = json.loads(json.dumps(request))
+    invalid["parameters"]["selection"]["episodes"] = [999]
+    receipt = {
+        "idempotency_key": journal["run_id"] + "-worker-invalid",
+        "request_sha256": client.digest(invalid),
+        "selection": invalid["parameters"]["selection"],
+        "phase": "admission_pending",
+        "zero_generation_children_verified": False,
+        "child_verification_source": "operator exact-parent terminal collector required",
+    }
+    journal["worker_invalid_dataset"] = receipt
+    public.persist()
+    accepted = await public.submit(invalid, receipt["idempotency_key"], "http")
+    identifier = client.harness.operation_id(accepted)
+    journal["operation_id"] = identifier
+    journal["parent_ids"].append(identifier)
+    receipt.update(operation_id=identifier, accepted=accepted, phase="admitted")
+    public.persist()
+    receipt["terminal"] = await public.wait_existing(args.timeout_seconds, "failed")
+    public.persist()
+    terminal = client.operation(receipt["terminal"])
+    client.check(
+        terminal.get("http_status") == 422
+        and terminal.get("error_code") == "DATASET_INVALID"
+        and terminal.get("error_detail") == ERROR_DETAILS["DATASET_INVALID"]
+        and client.settled(receipt["terminal"], "failed"),
+        "worker_failure_code_or_detail_mismatch",
+    )
+    receipt.update(phase="expected_failure_and_released", completed_at=client.now())
+    public.persist()
 
 
 async def execute(args, state, token):

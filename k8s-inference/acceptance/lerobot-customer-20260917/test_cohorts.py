@@ -17,6 +17,7 @@ driver = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(driver)
 OP = "00000000-0000-4000-8000-000000000033"
 SECOND = "00000000-0000-4000-8000-000000000034"
+INVALID = "00000000-0000-4000-8000-000000000035"
 
 
 def test_matrix_has_two_real_dimensions_both_protocols_and_explicit_blur():
@@ -63,8 +64,13 @@ def test_public_negative_contract_and_cancellation(
             return httpx2.Response(second_status, json=value)
 
         async def submit(self, request, key, protocol):
-            ids.append(OP)
-            return {"operation": {"id": OP}}
+            identifier = (
+                INVALID
+                if request["parameters"]["selection"]["episodes"] == [999]
+                else OP
+            )
+            ids.append(identifier)
+            return {"operation": {"id": identifier}}
 
         async def response(self, method, path, **kwargs):
             calls.append((method, path, kwargs))
@@ -90,8 +96,22 @@ def test_public_negative_contract_and_cancellation(
             }
 
         async def wait_existing(self, timeout, expected):
-            assert expected == "cancelled"
             settled_ids.append(self.state["operation_id"])
+            if expected == "failed":
+                return {
+                    "operation": {
+                        "id": INVALID,
+                        "status": "failed",
+                        "http_status": 422,
+                        "error_code": "DATASET_INVALID",
+                        "error_detail": driver.ERROR_DETAILS["DATASET_INVALID"],
+                    },
+                    "batch": {
+                        "status": "failed",
+                        "stages": [{"attempts": [{"resource_released": True}]}],
+                    },
+                }
+            assert expected == "cancelled"
             return {
                 "operation": {"id": self.state["operation_id"], "status": "cancelled"}
             }
@@ -104,7 +124,14 @@ def test_public_negative_contract_and_cancellation(
     args = SimpleNamespace(
         output=tmp_path, endpoint="https://gateway.example", timeout_seconds=10
     )
-    request = {"request": {"parameters": {"variants": {"count": 1}}}}
+    request = {
+        "request": {
+            "parameters": {
+                "variants": {"count": 1},
+                "selection": {"episodes": [0], "cameras": ["front"]},
+            }
+        }
+    }
     if expected:
         with pytest.raises(client.harness.AcceptanceError, match=expected):
             asyncio.run(driver.probes(args, {}, "not-recorded-test-key", request))
@@ -115,11 +142,59 @@ def test_public_negative_contract_and_cancellation(
     if invalid_status != 422:
         assert ids == [] and len(calls) == 1
     else:
-        assert ids == [OP] and settled_ids[-1] == OP
+        assert ids == [INVALID, OP] and settled_ids[-1] == OP
         journal = json.loads((tmp_path / "probes/run.json").read_text())
+        assert request["request"]["parameters"]["selection"]["episodes"] == [0]
+        assert (
+            journal["worker_invalid_dataset"]["phase"]
+            == "expected_failure_and_released"
+        )
+        assert (
+            journal["worker_invalid_dataset"]["zero_generation_children_verified"]
+            is False
+        )
         if second_status == 202:
-            assert journal["parent_ids"] == [OP, SECOND] and SECOND in settled_ids
+            assert (
+                journal["parent_ids"] == [INVALID, OP, SECOND] and SECOND in settled_ids
+            )
         assert journal["concurrency"]["status"] == second_status
+
+
+def test_worker_failure_probe_rejects_generic_or_unsafe_detail(tmp_path):
+    class FakePublic:
+        state = {"run_id": "test", "parent_ids": []}
+
+        def persist(self):
+            pass
+
+        async def submit(self, request, key, protocol):
+            assert protocol == "http" and request["parameters"]["selection"][
+                "episodes"
+            ] == [999]
+            return {"operation": {"id": INVALID}}
+
+        async def wait_existing(self, timeout, expected):
+            assert expected == "failed"
+            return {
+                "operation": {
+                    "id": INVALID,
+                    "status": "failed",
+                    "http_status": 422,
+                    "error_code": "DATASET_INVALID",
+                    "error_detail": "private exception data",
+                }
+            }
+
+    with pytest.raises(
+        client.harness.AcceptanceError, match="worker_failure_code_or_detail_mismatch"
+    ):
+        asyncio.run(
+            driver.worker_failure_probe(
+                FakePublic(),
+                SimpleNamespace(timeout_seconds=10),
+                {"parameters": {"selection": {"episodes": [0]}}},
+            )
+        )
 
 
 def test_running_stage_is_not_inferred_from_parent_alone():

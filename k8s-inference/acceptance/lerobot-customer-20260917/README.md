@@ -133,6 +133,16 @@ HTTP422, not authentication failure. An unexpected HTTP202 is preserved as an
 actual admission, cancelled/settled by ID, and **does not** count as the expected
 429 result. Failures stop new admissions; no automatic resubmission is made.
 
+One additional deliberately invalid worker selection reuses the valid finalized
+input artifacts, changing only `selection.episodes` to `[999]`. This ordinary
+HTTP request must be admitted, then fail with `DATASET_INVALID`, the exact static
+public detail and released worker resources. It is an explicitly expected
+negative case, not a successful dataset. Its receipt separately records that
+zero generation children still require the operator's exact-parent terminal
+collector; the client cannot infer an empty child set from parent status. The
+positive source dataset/policies are not modified and this case is never
+automatically retried.
+
 The release receipt is hashed, not asserted to prove live stability by this
 ordinary-key process. `observe.py` and the deployment owner separately verify
 unchanged release/runtime identities, all parent/child Runs and Usage,
@@ -151,7 +161,7 @@ action arrays are **not proof of physically action-aligned augmented imagery**.
 
 ## Local evidence
 
-Client/cohort suite: **24 passed**. Real pinned-reader tests: **2 passed** on the
+Client/cohort suite: **25 passed**. Real pinned-reader tests: **2 passed** on the
 two-episode/two-view fixture, including a full pack/unpack/rewrite/reopen loop
 and all-camera/all-episode preparation. The rewrite test uses an explicitly
 local FFmpeg brightness transform, not GPU inference or semantic qualification.
@@ -178,3 +188,10 @@ stages are `active`, not `running`, and the running-cancellation probe requires
 an unreleased attempt in `active_compute`; MCP context managers' nested
 ExceptionGroup no longer hides the safe `operation_terminal_failure` code.
 These fixes do not repair or relabel the actual worker/application failure.
+
+The follow-up CP source adds a bounded static worker-error projection: only a
+recognized LeRobot scientific-stage termination message is accepted; received
+text is never copied into public detail. OOM/preemption/infrastructure/timeout
+classification stays unchanged. Its new focused suite passed52 tests; existing
+production observer plus the initial51 new cases passed116. The actual worker
+negative case above must still verify this on the new deployed image.
