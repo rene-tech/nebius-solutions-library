@@ -113,7 +113,10 @@ class SignedArtifactContentReader:
             follow_redirects=False,
         ) as response:
             response.raise_for_status()
-            async for chunk in response.aiter_bytes():
+            # Compression is part of the artifact identity. S3 may advertise
+            # Content-Encoding:gzip for a stored .tar.gz; aiter_bytes silently
+            # expands it, breaking the verified size/hash and archive reader.
+            async for chunk in response.aiter_raw():
                 content.extend(chunk)
                 if len(content) > maximum_bytes:
                     raise ArtifactNotFoundError("input artifact exceeds the controller manifest bound")
@@ -166,8 +169,16 @@ class ArtifactServiceBridge:
             ).hexdigest() != artifact.digest.removeprefix("sha256:"):
                 raise ArtifactNotFoundError("input manifest bytes differ from verified metadata")
             manifest = self.profiles.validate_artifact_manifest(json.loads(payload))
-        except (UnicodeError, ValueError, json.JSONDecodeError) as error:
-            raise ArtifactNotFoundError("input manifest bytes are invalid") from error
+        except ScientificRequestError:
+            # The bytes have already been authorized and hash-verified. A bad
+            # manifest is a repairable caller error, not a missing artifact.
+            raise
+        except (UnicodeError, ValueError) as error:
+            raise ScientificRequestError(
+                "input manifest bytes are invalid JSON",
+                public_detail="The verified input manifest is not valid UTF-8 JSON. "
+                "Upload a corrected scientific artifact manifest; the source artifact can be reused.",
+            ) from error
         entries: list[ScientificInputArtifact] = []
         for raw_entry in cast(list[Mapping[str, Any]], manifest["entries"]):
             ref = cast(Mapping[str, Any], raw_entry["artifact"])

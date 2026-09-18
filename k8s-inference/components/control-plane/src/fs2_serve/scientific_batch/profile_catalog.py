@@ -397,6 +397,14 @@ class ScientificProfileCatalog:
         except ValidationError as error:
             raise ScientificProfileError("scientific result violates its canonical schema") from error
 
+    def artifact_manifest_schema(self) -> dict[str, Any]:
+        """Publish the same catalog-owned schema used for admission, by value."""
+
+        validator = self._validators.get(SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA)
+        if validator is None:
+            raise ScientificProfileError("canonical scientific artifact manifest schema is absent")
+        return cast(dict[str, Any], json.loads(json.dumps(validator.schema)))
+
     def validate_artifact_manifest(self, value: object) -> Mapping[str, Any]:
         """Validate and return the existing catalog-owned manifest contract."""
 
@@ -406,7 +414,14 @@ class ScientificProfileCatalog:
                 raise ScientificProfileError("canonical scientific artifact manifest schema is absent")
             validator.validate(value)
         except ValidationError as error:
-            raise ScientificRequestError("input manifest violates the canonical artifact schema") from error
+            raise ScientificRequestError(
+                "input manifest violates the canonical artifact schema",
+                public_detail="The verified input manifest violates the scientific artifact schema. "
+                "Read artifact_manifest_schema from get_model_schema, and the App's "
+                "input_artifact_contract when provided. Entry names are logical IDs, not filenames; "
+                "semantic_type requires a version suffix such as /v1. Upload a corrected manifest; "
+                "already verified source artifacts can be reused.",
+            ) from error
         if not isinstance(value, Mapping):  # implied by schema; narrows the return type
             raise ScientificRequestError("input manifest is not an object")
         return cast(Mapping[str, Any], value)

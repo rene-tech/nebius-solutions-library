@@ -32,6 +32,7 @@ from .common import (
     run_workspace,
     strict_object,
 )
+from .primitives import ScientificParameterError
 from .staged_workspace import completion_marker, contained_stable_file, wrap_stage_argv
 from .verified_input import verified_manifest_entry
 
@@ -56,6 +57,36 @@ MAX_RESULT_BYTES = 16 * 1024 * 1024
 MAX_OUTPUT_BYTES = 5 * 1024 * 1024 * 1024
 MAX_VARIANTS = 8
 REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
+
+
+def public_input_contract() -> dict[str, Any]:
+    """Logical manifest roles, from the same constants used by the compiler."""
+
+    reference = {
+        "name": INPUT_REFERENCE_ID,
+        "semantic_type": INPUT_REFERENCE_SEMANTIC_TYPE,
+        "media_type": "application/json",
+        "compression": "none",
+        "maximum_bytes": MAX_SOURCE_REFERENCE_BYTES,
+    }
+    return {
+        "exactly_one_entry": True,
+        "source_kind_parameter": "parameters.source.kind",
+        "source_kinds": {
+            "uploaded-bundle": {
+                "name": INPUT_BUNDLE_ID,
+                "semantic_type": INPUT_BUNDLE_SEMANTIC_TYPE,
+                "media_type": "application/x-tar",
+                "compression": "zstd",
+                "maximum_bytes": MAX_BUNDLE_BYTES,
+            },
+            "huggingface": dict(reference),
+            "object-store": dict(reference),
+        },
+        "source_pointer_rule": "For uploaded-bundle, parameters.source must identify the same "
+        "artifact (ID, SHA-256, size, media type and compression) as the manifest entry.",
+        "entry_name_rule": "The entry name is the logical role above, not the uploaded filename.",
+    }
 
 
 def _canonical_json(value: object) -> str:
@@ -163,7 +194,19 @@ def compile_run(
     parameters, source_kind, _variant_count = _parameters(request.parameters)
     if request.operation != "augment-lerobot-dataset":
         raise ScientificAdapterError("LeRobot augmentation supports only augment-lerobot-dataset")
-    source = _verified_source(request, parameters, source_kind, input_artifacts or ())
+    try:
+        source = _verified_source(request, parameters, source_kind, input_artifacts or ())
+    except ScientificAdapterError as error:
+        required = public_input_contract()["source_kinds"][source_kind]
+        raise ScientificParameterError(
+            "LeRobot source differs from the required verified input role",
+            public_detail="LeRobot input manifest must contain exactly one verified entry with "
+            f"name={required['name']}, semantic_type={required['semantic_type']}, "
+            f"media_type={required['media_type']}, compression={required['compression']}. "
+            "For uploaded-bundle, parameters.source must match that entry's artifact pointer. "
+            "Read get_model_schema.input_artifact_contract; reuse the verified source artifact "
+            "and upload a corrected manifest. No run was admitted.",
+        ) from error
     assert_profile_identity(
         profile,
         model_id=MODEL_ID,

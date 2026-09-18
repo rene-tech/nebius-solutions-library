@@ -463,6 +463,7 @@ async def test_http_scientific_flat_manifest_and_legacy_wrapper_share_one_run(re
     async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
         schema = _data(await client.call_tool("get_model_schema", {"model_id": "protein-design"}))
         (contract,) = schema["contracts"]
+        assert schema["artifact_manifest_schema"] == runtime.scientific_batches.profiles.artifact_manifest_schema()
         assert contract["protocol"] == "scientific-batch-v1"
         assert contract["tool_name"] == "submit_protein_design"
         fields = contract["input_schema"]["properties"]
@@ -556,3 +557,31 @@ async def test_scientific_mcp_exposes_only_explicit_public_parameter_detail(regi
             assert public_detail in str(caught.value)
             assert "INTERNAL_PATH_MUST_NOT_LEAK" not in str(caught.value)
         assert repository.records == {}
+
+
+@pytest.mark.asyncio
+async def test_lerobot_input_roles_are_discoverable_without_bloating_tool_list(registry, cipher, hasher, monkeypatch):
+    from fs2_serve.scientific_batch.adapters.cosmos_lerobot import MODEL_ID, public_input_contract
+
+    runtime, *_ = scientific_runtime(registry, cipher, hasher)
+    runtime.scientific_batches.profiles = profile_catalog_for(MODEL_ID)
+    monkeypatch.setattr(
+        "fs2_serve.mcp_server._scientific_tool_profiles",
+        lambda _runtime, principal: (
+            (SimpleNamespace(model_id=MODEL_ID, mcp_tool_name="submit_protein_design"),)
+            if MODEL_ID in principal.models else ()
+        ),
+    )
+    app = _app(runtime)
+    key = await _key(runtime, models=(MODEL_ID,))
+    restricted = await _key(runtime, models=("qwen3-8b",))
+    async with app.router.lifespan_context(app):
+        async with _connection(runtime, app, key) as client:
+            schema = _data(await client.call_tool("get_model_schema", {"model_id": MODEL_ID}))
+            assert schema["input_artifact_contract"] == public_input_contract()
+            assert schema["artifact_manifest_schema"] == runtime.scientific_batches.profiles.artifact_manifest_schema()
+            schema["input_artifact_contract"]["source_kinds"].clear()
+            assert public_input_contract()["source_kinds"]
+        async with _connection(runtime, app, restricted) as client:
+            with pytest.raises(MCPError, match="outside token policy"):
+                await client.call_tool("get_model_schema", {"model_id": MODEL_ID})

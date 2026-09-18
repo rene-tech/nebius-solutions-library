@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -22,6 +23,7 @@ from fs2_serve.scientific_batch.adapters.staged_workspace import (  # noqa: E402
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer  # noqa: E402
 from fs2_serve.scientific_batch.models import ScientificInputArtifact  # noqa: E402
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog  # noqa: E402
+from fs2_serve.scientific_batch.adapters.primitives import ScientificParameterError  # noqa: E402
 
 
 def _profile() -> dict[str, Any]:
@@ -81,6 +83,38 @@ def test_candidate_adapter_compiles_exact_source_reference_manifest() -> None:
     assert invocation.collector_id == cosmos_lerobot.COLLECTOR_ID
     assert "--source-artifact" in invocation.argv
     assert not invocation.environment
+
+
+def test_public_input_contract_uses_exact_compiler_roles_and_is_not_mutable() -> None:
+    contract = cosmos_lerobot.public_input_contract()
+    assert contract["exactly_one_entry"] is True
+    bundle = contract["source_kinds"]["uploaded-bundle"]
+    assert bundle == {
+        "name": cosmos_lerobot.INPUT_BUNDLE_ID,
+        "semantic_type": cosmos_lerobot.INPUT_BUNDLE_SEMANTIC_TYPE,
+        "media_type": "application/x-tar", "compression": "zstd",
+        "maximum_bytes": cosmos_lerobot.MAX_BUNDLE_BYTES,
+    }
+    contract["source_kinds"]["huggingface"]["name"] = "bad"
+    assert cosmos_lerobot.public_input_contract()["source_kinds"]["huggingface"]["name"] == "lerobot-source"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("logical_artifact_id", "source-reference.json"),
+    ("semantic_type", "lerobot-bundle/v1"),
+    ("media_type", "application/x-tar"),
+    ("compression", "zstd"),
+    ("size_bytes", cosmos_lerobot.MAX_SOURCE_REFERENCE_BYTES + 1),
+])
+def test_wrong_owned_manifest_role_has_actionable_caller_error(field, value) -> None:
+    with pytest.raises(ScientificParameterError) as caught:
+        cosmos_lerobot.compile_run(
+            _profile(), _request(), operation_id="00000000-0000-4000-8000-000000000201",
+            input_artifacts=(replace(_source_reference(), **{field: value}),),
+        )
+    assert "name=lerobot-source" in caught.value.public_detail
+    assert "semantic_type=lerobot-source-reference/v1" in caught.value.public_detail
+    assert "No run was admitted" in caught.value.public_detail
 
 
 def test_uploaded_source_must_match_verified_manifest_identity() -> None:
