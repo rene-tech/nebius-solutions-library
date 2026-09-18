@@ -40,6 +40,45 @@ cancellation propagation, headers and unchanged debug/semantic evidence. Ruff,
 `git diff --check`, and mypy of the new module passed. This is not a full CP
 typecheck or a production soak.
 
+## Follow-up: completed response versus normal disconnect
+
+The broader typed-MCP tests found a real interaction regression after
+`20c167d6b`, not a flaky model result. Both Boltz2/OpenFold2 invalid-input tests
+passed in all three runs on pre-change source `b21c90f28091cd5a55fe1e48106cc9ce4abbbfc3`
+and failed in all three runs on current source, using the same interpreter,
+dependencies and tests. Only the loaded backend source path changed.
+
+Payload-free ASGI traces show HTTP400 response start, final response body
+accepted by `send`, then `http.disconnect`. The pure-ASGI logger transparently
+exposes this normal post-response event. The shared telemetry/debug classifier
+unconditionally replaced the completed `model_input_validation` failure with
+`cancelled/client_disconnected`; the previous task-based logger had hidden the
+event. The source fix now classifies disconnect cancellation only when the
+response is incomplete. Completed HTTP/JSON-RPC semantics remain authoritative,
+the raw `disconnected` flag remains recorded, and genuine incomplete responses
+and application/transport exceptions retain their existing treatment.
+
+The exact original tests pass in all three repeated runs after the fix.
+Additional regressions exercise completed validation errors, durable acceptance,
+ordinary HTTP success/error, and interrupted partial responses. No MCP handler,
+runtime, timeout, quota, retry or admission behavior changes. This is a local
+source gate; the release owner has deliberately retained the pre-logger live CP
+image while this regression is resolved.
+
+Final relevant suite: **110 passed** across request telemetry, request debug,
+access logging, typed MCP HTTP, API/MCP (including real Uvicorn), and GenMol input
+contracts. Ruff and diff checks pass. The separate whole scientific-schema test
+still assumes ten profiles while the current catalog contains eleven; that
+unrelated assertion is not included in this passing count or changed here.
+
+Protected receipts under the evidence root's `mcp-telemetry-ab/`:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `summary.json` (before/current A/B) | `a862e78086ddf24c8f2b569cc091e18e17662dd7362ff72d0e828bc5e81a0b98` |
+| `message-order.json` | `6116a846f178f1f0f13be2ee812ff3122575076df5d311dfb161a57e356bdc08` |
+| `summary-fixed.json` | `555c747ebecf928b20452a3cd095111c867aa1ff0d23dfa0c3c3fa0c396dbb34` |
+
 ## Read-only current verification and retained evidence
 
 At 21:19:35–37, six ordinary owner-authenticated `GET /v1/operations?limit=1`

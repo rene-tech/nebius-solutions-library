@@ -122,6 +122,77 @@ async def test_disconnect_preserves_partial_bytes_and_does_not_invent_status():
     (row,) = store.observations
     assert row.disconnected and row.request_bytes_observed == 3
     assert row.request_bytes is None and row.response_bytes is None and row.http_status is None
+    assert row.semantic_outcome == "cancelled" and row.semantic_error_type == "client_disconnected"
+
+
+@pytest.mark.parametrize(
+    ("path", "status", "body", "expected", "error_type"),
+    [
+        (
+            "/mcp",
+            400,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {
+                    "code": -32602,
+                    "data": {"type": "model_input_validation"},
+                },
+            },
+            "failed",
+            "model_input_validation",
+        ),
+        (
+            "/mcp",
+            200,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": {
+                    "isError": False,
+                    "structuredContent": {
+                        "id": "07e454be-e11b-4f4f-9110-c076eb69c68e",
+                        "status": "queued",
+                        "model_id": "qwen3-8b",
+                    },
+                },
+            },
+            "accepted",
+            None,
+        ),
+        ("/v1/models", 200, {"models": []}, "succeeded", None),
+        ("/v1/models", 422, {"error": "invalid_request"}, "failed", "http_request_error"),
+    ],
+)
+async def test_post_response_disconnect_retains_completed_semantics_and_raw_flag(
+    path, status, body, expected, error_type
+):
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": status})
+        await send({"type": "http.response.body", "body": json.dumps(body).encode(), "more_body": False})
+        assert (await receive())["type"] == "http.disconnect"
+
+    store, _ = await exchange(app, path=path)
+    (row,) = store.observations
+    assert row.disconnected and row.response_complete
+    assert row.semantic_outcome == expected and row.semantic_error_type == error_type
+    assert row.http_status == status and row.error_type is None
+    if path == "/mcp" and status == 400:
+        assert row.jsonrpc_error_code == -32602 and row.admission_stage == "pre_admission"
+
+
+async def test_mid_response_disconnect_remains_cancelled_with_incomplete_observed_bytes():
+    async def app(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200})
+        await send({"type": "http.response.body", "body": b"partial", "more_body": True})
+        assert (await receive())["type"] == "http.disconnect"
+
+    store, _ = await exchange(app, path="/mcp")
+    (row,) = store.observations
+    assert row.disconnected and not row.response_complete
+    assert row.response_bytes is None and row.response_bytes_observed == 7
+    assert row.semantic_outcome == "cancelled" and row.semantic_error_type == "client_disconnected"
+    assert row.http_status == 200
 
 
 async def test_response_failure_preserves_partial_result_without_replacing_original_exception():

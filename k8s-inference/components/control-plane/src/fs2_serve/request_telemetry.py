@@ -407,7 +407,11 @@ def classify_public_outcome(
             )
         else:
             values.update(semantic_outcome="unknown", admission_stage="unknown")
-    if disconnected:
+    # ASGI transports may report http.disconnect after the final response body
+    # was accepted by send(). That closes an already completed exchange; it
+    # must not erase its JSON-RPC/HTTP outcome. Keep the raw disconnect flag in
+    # telemetry/debug records, but classify cancellation only while incomplete.
+    if disconnected and not response_complete:
         values.update(
             semantic_outcome="cancelled",
             semantic_error_type="client_disconnected",
