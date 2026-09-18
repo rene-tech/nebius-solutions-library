@@ -16,6 +16,7 @@ RUN apt-get update \
        fastapi==0.141.1 \
        pydantic==2.13.4 \
        rdkit==2025.9.6 \
+       cma==4.4.0 \
        uvicorn==0.52.4 \
     && apt-get purge -y git \
     && apt-get autoremove -y \
