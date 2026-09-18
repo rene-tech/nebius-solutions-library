@@ -90,6 +90,11 @@ _MAX_REPORTED_TOKEN_COUNT = 2**63 - 1
 _DEBUG_CAPTURE_EXTENSION = "fs2_upstream_debug_capture"
 _MAX_SCIENTIFIC_ERROR_BYTES = 16 * 1024
 _SCIENTIFIC_ERROR_DETAILS = {
+    "evo2_memory_exhausted": (
+        "Evo2 exhausted GPU memory while processing this accepted request. "
+        "The operation was not automatically retried on the same runtime. "
+        "The platform operator must correct runtime memory use or model capacity before replaying this shape."
+    ),
     "invalid_molecule": (
         "MolMIM rejected the molecular input. Supply valid SMILES whose tokens fit "
         "the supported vocabulary and sequence window."
@@ -742,6 +747,13 @@ class RuntimeClient:
         if not isinstance(payload, dict) or not isinstance(payload.get("detail"), dict):
             return None
         detail = payload["detail"]
+        if source_model == "evo2-40b" and status == 500 and detail.get("code") == "MODEL_MEMORY_EXHAUSTED":
+            input_length, num_tokens = detail.get("input_length"), detail.get("num_tokens")
+            if (type(input_length) is int and 1 <= input_length <= 8192
+                    and type(num_tokens) is int and 1 <= num_tokens <= 512
+                    and detail.get("retryable") is False):
+                return "model_memory_exhausted", _SCIENTIFIC_ERROR_DETAILS["evo2_memory_exhausted"]
+            return None
         if source_model == "molmim" and status == 422 and detail.get("code") == "INVALID_MOLECULE":
             return "invalid_molecule", _SCIENTIFIC_ERROR_DETAILS["invalid_molecule"]
 
@@ -894,7 +906,8 @@ class RuntimeClient:
                 if not response.is_success:
                     scientific_error = None
                     if (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
-                            and source_model in {"molmim", "genmol"} and response.status_code in {422, 503}
+                            and source_model in {"molmim", "genmol", "evo2-40b"}
+                            and response.status_code in {422, 500, 503}
                             and content_type == "application/json"):
                         rejected_body = await self._scientific_error_body(response)
                         if rejected_body is not None:

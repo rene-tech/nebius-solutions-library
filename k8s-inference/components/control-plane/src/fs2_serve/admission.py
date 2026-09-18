@@ -759,7 +759,9 @@ class AdmissionService:
                 )
             finally:
                 del request_body
-            if result.status_code >= 500 and result.failure_code != "generation_exhausted":
+            if result.status_code >= 500 and result.failure_code not in {
+                "generation_exhausted", "model_memory_exhausted"
+            }:
                 failure = RuntimeOperationError("upstream returned a retryable status")
                 if await self._retry(model, claimed, failure):
                     return

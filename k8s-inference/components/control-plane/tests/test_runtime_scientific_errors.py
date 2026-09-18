@@ -36,6 +36,10 @@ GENMOL = {"detail": {"code": "generation_exhausted", "message": PRIVATE_MESSAGE,
     "minimum_mask_tokens": 15, "unique_requested": True,
 }}}
 INVALID = {"detail": {"code": "INVALID_MOLECULE", "message": PRIVATE_MESSAGE}}
+EVO2_OOM = {"detail": {
+    "code": "MODEL_MEMORY_EXHAUSTED", "message": PRIVATE_MESSAGE,
+    "input_length": 8192, "num_tokens": 512, "retryable": False,
+}}
 
 
 def model_for(registry, model_id="molmim"):
@@ -72,6 +76,7 @@ async def invoke(registry, payload, *, model_id="molmim", status=422, model=None
     ("molmim", 422, MOLMIM, "generation_exhausted", "found 6 of 8"),
     ("genmol", 503, GENMOL, "generation_exhausted", "accepted 15 of 16"),
     ("molmim", 422, INVALID, "invalid_molecule", "Supply valid SMILES"),
+    ("evo2-40b", 500, EVO2_OOM, "model_memory_exhausted", "correct runtime memory use"),
 ])
 async def test_recognized_failure_retains_original_debug_but_public_static_counts_only(
     registry, model_id, status, payload, code, fragment,
@@ -93,6 +98,10 @@ async def test_recognized_failure_retains_original_debug_but_public_static_count
     ("molmim", 422, {"detail": [{"msg": PRIVATE_MESSAGE, "input": PRIVATE_MESSAGE}]}),
     ("molmim", 422, {"detail": {"code": "OTHER", "message": PRIVATE_MESSAGE}}),
     ("molmim", 422, b'{"detail":'), ("molmim", 422, b"\xff"),
+    ("evo2-40b", 503, EVO2_OOM), ("genmol", 500, EVO2_OOM),
+    ("evo2-40b", 500, {"detail": {**EVO2_OOM["detail"], "retryable": True}}),
+    ("evo2-40b", 500, {"detail": {**EVO2_OOM["detail"], "input_length": 8193}}),
+    ("evo2-40b", 500, {"detail": {**EVO2_OOM["detail"], "num_tokens": True}}),
 ])
 async def test_unrecognized_failures_remain_payload_free(registry, model_id, status, payload):
     result, _ = await invoke(registry, payload, model_id=model_id, status=status)
@@ -187,6 +196,9 @@ def test_detail_sanitizer_accepts_only_exact_static_templates():
     ("molmim", 422, INVALID, "invalid_molecule", 1),
     ("genmol", 503, GENMOL, "generation_exhausted", 1),
     ("genmol", 503, {"detail": "model is loading"}, "upstream_http_error", 2),
+    ("evo2-40b", 500, EVO2_OOM, "model_memory_exhausted", 1),
+    ("evo2-40b", 503, {"status": "loading"}, "upstream_http_error", 2),
+    ("evo2-40b", 500, {"detail": {"code": "UNKNOWN"}}, "upstream_http_error", 2),
 ])
 async def test_real_runtime_worker_store_retains_actionable_failure_without_replaying_search(
     registry, cipher, hasher, monkeypatch, model_id, status, payload, code, expected_attempts,
