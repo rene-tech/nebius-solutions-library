@@ -48,6 +48,7 @@ def test_preserves_original_envelope_and_default_shm(tmp_path):
         assert f"--model-seeds {seed}" in container["args"][-1]
         assert f"CONFIG_ACCEPTED {pdb}-s{seed}" in container["args"][-1]
     assert "InferenceExperimentConfig.model_validate" in container["args"][-1]
+    assert 'd["inference_ckpt_path"]="/models/openfold3/of3-ob-2025-06-30-174k.pt"' in container["args"][-1]
     assert "ALL_CASES_COMPLETE" in container["args"][-1]
 
 

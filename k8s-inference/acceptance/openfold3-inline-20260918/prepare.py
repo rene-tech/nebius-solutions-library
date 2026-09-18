@@ -97,7 +97,7 @@ df -B1 /dev/shm > /outputs/shm.txt
         command = command.replace("/outputs/semantic", f"/outputs/{case}/semantic")
         # Parse the emitted policy through the exact installed upstream config,
         # not only the wrapper's YAML parser, before consuming GPU work.
-        before_gpu = f'''PYTHONPATH=/opt/fs2 python -c 'import json,yaml; from openfold3.entry_points.validator import InferenceExperimentConfig; c=InferenceExperimentConfig.model_validate(yaml.safe_load(open("/work/{case}/prepared/runner.yaml"))); assert c.data_module_args.num_workers == 0; assert c.data_module_args.prefetch_factor is None; assert c.data_module_args.persistent_workers is False; assert c.experiment_settings.seeds == [{seed}]; print("CONFIG_ACCEPTED {case}")'
+        before_gpu = f'''PYTHONPATH=/opt/fs2 python -c 'import yaml; from pathlib import Path; from openfold3.entry_points.validator import InferenceExperimentConfig; d=yaml.safe_load(Path("/work/{case}/prepared/runner.yaml").read_text()); d["inference_ckpt_path"]="/models/openfold3/of3-ob-2025-06-30-174k.pt"; c=InferenceExperimentConfig.model_validate(d); assert c.data_module_args.num_workers == 0; assert c.data_module_args.prefetch_factor is None; assert c.data_module_args.persistent_workers is False; assert c.experiment_settings.seeds == [{seed}]; print("CONFIG_ACCEPTED {case}")'
 '''
         command = command.replace('export FS2_QUALIFICATION_STARTED_EPOCH=', before_gpu+'export FS2_QUALIFICATION_STARTED_EPOCH=')
         commands.append(f'echo "CASE_START {case}"\n'+command+f'\necho "CASE_COMPLETE {case}"\n')
