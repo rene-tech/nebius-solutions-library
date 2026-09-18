@@ -613,10 +613,31 @@ _ResponseValue = TypeVar("_ResponseValue")
 
 
 class WorkloadArtifactHttpClient:
-    def __init__(self, *, base_url: str, capability: str, client: httpx.Client | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        capability: str,
+        client: httpx.Client | None = None,
+        fallback_base_url: str | None = None,
+    ) -> None:
         self.client = client or httpx.Client(timeout=60, follow_redirects=False)
         self.base_url = base_url.rstrip("/")
+        self.fallback_base_url = fallback_base_url.rstrip("/") if fallback_base_url else None
         self.headers = {"Authorization": f"Bearer {capability}"}
+
+    def _attempt_url(self, url: str, attempt: int) -> str:
+        # Prefer readiness-gated backends during rollouts. The existing
+        # artifact-only fallback avoids a deadlock if worker readiness fails
+        # while the HTTP server can still serve already-admitted jobs. Reuse
+        # the existing retry budget; never redirect signed object-store URLs.
+        if (
+            self.fallback_base_url
+            and attempt % 2 == 1
+            and url.startswith(self.base_url + "/internal/scientific-workloads/")
+        ):
+            return self.fallback_base_url + url[len(self.base_url) :]
+        return url
 
     def _download_get(
         self,
@@ -630,7 +651,7 @@ class WorkloadArtifactHttpClient:
         for attempt in range(_ARTIFACT_DOWNLOAD_MAX_ATTEMPTS):
             retry = False
             try:
-                with self.client.stream("GET", url, headers=headers) as response:
+                with self.client.stream("GET", self._attempt_url(url, attempt), headers=headers) as response:
                     retry = response.status_code == 429 or 500 <= response.status_code < 600
                     if not retry or attempt + 1 == _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS:
                         response.raise_for_status()
@@ -668,7 +689,7 @@ class WorkloadArtifactHttpClient:
             try:
                 response = self.client.request(
                     method,
-                    url,
+                    self._attempt_url(url, attempt),
                     headers=headers,
                     json=json_body,
                     content=content,

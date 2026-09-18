@@ -1190,6 +1190,9 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         for item in named[("Deployment", "fs2-serve-control-plane")]["spec"]["template"]["spec"]["containers"][0]["env"]
     }
     assert gateway_env["FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL"]["value"] == (
+        "http://fs2-serve-control-plane.fs2-system.svc:8080"
+    )
+    assert gateway_env["FS2_SCIENTIFIC_BATCH_INTERNAL_FALLBACK_API_URL"]["value"] == (
         "http://fs2-serve-control-plane-scientific-artifacts.fs2-system.svc:8080"
     )
     flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]

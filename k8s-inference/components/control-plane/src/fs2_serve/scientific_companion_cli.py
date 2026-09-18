@@ -108,7 +108,10 @@ def main() -> None:
     capability = os.environ.get("FS2_SCIENTIFIC_WORKLOAD_CAPABILITY")
     if not api_url or not capability:
         parser.error("scientific companion API and capability are required")
-    client = WorkloadArtifactHttpClient(base_url=api_url, capability=capability)
+    client = WorkloadArtifactHttpClient(
+        base_url=api_url, capability=capability,
+        fallback_base_url=os.environ.get("FS2_SCIENTIFIC_INTERNAL_FALLBACK_API_URL"),
+    )
     try:
         if args.command == "scientific-materialize":
             _materialize(client, args, parser)

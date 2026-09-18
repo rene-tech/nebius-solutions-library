@@ -273,6 +273,7 @@ class FileScientificManifestRenderer:
         profiles: ScientificProfileCatalog,
         tools_image: str | None = None,
         internal_api_url: str | None = None,
+        internal_fallback_api_url: str | None = None,
         capability_authority: ScientificWorkloadCapabilityAuthority | None = None,
         academic_tenant_id: str | None = None,
         academic_authorization_receipt_sha256: str | None = None,
@@ -850,6 +851,7 @@ class FileScientificManifestRenderer:
         self.runtime_artifacts = MappingProxyType(runtime_artifacts)
         self.tools_image = tools_image
         self.internal_api_url = internal_api_url
+        self.internal_fallback_api_url = internal_fallback_api_url
         self.capability_authority = capability_authority
         if (
             academic_authorization_receipt_sha256 is not None
@@ -1724,6 +1726,13 @@ class FileScientificManifestRenderer:
             # workload Pods do not mount the gateway's optional catalog PVC.
             {"name": "FS2_CATALOG_DIR", "value": PACKAGED_TOOLS_CATALOG_DIR},
         ]
+        if self.internal_fallback_api_url:
+            companion_env.append(
+                {
+                    "name": "FS2_SCIENTIFIC_INTERNAL_FALLBACK_API_URL",
+                    "value": self.internal_fallback_api_url,
+                }
+            )
         companion_security = {
             "allowPrivilegeEscalation": False,
             "capabilities": {"drop": ["ALL"]},

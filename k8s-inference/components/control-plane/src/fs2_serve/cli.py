@@ -408,6 +408,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             profiles=scientific_profiles,
             tools_image=settings.scientific_batch_tools_image,
             internal_api_url=settings.scientific_batch_internal_api_url,
+            internal_fallback_api_url=settings.scientific_batch_internal_fallback_api_url,
             capability_authority=scientific_capabilities,
             academic_tenant_id=settings.scientific_batch_academic_tenant_id,
             academic_authorization_receipt_sha256=(settings.scientific_batch_academic_authorization_receipt_sha256),

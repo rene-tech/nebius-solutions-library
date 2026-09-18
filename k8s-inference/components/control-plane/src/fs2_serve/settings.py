@@ -249,6 +249,7 @@ class Settings(BaseSettings):
     scientific_batch_internal_api_url: str = Field(
         default="http://fs2-serve-control-plane.default.svc:8080", min_length=1, max_length=2048
     )
+    scientific_batch_internal_fallback_api_url: str | None = Field(default=None, min_length=1, max_length=2048)
     scientific_batch_workers: int = Field(default=2, ge=1, le=32)
     scientific_batch_poll_seconds: float = Field(default=0.25, ge=0.05, le=60)
     scientific_batch_lease_seconds: float = Field(default=30, ge=5, le=300)
@@ -441,6 +442,19 @@ class Settings(BaseSettings):
             or internal_api.fragment
         ):
             raise ValueError("scientific batch internal API URL must be an in-cluster HTTP origin")
+        if self.scientific_batch_internal_fallback_api_url:
+            fallback_api = urlsplit(self.scientific_batch_internal_fallback_api_url)
+            if (
+                fallback_api.scheme != "http"
+                or fallback_api.hostname is None
+                or (not fallback_api.hostname.endswith(".svc") and not self.allow_non_cluster_urls)
+                or fallback_api.username
+                or fallback_api.password
+                or fallback_api.path not in {"", "/"}
+                or fallback_api.query
+                or fallback_api.fragment
+            ):
+                raise ValueError("scientific batch fallback API URL must be an in-cluster HTTP origin")
         if not self.scientific_batch_kubernetes_api_url.startswith("https://"):
             raise ValueError("scientific batch Kubernetes API URL must use HTTPS")
         if self.scientific_batch_enabled and not self.scientific_artifacts_enabled:
