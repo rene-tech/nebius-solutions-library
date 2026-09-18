@@ -8,6 +8,7 @@ reusing compiler caches whose paths embed the old image digest.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import copy
 import hashlib
 import importlib.util
@@ -18,6 +19,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+from fs2_serve_catalog.loader import load_catalog
+
+from fs2_serve.configuration import (
+    ConfigurationService,
+    InMemoryConfigurationRepository,
+    StaticCatalogConfigurationAdapter,
+    catalog_configuration_contracts,
+)
+from fs2_serve.configuration_models import PlatformConfiguration
+from fs2_serve.deployment_runtimes import deployment_runtime_configuration_identity
 from fs2_serve.model_deployment import (
     InfrastructureEnvelope,
     LegacyTemplateBundle,
@@ -29,6 +40,7 @@ from fs2_serve.model_deployment import (
     validate_model_deployment,
 )
 from fs2_serve.model_deployment_controller import ControllerFiles
+from fs2_serve.native_catalog import augment_native_catalog
 
 ROOT = Path(__file__).resolve().parents[2]
 OLD = {"genmol": "7a89a6f254e5a56dad391b8707315f8abd77d7138cacd585c706f63440463aaf",
@@ -177,9 +189,50 @@ def configmap(prefix, data):
                          "labels": {"workload.fs2.nebius/owner": "scientific-qualification-20260918"}}, "data": data}
 
 
+def rebase_admin_configuration(configuration, previous_entries, successors):
+    """Keep operator settings; align only the two immutable artifact identities."""
+    result = copy.deepcopy(configuration)
+    identity_fields = {
+        "artifact_manifest_sha256": "artifact_manifest_sha256",
+        "acquisition_contract_sha256": "acquisition_contract_sha256",
+        "provenance_sha256": "provenance_sha256",
+        "semantic_health_contract_sha256": "semantic_health_contract_sha256",
+        "image_digest": "runtime_image_digest",
+        "model_revision": "model_revision",
+    }
+    for model_id in NEW:
+        old = deployment_runtime_configuration_identity(previous_entries[model_id])
+        new = deployment_runtime_configuration_identity(successors[model_id])
+        artifact = result["models"][model_id]["artifact"]
+        for field, identity_field in identity_fields.items():
+            if artifact[field] != old[identity_field]:
+                raise ValueError("bootstrap_identity_changed_since_capture:" + model_id + ":" + field)
+            artifact[field] = new[identity_field]
+    return result
+
+
+async def validate_admin_configuration(configuration, entries):
+    """Exercise the actual gateway bootstrap boundary before draining an App."""
+    catalog_dir = ROOT / "catalog/runtime"
+    repo_root = catalog_dir / "packaged-repository"
+    catalog = augment_native_catalog(load_catalog(catalog_dir, repo_root=repo_root), catalog_dir, repo_root=repo_root)
+    desired = PlatformConfiguration.model_validate(configuration)
+    service = ConfigurationService(
+        repository=InMemoryConfigurationRepository(desired),
+        catalog=StaticCatalogConfigurationAdapter(
+            catalog_configuration_contracts(catalog, deployment_runtime_entries=entries)
+        ),
+    )
+    validation = await service.validate_bootstrap(desired)
+    if not validation.valid:
+        errors = [issue.model_dump(mode="json") for issue in validation.issues if issue.severity == "error"]
+        raise ValueError("gateway_bootstrap_rejected:" + json.dumps(errors, sort_keys=True))
+    return validation.model_dump(mode="json")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("live-configmaps", "live-routes", "modeldeployments", "output"):
+    for name in ("live-configmaps", "live-routes", "live-admin-configuration", "modeldeployments", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
     args = parser.parse_args()
@@ -203,12 +256,22 @@ def main():
     candidate, bundles, route_data, proposals = extend(original, document("renderer-bundles.json"),
                                                        routes["data"], deployments, successors)
     validation = validate_candidate(original, candidate, bundles, deployments, proposals)
+    admin_map = json.loads(args.live_admin_configuration.read_bytes())
+    old_configuration = json.loads(admin_map["data"]["admin-configuration.json"])
+    new_configuration = rebase_admin_configuration(old_configuration,
+        json.loads(routes["data"]["deployment-runtimes.json"])["models"], successors)
+    validation["gateway_bootstrap"] = asyncio.run(validate_admin_configuration(
+        new_configuration, json.loads(route_data["deployment-runtimes.json"])["models"]))
     objects = [configmap("fs2-science-envelope-", {"infrastructure-envelope.json": canonical_json(candidate).decode()}),
                configmap("fs2-science-bundles-", {"renderer-bundles.json": canonical_json(bundles).decode()}),
-               configmap("fs2-science-routes-", route_data)]
+               configmap("fs2-science-routes-", route_data),
+               configmap("fs2-science-admin-", {
+                   "admin-configuration.json": canonical_json(new_configuration).decode()})]
     values = {"modelController": {"infrastructureEnvelopeConfigMapName": objects[0]["metadata"]["name"],
                                   "rendererBundlesConfigMapName": objects[1]["metadata"]["name"]},
-              "catalog": {"leanRoutes": {"configMapName": objects[2]["metadata"]["name"]}}}
+              "catalog": {"leanRoutes": {"configMapName": objects[2]["metadata"]["name"]}},
+              "adminConfiguration": {"configMapName": objects[3]["metadata"]["name"],
+                  "sha256": hashlib.sha256(canonical_json(new_configuration)).hexdigest()}}
     receipt = {"applied": False, "source_commit": args.source_commit, "values": values, "validation": validation,
                "model_count": len(candidate["qualifications"]), "preserved_sibling_models": 18,
                "all_prior_bundles_preserved": True, "added_genmol_template": TEMPLATE_NAME,
@@ -216,7 +279,8 @@ def main():
                "new_images_have_snapshot_evidence": False,
                "input_sha256": {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in (
                    ("live_configmaps", args.live_configmaps), ("live_routes", args.live_routes),
-                   ("modeldeployments", args.modeldeployments))},
+                   ("modeldeployments", args.modeldeployments),
+                   ("live_admin_configuration", args.live_admin_configuration))},
                "configmaps": [{"name": obj["metadata"]["name"],
                                "data_sha256": hashlib.sha256(canonical_json(obj["data"])).hexdigest()}
                               for obj in objects]}

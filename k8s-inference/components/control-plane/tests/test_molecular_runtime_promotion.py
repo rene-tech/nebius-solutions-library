@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import importlib.util
 import json
@@ -9,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from conftest import CATALOG_ROOT
+from test_admin_configuration import qualified_configuration
 from test_deployment_runtimes import inputs as canonical_inputs
 from test_deployment_runtimes import project
 
@@ -138,3 +140,60 @@ def test_immutable_configmap_names_bind_every_data_byte():
     c = promotion.configmap("fs2-science-", {"a": "other", "b": "two"})
     assert a == b and a["metadata"]["name"] != c["metadata"]["name"]
     assert a["immutable"] is True
+
+
+def admin_baseline():
+    configuration = {"pools": {"retained": "unchanged"}, "models": {"sibling": {"retain": "all fields"}}}
+    for name, entry in records().items():
+        fields = promotion.deployment_runtime_configuration_identity(entry)
+        artifact = {key: value for key, value in fields.items()
+                    if key not in {"model_id", "supported_accelerator_classes", "runtime_image_digest"}}
+        artifact["image_digest"] = fields["runtime_image_digest"]
+        artifact["image_repository"] = entry["record"]["runtime"]["image"]["reference"].split("@")[0]
+        configuration["models"][name] = {"artifact": artifact, "autoscaling": {"min_replicas": 1},
+                                        "queue": {"preserved": True}}
+    return configuration
+
+
+def test_bootstrap_baseline_rebases_exact_runtime_identities_not_operator_settings():
+    before = admin_baseline()
+    unchanged = copy.deepcopy(before)
+    after = promotion.rebase_admin_configuration(before, records(), records("-20260918"))
+    assert before == unchanged
+    assert after["pools"] == before["pools"]
+    assert after["models"]["sibling"] == before["models"]["sibling"]
+    for name in promotion.NEW:
+        fields = promotion.deployment_runtime_configuration_identity(records("-20260918")[name])
+        artifact = after["models"][name]["artifact"]
+        assert artifact["image_digest"] == fields["runtime_image_digest"]
+        for field in ("provenance_sha256", "acquisition_contract_sha256", "semantic_health_contract_sha256"):
+            assert artifact[field] == fields[field]
+        assert artifact["image_repository"] == before["models"][name]["artifact"]["image_repository"]
+        restored = copy.deepcopy(after["models"][name])
+        restored["artifact"] = before["models"][name]["artifact"]
+        assert restored == before["models"][name]
+
+
+@pytest.mark.parametrize("field", ["image_digest", "provenance_sha256", "acquisition_contract_sha256"])
+def test_bootstrap_baseline_does_not_overwrite_concurrently_changed_identity(field):
+    configuration = admin_baseline()
+    configuration["models"]["genmol"]["artifact"][field] = "different"
+    with pytest.raises(ValueError, match="bootstrap_identity_changed_since_capture:genmol:" + field):
+        promotion.rebase_admin_configuration(configuration, records(), records("-20260918"))
+
+
+def test_actual_gateway_bootstrap_rejects_stale_baseline_and_accepts_rebased_identities():
+    configuration, _ = qualified_configuration()
+    payload = configuration.model_dump(mode="json")
+    template = payload["models"].pop("qwen3-8b")
+    for name, value in admin_baseline()["models"].items():
+        if name not in promotion.NEW:
+            continue
+        payload["models"][name] = {**copy.deepcopy(template), "model_id": name,
+                                   "artifact": value["artifact"]}
+        payload["models"][name]["mcp"]["tool_name"] = name
+    with pytest.raises(ValueError, match="gateway_bootstrap_rejected:.*catalog_runtime_mismatch"):
+        asyncio.run(promotion.validate_admin_configuration(payload, records("-20260918")))
+    updated = promotion.rebase_admin_configuration(payload, records(), records("-20260918"))
+    validation = asyncio.run(promotion.validate_admin_configuration(updated, records("-20260918")))
+    assert validation["valid"]

@@ -33,7 +33,8 @@ route/HTTP-MCP/cold-start/elasticity false and their receipts null.
 
 Retain read-only JSON captures of the currently mounted infrastructure-envelope
 and renderer-bundle ConfigMaps as a Kubernetes List, the current routes ConfigMap,
-and all current ModelDeployments. These may contain deployment configuration and
+the mounted admin-configuration baseline ConfigMap, and all current
+ModelDeployments. These may contain deployment configuration and
 belong in a private directory, not the repository. The initial reviewed captures
 are under `/home/tux/secure-handoff/molecular-promotion-20260918-3OiTaJ`.
 
@@ -44,15 +45,24 @@ components/control-plane/.venv/bin/python acceptance/scientific-runtime-repair-2
   --source-commit EXACT_COMMITTED_CANDIDATE_REVISION \
   --live-configmaps PRIVATE/live-configmaps.json \
   --live-routes PRIVATE/live-routes.json \
+  --live-admin-configuration PRIVATE/live-admin-configuration.json \
   --modeldeployments PRIVATE/modeldeployments.json \
   --output PRIVATE/new-candidate
 ```
 
 The helper checks that both successor JSON files match the explicit commit,
 reuses the existing voice/Cosmos resource-digest format, and produces private
-immutable ConfigMaps, a three-reference Helm values delta, proposed App specs,
+immutable ConfigMaps, a four-reference Helm values delta, proposed App specs,
 original rollback App specs, and a hash-bound validation receipt. It has no
 Kubernetes, Helm, Terraform, or admin API mutation path.
+
+The baseline changes only the two selected model artifact identities (image,
+acquisition and provenance descriptors); operator settings and all sibling rows
+are retained. Preparation invokes the gateway's actual bootstrap validation.
+The first attempted rollout omitted this fourth dependency and its new gateway
+failed startup with a canonical-catalog mismatch. Existing gateway replicas
+continued serving while Helm rolled back. Preserve that failed release receipt;
+renderer validation alone was not a sufficient deployment acceptance test.
 
 The complete envelope retains all 20 model qualifications, including the five
 speech models. Only GenMol and ProteinMPNN gain candidate image permission; the
@@ -78,14 +88,14 @@ customer workloads/qualification runs are ready for it:
 
 1. Recheck current App specs/ETags and mounted contracts against the captured
    inputs. If they changed, regenerate and review; do not overwrite concurrent
-   configuration. Create the three new immutable ConfigMaps additively, retaining
+   configuration. Create the four new immutable ConfigMaps additively, retaining
    all old maps. This alone does not change any route or running model.
 2. Immediately before cutover, drain only these two Apps through the existing
    `/admin/api/v1/model-deployments/{name}:drain` API with current ETags. Wait for
    terminal in-flight operations and each matching observed revision/spec digest
    to be Cold with desired/ready/available replicas zero. No early drain while
    images, contracts or the release are still being prepared.
-3. Upgrade the existing Helm release using all retained values and only the three
+3. Upgrade the existing Helm release using all retained values and only the four
    generated ConfigMap references. Wait for the gateway and controller to load
    them. The canonical runtime identity check intentionally prevents an old
    runtime image from publishing against a new selected record; drained Apps can
