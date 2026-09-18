@@ -6,39 +6,30 @@ follows durable progress, downloads every output, safely unpacks it, and fully
 reopens it with **LeRobot 0.6.1**. Local paths are interpreted only by this client;
 they are never sent to Cosmos as remote paths. The input directory is unchanged.
 
-Current status (2026-09-18): the corrected release148 named-MCP lighting debug
-**passed**. Parent `e50a8f50-c388-4eb7-a53d-bd943d82070c` succeeded on its first
-attempt, both idempotent replays returned that parent, and the downloaded output
-passed LeRobot0.6.1 full-reader comparison: two32-frame episodes, two cameras,
-128 decoded frames and2,304 exactly preserved Arrow-backed nonvideo values.
-All32 selected front frames changed; untouched streams' maximum per-frame MAE
-was2.108/255 (declared limit6). The attempt reports resources released. Parent
-accepted00:37:32.688537Z and completed00:39:21.695405Z; local collection/validation
-finished00:39:50.589067Z. Raw source/result/archive/dataset remain unchanged in
-`/home/tux/secure-handoff/lerobot-release-20260917/debug-lighting-mcp-r148/`.
-CP index96e197fd/source0834206d0 and corrected workerdf364 are bound by the
-operator's qualification observations. This is one bounded dataset-mechanics
-debug pass, **not two final cohorts, physical alignment or actual LibreChat
-qualification**. Visual review and content-addressed promotion are separate;
-no further admission was made after this debug.
+Current status (2026-09-18): release149 completed **four dataset-mechanics
+passes**: lighting edge-transfer and all-camera/all-episode environment V2V in
+each of two cohorts, swapping HTTP and named MCP. Every output passed the full
+pinned reader and both idempotent replays. The fifth, two-variant blur parent
+`dc708f87-d0a2-4021-b645-7540cf0f4837` failed with public HTTP422 /
+`PLATFORM_UPSTREAM_ERROR`; its static detail is “The control plane rejected or
+could not process a delegated Cosmos request.” Its worker resources are
+released. The runner stopped: malformed-input, worker-invalid-selection,
+concurrency and cancellation probes **did not run**. This is not a passing
+complete suite. No blind retry or further admission followed.
 
-The earlier release147 debug failure remains retained. Parent
-`842b4692-6587-4dfc-8c1b-0d7f77047962` was accepted at
-00:19:39.492065Z and failed at00:20:45.747370Z. Both input uploads finalized and
-the in-flight replay returned the same parent. Its first attempt reached active
-compute, then ended with public HTTP422 / application failure code `Error`,
-without public error detail or an output dataset; the attempt reports resources
-released. No new admission or blind retry followed. Root/worker owners retain
-the child diagnostics; the owner keeps the disposable key for an explicitly
-authorized follow-up. Earlier release146 media passes do not qualify this App.
-No actual LibreChat or physical action-alignment claim is made.
+The unchanged release was CP source `8fe42b85f`, index `sha256:da50219255ae4af4975bba74c0221890cce1eaad4b28ac114d89ceb087e624e4`,
+worker `df364675`. Original journals and all four outputs remain private under
+`/home/tux/secure-handoff/lerobot-release-20260917/final-cohorts-r149/`.
+[Run a local directory](#run-a-local-directory) for the usable CLI; see
+[release evidence](RELEASE.md) for exact identities, observations and retained
+release147 failure / release148 corrected debug history.
 
-The negative run is retained privately at
-`/home/tux/secure-handoff/lerobot-release-20260917/debug-lighting-mcp/`.
-Release147 CP index was
-`sha256:58a6ccc0c7a9882e6155c1aefda1798d8f8777aa86faebf7d583bf007e339390`
-(source `182be10e0`), with worker
-`sha256:71047b62303a21d2feec6127a4531b2ad4333f157bdb52cf67d2756dd7ead8c1`.
+Mechanics are not semantic or physical qualification: visual review observed
+object and trajectory drift, and the requested environment change was not
+visibly achieved. Exact action/timestamp arrays and changed pixels do not prove
+action-aligned imagery or suitable training data. Actual hosted LibreChat also
+remains unqualified. A corrected-release follow-up requires explicit operator
+GO; the original failed suite is never relabelled as a pass.
 
 ## Run a local directory
 
@@ -161,6 +152,13 @@ collector; the client cannot infer an empty child set from parent status. The
 positive source dataset/policies are not modified and this case is never
 automatically retried.
 
+For an explicitly authorized corrected-release debug, `run_targeted_debug.py`
+accepts the same arguments and runs only the two-variant MCP blur case followed
+by those negative probes. It uses a new output directory and reports
+`targeted_blur_probes_passed`, never a final-cohort pass. It stops on an unexpected
+blur or probe failure and makes no automatic retry. This smaller diagnostic
+does not replace the two unchanged-release cohorts after qualification.
+
 The release receipt is hashed, not asserted to prove live stability by this
 ordinary-key process. `observe.py` and the deployment owner separately verify
 unchanged release/runtime identities, all parent/child Runs and Usage,
@@ -179,7 +177,8 @@ action arrays are **not proof of physically action-aligned augmented imagery**.
 
 ## Local evidence
 
-Client/cohort suite: **27 passed**. Real pinned-reader tests: **2 passed** on the
+Client/cohort/targeted-debug suite: **30 passed**. Real pinned-reader tests:
+**2 passed** on the
 two-episode/two-view fixture, including a full pack/unpack/rewrite/reopen loop
 and all-camera/all-episode preparation. The rewrite test uses an explicitly
 local FFmpeg brightness transform, not GPU inference or semantic qualification.
@@ -188,7 +187,8 @@ Ruff passes for all owned Python files.
 ```sh
 components/control-plane/.venv/bin/python -m pytest -q \
   acceptance/lerobot-customer-20260917/test_client.py \
-  acceptance/lerobot-customer-20260917/test_cohorts.py
+  acceptance/lerobot-customer-20260917/test_cohorts.py \
+  acceptance/lerobot-customer-20260917/test_targeted_debug.py
 FS2_LEROBOT_LOCAL_DATASET=/private/public-robot-2x32 \
   /private/pinned-reader/bin/python -m pytest -q \
   acceptance/lerobot-customer-20260917/test_reader.py

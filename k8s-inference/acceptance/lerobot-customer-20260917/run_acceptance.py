@@ -284,7 +284,7 @@ async def execute(args, state, token):
     )
 
 
-def main():
+def main(executor=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("dataset", "key-file", "reader-python", "output", "release-receipt"):
         parser.add_argument("--" + name, type=Path, required=True)
@@ -320,7 +320,7 @@ def main():
             "runs": [],
         }
         client.save(args.output / "acceptance.json", state, token)
-        asyncio.run(execute(args, state, token))
+        asyncio.run((executor or execute)(args, state, token))
         client.save(args.output / "acceptance.json", state, token)
         print(
             json.dumps(
