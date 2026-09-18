@@ -38,12 +38,16 @@ def cases(include_blur):
 
 async def run_directory(args, state, token, cohort, policy, protocol):
     output = args.output / f"cohort-{cohort}-{policy}"
+    expected_variants = json.loads((HERE / (policy + ".json")).read_text())["variants"][
+        "count"
+    ]
     entry = {
         "cohort": cohort,
         "policy": policy,
         "protocol": protocol,
         "output": str(output),
         "started_at": client.now(),
+        "expected_variants": expected_variants,
     }
     state["runs"].append(entry)
     client.save(args.output / "acceptance.json", state, token)
@@ -88,9 +92,12 @@ async def run_directory(args, state, token, cohort, policy, protocol):
     if (output / "run.json").exists():
         run = client.harness.private_json(output / "run.json")
         entry.update(operation_id=run.get("operation_id"), outcome=run.get("outcome"))
+        entry["validated_datasets"] = len(run.get("validations", []))
     client.save(args.output / "acceptance.json", state, token)
     client.check(
-        code == 0 and entry.get("outcome") == "dataset_integrity_passed",
+        code == 0
+        and entry.get("outcome") == "dataset_integrity_passed"
+        and entry.get("validated_datasets") == expected_variants,
         "dataset_run_failed_stop_admissions",
     )
     return run
@@ -270,7 +277,11 @@ async def execute(args, state, token):
         successful = await run_directory(args, state, token, cohort, policy, protocol)
     assert successful
     await probes(args, state, token, successful)
-    state.update(outcome="bounded_dataset_cohorts_passed", completed_at=client.now())
+    state.update(
+        outcome="bounded_dataset_cohorts_passed",
+        completed_at=client.now(),
+        validated_datasets=sum(entry["validated_datasets"] for entry in state["runs"]),
+    )
 
 
 def main():
@@ -315,7 +326,8 @@ def main():
             json.dumps(
                 {
                     "outcome": state["outcome"],
-                    "datasets": len(state["runs"]),
+                    "runs": len(state["runs"]),
+                    "datasets": state["validated_datasets"],
                     "customer_ready": False,
                 }
             )

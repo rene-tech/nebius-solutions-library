@@ -6,9 +6,24 @@ follows durable progress, downloads every output, safely unpacks it, and fully
 reopens it with **LeRobot 0.6.1**. Local paths are interpreted only by this client;
 they are never sent to Cosmos as remote paths. The input directory is unchanged.
 
-Current status (2026-09-18): the first actual public named-MCP lighting debug
-workflow ran on release147 and **failed**, so no final cohorts or qualification
-are claimed. Parent `842b4692-6587-4dfc-8c1b-0d7f77047962` was accepted at
+Current status (2026-09-18): the corrected release148 named-MCP lighting debug
+**passed**. Parent `e50a8f50-c388-4eb7-a53d-bd943d82070c` succeeded on its first
+attempt, both idempotent replays returned that parent, and the downloaded output
+passed LeRobot0.6.1 full-reader comparison: two32-frame episodes, two cameras,
+128 decoded frames and2,304 exactly preserved Arrow-backed nonvideo values.
+All32 selected front frames changed; untouched streams' maximum per-frame MAE
+was2.108/255 (declared limit6). The attempt reports resources released. Parent
+accepted00:37:32.688537Z and completed00:39:21.695405Z; local collection/validation
+finished00:39:50.589067Z. Raw source/result/archive/dataset remain unchanged in
+`/home/tux/secure-handoff/lerobot-release-20260917/debug-lighting-mcp-r148/`.
+CP index96e197fd/source0834206d0 and corrected workerdf364 are bound by the
+operator's qualification observations. This is one bounded dataset-mechanics
+debug pass, **not two final cohorts, physical alignment or actual LibreChat
+qualification**. Visual review and content-addressed promotion are separate;
+no further admission was made after this debug.
+
+The earlier release147 debug failure remains retained. Parent
+`842b4692-6587-4dfc-8c1b-0d7f77047962` was accepted at
 00:19:39.492065Z and failed at00:20:45.747370Z. Both input uploads finalized and
 the in-flight replay returned the same parent. Its first attempt reached active
 compute, then ended with public HTTP422 / application failure code `Error`,
@@ -124,8 +139,11 @@ components/control-plane/.venv/bin/python \
 
 Two consecutive cohorts each run lighting edge-transfer on episode0/front and
 native V2V environment variation on both episodes/cameras. HTTP and named MCP
-are swapped between cohorts. The optional fifth output covers blur-transfer on
-episode1/wrist. All use 35 steps / guidance 6. Each parent has both in-flight and
+are swapped between cohorts. The optional fifth parent produces **two complete
+output datasets** with distinct seeds for blur-transfer on episode1/wrist. Thus
+the positive matrix has five parents and six validated datasets; the runner
+checks every output count and variant, including a regression that rejects a
+corrupt second variant. All use35 steps / guidance6. Each parent has both in-flight and
 terminal replay checks. A final additional parent tests running-stage
 cancellation and an overlapping second admission tests the documented HTTP429
 `concurrency_exceeded` response. Invalid `variants.count=0` must produce public
@@ -161,7 +179,7 @@ action arrays are **not proof of physically action-aligned augmented imagery**.
 
 ## Local evidence
 
-Client/cohort suite: **25 passed**. Real pinned-reader tests: **2 passed** on the
+Client/cohort suite: **27 passed**. Real pinned-reader tests: **2 passed** on the
 two-episode/two-view fixture, including a full pack/unpack/rewrite/reopen loop
 and all-camera/all-episode preparation. The rewrite test uses an explicitly
 local FFmpeg brightness transform, not GPU inference or semantic qualification.

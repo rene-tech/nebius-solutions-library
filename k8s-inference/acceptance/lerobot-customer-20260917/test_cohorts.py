@@ -28,6 +28,13 @@ def test_matrix_has_two_real_dimensions_both_protocols_and_explicit_blur():
         (2, "environment", "mcp"),
     ]
     assert driver.cases(True)[-1] == (2, "blur", "mcp")
+    blur = json.loads((Path(__file__).parent / "blur.json").read_text())
+    assert blur["variants"]["count"] == 2
+    assert len(set(blur["variants"]["seeds"])) == 2
+    assert blur["selection"] == {
+        "episodes": [1],
+        "cameras": ["observation.images.wrist"],
+    }
 
 
 @pytest.mark.parametrize(

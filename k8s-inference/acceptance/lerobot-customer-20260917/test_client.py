@@ -5,6 +5,7 @@ import json
 import tarfile
 from pathlib import Path
 from builtins import ExceptionGroup
+from types import SimpleNamespace
 
 import httpx2
 import pytest
@@ -334,3 +335,109 @@ def test_resume_lock_failure_does_not_overwrite_journal(tmp_path, monkeypatch):
     )
     assert client.main() == 1
     assert json.loads((tmp_path / "run.json").read_text()) == state
+
+
+@pytest.mark.parametrize("corrupt_second", [False, True])
+def test_every_returned_variant_is_downloaded_and_validated(
+    tmp_path, monkeypatch, corrupt_second
+):
+    def reference(number, media_type="application/x-tar", compression="zstd"):
+        return {
+            "artifact_id": f"00000000-0000-4000-8000-{number:012d}",
+            "sha256": "a" * 64,
+            "size_bytes": 100,
+            "media_type": media_type,
+            "compression": compression,
+        }
+
+    manifest = reference(101, "application/vnd.fs2.scientific-manifest+json", "none")
+    result_ref = reference(102, "application/json", "none")
+    variants = [reference(103), reference(104)]
+    entries = [
+        {
+            "name": "result",
+            "semantic_type": "lerobot-augmentation-result/v1",
+            "artifact": result_ref,
+        }
+    ]
+    result = {
+        "schema": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-result/v1",
+        "operation_id": OP,
+        "status": "succeeded",
+        "failures": [],
+        "variants": [],
+    }
+    for index, artifact in enumerate(variants):
+        entries.append(
+            {
+                "name": f"variant-{index:02d}",
+                "semantic_type": "lerobot-v3-augmented-bundle/v1",
+                "artifact": artifact,
+            }
+        )
+        result["variants"].append(
+            {
+                "variant_index": index,
+                "seed": 7 + index,
+                "artifact": {**artifact, "artifact_id": f"{OP}.variant-{index:02d}"},
+                "provenance_sha256": "b" * 64,
+            }
+        )
+    if corrupt_second:
+        result["variants"][1]["artifact"]["sha256"] = "c" * 64
+    validated, downloaded = [], []
+
+    def validate_reader(python, *arguments):
+        variant = Path(arguments[arguments.index("--variant") + 1])
+        receipt = Path(arguments[arguments.index("--receipt") + 1])
+        validated.append(variant.name)
+        client.harness.write_private(receipt, {"validation": {"status": "passed"}}, ())
+
+    monkeypatch.setattr(client, "reader", validate_reader)
+
+    class FakePublic:
+        output, token = tmp_path, TOKEN
+        state = {
+            "operation_id": OP,
+            "request": {"parameters": {"variants": {"count": 2, "seeds": [7, 8]}}},
+        }
+
+        async def response(self, method, path):
+            return {"terminal_status": "succeeded", "output_manifest": manifest}
+
+        async def call(self, name, arguments):
+            assert name == "inspect_scientific_artifact_manifest"
+            return {"artifact": manifest, "truncated": False, "entries": entries}
+
+        async def download_file(self, artifact, destination, maximum):
+            downloaded.append(destination.name)
+            if destination.name == "result.json":
+                client.harness.write_private(destination, result, ())
+
+        def persist(self):
+            pass
+
+    public = FakePublic()
+    args = SimpleNamespace(
+        reader_python=Path("/unused"),
+        max_bytes=5 * 1024**3,
+        max_expanded_bytes=8 * 1024**3,
+    )
+    if corrupt_second:
+        with pytest.raises(
+            client.harness.AcceptanceError, match="variant_manifest_identity_mismatch"
+        ):
+            asyncio.run(client.collect_outputs(public, args))
+        assert "outcome" not in public.state
+        assert validated == ["variant-00.json"]
+    else:
+        asyncio.run(client.collect_outputs(public, args))
+        assert validated == ["variant-00.json", "variant-01.json"]
+        assert downloaded == [
+            "output-manifest.json",
+            "result.json",
+            "variant-00.tar.zst",
+            "variant-01.tar.zst",
+        ]
+        assert len(public.state["validations"]) == 2
+        assert public.state["outcome"] == "dataset_integrity_passed"
