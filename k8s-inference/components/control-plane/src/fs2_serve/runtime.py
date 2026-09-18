@@ -307,6 +307,17 @@ class RuntimeLifecycleMetadataProvider(RuntimeMetadataProvider, Protocol):
     ) -> RuntimeLifecycleObservation | None: ...
 
 
+@runtime_checkable
+class RuntimeResponseMetadataProvider(RuntimeLifecycleMetadataProvider, Protocol):
+    """Verify a response hint against the actual model Service endpoint set."""
+
+    async def resolve_response_lifecycle(
+        self, *, operation_id: UUID, model_id: str, pod_uid: str,
+        service_name: str, service_namespace: str, service_port: int,
+        runtime_image_digest: str, model_revision: str | None,
+    ) -> RuntimeLifecycleObservation | None: ...
+
+
 class NullRuntimeMetadataProvider:
     """Fail-closed default when no trusted allocation source is configured."""
 
@@ -523,8 +534,36 @@ class RuntimeClient:
         self,
         operation: ClaimedOperation,
         model: OperationalModel,
+        response: httpx.Response | None = None,
     ) -> tuple[RuntimeIdentity, RuntimeLifecycleObservation | None]:
         try:
+            if (response is not None and model.binding.backend_class == "local-kubernetes"
+                    and isinstance(self.metadata_provider, RuntimeResponseMetadataProvider)):
+                names = ("x-fs2-runtime-pod-uid", "x-fs2-runtime-operation-id", "x-fs2-runtime-attempt")
+                if any(name in response.headers for name in names):
+                    # A malformed/stale hint is unavailable, never a reason to
+                    # guess the singleton Pod or fail otherwise valid inference.
+                    values = [response.headers.get_list(name) for name in names]
+                    if (any(len(v) != 1 or len(v[0]) > 128 for v in values)
+                            or values[1][0] != str(operation.id) or values[2][0] != str(operation.attempt)):
+                        return RuntimeIdentity(), None
+                    try:
+                        pod_uid = str(UUID(values[0][0]))
+                    except ValueError:
+                        return RuntimeIdentity(), None
+                    observation = await self.metadata_provider.resolve_response_lifecycle(
+                        operation_id=operation.id, model_id=model.id, pod_uid=pod_uid,
+                        service_name=model.binding.backend_service_name,
+                        service_namespace=model.binding.backend_namespace,
+                        service_port=model.binding.backend_port,
+                        runtime_image_digest=model.binding.backend_runtime_image_digest,
+                        model_revision=(model.dynamic_policy.publication.artifact_revision
+                                        if model.dynamic_policy else model.gateway.model_revision),
+                    )
+                    if observation is None:
+                        return RuntimeIdentity(), None
+                    validated = RuntimeLifecycleObservation.model_validate(observation)
+                    return validated.runtime, validated
             if isinstance(self.metadata_provider, RuntimeLifecycleMetadataProvider):
                 observation = await self.metadata_provider.resolve_lifecycle(
                     operation_id=operation.id,
@@ -934,7 +973,7 @@ class RuntimeClient:
                     # Public failures carry only CP-owned wording and validated
                     # aggregate counts for the recognized scientific contracts.
                     # The optional encrypted debug capture owns original bodies.
-                    runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
+                    runtime, lifecycle = await self._trusted_runtime_observation(operation, model, response)
                     return RuntimeResult(
                         status_code=response.status_code,
                         body=b"",
@@ -967,7 +1006,7 @@ class RuntimeClient:
                 else:
                     semantic = self._semantic_outcome(operation.protocol, bytes(content))
                     usage = self._reported_usage(operation.protocol, bytes(content), speech=speech)
-                runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
+                runtime, lifecycle = await self._trusted_runtime_observation(operation, model, response)
                 return RuntimeResult(
                     status_code=response.status_code,
                     body=bytes(content),

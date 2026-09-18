@@ -1,7 +1,8 @@
 """Fail-closed Kubernetes runtime identity and lifecycle observations.
 
-The public inference response is not an attribution authority.  This adapter
-resolves a single ready ModelDeployment Pod through the Kubernetes API and
+The public inference response is not an attribution authority. This adapter
+verifies instrumented response hints against Service/EndpointSlice/Pod facts,
+or resolves a single ready ModelDeployment Pod through the Kubernetes API and
 uses only Pod/Node status, Kubernetes Events, and annotations written by the
 node-local GPU allocation observer.  Ambiguous replicas deliberately produce
 no attribution rather than guessing which Pod served a request.
@@ -33,10 +34,10 @@ GPU_UUIDS_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-uuids"
 GPU_ALLOCATION_OBSERVED_AT_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-allocation-observed-at"
 GPU_OBSERVER_RESOLUTION_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds"
 PHASE_ANNOTATION_PREFIX = "telemetry.fs2.nebius.ai/phase-"
+RESPONSE_IDENTITY_ANNOTATION = "telemetry.fs2.nebius.ai/response-identity"
+RESPONSE_IDENTITY_VERSION = "asgi-v1"
 
-_GPU_RESOURCE = re.compile(
-    r"^(?:nvidia\.com/(?:gpu|mig-[A-Za-z0-9_.-]+)|amd\.com/gpu|gpu\.intel\.com/(?:i915|xe))$"
-)
+_GPU_RESOURCE = re.compile(r"^(?:nvidia\.com/(?:gpu|mig-[A-Za-z0-9_.-]+)|amd\.com/gpu|gpu\.intel\.com/(?:i915|xe))$")
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 
@@ -240,12 +241,147 @@ class KubernetesRuntimeMetadataProvider:
         model_id: str,
     ) -> RuntimeLifecycleObservation | None:
         del operation_id
+        return await self._resolve(model_id=model_id)
+
+    async def resolve_response_lifecycle(
+        self,
+        *,
+        operation_id: UUID,
+        model_id: str,
+        pod_uid: str,
+        service_name: str,
+        service_namespace: str,
+        service_port: int,
+        runtime_image_digest: str,
+        model_revision: str | None,
+    ) -> RuntimeLifecycleObservation | None:
+        del operation_id  # The RuntimeClient already verifies operation + attempt echo.
+        if service_namespace != self.namespace or _DNS_LABEL.fullmatch(service_name) is None or model_revision is None:
+            return None
+        return await self._resolve(
+            model_id=model_id,
+            response_binding={
+                "pod_uid": pod_uid,
+                "service_name": service_name,
+                "service_port": service_port,
+                "runtime_image_digest": runtime_image_digest,
+                "model_revision": model_revision,
+            },
+        )
+
+    async def _response_matches_endpoint(
+        self,
+        pod: Mapping[str, Any],
+        binding: Mapping[str, Any],
+    ) -> bool:
+        metadata, spec, status = (_mapping(pod.get(key)) for key in ("metadata", "spec", "status"))
+        annotations = _mapping(metadata.get("annotations"))
+        if (
+            metadata.get("namespace") != self.namespace
+            or annotations.get(RESPONSE_IDENTITY_ANNOTATION) != RESPONSE_IDENTITY_VERSION
+            or annotations.get("fs2.nebius/model-revision") != binding["model_revision"]
+            or annotations.get("fs2.nebius/runtime-image-digest") != binding["runtime_image_digest"]
+        ):
+            return False
+        containers = [_mapping(c) for c in _sequence(spec.get("containers"))]
+        instrumented = [
+            c
+            for c in containers
+            if str(c.get("image", "")).endswith("@" + binding["runtime_image_digest"])
+            and "fs2_runtime_identity.RuntimeIdentityMiddleware" in _sequence(c.get("args"))
+            and any(
+                _mapping(e).get("name") == "FS2_RUNTIME_POD_UID"
+                and _mapping(_mapping(_mapping(e).get("valueFrom")).get("fieldRef")).get("fieldPath") == "metadata.uid"
+                for e in _sequence(c.get("env"))
+            )
+        ]
+        if len(instrumented) != 1:
+            return False
+        running_images = [
+            _mapping(c).get("imageID")
+            for c in _sequence(status.get("containerStatuses"))
+            if _mapping(c).get("name") == instrumented[0].get("name")
+        ]
+        if (
+            len(running_images) != 1
+            or not isinstance(running_images[0], str)
+            or not running_images[0].endswith("@" + binding["runtime_image_digest"])
+        ):
+            return False
+        services = await self.reader.list(f"/api/v1/namespaces/{self.namespace}/services")
+        services = [s for s in services if _mapping(s.get("metadata")).get("name") == binding["service_name"]]
+        if len(services) != 1:
+            return False
+        service_meta, service_spec = (_mapping(services[0].get(k)) for k in ("metadata", "spec"))
+        selector, labels = _mapping(service_spec.get("selector")), _mapping(metadata.get("labels"))
+        if not service_meta.get("uid") or not selector or any(labels.get(k) != v for k, v in selector.items()):
+            return False
+        ports = [
+            _mapping(p)
+            for p in _sequence(service_spec.get("ports"))
+            if _mapping(p).get("port") == binding["service_port"] and _mapping(p).get("protocol", "TCP") == "TCP"
+        ]
+        if len(ports) != 1:
+            return False
+        target = ports[0].get("targetPort", binding["service_port"])
+        container_ports = [_mapping(p) for p in _sequence(instrumented[0].get("ports"))]
+        selected = [
+            p
+            for p in container_ports
+            if (p.get("name") == target if isinstance(target, str) else p.get("containerPort") == target)
+        ]
+        if len(selected) != 1:
+            return False
+        slices = await self.reader.list(f"/apis/discovery.k8s.io/v1/namespaces/{self.namespace}/endpointslices")
+        for item in slices:
+            slice_meta = _mapping(item.get("metadata"))
+            if (
+                _mapping(slice_meta.get("labels")).get("kubernetes.io/service-name") != binding["service_name"]
+                or not any(
+                    _mapping(o).get("kind") == "Service" and _mapping(o).get("uid") == service_meta["uid"]
+                    for o in _sequence(slice_meta.get("ownerReferences"))
+                )
+                or not any(
+                    _mapping(p).get("port") == selected[0].get("containerPort")
+                    and _mapping(p).get("protocol", "TCP") == "TCP"
+                    for p in _sequence(item.get("ports"))
+                )
+            ):
+                continue
+            for raw_endpoint in _sequence(item.get("endpoints")):
+                endpoint = _mapping(raw_endpoint)
+                ref, conditions = _mapping(endpoint.get("targetRef")), _mapping(endpoint.get("conditions"))
+                if (
+                    ref.get("kind") == "Pod"
+                    and ref.get("uid") == metadata.get("uid")
+                    and ref.get("name") == metadata.get("name")
+                    and ref.get("namespace") == self.namespace
+                    and conditions.get("ready") is True
+                    and conditions.get("terminating") is not True
+                    and isinstance(status.get("podIP"), str)
+                    and status["podIP"] in _sequence(endpoint.get("addresses"))
+                ):
+                    return True
+        return False
+
+    async def _resolve(
+        self,
+        *,
+        model_id: str,
+        response_binding: Mapping[str, Any] | None = None,
+    ) -> RuntimeLifecycleObservation | None:
         try:
             pods = await self.reader.list(f"/api/v1/namespaces/{self.namespace}/pods")
             candidates = [pod for pod in pods if _is_ready_model_pod(pod, model_id)]
+            if response_binding is not None:
+                candidates = [
+                    pod for pod in candidates if _mapping(pod.get("metadata")).get("uid") == response_binding["pod_uid"]
+                ]
             if len(candidates) != 1:
                 return None
             pod = candidates[0]
+            if response_binding is not None and not await self._response_matches_endpoint(pod, response_binding):
+                return None
             metadata = _mapping(pod.get("metadata"))
             spec = _mapping(pod.get("spec"))
             pod_uid = metadata.get("uid")

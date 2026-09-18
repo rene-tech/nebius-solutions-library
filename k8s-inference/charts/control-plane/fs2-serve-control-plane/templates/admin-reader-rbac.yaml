@@ -48,6 +48,10 @@ rules:
     # image-pull boundaries while retained; no event message is persisted.
     resources: ["pods", "services", "events"]
     verbs: ["list"]
+  - apiGroups: ["discovery.k8s.io"]
+    # Validate response identity against the actual serving endpoint set.
+    resources: ["endpointslices"]
+    verbs: ["list"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
     verbs: ["list"]
