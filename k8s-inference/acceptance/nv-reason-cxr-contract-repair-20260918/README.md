@@ -72,11 +72,12 @@ Run it only after the release owner allocates a campaign identity. Keep two
 repetitions separate, and validate the returned schema in addition to the
 unchanged evaluator. No new answer is inferred from an old failed response.
 
-Local validation: 32 tests and Ruff pass. Public qualification is pending;
-prepared manifest SHA256 is
+Local validation: 32 tests and Ruff pass. The request helper and recipe are
+frozen in commit `feb22181a1892cb7bcdba16a798888d099a614a8`.
+Prepared manifest SHA256 is
 `7d1111392841229450e711f58c3ebb1a8b94aa1aaa1771fd1360dacd8c84e5bc`.
 Original evidence is under the protected `general-r1` campaign; revised evidence
-is under `cxr-json-schema-r1` (and a separate r2 if the first supports continuing).
+is under `cxr-json-schema-r1` and `cxr-json-schema-r2`.
 The original failed operation IDs are:
 
 - `df993893-ae40-4a73-a0fc-c7042f49ef70` (row15)
@@ -86,6 +87,40 @@ The original failed operation IDs are:
 - `53399445-5fb5-49ec-b6ce-f6d51457d0a8` (row22, truncated)
 - `f4a53332-d543-44d9-b53c-19c3baf9917b` (row31)
 - `375263f7-8cdb-454e-ad6e-3de5c467ef70` (row6)
+
+## Observed public request-contract results
+
+The ordinary campaign identity `scientist-08` completed both sequential public
+typed-MCP repetitions: **40/40 succeeded on attempt 1**, 40/40 passed the original
+evaluator, and 40/40 independently passed the exact bounded schema with
+`finish_reason=stop`. There were 20 distinct images, not 40 independent samples.
+The actual submitted image artifact hashes/sizes, prompts, temperature and
+completion budget were compared with the originals; only `response_format`
+changed in model inputs. Original request/result/evaluation hashes were rechecked
+and remain unchanged.
+
+| Revised request cohort | Complete schema-valid outputs | Completion tokens | Exact weak-label matches |
+| --- | --- | --- | --- |
+| r1 | 20/20 | 17–120 | 7/20 |
+| r2 | 20/20 | 21–120 | 7/20 |
+
+The CXR ModelDeployment specification remained identical (generation 10), with
+model revision `056bd0383b35226554da9dc5866e095df174ae19`, BF16, context 8192,
+and runtime image
+`sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635`.
+The control-plane deployment changed during the wider campaign, so this does
+**not** satisfy the frozen whole-release clean-cohort gate. No cold-start,
+scale-out, concurrency, LibreChat or default free-text guarantee is inferred.
+The allocated key was returned to the release owner after all work terminated;
+no key, model or cluster setting was changed by this lane.
+
+Private receipt:
+`/home/tux/secure-handoff/scientific-qualification-20260918/cxr-contract-repair/qualification-receipt.json`,
+SHA256 `5a707a69ccdde44a9bf4a3805cb0900db11c47884b4f6e1aff6a34c939e48d47`.
+It retains operation identities, runtime attribution, per-case hashes,
+first/last times, schema checks and descriptive weak-label measurements.
+The original evidence-index SHA256 is
+`9cb70d68bd4f33cb98be6809fc1fd8bbbf853db2fd0014c2cbb1d82639d0d061`.
 
 NIH report-mined labels are weak labels, not adjudicated expert reference
 reports; the mirror JPEGs are not diagnostic DICOM. Formatting success cannot
