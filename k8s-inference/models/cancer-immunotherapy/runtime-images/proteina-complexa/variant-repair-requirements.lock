@@ -1,0 +1,8 @@
+# Exact CPython3.12 / Linux x86_64 wheels. The base Torch2.7.0+cu126,
+# Triton3.3.0 and RF3/Complexa dependencies are otherwise unchanged.
+# cuEquivariance0.10+ renamed a Torch tracing API unavailable in Torch2.7.
+# RF3 rc-foundry0.2.0 explicitly supports cuEquivariance>=0.6.1.
+cuequivariance==0.9.0 --hash=sha256:332bf75127468e606beb7ae840487e72f9bd92fc5d5daa92777d54908cee02a4
+cuequivariance-torch==0.9.0 --hash=sha256:71bfc3ab8aebff5d1c2025c4bdb74882e01c91e61968059fb9592fee63d8442b
+cuequivariance-ops-cu12==0.9.0 --hash=sha256:39b1f81a1f0491d6b829c781debfcd2cf743ba2b8783f6da8155c48947e54291
+cuequivariance-ops-torch-cu12==0.9.0 --hash=sha256:a404b6d7dee74f2ecbd2947109049cbaa61f63c8502d4988f050a8579b0cac82
