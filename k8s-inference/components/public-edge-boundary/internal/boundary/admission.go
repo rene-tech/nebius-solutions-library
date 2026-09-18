@@ -137,10 +137,15 @@ func (r *Runtime) authorize(request *AdmissionRequest) (Transition, bool, string
 			return Transition{}, true, "old admission object lacks exact UID/resourceVersion identity"
 		}
 	}
-	if (request.Operation == "CREATE" && !serviceAccountToken) || request.Operation == "UPDATE" {
+	if request.Operation == "CREATE" && !serviceAccountToken {
 		newObject, err = admissionObjectBinding(request.Object)
-		if err != nil || bindingEmpty(newObject) {
-			return Transition{}, true, "new admission object lacks exact UID/resourceVersion identity"
+		if err != nil || !bindingForCreate(newObject) || requestObjectSHA256 != newObject.ObjectSHA256 {
+			return Transition{}, true, "CREATE admission object lacks its exact pre-persistence digest binding"
+		}
+	} else if request.Operation == "UPDATE" {
+		newObject, err = admissionObjectBinding(request.Object)
+		if err != nil || !bindingComplete(newObject) || requestObjectSHA256 != newObject.ObjectSHA256 {
+			return Transition{}, true, "UPDATE admission object lacks exact UID/resourceVersion identity"
 		}
 	}
 	generateName := ""
