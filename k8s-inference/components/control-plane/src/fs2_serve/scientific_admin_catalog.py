@@ -136,19 +136,31 @@ class ScientificProfileDiscoveryAdapter:
         execution_mode: Literal["scientific-batch", "hybrid"] = (
             "hybrid" if profile.execution_mode == "hybrid" else "scientific-batch"
         )
+        qualified = profile.state == "qualified"
+        missing_evidence = [
+            name
+            for name in ("public_completion_receipt_sha256", "scheduler_eligibility_receipt_sha256")
+            if getattr(profile, name) is None
+        ]
         return ScientificModelReadiness(
             model_id=profile.model_id,
             candidate_id=profile.model_id,
             display_name=profile.display_name,
-            readiness="qualified",
+            readiness="qualified" if qualified else "candidate",
             readiness_reason=(
                 "The exact profile, execution map, access binding, and scheduler eligibility are active."
+                if qualified
+                else "Active onboarding profile is submittable; public qualification remains incomplete."
             ),
             workload_profile="published",
-            missing_evidence=[],
+            missing_evidence=missing_evidence,
             qualification=ScientificQualificationJoin(
-                state="qualified",
-                reason="The controller exposed this exact qualified profile as submittable for the selected tenant.",
+                state="qualified" if qualified else "evidence-absent",
+                reason=(
+                    "The controller exposed this exact qualified profile as submittable for the selected tenant."
+                    if qualified
+                    else "The selected tenant can submit this active profile, but it is not qualified."
+                ),
                 compared=[
                     "source_revision",
                     "runtime_image_digest",
@@ -163,7 +175,7 @@ class ScientificProfileDiscoveryAdapter:
             service_classes=service_classes,
             backend=ScientificBackendIdentity(
                 backend_id=profile.variant_id,
-                kind="qualified-scientific-profile",
+                kind="qualified-scientific-profile" if qualified else "active-scientific-profile",
                 source_repository=profile.source_repository,
                 source_revision=profile.source_revision,
                 model_revision=profile.source_revision,
@@ -741,14 +753,15 @@ class ScientificCatalogFileAdapter:
                 receipt_source_kind is not None
                 and receipt_source_repository is not None
                 and receipt_source_revision is not None
-                and receipt_source_kind == "git"
+                and receipt_source_kind in {"git", "huggingface"}
                 and receipt_source_kind == profile_source_kind
                 and receipt_source_repository == profile_source_repository
+                and (receipt_source_kind == "git" or receipt_source_revision == profile_source_revision)
             )
             document_identity_consistent = pinned_source_consistent and source_family_consistent
             if not document_identity_consistent:
                 missing.append("source-identity-agreement")
-            elif receipt_source_revision != profile_source_revision:
+            elif receipt_source_kind == "git" and receipt_source_revision != profile_source_revision:
                 available_upgrade = ScientificAvailableUpgrade(
                     source_kind="git",
                     source_repository=_text(receipt_source_repository, "upgrade repository", 512),

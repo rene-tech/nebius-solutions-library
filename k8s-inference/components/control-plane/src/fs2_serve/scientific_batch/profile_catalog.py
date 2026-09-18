@@ -88,7 +88,7 @@ def _schema_contract_name(schema: Mapping[str, Any]) -> str | None:
     return None
 
 
-def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> bool:
+def profile_has_complete_qualification_evidence(value: Mapping[str, Any], *, allow_active: bool = False) -> bool:
     """Return whether a profile carries the complete, immutable qualification set.
 
     ``active`` profiles intentionally remain dispatchable while their public
@@ -97,6 +97,10 @@ def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> boo
     and every required digest is a real lowercase SHA-256 value.
     """
 
+    # Active onboarding is explicitly unqualified. Only the two receipts that
+    # require public execution may be absent; immutable runtime/H100 evidence
+    # and the same execution/scheduler admission gates remain mandatory.
+    active = allow_active and value.get("state") == "active"
     qualification = value.get("qualification")
     semantic = value.get("semantic_validation")
     identity = value.get("execution_identity")
@@ -120,8 +124,8 @@ def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> boo
     except ValueError:
         qualified_time = None
     return (
-        value.get("state") == "qualified"
-        and semantic.get("state") == "qualified"
+        (value.get("state") == "qualified" or active)
+        and (semantic.get("state") == "qualified" or (active and semantic.get("state") == "active"))
         and source.get("kind") in {"git", "huggingface"}
         and isinstance(source.get("repository"), str)
         and isinstance(source.get("revision"), str)
@@ -142,7 +146,14 @@ def profile_has_complete_qualification_evidence(value: Mapping[str, Any]) -> boo
         and qualified_time.tzinfo is not None
         and qualified_time.utcoffset() is not None
         and all(
-            isinstance(qualification.get(field), str) and _RAW_SHA256_RE.fullmatch(qualification[field]) is not None
+            (
+                active
+                and field in {"public_completion_receipt_sha256", "scheduler_eligibility_receipt_sha256"}
+                and qualification.get(field) is None
+            )
+            or (
+                isinstance(qualification.get(field), str) and _RAW_SHA256_RE.fullmatch(qualification[field]) is not None
+            )
             for field in _REQUIRED_QUALIFICATION_DIGESTS
         )
     )

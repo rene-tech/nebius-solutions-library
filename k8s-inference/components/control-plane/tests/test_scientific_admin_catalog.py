@@ -190,9 +190,10 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     )
     snapshot = await delivered.list_models()
 
-    assert len(snapshot.data.items) == 10
+    assert len(snapshot.data.items) == 11
     by_candidate = {item.candidate_id: item for item in snapshot.data.items}
     assert set(by_candidate) == {
+        "cosmos3-lerobot-augmentation",
         "alphafold3",
         "bindcraft",
         "boltzgen",
@@ -654,6 +655,27 @@ async def test_admin_discovery_lists_only_tenant_submittable_profiles() -> None:
     assert model.readiness == "qualified"
     assert model.backend.runtime_image_digest == "sha256:" + "b" * 64
     assert model.backend.execution_identity_digest == "c" * 64
+
+
+def test_active_discovery_admin_projection_does_not_claim_qualification() -> None:
+    (profile,) = DiscoveryService().discovery_profiles(
+        tenant_id="tenant-a",
+        allowed_models=frozenset({"*"}),
+        surface="admin",
+    )
+    active = profile.model_copy(
+        update={
+            "state": "active",
+            "public_completion_receipt_sha256": None,
+            "scheduler_eligibility_receipt_sha256": None,
+        }
+    )
+    projected = ScientificProfileDiscoveryAdapter._project(active)
+    assert projected.readiness == "candidate"
+    assert projected.qualification.state == "evidence-absent"
+    assert projected.backend.kind == "active-scientific-profile"
+    assert projected.missing_evidence == ["public_completion_receipt_sha256", "scheduler_eligibility_receipt_sha256"]
+    assert projected.batch_supported
 
 
 async def test_admin_discovery_preserves_global_candidate_catalog_without_bypassing_tenant_filter() -> None:

@@ -2257,6 +2257,70 @@
         }
       ],
       "access_profile": "academic"
+    },
+    {
+      "model_id": "cosmos3-lerobot-augmentation",
+      "variant_id": "cosmos3-nano-lerobot-v3",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "b308acf83988e4af68ff08f555896013d226b3bd84953cb2f2b49b2180e4b890",
+      "plan_adapter": {
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
+      },
+      "access_profile": "public",
+      "runtime_artifacts": [],
+      "stages": [
+        {
+          "stage_id": "augment-dataset",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:71047b62303a21d2feec6127a4531b2ad4333f157bdb52cf67d2756dd7ead8c1",
+          "collector_id": "cosmos3-lerobot-v3-0-6-1",
+          "validator_id": "cosmos3-lerobot-v3-0-6-1",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            }
+          ],
+          "service_account_name": "cosmos3-nano",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "2000m",
+              "memory": "16Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "4000m",
+              "memory": "24Gi",
+              "ephemeral_storage": "32Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 60,
+          "environment": {},
+          "required_node_labels": {}
+        }
+      ]
     }
-  ]
+  ],
+  "qualification_baselines": {
+    "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521": [
+      "boltzgen",
+      "proteina-complexa",
+      "bindcraft",
+      "mosaic",
+      "rfdiffusion",
+      "esmfold2",
+      "esmfold2-fast",
+      "openfold3-openbind",
+      "protenix-v2",
+      "alphafold3"
+    ]
+  }
 }

@@ -2062,6 +2062,130 @@
           "readiness_manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748"
         }
       ]
+    },
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "cosmos3-lerobot-augmentation",
+      "display_name": "NVIDIA Cosmos3-Nano LeRobot robotics augmentation",
+      "execution_mode": "hybrid",
+      "state": "active",
+      "route_exposed": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/Cosmos3-Nano",
+        "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "review_url": "https://huggingface.co/nvidia/Cosmos3-Nano/tree/7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "classification": "qualified-input"
+      },
+      "execution_identity": {
+        "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "runtime_image_digest": "sha256:71047b62303a21d2feec6127a4531b2ad4333f157bdb52cf67d2756dd7ead8c1",
+        "runtime_recipe_sha256": "ef1a5150826003902897edc6ae750ef8c3d0300a53cd62c2f0e47a921fd30ec0",
+        "workload_recipe_sha256": "c7b9141a9cf8fc4c4363596ed5c1a14f2466a45a7a0a8f1f4fc313df652ebae4",
+        "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "execution_identity_sha256": "b308acf83988e4af68ff08f555896013d226b3bd84953cb2f2b49b2180e4b890"
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/cosmos3-lerobot-augmentation:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-request/v1",
+        "operations": [
+          "augment-lerobot-dataset"
+        ],
+        "service_classes": [
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": true,
+          "tool_name": "submit_cosmos3_lerobot_augmentation",
+          "description": "NVIDIA Cosmos3-Nano robotics augmentation for LeRobot v3: transfer/V2V, numeric actions preserved; physical fidelity unproven. Clips16–400 frames; bundles≤5GiB. Download output_manifest public artifact UUIDs, not logical worker labels."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "not-required",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-reserved-8x",
+          "h100-1x"
+        ],
+        "required_node_labels": {
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "augment-dataset",
+            "needs": [],
+            "resource_class": "cpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 1,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable",
+            "placement": {
+              "class": "general-cpu"
+            },
+            "resources": {
+              "cpu_millis": 2000,
+              "memory_bytes": 17179869184,
+              "ephemeral_storage_bytes": 34359738368,
+              "limits": {
+                "cpu_millis": 4000,
+                "memory_bytes": 25769803776,
+                "ephemeral_storage_bytes": 34359738368
+              }
+            }
+          }
+        ],
+        "retry": {
+          "max_attempts": 2,
+          "retryable_exit_codes": [
+            75,
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 60
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "cosmos3-lerobot-v3-0-6-1",
+        "state": "active"
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "non_clinical": false,
+        "limitations": [
+          "Active onboarding permits public submission; public-completion and scheduler receipts remain null until actual uploaded dataset runs and pinned-reader reopen are retained.",
+          "Appearance augmentation preserves numeric actions, state, timestamps and canonical indices, not proven physical/action alignment. Transfer retains coarse layout; video-to-video may alter trajectories. Inspect output before training.",
+          "Selected clips:16–400 frames, integer FPS1–30, RGB256..1280 by256..720 dimensions divisible by16; at most256 selected episodes,8 selected cameras and8 variants. Untouched clips are checked for dataset integrity, not generation caps.",
+          "Compressed input/each output≤5GiB; expanded source≤8GiB;32GiB workspace with conservative pre-GPU estimate and2GiB reserve. Fixed-rate canonical timestamps/task ordering are required; no maximum-bound throughput qualification.",
+          "Forward/inverse dynamics and policy-model rollout are unsupported. Source action trajectories are preserved; episodes longer than400 frames need a separately qualified chunk/stitch contract."
+        ]
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "2295434692cec27d200dd9f5151324c27485dbb01d1b6cd9f68156545f29c3c1",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "daf297e2ced794b910df757acd7a4dadba3bb17c863c0b38b0c9497601b0cf5d",
+        "qualified_at": "2026-09-18T00:03:50Z"
+      }
     }
   ]
 }

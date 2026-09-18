@@ -171,6 +171,24 @@
       "access_profile": "standard",
       "access_state": "unverified",
       "notes": "Native RFdiffusion batch candidate; any bounded HTTP adapter is a separate qualified interface over the same exact backend identity."
+    },
+    {
+      "model_id": "cosmos3-lerobot-augmentation",
+      "upstream_name": "NVIDIA Cosmos3-Nano LeRobot robotics augmentation",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-17",
+      "source": {
+        "kind": "huggingface",
+        "repository": "nvidia/Cosmos3-Nano",
+        "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "review_url": "https://huggingface.co/nvidia/Cosmos3-Nano/tree/7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Pinned source and all 68 model inventory files verified before H100 r7 preview; retained in acceptance/cosmos3-customer-20260917/snapshot-media-compatibility.json. Source observation is not public LeRobot qualification or physical/action-fidelity evidence."
     }
   ]
 }

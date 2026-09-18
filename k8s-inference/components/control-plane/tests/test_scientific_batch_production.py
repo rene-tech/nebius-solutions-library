@@ -947,7 +947,7 @@ def test_scientific_discovery_never_exposes_incomplete_qualification(
 
 @pytest.mark.parametrize(
     ("profile_state", "semantic_state"),
-    [("active", "qualified"), ("qualified", "active")],
+    [("qualified", "active")],
 )
 def test_scientific_discovery_requires_explicit_qualified_states(
     registry,
@@ -970,6 +970,51 @@ def test_scientific_discovery_requires_explicit_qualified_states(
 
     assert (
         runtime.scientific_batches.discovery_profiles(
+            tenant_id="tenant-a",
+            allowed_models=frozenset({"*"}),
+            surface="mcp",
+        )
+        == ()
+    )
+
+
+@pytest.mark.parametrize("semantic_state", ["active", "qualified"])
+def test_active_scientific_discovery_is_invocable_but_explicitly_unqualified(
+    registry,
+    cipher,
+    hasher,
+    semantic_state,
+) -> None:
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    service = runtime.scientific_batches
+    assert service is not None
+    profile = profile_value()
+    profile["state"] = "active"
+    profile["semantic_validation"]["state"] = semantic_state
+    profile["qualification"]["public_completion_receipt_sha256"] = None
+    profile["qualification"]["scheduler_eligibility_receipt_sha256"] = None
+    service.profiles = profile_catalog_for("protein-design", profile_document=profile)
+    for surface in ("admin", "http", "mcp"):
+        (discovered,) = service.discovery_profiles(
+            tenant_id="tenant-a",
+            allowed_models=frozenset({"protein-design"}),
+            surface=surface,
+        )
+        assert discovered.state == "active"
+        assert discovered.public_completion_receipt_sha256 is None
+        assert discovered.scheduler_eligibility_receipt_sha256 is None
+        assert (
+            service.discovery_profiles(
+                tenant_id="tenant-a",
+                allowed_models=frozenset({"another-model"}),
+                surface=surface,
+            )
+            == ()
+        )
+    profile["qualification"]["h100_semantic_receipt_sha256"] = None
+    service.profiles = profile_catalog_for("protein-design", profile_document=profile)
+    assert (
+        service.discovery_profiles(
             tenant_id="tenant-a",
             allowed_models=frozenset({"*"}),
             surface="mcp",

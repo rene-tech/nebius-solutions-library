@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -22,7 +21,7 @@ from fs2_serve.scientific_batch.adapters.staged_workspace import (  # noqa: E402
 )
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer  # noqa: E402
 from fs2_serve.scientific_batch.models import ScientificInputArtifact  # noqa: E402
-from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificProfileError  # noqa: E402
+from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog  # noqa: E402
 
 
 def _profile() -> dict[str, Any]:
@@ -45,31 +44,28 @@ def _source_reference() -> ScientificInputArtifact:
     )
 
 
-def test_published_candidate_execution_binding_validates_without_exposing_route(tmp_path: Path) -> None:
-    catalog_path = tmp_path / "catalog"
-    shutil.copytree(SOLUTION_ROOT / "catalog/runtime", catalog_path)
-    profiles_path = catalog_path / "contracts/scientific-workload-profiles.json"
-    profiles = json.loads(profiles_path.read_text())
+def test_published_active_execution_binding_matches_canonical_catalog(tmp_path: Path) -> None:
+    catalog_path = SOLUTION_ROOT / "catalog/runtime"
     profile = _profile()
-    assert not profile["route_exposed"]
-    assert profile["state"] == "candidate-unqualified"
-    assert profile["semantic_validation"]["state"] == "candidate-unqualified"
-    profiles["profiles"].append(profile)
-    profiles_path.write_text(json.dumps(profiles))
-    shutil.copyfile(ROOT / "schema/request.schema.json", catalog_path / "schema/cosmos3-lerobot.schema.json")
+    assert profile["route_exposed"]
+    assert profile["state"] in {"active", "qualified"}
+    assert profile["semantic_validation"]["state"] == profile["state"]
     candidate = json.loads((ROOT / "activation/execution-map.json").read_text())["model"]
     execution_path = tmp_path / "execution-map.json"
     execution = json.loads((catalog_path / "contracts/scientific-execution-map.json").read_text())
-    execution["models"].append(candidate)
+    assert [row for row in execution["models"] if row["model_id"] == cosmos_lerobot.MODEL_ID] == [candidate]
     execution_path.write_text(json.dumps(execution))
     catalog = ScientificProfileCatalog.load(catalog_path)
-    FileScientificManifestRenderer(path=execution_path, profiles=catalog)
-    with pytest.raises(ScientificProfileError, match="not runnable"):
-        catalog.get(cosmos_lerobot.MODEL_ID)
-    publication = json.loads((ROOT / "activation/registry-publication-20260917.json").read_text())
-    assert candidate["stages"][0]["image"] == publication["runtime_image"]
-    assert profile["execution_identity"]["runtime_image_digest"] == publication["registry_manifest_digest"]
-    assert publication["registry_manifest_digest"] != publication["configuration_digest"]
+    renderer = FileScientificManifestRenderer(path=execution_path, profiles=catalog)
+    assert dict(catalog.get(cosmos_lerobot.MODEL_ID).value) == profile
+    assert renderer.qualification_matches(
+        cosmos_lerobot.MODEL_ID, "sha256:" + profile["qualification"]["execution_map_sha256"]
+    )
+    assert candidate["stages"][0]["image"].split("@", 1)[1] == profile["execution_identity"]["runtime_image_digest"]
+    assert (ROOT / "schema/request.schema.json").read_bytes() == (
+        catalog_path / "schema/cosmos3-lerobot-augmentation-request.schema.json"
+    ).read_bytes()
+    assert cosmos_lerobot.MAX_BUNDLE_BYTES == cosmos_lerobot.MAX_OUTPUT_BYTES == 5 * 1024**3
 
 
 def test_candidate_adapter_compiles_exact_source_reference_manifest() -> None:

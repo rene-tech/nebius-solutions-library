@@ -47,12 +47,22 @@ contacting a GPU.
 
 The App is an independent catalog identity,
 `cosmos3-lerobot-augmentation`; it is not an operation on the single-video
-`cosmos3-nano` App. Its eventual HTTP route is
+`cosmos3-nano` App. Its HTTP contract is
 `POST /v1/models/cosmos3-lerobot-augmentation:submit`, and its typed MCP tool is
 `submit_cosmos3_lerobot_augmentation`. Both accept the canonical
 `fs2-serve.nebius.ai/scientific-run-request/v1` envelope. The augmentation
 object is nested under `parameters`, not passed as top-level tool arguments.
 See `fixtures/scientific-run-request.json`.
+
+The [additive activation procedure](activation/README.md) packages the canonical
+profile/schema and preserves the complete existing deployment. Bootstrap
+discovery reports `active` with nullable public/scheduler receipts; this is
+dispatchable onboarding, not a completed qualification claim. A caller needs
+both model grants plus `artifacts.write`, `operations.result`, `inference.invoke`,
+`operations.read` and `catalog.read`; cancellation additionally requires
+`operations.cancel`. The parent and its sequential delegated child share the
+key's existing concurrency slot, including a limit of one.
+MCP callers additionally need `mcp.invoke`.
 
 The outer `input_manifest` points to a finalized JSON artifact with schema
 `fs2-serve.nebius.ai/scientific-artifact-manifest/v1` and exactly one logical
@@ -96,6 +106,12 @@ feature must be RGB, no larger than 1280x720, with width and height divisible by
 16. These are admission bounds for the pinned Cosmos recipe, not general LeRobot
 limits. Longer episodes require a separately qualified chunk/stitch contract.
 
+Compressed source and each output are limited to 5 GiB, expanded source to
+8 GiB, and CPU workspace to 32 GiB. The worker checks the full dataset and
+requested variant workspace before GPU generation. Generation caps apply only
+to selected clips; short or smaller untouched streams remain valid. Full
+[runtime limits and numeric-preservation constraints](runtime/README.md) apply.
+
 ## Queue, progress, and artifacts
 
 The App is intended to use the existing `scientific-batch-v1` admission,
@@ -107,6 +123,12 @@ routes: upload/finalize the episode MP4, admit generation, poll its durable
 operation, then download the resulting artifact. The same serving admission,
 model grants, request budgets, GPU reservations, queues, and usage records apply.
 The initial coordinator processes variants and cameras sequentially.
+
+After terminal success, fetch the scientific result and its finalized
+`output_manifest`. Download the public artifact UUIDs in that manifest. Worker
+result labels such as `<parent>.variant-00` are logical names, not public download
+IDs; match `variant_index` plus SHA-256, size, media type and compression to the
+manifest before downloading and reopening the corresponding complete dataset.
 
 The renderer injects `FS2_SCIENTIFIC_WORKLOAD_CAPABILITY` and
 `FS2_SCIENTIFIC_INTERNAL_API_URL` into the exact LeRobot model stage. The worker
@@ -145,13 +167,15 @@ records the non-root image's offline fixture encode/normalize/decode check. Its
 local image ID is not a publishable registry manifest digest. This evidence does
 not qualify a deployed GPU workflow or the Apps UI.
 
-The exact CPU image is now published as
+The historical CPU image was published as
 `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:a725b52d6b53ff377d05bd87e748d1722399140b08a10dde49918a029734cfc5`.
 The [registry publication receipt](activation/registry-publication-20260917.json)
-records the independent manifest/config check. The adjacent execution-map
-projection binds this image but remains candidate/unrouted: its full execution
-identity and qualification fields must be completed through the existing catalog
-promotion contract, not invented from local test results.
+records the independent manifest/config check. It has been superseded by
+the [integrity-corrected worker publication](activation/registry-publication-integrity-20260917.json).
+The [active onboarding identity](activation/active-onboarding-20260918.json)
+and canonical execution map bind that successor's registry manifest. Public
+completion and scheduler receipts remain null until the actual deployed App is
+tested; local tests do not manufacture those receipts.
 
 Live direct H100 preview tests on 2026-09-17 produced distinct lighting V2V and
 environment transfer MP4s, then rewrote, packaged, extracted and fully decoded

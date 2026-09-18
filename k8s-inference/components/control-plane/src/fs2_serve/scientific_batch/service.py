@@ -225,6 +225,7 @@ class ScientificProfileDiscovery(StrictModel):
     model_id: str
     display_name: str
     execution_mode: str
+    state: str = "qualified"
     operations: tuple[str, ...]
     service_classes: tuple[str, ...]
     parameter_schema: str
@@ -237,8 +238,8 @@ class ScientificProfileDiscovery(StrictModel):
     access_state: str
     access_receipt_digest: str | None
     h100_semantic_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    public_completion_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    scheduler_eligibility_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    public_completion_receipt_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
+    scheduler_eligibility_receipt_sha256: str | None = Field(pattern=r"^[a-f0-9]{64}$")
     execution_map_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     qualified_at: str = Field(
         min_length=20,
@@ -306,9 +307,15 @@ class ScientificBatchService:
                 continue
             try:
                 qualification = profile.value["qualification"]
-                if not profile_has_complete_qualification_evidence(profile.value):
+                if not profile_has_complete_qualification_evidence(profile.value, allow_active=True):
                     raise ScientificProfileError("scientific profile does not carry complete qualification receipts")
-                if self.execution_binding.execution_map_sha256 != (f"sha256:{qualification['execution_map_sha256']}"):
+                matches = getattr(self.execution_binding, "qualification_matches", None)
+                qualified_map = f"sha256:{qualification['execution_map_sha256']}"
+                if not (
+                    matches(profile.model_id, qualified_map)
+                    if callable(matches)
+                    else self.execution_binding.execution_map_sha256 == qualified_map
+                ):
                     raise ScientificProfileError("scientific qualification binds another execution map")
                 self.execution_binding.access_context(profile, tenant_id=tenant_id)
                 variant_id = self.execution_binding.variant_id(profile.model_id)
@@ -343,6 +350,7 @@ class ScientificBatchService:
                     model_id=profile.model_id,
                     display_name=profile.display_name,
                     execution_mode=profile.execution_mode,
+                    state=cast(str, profile.value["state"]),
                     operations=profile.operations,
                     service_classes=profile.service_classes,
                     parameter_schema=profile.parameter_schema,
@@ -355,9 +363,11 @@ class ScientificBatchService:
                     access_state=profile.access_state,
                     access_receipt_digest=profile.access_receipt_digest,
                     h100_semantic_receipt_sha256=cast(str, qualification["h100_semantic_receipt_sha256"]),
-                    public_completion_receipt_sha256=cast(str, qualification["public_completion_receipt_sha256"]),
+                    public_completion_receipt_sha256=cast(
+                        str | None, qualification["public_completion_receipt_sha256"]
+                    ),
                     scheduler_eligibility_receipt_sha256=cast(
-                        str, qualification["scheduler_eligibility_receipt_sha256"]
+                        str | None, qualification["scheduler_eligibility_receipt_sha256"]
                     ),
                     execution_map_sha256=cast(str, qualification["execution_map_sha256"]),
                     qualified_at=cast(str, qualification["qualified_at"]),
@@ -698,10 +708,20 @@ class ScientificBatchService:
             except ScientificBatchNotFoundError:
                 raise conflict from None
             frozen_fields = (
-                "operation_id", "batch_id", "workload_id", "tenant_id", "model_id",
-                "variant_id", "input_artifact_id", "plan", "scheduling",
-                "execution_plan", "access_context", "input_manifest",
-                "runtime_artifacts", "stored_schema",
+                "operation_id",
+                "batch_id",
+                "workload_id",
+                "tenant_id",
+                "model_id",
+                "variant_id",
+                "input_artifact_id",
+                "plan",
+                "scheduling",
+                "execution_plan",
+                "access_context",
+                "input_manifest",
+                "runtime_artifacts",
+                "stored_schema",
             )
             if any(getattr(admitted, name) != getattr(state, name) for name in frozen_fields):
                 raise

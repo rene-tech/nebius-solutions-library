@@ -58,7 +58,11 @@
             "const": "unqualified"
           },
           "observation_method": {
-            "const": "git-ls-remote-head"
+            "enum": ["git-ls-remote-head", "pinned-runtime-artifact-manifest"]
+          },
+          "observed_on": {
+            "type": "string",
+            "format": "date"
           },
           "source": {
             "type": "object",
@@ -71,7 +75,7 @@
             ],
             "properties": {
               "kind": {
-                "const": "git"
+                "enum": ["git", "huggingface"]
               },
               "repository": {
                 "type": "string",
@@ -84,7 +88,7 @@
               },
               "review_url": {
                 "type": "string",
-                "pattern": "^https://github\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/[0-9a-f]{40}$",
+                "pattern": "^https://(?:github\\.com|huggingface\\.co)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/[0-9a-f]{40}$",
                 "maxLength": 2048
               }
             }
@@ -96,7 +100,7 @@
             ]
           },
           "access_state": {
-            "const": "unverified"
+            "enum": ["unverified", "not-required"]
           },
           "notes": {
             "type": "string",

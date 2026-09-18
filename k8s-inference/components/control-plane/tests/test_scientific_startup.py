@@ -177,9 +177,11 @@ def test_complete_committed_execution_map_keeps_normal_qualification_with_regist
     path = tmp_path / "execution-map.json"
     path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")))
     renderer = FileScientificManifestRenderer(path=path, profiles=profiles)
-    assert len(document["models"]) == 10
+    assert len(document["models"]) == 11
     for profile in profiles.list():
-        assert renderer.execution_map_sha256 == "sha256:" + profile.value["qualification"]["execution_map_sha256"]
+        assert renderer.qualification_matches(
+            profile.model_id, "sha256:" + profile.value["qualification"]["execution_map_sha256"]
+        )
     assert renderer.execution_configuration_sha256 != renderer.execution_map_sha256
     assert all(execution.startup_policy.backend == "normal-load" for execution in renderer.executions.values())
     selection = {"sample-structure": {"backend": "cuda-criu", "bundle_id": bundle["bundle_id"]}}

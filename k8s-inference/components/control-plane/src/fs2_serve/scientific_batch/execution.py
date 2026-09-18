@@ -287,7 +287,7 @@ class FileScientificManifestRenderer:
         root = _object(value, "scientific execution map")
         if (
             not {"schema", "models"}.issubset(root)
-            or set(root) - {"schema", "models", "snapshot_bundles"}
+            or set(root) - {"schema", "models", "snapshot_bundles", "qualification_baselines"}
             or root["schema"] != EXECUTION_SCHEMA
         ):
             raise ScientificExecutionMapError("scientific execution map schema is unsupported")
@@ -306,9 +306,13 @@ class FileScientificManifestRenderer:
         # identity while freezing the complete selected bundle separately.
         qualified_raw = (
             raw
-            if "snapshot_bundles" not in root
+            if not {"snapshot_bundles", "qualification_baselines"}.intersection(root)
             else json.dumps(
-                {key: value for key, value in root.items() if key != "snapshot_bundles"},
+                {
+                    key: value
+                    for key, value in root.items()
+                    if key not in {"snapshot_bundles", "qualification_baselines"}
+                },
                 sort_keys=True,
                 separators=(",", ":"),
                 allow_nan=False,
@@ -318,6 +322,38 @@ class FileScientificManifestRenderer:
         models = root["models"]
         if not isinstance(models, list) or len(models) > 256:
             raise ScientificExecutionMapError("scientific execution models are not bounded")
+        # Historical whole-map receipts remain valid only for an exactly
+        # preserved ordered baseline. New models/optional snapshot registries
+        # cannot invalidate siblings, nor can this metadata authorize changing
+        # or removing any measured legacy row. Runtime receipts still freeze
+        # the complete CURRENT map/configuration above.
+        baselines = _object(root.get("qualification_baselines", {}), "qualification baselines")
+        if len(baselines) > 32:
+            raise ScientificExecutionMapError("qualification baselines exceed the bound")
+        baseline_models: dict[str, frozenset[str]] = {}
+        for digest, ids in baselines.items():
+            if (
+                re.fullmatch(r"[a-f0-9]{64}", digest) is None
+                or not isinstance(ids, list)
+                or not 1 <= len(ids) <= 256
+                or not all(isinstance(model_id, str) for model_id in ids)
+                or len(set(ids)) != len(ids)
+            ):
+                raise ScientificExecutionMapError("qualification baseline identity is invalid")
+            selected = []
+            for model_id in ids:
+                rows = [row for row in models if isinstance(row, dict) and row.get("model_id") == model_id]
+                if len(rows) != 1:
+                    raise ScientificExecutionMapError("qualification baseline model is missing or duplicated")
+                selected.append(rows[0])
+            projection = {"schema": root["schema"], "models": selected}
+            projected_digest = hashlib.sha256(
+                json.dumps(projection, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+            ).hexdigest()
+            if projected_digest != digest:
+                raise ScientificExecutionMapError("qualification baseline execution fields changed")
+            baseline_models[f"sha256:{digest}"] = frozenset(ids)
+        self.qualification_baselines = MappingProxyType(baseline_models)
         executions: dict[tuple[str, str], StageExecution] = {}
         runtime_artifacts: dict[tuple[str, str], RuntimeArtifactLocalization] = {}
         variants: dict[str, str] = {}
@@ -823,6 +859,11 @@ class FileScientificManifestRenderer:
         self.academic_tenant_id = academic_tenant_id
         self.academic_authorization_receipt_sha256 = academic_authorization_receipt_sha256
 
+    def qualification_matches(self, model_id: str, digest: str) -> bool:
+        return model_id in self.variants and (
+            digest == self.execution_map_sha256 or model_id in self.qualification_baselines.get(digest, frozenset())
+        )
+
     def access_context(self, profile: ScientificWorkloadProfile, *, tenant_id: str) -> ArtifactAccessContext:
         """Resolve platform asset authorization, retaining the caller's data owner.
 
@@ -1093,7 +1134,7 @@ class FileScientificManifestRenderer:
     def startup_policy_options(self, model_id: str) -> dict[str, list[str]]:
         """Qualified per-stage bundle IDs; full metadata lives in snapshot_bundles."""
         profile = self._startup_profiles.get(model_id, runnable=False)
-        options = {}
+        options: dict[str, list[str]] = {}
         for (model, stage), execution in self.executions.items():
             if model != model_id:
                 continue
@@ -1101,12 +1142,15 @@ class FileScientificManifestRenderer:
             for bundle in self.snapshot_bundles.values():
                 try:
                     selected = self._select_startup_policy(
-                        profile, stage, execution.image,
+                        profile,
+                        stage,
+                        execution.image,
                         {"backend": "cuda-criu", "bundle_id": bundle["bundle_id"]},
                     )
                 except ScientificExecutionMapError:
                     continue
-                options[stage].append(selected.bundle_id)
+                if selected.bundle_id is not None:
+                    options[stage].append(selected.bundle_id)
         return options
 
     def validate_startup_policy_overrides(
@@ -1658,12 +1702,16 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")
         capability = self.capability_authority.issue(resource)
         if (resource.model_id, invocation.stage_id, invocation.collector_id) == (
-            "cosmos3-lerobot-augmentation", "augment-dataset", "cosmos3-lerobot-v3-0-6-1",
+            "cosmos3-lerobot-augmentation",
+            "augment-dataset",
+            "cosmos3-lerobot-v3-0-6-1",
         ):
-            env.extend([
-                {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
-                {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
-            ])
+            env.extend(
+                [
+                    {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
+                    {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
+                ]
+            )
         workspace_mount = next(mount for mount in volume_mounts if mount["mountPath"] == "/mnt/fs2-scientific")
         companion_env = [
             {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},

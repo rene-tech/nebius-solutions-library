@@ -116,6 +116,14 @@ class AppScientificExecution(FileScientificManifestRenderer):
     def variant_id(self, model_id: str) -> str:
         return self.source.variant_id(self.inventory.source(model_id))
 
+    def qualification_matches(self, model_id: str, digest: str) -> bool:
+        matches = getattr(self.source, "qualification_matches", None)
+        return (
+            bool(matches(self.inventory.source(model_id), digest))
+            if callable(matches)
+            else self.source.execution_map_sha256 == digest
+        )
+
     def workload_namespace(self, model_id: str) -> str:
         return self.source.workload_namespace(self.inventory.source(model_id))
 

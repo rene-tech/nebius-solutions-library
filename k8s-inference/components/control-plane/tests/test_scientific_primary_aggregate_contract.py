@@ -165,7 +165,12 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
         (CATALOG_ROOT / "schema/scientific-workload-profile.schema.json").read_text(encoding="utf-8")
     )
     profile_validator = Draft202012Validator(profile_schema, format_checker=FormatChecker())
-    execution_map_sha256 = _canonical_sha256(execution_document)
+    baseline_ids = [
+        item["model_id"] for item in execution_document["models"] if item["model_id"] != "cosmos3-lerobot-augmentation"
+    ]
+    baseline = {"schema": execution_document["schema"], "models": [executions[model_id] for model_id in baseline_ids]}
+    execution_map_sha256 = _canonical_sha256(baseline)
+    assert execution_document["qualification_baselines"][execution_map_sha256] == baseline_ids
     assert set(PRIMARY_ACTIVE_BRIDGE).issubset(profiles)
     assert set(PRIMARY_ACTIVE_BRIDGE).issubset(executions)
 

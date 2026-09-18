@@ -184,6 +184,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         receipts = self.load(CONTRACT_ROOT / "scientific-source-candidate-receipts.json")
         self.assert_valid("scientific-source-candidate-receipts.schema.json", receipts)
         expected = {
+            "cosmos3-lerobot-augmentation": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
             "alphafold3": "c0f97eda2f1f482fd94d3a38bece18c7069b4a5c",
             "bindcraft": "efb5bfeb8b4b1a5944256f979c34e0c8e6a82d9d",
             "boltzgen": "a3149cf18eeb58648d1abbb27539bd73f746cdda",
@@ -204,6 +205,7 @@ class ScientificWorkloadContractTests(unittest.TestCase):
         self.assertEqual({"alphafold3", "bindcraft"}, academic)
 
     PROMOTABLE_SCIENTIFIC_FLEET = {
+        "cosmos3-lerobot-augmentation",
         "alphafold3",
         "bindcraft",
         "boltzgen",

@@ -1102,10 +1102,17 @@ class DeploymentContractTests(unittest.TestCase):
         )["profiles"]
         profiles_by_id = {profile["model_id"]: profile for profile in profiles}
         for model in committed_map["models"]:
-            self.assertEqual(
-                profiles_by_id[model["model_id"]]["qualification"]["execution_map_sha256"],
-                effective["execution_map_sha256"],
-            )
+            qualified_digest = profiles_by_id[model["model_id"]]["qualification"]["execution_map_sha256"]
+            baseline_ids = committed_map.get("qualification_baselines", {}).get(qualified_digest)
+            if baseline_ids is not None:
+                self.assertIn(model["model_id"], baseline_ids)
+                rows = {row["model_id"]: row for row in committed_map["models"]}
+                measured = {"schema": committed_map["schema"], "models": [rows[key] for key in baseline_ids]}
+            else:
+                measured = {key: value for key, value in committed_map.items() if key != "qualification_baselines"}
+            self.assertEqual(qualified_digest, hashlib.sha256(
+                json.dumps(measured, separators=(",", ":"), sort_keys=True).encode()
+            ).hexdigest())
 
         for relative in ("locals.tf", "outputs.tf"):
             with self.subTest(source=relative):

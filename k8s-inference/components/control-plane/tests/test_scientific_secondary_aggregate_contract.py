@@ -93,6 +93,7 @@ SECONDARY_ACTIVE = {
 }
 
 COMPLETE_FLEET = {
+    "cosmos3-lerobot-augmentation",
     "boltzgen",
     "proteina-complexa",
     "bindcraft",
@@ -141,9 +142,7 @@ def test_complete_fleet_has_consistent_public_acceptance_evidence_state() -> Non
             assert qualification["scheduler_eligibility_receipt_sha256"] is None
             assert qualification["qualified_at"] == expected["qualified_at"]
         else:
-            assert re.fullmatch(
-                r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"]
-            )
+            assert re.fullmatch(r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"])
             assert re.fullmatch(
                 r"[a-f0-9]{64}",
                 qualification["scheduler_eligibility_receipt_sha256"],

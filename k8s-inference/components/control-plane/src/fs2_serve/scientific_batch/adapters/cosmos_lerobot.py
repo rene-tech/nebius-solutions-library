@@ -1,7 +1,7 @@
 """Candidate scientific-batch adapter for the LeRobot augmentation App.
 
 The production registry installs this compiler and collector. Route exposure
-still requires a qualified profile and digest-pinned execution map; registration
+still requires an active or qualified profile and digest-pinned execution map; registration
 alone does not qualify the dataset workflow for customers.
 """
 
@@ -50,10 +50,10 @@ INPUT_REFERENCE_SEMANTIC_TYPE = "lerobot-source-reference/v1"
 COLLECTOR_ID = "cosmos3-lerobot-v3-0-6-1"
 VALIDATOR_ID = "cosmos3-lerobot-v3-0-6-1"
 RUNTIME_ENTRYPOINT = "/opt/fs2/lerobot-augmentation/.venv/bin/fs2-augment-lerobot"
-MAX_BUNDLE_BYTES = 128 * 1024 * 1024 * 1024
+MAX_BUNDLE_BYTES = 5 * 1024 * 1024 * 1024
 MAX_SOURCE_REFERENCE_BYTES = 64 * 1024
 MAX_RESULT_BYTES = 16 * 1024 * 1024
-MAX_OUTPUT_BYTES = 128 * 1024 * 1024 * 1024
+MAX_OUTPUT_BYTES = 5 * 1024 * 1024 * 1024
 MAX_VARIANTS = 8
 REQUIRES_VERIFIED_INPUT_ARTIFACTS = True
 
