@@ -30,6 +30,7 @@ type Provider struct {
 	expectedAuthoritySnapshotID     string
 	expectedAuthorityClosureSHA256  string
 	acceptance                      Acceptance
+	legacyBootstrap                 *LegacyRuntimeBootstrap
 	current                         *Runtime
 	currentKey                      regularFileKey
 	currentActivationKey            regularFileKey
@@ -93,6 +94,7 @@ func NewProvider(
 	trustPath string,
 	snapshotPath string,
 	acceptance Acceptance,
+	legacyBootstrap *LegacyRuntimeBootstrap,
 ) *Provider {
 	return &Provider{
 		trustPath:                       trustPath,
@@ -107,6 +109,7 @@ func NewProvider(
 		expectedAuthoritySnapshotID:     acceptance.AuthoritySnapshotID,
 		expectedAuthorityClosureSHA256:  acceptance.AuthorityClosureSHA256,
 		acceptance:                      acceptance,
+		legacyBootstrap:                 legacyBootstrap,
 	}
 }
 
@@ -283,6 +286,11 @@ func (p *Provider) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRu
 	}
 	trustRaw, authoritySnapshotID, authorityClosureSHA256, err := p.runtimeSelectionAuthority(selection)
 	if err != nil {
+		if selection.Schema == legacySnapshotRuntimeSelectionSchema {
+			if bootstrapErr := p.verifyLegacyRuntimeSelection(raw, envelopeRaw, now); bootstrapErr == nil {
+				return selection, nil
+			}
+		}
 		return snapshotRuntimeSelection{}, err
 	}
 	runtime, err := LoadRuntimeFromBytesForChainRecovery(
@@ -295,6 +303,11 @@ func (p *Provider) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRu
 		authorityClosureSHA256,
 		now,
 	)
+	if err != nil && selection.Schema == legacySnapshotRuntimeSelectionSchema {
+		if bootstrapErr := p.verifyLegacyRuntimeSelection(raw, envelopeRaw, now); bootstrapErr == nil {
+			return selection, nil
+		}
+	}
 	if err != nil || runtime.Snapshot.ActivationCycleContractSHA256 != selection.Activation.CycleContractSHA256 ||
 		runtime.Snapshot.ActivationCycleID != selection.Activation.CycleID ||
 		runtime.Snapshot.ActivationCycleIssuedAt != selection.Activation.CycleIssuedAt ||
@@ -304,6 +317,86 @@ func (p *Provider) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRu
 		return snapshotRuntimeSelection{}, errors.New("historical runtime selector differs from its signed activation transition")
 	}
 	return selection, nil
+}
+
+func (p *Provider) verifyLegacyRuntimeSelection(selectionRaw []byte, envelopeRaw []byte, now time.Time) error {
+	selectionSHA256 := digestHex(selectionRaw)
+	runtimeRoot := filepath.Dir(p.selectionPath)
+	bootstrapPath := filepath.Join(runtimeRoot, "legacy-bootstrap-generations", "legacy-bootstrap-for-"+selectionSHA256+".json")
+	bootstrapRaw, err := readProtectedRegular(bootstrapPath, maxTrustBytes)
+	if errors.Is(err, os.ErrNotExist) && p.legacyBootstrap != nil {
+		bootstrapRaw, _, err = p.legacyBootstrap.EnvelopeGeneration()
+	}
+	if err != nil {
+		return errors.New("legacy runtime selection lacks its signed bootstrap generation")
+	}
+	acceptanceTrustSHA256, err := InspectLegacyRuntimeBootstrapTrustSHA256(bootstrapRaw)
+	if err != nil {
+		return err
+	}
+	acceptanceTrustRaw, err := readProtectedRegular(
+		filepath.Join(runtimeRoot, "acceptance-trust-generations", "acceptance-trust-"+acceptanceTrustSHA256+".json"),
+		maxTrustBytes,
+	)
+	if errors.Is(err, os.ErrNotExist) {
+		currentTrustRaw, currentTrustSHA256, currentErr := p.acceptance.TrustGeneration()
+		if currentErr == nil && currentTrustSHA256 == acceptanceTrustSHA256 {
+			acceptanceTrustRaw = currentTrustRaw
+			err = nil
+		}
+	}
+	if err != nil || digestHex(acceptanceTrustRaw) != acceptanceTrustSHA256 {
+		return errors.New("legacy bootstrap acceptance trust generation is missing")
+	}
+	bootstrap, err := VerifyLegacyRuntimeBootstrap(acceptanceTrustRaw, bootstrapRaw, now, false)
+	if err != nil || bootstrap.LegacySelectionSHA256 != selectionSHA256 {
+		return errors.New("legacy bootstrap does not bind the exact retained selector")
+	}
+	accepted, err := p.acceptanceGeneration(
+		bootstrap.SuccessorAcceptanceEnvelopeSHA256,
+		bootstrap.SuccessorAcceptanceTrustSHA256,
+	)
+	if err != nil {
+		return err
+	}
+	if err := AcceptanceGenerationsRelated(p.acceptance, accepted, p.acceptanceGeneration); err != nil {
+		return err
+	}
+	legacyTrustRaw, err := readProtectedRegular(
+		filepath.Join(runtimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
+		maxTrustBytes,
+	)
+	if errors.Is(err, os.ErrNotExist) {
+		legacyTrustRaw, err = readProtectedRegular(p.trustPath, maxTrustBytes)
+	}
+	if err != nil {
+		return err
+	}
+	return VerifyLegacyRuntimeAnchor(*bootstrap, selectionRaw, legacyTrustRaw, envelopeRaw)
+}
+
+func (p *Provider) acceptanceGeneration(envelopeDigest string, trustDigest string) (Acceptance, error) {
+	if !isSHA256(envelopeDigest) || !isSHA256(trustDigest) {
+		return Acceptance{}, errors.New("acceptance generation digest pair is invalid")
+	}
+	_, currentTrustDigest, currentTrustErr := p.acceptance.TrustGeneration()
+	_, currentEnvelopeDigest, currentEnvelopeErr := p.acceptance.EnvelopeGeneration()
+	if currentTrustErr == nil && currentEnvelopeErr == nil && currentTrustDigest == trustDigest && currentEnvelopeDigest == envelopeDigest {
+		return p.acceptance, nil
+	}
+	runtimeRoot := filepath.Dir(p.selectionPath)
+	trustRaw, trustErr := readProtectedRegular(
+		filepath.Join(runtimeRoot, "acceptance-trust-generations", "acceptance-trust-"+trustDigest+".json"),
+		maxTrustBytes,
+	)
+	envelopeRaw, envelopeErr := readProtectedRegular(
+		filepath.Join(runtimeRoot, "acceptance-envelope-generations", "acceptance-envelope-"+envelopeDigest+".json"),
+		maxTrustBytes,
+	)
+	if trustErr != nil || envelopeErr != nil || digestHex(trustRaw) != trustDigest || digestHex(envelopeRaw) != envelopeDigest {
+		return Acceptance{}, errors.New("acceptance generation is missing or changed")
+	}
+	return VerifyAcceptanceGeneration(trustRaw, envelopeRaw)
 }
 
 func (p *Provider) runtimeSelectionAuthority(selection snapshotRuntimeSelection) ([]byte, string, string, error) {
@@ -350,27 +443,7 @@ func (p *Provider) runtimeSelectionAuthority(selection snapshotRuntimeSelection)
 		accepted.AuthoritySnapshotID != selection.AuthoritySnapshotID || accepted.AuthorityClosureSHA256 != selection.AuthorityClosureSHA256 {
 		return nil, "", "", errors.New("runtime selector authority pins differ from its signed acceptance generation")
 	}
-	loader := func(envelopeDigest string, trustDigest string) (Acceptance, error) {
-		if !isSHA256(envelopeDigest) || !isSHA256(trustDigest) {
-			return Acceptance{}, errors.New("acceptance predecessor digest pair is invalid")
-		}
-		predecessorTrustRaw, trustErr := readProtectedRegular(
-			filepath.Join(runtimeRoot, "acceptance-trust-generations", "acceptance-trust-"+trustDigest+".json"),
-			maxTrustBytes,
-		)
-		if trustErr != nil || digestHex(predecessorTrustRaw) != trustDigest {
-			return Acceptance{}, errors.New("acceptance predecessor trust generation is missing")
-		}
-		predecessorRaw, envelopeErr := readProtectedRegular(
-			filepath.Join(runtimeRoot, "acceptance-envelope-generations", "acceptance-envelope-"+envelopeDigest+".json"),
-			maxTrustBytes,
-		)
-		if envelopeErr != nil || digestHex(predecessorRaw) != envelopeDigest {
-			return Acceptance{}, errors.New("acceptance predecessor envelope generation is missing")
-		}
-		return VerifyAcceptanceGeneration(predecessorTrustRaw, predecessorRaw)
-	}
-	if err := AcceptanceGenerationsRelated(p.acceptance, accepted, loader); err != nil {
+	if err := AcceptanceGenerationsRelated(p.acceptance, accepted, p.acceptanceGeneration); err != nil {
 		return nil, "", "", err
 	}
 	return snapshotTrustRaw, selection.AuthoritySnapshotID, selection.AuthorityClosureSHA256, nil

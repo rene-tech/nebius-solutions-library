@@ -14,6 +14,7 @@ import (
 
 const acceptanceTrustPath = "/usr/local/share/fs2-boundary/trusted-acceptance-issuers.json"
 const acceptanceEnvelopePath = "/var/run/fs2-boundary/acceptance/accepted-boundary-envelope.json"
+const legacyRuntimeBootstrapEnvelopePath = "/var/run/fs2-boundary/acceptance/legacy-runtime-bootstrap-envelope.json"
 const collectorConfigPath = "/usr/local/share/fs2-boundary/native-collector.json"
 const nativeTrustPath = "/usr/local/share/fs2-boundary/trusted-native-response-issuers.json"
 const snapshotTrustPath = "/usr/local/share/fs2-boundary/trusted-snapshot-issuers.json"
@@ -28,7 +29,14 @@ func main() {
 		slog.Error("collector acceptance rejected", "error", err)
 		os.Exit(1)
 	}
-	runner, err := collector.LoadRunner(collectorConfigPath, nativeTrustPath, snapshotTrustPath, acceptance)
+	legacyBootstrap, err := boundary.LoadOptionalLegacyRuntimeBootstrap(
+		acceptanceTrustPath, legacyRuntimeBootstrapEnvelopePath, acceptance, time.Now(),
+	)
+	if err != nil {
+		slog.Error("legacy runtime bootstrap rejected", "error", err)
+		os.Exit(1)
+	}
+	runner, err := collector.LoadRunner(collectorConfigPath, nativeTrustPath, snapshotTrustPath, acceptance, legacyBootstrap)
 	if err != nil {
 		slog.Error("collector configuration rejected", "error", err)
 		os.Exit(1)

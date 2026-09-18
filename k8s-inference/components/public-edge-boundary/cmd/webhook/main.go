@@ -18,6 +18,7 @@ const maximumAdmissionBytes = 8 * 1024 * 1024
 const maximumConcurrentAdmissions = 64
 const acceptanceTrustPath = "/usr/local/share/fs2-boundary/trusted-acceptance-issuers.json"
 const acceptanceEnvelopePath = "/var/run/fs2-boundary/acceptance/accepted-boundary-envelope.json"
+const legacyRuntimeBootstrapEnvelopePath = "/var/run/fs2-boundary/acceptance/legacy-runtime-bootstrap-envelope.json"
 const runtimeTrustPath = "/var/run/fs2-boundary/snapshot-trust.json"
 const runtimeSnapshotPath = "/var/run/fs2-boundary/snapshot-envelope.json"
 const tlsCertificatePath = "/var/run/fs2-boundary/tls/tls.crt"
@@ -40,6 +41,7 @@ type config struct {
 	admissionAuthenticator *boundary.AdmissionChannelAuthenticator
 	transitionLedger    *boundary.TransitionLedger
 	acceptance          boundary.Acceptance
+	legacyBootstrap     *boundary.LegacyRuntimeBootstrap
 }
 
 func main() {
@@ -51,11 +53,12 @@ func main() {
 	handler := &admissionHandler{
 		config: configuration,
 		slots:  make(chan struct{}, maximumConcurrentAdmissions),
-			provider: boundary.NewProvider(
-				configuration.trustPath,
-				configuration.snapshotPath,
-				configuration.acceptance,
-				),
+		provider: boundary.NewProvider(
+			configuration.trustPath,
+			configuration.snapshotPath,
+			configuration.acceptance,
+			configuration.legacyBootstrap,
+		),
 		transitionLedger: configuration.transitionLedger,
 	}
 	mux := http.NewServeMux()
@@ -207,6 +210,12 @@ func loadConfig() (config, error) {
 	if uint32(os.Getegid()) != acceptance.BoundaryRuntimeReaderGID {
 		return config{}, errors.New("boundary effective GID differs from the independently accepted runtime reader group")
 	}
+	legacyBootstrap, err := boundary.LoadOptionalLegacyRuntimeBootstrap(
+		acceptanceTrustPath, legacyRuntimeBootstrapEnvelopePath, acceptance, time.Now(),
+	)
+	if err != nil {
+		return config{}, err
+	}
 	admissionAuthenticator, err := boundary.LoadAdmissionChannelAuthenticator(
 		admissionClientTrustPath,
 		acceptance.BoundaryAdmissionClientTrustSHA256,
@@ -252,5 +261,6 @@ func loadConfig() (config, error) {
 		admissionAuthenticator: admissionAuthenticator,
 		transitionLedger:       transitionLedger,
 		acceptance:             acceptance,
+		legacyBootstrap:        legacyBootstrap,
 	}, nil
 }
