@@ -1603,6 +1603,20 @@ class MemoryStore:
                 result = {"base64": base64.b64encode(raw).decode()}
             return OperationResult(operation=metadata, result=result)
 
+    async def list_customer_operations(
+        self, principal: Principal, *, limit: int, before: tuple[datetime, UUID] | None = None
+    ) -> list[OperationView]:
+        if not 1 <= limit <= 201:
+            raise ValueError("operation history page is outside the bound")
+        async with self._lock:
+            rows = [row for row in self.operations.values()
+                    if row.view.tenant_id == principal.tenant_id
+                    and ("tenant.admin" in principal.scopes or (
+                        row.view.token_id == principal.token_id and row.view.principal_id == principal.principal_id))
+                    and (before is None or (row.view.accepted_at, row.view.id.int) < (before[0], before[1].int))]
+            rows.sort(key=lambda row: (row.view.accepted_at, row.view.id.int), reverse=True)
+            return [self._metadata(row) for row in rows[:limit]]
+
     async def claim_operation(
         self, worker_id: str, *, lease_seconds: float, stream_operation_id: UUID | None = None,
     ) -> ClaimedOperation | None:

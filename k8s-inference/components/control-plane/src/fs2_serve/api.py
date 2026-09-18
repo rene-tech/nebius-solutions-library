@@ -106,6 +106,7 @@ from .models import (
     TokenIssued,
     TokenView,
 )
+from .operation_history import OperationPage, decode_cursor, encode_cursor
 from .operation_metrics import customer_operation_metrics
 from .registry import OperationalModel, Registry, RegistryError
 from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
@@ -1362,6 +1363,27 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             upload_id=upload_id,
         )
         return JSONResponse(result.model_dump(mode="json", exclude_none=True), headers={"cache-control": "no-store"})
+
+    @app.get("/v1/operations", response_model=OperationPage)
+    async def operation_history(
+        identity: Annotated[Principal, Depends(principal)],
+        limit: Annotated[int, Query(ge=1, le=200)] = 50,
+        cursor: Annotated[str | None, Query(max_length=256)] = None,
+    ) -> Response:
+        try:
+            before = decode_cursor(cursor)
+        except ValueError:
+            return _error(400, "invalid_cursor", "invalid operation history cursor")
+        operations = await runtime.store.list_customer_operations(identity, limit=limit + 1, before=before)
+        # Keep this contract identical to individual status/result access. The
+        # store filters before pagination; this assertion prevents future drift.
+        for operation in operations:
+            require_operation_access(identity, operation)
+        page = OperationPage(
+            data=tuple(operations[:limit]),
+            next_cursor=encode_cursor(operations[limit - 1]) if len(operations) > limit else None,
+        )
+        return JSONResponse(page.model_dump(mode="json"), headers={"cache-control": "no-store"})
 
     @app.get("/v1/operations/{operation_id}", response_model=OperationView | ScientificBatchStatusResponse)
     async def operation_status(operation_id: UUID, identity: Annotated[Principal, Depends(principal)]) -> Response:

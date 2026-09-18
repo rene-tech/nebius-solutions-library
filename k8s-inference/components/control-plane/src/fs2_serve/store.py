@@ -312,6 +312,10 @@ class Store(Protocol):
 
     async def get_operation(self, operation_id: UUID, *, tenant_id: str | None = None) -> OperationView: ...
 
+    async def list_customer_operations(
+        self, principal: Principal, *, limit: int, before: tuple[datetime, UUID] | None = None
+    ) -> list[OperationView]: ...
+
     async def get_operation_result(self, operation_id: UUID, *, tenant_id: str) -> OperationResult: ...
 
     async def claim_operation(

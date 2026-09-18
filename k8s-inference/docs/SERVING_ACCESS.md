@@ -15,6 +15,25 @@ or billing identity. Even identical principal names and idempotency keys in two
 tenants remain distinct. A customer's lifecycle/result request for another
 tenant's operation returns not found.
 
+## Customer operation history
+
+`GET /v1/operations?limit=50` discovers the caller's durable operations without
+requiring the client to have saved every operation ID. The response contains
+`data` (standard operation metadata for native, OpenAI and scientific-batch
+requests) and an opaque `next_cursor`. Pass that cursor with the same endpoint
+to read older pages; the maximum page size is 200. Ordering uses the immutable
+acceptance time and operation ID, so newly submitted work does not shift an
+in-progress traversal or duplicate earlier pages.
+
+History has exactly the individual operation-read authorization rule: the
+submitting API key and principal can see their operations, while an explicitly
+authorized `tenant.admin` key can see the same tenant's operations. Another key
+belonging to the same principal does not inherit old operations implicitly.
+Filtering happens before pagination and no request or result payload is
+returned. Use the existing operation status, result and cancellation endpoints
+for details and lifecycle actions. Scientific-batch stage details remain in the
+individual status response.
+
 ## Compatibility with existing deployments
 
 - Existing `policy.visibility: Tenant` with no `allowedPrincipalIds` is the

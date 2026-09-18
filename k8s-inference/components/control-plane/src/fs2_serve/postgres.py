@@ -2851,6 +2851,31 @@ class PostgresStore:
                 raise NotFoundError("operation not found")
             return self._operation(row)
 
+    async def list_customer_operations(
+        self, principal: Principal, *, limit: int, before: tuple[datetime, UUID] | None = None
+    ) -> list[OperationView]:
+        if not 1 <= limit <= 201:
+            raise ValueError("operation history page is outside the bound")
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """
+                SELECT * FROM fs2_operations
+                WHERE tenant_id=$1
+                  AND ($2::boolean OR (token_id=$3 AND principal_id=$4))
+                  AND ($5::timestamptz IS NULL OR
+                       (accepted_at,id)<($5::timestamptz,$6::uuid))
+                ORDER BY accepted_at DESC,id DESC LIMIT $7
+                """,
+                principal.tenant_id,
+                "tenant.admin" in principal.scopes,
+                principal.token_id,
+                principal.principal_id,
+                before[0] if before else None,
+                before[1] if before else None,
+                limit,
+            )
+        return [self._operation(row) for row in rows]
+
     async def get_operation_result(self, operation_id: UUID, *, tenant_id: str) -> OperationResult:
         async with self.pool.acquire() as connection:
             row = await connection.fetchrow(
