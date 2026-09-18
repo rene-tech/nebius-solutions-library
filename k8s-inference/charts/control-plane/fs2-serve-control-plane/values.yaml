@@ -251,7 +251,12 @@ runtimeAttribution:
   nodeSelector:
     nebius.com/gpu: "true"
   tolerations:
-    - operator: Exists
+    # Follow dedicated GPU workloads, but not provider shutdown taints. A
+    # blanket NoSchedule toleration keeps stopped preemptible nodes in the
+    # DaemonSet's desired count and can block unrelated platform rollouts.
+    # Override this list for additional workload-dedication keys in your pools.
+    - key: dedicated
+      operator: Exists
       effect: NoSchedule
   resources:
     requests:

@@ -311,6 +311,12 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
     container = pod_spec["containers"][0]
     assert daemonset["metadata"]["name"] == "fs2-serve-control-plane-gpu-observer"
     assert pod_spec["nodeSelector"] == {"nebius.com/gpu": "true"}
+    # A stopped preemptible GPU remains registered while its provider replaces
+    # it. Do not count it as an eligible observer rollout target by tolerating
+    # every NoSchedule taint (including provider shutdown and unreachable).
+    assert pod_spec["tolerations"] == [
+        {"key": "dedicated", "operator": "Exists", "effect": "NoSchedule"}
+    ]
     assert container["args"] == ["gpu-allocation-observer"]
     environment = {item["name"]: item.get("value") for item in container["env"]}
     assert environment["FS2_GPU_ALLOCATION_OBSERVER_NAMESPACES"] == '["fs2-academic-poc","fs2-models"]'
@@ -356,6 +362,17 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
         for document in legacy_documents
         if document["kind"] == "Role" and document["metadata"]["name"] == legacy_daemonset["metadata"]["name"]
     } == {"legacy-models"}
+
+
+def test_gpu_observer_accepts_explicit_pool_tolerations_without_a_wildcard() -> None:
+    documents = render(
+        "--set", "runtimeAttribution.enabled=true",
+        "--set-json", 'runtimeAttribution.tolerations=[{"key":"nvidia.com/gpu","operator":"Exists","effect":"NoSchedule"}]',
+    )
+    daemonset = next(document for document in documents if document["kind"] == "DaemonSet")
+    assert daemonset["spec"]["template"]["spec"]["tolerations"] == [
+        {"key": "nvidia.com/gpu", "operator": "Exists", "effect": "NoSchedule"}
+    ]
 
 
 def test_admin_console_renders_digest_bound_workload_route_and_network_boundary() -> None:
