@@ -119,6 +119,8 @@ Private receipt:
 SHA256 `5a707a69ccdde44a9bf4a3805cb0900db11c47884b4f6e1aff6a34c939e48d47`.
 It retains operation identities, runtime attribution, per-case hashes,
 first/last times, schema checks and descriptive weak-label measurements.
+29/40 operation receipts lack a Pod identity; those attribution fields remain
+unknown, not zero GPU usage or proof of which replica served the request.
 The original evidence-index SHA256 is
 `9cb70d68bd4f33cb98be6809fc1fd8bbbf853db2fd0014c2cbb1d82639d0d061`.
 
