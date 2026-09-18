@@ -6,6 +6,14 @@ locals {
     var.model_controller.enabled && length(local.serving_snapshot_bundles) > 0
   )
   serving_snapshot_cache = var.model_controller.gpu_snapshots.cache
+  # Immutable historical bundles retain their original wrapper. New bundles
+  # select the log-forwarding wrapper by content digest, not by GPU or region.
+  serving_snapshot_entrypoint_sources = {
+    for filename in ["serving_entrypoint.py", "serving_entrypoint_logging.py"] :
+    filesha256("${local.fs2_root}/models/scientific-snapshot/${filename}") => file(
+      "${local.fs2_root}/models/scientific-snapshot/${filename}"
+    )
+  }
   serving_snapshot_source_groups = {
     for id, bundle in local.serving_snapshot_bundles : bundle.source_configmap => {
       for filename, digest in bundle.source_sha256 : filename => file(
@@ -15,7 +23,7 @@ locals {
   }
   serving_snapshot_entrypoint_groups = {
     for id, bundle in local.serving_snapshot_bundles : bundle.entrypoint_configmap => {
-      "serving_entrypoint.py" = file("${local.fs2_root}/models/scientific-snapshot/serving_entrypoint.py")
+      "serving_entrypoint.py" = lookup(local.serving_snapshot_entrypoint_sources, bundle.entrypoint_sha256, "")
     }...
   }
   serving_snapshot_network_groups = {
@@ -83,7 +91,7 @@ resource "kubernetes_config_map_v1" "serving_snapshot_sources" {
           for filename, digest in bundle.source_sha256 :
           filesha256("${local.fs2_root}/models/scientific-snapshot/${filename}") == digest
         ]) &&
-        filesha256("${local.fs2_root}/models/scientific-snapshot/serving_entrypoint.py") == bundle.entrypoint_sha256
+        contains(keys(local.serving_snapshot_entrypoint_sources), bundle.entrypoint_sha256)
       ])
       error_message = "Serving snapshots must reference this cache and the exact source bytes used to qualify their bundle."
     }

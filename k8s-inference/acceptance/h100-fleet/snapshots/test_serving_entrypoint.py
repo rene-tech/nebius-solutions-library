@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-source = Path(__file__).resolve().parents[3] / "models/scientific-snapshot/serving_entrypoint.py"
+source = Path(__file__).resolve().parents[3] / "models/scientific-snapshot/serving_entrypoint_logging.py"
 spec = importlib.util.spec_from_file_location("serving_entrypoint", source)
 entrypoint = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(entrypoint)
