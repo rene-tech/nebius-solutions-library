@@ -1,0 +1,225 @@
+{
+  "model_id": "cosmos3-nano",
+  "qualification": {
+    "active_runtime": {
+      "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+      "runtime_image_digest": "sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+      "service": {
+        "name": "cosmos3-nano",
+        "namespace": "fs2-models",
+        "port": 8080
+      }
+    },
+    "evidence": {
+      "audited_catalog_sha256": "36222c86357ef1ce7efbb5c6e2246fe37583456fd7323cd282bac1463b55cf74",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "87c9dc98df4ae4223661c1c457e12a8d01215d0317a00335b317c5e19318b37e"
+    },
+    "model_id": "cosmos3-nano",
+    "policy": {
+      "commercial_use": "allowed",
+      "license_id": "openmdw1.1-license",
+      "non_clinical": false
+    },
+    "runtime_origin": {
+      "kind": "independent-runtime",
+      "nim_artifact_parity": "not-applicable",
+      "relationship": "canonical-runtime",
+      "repository": "nvidia/Cosmos3-Nano",
+      "source_kind": "huggingface",
+      "variant_id": null
+    },
+    "states": {
+      "cold_start_qualified": false,
+      "elasticity_qualified": false,
+      "http_mcp_qualified": false,
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true
+    },
+    "variant_id": null
+  },
+  "record": {
+    "cache": {
+      "artifact": {
+        "capacity_bound_bytes": 68719476736,
+        "expanded_bytes": 34986890561,
+        "kind": "weights",
+        "manifest_digest": "49b4bf03d84857892b86366ef2f6c3b68ac575cb1a3f2de4122c41e638f4cc6e",
+        "minimum_bytes": 34986890561,
+        "staged": false,
+        "state": "platform-verified"
+      },
+      "local_path": "/var/lib/fs2-serve/cache/models/cosmos3-nano",
+      "owner": "fs2-serve-localizer",
+      "pre_pull_image": true,
+      "shared_path": "/mnt/fs2-serve-cache/models/cosmos3-nano"
+    },
+    "evidence": [
+      {
+        "classification": "measured-historical",
+        "hardware": "NVIDIA B300 288GB",
+        "outcome": "conventional-fallback",
+        "source_commit": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+        "summary": "The immutable vLLM-Omni recipe documents online Cosmos3-Nano serving on one B300; this is vendor/community evidence, not an fs2 platform measurement."
+      },
+      {
+        "classification": "measured-historical",
+        "hardware": "NVIDIA H100 80GB HBM3",
+        "outcome": "conventional-fallback",
+        "source_commit": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "summary": "The immutable NVIDIA model card reports H100 testing; this is vendor evidence, not an fs2 platform measurement."
+      },
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3; driver580.159.04",
+        "outcome": "live-qualified",
+        "source_commit": "711590a103384931e5378c1b5d6cea76a6f0d3a3",
+        "summary": "Isolated evidence SHA256 87c9dc98df4ae4223661c1c457e12a8d01215d0317a00335b317c5e19318b37e. Same NVIDIA Cosmos3 checkpoint, native precision and model kernels; source-pinned transfer explicit-size fix. Isolated H100 recorded ALOHA V2V, edge transfer, T2V, I2V, audio and bounded queue tests; exact decoded frame count, dimensions and FPS verified. First-frame V2V can change motion; edge transfer better follows the input but is not guaranteed lighting-only or policy-safe augmentation. Fresh loading only. The historical r7 CUDA snapshot fails recorded-video VAE decoding and is not eligible for this runtime. New public MCP, LeRobot end-to-end, cold-start, elasticity, action-dynamics and GPU-snapshot qualification are not inherited."
+      }
+    ],
+    "interface": {
+      "endpoints": {
+        "native": "/generate"
+      },
+      "execution_mode": "http",
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "license_enforced": true,
+        "non_clinical": false,
+        "operations": [
+          "generate-media"
+        ]
+      },
+      "protocols": [
+        "native"
+      ],
+      "readiness": {
+        "expected_status": 200,
+        "method": "GET",
+        "path": "/readyz",
+        "timeout_seconds": 1800
+      },
+      "warmup": null
+    },
+    "model": {
+      "display_name": "NVIDIA Cosmos 3 Nano",
+      "family": "video-generation",
+      "id": "cosmos3-nano",
+      "source": {
+        "entitlement": {
+          "credential_contract": null,
+          "notes": "The exact Hugging Face revision is public and ungated.",
+          "required": false,
+          "state": "not-required"
+        },
+        "kind": "huggingface",
+        "license": {
+          "id": "openmdw1.1-license",
+          "notes": "The exact-revision NVIDIA model card identifies Open Model Data and Weights License 1.1 and permits commercial and non-commercial use.",
+          "state": "verified"
+        },
+        "repository": "nvidia/Cosmos3-Nano",
+        "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1"
+      },
+      "tested_lane": true
+    },
+    "provenance": [
+      {
+        "classification": "reviewed-input",
+        "revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "url": "https://huggingface.co/nvidia/Cosmos3-Nano/raw/7a312c868bcce8e40b3eb40861300a9d0ba3fde1/README.md"
+      },
+      {
+        "classification": "reviewed-input",
+        "revision": "eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c",
+        "url": "https://raw.githubusercontent.com/vllm-project/vllm-omni/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/recipes/cosmos3/Cosmos3-Nano.md"
+      }
+    ],
+    "resources": {
+      "cpu_millis": 16000,
+      "gpu": {
+        "alternatives": [],
+        "b300_state": "unverified",
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "placement": null,
+        "topology": "single-gpu"
+      },
+      "host_ram_min_bytes": null,
+      "memory_bytes": 137438953472,
+      "scaler_owner": "nebius-managed-node-group-autoscaler"
+    },
+    "runtime": {
+      "command": [
+        "vllm",
+        "serve",
+        "nvidia/Cosmos3-Nano",
+        "--omni",
+        "--revision",
+        "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--init-timeout",
+        "1800",
+        "--no-guardrails",
+        "--model-class-name",
+        "Cosmos3OmniDiffusersPipeline"
+      ],
+      "image": {
+        "digest": "sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+        "state": "resolved"
+      },
+      "kind": "vllm-omni",
+      "version": "cosmos3-recorded-video-contract-20260918-v4"
+    },
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "semantic_validator": {
+      "contract": "bounded-json-base64-media/v1",
+      "distinct_requests": true,
+      "distinct_responses": true,
+      "fixture_path": "k8s-inference/catalog/runtime/validators/assets/cosmos3-nano.json",
+      "fixture_sha256": "467bfa7484ec20dc1fc30a109b8e0e7e23d3b443061f1c0a9b659dfce30c82de",
+      "kind": "repository-command",
+      "request_count": 2,
+      "source_path": "k8s-inference/catalog/runtime/validators/validate_cosmos3_nano.py",
+      "source_sha256": "9482862238b3f4582d4aa48786fcad4c0920e4755a7bd7c15acc7c97e618745b"
+    },
+    "startup": {
+      "default": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [],
+      "fallback": "conventional",
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "support": {
+      "limitations": [
+        "Same NVIDIA Cosmos3 checkpoint, native precision and model kernels; source-pinned transfer explicit-size fix.",
+        "Isolated H100 recorded ALOHA V2V, edge transfer, T2V, I2V, audio and bounded queue tests; exact decoded frame count, dimensions and FPS verified.",
+        "First-frame V2V can change motion; edge transfer better follows the input but is not guaranteed lighting-only or policy-safe augmentation.",
+        "Fresh loading only. The historical r7 CUDA snapshot fails recorded-video VAE decoding and is not eligible for this runtime.",
+        "New public MCP, LeRobot end-to-end, cold-start, elasticity, action-dynamics and GPU-snapshot qualification are not inherited."
+      ],
+      "non_clinical": false,
+      "route_exposed": false,
+      "state": "qualified"
+    }
+  },
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "variant_id": null
+}
