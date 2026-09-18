@@ -1,0 +1,41 @@
+{
+  "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "context": "fs2-remediation-sandbox2",
+  "main_suite": {
+    "checks": [
+      "all_active_users_ready_and_stockholm_excluded",
+      "cross_tenant_s3_access_denied",
+      "shared_bucket_distinct_keys_and_17_mib_multipart_roundtrip",
+      "per_user_mode_and_same_tenant_read_write_isolation",
+      "public_authenticated_storage_and_multiple_keys_same_identity",
+      "disabled_users_lose_s3_access",
+      "disable_reenable_preserves_s3_identity_and_restores_access"
+    ],
+    "completed_at": "2026-09-18T09:14:28.346078+00:00",
+    "outcome": "passed",
+    "started_at": "2026-09-18T09:10:47.700980+00:00"
+  },
+  "namespace": "fs2-system",
+  "project": "project-e00rene",
+  "quota_suite": {
+    "accepted_writes_before_rejection": 0,
+    "cleanup": "accepted objects deleted; fixture user disabled",
+    "completed_at": "2026-09-18T09:12:25.294270+00:00",
+    "configured_quota_bytes": 1048576,
+    "outcome": "passed",
+    "provider_rejection": {
+      "code": "BucketMaxSizeExceeded",
+      "status": 400
+    },
+    "started_at": "2026-09-18T09:10:47.857841+00:00",
+    "write_size_bytes": 2097152
+  },
+  "region": "eu-north1",
+  "ui": {
+    "browser_console_errors": 0,
+    "credentials_hidden_after_test": true,
+    "credentials_populated_on_explicit_reveal": true,
+    "outcome": "passed",
+    "secret_captured": false
+  }
+}

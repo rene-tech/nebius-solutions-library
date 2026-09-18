@@ -1,115 +1,116 @@
-# Customer storage — 2026-09-16 acceptance and resume
+# Customer storage — final live acceptance
 
-## Outcome: partially deployed; cloud-quota blocked
+## Outcome: passed on 2026-09-18
 
-The requested shared-tenant/default and optional private-user storage modes are
-implemented. Customer S3 keys are encrypted with the existing user-associated
-PostgreSQL records, and explicitly retrievable in the admin Users page or the
-authenticated storage API. Default allowance is 5,000,000,000 bytes per bucket.
-LibreChat, model input adapters, billing and old-result migration are unchanged.
+Customer S3 storage is reconciled and live-qualified in the Scientific AI H100
+cluster after the project IAM policy quota was resolved. Every eligible active
+user has a ready 5,000,000,000-byte bucket and a stable per-user S3 identity.
+Shared-tenant and private-user modes, direct S3 access, the authenticated public
+API, the admin UI, disable/re-enable, and provider byte-limit rejection all
+passed against the live service.
 
-The Nebius tenant has exhausted `iam.storageaccesspolicy.count`, limit **10**.
-The failed bucket-create operation `opstoragebucket-e00kvcfj4q763m784j` reported
-`RESOURCE_EXHAUSTED` for tenant `tenant-e00f3wdfzwfjgbcyfv`. **No cloud limits
-were raised.** No unrelated policies were deleted. On 2026-09-16 the user
-confirmed that they will handle the limit. The agent must not raise it or submit
-a quota request. Storage remains partially accepted; no repeated blocker
-notification is needed while the user handles this.
+This acceptance did not change model deployments, GPU/node capacity, LibreChat,
+BioIR, customer quotas, cloud limits, or Stockholm's disabled storage policy.
+No customer key was rotated or revoked, and no customer data was deleted.
 
-| Platform tenant | User(s) | State |
-| --- | --- | --- |
-| rene | rene | Ready; S3 upload/download and public API qualified |
-| fs2-h100 | fs2-h100-operator-handover | Ready; S3 access qualified |
-| kopra | kopra | Pending; quota blocked |
-| rene-tech | dual-acceptance-h100-operator | Pending; quota blocked |
-| robotics | timmothy | Pending; quota blocked |
-| tenant-academic | Two Terraform bootstrap owners | Pending; quota blocked |
-| tenant-e00f3wdfzwfjgbcyfv | terraform-bootstrap-client | Pending; quota blocked |
-| stockholm | All 20 teams | Intentionally disabled; no buckets/credentials |
+## Final inventory
 
-Failed provider creates may briefly appear as `CREATING` and then roll back.
-Those are not ready workspaces. After quota is available, named resources are
-adopted/retried and only successful completed operations are stored as ready.
+| Platform tenant | Principal | Bucket | Mode/result |
+| --- | --- | --- | --- |
+| fs2-h100 | fs2-h100-operator-handover | `fs2-data-bucket-c298e54c85186c77820b93ee` | Ready, 5 GB; preserved legacy name |
+| kopra | kopra | `fs2-kopra-b559903873831e20` | Ready, 5 GB shared tenant |
+| rene | rene | `fs2-data-bucket-081a89fb4b12bf2194ad340d` | Ready, 5 GB; preserved legacy name and existing data |
+| rene-tech | dual-acceptance-h100-operator | `fs2-rene-tech-0b22504be9db9b25` | Ready, 5 GB shared tenant |
+| robotics | timmothy | `fs2-robotics-9bbacec25c21ce81` | Ready, 5 GB shared tenant |
+| tenant-academic | terraform-academic-scientific-client | `fs2-tenant-academic-079968c4be6437f7` | Ready, 5 GB shared tenant |
+| tenant-academic | terraform-bootstrap-client | `fs2-tenant-academic-079968c4be6437f7` | Ready; same bucket, distinct S3 identity |
+| tenant-e00f3wdfzwfjgbcyfv | terraform-bootstrap-client | `fs2-tenant-e00f3wdfzwfjgbcyfv-6879e07b58342034` | Ready, 5 GB shared tenant |
+| stockholm | team-01 through team-20 | None | Intentionally disabled and excluded |
 
-## Evidence
+New buckets use the readable `fs2-<tenant>-<optional-user>-<id>` convention.
+Nebius bucket names are immutable. The two legacy buckets were deliberately not
+replaced or migrated: preserving their identities and objects is safer than a
+cosmetic rename, and Rene's bucket contains retained medical demo assets.
 
-- 196 backend, real disposable-PostgreSQL, packaging, migration, telemetry/debug
-  and Helm rendering tests passed. Strict mypy and Ruff passed for storage code.
-- Eight admin Users/credential-panel component tests passed; production UI build
-  passed. Full live browser acceptance has **not** been performed.
-- Real dedicated provisioner created/adopted a bucket and a per-user S3 key.
-  Repeating credential creation recovered the same key/secret.
-- Real S3 write/read/delete passed for Rene.
-- A **17 MiB multipart upload**, download and SHA-256 comparison passed. The
-  task-owned object was deleted afterward.
-- Cross-tenant S3 list access was denied in both directions between the two
-  ready tenants; each could list its own bucket.
-- Two temporary platform API keys for Rene both returned the same user's S3
-  identity through `/v1/storage` and `/v1/storage/credentials`. Both test API keys
-  were revoked afterward. No customer key was rotated or revoked.
-- Normal user metadata contains no S3 secret. Explicit disclosure returns
-  `Cache-Control: no-store`. Inference keys cannot access admin storage APIs.
-- All 20 Stockholm users report disabled storage with no bucket.
-- Terraform applied the six-resource internal provisioner module; a subsequent
-  plan returned **no changes**. No GPU/node resources or cloud quotas changed.
+## Live evidence
 
-Blocked, not passed: full existing-tenant provisioning, live shared-bucket access
-by two different users, live private-user bucket creation/isolation, live key
-deactivation/re-enable, and live overflow rejection at the bucket byte limit.
-Unit/PostgreSQL coverage is not a substitute for those live checks.
+The committed `verify.py` suite ran from
+`2026-09-18T09:10:47.700980Z` to `2026-09-18T09:14:28.346078Z` and passed all
+seven checks:
 
-## Release and retained infrastructure
+1. All eligible active users ready at 5 GB; Stockholm excluded with no bucket.
+2. Cross-tenant list access denied in both directions.
+3. Two users shared one tenant bucket with distinct keys; a 17 MiB multipart
+   upload/download passed SHA-256 verification.
+4. Alice and Bob received different private-user buckets; cross-user reads and
+   writes were denied.
+5. Two inference keys for one user resolved to the same S3 identity through
+   `/v1/storage` and `/v1/storage/credentials`; inference auth could not call an
+   admin storage route.
+6. Disabling fixture users deactivated direct S3 access.
+7. Re-enabling Alice preserved the bucket, access key ID, and secret; S3
+   read/write returned; the fixture was disabled again afterward.
 
-- Helm revision **123** completed successfully. Final rollout: 3/3 gateway,
-  2/2 admin, 2/2 controller and 15/15 GPU-observer pods ready. Quota failures now
-  identify `RESOURCE_EXHAUSTED` and operation IDs in runtime logs and back off.
-- Target-specific values are retained in `retained-release.values.yaml`.
-- Project `project-e00rene`, region `eu-north1`, cluster
-  `mk8scluster-e00j5z9te7x5dd9g6a`, namespace `fs2-system`.
-- Backend source: `6dbf648e8165c9eb434300ad2b310ac2d136ca92`.
-- Backend image: `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:da7f5076307476b636283752c41cc2ffd96bdefa951d12231ed13434a4709422`.
-- Admin source: `8f84183fbf3c46993ae225ba242b5c96fdc0c185`.
-- Admin image: `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:4320eb8b1dbf9d0fce3122d6418001aac7e00f7f2ec5577c697455ab277949ce`.
-- Images were built from an isolated committed snapshot of the deployed source;
-  unrelated uncommitted Cosmos/readiness/semantic runtime/UI work was not shipped.
-- Schema advanced from 29 to 31 migrations. Additive migration 0030 was included
-  to preserve the canonical migration sequence; the old telemetry reader was
-  made tolerant of extra columns. Migration 0031 adds customer storage tables.
-  Do not blindly roll back to an image requiring exactly 29 migrations.
-- The system CPU node lacked rollout headroom. Existing general-CPU capacity was
-  enabled for the control plane/UI/controller and CPU hook jobs using Helm
-  tolerations. No taints were removed and no new nodes were created. CPU hook
-  templates now inherit the chart's top-level tolerations. GPU workloads unchanged.
-- Separate provisioner Terraform state is retained privately at
-  `/home/tux/secure-handoff/scientific-ai-customer-storage-20260916/provisioner`.
-  It contains the internal RSA private key: never commit or disclose the state.
-  The matching Kubernetes Secret is `fs2-customer-storage-provisioner`.
-- Before enabling the new module in this cluster's canonical workloads state,
-  **move/adopt** the existing six provisioner resources into
-  `module.customer_storage_provisioner[0]` and import the existing Secret. Do not
-  create a duplicate identity or discard the TLS-key state. Fresh deployments
-  use the integrated workloads module directly.
+The committed `verify_quota.py` suite ran from
+`2026-09-18T09:10:47.857841Z` to `2026-09-18T09:12:25.294270Z`. A disposable
+1 MiB bucket rejected a 2 MiB write with HTTP 400 `BucketMaxSizeExceeded`.
+Nebius documents that rapid writes can temporarily overshoot `max_size_bytes`,
+so the check uses paced bounded writes and requires that exact provider error.
+It never lowers a customer's allowance.
 
-Unrelated observation, not changed here: the maintenance command fails deleting
-old operations referenced by `fs2_scientific_stage_attempts`. It was observed
-during rollout and needs a separate retention fix; no scientific history was
-deleted as part of the bucket work.
+Live browser acceptance passed on the Admin → Users → user → Data storage panel:
+the operator could reveal populated S3 connection details, hide them again, and
+the page produced no browser-console errors. No secret value was captured in the
+evidence. The admin endpoint returned HTTP 200 with TLS verification enabled.
 
-## Resume after the user resolves the quota
+Post-test cleanup was verified:
 
-1. The user owns resolution of the IAM policy quota. Do not raise limits or
-   remove unrelated policies. The controller retries new provisioning after
-   its five-minute quota backoff; verify actual provisioning results rather
-   than treating the limit change itself as acceptance.
-2. Run `verify.py` with the control-plane venv, explicit kubeconfig/context and
-   `--origin https://89.169.99.188`. It verifies all existing users, shared tenant
-   access, multipart transfer, and two private-user fixtures. It disables fixture
-   users and revokes temporary platform keys; empty fixture buckets are retained
-   for repeatability. Read its documented mutation scope before execution.
-3. `verify_existing.py` is the smaller test for already-ready Rene storage. It
-   passed, but deliberately does not claim full provisioning acceptance.
-4. Complete a live browser check under Admin → Users → user → Data storage,
-   including explicit Show/Hide credentials, plus quota overflow acceptance on a
-   disposable small-quota fixture. Do not lower any customer's quota for testing.
-5. Document final per-user bucket inventory and test outcomes before claiming
-   completion. Keep Stockholm excluded; do not touch LibreChat or BioIR work.
+- Alice, Bob, and the quota-overflow fixture are disabled with zero active
+  inference keys.
+- All task-owned objects were deleted; empty fixture buckets are retained so the
+  tests can safely adopt and reuse them.
+- All 20 Stockholm teams still report disabled storage and no bucket.
+
+## Live deployment
+
+- Project: `project-e00rene`
+- Region: `eu-north1`
+- Cluster: `mk8scluster-e00j5z9te7x5dd9g6a`
+- Namespace: `fs2-system`
+- Working context: `fs2-remediation-sandbox2`
+- Gateway/controller image:
+  `fs2-serve-control-plane@sha256:ab2f802727b29b60a301870771610ec5b9851e2d92f837ee422c52b7fd78f214`
+- Admin image:
+  `fs2-serve-admin-console@sha256:6428b3500d2dd6784c0ff2308335b3d2962f725434cc5e7ea8fd5098dbf21659`
+
+The old storage-only kubeconfig in the secure handoff references a deactivated
+public key and is intentionally not used. Live verification used the existing
+`sandbox2` cluster handoff; no cloud key or role was changed.
+
+The provisioner Terraform state remains private at
+`/home/tux/secure-handoff/scientific-ai-customer-storage-20260916/provisioner`.
+It contains private key material and must never be committed or disclosed. If
+the canonical workloads Terraform is enabled for this retained cluster, first
+move/adopt those six provisioner resources and import the existing Kubernetes
+Secret; do not create a second provisioner identity.
+
+## Re-run
+
+Read each script's mutation scope before execution. Both use only named fixture
+users, revoke temporary inference keys, delete task-owned objects, and leave the
+fixtures disabled.
+
+```bash
+python3 acceptance/customer-storage-20260916/verify.py \
+  --kubeconfig /path/to/current/kubeconfig \
+  --context current-context \
+  --origin https://admin-origin
+
+python3 acceptance/customer-storage-20260916/verify_quota.py \
+  --kubeconfig /path/to/current/kubeconfig \
+  --context current-context \
+  --origin https://admin-origin
+```
+
+`verify_existing.py` remains the smaller non-provisioning smoke test for an
+already-ready user. It is not a substitute for either final suite above.

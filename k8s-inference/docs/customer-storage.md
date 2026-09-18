@@ -106,9 +106,13 @@ of tenant/private buckets; the controller never raises cloud limits.
 Build and supply matching control-plane/admin images through the existing
 `deployment.applications` configuration.
 
-The retained H100 deployment on 2026-09-16 is **partially provisioned**, blocked
-by that quota (limit 10). Do not describe all tenants or private-user mode as
-live-qualified yet. See the [acceptance and resume report](../acceptance/customer-storage-20260916/README.md).
+The retained H100 deployment is fully provisioned and live-qualified as of
+2026-09-18. All eligible active users are ready at 5 GB, the shared and private
+modes have passed real S3 isolation and multipart tests, disable/re-enable
+preserves the same identity, and the provider rejects over-limit writes. The 20
+Stockholm teams remain deliberately excluded. See the
+[final acceptance report](../acceptance/customer-storage-20260916/README.md).
+
 # Bucket naming
 
 New customer buckets use `fs2-<tenant>-<optional-user>-<id>`.

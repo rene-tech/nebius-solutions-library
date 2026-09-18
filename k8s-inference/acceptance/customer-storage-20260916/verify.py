@@ -133,7 +133,11 @@ def main():
             rene, kopra = retained[("rene", "rene")], retained[("kopra", "kopra")]
             for own, other in [(rene, kopra), (kopra, rene)]:
                 client = s3(own)
-                denied(lambda: client.list_objects_v2(Bucket=other["bucket_name"], MaxKeys=1))
+                denied(
+                    lambda client=client, other=other: client.list_objects_v2(
+                        Bucket=other["bucket_name"], MaxKeys=1
+                    )
+                )
             passed("cross_tenant_s3_access_denied")
 
             shared = [c for (tenant, _), c in retained.items() if tenant == "tenant-academic"]
@@ -188,8 +192,38 @@ def main():
             require(all(state == "disabled" for state in states), "disabled_users_reconciled")
             denied(lambda: a.list_objects_v2(Bucket=bucket, MaxKeys=1))
             passed("disabled_users_lose_s3_access")
+
+            # Re-enable must reactivate the same durable S3 identity rather than
+            # rotating credentials or replacing the bucket. Leave both fixture
+            # users disabled again after the round trip.
+            request("PATCH", f"/admin/api/v1/users/{alice['id']}", {"enabled": True})
+            restored = credentials(alice)
+            require(restored["bucket_name"] == private_a["bucket_name"], "reenable_bucket_changed")
+            require(restored["access_key_id"] == private_a["access_key_id"], "reenable_access_key_changed")
+            require(restored["secret_access_key"] == private_a["secret_access_key"], "reenable_secret_changed")
+            restored_client = s3(restored)
+            key = "acceptance/customer-storage/reenable-" + str(uuid4())
+            objects.append((restored_client, restored["bucket_name"], key))
+            restored_client.put_object(Bucket=restored["bucket_name"], Key=key, Body=b"reenabled")
+            require(
+                restored_client.get_object(Bucket=restored["bucket_name"], Key=key)["Body"].read()
+                == b"reenabled",
+                "reenable_read_write",
+            )
+            restored_client.delete_object(Bucket=restored["bucket_name"], Key=key)
+            objects.clear()
+            request("PATCH", f"/admin/api/v1/users/{alice['id']}", {"enabled": False})
+            deadline = time.monotonic() + 180
+            while time.monotonic() < deadline:
+                state = request("GET", f"/admin/api/v1/users/{alice['id']}/storage")["state"]
+                if state == "disabled":
+                    break
+                time.sleep(5)
+            require(state == "disabled", "reenabled_user_not_disabled_after_test")
+            denied(lambda: restored_client.list_objects_v2(Bucket=restored["bucket_name"], MaxKeys=1))
+            passed("disable_reenable_preserves_s3_identity_and_restores_access")
             evidence["outcome"] = "passed"
-        except Exception as error:
+        except Exception as error:  # noqa: BLE001 - evidence redacts provider errors by design
             evidence["outcome"] = "failed"
             evidence["error_type"] = type(error).__name__
             if isinstance(error, AssertionError):
