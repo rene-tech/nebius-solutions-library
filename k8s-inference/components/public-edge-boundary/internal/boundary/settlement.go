@@ -147,6 +147,9 @@ func (l *TransitionLedger) consumeBound(snapshot Snapshot, transition Transition
 		if err := validateTransitionRetry(retained, receipt); err != nil {
 			return err
 		}
+		if err := confirmTransitionReceiptDurable(path); err != nil {
+			return fmt.Errorf("confirm retained transition receipt durability: %w", err)
+		}
 		if !snapshotCurrent(snapshot, time.Now()) {
 			return errors.New("transition idempotent retry crossed snapshot expiry")
 		}
@@ -171,6 +174,9 @@ func (l *TransitionLedger) consumeBound(snapshot Snapshot, transition Transition
 			if retryErr := validateTransitionRetry(retained, receipt); retryErr != nil {
 				return retryErr
 			}
+			if syncErr := confirmTransitionReceiptDurable(path); syncErr != nil {
+				return fmt.Errorf("repair transition receipt directory durability: %w", syncErr)
+			}
 			if !snapshotCurrent(snapshot, time.Now()) {
 				return errors.New("transition settlement crossed snapshot expiry")
 			}
@@ -182,6 +188,16 @@ func (l *TransitionLedger) consumeBound(snapshot Snapshot, transition Transition
 		return errors.New("transition settlement crossed snapshot expiry")
 	}
 	return nil
+}
+
+func confirmTransitionReceiptDurable(path string) error {
+	if filepath.Base(path) == "." || filepath.Base(path) == "" {
+		return errors.New("transition receipt path is invalid")
+	}
+	if _, err := readTransitionRegular(path, maximumTransitionReceiptBytes); err != nil {
+		return err
+	}
+	return fsyncTransitionDirectory(filepath.Dir(path))
 }
 
 func snapshotCurrent(snapshot Snapshot, now time.Time) bool {
