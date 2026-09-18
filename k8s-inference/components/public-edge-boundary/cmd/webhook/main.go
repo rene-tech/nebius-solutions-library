@@ -39,6 +39,7 @@ type config struct {
 	tlsCertificate      tls.Certificate
 	admissionAuthenticator *boundary.AdmissionChannelAuthenticator
 	transitionLedger    *boundary.TransitionLedger
+	acceptance          boundary.Acceptance
 }
 
 func main() {
@@ -50,15 +51,11 @@ func main() {
 	handler := &admissionHandler{
 		config: configuration,
 		slots:  make(chan struct{}, maximumConcurrentAdmissions),
-		provider: boundary.NewProvider(
-			configuration.trustPath,
-			configuration.snapshotPath,
-			configuration.trustSHA256,
-			configuration.clusterID,
-			configuration.deploymentID,
-			configuration.authoritySnapshotID,
-			configuration.authorityClosureSHA256,
-			),
+			provider: boundary.NewProvider(
+				configuration.trustPath,
+				configuration.snapshotPath,
+				configuration.acceptance,
+				),
 		transitionLedger: configuration.transitionLedger,
 	}
 	mux := http.NewServeMux()
@@ -254,5 +251,6 @@ func loadConfig() (config, error) {
 		tlsCertificate:         tlsIdentity,
 		admissionAuthenticator: admissionAuthenticator,
 		transitionLedger:       transitionLedger,
+		acceptance:             acceptance,
 	}, nil
 }

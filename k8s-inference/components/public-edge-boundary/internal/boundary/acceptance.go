@@ -16,13 +16,43 @@ const (
 	AcceptanceTrustSchema    = "fs2-serve.nebius.ai/public-edge-boundary-acceptance-trust/v1"
 	AcceptanceEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance-envelope/v1"
 	LegacyAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v1"
-	AcceptancePayloadSchema  = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v2"
+	PreviousAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v2"
+	AcceptancePayloadSchema  = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v3"
 	acceptanceIssuerRole     = "platform-security-public-edge-boundary-acceptance"
 	maximumAcceptanceClusterIDBytes = 128
 	maximumAcceptanceDeploymentIDBytes = 128
 )
 
 type Acceptance struct {
+	Schema                    string `json:"schema"`
+	ClusterID                 string `json:"cluster_id"`
+	DeploymentID              string `json:"deployment_id"`
+	AuthoritySnapshotID       string `json:"authority_snapshot_id"`
+	AuthorityClosureSHA256    string `json:"authority_closure_sha256"`
+	SnapshotTrustSHA256       string `json:"snapshot_trust_sha256"`
+	NativeCollectorConfigSHA256 string `json:"native_collector_config_sha256"`
+	NativeAuthorityConfigSHA256 string `json:"native_authority_config_sha256"`
+	NativeResponseTrustSHA256 string `json:"native_response_trust_sha256"`
+	MandatoryCollectionsSHA256 string `json:"mandatory_collections_sha256"`
+	BoundaryExecutableSHA256  string `json:"boundary_executable_sha256"`
+	CollectorExecutableSHA256 string `json:"collector_executable_sha256"`
+	NativeAuthorityExecutableSHA256 string `json:"native_authority_executable_sha256"`
+	BoundaryTLSCertificateSHA256 string `json:"boundary_tls_certificate_sha256"`
+	BoundaryTLSPrivateKeySHA256 string `json:"boundary_tls_private_key_sha256"`
+	BoundaryTLSSPKISHA256       string `json:"boundary_tls_spki_sha256"`
+	BoundaryAdmissionClientTrustSHA256 string `json:"boundary_admission_client_trust_sha256"`
+	TransitionSettlementConfigSHA256 string `json:"transition_settlement_config_sha256"`
+	BoundaryRuntimeReaderGID uint32 `json:"boundary_runtime_reader_gid"`
+	AcceptanceTrustSHA256 string `json:"acceptance_trust_sha256"`
+	PredecessorAcceptanceEnvelopeSHA256 string `json:"predecessor_acceptance_envelope_sha256"`
+	PredecessorAcceptanceTrustSHA256 string `json:"predecessor_acceptance_trust_sha256"`
+	SourceCommit              string `json:"source_commit"`
+	SourceTree                string `json:"source_tree"`
+	trustRaw                  []byte
+	envelopeRaw               []byte
+}
+
+type acceptanceV2 struct {
 	Schema                    string `json:"schema"`
 	ClusterID                 string `json:"cluster_id"`
 	DeploymentID              string `json:"deployment_id"`
@@ -51,71 +81,13 @@ func LoadAcceptance(trustPath string, envelopePath string, executableRole string
 	if err != nil {
 		return Acceptance{}, fmt.Errorf("read acceptance trust registry: %w", err)
 	}
-	var trust TrustRegistry
-	if err := decodeExactJSON(trustRaw, &trust); err != nil {
-		return Acceptance{}, fmt.Errorf("decode acceptance trust registry: %w", err)
-	}
-	if trust.Schema != AcceptanceTrustSchema || len(trust.Issuers) == 0 {
-		return Acceptance{}, errors.New("acceptance trust registry is empty or unsupported")
-	}
 	envelopeRaw, err := readProtectedRegular(envelopePath, maxTrustBytes)
 	if err != nil {
 		return Acceptance{}, fmt.Errorf("read acceptance envelope: %w", err)
 	}
-	var envelope SignedEnvelope
-	if err := decodeExactJSON(envelopeRaw, &envelope); err != nil {
-		return Acceptance{}, fmt.Errorf("decode acceptance envelope: %w", err)
-	}
-	if envelope.Schema != AcceptanceEnvelopeSchema || envelope.Algorithm != "ed25519" {
-		return Acceptance{}, errors.New("acceptance envelope has an unsupported signature contract")
-	}
-	payloadRaw, err := decodeCanonicalBase64(envelope.PayloadBase64)
-	if err != nil || digestHex(payloadRaw) != envelope.PayloadSHA256 {
-		return Acceptance{}, errors.New("acceptance payload bytes do not match their digest")
-	}
-	key, err := trustedKey(trust, envelope.Issuer, envelope.KeyID, acceptanceIssuerRole)
+	acceptance, err := VerifyAcceptanceGeneration(trustRaw, envelopeRaw)
 	if err != nil {
 		return Acceptance{}, err
-	}
-	signature, err := decodeCanonicalBase64URL(envelope.Signature, ed25519.SignatureSize)
-	if err != nil {
-		return Acceptance{}, fmt.Errorf("decode acceptance signature: %w", err)
-	}
-	message := bytes.Join(
-		[][]byte{
-			[]byte(AcceptanceEnvelopeSchema),
-			[]byte(envelope.Issuer),
-			[]byte(envelope.KeyID),
-			[]byte(envelope.PayloadSHA256),
-			payloadRaw,
-		},
-		[]byte("\n"),
-	)
-	if !ed25519.Verify(key, message, signature) {
-		return Acceptance{}, errors.New("acceptance Ed25519 signature verification failed")
-	}
-	var acceptance Acceptance
-	if err := decodeExactJSON(payloadRaw, &acceptance); err != nil {
-		return Acceptance{}, fmt.Errorf("decode acceptance payload: %w", err)
-	}
-	if acceptance.Schema == LegacyAcceptancePayloadSchema {
-		return Acceptance{}, errors.New("legacy acceptance v1 is retained evidence but cannot be reinterpreted as v2; install a separately signed additive v2 acceptance envelope")
-	}
-	canonical, err := json.Marshal(acceptance)
-	if err != nil || !bytes.Equal(canonical, payloadRaw) {
-		return Acceptance{}, errors.New("acceptance payload is not canonical JSON")
-	}
-	if acceptance.Schema != AcceptancePayloadSchema || !safeText(acceptance.ClusterID, false) || len(acceptance.ClusterID) > maximumAcceptanceClusterIDBytes ||
-		!safeText(acceptance.DeploymentID, false) || len(acceptance.DeploymentID) > maximumAcceptanceDeploymentIDBytes || !isSHA256(acceptance.AuthoritySnapshotID) ||
-		!isSHA256(acceptance.AuthorityClosureSHA256) || !isSHA256(acceptance.SnapshotTrustSHA256) ||
-		!isSHA256(acceptance.NativeCollectorConfigSHA256) || !isSHA256(acceptance.NativeAuthorityConfigSHA256) ||
-		!isSHA256(acceptance.NativeResponseTrustSHA256) || !isSHA256(acceptance.MandatoryCollectionsSHA256) || !isSHA256(acceptance.BoundaryExecutableSHA256) ||
-		!isSHA256(acceptance.CollectorExecutableSHA256) || !isSHA256(acceptance.NativeAuthorityExecutableSHA256) ||
-			!isSHA256(acceptance.BoundaryTLSCertificateSHA256) || !isSHA256(acceptance.BoundaryTLSPrivateKeySHA256) ||
-			!isSHA256(acceptance.BoundaryTLSSPKISHA256) || !isSHA256(acceptance.BoundaryAdmissionClientTrustSHA256) ||
-			!isSHA256(acceptance.TransitionSettlementConfigSHA256) || acceptance.BoundaryRuntimeReaderGID == 0 ||
-		!isCommit(acceptance.SourceCommit) || !isCommit(acceptance.SourceTree) {
-		return Acceptance{}, errors.New("acceptance payload does not bind exact source, executables and authority evidence")
 	}
 	executableSHA256, err := runningExecutableSHA256()
 	if err != nil {
@@ -136,6 +108,201 @@ func LoadAcceptance(trustPath string, envelopePath string, executableRole string
 		return Acceptance{}, errors.New("running executable bytes differ from the independently accepted digest")
 	}
 	return acceptance, nil
+}
+
+// VerifyAcceptanceGeneration authenticates retained acceptance bytes without
+// comparing them to the currently running executable. Historical selectors
+// use it only for signature/pin reconstruction; serving eligibility is still
+// anchored in the current process acceptance and its signed predecessor chain.
+func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance, error) {
+	payloadRaw, err := verifyAcceptanceEnvelopeSignature(trustRaw, envelopeRaw)
+	if err != nil {
+		return Acceptance{}, err
+	}
+	trustSHA256 := digestHex(trustRaw)
+	var schemaOnly struct {
+		Schema string `json:"schema"`
+	}
+	if err := rejectDuplicateKeys(payloadRaw); err != nil || json.Unmarshal(payloadRaw, &schemaOnly) != nil {
+		return Acceptance{}, errors.New("acceptance payload schema cannot be decoded exactly")
+	}
+	if schemaOnly.Schema == LegacyAcceptancePayloadSchema {
+		return Acceptance{}, errors.New("legacy acceptance v1 is retained evidence but cannot be reinterpreted as v2 or v3; install a separately signed additive acceptance generation")
+	}
+	var acceptance Acceptance
+	if schemaOnly.Schema == PreviousAcceptancePayloadSchema {
+		var previous acceptanceV2
+		if err := decodeExactJSON(payloadRaw, &previous); err != nil {
+			return Acceptance{}, fmt.Errorf("decode acceptance v2 payload: %w", err)
+		}
+		canonical, marshalErr := json.Marshal(previous)
+		if marshalErr != nil || !bytes.Equal(canonical, payloadRaw) || json.Unmarshal(payloadRaw, &acceptance) != nil {
+			return Acceptance{}, errors.New("acceptance v2 payload is not canonical JSON")
+		}
+	} else {
+		if err := decodeExactJSON(payloadRaw, &acceptance); err != nil {
+			return Acceptance{}, fmt.Errorf("decode acceptance payload: %w", err)
+		}
+		canonical, marshalErr := json.Marshal(acceptance)
+		if marshalErr != nil || !bytes.Equal(canonical, payloadRaw) {
+			return Acceptance{}, errors.New("acceptance payload is not canonical JSON")
+		}
+	}
+	if acceptance.Schema != AcceptancePayloadSchema && acceptance.Schema != PreviousAcceptancePayloadSchema {
+		return Acceptance{}, errors.New("acceptance payload schema is unsupported")
+	}
+	predecessorPresent := acceptance.PredecessorAcceptanceEnvelopeSHA256 != "" || acceptance.PredecessorAcceptanceTrustSHA256 != ""
+	if !safeText(acceptance.ClusterID, false) || len(acceptance.ClusterID) > maximumAcceptanceClusterIDBytes ||
+		!safeText(acceptance.DeploymentID, false) || len(acceptance.DeploymentID) > maximumAcceptanceDeploymentIDBytes || !isSHA256(acceptance.AuthoritySnapshotID) ||
+		!isSHA256(acceptance.AuthorityClosureSHA256) || !isSHA256(acceptance.SnapshotTrustSHA256) ||
+		!isSHA256(acceptance.NativeCollectorConfigSHA256) || !isSHA256(acceptance.NativeAuthorityConfigSHA256) ||
+		!isSHA256(acceptance.NativeResponseTrustSHA256) || !isSHA256(acceptance.MandatoryCollectionsSHA256) || !isSHA256(acceptance.BoundaryExecutableSHA256) ||
+		!isSHA256(acceptance.CollectorExecutableSHA256) || !isSHA256(acceptance.NativeAuthorityExecutableSHA256) ||
+			!isSHA256(acceptance.BoundaryTLSCertificateSHA256) || !isSHA256(acceptance.BoundaryTLSPrivateKeySHA256) ||
+			!isSHA256(acceptance.BoundaryTLSSPKISHA256) || !isSHA256(acceptance.BoundaryAdmissionClientTrustSHA256) ||
+			!isSHA256(acceptance.TransitionSettlementConfigSHA256) || acceptance.BoundaryRuntimeReaderGID == 0 ||
+			(acceptance.Schema == AcceptancePayloadSchema && acceptance.AcceptanceTrustSHA256 != trustSHA256) ||
+			(acceptance.Schema == AcceptancePayloadSchema && predecessorPresent &&
+				(!isSHA256(acceptance.PredecessorAcceptanceEnvelopeSHA256) || !isSHA256(acceptance.PredecessorAcceptanceTrustSHA256))) ||
+			(acceptance.Schema == PreviousAcceptancePayloadSchema &&
+				(acceptance.AcceptanceTrustSHA256 != "" || predecessorPresent)) ||
+		!isCommit(acceptance.SourceCommit) || !isCommit(acceptance.SourceTree) {
+		return Acceptance{}, errors.New("acceptance payload does not bind exact source, executables and authority evidence")
+	}
+	acceptance.trustRaw = append([]byte(nil), trustRaw...)
+	acceptance.envelopeRaw = append([]byte(nil), envelopeRaw...)
+	return acceptance, nil
+}
+
+func verifyAcceptanceEnvelopeSignature(trustRaw []byte, envelopeRaw []byte) ([]byte, error) {
+	var trust TrustRegistry
+	if err := decodeExactJSON(trustRaw, &trust); err != nil {
+		return nil, fmt.Errorf("decode acceptance trust registry: %w", err)
+	}
+	if trust.Schema != AcceptanceTrustSchema || len(trust.Issuers) == 0 {
+		return nil, errors.New("acceptance trust registry is empty or unsupported")
+	}
+	var envelope SignedEnvelope
+	if err := decodeExactJSON(envelopeRaw, &envelope); err != nil {
+		return nil, fmt.Errorf("decode acceptance envelope: %w", err)
+	}
+	if envelope.Schema != AcceptanceEnvelopeSchema || envelope.Algorithm != "ed25519" {
+		return nil, errors.New("acceptance envelope has an unsupported signature contract")
+	}
+	payloadRaw, err := decodeCanonicalBase64(envelope.PayloadBase64)
+	if err != nil || digestHex(payloadRaw) != envelope.PayloadSHA256 {
+		return nil, errors.New("acceptance payload bytes do not match their digest")
+	}
+	key, err := trustedKey(trust, envelope.Issuer, envelope.KeyID, acceptanceIssuerRole)
+	if err != nil {
+		return nil, err
+	}
+	signature, err := decodeCanonicalBase64URL(envelope.Signature, ed25519.SignatureSize)
+	if err != nil {
+		return nil, fmt.Errorf("decode acceptance signature: %w", err)
+	}
+	message := bytes.Join(
+		[][]byte{
+			[]byte(AcceptanceEnvelopeSchema),
+			[]byte(envelope.Issuer),
+			[]byte(envelope.KeyID),
+			[]byte(envelope.PayloadSHA256),
+			payloadRaw,
+		},
+		[]byte("\n"),
+	)
+	if !ed25519.Verify(key, message, signature) {
+		return nil, errors.New("acceptance Ed25519 signature verification failed")
+	}
+	return payloadRaw, nil
+}
+
+func (acceptance Acceptance) TrustGeneration() ([]byte, string, error) {
+	if len(acceptance.trustRaw) == 0 {
+		return nil, "", errors.New("acceptance trust generation bytes are unavailable")
+	}
+	raw := append([]byte(nil), acceptance.trustRaw...)
+	return raw, digestHex(raw), nil
+}
+
+func (acceptance Acceptance) EnvelopeGeneration() ([]byte, string, error) {
+	if len(acceptance.envelopeRaw) == 0 {
+		return nil, "", errors.New("acceptance envelope generation bytes are unavailable")
+	}
+	raw := append([]byte(nil), acceptance.envelopeRaw...)
+	return raw, digestHex(raw), nil
+}
+
+// AcceptanceGenerationsRelated proves that two independently signed
+// acceptance envelopes are identical or connected by the v3 predecessor
+// chain. The loader must reopen and verify the exact content-addressed
+// predecessor generation. Both directions are checked so rolling old and new
+// processes can verify one another during a bounded current/next handoff.
+func AcceptanceGenerationsRelated(current Acceptance, candidate Acceptance, load func(string, string) (Acceptance, error)) error {
+	currentTrustRaw, currentTrustDigest, currentTrustErr := current.TrustGeneration()
+	_, currentDigest, currentErr := current.EnvelopeGeneration()
+	_, candidateTrustDigest, candidateTrustErr := candidate.TrustGeneration()
+	_, candidateDigest, candidateErr := candidate.EnvelopeGeneration()
+	if currentErr != nil || candidateErr != nil || current.ClusterID != candidate.ClusterID || current.DeploymentID != candidate.DeploymentID {
+		return errors.New("acceptance generations do not bind the same exact deployment")
+	}
+	if currentDigest == candidateDigest {
+		if currentTrustErr != nil || candidateTrustErr != nil || currentTrustDigest != candidateTrustDigest {
+			return errors.New("identical acceptance envelopes reference different trust generations")
+		}
+		return nil
+	}
+	if acceptanceChainContains(current, candidateDigest, candidateTrustDigest, load) {
+		return nil
+	}
+	// A rolling old process may observe only its directly authorized next
+	// generation. The next envelope must be signed by a key retained in both
+	// trust generations, while its signed payload binds both trust digests and
+	// the exact predecessor envelope. This prevents an untrusted replacement
+	// registry from authorizing itself.
+	if currentTrustErr == nil && candidate.Schema == AcceptancePayloadSchema &&
+		candidate.PredecessorAcceptanceEnvelopeSHA256 == currentDigest &&
+		candidate.PredecessorAcceptanceTrustSHA256 == currentTrustDigest {
+		payloadRaw, err := verifyAcceptanceEnvelopeSignature(currentTrustRaw, candidate.envelopeRaw)
+		canonical, marshalErr := json.Marshal(candidate)
+		if err == nil && marshalErr == nil && bytes.Equal(payloadRaw, canonical) {
+			return nil
+		}
+	}
+	return errors.New("acceptance generation is not in the signed current-to-next predecessor chain")
+}
+
+func acceptanceChainContains(start Acceptance, targetDigest string, targetTrustDigest string, load func(string, string) (Acceptance, error)) bool {
+	seen := map[string]struct{}{}
+	current := start
+	for depth := 0; depth < 1024; depth++ {
+		predecessor := current.PredecessorAcceptanceEnvelopeSHA256
+		predecessorTrust := current.PredecessorAcceptanceTrustSHA256
+		if predecessor == "" || predecessorTrust == "" {
+			return false
+		}
+		if predecessor == targetDigest && predecessorTrust == targetTrustDigest {
+			return true
+		}
+		if !isSHA256(predecessor) || !isSHA256(predecessorTrust) {
+			return false
+		}
+		if _, duplicate := seen[predecessor]; duplicate {
+			return false
+		}
+		seen[predecessor] = struct{}{}
+		next, err := load(predecessor, predecessorTrust)
+		if err != nil || next.ClusterID != start.ClusterID || next.DeploymentID != start.DeploymentID {
+			return false
+		}
+		_, digest, err := next.EnvelopeGeneration()
+		_, trustDigest, trustErr := next.TrustGeneration()
+		if err != nil || trustErr != nil || digest != predecessor || trustDigest != predecessorTrust {
+			return false
+		}
+		current = next
+	}
+	return false
 }
 
 func runningExecutableSHA256() (string, error) {

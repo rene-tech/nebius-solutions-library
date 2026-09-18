@@ -37,7 +37,8 @@ const (
 	maximumSnapshotRuntimeSelectionBytes = 16 * 1024
 	snapshotCycleSettlementSchema = "fs2-serve.nebius.ai/public-edge-snapshot-cycle-settlement/v2"
 	snapshotActivationReceiptSchema = "fs2-serve.nebius.ai/public-edge-snapshot-activation-receipt/v1"
-	snapshotRuntimeSelectionSchema = "fs2-serve.nebius.ai/public-edge-snapshot-runtime-selection/v1"
+	legacySnapshotRuntimeSelectionSchema = "fs2-serve.nebius.ai/public-edge-snapshot-runtime-selection/v1"
+	snapshotRuntimeSelectionSchema = "fs2-serve.nebius.ai/public-edge-snapshot-runtime-selection/v2"
 	snapshotSelectionCommitSchema = "fs2-serve.nebius.ai/public-edge-snapshot-selection-commit/v1"
 	snapshotCyclePredecessorSchema = "fs2-serve.nebius.ai/public-edge-snapshot-cycle-predecessor/v1"
 	snapshotActivationSafetyMargin = 5 * time.Second
@@ -79,6 +80,22 @@ type snapshotRuntimeSelection struct {
 	Schema                 string                    `json:"schema"`
 	SnapshotEnvelopeName   string                    `json:"snapshot_envelope_name"`
 	SnapshotEnvelopeSHA256 string                    `json:"snapshot_envelope_sha256"`
+	SnapshotTrustName      string                    `json:"snapshot_trust_name"`
+	SnapshotTrustSHA256    string                    `json:"snapshot_trust_sha256"`
+	AcceptanceTrustName    string                    `json:"acceptance_trust_name"`
+	AcceptanceTrustSHA256  string                    `json:"acceptance_trust_sha256"`
+	AcceptanceEnvelopeName string                    `json:"acceptance_envelope_name"`
+	AcceptanceEnvelopeSHA256 string                  `json:"acceptance_envelope_sha256"`
+	AuthoritySnapshotID    string                    `json:"authority_snapshot_id"`
+	AuthorityClosureSHA256 string                    `json:"authority_closure_sha256"`
+	PredecessorSelectionSHA256 string                `json:"predecessor_selection_sha256"`
+	Activation             snapshotActivationReceipt `json:"activation"`
+}
+
+type legacySnapshotRuntimeSelection struct {
+	Schema                 string                    `json:"schema"`
+	SnapshotEnvelopeName   string                    `json:"snapshot_envelope_name"`
+	SnapshotEnvelopeSHA256 string                    `json:"snapshot_envelope_sha256"`
 	PredecessorSelectionSHA256 string                `json:"predecessor_selection_sha256"`
 	Activation             snapshotActivationReceipt `json:"activation"`
 }
@@ -111,6 +128,12 @@ type snapshotActivationPlan struct {
 	bundleSHA256      string
 	envelopeSHA256    string
 	predecessorSelectionSHA256 string
+	snapshotTrustName string
+	snapshotTrustSHA256 string
+	acceptanceTrustName string
+	acceptanceTrustSHA256 string
+	acceptanceEnvelopeName string
+	acceptanceEnvelopeSHA256 string
 }
 
 func (r *Runner) AcceptedCycle(now time.Time) (CollectorCycle, error) {
@@ -833,17 +856,24 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 		return plan, err
 	}
 	if activeExists && bytes.Equal(activeRaw, envelopeRaw) {
+		selectedTrustRaw, selectedAuthoritySnapshotID, selectedAuthorityClosureSHA256, authorityErr := r.runtimeSelectionAuthority(selected)
+		if authorityErr != nil {
+			return plan, authorityErr
+		}
 		if _, err := boundary.LoadRuntimeFromBytes(
-			snapshotTrustRaw,
+			selectedTrustRaw,
 			activeRaw,
-			r.Acceptance.SnapshotTrustSHA256,
+			digest(selectedTrustRaw),
 			r.Acceptance.ClusterID,
 			r.Acceptance.DeploymentID,
-			r.Acceptance.AuthoritySnapshotID,
-			r.Acceptance.AuthorityClosureSHA256,
+			selectedAuthoritySnapshotID,
+			selectedAuthorityClosureSHA256,
 			now,
 		); err != nil {
 			return plan, fmt.Errorf("verify identical selected snapshot before no-op: %w", err)
+		}
+		if !r.selectionUsesCurrentAcceptance(selected) {
+			return plan, errors.New("identical snapshot retry belongs to a historical acceptance generation; a fresh signed successor is required")
 		}
 		if !r.activationReceiptIsExact(selected.Activation, plan, now) {
 			return plan, errors.New("identical immutable runtime envelope lacks its exact committed selection receipt")
@@ -854,7 +884,10 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 	if predecessorSelectionSHA256 != plan.predecessorSelectionSHA256 {
 		return plan, errors.New("signed snapshot activation predecessor changed during evidence collection")
 	}
-	if err := r.appendRuntimeOrMatch(filepath.Join(r.Config.RuntimeRoot, "snapshot-trust.json"), snapshotTrustRaw, 0o444); err != nil {
+	if activeExists && !r.currentAcceptanceMayFollowSelection(selected) {
+		return plan, errors.New("collector acceptance generation is not the exact current or directly signed next generation")
+	}
+	if err := r.prepareRuntimeAuthorityGenerations(&plan, snapshotTrustRaw); err != nil {
 		return plan, err
 	}
 	digestValue := plan.envelopeSHA256
@@ -879,14 +912,18 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 		return plan, fmt.Errorf("verify candidate snapshot before activation: %w", err)
 	}
 	if activeExists {
+		activeTrustRaw, activeAuthoritySnapshotID, activeAuthorityClosureSHA256, authorityErr := r.runtimeSelectionAuthority(selected)
+		if authorityErr != nil {
+			return plan, authorityErr
+		}
 		activeRuntime, err := boundary.LoadRuntimeFromBytesForChainRecovery(
-			snapshotTrustRaw,
+			activeTrustRaw,
 			activeRaw,
-			r.Acceptance.SnapshotTrustSHA256,
+			digest(activeTrustRaw),
 			r.Acceptance.ClusterID,
 			r.Acceptance.DeploymentID,
-			r.Acceptance.AuthoritySnapshotID,
-			r.Acceptance.AuthorityClosureSHA256,
+			activeAuthoritySnapshotID,
+			activeAuthorityClosureSHA256,
 			now,
 		)
 		if err != nil {
@@ -899,6 +936,47 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 		}
 	}
 	return plan, nil
+}
+
+func (r *Runner) prepareRuntimeAuthorityGenerations(plan *snapshotActivationPlan, snapshotTrustRaw []byte) error {
+	if plan == nil || len(snapshotTrustRaw) == 0 {
+		return errors.New("runtime authority generation is incomplete")
+	}
+	acceptanceTrustRaw, acceptanceTrustSHA256, err := r.Acceptance.TrustGeneration()
+	if err != nil {
+		return err
+	}
+	acceptanceEnvelopeRaw, acceptanceEnvelopeSHA256, err := r.Acceptance.EnvelopeGeneration()
+	if err != nil {
+		return err
+	}
+	snapshotTrustSHA256 := digest(snapshotTrustRaw)
+	plan.snapshotTrustName = "snapshot-trust-" + snapshotTrustSHA256 + ".json"
+	plan.snapshotTrustSHA256 = snapshotTrustSHA256
+	plan.acceptanceTrustName = "acceptance-trust-" + acceptanceTrustSHA256 + ".json"
+	plan.acceptanceTrustSHA256 = acceptanceTrustSHA256
+	plan.acceptanceEnvelopeName = "acceptance-envelope-" + acceptanceEnvelopeSHA256 + ".json"
+	plan.acceptanceEnvelopeSHA256 = acceptanceEnvelopeSHA256
+	for _, name := range []string{"snapshot-trust-generations", "acceptance-trust-generations", "acceptance-envelope-generations"} {
+		if err := r.ensureRuntimeChildDirectory(name); err != nil {
+			return err
+		}
+	}
+	publications := []struct {
+		directory string
+		name      string
+		raw       []byte
+	}{
+		{"snapshot-trust-generations", plan.snapshotTrustName, snapshotTrustRaw},
+		{"acceptance-trust-generations", plan.acceptanceTrustName, acceptanceTrustRaw},
+		{"acceptance-envelope-generations", plan.acceptanceEnvelopeName, acceptanceEnvelopeRaw},
+	}
+	for _, publication := range publications {
+		if err := r.appendRuntimeOrMatch(filepath.Join(r.Config.RuntimeRoot, publication.directory, publication.name), publication.raw, 0o444); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *Runner) loadRuntimeSelection(now time.Time) (snapshotRuntimeSelection, []byte, string, bool, error) {
@@ -922,8 +1000,10 @@ func (r *Runner) loadRuntimeSelection(now time.Time) (snapshotRuntimeSelection, 
 	}
 	if fixedExists {
 		var hint snapshotRuntimeSelection
-		if canonicalJSON(raw, &hint) != nil {
+		if decoded, decodeErr := decodeSnapshotRuntimeSelection(raw); decodeErr != nil {
 			return snapshotRuntimeSelection{}, nil, "", false, errors.New("runtime selection accelerator is not canonical")
+		} else {
+			hint = decoded
 		}
 		committedPath, pathErr := r.snapshotSuccessorPath(hint.PredecessorSelectionSHA256)
 		if pathErr != nil {
@@ -959,8 +1039,8 @@ func (r *Runner) loadRuntimeSelection(now time.Time) (snapshotRuntimeSelection, 
 		if readErr != nil {
 			return snapshotRuntimeSelection{}, nil, "", false, readErr
 		}
-		var next snapshotRuntimeSelection
-		if canonicalJSON(nextRaw, &next) != nil || next.PredecessorSelectionSHA256 != digest(raw) {
+		next, decodeErr := decodeSnapshotRuntimeSelection(nextRaw)
+		if decodeErr != nil || next.PredecessorSelectionSHA256 != digest(raw) {
 			return snapshotRuntimeSelection{}, nil, "", false, errors.New("runtime selection successor does not bind its exact predecessor")
 		}
 		raw = nextRaw
@@ -970,8 +1050,8 @@ func (r *Runner) loadRuntimeSelection(now time.Time) (snapshotRuntimeSelection, 
 }
 
 func (r *Runner) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRuntimeSelection, []byte, error) {
-	var selection snapshotRuntimeSelection
-	if err := canonicalJSON(raw, &selection); err != nil || selection.Schema != snapshotRuntimeSelectionSchema ||
+	selection, decodeErr := decodeSnapshotRuntimeSelection(raw)
+	if decodeErr != nil || selection.Schema != snapshotRuntimeSelectionSchema && selection.Schema != legacySnapshotRuntimeSelectionSchema ||
 		!isDigest(selection.SnapshotEnvelopeSHA256) || selection.SnapshotEnvelopeName != "snapshot-envelope-"+selection.SnapshotEnvelopeSHA256+".json" ||
 		filepath.Base(selection.SnapshotEnvelopeName) != selection.SnapshotEnvelopeName ||
 		selection.Activation.SnapshotEnvelopeSHA256 != selection.SnapshotEnvelopeSHA256 ||
@@ -994,13 +1074,13 @@ func (r *Runner) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRunt
 		activatedAt.Before(issuedAt) || now.Before(activatedAt.Add(-30*time.Second)) {
 		return snapshotRuntimeSelection{}, nil, errors.New("runtime selection activation receipt is invalid")
 	}
-	snapshotTrustRaw, trustErr := r.snapshotTrust.CanonicalBytes()
+	snapshotTrustRaw, authoritySnapshotID, authorityClosureSHA256, trustErr := r.runtimeSelectionAuthority(selection)
 	if trustErr != nil {
 		return snapshotRuntimeSelection{}, nil, trustErr
 	}
 	runtime, runtimeErr := boundary.LoadRuntimeFromBytesForChainRecovery(
-		snapshotTrustRaw, envelopeRaw, r.Acceptance.SnapshotTrustSHA256, r.Acceptance.ClusterID,
-		r.Acceptance.DeploymentID, r.Acceptance.AuthoritySnapshotID, r.Acceptance.AuthorityClosureSHA256, now,
+		snapshotTrustRaw, envelopeRaw, digest(snapshotTrustRaw), r.Acceptance.ClusterID,
+		r.Acceptance.DeploymentID, authoritySnapshotID, authorityClosureSHA256, now,
 	)
 	if runtimeErr != nil || runtime.Snapshot.ActivationCycleContractSHA256 != selection.Activation.CycleContractSHA256 ||
 		runtime.Snapshot.ActivationCycleID != selection.Activation.CycleID ||
@@ -1011,6 +1091,128 @@ func (r *Runner) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRunt
 		return snapshotRuntimeSelection{}, nil, errors.New("runtime selection differs from its signed activation transition")
 	}
 	return selection, envelopeRaw, nil
+}
+
+func (r *Runner) runtimeSelectionAuthority(selection snapshotRuntimeSelection) ([]byte, string, string, error) {
+	if selection.Schema == legacySnapshotRuntimeSelectionSchema {
+		trustRaw, err := r.snapshotTrust.CanonicalBytes()
+		return trustRaw, r.Acceptance.AuthoritySnapshotID, r.Acceptance.AuthorityClosureSHA256, err
+	}
+	if selection.Schema != snapshotRuntimeSelectionSchema || !isDigest(selection.SnapshotTrustSHA256) ||
+		!isDigest(selection.AcceptanceTrustSHA256) || !isDigest(selection.AcceptanceEnvelopeSHA256) ||
+		!isDigest(selection.AuthoritySnapshotID) || !isDigest(selection.AuthorityClosureSHA256) ||
+		selection.SnapshotTrustName != "snapshot-trust-"+selection.SnapshotTrustSHA256+".json" ||
+		selection.AcceptanceTrustName != "acceptance-trust-"+selection.AcceptanceTrustSHA256+".json" ||
+		selection.AcceptanceEnvelopeName != "acceptance-envelope-"+selection.AcceptanceEnvelopeSHA256+".json" {
+		return nil, "", "", errors.New("runtime selector authority generation references are invalid")
+	}
+	snapshotTrustRaw, err := readRootRegular(
+		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust-generations", selection.SnapshotTrustName),
+		maximumConfigBytes,
+	)
+	if err != nil || digest(snapshotTrustRaw) != selection.SnapshotTrustSHA256 {
+		return nil, "", "", errors.New("runtime selector snapshot trust generation is missing or changed")
+	}
+	acceptanceTrustRaw, err := readRootRegular(
+		filepath.Join(r.Config.RuntimeRoot, "acceptance-trust-generations", selection.AcceptanceTrustName),
+		maximumConfigBytes,
+	)
+	if err != nil || digest(acceptanceTrustRaw) != selection.AcceptanceTrustSHA256 {
+		return nil, "", "", errors.New("runtime selector acceptance trust generation is missing or changed")
+	}
+	acceptanceRaw, err := readRootRegular(
+		filepath.Join(r.Config.RuntimeRoot, "acceptance-envelope-generations", selection.AcceptanceEnvelopeName),
+		maximumConfigBytes,
+	)
+	if err != nil || digest(acceptanceRaw) != selection.AcceptanceEnvelopeSHA256 {
+		return nil, "", "", errors.New("runtime selector acceptance envelope generation is missing or changed")
+	}
+	accepted, err := boundary.VerifyAcceptanceGeneration(acceptanceTrustRaw, acceptanceRaw)
+	if err != nil || accepted.ClusterID != r.Config.ClusterID || accepted.DeploymentID != r.Config.DeploymentID ||
+		accepted.SnapshotTrustSHA256 != selection.SnapshotTrustSHA256 ||
+		accepted.AuthoritySnapshotID != selection.AuthoritySnapshotID || accepted.AuthorityClosureSHA256 != selection.AuthorityClosureSHA256 {
+		return nil, "", "", errors.New("runtime selector authority pins differ from its signed acceptance generation")
+	}
+	loader := func(envelopeDigest string, trustDigest string) (boundary.Acceptance, error) {
+		if !isDigest(envelopeDigest) || !isDigest(trustDigest) {
+			return boundary.Acceptance{}, errors.New("acceptance predecessor digest pair is invalid")
+		}
+		predecessorTrustRaw, trustReadErr := readRootRegular(
+			filepath.Join(r.Config.RuntimeRoot, "acceptance-trust-generations", "acceptance-trust-"+trustDigest+".json"),
+			maximumConfigBytes,
+		)
+		if trustReadErr != nil || digest(predecessorTrustRaw) != trustDigest {
+			return boundary.Acceptance{}, errors.New("acceptance predecessor trust generation is missing")
+		}
+		raw, readErr := readRootRegular(
+			filepath.Join(r.Config.RuntimeRoot, "acceptance-envelope-generations", "acceptance-envelope-"+envelopeDigest+".json"),
+			maximumConfigBytes,
+		)
+		if readErr != nil || digest(raw) != envelopeDigest {
+			return boundary.Acceptance{}, errors.New("acceptance predecessor generation is missing")
+		}
+		return boundary.VerifyAcceptanceGeneration(predecessorTrustRaw, raw)
+	}
+	if err := boundary.AcceptanceGenerationsRelated(r.Acceptance, accepted, loader); err != nil {
+		return nil, "", "", err
+	}
+	return snapshotTrustRaw, selection.AuthoritySnapshotID, selection.AuthorityClosureSHA256, nil
+}
+
+func (r *Runner) selectionUsesCurrentAcceptance(selection snapshotRuntimeSelection) bool {
+	if selection.Schema != snapshotRuntimeSelectionSchema {
+		return false
+	}
+	_, currentTrustSHA256, trustErr := r.Acceptance.TrustGeneration()
+	_, currentEnvelopeSHA256, envelopeErr := r.Acceptance.EnvelopeGeneration()
+	return trustErr == nil && envelopeErr == nil && selection.AcceptanceTrustSHA256 == currentTrustSHA256 &&
+		selection.AcceptanceEnvelopeSHA256 == currentEnvelopeSHA256
+}
+
+func (r *Runner) currentAcceptanceMayFollowSelection(selection snapshotRuntimeSelection) bool {
+	if r.selectionUsesCurrentAcceptance(selection) {
+		return true
+	}
+	if selection.Schema == legacySnapshotRuntimeSelectionSchema {
+		// Legacy selectors are accepted only under the currently source-owned
+		// trust and pins by runtimeSelectionAuthority. A fresh v2 selector is the
+		// additive migration record and preserves the legacy bytes unchanged.
+		return true
+	}
+	_, currentTrustSHA256, trustErr := r.Acceptance.TrustGeneration()
+	_, currentEnvelopeSHA256, envelopeErr := r.Acceptance.EnvelopeGeneration()
+	return trustErr == nil && envelopeErr == nil && r.Acceptance.Schema == boundary.AcceptancePayloadSchema &&
+		r.Acceptance.AcceptanceTrustSHA256 == currentTrustSHA256 &&
+		r.Acceptance.PredecessorAcceptanceEnvelopeSHA256 == selection.AcceptanceEnvelopeSHA256 &&
+		r.Acceptance.PredecessorAcceptanceTrustSHA256 == selection.AcceptanceTrustSHA256 &&
+		currentEnvelopeSHA256 != selection.AcceptanceEnvelopeSHA256
+}
+
+func decodeSnapshotRuntimeSelection(raw []byte) (snapshotRuntimeSelection, error) {
+	var schema struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		return snapshotRuntimeSelection{}, err
+	}
+	if schema.Schema == legacySnapshotRuntimeSelectionSchema {
+		var legacy legacySnapshotRuntimeSelection
+		if err := canonicalJSON(raw, &legacy); err != nil {
+			return snapshotRuntimeSelection{}, err
+		}
+		return snapshotRuntimeSelection{
+			Schema: legacy.Schema,
+			SnapshotEnvelopeName: legacy.SnapshotEnvelopeName,
+			SnapshotEnvelopeSHA256: legacy.SnapshotEnvelopeSHA256,
+			PredecessorSelectionSHA256: legacy.PredecessorSelectionSHA256,
+			Activation: legacy.Activation,
+		}, nil
+	}
+	var selection snapshotRuntimeSelection
+	if err := canonicalJSON(raw, &selection); err != nil {
+		return snapshotRuntimeSelection{}, err
+	}
+	return selection, nil
 }
 
 func (r *Runner) snapshotSuccessorPath(predecessorSHA256 string) (string, error) {
@@ -1134,6 +1336,14 @@ func (r *Runner) publishSnapshotActivationReceipt(plan snapshotActivationPlan, d
 		Schema: snapshotRuntimeSelectionSchema,
 		SnapshotEnvelopeName: filepath.Base(plan.envelopePath),
 		SnapshotEnvelopeSHA256: plan.envelopeSHA256,
+		SnapshotTrustName: plan.snapshotTrustName,
+		SnapshotTrustSHA256: plan.snapshotTrustSHA256,
+		AcceptanceTrustName: plan.acceptanceTrustName,
+		AcceptanceTrustSHA256: plan.acceptanceTrustSHA256,
+		AcceptanceEnvelopeName: plan.acceptanceEnvelopeName,
+		AcceptanceEnvelopeSHA256: plan.acceptanceEnvelopeSHA256,
+		AuthoritySnapshotID: r.Acceptance.AuthoritySnapshotID,
+		AuthorityClosureSHA256: r.Acceptance.AuthorityClosureSHA256,
 		PredecessorSelectionSHA256: plan.predecessorSelectionSHA256,
 		Activation: receipt,
 	}
@@ -1143,15 +1353,20 @@ func (r *Runner) publishSnapshotActivationReceipt(plan snapshotActivationPlan, d
 	}
 	selectionCandidate := filepath.Join(r.Config.RuntimeRoot, "snapshot-runtime-selection.candidate-"+plan.cycle.CycleID+".json")
 	if retainedRaw, readErr := readRootRegular(selectionCandidate, maximumSnapshotRuntimeSelectionBytes); readErr == nil {
-		var retained snapshotRuntimeSelection
-		if canonicalJSON(retainedRaw, &retained) != nil || retained.Schema != snapshotRuntimeSelectionSchema ||
-			retained.SnapshotEnvelopeName != filepath.Base(plan.envelopePath) || retained.SnapshotEnvelopeSHA256 != plan.envelopeSHA256 ||
-			!r.activationReceiptIsExact(retained.Activation, plan, time.Now().UTC()) {
+		decoded, decodeErr := decodeSnapshotRuntimeSelection(retainedRaw)
+		if decodeErr != nil || decoded.Schema != snapshotRuntimeSelectionSchema ||
+			decoded.SnapshotEnvelopeName != filepath.Base(plan.envelopePath) || decoded.SnapshotEnvelopeSHA256 != plan.envelopeSHA256 ||
+			decoded.SnapshotTrustName != plan.snapshotTrustName || decoded.SnapshotTrustSHA256 != plan.snapshotTrustSHA256 ||
+			decoded.AcceptanceTrustName != plan.acceptanceTrustName || decoded.AcceptanceTrustSHA256 != plan.acceptanceTrustSHA256 ||
+			decoded.AcceptanceEnvelopeName != plan.acceptanceEnvelopeName || decoded.AcceptanceEnvelopeSHA256 != plan.acceptanceEnvelopeSHA256 ||
+			decoded.AuthoritySnapshotID != r.Acceptance.AuthoritySnapshotID || decoded.AuthorityClosureSHA256 != r.Acceptance.AuthorityClosureSHA256 ||
+			decoded.PredecessorSelectionSHA256 != plan.predecessorSelectionSHA256 ||
+			!r.activationReceiptIsExact(decoded.Activation, plan, time.Now().UTC()) {
 			return errors.New("retained cycle selector candidate conflicts with the exact immutable activation plan")
 		}
-		selection = retained
+		selection = decoded
 		selectionRaw = retainedRaw
-		receipt = retained.Activation
+		receipt = decoded.Activation
 	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return readErr
 	}
@@ -1467,6 +1682,10 @@ func runtimePerCycleStorageBounds(config Config) (uint64, uint64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
+	authorityGenerationBytes, err := runtimeAllocatedBytes(maximumConfigBytes, block)
+	if err != nil {
+		return 0, 0, err
+	}
 	// Each cycle retains an immutable envelope generation and one complete
 	// envelope/receipt selector. Keep a third inode in the bound for a failed
 	// selector attempt. Their attempt/fixed hard links do not allocate more
@@ -1480,7 +1699,15 @@ func runtimePerCycleStorageBounds(config Config) (uint64, uint64, error) {
 	if !ok {
 		return 0, 0, errors.New("native runtime receipt storage bound overflows")
 	}
-	entryBytes, ok := checkedMultiply(block, 8)
+	authorityBytes, ok := checkedMultiply(authorityGenerationBytes, 3)
+	if !ok {
+		return 0, 0, errors.New("native runtime authority generation bound overflows")
+	}
+	objectBytes, ok = checkedAdd(objectBytes, authorityBytes)
+	if !ok {
+		return 0, 0, errors.New("native runtime generation storage bound overflows")
+	}
+	entryBytes, ok := checkedMultiply(block, 14)
 	if !ok {
 		return 0, 0, errors.New("native runtime directory-entry bound overflows")
 	}
@@ -1488,7 +1715,7 @@ func runtimePerCycleStorageBounds(config Config) (uint64, uint64, error) {
 	if !ok {
 		return 0, 0, errors.New("native runtime per-cycle byte bound overflows")
 	}
-	return total, 3, nil
+	return total, 6, nil
 }
 
 func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
@@ -1513,10 +1740,12 @@ func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	// Fixed storage is the cached trust inode plus the root attempt directory,
-	// immutable-generation directory and its attempt directory. Six directory
-	// blocks cover those directories and their initial entries.
-	fixedDirectoryBytes, ok := checkedMultiply(config.RuntimeFilesystemBlockBytes, 6)
+	// Fixed storage is the legacy cached-trust inode, the root attempt
+	// directory, and the snapshot, snapshot-trust, acceptance-trust and
+	// acceptance-envelope generation directories plus their private attempt
+	// directories. Extra directory blocks conservatively cover their root
+	// entries and the immutable successor namespace.
+	fixedDirectoryBytes, ok := checkedMultiply(config.RuntimeFilesystemBlockBytes, 16)
 	if !ok {
 		return 0, 0, errors.New("native runtime fixed directory bound overflows")
 	}
@@ -1525,10 +1754,10 @@ func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
 		return 0, 0, errors.New("native runtime fixed byte bound overflows")
 	}
 	horizonBytes, ok = checkedAdd(horizonBytes, fixedBytes)
-	if !ok || horizonInodes > ^uint64(0)-4 {
+	if !ok || horizonInodes > ^uint64(0)-10 {
 		return 0, 0, errors.New("native runtime fixed horizon overflows")
 	}
-	return horizonBytes, horizonInodes + 4, nil
+	return horizonBytes, horizonInodes + 10, nil
 }
 
 func runtimeAllocatedBytes(size int, block uint64) (uint64, error) {
@@ -2063,8 +2292,14 @@ func validateRuntimeCapacity(config Config, upcomingBytes uint64, upcomingInodes
 
 func (r *Runner) appendRuntimeOrMatch(path string, raw []byte, mode os.FileMode) error {
 	parent := filepath.Dir(path)
-	generationRoot := filepath.Join(r.Config.RuntimeRoot, "snapshot-generations")
-	if parent != r.Config.RuntimeRoot && parent != generationRoot {
+	allowedParents := map[string]struct{}{
+		r.Config.RuntimeRoot: {},
+		filepath.Join(r.Config.RuntimeRoot, "snapshot-generations"): {},
+		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust-generations"): {},
+		filepath.Join(r.Config.RuntimeRoot, "acceptance-trust-generations"): {},
+		filepath.Join(r.Config.RuntimeRoot, "acceptance-envelope-generations"): {},
+	}
+	if _, allowed := allowedParents[parent]; !allowed {
 		return errors.New("runtime append target escaped the accepted runtime root")
 	}
 	if existing, err := readRootRegular(path, int64(len(raw))); err == nil {
