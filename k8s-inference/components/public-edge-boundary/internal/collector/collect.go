@@ -1530,7 +1530,7 @@ func (r *Runner) currentAcceptanceMayFollowSelection(selection snapshotRuntimeSe
 	}
 	_, currentTrustSHA256, trustErr := r.Acceptance.TrustGeneration()
 	_, currentEnvelopeSHA256, envelopeErr := r.Acceptance.EnvelopeGeneration()
-	return trustErr == nil && envelopeErr == nil && r.Acceptance.Schema == boundary.AcceptancePayloadSchema &&
+	return trustErr == nil && envelopeErr == nil && boundary.AcceptanceSupportsRotation(r.Acceptance.Schema) &&
 		r.Acceptance.AcceptanceTrustSHA256 == currentTrustSHA256 &&
 		r.Acceptance.PredecessorAcceptanceEnvelopeSHA256 == selection.AcceptanceEnvelopeSHA256 &&
 		r.Acceptance.PredecessorAcceptanceTrustSHA256 == selection.AcceptanceTrustSHA256 &&

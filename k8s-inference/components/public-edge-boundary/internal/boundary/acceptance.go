@@ -17,13 +17,47 @@ const (
 	AcceptanceEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance-envelope/v1"
 	LegacyAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v1"
 	PreviousAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v2"
-	AcceptancePayloadSchema  = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v3"
+	RotatingAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v3"
+	AcceptancePayloadSchema  = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v4"
 	acceptanceIssuerRole     = "platform-security-public-edge-boundary-acceptance"
 	maximumAcceptanceClusterIDBytes = 128
 	maximumAcceptanceDeploymentIDBytes = 128
 )
 
 type Acceptance struct {
+	Schema                    string `json:"schema"`
+	ClusterID                 string `json:"cluster_id"`
+	DeploymentID              string `json:"deployment_id"`
+	AuthoritySnapshotID       string `json:"authority_snapshot_id"`
+	AuthorityClosureSHA256    string `json:"authority_closure_sha256"`
+	SnapshotTrustSHA256       string `json:"snapshot_trust_sha256"`
+	NativeCollectorConfigSHA256 string `json:"native_collector_config_sha256"`
+	NativeAuthorityConfigSHA256 string `json:"native_authority_config_sha256"`
+	NativeResponseTrustSHA256 string `json:"native_response_trust_sha256"`
+	MandatoryCollectionsSHA256 string `json:"mandatory_collections_sha256"`
+	BoundaryExecutableSHA256  string `json:"boundary_executable_sha256"`
+	CollectorExecutableSHA256 string `json:"collector_executable_sha256"`
+	NativeAuthorityExecutableSHA256 string `json:"native_authority_executable_sha256"`
+	SnapshotAuthorityConfigSHA256 string `json:"snapshot_authority_config_sha256"`
+	SnapshotAuthorityExecutableSHA256 string `json:"snapshot_authority_executable_sha256"`
+	TransitionAuthorityConfigSHA256 string `json:"transition_authority_config_sha256"`
+	TransitionAuthorityExecutableSHA256 string `json:"transition_authority_executable_sha256"`
+	BoundaryTLSCertificateSHA256 string `json:"boundary_tls_certificate_sha256"`
+	BoundaryTLSPrivateKeySHA256 string `json:"boundary_tls_private_key_sha256"`
+	BoundaryTLSSPKISHA256       string `json:"boundary_tls_spki_sha256"`
+	BoundaryAdmissionClientTrustSHA256 string `json:"boundary_admission_client_trust_sha256"`
+	TransitionSettlementConfigSHA256 string `json:"transition_settlement_config_sha256"`
+	BoundaryRuntimeReaderGID uint32 `json:"boundary_runtime_reader_gid"`
+	AcceptanceTrustSHA256 string `json:"acceptance_trust_sha256"`
+	PredecessorAcceptanceEnvelopeSHA256 string `json:"predecessor_acceptance_envelope_sha256"`
+	PredecessorAcceptanceTrustSHA256 string `json:"predecessor_acceptance_trust_sha256"`
+	SourceCommit              string `json:"source_commit"`
+	SourceTree                string `json:"source_tree"`
+	trustRaw                  []byte
+	envelopeRaw               []byte
+}
+
+type acceptanceV3 struct {
 	Schema                    string `json:"schema"`
 	ClusterID                 string `json:"cluster_id"`
 	DeploymentID              string `json:"deployment_id"`
@@ -48,8 +82,6 @@ type Acceptance struct {
 	PredecessorAcceptanceTrustSHA256 string `json:"predecessor_acceptance_trust_sha256"`
 	SourceCommit              string `json:"source_commit"`
 	SourceTree                string `json:"source_tree"`
-	trustRaw                  []byte
-	envelopeRaw               []byte
 }
 
 type acceptanceV2 struct {
@@ -101,6 +133,16 @@ func LoadAcceptance(trustPath string, envelopePath string, executableRole string
 		expectedExecutableSHA256 = acceptance.CollectorExecutableSHA256
 	case "native-authority":
 		expectedExecutableSHA256 = acceptance.NativeAuthorityExecutableSHA256
+	case "snapshot-authority":
+		if acceptance.Schema != AcceptancePayloadSchema {
+			return Acceptance{}, errors.New("snapshot authority requires an additive acceptance v4 generation")
+		}
+		expectedExecutableSHA256 = acceptance.SnapshotAuthorityExecutableSHA256
+	case "transition-authority":
+		if acceptance.Schema != AcceptancePayloadSchema {
+			return Acceptance{}, errors.New("transition authority requires an additive acceptance v4 generation")
+		}
+		expectedExecutableSHA256 = acceptance.TransitionAuthorityExecutableSHA256
 	default:
 		return Acceptance{}, errors.New("acceptance executable role is unsupported")
 	}
@@ -127,7 +169,7 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 		return Acceptance{}, errors.New("acceptance payload schema cannot be decoded exactly")
 	}
 	if schemaOnly.Schema == LegacyAcceptancePayloadSchema {
-		return Acceptance{}, errors.New("legacy acceptance v1 is retained evidence but cannot be reinterpreted as v2 or v3; install a separately signed additive acceptance generation")
+		return Acceptance{}, errors.New("legacy acceptance v1 is retained evidence but cannot be reinterpreted as v2, v3 or v4; install a separately signed additive acceptance generation")
 	}
 	var acceptance Acceptance
 	if schemaOnly.Schema == PreviousAcceptancePayloadSchema {
@@ -139,6 +181,15 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 		if marshalErr != nil || !bytes.Equal(canonical, payloadRaw) || json.Unmarshal(payloadRaw, &acceptance) != nil {
 			return Acceptance{}, errors.New("acceptance v2 payload is not canonical JSON")
 		}
+	} else if schemaOnly.Schema == RotatingAcceptancePayloadSchema {
+		var previous acceptanceV3
+		if err := decodeExactJSON(payloadRaw, &previous); err != nil {
+			return Acceptance{}, fmt.Errorf("decode acceptance v3 payload: %w", err)
+		}
+		canonical, marshalErr := json.Marshal(previous)
+		if marshalErr != nil || !bytes.Equal(canonical, payloadRaw) || json.Unmarshal(payloadRaw, &acceptance) != nil {
+			return Acceptance{}, errors.New("acceptance v3 payload is not canonical JSON")
+		}
 	} else {
 		if err := decodeExactJSON(payloadRaw, &acceptance); err != nil {
 			return Acceptance{}, fmt.Errorf("decode acceptance payload: %w", err)
@@ -148,10 +199,14 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 			return Acceptance{}, errors.New("acceptance payload is not canonical JSON")
 		}
 	}
-	if acceptance.Schema != AcceptancePayloadSchema && acceptance.Schema != PreviousAcceptancePayloadSchema {
+	if acceptance.Schema != AcceptancePayloadSchema && acceptance.Schema != RotatingAcceptancePayloadSchema &&
+		acceptance.Schema != PreviousAcceptancePayloadSchema {
 		return Acceptance{}, errors.New("acceptance payload schema is unsupported")
 	}
 	predecessorPresent := acceptance.PredecessorAcceptanceEnvelopeSHA256 != "" || acceptance.PredecessorAcceptanceTrustSHA256 != ""
+	rotatingSchema := AcceptanceSupportsRotation(acceptance.Schema)
+	newAuthorityFieldsPresent := acceptance.SnapshotAuthorityConfigSHA256 != "" || acceptance.SnapshotAuthorityExecutableSHA256 != "" ||
+		acceptance.TransitionAuthorityConfigSHA256 != "" || acceptance.TransitionAuthorityExecutableSHA256 != ""
 	if !safeText(acceptance.ClusterID, false) || len(acceptance.ClusterID) > maximumAcceptanceClusterIDBytes ||
 		!safeText(acceptance.DeploymentID, false) || len(acceptance.DeploymentID) > maximumAcceptanceDeploymentIDBytes || !isSHA256(acceptance.AuthoritySnapshotID) ||
 		!isSHA256(acceptance.AuthorityClosureSHA256) || !isSHA256(acceptance.SnapshotTrustSHA256) ||
@@ -161,8 +216,12 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 			!isSHA256(acceptance.BoundaryTLSCertificateSHA256) || !isSHA256(acceptance.BoundaryTLSPrivateKeySHA256) ||
 			!isSHA256(acceptance.BoundaryTLSSPKISHA256) || !isSHA256(acceptance.BoundaryAdmissionClientTrustSHA256) ||
 			!isSHA256(acceptance.TransitionSettlementConfigSHA256) || acceptance.BoundaryRuntimeReaderGID == 0 ||
-			(acceptance.Schema == AcceptancePayloadSchema && acceptance.AcceptanceTrustSHA256 != trustSHA256) ||
-			(acceptance.Schema == AcceptancePayloadSchema && predecessorPresent &&
+			(acceptance.Schema == AcceptancePayloadSchema &&
+				(!isSHA256(acceptance.SnapshotAuthorityConfigSHA256) || !isSHA256(acceptance.SnapshotAuthorityExecutableSHA256) ||
+					!isSHA256(acceptance.TransitionAuthorityConfigSHA256) || !isSHA256(acceptance.TransitionAuthorityExecutableSHA256))) ||
+			(acceptance.Schema != AcceptancePayloadSchema && newAuthorityFieldsPresent) ||
+			(rotatingSchema && acceptance.AcceptanceTrustSHA256 != trustSHA256) ||
+			(rotatingSchema && predecessorPresent &&
 				(!isSHA256(acceptance.PredecessorAcceptanceEnvelopeSHA256) || !isSHA256(acceptance.PredecessorAcceptanceTrustSHA256))) ||
 			(acceptance.Schema == PreviousAcceptancePayloadSchema &&
 				(acceptance.AcceptanceTrustSHA256 != "" || predecessorPresent)) ||
@@ -172,6 +231,49 @@ func VerifyAcceptanceGeneration(trustRaw []byte, envelopeRaw []byte) (Acceptance
 	acceptance.trustRaw = append([]byte(nil), trustRaw...)
 	acceptance.envelopeRaw = append([]byte(nil), envelopeRaw...)
 	return acceptance, nil
+}
+
+// AcceptanceSupportsRotation identifies the exact payload versions that bind
+// their own trust generation and an optional signed predecessor. V2 remains
+// readable historical evidence but cannot be reinterpreted as a rotatable
+// authority generation.
+func AcceptanceSupportsRotation(schema string) bool {
+	return schema == RotatingAcceptancePayloadSchema || schema == AcceptancePayloadSchema
+}
+
+func canonicalRotatingAcceptancePayload(acceptance Acceptance) ([]byte, error) {
+	if acceptance.Schema == RotatingAcceptancePayloadSchema {
+		return json.Marshal(acceptanceV3{
+			Schema: acceptance.Schema,
+			ClusterID: acceptance.ClusterID,
+			DeploymentID: acceptance.DeploymentID,
+			AuthoritySnapshotID: acceptance.AuthoritySnapshotID,
+			AuthorityClosureSHA256: acceptance.AuthorityClosureSHA256,
+			SnapshotTrustSHA256: acceptance.SnapshotTrustSHA256,
+			NativeCollectorConfigSHA256: acceptance.NativeCollectorConfigSHA256,
+			NativeAuthorityConfigSHA256: acceptance.NativeAuthorityConfigSHA256,
+			NativeResponseTrustSHA256: acceptance.NativeResponseTrustSHA256,
+			MandatoryCollectionsSHA256: acceptance.MandatoryCollectionsSHA256,
+			BoundaryExecutableSHA256: acceptance.BoundaryExecutableSHA256,
+			CollectorExecutableSHA256: acceptance.CollectorExecutableSHA256,
+			NativeAuthorityExecutableSHA256: acceptance.NativeAuthorityExecutableSHA256,
+			BoundaryTLSCertificateSHA256: acceptance.BoundaryTLSCertificateSHA256,
+			BoundaryTLSPrivateKeySHA256: acceptance.BoundaryTLSPrivateKeySHA256,
+			BoundaryTLSSPKISHA256: acceptance.BoundaryTLSSPKISHA256,
+			BoundaryAdmissionClientTrustSHA256: acceptance.BoundaryAdmissionClientTrustSHA256,
+			TransitionSettlementConfigSHA256: acceptance.TransitionSettlementConfigSHA256,
+			BoundaryRuntimeReaderGID: acceptance.BoundaryRuntimeReaderGID,
+			AcceptanceTrustSHA256: acceptance.AcceptanceTrustSHA256,
+			PredecessorAcceptanceEnvelopeSHA256: acceptance.PredecessorAcceptanceEnvelopeSHA256,
+			PredecessorAcceptanceTrustSHA256: acceptance.PredecessorAcceptanceTrustSHA256,
+			SourceCommit: acceptance.SourceCommit,
+			SourceTree: acceptance.SourceTree,
+		})
+	}
+	if acceptance.Schema == AcceptancePayloadSchema {
+		return json.Marshal(acceptance)
+	}
+	return nil, errors.New("acceptance payload is not a rotatable generation")
 }
 
 func verifyAcceptanceEnvelopeSignature(trustRaw []byte, envelopeRaw []byte) ([]byte, error) {
@@ -234,7 +336,7 @@ func (acceptance Acceptance) EnvelopeGeneration() ([]byte, string, error) {
 }
 
 // AcceptanceGenerationsRelated proves that two independently signed
-// acceptance envelopes are identical or connected by the v3 predecessor
+// acceptance envelopes are identical or connected by the versioned predecessor
 // chain. The loader must reopen and verify the exact content-addressed
 // predecessor generation. Both directions are checked so rolling old and new
 // processes can verify one another during a bounded current/next handoff.
@@ -260,11 +362,11 @@ func AcceptanceGenerationsRelated(current Acceptance, candidate Acceptance, load
 	// trust generations, while its signed payload binds both trust digests and
 	// the exact predecessor envelope. This prevents an untrusted replacement
 	// registry from authorizing itself.
-	if currentTrustErr == nil && candidate.Schema == AcceptancePayloadSchema &&
+	if currentTrustErr == nil && AcceptanceSupportsRotation(candidate.Schema) &&
 		candidate.PredecessorAcceptanceEnvelopeSHA256 == currentDigest &&
 		candidate.PredecessorAcceptanceTrustSHA256 == currentTrustDigest {
 		payloadRaw, err := verifyAcceptanceEnvelopeSignature(currentTrustRaw, candidate.envelopeRaw)
-		canonical, marshalErr := json.Marshal(candidate)
+		canonical, marshalErr := canonicalRotatingAcceptancePayload(candidate)
 		if err == nil && marshalErr == nil && bytes.Equal(payloadRaw, canonical) {
 			return nil
 		}
