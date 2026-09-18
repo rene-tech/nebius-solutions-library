@@ -560,17 +560,22 @@ func (r *Runner) collectSource(ctx context.Context, source SourceSpec, cycle Col
 		if err := r.appendEvidence(envelopeObject, envelopeRaw); err != nil {
 			return SourceEvidence{}, err
 		}
-		evidence.Pages = append(evidence.Pages, CapturedPage{
+			evidence.Pages = append(evidence.Pages, CapturedPage{
 			CycleContractSHA256: cycle.ContractSHA256,
 			CycleID: cycle.CycleID,
 			CycleIssuedAt: cycle.IssuedAt,
 			CycleDeadlineAt: cycle.DeadlineAt,
 			DirectiveSHA256: digest(directiveRaw),
 			CollectedAt: page.CollectedAt,
-			EnvelopeObject: envelopeObject,
-			EnvelopeSHA256: envelopeSHA256,
-			PayloadSHA256:  digest(payloadRaw),
-		})
+				EnvelopeObject: envelopeObject,
+				EnvelopeSHA256: envelopeSHA256,
+				PayloadSHA256:  digest(payloadRaw),
+				// The remote snapshot authority cannot dereference the collector's
+				// private EvidenceRoot. Carry the exact independently signed native
+				// envelope as bounded canonical base64 while retaining the local
+				// content-addressed object for audit and recovery.
+				EnvelopeBase64: base64.StdEncoding.EncodeToString(envelopeRaw),
+			})
 		if page.Complete {
 			return evidence, nil
 		}
@@ -1816,7 +1821,7 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 		!boundedProtocolText(config.SnapshotAuthorityName, maximumServerNameBytes, false) ||
 		!boundedProtocolText(config.SnapshotClientSPIFFEURI, maximumSPIFFEURIBytes, false) ||
 		!boundedProtocolText(config.SnapshotCredentialLaneID, maximumCredentialLaneIDBytes, false) ||
-		config.MaximumBundleBytes < 1024 || config.MaximumBundleBytes > 16*1024*1024 || len(config.Sources) == 0 ||
+		config.MaximumBundleBytes < 1024 || config.MaximumBundleBytes > 256*1024*1024 || len(config.Sources) == 0 ||
 		!isDigest(config.EvidenceStoreID) || config.RefreshIntervalSeconds < 240 || config.RefreshIntervalSeconds > 270 ||
 		config.CollectionDeadlineSeconds < 30 || config.CollectionDeadlineSeconds >= config.RefreshIntervalSeconds ||
 		config.MaximumConcurrentSources < 1 || config.MaximumConcurrentSources > 8 ||
@@ -2104,8 +2109,24 @@ func maximumEvidenceManifestBytes(config Config) (uint64, error) {
 		return 0, errors.New("native evidence cycle framing bound overflows")
 	}
 	for _, source := range config.Sources {
-		pageBytes := uint64(source.MaximumPages) * maximumEvidenceReferenceBytes
-		if uint64(source.MaximumPages) != 0 && pageBytes/uint64(source.MaximumPages) != maximumEvidenceReferenceBytes {
+		rawEnvelopeBytes, ok := checkedMultiply(uint64(source.MaximumPageBytes), 2)
+		if !ok {
+			return 0, errors.New("native inline envelope bound overflows")
+		}
+		rawEnvelopeBytes, ok = checkedAdd(rawEnvelopeBytes, 1024*1024)
+		if !ok {
+			return 0, errors.New("native inline envelope framing bound overflows")
+		}
+		inlineBytes, ok := base64EncodedBound(rawEnvelopeBytes)
+		if !ok {
+			return 0, errors.New("native inline envelope encoding bound overflows")
+		}
+		pageUnitBytes, ok := checkedAdd(inlineBytes, maximumEvidenceReferenceBytes)
+		if !ok {
+			return 0, errors.New("native inline page reference bound overflows")
+		}
+		pageBytes, ok := checkedMultiply(uint64(source.MaximumPages), pageUnitBytes)
+		if !ok {
 			return 0, errors.New("native evidence reference bound overflows")
 		}
 		if bound > ^uint64(0)-pageBytes-1024 {
