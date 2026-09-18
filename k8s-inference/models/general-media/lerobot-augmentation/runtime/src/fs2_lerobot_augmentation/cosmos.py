@@ -201,18 +201,36 @@ class CosmosClient:
             raise CosmosError("PLATFORM_RESPONSE_INVALID", "artifact upload has no safe content path", retryable=False)
         if isinstance(maximum, bool) or not isinstance(maximum, int) or size > maximum:
             raise CosmosError("REFERENCE_TOO_LARGE", "episode MP4 exceeds the platform upload bound", retryable=False)
-        with reference.open("rb") as source:
-            stored = client.put(
-                content_path,
-                headers={"Content-Type": "video/mp4", "Content-Length": str(size)},
-                content=source,
-            )
-        self._check(stored, action="artifact content upload", expected={200})
-        receipt = _object(stored.json(), label="artifact upload receipt")
-        if receipt.get("sha256") != digest or receipt.get("size_bytes") != size:
-            raise CosmosError(
-                "PLATFORM_RESPONSE_INVALID", "artifact upload identity differs from source", retryable=False
-            )
+        # Begin replays the same upload identity across variants/retries, but
+        # finalized uploads are write-once. Resolve durable state rather than
+        # depending on an in-process cache or swallowing an arbitrary PUT 409.
+        status_response = client.get(f"/internal/scientific-workloads/cosmos/v1/operations/{upload_operation_id}")
+        self._check(status_response, action="artifact upload status", expected={200})
+        status = _object(status_response.json(), label="artifact upload status")
+        if _operation_id(status) != upload_operation_id:
+            raise CosmosError("PLATFORM_RESPONSE_INVALID", "artifact upload status identity differs", retryable=False)
+        upload_state = status.get("status")
+        if not isinstance(upload_state, str):
+            raise CosmosError("PLATFORM_RESPONSE_INVALID", "artifact upload status is invalid", retryable=False)
+        if upload_state in {"failed", "cancelled", "expired"}:
+            raise CosmosError("PLATFORM_UPSTREAM_ERROR", "artifact upload is no longer usable", retryable=False)
+        if upload_state not in {"queued", "succeeded"}:
+            raise CosmosError("PLATFORM_RESPONSE_INVALID", "artifact upload status is invalid", retryable=False)
+        if upload_state == "queued":
+            with reference.open("rb") as source:
+                stored = client.put(
+                    content_path,
+                    headers={"Content-Type": "video/mp4", "Content-Length": str(size)},
+                    content=source,
+                )
+            self._check(stored, action="artifact content upload", expected={200})
+            receipt = _object(stored.json(), label="artifact upload receipt")
+            if receipt.get("sha256") != digest or receipt.get("size_bytes") != size:
+                raise CosmosError(
+                    "PLATFORM_RESPONSE_INVALID", "artifact upload identity differs from source", retryable=False
+                )
+        # Finalization is idempotent: a succeeded upload returns its existing
+        # immutable ArtifactRef, which is checked against the local bytes below.
         finalized_response = client.post(
             f"/internal/scientific-workloads/cosmos/v1/scientific-artifacts/uploads/{upload_id}:finalize",
             json={"operation_id": upload_operation_id},
