@@ -706,8 +706,9 @@ func publishTransitionRegular(path string, raw []byte) error {
 	}
 	oldPath, _ := syscall.BytePtrFromString(procPath)
 	targetPath, _ := syscall.BytePtrFromString(path)
-	_, _, errno := syscall.RawSyscall6(syscall.SYS_LINKAT, uintptr(transitionATFDCWD), uintptr(unsafe.Pointer(oldPath)),
-		uintptr(transitionATFDCWD), uintptr(unsafe.Pointer(targetPath)), uintptr(transitionATSymlinkFollow), 0)
+	directoryFD := transitionATFDCWD
+	_, _, errno := syscall.RawSyscall6(syscall.SYS_LINKAT, uintptr(directoryFD), uintptr(unsafe.Pointer(oldPath)),
+		uintptr(directoryFD), uintptr(unsafe.Pointer(targetPath)), uintptr(transitionATSymlinkFollow), 0)
 	if errno != 0 && errno != syscall.EEXIST {
 		return errno
 	}

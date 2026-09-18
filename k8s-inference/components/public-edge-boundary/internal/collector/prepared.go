@@ -356,11 +356,12 @@ func renameNoReplace(source string, destination string) error {
 	if err != nil {
 		return err
 	}
+	directoryFD := linuxATFDCWD
 	_, _, errno := syscall.RawSyscall6(
 		syscall.SYS_RENAMEAT2,
-		uintptr(linuxATFDCWD),
+		uintptr(directoryFD),
 		uintptr(unsafe.Pointer(sourcePointer)),
-		uintptr(linuxATFDCWD),
+		uintptr(directoryFD),
 		uintptr(unsafe.Pointer(destinationPointer)),
 		uintptr(linuxRenameNoReplace),
 		0,
