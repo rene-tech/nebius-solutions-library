@@ -2,12 +2,14 @@ package boundary
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 	"unsafe"
@@ -16,8 +18,11 @@ import (
 const (
 	TransitionSettlementConfigSchema = "fs2-serve.nebius.ai/public-edge-transition-settlement-config/v1"
 	transitionSettlementSchema       = "fs2-serve.nebius.ai/public-edge-transition-settlement/v1"
+	transitionDailyReservationSchema = "fs2-serve.nebius.ai/public-edge-transition-daily-reservation/v1"
 	maximumTransitionConfigBytes     = 64 * 1024
 	maximumTransitionReceiptBytes    = 64 * 1024
+	maximumTransitionReservationBytes = 96 * 1024
+	maximumTransitionReceiptsPerDay  = 1_000_000
 	transitionOTmpfile               = 0x410000
 	transitionATSymlinkFollow        = 0x400
 	transitionATFDCWD                = -100
@@ -50,6 +55,19 @@ type TransitionSettlement struct {
 	SettledAt        string `json:"settled_at"`
 }
 
+// transitionDailyReservation is the append-only cross-process daily CAS. The
+// exact receipt bytes are retained in the slot so a crash after reservation
+// but before final receipt publication can be completed without inventing a
+// second settlement timestamp or consuming another day's capacity.
+type transitionDailyReservation struct {
+	Schema           string `json:"schema"`
+	Day              string `json:"day"`
+	Slot             uint64 `json:"slot"`
+	TransitionID     string `json:"transition_id"`
+	SettlementSHA256 string `json:"settlement_sha256"`
+	SettlementBase64 string `json:"settlement_base64"`
+}
+
 type admissionChannelConsumer struct {
 	ledger *TransitionLedger
 	channel AdmissionChannelBinding
@@ -76,18 +94,19 @@ func LoadTransitionLedger(path string, expectedSHA256 string, clusterID string, 
 		config.ClusterID != clusterID || config.DeploymentID != deploymentID || !filepath.IsAbs(config.Root) ||
 		filepath.Clean(config.Root) != config.Root || config.Root == "/" || config.DeviceID == 0 ||
 		config.CapacityBytes < 1024*1024 || config.CapacityInodes < 4096 ||
-		config.MinimumFreeBytes < maximumTransitionReceiptBytes || config.MinimumFreeInodes < 1024 ||
+		config.MinimumFreeBytes < maximumTransitionReceiptBytes+maximumTransitionReservationBytes || config.MinimumFreeInodes < 1024 ||
 		config.CapacityBytes <= config.MinimumFreeBytes || config.CapacityInodes <= config.MinimumFreeInodes ||
 		config.OperatingHorizonDays < 365 || config.OperatingHorizonDays > 3660 || config.MaximumReceiptsPerDay < 1 ||
-		config.MaximumReceiptsPerDay > (config.CapacityInodes-config.MinimumFreeInodes)/(3*uint64(config.OperatingHorizonDays)) ||
-		config.MaximumReceiptsPerDay > (config.CapacityBytes-config.MinimumFreeBytes)/(maximumTransitionReceiptBytes*uint64(config.OperatingHorizonDays)) {
+		config.MaximumReceiptsPerDay > maximumTransitionReceiptsPerDay ||
+		config.MaximumReceiptsPerDay > (config.CapacityInodes-config.MinimumFreeInodes)/(10*uint64(config.OperatingHorizonDays)) ||
+		config.MaximumReceiptsPerDay > (config.CapacityBytes-config.MinimumFreeBytes)/((maximumTransitionReceiptBytes+maximumTransitionReservationBytes)*uint64(config.OperatingHorizonDays)) {
 		return nil, errors.New("transition settlement config is incomplete or cannot preserve its append-only horizon")
 	}
 	if err := requireTransitionDirectory(config.Root); err != nil {
 		return nil, err
 	}
 	ledger := &TransitionLedger{config: config}
-	if err := ledger.ensureCapacity(maximumTransitionReceiptBytes, 5); err != nil {
+	if err := ledger.ensureCapacity(maximumTransitionReceiptBytes+maximumTransitionReservationBytes, 10); err != nil {
 		return nil, err
 	}
 	probePath := filepath.Join(config.Root, "atomic-publication-probe-v1")
@@ -147,6 +166,9 @@ func (l *TransitionLedger) consumeBound(snapshot Snapshot, transition Transition
 		if err := validateTransitionRetry(retained, receipt); err != nil {
 			return err
 		}
+		if _, err := l.reserveDailySettlement(snapshot.IssuedAt, retained, receipt); err != nil {
+			return fmt.Errorf("confirm retained transition daily reservation: %w", err)
+		}
 		if err := confirmTransitionReceiptDurable(path); err != nil {
 			return fmt.Errorf("confirm retained transition receipt durability: %w", err)
 		}
@@ -157,6 +179,11 @@ func (l *TransitionLedger) consumeBound(snapshot Snapshot, transition Transition
 	} else if !errors.Is(readErr, os.ErrNotExist) {
 		return readErr
 	}
+	reservedReceiptRaw, err := l.reserveDailySettlement(snapshot.IssuedAt, receiptRaw, receipt)
+	if err != nil {
+		return err
+	}
+	receiptRaw = reservedReceiptRaw
 	if err := l.ensureCapacity(uint64(len(receiptRaw)), 5); err != nil {
 		return err
 	}
@@ -190,11 +217,143 @@ func (l *TransitionLedger) consumeBound(snapshot Snapshot, transition Transition
 	return nil
 }
 
+func (l *TransitionLedger) reserveDailySettlement(
+	snapshotIssuedAt string,
+	receiptRaw []byte,
+	expected TransitionSettlement,
+) ([]byte, error) {
+	issuedAt, err := parseWholeUTC(snapshotIssuedAt)
+	if err != nil || len(receiptRaw) < 1 || len(receiptRaw) > maximumTransitionReceiptBytes {
+		return nil, errors.New("transition daily reservation has an invalid snapshot day or receipt")
+	}
+	var retainedReceipt TransitionSettlement
+	if err := decodeExactJSON(receiptRaw, &retainedReceipt); err != nil || validateTransitionRetry(receiptRaw, expected) != nil {
+		return nil, errors.New("transition daily reservation receipt is not the exact admission settlement")
+	}
+	day := issuedAt.UTC().Format("2006-01-02")
+	dayRoot := filepath.Join(l.config.Root, "days", day)
+	if err := l.ensureCapacity(maximumTransitionReceiptBytes+maximumTransitionReservationBytes, 10); err != nil {
+		return nil, err
+	}
+	for _, directory := range []string{filepath.Join(l.config.Root, "days"), dayRoot, filepath.Join(dayRoot, "slots")} {
+		if err := ensureTransitionDirectory(directory); err != nil {
+			return nil, err
+		}
+	}
+	seed, err := strconv.ParseUint(expected.TransitionID[:16], 16, 64)
+	if err != nil {
+		return nil, errors.New("transition ID cannot derive its bounded daily slot")
+	}
+	seed %= l.config.MaximumReceiptsPerDay
+	for offset := uint64(0); offset < l.config.MaximumReceiptsPerDay; offset++ {
+		slot := seed + offset
+		if slot >= l.config.MaximumReceiptsPerDay {
+			slot -= l.config.MaximumReceiptsPerDay
+		}
+		slotName := fmt.Sprintf("%08d", slot)
+		shardRoot := filepath.Join(dayRoot, "slots", slotName[:2])
+		leafRoot := filepath.Join(shardRoot, slotName[2:4])
+		if err := l.ensureCapacity(maximumTransitionReceiptBytes+maximumTransitionReservationBytes, 10); err != nil {
+			return nil, err
+		}
+		for _, directory := range []string{shardRoot, leafRoot} {
+			if err := ensureTransitionDirectory(directory); err != nil {
+				return nil, err
+			}
+		}
+		path := filepath.Join(leafRoot, "slot-"+slotName+".json")
+		retained, readErr := readTransitionRegular(path, maximumTransitionReservationBytes)
+		if readErr == nil {
+			reservedRaw, match, matchErr := validateDailyReservation(retained, day, slot, expected)
+			if matchErr != nil {
+				return nil, matchErr
+			}
+			if match {
+				if err := confirmTransitionRegularDurable(path, maximumTransitionReservationBytes); err != nil {
+					return nil, err
+				}
+				return reservedRaw, nil
+			}
+			continue
+		}
+		if !errors.Is(readErr, os.ErrNotExist) {
+			return nil, readErr
+		}
+		record := transitionDailyReservation{
+			Schema: transitionDailyReservationSchema, Day: day, Slot: slot,
+			TransitionID: expected.TransitionID, SettlementSHA256: digestHex(receiptRaw),
+			SettlementBase64: base64.StdEncoding.EncodeToString(receiptRaw),
+		}
+		recordRaw, marshalErr := json.Marshal(record)
+		if marshalErr != nil || len(recordRaw) > maximumTransitionReservationBytes {
+			return nil, errors.New("transition daily reservation exceeds its exact bound")
+		}
+		if err := l.ensureCapacity(uint64(len(recordRaw)+len(receiptRaw)), 10); err != nil {
+			return nil, err
+		}
+		if publishErr := publishTransitionRegular(path, recordRaw); publishErr != nil {
+			// A competing replica may have won this exact no-replace slot. Reopen
+			// it before moving to another slot rather than treating a collision as
+			// authority to exceed the configured daily ceiling.
+			if retained, readErr := readTransitionRegular(path, maximumTransitionReservationBytes); readErr == nil {
+				reservedRaw, match, matchErr := validateDailyReservation(retained, day, slot, expected)
+				if matchErr != nil {
+					return nil, matchErr
+				}
+				if match {
+					if err := confirmTransitionRegularDurable(path, maximumTransitionReservationBytes); err != nil {
+						return nil, err
+					}
+					return reservedRaw, nil
+				}
+				continue
+			}
+			return nil, publishErr
+		}
+		return receiptRaw, nil
+	}
+	return nil, errors.New("transition settlement daily receipt limit is exhausted")
+}
+
+func validateDailyReservation(
+	raw []byte,
+	day string,
+	slot uint64,
+	expected TransitionSettlement,
+) ([]byte, bool, error) {
+	var record transitionDailyReservation
+	if err := decodeExactJSON(raw, &record); err != nil {
+		return nil, false, err
+	}
+	canonical, err := json.Marshal(record)
+	if err != nil || !bytes.Equal(canonical, raw) || record.Schema != transitionDailyReservationSchema ||
+		record.Day != day || record.Slot != slot || !isSHA256(record.TransitionID) ||
+		!isSHA256(record.SettlementSHA256) {
+		return nil, false, errors.New("transition daily reservation is non-canonical or misplaced")
+	}
+	if record.TransitionID != expected.TransitionID {
+		return nil, false, nil
+	}
+	settlementRaw, err := base64.StdEncoding.Strict().DecodeString(record.SettlementBase64)
+	if err != nil || base64.StdEncoding.EncodeToString(settlementRaw) != record.SettlementBase64 ||
+		digestHex(settlementRaw) != record.SettlementSHA256 || len(settlementRaw) > maximumTransitionReceiptBytes {
+		return nil, false, errors.New("transition daily reservation settlement bytes are invalid")
+	}
+	if err := validateTransitionRetry(settlementRaw, expected); err != nil {
+		return nil, false, err
+	}
+	return settlementRaw, true, nil
+}
+
 func confirmTransitionReceiptDurable(path string) error {
+	return confirmTransitionRegularDurable(path, maximumTransitionReceiptBytes)
+}
+
+func confirmTransitionRegularDurable(path string, maximum int64) error {
 	if filepath.Base(path) == "." || filepath.Base(path) == "" {
 		return errors.New("transition receipt path is invalid")
 	}
-	if _, err := readTransitionRegular(path, maximumTransitionReceiptBytes); err != nil {
+	if _, err := readTransitionRegular(path, maximum); err != nil {
 		return err
 	}
 	return fsyncTransitionDirectory(filepath.Dir(path))
@@ -257,10 +416,11 @@ func ensureTransitionDirectory(path string) error {
 }
 
 func readTransitionRegular(path string, maximum int64) ([]byte, error) {
-	file, err := os.Open(path)
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
+	file := os.NewFile(uintptr(fd), path)
 	defer file.Close()
 	before, err := file.Stat()
 	if err != nil || !before.Mode().IsRegular() || before.Mode().Perm() != 0o400 || before.Size() < 1 || before.Size() > maximum {
