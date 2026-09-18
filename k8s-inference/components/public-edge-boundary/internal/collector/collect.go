@@ -879,7 +879,7 @@ func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleR
 		return plan, fmt.Errorf("verify candidate snapshot before activation: %w", err)
 	}
 	if activeExists {
-		activeRuntime, err := boundary.LoadRuntimeFromBytes(
+		activeRuntime, err := boundary.LoadRuntimeFromBytesForChainRecovery(
 			snapshotTrustRaw,
 			activeRaw,
 			r.Acceptance.SnapshotTrustSHA256,
@@ -998,7 +998,7 @@ func (r *Runner) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRunt
 	if trustErr != nil {
 		return snapshotRuntimeSelection{}, nil, trustErr
 	}
-	runtime, runtimeErr := boundary.LoadRuntimeFromBytes(
+	runtime, runtimeErr := boundary.LoadRuntimeFromBytesForChainRecovery(
 		snapshotTrustRaw, envelopeRaw, r.Acceptance.SnapshotTrustSHA256, r.Acceptance.ClusterID,
 		r.Acceptance.DeploymentID, r.Acceptance.AuthoritySnapshotID, r.Acceptance.AuthorityClosureSHA256, now,
 	)

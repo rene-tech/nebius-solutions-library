@@ -82,6 +82,58 @@ func LoadRuntimeFromBytes(
 	expectedAuthorityClosureSHA256 string,
 	now time.Time,
 ) (*Runtime, error) {
+	return loadRuntimeFromBytes(
+		trustRaw,
+		envelopeRaw,
+		expectedTrustSHA256,
+		expectedClusterID,
+		expectedDeploymentID,
+		expectedAuthoritySnapshotID,
+		expectedAuthorityClosureSHA256,
+		now,
+		true,
+	)
+}
+
+// LoadRuntimeFromBytesForChainRecovery verifies the complete signed snapshot
+// and authority closure without making it eligible to serve admission. It is
+// used only to authenticate immutable selector predecessors while recovering
+// the activation chain. Expired snapshots are permitted here; future-dated,
+// malformed, wrongly pinned, or otherwise invalid snapshots remain rejected.
+func LoadRuntimeFromBytesForChainRecovery(
+	trustRaw []byte,
+	envelopeRaw []byte,
+	expectedTrustSHA256 string,
+	expectedClusterID string,
+	expectedDeploymentID string,
+	expectedAuthoritySnapshotID string,
+	expectedAuthorityClosureSHA256 string,
+	now time.Time,
+) (*Runtime, error) {
+	return loadRuntimeFromBytes(
+		trustRaw,
+		envelopeRaw,
+		expectedTrustSHA256,
+		expectedClusterID,
+		expectedDeploymentID,
+		expectedAuthoritySnapshotID,
+		expectedAuthorityClosureSHA256,
+		now,
+		false,
+	)
+}
+
+func loadRuntimeFromBytes(
+	trustRaw []byte,
+	envelopeRaw []byte,
+	expectedTrustSHA256 string,
+	expectedClusterID string,
+	expectedDeploymentID string,
+	expectedAuthoritySnapshotID string,
+	expectedAuthorityClosureSHA256 string,
+	now time.Time,
+	requireCurrent bool,
+) (*Runtime, error) {
 	if digestHex(trustRaw) != expectedTrustSHA256 {
 		return nil, errors.New("trust registry digest differs from the deployed immutable value")
 	}
@@ -154,6 +206,7 @@ func LoadRuntimeFromBytes(
 		expectedAuthoritySnapshotID,
 		expectedAuthorityClosureSHA256,
 		now,
+		requireCurrent,
 	)
 }
 
@@ -164,6 +217,7 @@ func newRuntime(
 	expectedAuthoritySnapshotID string,
 	expectedAuthorityClosureSHA256 string,
 	now time.Time,
+	requireCurrent bool,
 ) (*Runtime, error) {
 	issuedAt, err := parseWholeUTC(snapshot.IssuedAt)
 	if err != nil {
@@ -209,7 +263,10 @@ func newRuntime(
 	if digestHex(normalizedRaw) != snapshot.SnapshotID {
 		return nil, errors.New("snapshot_id does not identify the canonical normalized snapshot")
 	}
-	if issuedAt.After(now.Add(30*time.Second)) || now.Sub(issuedAt) > time.Duration(snapshot.MaximumAgeSeconds)*time.Second || !expiresAt.After(now) || expiresAt.Sub(issuedAt) > 10*time.Minute {
+	if issuedAt.After(now.Add(30*time.Second)) || !expiresAt.After(issuedAt) || expiresAt.Sub(issuedAt) > 10*time.Minute {
+		return nil, errors.New("snapshot signed lifetime is invalid")
+	}
+	if requireCurrent && (now.Sub(issuedAt) > time.Duration(snapshot.MaximumAgeSeconds)*time.Second || !expiresAt.After(now)) {
 		return nil, errors.New("snapshot is not current at the admission boundary")
 	}
 	if err := validateActor(snapshot.Controller); err != nil {

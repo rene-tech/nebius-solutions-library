@@ -260,6 +260,35 @@ func (p *Provider) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRu
 	if err := p.validateActivationReceipt(selection.Activation, now); err != nil {
 		return snapshotRuntimeSelection{}, err
 	}
+	envelopeRaw, err := readProtectedRegular(
+		filepath.Join(p.generationRoot, selection.SnapshotEnvelopeName),
+		maxSnapshotBytes,
+	)
+	if err != nil || digestHex(envelopeRaw) != selection.SnapshotEnvelopeSHA256 {
+		return snapshotRuntimeSelection{}, errors.New("historical runtime selector lacks its exact immutable envelope")
+	}
+	trustRaw, err := readProtectedRegular(p.trustPath, maxTrustBytes)
+	if err != nil {
+		return snapshotRuntimeSelection{}, err
+	}
+	runtime, err := LoadRuntimeFromBytesForChainRecovery(
+		trustRaw,
+		envelopeRaw,
+		p.expectedTrustSHA256,
+		p.expectedClusterID,
+		p.expectedDeploymentID,
+		p.expectedAuthoritySnapshotID,
+		p.expectedAuthorityClosureSHA256,
+		now,
+	)
+	if err != nil || runtime.Snapshot.ActivationCycleContractSHA256 != selection.Activation.CycleContractSHA256 ||
+		runtime.Snapshot.ActivationCycleID != selection.Activation.CycleID ||
+		runtime.Snapshot.ActivationCycleIssuedAt != selection.Activation.CycleIssuedAt ||
+		runtime.Snapshot.ActivationCycleDeadlineAt != selection.Activation.CycleDeadlineAt ||
+		runtime.Snapshot.ActivationPredecessorSelectionSHA256 != selection.PredecessorSelectionSHA256 ||
+		runtime.Snapshot.EvidenceBundleSHA256 != selection.Activation.EvidenceBundleSHA256 {
+		return snapshotRuntimeSelection{}, errors.New("historical runtime selector differs from its signed activation transition")
+	}
 	return selection, nil
 }
 
