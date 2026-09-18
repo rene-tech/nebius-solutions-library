@@ -60,6 +60,7 @@ var kubernetesCollections = map[string]collectionContract{
 	"apiserver-client-traffic-policies": {"gateway.envoyproxy.io", "clienttrafficpolicies", "ClientTrafficPolicy", true},
 	"apiserver-clusterrolebindings": {"rbac.authorization.k8s.io", "clusterrolebindings", "ClusterRoleBinding", false},
 	"apiserver-clusterroles": {"rbac.authorization.k8s.io", "clusterroles", "ClusterRole", false},
+	"apiserver-configmaps": {"", "configmaps", "ConfigMap", true},
 	"apiserver-crds": {"apiextensions.k8s.io", "customresourcedefinitions", "CustomResourceDefinition", false},
 	"apiserver-csrs": {"certificates.k8s.io", "certificatesigningrequests", "CertificateSigningRequest", false},
 	"apiserver-daemonsets": {"apps", "daemonsets", "DaemonSet", true},
@@ -98,6 +99,7 @@ var kubernetesCollections = map[string]collectionContract{
 	"apiserver-storageclasses": {"storage.k8s.io", "storageclasses", "StorageClass", false},
 	"apiserver-tcproutes": {"gateway.networking.k8s.io", "tcproutes", "TCPRoute", true},
 	"apiserver-tlsroutes": {"gateway.networking.k8s.io", "tlsroutes", "TLSRoute", true},
+	"apiserver-tls-certificate-evidence": {"", "secrets", "Secret", true},
 	"apiserver-udproutes": {"gateway.networking.k8s.io", "udproutes", "UDPRoute", true},
 	"apiserver-volumeattachments": {"storage.k8s.io", "volumeattachments", "VolumeAttachment", false},
 }
@@ -291,6 +293,9 @@ func deriveInventory(verified *collector.VerifiedEvidenceBundle, config collecto
 		if source.SemanticCollection == "apiserver-secrets-metadata" && plan.Kind != "kubernetes-secret-metadata-projection" {
 			return nil, errors.New("Secret inventory is not the explicit independently authenticated metadata-only projection")
 		}
+		if source.SemanticCollection == "apiserver-tls-certificate-evidence" && plan.Kind != "kubernetes-tls-certificate-projection" {
+			return nil, errors.New("TLS certificate inventory is not the explicit public-material-only projection")
+		}
 		responses := verified.RawResponses[source.SourceID]
 		if len(responses) != len(source.Pages) {
 			return nil, errors.New("verified native response inventory is incomplete")
@@ -302,6 +307,12 @@ func deriveInventory(verified *collector.VerifiedEvidenceBundle, config collecto
 				var projection secretMetadataProjectionList
 				if err := boundary.DecodeExactJSON(raw, &projection); err != nil || projection.Schema != "fs2-serve.nebius.ai/kubernetes-secret-metadata-projection/v1" {
 					return nil, errors.New("Secret inventory is not the exact independently authenticated metadata-only response schema")
+				}
+				list = kubernetesList{APIVersion: projection.APIVersion, Kind: projection.Kind, Metadata: projection.Metadata, Items: projection.Items}
+			} else if source.SemanticCollection == "apiserver-tls-certificate-evidence" {
+				var projection secretMetadataProjectionList
+				if err := boundary.DecodeExactJSON(raw, &projection); err != nil || projection.Schema != "fs2-serve.nebius.ai/kubernetes-tls-certificate-projection/v1" {
+					return nil, errors.New("TLS certificate inventory is not the exact independently authenticated public-material-only response schema")
 				}
 				list = kubernetesList{APIVersion: projection.APIVersion, Kind: projection.Kind, Metadata: projection.Metadata, Items: projection.Items}
 			} else if err := boundary.DecodeExactJSON(raw, &list); err != nil {
@@ -349,6 +360,9 @@ func validateKubernetesListSource(source collector.SourceSpec, contract collecti
 	expectedPath := "/api/" + contractVersionPath(source.InitialURL) + "/" + contract.resource
 	if source.SemanticCollection == "apiserver-secrets-metadata" {
 		expectedPath = "/fs2-native/v1/secret-metadata"
+	}
+	if source.SemanticCollection == "apiserver-tls-certificate-evidence" {
+		expectedPath = "/fs2-native/v1/tls-certificates"
 	}
 	if contract.apiGroup != "" {
 		expectedPath = "/apis/" + contract.apiGroup + "/" + contractVersionPath(source.InitialURL) + "/" + contract.resource
@@ -405,7 +419,7 @@ func decodeInventoryObject(collection string, contract collectionContract, raw [
 	if name == "" || uid == "" || resourceVersion == "" || contract.namespaced && namespace == "" || !contract.namespaced && namespace != "" {
 		return inventoryObject{}, fmt.Errorf("semantic collection %s object identity is incomplete", collection)
 	}
-	if collection == "apiserver-secrets-metadata" {
+	if collection == "apiserver-secrets-metadata" || collection == "apiserver-tls-certificate-evidence" {
 		if _, exists := fields["data"]; exists {
 			return inventoryObject{}, errors.New("Secret metadata collection contains customer secret data")
 		}

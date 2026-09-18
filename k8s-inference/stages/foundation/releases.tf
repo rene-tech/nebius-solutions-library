@@ -102,11 +102,22 @@ resource "helm_release" "envoy_gateway" {
     yamlencode(local.envoy_gateway_edge_availability_values),
   ]
 
+  lifecycle {
+    precondition {
+      condition = !local.public_edge_enabled || can(regex(
+        "^[^[:space:]@]+@sha256:[a-f0-9]{64}$",
+        var.public_edge_rate_limit_image,
+      ))
+      error_message = "Public-edge Envoy Gateway requires an owner-supplied digest-qualified rate-limit image; the pinned chart's tag-only default is not an accepted execution identity."
+    }
+  }
+
   depends_on = [
     terraform_data.cluster_contract,
     kubernetes_stateful_set_v1.edge_rate_limit_redis,
     kubernetes_service_v1.edge_rate_limit_redis_headless,
     kubernetes_service_v1.edge_rate_limit_redis_sentinel,
+    kubernetes_network_policy_v1.edge_gateway_controller_xds,
   ]
 }
 

@@ -1,0 +1,58 @@
+{
+  "schema": "fs2-serve.nebius.ai/postgresql-migration-integration-gate/v1",
+  "status": "blocked-pending-exact-sibling-integration",
+  "canonical_predecessor": {
+    "version": "0029_request_debug.sql",
+    "sha256": "a02fe7eb59ea664c4cb4972158a59d52b5df22aa937eb83cd9a287939a90438a"
+  },
+  "reserved_successor": {
+    "version": "0034_request_debug_activations.sql",
+    "sha256": "96c93567a43e82592e6da089e5fdd337850f2c2397ce0a23e29e4bb0c7ba2b43"
+  },
+  "required_siblings": [
+    {
+      "version": "0030",
+      "owner": "SAI-21",
+      "status": "name-ownership-conflict",
+      "observed_sha256": "66d7c443254945b82b1c8f36c32953292b5e5c7f5f1c7c70ee05dbb88040356b",
+      "observed_names": [
+        "0030_scientific_artifact_object_versions.sql",
+        "0030_scientific_quota_settlement.sql"
+      ]
+    },
+    {
+      "version": "0031",
+      "owner": "SAI-21",
+      "status": "name-ownership-conflict",
+      "observed_sha256": "011206fc57e381f0d58baa02bbc3769fe111144abc5d9019607a8313b5532265",
+      "observed_names": [
+        "0031_scientific_artifact_version_backfill.sql",
+        "0031_scientific_quota_fencing.sql"
+      ]
+    },
+    {
+      "version": "0032",
+      "owner": "SAI-19",
+      "status": "exact-bytes-unavailable"
+    },
+    {
+      "version": "0033",
+      "owner": "SAI-19",
+      "status": "exact-bytes-unavailable"
+    }
+  ],
+  "rejected_handoffs": [
+    {
+      "commit": "e85520db9",
+      "status": "rejected-unpushed-no-go",
+      "reason": "The observed runtime grants reference nonexistent object_version_id after the committed migrations, and the new roles lack one coherent committed creation, grant and Secret-consumer chain. These bytes await a narrow resealed successor and fresh exact review."
+    }
+  ],
+  "release_behavior": "The canonical 29-migration release remains fail-closed. 0034 must not enter EXPECTED_MIGRATIONS, the packaged count, or the release contract until one independently accepted owner supplies exact canonical names and bytes for 0030 through 0033 and reseals the complete ordered set.",
+  "prohibitions": [
+    "do-not-renumber-0034",
+    "do-not-copy-or-rename-a-sibling-branch-by-guess",
+    "do-not-overwrite-existing-sibling-history",
+    "do-not-run-0034-across-a-version-gap"
+  ]
+}

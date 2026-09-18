@@ -250,7 +250,7 @@ func validateManifestStructure(manifest custodyManifest) error {
 	}
 	for _, item := range manifest.Directories {
 		parent := filepath.Dir(item.Destination)
-		if !custodycontract.ValidDirectoryDestination(item.Destination) || seen[item.Destination] || item.UID != 0 || item.Mode != 0o700 && item.Mode != 0o750 && item.Mode != 0o2750 || parent != "/custody" && directories[parent].Destination == "" { return errors.New("custody directory or its signed parent is invalid") }
+		if !custodycontract.ValidDirectoryDestination(item.Destination) || seen[item.Destination] || item.UID != 0 || item.Mode != 0o700 && item.Mode != 0o750 || parent != "/custody" && directories[parent].Destination == "" { return errors.New("custody directory or its signed parent is invalid") }
 		seen[item.Destination] = true
 		directories[item.Destination] = item
 	}

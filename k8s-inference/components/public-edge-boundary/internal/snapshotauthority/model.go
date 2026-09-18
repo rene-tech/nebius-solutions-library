@@ -156,6 +156,44 @@ type EdgeGraphPolicy struct {
 	RateLimitServiceName string `json:"rate_limit_service_name"`
 	RedisServiceNamespace string `json:"redis_service_namespace"`
 	RedisServiceName string `json:"redis_service_name"`
+	RedisSentinelServiceName string `json:"redis_sentinel_service_name"`
+	RedisSentinelMasterName string `json:"redis_sentinel_master_name"`
+	RedisSentinelEndpoints []string `json:"redis_sentinel_endpoints"`
+	RedisBootstrapConfigMapName string `json:"redis_bootstrap_config_map_name"`
+	RedisBootstrapConfigDataSHA256 string `json:"redis_bootstrap_config_data_sha256"`
+	RedisTLSHandoffSHA256 string `json:"redis_tls_handoff_sha256"`
+	RedisTLSHandoffIssuer string `json:"redis_tls_handoff_issuer"`
+	RedisTLSHandoffKeyID string `json:"redis_tls_handoff_key_id"`
+	RedisTLSHandoffPublicKey string `json:"redis_tls_handoff_public_key"`
+	RedisTLSServerSecretName string `json:"redis_tls_server_secret_name"`
+	RedisTLSClientSecretName string `json:"redis_tls_client_secret_name"`
+	RedisTLSServerCertificate ObjectReference `json:"redis_tls_server_certificate"`
+	RedisTLSClientCertificate ObjectReference `json:"redis_tls_client_certificate"`
+	RedisTLSCARootSPKISHA256 string `json:"redis_tls_ca_root_spki_sha256"`
+	RedisTLSIssuerGroup string `json:"redis_tls_issuer_group"`
+	RedisTLSIssuerKind string `json:"redis_tls_issuer_kind"`
+	RedisTLSIssuerName string `json:"redis_tls_issuer_name"`
+	RedisTLSMinimumHandoffGeneration int64 `json:"redis_tls_minimum_handoff_generation"`
+	RedisTLSServerDNSNames []string `json:"redis_tls_server_dns_names"`
+	RedisTLSClientSPIFFEURI string `json:"redis_tls_client_spiffe_uri"`
+	RedisTLSMaximumLifetimeSeconds int64 `json:"redis_tls_maximum_lifetime_seconds"`
+	RedisTLSMinimumRemainingSeconds int64 `json:"redis_tls_minimum_remaining_seconds"`
+	RateLimitRuntimeUID int64 `json:"rate_limit_runtime_uid"`
+	RateLimitRuntimeGID int64 `json:"rate_limit_runtime_gid"`
+	RateLimitServiceAccountName string `json:"rate_limit_service_account_name"`
+	RateLimitContainerImage string `json:"rate_limit_container_image"`
+	RateLimitTLSReaderGID int64 `json:"rate_limit_tls_reader_gid"`
+	RateLimitTLSSecretDefaultMode int64 `json:"rate_limit_tls_secret_default_mode"`
+	RateLimitXDSAddress string `json:"rate_limit_xds_address"`
+	RateLimitXDSPort int64 `json:"rate_limit_xds_port"`
+	RateLimitPodSelector map[string]string `json:"rate_limit_pod_selector"`
+	EnvoyGatewayReleaseName string `json:"envoy_gateway_release_name"`
+	EnvoyGatewayControllerNamespace string `json:"envoy_gateway_controller_namespace"`
+	EnvoyGatewayControllerServiceName string `json:"envoy_gateway_controller_service_name"`
+	EnvoyGatewayControllerPodSelector map[string]string `json:"envoy_gateway_controller_pod_selector"`
+	EnvoyProxyNamespace string `json:"envoy_proxy_namespace"`
+	EnvoyProxyPodSelector map[string]string `json:"envoy_proxy_pod_selector"`
+	RedisPodSelector map[string]string `json:"redis_pod_selector"`
 	ProviderLoadBalancerID string `json:"provider_load_balancer_id"`
 	ProviderHTTPListenerID string `json:"provider_http_listener_id"`
 	ProviderHTTPSListenerID string `json:"provider_https_listener_id"`
@@ -163,9 +201,28 @@ type EdgeGraphPolicy struct {
 	ProviderHealthCheckID string `json:"provider_health_check_id"`
 	RateLimitServicePort int64 `json:"rate_limit_service_port"`
 	RedisServicePort int64 `json:"redis_service_port"`
-	RedisTLSSecretName string `json:"redis_tls_secret_name"`
+	RedisSentinelPort int64 `json:"redis_sentinel_port"`
 	MinimumPerSourceConnectionLimit int64 `json:"minimum_per_source_connection_limit"`
 	MaximumPerSourceConnectionLimit int64 `json:"maximum_per_source_connection_limit"`
+	PublicSourceCIDR string `json:"public_source_cidr"`
+	PublicRateLimitRequests int64 `json:"public_rate_limit_requests"`
+	PublicRateLimitUnit string `json:"public_rate_limit_unit"`
+	AdminPathPrefix string `json:"admin_path_prefix"`
+	AdminRateLimitRequests int64 `json:"admin_rate_limit_requests"`
+	AdminRateLimitUnit string `json:"admin_rate_limit_unit"`
+	TrustedHopCount int64 `json:"trusted_hop_count"`
+	ConnectionLimit int64 `json:"connection_limit"`
+	MaximumRequestsPerConnection int64 `json:"maximum_requests_per_connection"`
+	MaximumConnectionDuration string `json:"maximum_connection_duration"`
+	MaximumStreamDuration string `json:"maximum_stream_duration"`
+	RequestReceivedTimeout string `json:"request_received_timeout"`
+	IdleTimeout string `json:"idle_timeout"`
+	StreamIdleTimeout string `json:"stream_idle_timeout"`
+	MaximumHTTP2ConcurrentStreams int64 `json:"maximum_http2_concurrent_streams"`
+	AudioStreamPath string `json:"audio_stream_path"`
+	AudioStreamRequestTimeout string `json:"audio_stream_request_timeout"`
+	AudioStreamBackendRequestTimeout string `json:"audio_stream_backend_request_timeout"`
+	PublicRouteHostnames []string `json:"public_route_hostnames"`
 }
 
 type NetworkPolicySpecContract struct {

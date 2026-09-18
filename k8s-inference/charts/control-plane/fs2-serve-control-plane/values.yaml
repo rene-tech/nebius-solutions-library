@@ -428,15 +428,29 @@ networkPolicy:
     namespaceLabels:
       kubernetes.io/metadata.name: envoy-gateway-system
     podLabels:
-      app.kubernetes.io/instance: envoy-gateway
+      # Workload delivery replaces owner-required with the exact foundation
+      # Helm release instance fs2-<run-id>-envoy. The fail-closed default must
+      # never accidentally select a controller from another lifecycle.
+      app.kubernetes.io/instance: fs2-owner-required-envoy
       app.kubernetes.io/name: gateway-helm
       control-plane: envoy-gateway
+    # Foundation installs active controller isolation before the controller
+    # Helm release. Retain this historical chart object without selecting the
+    # controller, avoiding a duplicate additive policy union during rollout.
+    retainedPolicyPodLabels:
+      fs2.nebius.ai/retained-network-policy: fs2-serve-control-plane-envoy-controller-xds
     port: 18000
+    rateLimitPort: 18001
   rateLimit:
     namespaceLabels:
       kubernetes.io/metadata.name: envoy-gateway-system
     podLabels:
       fs2.nebius.ai/edge-rate-limit-service: "true"
+    # Retain the historical chart-owned NetworkPolicy object without selecting
+    # the generated RLS Pods. Foundation owns the one exact, semantically
+    # attested RLS policy union.
+    retainedPolicyPodLabels:
+      fs2.nebius.ai/retained-network-policy: fs2-serve-control-plane-envoy-rate-limit
     port: 8081
   rateLimitStore:
     namespaceLabels:
@@ -444,6 +458,10 @@ networkPolicy:
     podLabels:
       app.kubernetes.io/name: fs2-edge-rate-limit-redis
       app.kubernetes.io/component: edge-rate-limit-store
+      app.kubernetes.io/managed-by: terraform
+      app.kubernetes.io/part-of: fs2-serve
+      fs2.nebius.ai/environment: disposable
+      fs2.nebius.ai/run-id: owner-required
     port: 6379
     sentinelPort: 26379
   solver:

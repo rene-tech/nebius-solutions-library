@@ -2672,6 +2672,12 @@ func (a *Authority) collect(ctx context.Context, source AuthoritySourceSpec, dir
 			return NativePage{}, err
 		}
 	}
+	if source.Kind == "kubernetes-tls-certificate-projection" {
+		responseRaw, err = projectTLSCertificateList(responseRaw)
+		if err != nil {
+			return NativePage{}, err
+		}
+	}
 	return NativePage{
 		Schema:                   NativePageSchema,
 		SourceID:                 source.ID,
@@ -2716,6 +2722,22 @@ type secretMetadataObject struct {
 	Type       string                     `json:"type,omitempty"`
 }
 
+type tlsCertificateProjection struct {
+	Schema     string                         `json:"schema"`
+	APIVersion string                         `json:"apiVersion"`
+	Kind       string                         `json:"kind"`
+	Metadata   map[string]json.RawMessage     `json:"metadata"`
+	Items      []tlsCertificateProjectionItem `json:"items"`
+}
+
+type tlsCertificateProjectionItem struct {
+	APIVersion string                     `json:"apiVersion"`
+	Kind       string                     `json:"kind"`
+	Metadata   map[string]json.RawMessage `json:"metadata"`
+	Type       string                     `json:"type"`
+	Certificate map[string]string         `json:"certificate"`
+}
+
 func projectSecretMetadataList(raw []byte) ([]byte, error) {
 	var fields map[string]json.RawMessage
 	if err := boundary.DecodeExactJSON(raw, &fields); err != nil {
@@ -2730,11 +2752,15 @@ func projectSecretMetadataList(raw []byte) ([]byte, error) {
 		apiVersion != "v1" || kind != "SecretList" || metadata == nil || items == nil {
 		return nil, errors.New("Kubernetes Secret response is not an exact v1 SecretList")
 	}
+	safeListMetadata, metadataErr := projectSafeSecretListMetadata(metadata)
+	if metadataErr != nil {
+		return nil, metadataErr
+	}
 	projection := secretMetadataProjection{
 		Schema: "fs2-serve.nebius.ai/kubernetes-secret-metadata-projection/v1",
 		APIVersion: apiVersion,
 		Kind: kind,
-		Metadata: metadata,
+		Metadata: safeListMetadata,
 		Items: make([]secretMetadataObject, 0, len(items)),
 	}
 	for _, itemRaw := range items {
@@ -2753,11 +2779,141 @@ func projectSecretMetadataList(raw []byte) ([]byte, error) {
 		if typeRaw, exists := itemFields["type"]; exists && json.Unmarshal(typeRaw, &secretType) != nil {
 			return nil, errors.New("Kubernetes Secret type is malformed")
 		}
-		projection.Items = append(projection.Items, secretMetadataObject{APIVersion: itemAPIVersion, Kind: itemKind, Metadata: itemMetadata, Type: secretType})
+		safeMetadata, metadataErr := projectSafeSecretMetadata(itemMetadata)
+		if metadataErr != nil {
+			return nil, metadataErr
+		}
+		projection.Items = append(projection.Items, secretMetadataObject{APIVersion: itemAPIVersion, Kind: itemKind, Metadata: safeMetadata, Type: secretType})
 	}
 	projected, err := json.Marshal(projection)
 	if err != nil {
 		return nil, err
+	}
+	return projected, nil
+}
+
+// projectTLSCertificateList retains only public certificate material and the
+// exact Secret identity. The private key is neither copied into the signed
+// native page nor persisted in the collector evidence store.
+func projectTLSCertificateList(raw []byte) ([]byte, error) {
+	var fields map[string]json.RawMessage
+	if err := boundary.DecodeExactJSON(raw, &fields); err != nil {
+		return nil, errors.New("Kubernetes TLS Secret response is not exact JSON")
+	}
+	var apiVersion string
+	var kind string
+	var metadata map[string]json.RawMessage
+	var items []json.RawMessage
+	if json.Unmarshal(fields["apiVersion"], &apiVersion) != nil || json.Unmarshal(fields["kind"], &kind) != nil ||
+		json.Unmarshal(fields["metadata"], &metadata) != nil || json.Unmarshal(fields["items"], &items) != nil ||
+		apiVersion != "v1" || kind != "SecretList" || metadata == nil || items == nil {
+		return nil, errors.New("Kubernetes TLS Secret response is not an exact v1 SecretList")
+	}
+	safeListMetadata, metadataErr := projectSafeSecretListMetadata(metadata)
+	if metadataErr != nil {
+		return nil, metadataErr
+	}
+	projection := tlsCertificateProjection{
+		Schema:     "fs2-serve.nebius.ai/kubernetes-tls-certificate-projection/v1",
+		APIVersion: apiVersion,
+		Kind:       kind,
+		Metadata:   safeListMetadata,
+		Items:      []tlsCertificateProjectionItem{},
+	}
+	for _, itemRaw := range items {
+		var itemFields map[string]json.RawMessage
+		if err := boundary.DecodeExactJSON(itemRaw, &itemFields); err != nil {
+			return nil, errors.New("Kubernetes TLS Secret item is not exact JSON")
+		}
+		var itemAPIVersion string
+		var itemKind string
+		var itemMetadata map[string]json.RawMessage
+		var secretType string
+		if json.Unmarshal(itemFields["apiVersion"], &itemAPIVersion) != nil || json.Unmarshal(itemFields["kind"], &itemKind) != nil ||
+			json.Unmarshal(itemFields["metadata"], &itemMetadata) != nil || itemAPIVersion != "v1" || itemKind != "Secret" || itemMetadata == nil ||
+			json.Unmarshal(itemFields["type"], &secretType) != nil {
+			return nil, errors.New("Kubernetes TLS Secret item lacks exact type and metadata")
+		}
+		if secretType != "kubernetes.io/tls" {
+			continue
+		}
+		var data map[string]string
+		if json.Unmarshal(itemFields["data"], &data) != nil {
+			return nil, errors.New("Kubernetes TLS Secret data is malformed")
+		}
+		caPEM := data["ca.crt"]
+		leafPEM := data["tls.crt"]
+		if caPEM == "" || leafPEM == "" {
+			continue
+		}
+		safeMetadata, metadataErr := projectSafeSecretMetadata(itemMetadata)
+		if metadataErr != nil {
+			return nil, metadataErr
+		}
+		projection.Items = append(projection.Items, tlsCertificateProjectionItem{
+			APIVersion: itemAPIVersion,
+			Kind:       itemKind,
+			Metadata:   safeMetadata,
+			Type:       secretType,
+			Certificate: map[string]string{
+				"ca_pem_base64":   caPEM,
+				"leaf_pem_base64": leafPEM,
+			},
+		})
+	}
+	projected, err := json.Marshal(projection)
+	if err != nil {
+		return nil, err
+	}
+	return projected, nil
+}
+
+func projectSafeSecretMetadata(metadata map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	if metadata == nil {
+		return nil, errors.New("Kubernetes Secret metadata is absent")
+	}
+	projected := make(map[string]json.RawMessage, 4)
+	for _, field := range []string{"name", "namespace", "uid", "resourceVersion"} {
+		raw, exists := metadata[field]
+		if !exists {
+			return nil, fmt.Errorf("Kubernetes Secret metadata lacks %s", field)
+		}
+		var value string
+		if json.Unmarshal(raw, &value) != nil || value == "" || len(value) > 512 || strings.ContainsAny(value, "\x00\r\n") {
+			return nil, fmt.Errorf("Kubernetes Secret metadata %s is invalid", field)
+		}
+		canonical, err := json.Marshal(value)
+		if err != nil {
+			return nil, err
+		}
+		projected[field] = canonical
+	}
+	return projected, nil
+}
+
+func projectSafeSecretListMetadata(metadata map[string]json.RawMessage) (map[string]json.RawMessage, error) {
+	if metadata == nil {
+		return nil, errors.New("Kubernetes SecretList metadata is absent")
+	}
+	projected := make(map[string]json.RawMessage, 3)
+	var resourceVersion string
+	if json.Unmarshal(metadata["resourceVersion"], &resourceVersion) != nil || resourceVersion == "" || len(resourceVersion) > 512 || strings.ContainsAny(resourceVersion, "\x00\r\n") {
+		return nil, errors.New("Kubernetes SecretList resourceVersion is invalid")
+	}
+	projected["resourceVersion"], _ = json.Marshal(resourceVersion)
+	if raw, exists := metadata["continue"]; exists {
+		var value string
+		if json.Unmarshal(raw, &value) != nil || len(value) > maximumPageTokenBytes || strings.ContainsAny(value, "\x00\r\n") {
+			return nil, errors.New("Kubernetes SecretList continue token is invalid")
+		}
+		projected["continue"], _ = json.Marshal(value)
+	}
+	if raw, exists := metadata["remainingItemCount"]; exists {
+		var value int64
+		if json.Unmarshal(raw, &value) != nil || value < 0 {
+			return nil, errors.New("Kubernetes SecretList remainingItemCount is invalid")
+		}
+		projected["remainingItemCount"], _ = json.Marshal(value)
 	}
 	return projected, nil
 }

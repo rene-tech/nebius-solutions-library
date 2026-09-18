@@ -40,9 +40,10 @@ output "cluster_contract" {
 output "managed_resource_count" {
   description = "Expected managed Terraform address count for plan review."
   # 29 pre-existing addresses, the Kueue release verification, and the always
-  # present jobset-system namespace. The seven exact rate-limit-store/service
-  # addresses below are always present. Public mode adds the apply-time eligibility gate
-  # and four Node-authority/CAS admission addresses to the same closed allowlist.
+  # present jobset-system namespace. The exact rate-limit-store/service and
+  # controller-isolation addresses below are always present. Public mode adds
+  # the apply-time eligibility gate and four Node-authority/CAS admission
+  # addresses to the same closed allowlist.
   # The JobSet module itself contributes five
   # addresses only when it is enabled.
   value = (

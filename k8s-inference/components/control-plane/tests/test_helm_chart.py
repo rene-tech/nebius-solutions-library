@@ -70,6 +70,10 @@ def helm_values() -> list[str]:
         f"image.digest={TEST_DIGEST}",
         "--set",
         f"catalog.rolloutDigest={TEST_CATALOG_ROLLOUT_DIGEST}",
+        "--set-string",
+        f"networkPolicy.envoyController.podLabels.app\\.kubernetes\\.io/instance=fs2-{TEST_RUN_ID}-envoy",
+        "--set-string",
+        f"networkPolicy.rateLimitStore.podLabels.fs2\\.nebius\\.ai/run-id={TEST_RUN_ID}",
         "--set",
         f"config.publicBaseUrl={TEST_PUBLIC_URL}",
         "--set",
@@ -1988,9 +1992,12 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     }
     solver_selector = contract["cert_manager"]["http01_solver_selector"]
     assert public_egress[(8089,)] == {"podSelector": {"matchLabels": solver_selector}}
+    controller_selector = dict(contract["envoy_gateway"]["controller_selector"])
+    assert controller_selector.pop("app.kubernetes.io/instance") == "fs2-<run-id>-envoy"
+    controller_selector["app.kubernetes.io/instance"] = f"fs2-{TEST_RUN_ID}-envoy"
     assert public_egress[(18000,)] == {
         "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "envoy-gateway-system"}},
-        "podSelector": {"matchLabels": contract["envoy_gateway"]["controller_selector"]},
+        "podSelector": {"matchLabels": controller_selector},
     }
     solver = policies["fs2-serve-control-plane-acme-solver"]["spec"]
     assert solver["podSelector"]["matchLabels"] == solver_selector
@@ -2007,7 +2014,9 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
     ]
     xds = policies["fs2-serve-control-plane-envoy-controller-xds"]
     assert xds["metadata"]["namespace"] == "envoy-gateway-system"
-    assert xds["spec"]["podSelector"]["matchLabels"] == contract["envoy_gateway"]["controller_selector"]
+    assert xds["spec"]["podSelector"]["matchLabels"] == {
+        "fs2.nebius.ai/retained-network-policy": "fs2-serve-control-plane-envoy-controller-xds"
+    }
     assert xds["spec"]["ingress"] == [
         {
             "from": [
@@ -2017,12 +2026,25 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
                 }
             ],
             "ports": [{"port": 18000, "protocol": "TCP"}],
-        }
+        },
+        {
+            "from": [
+                {
+                    "namespaceSelector": {
+                        "matchLabels": {"kubernetes.io/metadata.name": "envoy-gateway-system"}
+                    },
+                    "podSelector": {
+                        "matchLabels": {"fs2.nebius.ai/edge-rate-limit-service": "true"}
+                    },
+                }
+            ],
+            "ports": [{"port": 18001, "protocol": "TCP"}],
+        },
     ]
     rate_limit = policies["fs2-serve-control-plane-envoy-rate-limit"]
     assert rate_limit["metadata"]["namespace"] == "envoy-gateway-system"
     assert rate_limit["spec"]["podSelector"]["matchLabels"] == {
-        "fs2.nebius.ai/edge-rate-limit-service": "true"
+        "fs2.nebius.ai/retained-network-policy": "fs2-serve-control-plane-envoy-rate-limit"
     }
     store_egress = next(
         rule
@@ -2040,6 +2062,10 @@ def test_network_policies_use_exact_architecture_namespaces_labels_and_ports() -
                     "matchLabels": {
                         "app.kubernetes.io/name": "fs2-edge-rate-limit-redis",
                         "app.kubernetes.io/component": "edge-rate-limit-store",
+                        "app.kubernetes.io/managed-by": "terraform",
+                        "app.kubernetes.io/part-of": "fs2-serve",
+                        "fs2.nebius.ai/environment": "disposable",
+                        "fs2.nebius.ai/run-id": TEST_RUN_ID,
                     }
                 },
             }

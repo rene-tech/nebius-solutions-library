@@ -76,6 +76,19 @@ locals {
       kubernetesApiCidrs = sort(tolist(local.kubernetes_api_egress_cidrs))
       artifactStoreCidrs = sort(tolist(var.scientific_artifacts.egress_cidrs))
       dns                = { podLabels = { "k8s-app" = "coredns" } }
+      envoyController = {
+        podLabels = {
+          "app.kubernetes.io/instance" = "fs2-${var.run_id}-envoy"
+          "app.kubernetes.io/name"     = "gateway-helm"
+          "control-plane"              = "envoy-gateway"
+        }
+      }
+      rateLimitStore = {
+        podLabels = merge(local.common_labels, {
+          "app.kubernetes.io/name"      = "fs2-edge-rate-limit-redis"
+          "app.kubernetes.io/component" = "edge-rate-limit-store"
+        })
+      }
       prometheus = {
         namespaceLabels = { "kubernetes.io/metadata.name" = "fs2-observability" }
         podLabels = {

@@ -212,7 +212,17 @@ locals {
   })
 
   edge_gateway_controller_labels = {
-    "control-plane" = "envoy-gateway"
+    "app.kubernetes.io/instance" = "fs2-${var.run_id}-envoy"
+    "app.kubernetes.io/name"     = "gateway-helm"
+    "control-plane"              = "envoy-gateway"
+  }
+  edge_gateway_proxy_namespace = "envoy-gateway-system"
+  edge_gateway_proxy_labels = {
+    "app.kubernetes.io/component"                       = "proxy"
+    "app.kubernetes.io/managed-by"                      = "envoy-gateway"
+    "app.kubernetes.io/name"                            = "envoy"
+    "gateway.envoyproxy.io/owning-gateway-name"         = "public"
+    "gateway.envoyproxy.io/owning-gateway-namespace"    = "fs2-system"
   }
   edge_rate_limit_service_labels = {
     "fs2.nebius.ai/edge-rate-limit-service" = "true"
@@ -254,7 +264,7 @@ locals {
       }
     } : null
   }
-  edge_rate_limit_service_pod_scheduling = {
+  edge_rate_limit_service_pod_scheduling = merge({
     labels = local.edge_rate_limit_service_labels
     nodeSelector = local.public_edge_enabled ? var.public_edge_availability_contract.node_selector : {
       "workload.fs2.nebius/system" = "true"
@@ -291,6 +301,65 @@ locals {
         }]
       }
     } : null
+  }, local.public_edge_enabled ? {
+    annotations = {
+      "fs2.nebius.ai/redis-tls-handoff-sha256" = local.edge_rate_limit_redis_tls_handoff_sha256
+    }
+    automountServiceAccountToken = false
+    volumes = [
+      {
+        name = "ratelimit-tmp"
+        emptyDir = {
+          sizeLimit = "64Mi"
+        }
+      },
+      {
+        name = "redis-client-tls"
+        secret = {
+          secretName  = local.edge_rate_limit_redis_client_tls_secret_name
+          defaultMode = 288
+          items = [
+            { key = "ca.crt", path = "ca.crt" },
+            { key = "tls.crt", path = "tls.crt" },
+            { key = "tls.key", path = "tls.key" },
+          ]
+        }
+      },
+    ]
+  } : {})
+  edge_rate_limit_service_container_transport = {
+    env = concat([
+      { name = "REDIS_TYPE", value = "sentinel" },
+      { name = "REDIS_URL", value = "fs2-edge-rate-limit,fs2-edge-rate-limit-redis-0.fs2-edge-rate-limit-redis-headless.envoy-gateway-system.svc.cluster.local:26379,fs2-edge-rate-limit-redis-1.fs2-edge-rate-limit-redis-headless.envoy-gateway-system.svc.cluster.local:26379,fs2-edge-rate-limit-redis-2.fs2-edge-rate-limit-redis-headless.envoy-gateway-system.svc.cluster.local:26379" },
+      { name = "REDIS_CLOSE_CONNECTION_ON_READONLY_ERROR", value = "true" },
+      { name = "REDIS_HEALTH_CHECK_ACTIVE_CONNECTION", value = "true" },
+    ], local.public_edge_enabled ? [
+      { name = "REDIS_TLS", value = "true" },
+      { name = "REDIS_TLS_SKIP_HOSTNAME_VERIFICATION", value = "false" },
+      { name = "REDIS_TLS_CACERT", value = "/redis-client-tls/ca.crt" },
+      { name = "REDIS_TLS_CLIENT_CERT", value = "/redis-client-tls/tls.crt" },
+      { name = "REDIS_TLS_CLIENT_KEY", value = "/redis-client-tls/tls.key" },
+    ] : [])
+    volumeMounts = concat([{
+      name      = "ratelimit-tmp"
+      mountPath = "/tmp"
+      readOnly  = false
+    }], local.public_edge_enabled ? [{
+      name      = "redis-client-tls"
+      mountPath = "/redis-client-tls"
+      readOnly  = true
+    }] : [])
+    imagePullPolicy = "IfNotPresent"
+    securityContext = {
+      allowPrivilegeEscalation = false
+      privileged               = false
+      readOnlyRootFilesystem   = true
+      runAsNonRoot             = true
+      runAsUser                = 65534
+      runAsGroup               = 65534
+      capabilities             = { drop = ["ALL"] }
+      seccompProfile           = { type = "RuntimeDefault" }
+    }
   }
   envoy_gateway_edge_availability_values = {
     deployment = {
@@ -301,7 +370,10 @@ locals {
         provider = {
           kubernetes = {
             rateLimitDeployment = {
-              pod = local.edge_rate_limit_service_pod_scheduling
+              pod       = local.edge_rate_limit_service_pod_scheduling
+              container = merge(local.edge_rate_limit_service_container_transport, local.public_edge_enabled ? {
+                image = var.public_edge_rate_limit_image
+              } : {})
             }
           }
         }

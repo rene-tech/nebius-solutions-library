@@ -203,7 +203,7 @@ func filesystemName(value int64) string {
 }
 
 func installDirectory(item directory, seen map[string]bool, directories map[string]directory) error {
-	if !custodycontract.ValidDirectoryDestination(item.Destination) || seen[item.Destination] || item.UID != 0 || item.Mode != 0o700 && item.Mode != 0o750 && item.Mode != 0o2750 { return errors.New("custody directory contract is invalid") }
+	if !custodycontract.ValidDirectoryDestination(item.Destination) || seen[item.Destination] || item.UID != 0 || item.Mode != 0o700 && item.Mode != 0o750 { return errors.New("custody directory contract is invalid") }
 	seen[item.Destination] = true
 	parentPath := filepath.Dir(item.Destination)
 	if parentPath != "/custody" {

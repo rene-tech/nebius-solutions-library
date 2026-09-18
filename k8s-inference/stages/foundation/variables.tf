@@ -209,6 +209,70 @@ variable "public_edge_availability_contract" {
   }
 }
 
+variable "public_edge_redis_tls_handoff" {
+  description = "Non-secret security-owner handoff for distinct Redis/Sentinel server-replication and Envoy RLS client certificates. Private key bytes remain in externally provisioned Kubernetes Secrets and never enter Terraform state."
+  type = object({
+    schema                    = string
+    status                    = string
+    issuer_group              = string
+    issuer_kind               = string
+    issuer_name               = string
+    ca_root_spki_sha256       = string
+    server_secret_name        = string
+    server_dns_names          = list(string)
+    server_extended_key_usage = list(string)
+    client_secret_name        = string
+    client_spiffe_uri         = string
+    client_extended_key_usage = list(string)
+    maximum_lifetime_seconds  = number
+    minimum_remaining_seconds = number
+    generation                = number
+    issued_at                 = string
+    expires_at                = string
+    predecessor_sha256        = string
+    evidence_sha256           = string
+    envelope_json             = string
+  })
+  nullable = false
+  default = {
+    schema                     = "fs2-serve.nebius.ai/edge-rate-limit-redis-tls-handoff/v1"
+    status                     = "blocked-pending-security-owner-enrollment"
+    issuer_group               = "cert-manager.io"
+    issuer_kind                = "ClusterIssuer"
+    issuer_name                = ""
+    ca_root_spki_sha256        = ""
+    server_secret_name         = "fs2-edge-rate-limit-redis-server-tls"
+    server_dns_names           = []
+    server_extended_key_usage = ["client auth", "server auth"]
+    client_secret_name         = "fs2-edge-rate-limit-redis-client-tls"
+    client_spiffe_uri          = "spiffe://fs2.nebius.ai/edge-rate-limit/client"
+    client_extended_key_usage = ["client auth"]
+    maximum_lifetime_seconds   = 604800
+    minimum_remaining_seconds  = 86400
+    generation                 = 0
+    issued_at                  = ""
+    expires_at                 = ""
+    predecessor_sha256         = ""
+    evidence_sha256            = ""
+    envelope_json              = ""
+  }
+}
+
+variable "public_edge_rate_limit_image" {
+  description = "Exact security-reviewed Envoy rate-limit image for public-edge mode. The checked-in Envoy Gateway chart default is tag-only and is deliberately not promoted without an owner-supplied immutable digest."
+  type        = string
+  nullable    = false
+  default     = ""
+
+  validation {
+    condition = var.public_edge_rate_limit_image == "" || can(regex(
+      "^[^[:space:]@]+@sha256:[a-f0-9]{64}$",
+      var.public_edge_rate_limit_image,
+    ))
+    error_message = "public_edge_rate_limit_image must be empty for non-public compatibility or an exact image@sha256:<64 lowercase hex> reference."
+  }
+}
+
 variable "infrastructure_contract" {
   description = "Optional legacy v1 B300 infrastructure output. accelerator_pool_contract is authoritative; when this compatibility view is supplied it must agree exactly with v2."
   type = object({

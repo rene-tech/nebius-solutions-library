@@ -10,6 +10,7 @@
 {{- range $name, $claim := .Values.storage -}}{{- $_ := required (printf "storage.%s is owner-enrolled" $name) $claim -}}{{- end -}}
 {{- $_ := required "webhook.caBundle is owner-enrolled" .Values.webhook.caBundle -}}
 {{- $_ := required "webhook.clientConfigEvidenceSHA256 is owner-enrolled" .Values.webhook.clientConfigEvidenceSHA256 -}}
+{{- if ne .Values.webhook.failurePolicy "Fail" -}}{{ fail "webhook.failurePolicy must remain Fail" }}{{- end -}}
 {{- $_ := required "controlPlaneHandoff.admissionConfigurationSHA256 is owner-enrolled" .Values.controlPlaneHandoff.admissionConfigurationSHA256 -}}
 {{- $_ := required "controlPlaneHandoff.webhookKubeconfigSHA256 is owner-enrolled" .Values.controlPlaneHandoff.webhookKubeconfigSHA256 -}}
 {{- $_ := required "controlPlaneHandoff.apiServerClientSPKISHA256Current is owner-enrolled" .Values.controlPlaneHandoff.apiServerClientSPKISHA256Current -}}

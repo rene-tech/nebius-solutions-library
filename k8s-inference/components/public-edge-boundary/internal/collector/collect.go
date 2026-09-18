@@ -2319,6 +2319,7 @@ func mandatorySemanticCollectionsForSchema(schema string) []string {
 		"apiserver-backend-traffic-policies",
 		"apiserver-clusterrolebindings",
 		"apiserver-clusterroles",
+		"apiserver-configmaps",
 		"apiserver-client-traffic-policies",
 		"apiserver-crds",
 		"apiserver-csrs",
@@ -2358,6 +2359,7 @@ func mandatorySemanticCollectionsForSchema(schema string) []string {
 		"apiserver-storageclasses",
 		"apiserver-tcproutes",
 		"apiserver-tlsroutes",
+		"apiserver-tls-certificate-evidence",
 		"apiserver-udproutes",
 		"apiserver-volumeattachments",
 		"ca-issued-credentials",
@@ -2374,7 +2376,8 @@ func mandatorySemanticCollectionsForSchema(schema string) []string {
 	if schema == PreviousConfigSchema {
 		legacy := collections[:0]
 		for _, collection := range collections {
-			if collection != "apiserver-envoyproxies" {
+			if collection != "apiserver-envoyproxies" && collection != "apiserver-configmaps" &&
+				collection != "apiserver-tls-certificate-evidence" {
 				legacy = append(legacy, collection)
 			}
 		}

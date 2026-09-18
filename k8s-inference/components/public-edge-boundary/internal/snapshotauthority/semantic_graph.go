@@ -1,13 +1,19 @@
 package snapshotauthority
 
 import (
+	"bytes"
+	"crypto/ed25519"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/rene-tech/nebius-solutions-library/k8s-inference/components/public-edge-boundary/internal/boundary"
 	"github.com/rene-tech/nebius-solutions-library/k8s-inference/components/public-edge-boundary/internal/collector"
@@ -27,6 +33,26 @@ var workloadCollections = []string{
 type namespacedSecretReference struct {
 	namespace string
 	name      string
+}
+
+type redisTLSHandoff struct {
+	Schema string `json:"schema"`
+	IssuerGroup string `json:"issuer_group"`
+	IssuerKind string `json:"issuer_kind"`
+	IssuerName string `json:"issuer_name"`
+	CARootSPKISHA256 string `json:"ca_root_spki_sha256"`
+	ServerSecretName string `json:"server_secret_name"`
+	ServerDNSNames []string `json:"server_dns_names"`
+	ServerExtendedKeyUsage []string `json:"server_extended_key_usage"`
+	ClientSecretName string `json:"client_secret_name"`
+	ClientSPIFFEURI string `json:"client_spiffe_uri"`
+	ClientExtendedKeyUsage []string `json:"client_extended_key_usage"`
+	MaximumLifetimeSeconds int64 `json:"maximum_lifetime_seconds"`
+	MinimumRemainingSeconds int64 `json:"minimum_remaining_seconds"`
+	Generation int64 `json:"generation"`
+	IssuedAt string `json:"issued_at"`
+	ExpiresAt string `json:"expires_at"`
+	PredecessorSHA256 string `json:"predecessor_sha256"`
 }
 
 func secretReferenceKey(reference namespacedSecretReference) string {
@@ -429,15 +455,15 @@ func validateEdgeGraph(
 	}
 	gateway, err := inventory.require(ObjectReference{"apiserver-gateways", policy.Namespace, policy.GatewayName})
 	if err != nil || stringValue(nestedObject(gateway.value, "spec")["gatewayClassName"]) != policy.GatewayClassName ||
-		!gatewayHasListeners(gateway.value, policy.HTTPListenerName, policy.HTTPSListenerName) {
+		!gatewayHasListeners(gateway.value, policy) {
 		return nil, errors.New("public Gateway does not expose the exact accepted HTTP and HTTPS listeners")
 	}
 	httpPolicy, err := inventory.require(ObjectReference{"apiserver-client-traffic-policies", policy.Namespace, policy.HTTPClientTrafficPolicyName})
-	if err != nil || validateClientTrafficPolicy(httpPolicy.value, policy.GatewayName, policy.HTTPListenerName) != nil {
+	if err != nil || validateClientTrafficPolicy(httpPolicy.value, policy.GatewayName, policy.HTTPListenerName, policy) != nil {
 		return nil, errors.New("public HTTP listener ClientTrafficPolicy is absent or unsafe")
 	}
 	httpsPolicy, err := inventory.require(ObjectReference{"apiserver-client-traffic-policies", policy.Namespace, policy.HTTPSClientTrafficPolicyName})
-	if err != nil || validateClientTrafficPolicy(httpsPolicy.value, policy.GatewayName, policy.HTTPSListenerName) != nil {
+	if err != nil || validateClientTrafficPolicy(httpsPolicy.value, policy.GatewayName, policy.HTTPSListenerName, policy) != nil {
 		return nil, errors.New("public HTTPS listener ClientTrafficPolicy is absent or unsafe")
 	}
 	backendPolicy, err := inventory.require(ObjectReference{"apiserver-backend-traffic-policies", policy.Namespace, policy.BackendTrafficPolicyName})
@@ -450,6 +476,7 @@ func validateEdgeGraph(
 		policy.HTTPListenerName,
 		policy.HTTPSListenerName,
 		policy.ProviderLoadBalancerID,
+		policy,
 	)
 	if err != nil || perSourceLimit < policy.MinimumPerSourceConnectionLimit || perSourceLimit > policy.MaximumPerSourceConnectionLimit {
 		return nil, errors.New("edge BackendTrafficPolicy does not enforce the accepted per-source rate and connection boundary")
@@ -465,13 +492,18 @@ func validateEdgeGraph(
 		{"apiserver-backend-traffic-policies", policy.Namespace, policy.BackendTrafficPolicyName},
 		{"apiserver-envoyproxies", policy.Namespace, policy.EnvoyProxyName},
 		policy.ControlPlaneWorkload,
-		{"apiserver-poddisruptionbudgets", policy.Namespace, policy.ControlPlanePDBName},
+		{"apiserver-services", policy.EnvoyGatewayControllerNamespace, policy.EnvoyGatewayControllerServiceName},
+		{"apiserver-poddisruptionbudgets", policy.EnvoyGatewayControllerNamespace, policy.ControlPlanePDBName},
 		{"apiserver-poddisruptionbudgets", policy.RateLimitPDBNamespace, policy.RateLimitPDBName},
 		{"apiserver-poddisruptionbudgets", policy.RedisPDBNamespace, policy.RedisPDBName},
 		{"apiserver-deployments", policy.RateLimitWorkloadNamespace, policy.RateLimitWorkloadName},
 		{"apiserver-statefulsets", policy.RedisWorkloadNamespace, policy.RedisWorkloadName},
 		{"apiserver-services", policy.RateLimitServiceNamespace, policy.RateLimitServiceName},
 		{"apiserver-services", policy.RedisServiceNamespace, policy.RedisServiceName},
+		{"apiserver-services", policy.RedisServiceNamespace, policy.RedisSentinelServiceName},
+		{"apiserver-configmaps", policy.RedisServiceNamespace, policy.RedisBootstrapConfigMapName},
+		policy.RedisTLSServerCertificate,
+		policy.RedisTLSClientCertificate,
 	}
 	refs = append(refs, policy.PublicRoutes...)
 	refs = append(refs, policy.PublicBackendServices...)
@@ -484,32 +516,62 @@ func validateEdgeGraph(
 		}
 		objects = append(objects, item)
 	}
-	// Fixed entries 7..9 are PDBs and 6,10,11 are their exact workloads.
-	if err := validatePDBSelectsWorkload(objects[7].value, objects[6].value); err != nil {
-		return nil, err
-	}
-	if err := validatePDBSelectsWorkload(objects[8].value, objects[10].value); err != nil {
+	// Fixed entries 8..10 are PDBs and 6,11,12 are their exact workloads.
+	if err := validatePDBSelectsWorkload(objects[8].value, objects[6].value); err != nil {
 		return nil, err
 	}
 	if err := validatePDBSelectsWorkload(objects[9].value, objects[11].value); err != nil {
 		return nil, err
 	}
-	if replicas(objects[10].value) < 2 || replicas(objects[11].value) < 3 {
-		return nil, errors.New("rate-limit or Redis workload lacks its accepted availability replica floor")
-	}
-	if !serviceSelectsWorkload(objects[12].value, objects[10].value) || !serviceSelectsWorkload(objects[13].value, objects[11].value) {
-		return nil, errors.New("rate-limit or Redis Service selector does not select its exact workload")
-	}
-	if err := validateServicePort(objects[12].value, policy.RateLimitServicePort); err != nil {
-		return nil, fmt.Errorf("rate-limit Service: %w", err)
-	}
-	if err := validateServicePort(objects[13].value, policy.RedisServicePort); err != nil {
-		return nil, fmt.Errorf("Redis Service: %w", err)
-	}
-	if err := validateRateLimitRedisBinding(objects[10], objects[11], policy); err != nil {
+	if err := validatePDBSelectsWorkload(objects[10].value, objects[12].value); err != nil {
 		return nil, err
 	}
-	baseCount := 14
+	if !workloadCarriesLabels(objects[11].value, policy.RateLimitPodSelector) || !pdbSelectorEquals(objects[9].value, policy.RateLimitPodSelector) ||
+		!pdbSelectorEquals(objects[10].value, policy.RedisPodSelector) || !pdbMinimumAvailableEquals(objects[8].value, 1) ||
+		!pdbMinimumAvailableEquals(objects[9].value, 1) || !pdbMinimumAvailableEquals(objects[10].value, 2) {
+		return nil, errors.New("edge controller, rate-limit or Redis PodDisruptionBudget differs from its exact selector or availability floor")
+	}
+	if replicas(objects[11].value) < 2 || replicas(objects[12].value) < 3 {
+		return nil, errors.New("rate-limit or Redis workload lacks its accepted availability replica floor")
+	}
+	if err := validateInternalService(objects[7].value, policy.EnvoyGatewayControllerPodSelector, false, false, []servicePortContract{
+		{name: "grpc", protocol: "TCP", port: 18000, numericTargetPort: 18000},
+		{name: "ratelimit", protocol: "TCP", port: policy.RateLimitXDSPort, numericTargetPort: policy.RateLimitXDSPort},
+		{name: "wasm", protocol: "TCP", port: 18002, numericTargetPort: 18002},
+		{name: "metrics", protocol: "TCP", port: 19001, numericTargetPort: 19001},
+	}); err != nil {
+		return nil, fmt.Errorf("Envoy Gateway xDS Service: %w", err)
+	}
+	if err := validateInternalService(objects[13].value, policy.RateLimitPodSelector, false, false, []servicePortContract{
+		{name: "grpc", protocol: "TCP", port: policy.RateLimitServicePort, numericTargetPort: policy.RateLimitServicePort},
+		{name: "metrics", protocol: "TCP", port: 19001, numericTargetPort: 19001},
+	}); err != nil {
+		return nil, fmt.Errorf("rate-limit Service: %w", err)
+	}
+	if err := validateInternalService(objects[14].value, policy.RedisPodSelector, true, true, []servicePortContract{
+		{name: "redis", protocol: "TCP", port: policy.RedisServicePort, namedTargetPort: "redis"},
+		{name: "sentinel", protocol: "TCP", port: policy.RedisSentinelPort, namedTargetPort: "sentinel"},
+	}); err != nil {
+		return nil, fmt.Errorf("Redis headless Service: %w", err)
+	}
+	if err := validateInternalService(objects[15].value, policy.RedisPodSelector, false, false, []servicePortContract{
+		{name: "sentinel", protocol: "TCP", port: policy.RedisSentinelPort, namedTargetPort: "sentinel"},
+	}); err != nil {
+		return nil, fmt.Errorf("Redis Sentinel Service: %w", err)
+	}
+	if !workloadCarriesLabels(objects[6].value, policy.EnvoyGatewayControllerPodSelector) ||
+		!objectSelectorEquals(objects[7].value, policy.EnvoyGatewayControllerPodSelector) ||
+		!pdbSelectorEquals(objects[8].value, policy.EnvoyGatewayControllerPodSelector) {
+		return nil, errors.New("Envoy Gateway Deployment, xDS Service and PodDisruptionBudget do not share the exact accepted controller identity")
+	}
+	if !workloadCarriesLabels(objects[12].value, policy.RedisPodSelector) || !objectSelectorEquals(objects[14].value, policy.RedisPodSelector) ||
+		!objectSelectorEquals(objects[15].value, policy.RedisPodSelector) {
+		return nil, errors.New("Redis StatefulSet and both Redis/Sentinel Services do not share the exact accepted full pod identity")
+	}
+	if err := validateRateLimitRedisBinding(objects[11], objects[12], objects[16], objects[17], objects[18], verified.Bundle.CollectedAt, policy); err != nil {
+		return nil, err
+	}
+	baseCount := 19
 	routeObjects := objects[baseCount : baseCount+len(policy.PublicRoutes)]
 	backendObjects := objects[baseCount+len(policy.PublicRoutes) : baseCount+len(policy.PublicRoutes)+len(policy.PublicBackendServices)]
 	networkObjects := objects[baseCount+len(policy.PublicRoutes)+len(policy.PublicBackendServices):]
@@ -517,7 +579,7 @@ func validateEdgeGraph(
 		return nil, err
 	}
 	if err := validateNoUnaccountedBackendRoutes(inventory, routeObjects, backendObjects); err != nil { return nil, err }
-	if err := validateEdgeNetworkPolicies(inventory, networkObjects, policy.NetworkPolicySpecs, objects[6], objects[10], objects[11]); err != nil {
+	if err := validateEdgeNetworkPolicies(inventory, networkObjects, policy.NetworkPolicySpecs, policy, objects[6], objects[11], objects[12]); err != nil {
 		return nil, err
 	}
 	identities := make([]boundary.ObjectIdentity, 0, len(objects))
@@ -527,14 +589,39 @@ func validateEdgeGraph(
 	return sortIdentities(identities), nil
 }
 
-func gatewayHasListeners(value map[string]any, expected ...string) bool {
+func gatewayHasListeners(value map[string]any, policy EdgeGraphPolicy) bool {
 	spec, _ := object(value["spec"])
+	listeners := array(spec["listeners"])
+	if len(listeners) != 2 || len(policy.PublicRouteHostnames) != 0 {
+		return false
+	}
 	actual := map[string]bool{}
 	for _, raw := range array(spec["listeners"]) {
 		listener, _ := object(raw)
-		actual[stringValue(listener["name"])] = true
+		name := stringValue(listener["name"])
+		protocol := stringValue(listener["protocol"])
+		port, validPort := number(listener["port"])
+		allowedRoutes, _ := object(listener["allowedRoutes"])
+		namespaces, _ := object(allowedRoutes["namespaces"])
+		kinds := array(allowedRoutes["kinds"])
+		var kind map[string]any
+		if len(kinds) == 1 {
+			kind, _ = object(kinds[0])
+		}
+		if stringValue(listener["hostname"]) != "" || !validPort || len(kinds) != 1 ||
+			stringValue(namespaces["from"]) != "Same" || stringValue(kind["group"]) != "gateway.networking.k8s.io" ||
+			stringValue(kind["kind"]) != "HTTPRoute" {
+			return false
+		}
+		if name == policy.HTTPListenerName && protocol == "HTTP" && port == 80 {
+			actual[name] = true
+		} else if name == policy.HTTPSListenerName && protocol == "HTTPS" && port == 443 {
+			actual[name] = true
+		} else {
+			return false
+		}
 	}
-	for _, name := range expected {
+	for _, name := range []string{policy.HTTPListenerName, policy.HTTPSListenerName} {
 		if name == "" || !actual[name] {
 			return false
 		}
@@ -542,7 +629,7 @@ func gatewayHasListeners(value map[string]any, expected ...string) bool {
 	return true
 }
 
-func validateClientTrafficPolicy(value map[string]any, gateway string, section string) error {
+func validateClientTrafficPolicy(value map[string]any, gateway string, section string, policy EdgeGraphPolicy) error {
 	spec, _ := object(value["spec"])
 	if !exactTargetRefs(spec["targetRefs"], gateway, []string{section}) {
 		return errors.New("ClientTrafficPolicy targetRef is not exact")
@@ -556,14 +643,24 @@ func validateClientTrafficPolicy(value map[string]any, gateway string, section s
 	http2, _ := object(spec["http2"])
 	streams, streamsValid := number(http2["maxConcurrentStreams"])
 	requests, requestsValid := number(connection["maxRequestsPerConnection"])
-	if !valid || limitValue < 1 || !hopsValid || hops < 1 || !streamsValid || streams < 1 ||
-		!requestsValid || requests < 1 || requests > 1_000_000 || stringValue(connection["maxConnectionDuration"]) == "" {
+	timeout, _ := object(spec["timeout"])
+	httpTimeout, _ := object(timeout["http"])
+	if !valid || limitValue != policy.ConnectionLimit || !hopsValid || hops != policy.TrustedHopCount ||
+		!streamsValid || streams != policy.MaximumHTTP2ConcurrentStreams || !requestsValid ||
+		requests != policy.MaximumRequestsPerConnection || stringValue(connection["maxConnectionDuration"]) != policy.MaximumConnectionDuration ||
+		stringValue(connection["maxStreamDuration"]) != policy.MaximumStreamDuration ||
+		stringValue(httpTimeout["requestReceivedTimeout"]) != policy.RequestReceivedTimeout ||
+		stringValue(httpTimeout["idleTimeout"]) != policy.IdleTimeout ||
+		stringValue(httpTimeout["streamIdleTimeout"]) != policy.StreamIdleTimeout ||
+		policy.ConnectionLimit < 1 || policy.TrustedHopCount < 1 || policy.MaximumHTTP2ConcurrentStreams < 1 ||
+		policy.MaximumRequestsPerConnection < 1 || policy.MaximumConnectionDuration == "" || policy.MaximumStreamDuration == "" ||
+		policy.RequestReceivedTimeout == "" || policy.IdleTimeout == "" || policy.StreamIdleTimeout == "" {
 		return errors.New("ClientTrafficPolicy connection boundary is incomplete")
 	}
 	return nil
 }
 
-func validateBackendTrafficPolicy(value map[string]any, gateway string, httpListener string, httpsListener string, providerID string) (int64, error) {
+func validateBackendTrafficPolicy(value map[string]any, gateway string, httpListener string, httpsListener string, providerID string, policy EdgeGraphPolicy) (int64, error) {
 	metadata, _ := object(value["metadata"])
 	annotations, _ := object(metadata["annotations"])
 	if stringValue(annotations["fs2.nebius.ai/provider-load-balancer-id"]) != providerID {
@@ -580,9 +677,17 @@ func validateBackendTrafficPolicy(value map[string]any, gateway string, httpList
 	rateLimit, _ := object(spec["rateLimit"])
 	global, _ := object(rateLimit["global"])
 	rules := array(global["rules"])
-	if len(rules) < 2 {
+	_, publicNetwork, publicCIDRErr := net.ParseCIDR(policy.PublicSourceCIDR)
+	publicPrefix, publicBits := 0, 0
+	if publicNetwork != nil { publicPrefix, publicBits = publicNetwork.Mask.Size() }
+	if len(rules) != 2 || policy.PublicSourceCIDR == "" || policy.PublicRateLimitRequests < 1 ||
+		policy.AdminPathPrefix != "/admin" || policy.AdminRateLimitRequests < 1 ||
+		policy.PublicRateLimitUnit == "" || policy.AdminRateLimitUnit == "" || publicCIDRErr != nil ||
+		publicNetwork.String() != policy.PublicSourceCIDR || publicPrefix != 0 || publicBits != 32 {
 		return 0, errors.New("BackendTrafficPolicy omits public or admin rate limits")
 	}
+	publicRule := false
+	adminRule := false
 	for _, rawRule := range rules {
 		rule, _ := object(rawRule)
 		shared, ok := rule["shared"].(bool)
@@ -593,12 +698,30 @@ func validateBackendTrafficPolicy(value map[string]any, gateway string, httpList
 		if len(selectors) != 1 {
 			return 0, errors.New("BackendTrafficPolicy rule lacks one exact client selector")
 		}
-		selector, _ := object(selectors[0])
+		selector, selectorOK := object(selectors[0])
 		sourceCIDR, _ := object(selector["sourceCIDR"])
-		if stringValue(sourceCIDR["type"]) != "Distinct" || stringValue(sourceCIDR["value"]) == "" {
+		if !selectorOK || stringValue(sourceCIDR["type"]) != "Distinct" || stringValue(sourceCIDR["value"]) != policy.PublicSourceCIDR {
 			return 0, errors.New("BackendTrafficPolicy does not isolate source CIDRs")
 		}
+		limitSpec, limitOK := object(rule["limit"])
+		requests, requestsOK := number(limitSpec["requests"])
+		unit := stringValue(limitSpec["unit"])
+		path, hasPath := object(selector["path"])
+		if !limitOK || !requestsOK { return 0, errors.New("BackendTrafficPolicy rule lacks an exact numeric budget") }
+		if !hasPath {
+			if len(selector) != 1 || requests != policy.PublicRateLimitRequests || unit != policy.PublicRateLimitUnit || publicRule {
+				return 0, errors.New("BackendTrafficPolicy public rule differs from its accepted exact budget")
+			}
+			publicRule = true
+		} else {
+			if len(selector) != 2 || stringValue(path["type"]) != "PathPrefix" || stringValue(path["value"]) != policy.AdminPathPrefix ||
+				requests != policy.AdminRateLimitRequests || unit != policy.AdminRateLimitUnit || adminRule {
+				return 0, errors.New("BackendTrafficPolicy admin rule differs from its accepted exact path and budget")
+			}
+			adminRule = true
+		}
 	}
+	if !publicRule || !adminRule { return 0, errors.New("BackendTrafficPolicy lacks one exact public and one exact admin rule") }
 	return limit, nil
 }
 
@@ -858,10 +981,15 @@ func validatePublicRoutes(inventory *semanticInventory, routes []inventoryObject
 		if backend.identity.Resource != "services" { return errors.New("public route backend is not a Service") }
 		acceptedBackends[backend.identity.Namespace+"\x00"+backend.identity.Name] = true
 	}
+	audioRules := 0
 	for _, route := range routes {
 		spec, _ := object(route.value["spec"])
+		if !sameStringSet(stringValues(array(spec["hostnames"])), policy.PublicRouteHostnames) {
+			return fmt.Errorf("route %s/%s hostname coverage differs from the exact accepted public listener coverage", route.identity.Namespace, route.identity.Name)
+		}
 		parents := array(spec["parentRefs"])
 		parentMatched := false
+		parentSection := ""
 		if len(parents) != 1 { return fmt.Errorf("route %s/%s has additional or missing Gateway parents", route.identity.Namespace, route.identity.Name) }
 		for _, rawParent := range parents {
 			parent, _ := object(rawParent)
@@ -872,12 +1000,27 @@ func validatePublicRoutes(inventory *semanticInventory, routes []inventoryObject
 				(stringValue(parent["kind"]) == "" || stringValue(parent["kind"]) == "Gateway") &&
 				parentNamespace == policy.Namespace && stringValue(parent["name"]) == policy.GatewayName && (section == policy.HTTPListenerName || section == policy.HTTPSListenerName) {
 				parentMatched = true
+				parentSection = section
 			}
 		}
 		if !parentMatched { return fmt.Errorf("route %s/%s is not attached to an exact public Gateway listener", route.identity.Namespace, route.identity.Name) }
 		backendCount := 0
-		for _, rawRule := range array(spec["rules"]) {
+		for ruleIndex, rawRule := range array(spec["rules"]) {
 			rule, _ := object(rawRule)
+			if ruleMatchesExactPath(rule, policy.AudioStreamPath) {
+				if parentSection != policy.HTTPSListenerName || ruleIndex != 0 {
+					return errors.New("public audio rule is not the first rule on the exact HTTPS listener")
+				}
+				timeouts, _ := object(rule["timeouts"])
+				if policy.AudioStreamPath != "/v1/audio/stream" || policy.AudioStreamRequestTimeout == "" || policy.AudioStreamBackendRequestTimeout == "" ||
+					stringValue(timeouts["request"]) != policy.AudioStreamRequestTimeout ||
+					stringValue(timeouts["backendRequest"]) != policy.AudioStreamBackendRequestTimeout {
+					return errors.New("public audio route differs from its accepted exact path and timeout contract")
+				}
+				audioRules++
+			} else if ruleCompetesWithExactPath(rule, policy.AudioStreamPath) {
+				return errors.New("public routes contain a competing exact or regular-expression audio rule")
+			}
 			for _, rawRef := range array(rule["backendRefs"]) {
 				ref, _ := object(rawRef)
 				group := stringValue(ref["group"])
@@ -898,7 +1041,43 @@ func validatePublicRoutes(inventory *semanticInventory, routes []inventoryObject
 		}
 		if backendCount == 0 { return errors.New("public route has no exact backend Service") }
 	}
+	if audioRules != 1 { return errors.New("public routes do not contain exactly one accepted audio streaming timeout rule") }
 	return nil
+}
+
+func ruleMatchesExactPath(rule map[string]any, expected string) bool {
+	if expected == "" { return false }
+	matches := array(rule["matches"])
+	if len(matches) != 1 { return false }
+	match, ok := object(matches[0])
+	if !ok || !onlyObjectKeys(match, "path") { return false }
+	path, ok := object(match["path"])
+	return ok && onlyObjectKeys(path, "type", "value") && stringValue(path["type"]) == "Exact" && stringValue(path["value"]) == expected
+}
+
+func ruleCompetesWithExactPath(rule map[string]any, expected string) bool {
+	if expected == "" {
+		return true
+	}
+	for _, rawMatch := range array(rule["matches"]) {
+		match, ok := object(rawMatch)
+		if !ok {
+			return true
+		}
+		path, hasPath := object(match["path"])
+		if !hasPath {
+			continue
+		}
+		typeName := stringValue(path["type"])
+		value := stringValue(path["value"])
+		if typeName == "RegularExpression" || typeName == "Exact" && value == expected {
+			return true
+		}
+		if typeName != "Exact" && typeName != "PathPrefix" {
+			return true
+		}
+	}
+	return false
 }
 
 func hasReferenceGrant(inventory *semanticInventory, route inventoryObject, backendNamespace string, backendName string) bool {
@@ -934,46 +1113,718 @@ func validatePDBSelectsWorkload(pdb map[string]any, workload map[string]any) err
 	return nil
 }
 
-func validateServicePort(service map[string]any, expected int64) error {
-	if expected < 1 || expected > 65535 { return errors.New("accepted Service port is invalid") }
-	spec, _ := object(service["spec"])
-	matches := 0
-	for _, raw := range array(spec["ports"]) {
-		port, _ := object(raw)
-		value, valid := number(port["port"])
-		if valid && value == expected { matches++ }
-	}
-	if matches != 1 { return errors.New("Service does not expose one exact accepted port") }
-	return nil
-}
-
-func validateRateLimitRedisBinding(rateLimit inventoryObject, redis inventoryObject, policy EdgeGraphPolicy) error {
-	podSpec, err := workloadPodSpec(rateLimit)
-	if err != nil { return err }
-	expectedAddress := policy.RedisServiceName+"."+policy.RedisServiceNamespace+".svc:"+strconv.FormatInt(policy.RedisServicePort, 10)
-	addressBound := false
-	tlsBound := false
-	for _, rawContainer := range array(podSpec["containers"]) {
-		container, _ := object(rawContainer)
-		for _, rawEnv := range array(container["env"]) {
-			env, _ := object(rawEnv)
-			if stringValue(env["name"]) == "REDIS_ADDRESS" && stringValue(env["value"]) == expectedAddress { addressBound = true }
-			if stringValue(env["name"]) == "REDIS_TLS_ENABLED" && stringValue(env["value"]) == "true" { tlsBound = true }
+func workloadCarriesLabels(workload map[string]any, expected map[string]string) bool {
+	spec, _ := object(workload["spec"])
+	template, _ := object(spec["template"])
+	metadata, _ := object(template["metadata"])
+	labels, _ := object(metadata["labels"])
+	for name, value := range expected {
+		if stringValue(labels[name]) != value {
+			return false
 		}
 	}
-	secretBound := false
-	for _, rawVolume := range array(podSpec["volumes"]) {
+	return len(expected) > 0
+}
+
+func objectSelectorEquals(value map[string]any, expected map[string]string) bool {
+	spec, _ := object(value["spec"])
+	selector, _ := object(spec["selector"])
+	if len(selector) != len(expected) {
+		return false
+	}
+	for name, value := range expected {
+		if stringValue(selector[name]) != value {
+			return false
+		}
+	}
+	return len(expected) > 0
+}
+
+func pdbSelectorEquals(value map[string]any, expected map[string]string) bool {
+	spec, _ := object(value["spec"])
+	selector, _ := object(spec["selector"])
+	return exactMatchLabelsSelector(selector, expected)
+}
+
+func pdbMinimumAvailableEquals(value map[string]any, expected int64) bool {
+	spec, _ := object(value["spec"])
+	minimum, valid := number(spec["minAvailable"])
+	return valid && minimum == expected
+}
+
+type servicePortContract struct {
+	name string
+	protocol string
+	port int64
+	numericTargetPort int64
+	namedTargetPort string
+}
+
+func validateInternalService(service map[string]any, selector map[string]string, headless bool, publishNotReady bool, expectedPorts []servicePortContract) error {
+	spec, specOK := object(service["spec"])
+	actualSelector, selectorOK := object(spec["selector"])
+	clusterIP := stringValue(spec["clusterIP"])
+	clusterIPs := stringValues(array(spec["clusterIPs"]))
+	if !specOK || !selectorOK || !objectStringMapEquals(actualSelector, selector) || stringValue(spec["type"]) != "ClusterIP" ||
+		boolValue(spec["publishNotReadyAddresses"]) != publishNotReady || len(array(spec["externalIPs"])) != 0 ||
+		stringValue(spec["externalName"]) != "" || stringValue(spec["loadBalancerIP"]) != "" ||
+		stringValue(spec["loadBalancerClass"]) != "" || len(array(spec["loadBalancerSourceRanges"])) != 0 {
+		return errors.New("Service identity, selector or internal-only exposure contract is invalid")
+	}
+	if headless {
+		if clusterIP != "None" || len(clusterIPs) != 1 || clusterIPs[0] != "None" {
+			return errors.New("headless Service does not use the exact None clusterIP contract")
+		}
+	} else if clusterIP == "" || clusterIP == "None" || len(clusterIPs) != 1 || clusterIPs[0] != clusterIP {
+		return errors.New("internal Service does not have one exact allocated ClusterIP")
+	}
+	ports := array(spec["ports"])
+	if len(ports) != len(expectedPorts) || len(ports) == 0 {
+		return errors.New("Service port inventory differs from the exact accepted contract")
+	}
+	expectedByName := map[string]servicePortContract{}
+	for _, expected := range expectedPorts {
+		if expected.name == "" || expected.protocol != "TCP" || expected.port < 1 || expected.port > 65535 || expectedByName[expected.name].name != "" ||
+			(expected.numericTargetPort == 0) == (expected.namedTargetPort == "") {
+			return errors.New("accepted Service port contract is malformed")
+		}
+		expectedByName[expected.name] = expected
+	}
+	seen := map[string]bool{}
+	for _, rawPort := range ports {
+		port, ok := object(rawPort)
+		name := stringValue(port["name"])
+		expected, accepted := expectedByName[name]
+		value, validValue := number(port["port"])
+		nodePort, hasNodePort := number(port["nodePort"])
+		if !ok || !accepted || seen[name] || stringValue(port["protocol"]) != expected.protocol || !validValue || value != expected.port ||
+			stringValue(port["appProtocol"]) != "" || hasNodePort && nodePort != 0 || !targetPortEquals(port["targetPort"], expected) {
+			return errors.New("Service carries an extra, externally exposed or inexact port")
+		}
+		seen[name] = true
+	}
+	return len(seen) == len(expectedByName)
+}
+
+func targetPortEquals(value any, expected servicePortContract) bool {
+	if expected.namedTargetPort != "" {
+		text, ok := value.(string)
+		return ok && text == expected.namedTargetPort
+	}
+	numberValue, ok := number(value)
+	return ok && numberValue == expected.numericTargetPort
+}
+
+func objectStringMapEquals(actual map[string]any, expected map[string]string) bool {
+	if len(actual) != len(expected) || len(expected) == 0 {
+		return false
+	}
+	for name, value := range expected {
+		if stringValue(actual[name]) != value {
+			return false
+		}
+	}
+	return true
+}
+
+func validateRateLimitRedisBinding(rateLimit inventoryObject, redis inventoryObject, bootstrap inventoryObject, serverCertificate inventoryObject, clientCertificate inventoryObject, collectedAt string, policy EdgeGraphPolicy) error {
+	rateLimitPodSpec, err := workloadPodSpec(rateLimit)
+	if err != nil { return err }
+	redisPodSpec, err := workloadPodSpec(redis)
+	if err != nil { return err }
+	bootstrapData, dataOK := object(bootstrap.value["data"])
+	bootstrapRaw, bootstrapErr := json.Marshal(bootstrapData)
+	if !dataOK || bootstrapErr != nil || digestBytes(bootstrapRaw) != policy.RedisBootstrapConfigDataSHA256 {
+		return errors.New("Redis/Sentinel bootstrap bytes do not match the independently accepted exact configuration digest")
+	}
+	if err := validateRedisTLSHandoff(bootstrapData, collectedAt, policy); err != nil {
+		return err
+	}
+	if err := validateRedisTLSCertificateEvidence(serverCertificate, clientCertificate, collectedAt, policy); err != nil {
+		return err
+	}
+	if policy.RedisSentinelMasterName == "" || policy.RedisSentinelPort < 1 || policy.RedisSentinelPort > 65535 ||
+		len(policy.RedisSentinelEndpoints) != 3 || !canonicalNonemptyStrings(policy.RedisSentinelEndpoints) {
+		return errors.New("accepted Redis Sentinel discovery contract is incomplete")
+	}
+	expectedEndpoints := make([]string, 0, 3)
+	for ordinal := 0; ordinal < 3; ordinal++ {
+		expectedEndpoints = append(expectedEndpoints, fmt.Sprintf("%s-%d.%s.%s.svc.cluster.local:%d", policy.RedisWorkloadName, ordinal, policy.RedisServiceName, policy.RedisServiceNamespace, policy.RedisSentinelPort))
+	}
+	if !sameStringSet(policy.RedisSentinelEndpoints, expectedEndpoints) {
+		return errors.New("accepted Redis Sentinel endpoints are not the exact three StatefulSet identities")
+	}
+	expectedURL := policy.RedisSentinelMasterName+","+strings.Join(policy.RedisSentinelEndpoints, ",")
+	requiredEnvironment := map[string]string{
+		"REDIS_TYPE": "sentinel",
+		"REDIS_URL": expectedURL,
+		"REDIS_CLOSE_CONNECTION_ON_READONLY_ERROR": "true",
+		"REDIS_HEALTH_CHECK_ACTIVE_CONNECTION": "true",
+		"REDIS_TLS": "true",
+		"REDIS_TLS_SKIP_HOSTNAME_VERIFICATION": "false",
+		"REDIS_TLS_CACERT": "/redis-client-tls/ca.crt",
+		"REDIS_TLS_CLIENT_CERT": "/redis-client-tls/tls.crt",
+		"REDIS_TLS_CLIENT_KEY": "/redis-client-tls/tls.key",
+		"CONFIG_TYPE": "GRPC_XDS_SOTW",
+		"CONFIG_GRPC_XDS_SERVER_URL": policy.RateLimitXDSAddress,
+	}
+	containers := array(rateLimitPodSpec["containers"])
+	if len(containers) != 1 || len(array(rateLimitPodSpec["initContainers"])) != 0 || len(array(rateLimitPodSpec["ephemeralContainers"])) != 0 ||
+		!explicitBool(rateLimitPodSpec["automountServiceAccountToken"], false) || boolValue(rateLimitPodSpec["hostNetwork"]) ||
+		boolValue(rateLimitPodSpec["hostPID"]) || boolValue(rateLimitPodSpec["hostIPC"]) || boolValue(rateLimitPodSpec["shareProcessNamespace"]) ||
+		stringValue(rateLimitPodSpec["serviceAccountName"]) != policy.RateLimitServiceAccountName || stringValue(rateLimitPodSpec["dnsPolicy"]) != "ClusterFirst" ||
+		len(nestedObject(rateLimitPodSpec, "dnsConfig")) != 0 || len(array(rateLimitPodSpec["hostAliases"])) != 0 ||
+		stringValue(rateLimitPodSpec["runtimeClassName"]) != "" || stringValue(rateLimitPodSpec["hostname"]) != "" ||
+		stringValue(rateLimitPodSpec["subdomain"]) != "" || boolValue(rateLimitPodSpec["setHostnameAsFQDN"]) ||
+		!exactRateLimitPodSecurityContext(rateLimitPodSpec, policy) {
+		return errors.New("rate-limit workload broadens the exact single-container nonroot Pod execution contract")
+	}
+	container, containerOK := object(containers[0])
+	if !containerOK || stringValue(container["name"]) != "envoy-ratelimit" || stringValue(container["image"]) != policy.RateLimitContainerImage ||
+		stringValue(container["imagePullPolicy"]) != "IfNotPresent" || len(array(container["command"])) != 0 || len(array(container["args"])) != 0 ||
+		len(array(container["envFrom"])) != 0 || !exactRateLimitEnvironment(container, requiredEnvironment) ||
+		!exactRateLimitContainerSecurityContext(container, policy) || !exactRateLimitContainerPorts(container) || !exactRateLimitResources(container) ||
+		!exactVolumeMounts(container, map[string]volumeMountContract{
+			"ratelimit-tmp": {path: "/tmp"},
+			"redis-client-tls": {path: "/redis-client-tls", readOnly: true},
+		}) || !rateLimitVolumeBackingIsExact(rateLimitPodSpec, policy) {
+		return errors.New("envoy-ratelimit image, environment, ports, resources, security context, mounts or volume backing differs from the exact accepted contract")
+	}
+	redisSecretBound := false
+	bootstrapBound := false
+	redisTLSContainers := map[string]bool{"redis": false, "sentinel": false}
+	for _, rawVolume := range array(redisPodSpec["volumes"]) {
 		volume, _ := object(rawVolume)
 		secret, _ := object(volume["secret"])
-		if stringValue(secret["secretName"]) == policy.RedisTLSSecretName { secretBound = true }
+		if stringValue(volume["name"]) == "redis-server-tls" && stringValue(secret["secretName"]) == policy.RedisTLSServerSecretName { redisSecretBound = true }
+		configMap, _ := object(volume["configMap"])
+		if stringValue(volume["name"]) == "bootstrap" && stringValue(configMap["name"]) == policy.RedisBootstrapConfigMapName { bootstrapBound = true }
 	}
-	if !addressBound || !tlsBound || !secretBound || replicas(redis.value) < 3 {
-		return errors.New("rate-limit workload does not bind the exact TLS Redis service and availability floor")
+	for _, rawContainer := range array(redisPodSpec["containers"]) {
+		container, _ := object(rawContainer)
+		name := stringValue(container["name"])
+		if _, required := redisTLSContainers[name]; !required { continue }
+		for _, rawMount := range array(container["volumeMounts"]) {
+			mount, _ := object(rawMount)
+			if stringValue(mount["name"]) == "redis-server-tls" && stringValue(mount["mountPath"]) == "/redis-server-tls" && boolValue(mount["readOnly"]) { redisTLSContainers[name] = true }
+		}
+	}
+	if !workloadAnnotationEquals(rateLimit.value, "fs2.nebius.ai/redis-tls-handoff-sha256", policy.RedisTLSHandoffSHA256) ||
+		!workloadAnnotationEquals(redis.value, "fs2.nebius.ai/redis-tls-handoff-sha256", policy.RedisTLSHandoffSHA256) ||
+		!redisBootstrapExecutionIsExact(redisPodSpec) || !redisTLSProbesAreExact(redisPodSpec) || !redisVolumeBackingIsExact(redisPodSpec, policy) ||
+		!redisSecretBound || !bootstrapBound || !redisTLSContainers["redis"] || !redisTLSContainers["sentinel"] || replicas(redis.value) < 3 {
+		return errors.New("rate-limit and Redis/Sentinel workloads do not bind the exact mutual-TLS Sentinel authority and availability floor")
 	}
 	return nil
 }
 
-func validateEdgeNetworkPolicies(inventory *semanticInventory, policies []inventoryObject, contracts []NetworkPolicySpecContract, workloads ...inventoryObject) error {
+func exactRateLimitPodSecurityContext(podSpec map[string]any, policy EdgeGraphPolicy) bool {
+	context, ok := object(podSpec["securityContext"])
+	uid, uidOK := number(context["runAsUser"])
+	gid, gidOK := number(context["runAsGroup"])
+	fsGroup, fsGroupOK := number(context["fsGroup"])
+	seccomp, seccompOK := object(context["seccompProfile"])
+	return ok && onlyObjectKeys(context, "runAsNonRoot", "runAsUser", "runAsGroup", "fsGroup", "fsGroupChangePolicy", "seccompProfile") &&
+		explicitBool(context["runAsNonRoot"], true) && uidOK && uid == policy.RateLimitRuntimeUID &&
+		gidOK && gid == policy.RateLimitRuntimeGID && fsGroupOK && fsGroup == policy.RateLimitTLSReaderGID &&
+		stringValue(context["fsGroupChangePolicy"]) == "OnRootMismatch" && seccompOK &&
+		onlyObjectKeys(seccomp, "type", "localhostProfile") && stringValue(seccomp["type"]) == "RuntimeDefault" && stringValue(seccomp["localhostProfile"]) == ""
+}
+
+func exactRateLimitContainerSecurityContext(container map[string]any, policy EdgeGraphPolicy) bool {
+	context, ok := object(container["securityContext"])
+	uid, uidOK := number(context["runAsUser"])
+	gid, gidOK := number(context["runAsGroup"])
+	capabilities, capabilitiesOK := object(context["capabilities"])
+	seccomp, seccompOK := object(context["seccompProfile"])
+	return ok && onlyObjectKeys(context, "allowPrivilegeEscalation", "privileged", "readOnlyRootFilesystem", "runAsNonRoot", "runAsUser", "runAsGroup", "capabilities", "seccompProfile") &&
+		explicitBool(context["allowPrivilegeEscalation"], false) && explicitBool(context["privileged"], false) &&
+		explicitBool(context["readOnlyRootFilesystem"], true) && explicitBool(context["runAsNonRoot"], true) &&
+		uidOK && uid == policy.RateLimitRuntimeUID && gidOK && gid == policy.RateLimitRuntimeGID &&
+		capabilitiesOK && onlyObjectKeys(capabilities, "add", "drop") && len(array(capabilities["add"])) == 0 &&
+		sameOrderedStrings(stringValues(array(capabilities["drop"])), []string{"ALL"}) && seccompOK &&
+		onlyObjectKeys(seccomp, "type", "localhostProfile") && stringValue(seccomp["type"]) == "RuntimeDefault" && stringValue(seccomp["localhostProfile"]) == ""
+}
+
+func exactRateLimitEnvironment(container map[string]any, expected map[string]string) bool {
+	environment := array(container["env"])
+	if len(environment) != len(expected) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, raw := range environment {
+		entry, ok := object(raw)
+		name := stringValue(entry["name"])
+		if !ok || !onlyObjectKeys(entry, "name", "value") || seen[name] || expected[name] != stringValue(entry["value"]) {
+			return false
+		}
+		seen[name] = true
+	}
+	return len(seen) == len(expected)
+}
+
+func exactRateLimitContainerPorts(container map[string]any) bool {
+	expected := map[string]int64{"grpc": 8081, "metrics": 19001}
+	ports := array(container["ports"])
+	if len(ports) != len(expected) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, raw := range ports {
+		port, ok := object(raw)
+		name := stringValue(port["name"])
+		containerPort, portOK := number(port["containerPort"])
+		hostPort, hasHostPort := number(port["hostPort"])
+		if !ok || !onlyObjectKeys(port, "name", "containerPort", "protocol", "hostIP", "hostPort") || seen[name] ||
+			!portOK || expected[name] != containerPort || stringValue(port["protocol"]) != "TCP" || stringValue(port["hostIP"]) != "" || hasHostPort && hostPort != 0 {
+			return false
+		}
+		seen[name] = true
+	}
+	return len(seen) == len(expected)
+}
+
+func exactRateLimitResources(container map[string]any) bool {
+	resources, ok := object(container["resources"])
+	requests, requestsOK := object(resources["requests"])
+	limits, limitsOK := object(resources["limits"])
+	return ok && onlyObjectKeys(resources, "requests", "limits", "claims") && len(array(resources["claims"])) == 0 &&
+		requestsOK && limitsOK && objectStringMapEquals(requests, map[string]string{"cpu": "100m", "memory": "128Mi"}) &&
+		objectStringMapEquals(limits, map[string]string{"cpu": "500m", "memory": "256Mi"})
+}
+
+func rateLimitVolumeBackingIsExact(podSpec map[string]any, policy EdgeGraphPolicy) bool {
+	volumes := array(podSpec["volumes"])
+	if len(volumes) != 2 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, raw := range volumes {
+		volume, ok := object(raw)
+		name := stringValue(volume["name"])
+		if !ok || seen[name] {
+			return false
+		}
+		switch name {
+		case "ratelimit-tmp":
+			emptyDir, exists := object(volume["emptyDir"])
+			if !exists || !onlyObjectKeys(volume, "name", "emptyDir") || !onlyObjectKeys(emptyDir, "sizeLimit", "medium") ||
+				stringValue(emptyDir["sizeLimit"]) != "64Mi" || stringValue(emptyDir["medium"]) != "" {
+				return false
+			}
+		case "redis-client-tls":
+			secret, exists := object(volume["secret"])
+			mode, validMode := number(secret["defaultMode"])
+			if !exists || !onlyObjectKeys(volume, "name", "secret") || stringValue(secret["secretName"]) != policy.RedisTLSClientSecretName ||
+				!validMode || mode != policy.RateLimitTLSSecretDefaultMode || !exactTLSSecretItems(secret) {
+				return false
+			}
+		default:
+			return false
+		}
+		seen[name] = true
+	}
+	return len(seen) == 2
+}
+
+func validateRedisTLSHandoff(bootstrapData map[string]any, collectedAt string, policy EdgeGraphPolicy) error {
+	rawText := stringValue(bootstrapData["tls-handoff-envelope.json"])
+	raw := []byte(rawText)
+	if rawText == "" || len(raw) > 64*1024 || digestBytes(raw) != policy.RedisTLSHandoffSHA256 {
+		return errors.New("Redis TLS handoff envelope is absent or differs from its independently accepted digest")
+	}
+	var envelope boundary.SignedEnvelope
+	if err := boundary.DecodeExactJSON(raw, &envelope); err != nil {
+		return errors.New("Redis TLS handoff envelope is not exact JSON")
+	}
+	canonicalEnvelope, err := json.Marshal(envelope)
+	if err != nil || !bytes.Equal(canonicalEnvelope, raw) || envelope.Schema != "fs2-serve.nebius.ai/edge-rate-limit-redis-tls-handoff-envelope/v1" ||
+		envelope.Algorithm != "ed25519" || envelope.Issuer != policy.RedisTLSHandoffIssuer || envelope.KeyID != policy.RedisTLSHandoffKeyID {
+		return errors.New("Redis TLS handoff envelope is non-canonical or signed by an unaccepted identity")
+	}
+	payloadRaw, err := base64.StdEncoding.Strict().DecodeString(envelope.PayloadBase64)
+	if err != nil || base64.StdEncoding.EncodeToString(payloadRaw) != envelope.PayloadBase64 || digestBytes(payloadRaw) != envelope.PayloadSHA256 {
+		return errors.New("Redis TLS handoff payload does not match its exact bytes")
+	}
+	publicKey, keyErr := base64.StdEncoding.Strict().DecodeString(policy.RedisTLSHandoffPublicKey)
+	signature, signatureErr := base64.RawURLEncoding.Strict().DecodeString(envelope.Signature)
+	message := bytes.Join([][]byte{
+		[]byte(envelope.Schema),
+		[]byte(envelope.Issuer),
+		[]byte(envelope.KeyID),
+		[]byte(envelope.PayloadSHA256),
+		payloadRaw,
+	}, []byte("\n"))
+	if keyErr != nil || signatureErr != nil || len(publicKey) != ed25519.PublicKeySize || len(signature) != ed25519.SignatureSize ||
+		!ed25519.Verify(ed25519.PublicKey(publicKey), message, signature) {
+		return errors.New("Redis TLS handoff signature is invalid")
+	}
+	var handoff redisTLSHandoff
+	if err := boundary.DecodeExactJSON(payloadRaw, &handoff); err != nil {
+		return errors.New("Redis TLS handoff payload is not exact JSON")
+	}
+	canonicalPayload, err := json.Marshal(handoff)
+	if err != nil || !bytes.Equal(canonicalPayload, payloadRaw) || handoff.Schema != "fs2-serve.nebius.ai/edge-rate-limit-redis-tls-handoff/v1" {
+		return errors.New("Redis TLS handoff payload is not canonical")
+	}
+	issuedAt, issueErr := time.Parse(time.RFC3339, handoff.IssuedAt)
+	expiresAt, expiryErr := time.Parse(time.RFC3339, handoff.ExpiresAt)
+	observedAt, observedErr := time.Parse(time.RFC3339, collectedAt)
+	if issueErr != nil || expiryErr != nil || observedErr != nil || issuedAt.Nanosecond() != 0 || expiresAt.Nanosecond() != 0 ||
+		observedAt.Nanosecond() != 0 || observedAt.Before(issuedAt) || !observedAt.Before(expiresAt) ||
+		expiresAt.Sub(issuedAt) > time.Duration(policy.RedisTLSMaximumLifetimeSeconds)*time.Second ||
+		expiresAt.Sub(observedAt) < time.Duration(policy.RedisTLSMinimumRemainingSeconds)*time.Second ||
+		handoff.Generation < policy.RedisTLSMinimumHandoffGeneration || !isDigestText(handoff.PredecessorSHA256) {
+		return errors.New("Redis TLS handoff is stale, rolled back or outside its accepted rotation window")
+	}
+	if handoff.IssuerGroup != policy.RedisTLSIssuerGroup || handoff.IssuerKind != policy.RedisTLSIssuerKind || handoff.IssuerName != policy.RedisTLSIssuerName ||
+		handoff.CARootSPKISHA256 != policy.RedisTLSCARootSPKISHA256 || handoff.ServerSecretName != policy.RedisTLSServerSecretName ||
+		handoff.ClientSecretName != policy.RedisTLSClientSecretName || !sameStringSet(handoff.ServerDNSNames, policy.RedisTLSServerDNSNames) ||
+		!sameStringSet(handoff.ServerExtendedKeyUsage, []string{"client auth", "server auth"}) ||
+		handoff.ClientSPIFFEURI != policy.RedisTLSClientSPIFFEURI || !sameStringSet(handoff.ClientExtendedKeyUsage, []string{"client auth"}) ||
+		handoff.MaximumLifetimeSeconds != policy.RedisTLSMaximumLifetimeSeconds || handoff.MinimumRemainingSeconds != policy.RedisTLSMinimumRemainingSeconds {
+		return errors.New("Redis TLS handoff differs from the independently accepted issuer, identity, SAN, EKU or rotation contract")
+	}
+	return nil
+}
+
+func validateRedisTLSCertificateEvidence(server inventoryObject, client inventoryObject, collectedAt string, policy EdgeGraphPolicy) error {
+	if server.identity.Namespace != policy.RedisServiceNamespace || server.identity.Name != policy.RedisTLSServerSecretName ||
+		client.identity.Namespace != policy.RedisServiceNamespace || client.identity.Name != policy.RedisTLSClientSecretName ||
+		server.kind != "Secret" || client.kind != "Secret" || stringValue(server.value["type"]) != "kubernetes.io/tls" ||
+		stringValue(client.value["type"]) != "kubernetes.io/tls" {
+		return errors.New("Redis TLS certificate evidence does not bind the two exact distinct Secret identities")
+	}
+	observedAt, err := time.Parse(time.RFC3339, collectedAt)
+	if err != nil || observedAt.Nanosecond() != 0 {
+		return errors.New("Redis TLS certificate evidence collection time is invalid")
+	}
+	serverRoot, serverChain, err := redisTLSCertificateChain(server.value)
+	if err != nil {
+		return fmt.Errorf("Redis server/replication certificate: %w", err)
+	}
+	clientRoot, clientChain, err := redisTLSCertificateChain(client.value)
+	if err != nil {
+		return fmt.Errorf("rate-limit client certificate: %w", err)
+	}
+	if !bytes.Equal(serverRoot.Raw, clientRoot.Raw) || digestBytes(serverRoot.RawSubjectPublicKeyInfo) != policy.RedisTLSCARootSPKISHA256 ||
+		!serverRoot.IsCA || !serverRoot.BasicConstraintsValid || serverRoot.KeyUsage&x509.KeyUsageCertSign == 0 ||
+		serverRoot.CheckSignatureFrom(serverRoot) != nil {
+		return errors.New("Redis TLS certificates do not chain to the one exact independently accepted security CA")
+	}
+	serverLeaf := serverChain[0]
+	clientLeaf := clientChain[0]
+	if bytes.Equal(serverLeaf.Raw, clientLeaf.Raw) || bytes.Equal(serverLeaf.RawSubjectPublicKeyInfo, clientLeaf.RawSubjectPublicKeyInfo) {
+		return errors.New("Redis server/replication and rate-limit client identities reuse a leaf or public key")
+	}
+	if !sameStringSet(serverLeaf.DNSNames, policy.RedisTLSServerDNSNames) || len(serverLeaf.URIs) != 0 ||
+		!exactExtKeyUsages(serverLeaf, x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth) {
+		return errors.New("Redis server/replication leaf lacks its exact DNS SAN and serverAuth/clientAuth identity")
+	}
+	if len(clientLeaf.DNSNames) != 0 || len(clientLeaf.URIs) != 1 || clientLeaf.URIs[0].String() != policy.RedisTLSClientSPIFFEURI ||
+		!exactExtKeyUsages(clientLeaf, x509.ExtKeyUsageClientAuth) {
+		return errors.New("rate-limit client leaf lacks its exact clientAuth-only SPIFFE identity")
+	}
+	for _, certificate := range []*x509.Certificate{serverLeaf, clientLeaf} {
+		if observedAt.Before(certificate.NotBefore) || !observedAt.Before(certificate.NotAfter) ||
+			certificate.NotAfter.Sub(certificate.NotBefore) > time.Duration(policy.RedisTLSMaximumLifetimeSeconds)*time.Second ||
+			certificate.NotAfter.Sub(observedAt) < time.Duration(policy.RedisTLSMinimumRemainingSeconds)*time.Second {
+			return errors.New("Redis TLS leaf is outside the accepted current rotation window")
+		}
+	}
+	if err := verifyRedisTLSChain(serverChain, serverRoot, observedAt, x509.ExtKeyUsageServerAuth); err != nil {
+		return err
+	}
+	if err := verifyRedisTLSChain(serverChain, serverRoot, observedAt, x509.ExtKeyUsageClientAuth); err != nil {
+		return err
+	}
+	if err := verifyRedisTLSChain(clientChain, clientRoot, observedAt, x509.ExtKeyUsageClientAuth); err != nil {
+		return err
+	}
+	return nil
+}
+
+func redisTLSCertificateChain(value map[string]any) (*x509.Certificate, []*x509.Certificate, error) {
+	evidence, ok := object(value["certificate"])
+	if !ok || !onlyObjectKeys(evidence, "ca_pem_base64", "leaf_pem_base64") {
+		return nil, nil, errors.New("public certificate projection is absent or contains unapproved fields")
+	}
+	roots, err := parseCertificatePEMBase64(stringValue(evidence["ca_pem_base64"]))
+	if err != nil || len(roots) != 1 {
+		return nil, nil, errors.New("CA projection is not one canonical certificate")
+	}
+	chain, err := parseCertificatePEMBase64(stringValue(evidence["leaf_pem_base64"]))
+	if err != nil || len(chain) == 0 {
+		return nil, nil, errors.New("leaf projection is not a canonical certificate chain")
+	}
+	return roots[0], chain, nil
+}
+
+func parseCertificatePEMBase64(encoded string) ([]*x509.Certificate, error) {
+	raw, err := base64.StdEncoding.Strict().DecodeString(encoded)
+	if err != nil || base64.StdEncoding.EncodeToString(raw) != encoded || len(raw) == 0 || len(raw) > 4*1024*1024 {
+		return nil, errors.New("certificate projection is not canonical bounded base64")
+	}
+	certificates := []*x509.Certificate{}
+	for len(raw) > 0 {
+		block, trailing := pem.Decode(raw)
+		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			return nil, errors.New("certificate projection contains a malformed PEM object")
+		}
+		certificate, err := x509.ParseCertificate(block.Bytes)
+		if err != nil {
+			return nil, errors.New("certificate projection contains invalid DER")
+		}
+		certificates = append(certificates, certificate)
+		raw = trailing
+	}
+	return certificates, nil
+}
+
+func verifyRedisTLSChain(chain []*x509.Certificate, root *x509.Certificate, at time.Time, usage x509.ExtKeyUsage) error {
+	roots := x509.NewCertPool()
+	roots.AddCert(root)
+	intermediates := x509.NewCertPool()
+	for _, certificate := range chain[1:] {
+		if !certificate.IsCA || !certificate.BasicConstraintsValid || certificate.KeyUsage&x509.KeyUsageCertSign == 0 {
+			return errors.New("Redis TLS chain contains an invalid intermediate CA")
+		}
+		intermediates.AddCert(certificate)
+	}
+	verified, err := chain[0].Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, CurrentTime: at, KeyUsages: []x509.ExtKeyUsage{usage}})
+	if err != nil || len(verified) != 1 || !bytes.Equal(verified[0][len(verified[0])-1].Raw, root.Raw) {
+		return errors.New("Redis TLS leaf does not form one exact enrolled issuer chain")
+	}
+	return nil
+}
+
+func exactExtKeyUsages(certificate *x509.Certificate, expected ...x509.ExtKeyUsage) bool {
+	if certificate == nil || len(certificate.ExtKeyUsage) != len(expected) {
+		return false
+	}
+	actual := map[x509.ExtKeyUsage]bool{}
+	for _, usage := range certificate.ExtKeyUsage {
+		if actual[usage] {
+			return false
+		}
+		actual[usage] = true
+	}
+	for _, usage := range expected {
+		if !actual[usage] {
+			return false
+		}
+	}
+	return true
+}
+
+func workloadAnnotationEquals(value map[string]any, name string, expected string) bool {
+	spec, _ := object(value["spec"])
+	template, _ := object(spec["template"])
+	metadata, _ := object(template["metadata"])
+	annotations, _ := object(metadata["annotations"])
+	return expected != "" && stringValue(annotations[name]) == expected
+}
+
+func redisBootstrapExecutionIsExact(podSpec map[string]any) bool {
+	initContainers := array(podSpec["initContainers"])
+	containers := array(podSpec["containers"])
+	if len(initContainers) != 1 || len(containers) != 2 {
+		return false
+	}
+	configure, _ := object(initContainers[0])
+	if stringValue(configure["name"]) != "configure" || !sameOrderedStrings(stringValues(array(configure["command"])), []string{"/bin/sh", "/bootstrap/configure.sh"}) ||
+		len(array(configure["args"])) != 0 || !exactVolumeMounts(configure, map[string]volumeMountContract{
+			"bootstrap": {path: "/bootstrap", readOnly: true},
+			"configuration": {path: "/work"},
+			"data": {path: "/data"},
+		}) {
+		return false
+	}
+	redisFound := false
+	sentinelFound := false
+	for _, rawContainer := range containers {
+		container, _ := object(rawContainer)
+		switch stringValue(container["name"]) {
+		case "redis":
+			redisFound = sameOrderedStrings(stringValues(array(container["command"])), []string{"/bin/sh", "/bootstrap/run-redis.sh"}) &&
+				len(array(container["args"])) == 0 && exactVolumeMounts(container, map[string]volumeMountContract{
+					"bootstrap": {path: "/bootstrap", readOnly: true},
+					"configuration": {path: "/work"},
+					"data": {path: "/data"},
+					"redis-server-tls": {path: "/redis-server-tls", readOnly: true},
+				})
+		case "sentinel":
+			sentinelFound = sameOrderedStrings(stringValues(array(container["command"])), []string{"redis-server", "/work/sentinel.conf", "--sentinel"}) &&
+				len(array(container["args"])) == 0 && exactVolumeMounts(container, map[string]volumeMountContract{
+					"bootstrap": {path: "/bootstrap", readOnly: true},
+					"configuration": {path: "/work"},
+					"redis-server-tls": {path: "/redis-server-tls", readOnly: true},
+				})
+		default:
+			return false
+		}
+	}
+	return redisFound && sentinelFound
+}
+
+type volumeMountContract struct {
+	path string
+	readOnly bool
+}
+
+func exactVolumeMounts(container map[string]any, expected map[string]volumeMountContract) bool {
+	mounts := array(container["volumeMounts"])
+	if len(mounts) != len(expected) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, rawMount := range mounts {
+		mount, ok := object(rawMount)
+		name := stringValue(mount["name"])
+		contract, accepted := expected[name]
+		if !ok || !onlyObjectKeys(mount, "name", "mountPath", "readOnly") || !accepted || seen[name] ||
+			stringValue(mount["mountPath"]) != contract.path || boolValue(mount["readOnly"]) != contract.readOnly {
+			return false
+		}
+		seen[name] = true
+	}
+	return len(seen) == len(expected)
+}
+
+func exactTLSSecretItems(secret map[string]any) bool {
+	if !onlyObjectKeys(secret, "secretName", "defaultMode", "items", "optional") || boolValue(secret["optional"]) {
+		return false
+	}
+	expected := map[string]string{"ca.crt": "ca.crt", "tls.crt": "tls.crt", "tls.key": "tls.key"}
+	items := array(secret["items"])
+	if len(items) != len(expected) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, rawItem := range items {
+		item, ok := object(rawItem)
+		key := stringValue(item["key"])
+		if !ok || !onlyObjectKeys(item, "key", "path", "mode") || item["mode"] != nil || expected[key] != stringValue(item["path"]) || seen[key] {
+			return false
+		}
+		seen[key] = true
+	}
+	return len(seen) == len(expected)
+}
+
+func redisVolumeBackingIsExact(podSpec map[string]any, policy EdgeGraphPolicy) bool {
+	volumes := array(podSpec["volumes"])
+	if len(volumes) != 4 {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, rawVolume := range volumes {
+		volume, ok := object(rawVolume)
+		name := stringValue(volume["name"])
+		if !ok || seen[name] {
+			return false
+		}
+		switch name {
+		case "bootstrap":
+			if !onlyObjectKeys(volume, "name", "configMap") {
+				return false
+			}
+			configMap, exists := object(volume["configMap"])
+			mode, validMode := number(configMap["defaultMode"])
+			if !exists || !onlyObjectKeys(configMap, "name", "defaultMode", "items", "optional") ||
+				stringValue(configMap["name"]) != policy.RedisBootstrapConfigMapName || !validMode || mode != 0444 ||
+				len(array(configMap["items"])) != 0 || boolValue(configMap["optional"]) {
+				return false
+			}
+		case "configuration":
+			emptyDir, exists := object(volume["emptyDir"])
+			if !exists || !onlyObjectKeys(volume, "name", "emptyDir") || !onlyObjectKeys(emptyDir, "sizeLimit", "medium") ||
+				stringValue(emptyDir["sizeLimit"]) != "16Mi" || stringValue(emptyDir["medium"]) != "" {
+				return false
+			}
+		case "data":
+			emptyDir, exists := object(volume["emptyDir"])
+			if !exists || !onlyObjectKeys(volume, "name", "emptyDir") || !onlyObjectKeys(emptyDir, "sizeLimit", "medium") ||
+				stringValue(emptyDir["sizeLimit"]) != "512Mi" || stringValue(emptyDir["medium"]) != "" {
+				return false
+			}
+		case "redis-server-tls":
+			secret, exists := object(volume["secret"])
+			mode, validMode := number(secret["defaultMode"])
+			if !exists || !onlyObjectKeys(volume, "name", "secret") || stringValue(secret["secretName"]) != policy.RedisTLSServerSecretName ||
+				!validMode || mode != 0440 || !exactTLSSecretItems(secret) {
+				return false
+			}
+		default:
+			return false
+		}
+		seen[name] = true
+	}
+	return len(seen) == 4
+}
+
+func redisTLSProbesAreExact(podSpec map[string]any) bool {
+	redisReady := []string{"/bin/sh", "/bootstrap/ready.sh"}
+	redisLive := []string{"/bin/sh", "/bootstrap/ping-redis.sh"}
+	sentinelProbe := []string{"/bin/sh", "/bootstrap/ping-sentinel.sh"}
+	matched := 0
+	for _, rawContainer := range array(podSpec["containers"]) {
+		container, _ := object(rawContainer)
+		readiness, _ := object(container["readinessProbe"])
+		readinessExec, _ := object(readiness["exec"])
+		liveness, _ := object(container["livenessProbe"])
+		livenessExec, _ := object(liveness["exec"])
+		switch stringValue(container["name"]) {
+		case "redis":
+			if !sameOrderedStrings(stringValues(array(readinessExec["command"])), redisReady) || !sameOrderedStrings(stringValues(array(livenessExec["command"])), redisLive) {
+				return false
+			}
+			matched++
+		case "sentinel":
+			if !sameOrderedStrings(stringValues(array(readinessExec["command"])), sentinelProbe) || !sameOrderedStrings(stringValues(array(livenessExec["command"])), sentinelProbe) {
+				return false
+			}
+			matched++
+		}
+	}
+	return matched == 2
+}
+
+func containerHasReadOnlyMount(container map[string]any, name string, path string) bool {
+	for _, rawMount := range array(container["volumeMounts"]) {
+		mount, _ := object(rawMount)
+		if stringValue(mount["name"]) == name && stringValue(mount["mountPath"]) == path && boolValue(mount["readOnly"]) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringValues(values []any) []string {
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			return nil
+		}
+		result = append(result, text)
+	}
+	return result
+}
+
+func sameOrderedStrings(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func validateEdgeNetworkPolicies(inventory *semanticInventory, policies []inventoryObject, contracts []NetworkPolicySpecContract, edgePolicy EdgeGraphPolicy, workloads ...inventoryObject) error {
 	if len(policies) == 0 { return errors.New("edge graph lacks accepted NetworkPolicy isolation") }
 	accepted := map[string]bool{}
 	contractByPolicy := map[string]string{}
@@ -990,8 +1841,15 @@ func validateEdgeNetworkPolicies(inventory *semanticInventory, policies []invent
 		accepted[key] = true
 	}
 	if len(accepted) != len(contractByPolicy) { return errors.New("edge NetworkPolicy spec contracts contain missing or extra objects") }
+	if len(workloads) != 3 {
+		return errors.New("edge NetworkPolicy validation lacks the exact controller, rate-limit and Redis workloads")
+	}
 	selectedPolicies := map[string]bool{}
-	for _, workload := range workloads {
+	// The source-controlled foundation owns the RLS and Redis policies, so both
+	// workloads must have explicit default-deny ingress and egress. The retained
+	// control-plane chart policy is the exact ingress-only controller isolation
+	// owner; validateControllerXDSIngress requires its proxy and RLS xDS peers.
+	for _, workload := range workloads[1:] {
 		workloadSpec, _ := object(workload.value["spec"])
 		template, _ := object(workloadSpec["template"])
 		metadata, _ := object(template["metadata"])
@@ -1026,8 +1884,175 @@ func validateEdgeNetworkPolicies(inventory *semanticInventory, policies []invent
 		}
 		if !ingressSelected || !egressSelected || !ingressDefaultDeny || !egressDefaultDeny { return fmt.Errorf("edge workload %s/%s lacks exact additive default-deny ingress and egress NetworkPolicy isolation", workload.identity.Namespace, workload.identity.Name) }
 	}
+	if err := validateRateLimitPolicyUnion(inventory, accepted, workloads[1], edgePolicy); err != nil {
+		return err
+	}
+	if err := validateControllerXDSIngress(inventory, accepted, selectedPolicies, workloads[0], edgePolicy); err != nil {
+		return err
+	}
 	if len(selectedPolicies) != len(accepted) { return errors.New("accepted NetworkPolicy union includes an unrelated non-edge selector") }
 	return nil
+}
+
+func validateRateLimitPolicyUnion(inventory *semanticInventory, accepted map[string]bool, workload inventoryObject, policy EdgeGraphPolicy) error {
+	workloadSpec, _ := object(workload.value["spec"])
+	template, _ := object(workloadSpec["template"])
+	metadata, _ := object(template["metadata"])
+	labels, _ := object(metadata["labels"])
+	required := map[string]int{
+		"ingress-envoy": 0,
+		"ingress-metrics": 0,
+		"egress-redis": 0,
+		"egress-dns": 0,
+		"egress-xds": 0,
+	}
+	for _, item := range inventory.byCollection["apiserver-networkpolicies"] {
+		if item.identity.Namespace != workload.identity.Namespace || !accepted[item.identity.Namespace+"\x00"+item.identity.Name] {
+			continue
+		}
+		spec, _ := object(item.value["spec"])
+		selector, _ := object(spec["podSelector"])
+		matches, err := exactLabelSelectorMatches(selector, labels)
+		if err != nil || !matches {
+			continue
+		}
+		for _, rawRule := range array(spec["ingress"]) {
+			rule, _ := object(rawRule)
+			switch {
+			case exactNetworkPolicyRule(rule, "from", map[string]string{"kubernetes.io/metadata.name": policy.EnvoyProxyNamespace}, policy.EnvoyProxyPodSelector, map[string]int64{"TCP": policy.RateLimitServicePort}):
+				required["ingress-envoy"]++
+			case exactNetworkPolicyRule(rule, "from", map[string]string{"kubernetes.io/metadata.name": "fs2-observability"}, map[string]string{"app.kubernetes.io/name": "prometheus"}, map[string]int64{"TCP": 19001}):
+				required["ingress-metrics"]++
+			default:
+				return fmt.Errorf("rate-limit NetworkPolicy %s/%s contains an unaccepted ingress peer or port", item.identity.Namespace, item.identity.Name)
+			}
+		}
+		for _, rawRule := range array(spec["egress"]) {
+			rule, _ := object(rawRule)
+			switch {
+			case exactNetworkPolicyRule(rule, "to", nil, policy.RedisPodSelector, map[string]int64{"TCP/6379": 6379, "TCP/26379": 26379}):
+				required["egress-redis"]++
+			case exactNetworkPolicyRule(rule, "to", map[string]string{"kubernetes.io/metadata.name": "kube-system"}, map[string]string{"k8s-app": "kube-dns"}, map[string]int64{"UDP/53": 53, "TCP/53": 53}):
+				required["egress-dns"]++
+			case exactNetworkPolicyRule(rule, "to", map[string]string{"kubernetes.io/metadata.name": policy.EnvoyGatewayControllerNamespace}, policy.EnvoyGatewayControllerPodSelector, map[string]int64{"TCP": policy.RateLimitXDSPort}):
+				required["egress-xds"]++
+			default:
+				return fmt.Errorf("rate-limit NetworkPolicy %s/%s contains an unaccepted egress peer or port", item.identity.Namespace, item.identity.Name)
+			}
+		}
+	}
+	for name, count := range required {
+		if count != 1 {
+			return fmt.Errorf("rate-limit NetworkPolicy union requires exactly one %s rule", name)
+		}
+	}
+	return nil
+}
+
+func validateControllerXDSIngress(inventory *semanticInventory, accepted map[string]bool, selectedPolicies map[string]bool, workload inventoryObject, policy EdgeGraphPolicy) error {
+	workloadSpec, _ := object(workload.value["spec"])
+	template, _ := object(workloadSpec["template"])
+	metadata, _ := object(template["metadata"])
+	labels, _ := object(metadata["labels"])
+	proxyMatches := 0
+	rateLimitMatches := 0
+	isolated := false
+	for _, item := range inventory.byCollection["apiserver-networkpolicies"] {
+		if item.identity.Namespace != workload.identity.Namespace {
+			continue
+		}
+		spec, _ := object(item.value["spec"])
+		selector, _ := object(spec["podSelector"])
+		selected, err := exactLabelSelectorMatches(selector, labels)
+		if err != nil {
+			return fmt.Errorf("NetworkPolicy %s/%s selector is invalid: %w", item.identity.Namespace, item.identity.Name, err)
+		}
+		if !selected {
+			continue
+		}
+		policyKey := item.identity.Namespace+"\x00"+item.identity.Name
+		if !accepted[policyKey] {
+			return fmt.Errorf("unaccounted NetworkPolicy %s/%s additively changes the Envoy Gateway controller policy union", item.identity.Namespace, item.identity.Name)
+		}
+		selectedPolicies[policyKey] = true
+		rawTypes := array(spec["policyTypes"])
+		types := stringSet(rawTypes)
+		if len(rawTypes) != 1 || len(types) != 1 || !types["Ingress"] || len(array(spec["egress"])) != 0 {
+			return fmt.Errorf("Envoy Gateway controller NetworkPolicy %s/%s is not exact ingress-only isolation", item.identity.Namespace, item.identity.Name)
+		}
+		isolated = true
+		for _, rawRule := range array(spec["ingress"]) {
+			rule, _ := object(rawRule)
+			switch {
+			case exactNetworkPolicyRule(rule, "from", map[string]string{"kubernetes.io/metadata.name": policy.EnvoyProxyNamespace}, policy.EnvoyProxyPodSelector, map[string]int64{"TCP": 18000}):
+				proxyMatches++
+			case exactNetworkPolicyRule(rule, "from", map[string]string{"kubernetes.io/metadata.name": policy.RateLimitWorkloadNamespace}, policy.RateLimitPodSelector, map[string]int64{"TCP": policy.RateLimitXDSPort}):
+				rateLimitMatches++
+			default:
+				return fmt.Errorf("Envoy Gateway controller NetworkPolicy %s/%s contains an unaccepted ingress peer or port", item.identity.Namespace, item.identity.Name)
+			}
+		}
+	}
+	if !isolated || proxyMatches != 1 || rateLimitMatches != 1 {
+		return errors.New("Envoy Gateway controller requires one exact proxy/18000 rule and one exact rate-limit/18001 rule under ingress isolation")
+	}
+	return nil
+}
+
+func exactNetworkPolicyRule(rule map[string]any, peerField string, namespaceLabels map[string]string, podLabels map[string]string, expectedPorts map[string]int64) bool {
+	if !onlyObjectKeys(rule, peerField, "ports") {
+		return false
+	}
+	peers := array(rule[peerField])
+	ports := array(rule["ports"])
+	if len(peers) != 1 || len(ports) != len(expectedPorts) {
+		return false
+	}
+	peer, ok := object(peers[0])
+	if !ok || !onlyObjectKeys(peer, "namespaceSelector", "podSelector") {
+		return false
+	}
+	namespaceSelector, hasNamespace := object(peer["namespaceSelector"])
+	podSelector, hasPod := object(peer["podSelector"])
+	if hasNamespace != (namespaceLabels != nil) || hasPod != (podLabels != nil) ||
+		hasNamespace && !exactMatchLabelsSelector(namespaceSelector, namespaceLabels) ||
+		hasPod && !exactMatchLabelsSelector(podSelector, podLabels) {
+		return false
+	}
+	seen := map[string]bool{}
+	for _, rawPort := range ports {
+		port, ok := object(rawPort)
+		if !ok || !onlyObjectKeys(port, "protocol", "port") {
+			return false
+		}
+		protocol := stringValue(port["protocol"])
+		value, valid := number(port["port"])
+		key := protocol
+		if len(expectedPorts) > 1 {
+			key = fmt.Sprintf("%s/%d", protocol, value)
+		}
+		if !valid || seen[key] || expectedPorts[key] != value {
+			return false
+		}
+		seen[key] = true
+	}
+	return len(seen) == len(expectedPorts)
+}
+
+func exactMatchLabelsSelector(selector map[string]any, expected map[string]string) bool {
+	if !onlyObjectKeys(selector, "matchLabels") {
+		return false
+	}
+	labels, ok := object(selector["matchLabels"])
+	if !ok || len(labels) != len(expected) {
+		return false
+	}
+	for name, value := range expected {
+		if stringValue(labels[name]) != value {
+			return false
+		}
+	}
+	return true
 }
 
 func exactLabelSelectorMatches(selector map[string]any, labels map[string]any) (bool, error) {
@@ -1105,6 +2130,10 @@ func validateNetworkPolicyRules(rules []any, peerField string) error {
 }
 
 func boolCount(value bool) int { if value { return 1 }; return 0 }
+
+func boolValue(value any) bool { result, _ := value.(bool); return result }
+
+func explicitBool(value any, expected bool) bool { result, ok := value.(bool); return ok && result == expected }
 
 func onlyObjectKeys(value map[string]any, allowed ...string) bool {
 	accepted := map[string]bool{}

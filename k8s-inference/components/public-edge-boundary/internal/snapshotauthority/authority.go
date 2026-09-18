@@ -325,8 +325,133 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 	for _, values := range [][]string{config.Policy.AllowedRequestHeaderProxyCommonNames, config.Policy.RequestHeaderUsernameHeaders, config.Policy.RequestHeaderGroupHeaders, config.Policy.RequestHeaderExtraHeaderPrefixes} {
 		for _, value := range values { if len(value) > 256 || strings.ContainsAny(value, ",\x00\r\n") { return errors.New("snapshot request-header identity mapping contains an unsafe or ambiguous value") } }
 	}
+	if config.Schema == ConfigSchema {
+		if err := validateEdgePolicyEnrollment(config.Policy.Edge); err != nil { return err }
+	}
 	if err := validateAcceptedSemanticPolicy(config, acceptance); err != nil { return err }
 	return validateSettlementCapacityContract(config)
+}
+
+func validateEdgePolicyEnrollment(policy EdgeGraphPolicy) error {
+	handoffPublicKey, handoffPublicKeyErr := base64.StdEncoding.Strict().DecodeString(policy.RedisTLSHandoffPublicKey)
+	expectedRedisServerDNSNames := []string{
+		policy.RedisServiceName + "." + policy.RedisServiceNamespace + ".svc.cluster.local",
+		policy.RedisSentinelServiceName + "." + policy.RedisServiceNamespace + ".svc.cluster.local",
+	}
+	for ordinal := 0; ordinal < 3; ordinal++ {
+		expectedRedisServerDNSNames = append(expectedRedisServerDNSNames, fmt.Sprintf("%s-%d.%s.%s.svc.cluster.local", policy.RedisWorkloadName, ordinal, policy.RedisServiceName, policy.RedisServiceNamespace))
+	}
+	sort.Strings(expectedRedisServerDNSNames)
+	if policy.Namespace == "" || policy.GatewayClassName == "" || policy.GatewayName == "" || policy.HTTPListenerName == "" || policy.HTTPSListenerName == "" ||
+		policy.HTTPClientTrafficPolicyName == "" || policy.HTTPSClientTrafficPolicyName == "" || policy.BackendTrafficPolicyName == "" || policy.EnvoyProxyName == "" ||
+		policy.RedisTLSServerSecretName == "" || policy.RedisTLSClientSecretName == "" || policy.RedisTLSServerSecretName == policy.RedisTLSClientSecretName ||
+		policy.RedisSentinelServiceName == "" || policy.RedisSentinelMasterName == "" || policy.RedisBootstrapConfigMapName == "" ||
+		!isDigestText(policy.RedisBootstrapConfigDataSHA256) || !isDigestText(policy.RedisTLSHandoffSHA256) || !isDigestText(policy.RedisTLSCARootSPKISHA256) ||
+		policy.RedisTLSHandoffIssuer == "" || len(policy.RedisTLSHandoffIssuer) > 128 || strings.ContainsAny(policy.RedisTLSHandoffIssuer, "\x00\r\n") ||
+		policy.RedisTLSHandoffKeyID == "" || len(policy.RedisTLSHandoffKeyID) > 128 || strings.ContainsAny(policy.RedisTLSHandoffKeyID, "\x00\r\n") ||
+		handoffPublicKeyErr != nil || len(handoffPublicKey) != ed25519.PublicKeySize || base64.StdEncoding.EncodeToString(handoffPublicKey) != policy.RedisTLSHandoffPublicKey ||
+		policy.RedisTLSServerCertificate.SemanticCollection != "apiserver-tls-certificate-evidence" ||
+		policy.RedisTLSServerCertificate.Namespace != policy.RedisServiceNamespace || policy.RedisTLSServerCertificate.Name != policy.RedisTLSServerSecretName ||
+		policy.RedisTLSClientCertificate.SemanticCollection != "apiserver-tls-certificate-evidence" ||
+		policy.RedisTLSClientCertificate.Namespace != policy.RedisServiceNamespace || policy.RedisTLSClientCertificate.Name != policy.RedisTLSClientSecretName ||
+		policy.RedisTLSIssuerGroup != "cert-manager.io" || (policy.RedisTLSIssuerKind != "Issuer" && policy.RedisTLSIssuerKind != "ClusterIssuer") ||
+		policy.RedisTLSIssuerName == "" || len(policy.RedisTLSIssuerName) > 253 || strings.ContainsAny(policy.RedisTLSIssuerName, "\x00\r\n") ||
+		policy.RedisTLSMinimumHandoffGeneration < 1 ||
+		!sameStringSet(policy.RedisTLSServerDNSNames, expectedRedisServerDNSNames) || !canonicalNonemptyStrings(policy.RedisTLSServerDNSNames) ||
+		policy.RedisTLSClientSPIFFEURI != "spiffe://fs2.nebius.ai/edge-rate-limit/client" ||
+		policy.RedisTLSMaximumLifetimeSeconds != 604800 || policy.RedisTLSMinimumRemainingSeconds != 86400 ||
+		policy.RateLimitRuntimeUID != 65534 || policy.RateLimitRuntimeGID != 65534 || !acceptedServiceAccountName(policy.RateLimitServiceAccountName) ||
+		!digestQualifiedImage(policy.RateLimitContainerImage) || policy.RateLimitTLSReaderGID != 65534 ||
+		policy.RateLimitTLSSecretDefaultMode != 0440 || policy.RateLimitXDSAddress != "envoy-gateway:18001" || policy.RateLimitXDSPort != 18001 ||
+		len(policy.RateLimitPodSelector) != 1 || !acceptedExactLabelSelector(policy.RateLimitPodSelector, map[string]string{"fs2.nebius.ai/edge-rate-limit-service": "true"}, 1) ||
+		!acceptedEnvoyGatewayReleaseName(policy.EnvoyGatewayReleaseName) ||
+		policy.EnvoyGatewayControllerNamespace != policy.RateLimitWorkloadNamespace || len(policy.EnvoyGatewayControllerPodSelector) != 3 ||
+		policy.EnvoyGatewayControllerServiceName != "envoy-gateway" || policy.EnvoyGatewayControllerPodSelector["control-plane"] != "envoy-gateway" ||
+		policy.EnvoyGatewayReleaseName != policy.EnvoyGatewayControllerPodSelector["app.kubernetes.io/instance"] ||
+		policy.EnvoyGatewayControllerPodSelector["app.kubernetes.io/name"] != "gateway-helm" ||
+		policy.EnvoyProxyNamespace != policy.EnvoyGatewayControllerNamespace ||
+		!acceptedExactLabelSelector(policy.EnvoyProxyPodSelector, map[string]string{
+			"app.kubernetes.io/component": "proxy", "app.kubernetes.io/managed-by": "envoy-gateway",
+			"app.kubernetes.io/name": "envoy", "gateway.envoyproxy.io/owning-gateway-name": policy.GatewayName,
+			"gateway.envoyproxy.io/owning-gateway-namespace": policy.Namespace,
+		}, 5) ||
+		policy.ControlPlaneWorkload.SemanticCollection != "apiserver-deployments" || policy.ControlPlaneWorkload.Namespace != policy.EnvoyGatewayControllerNamespace ||
+		policy.ControlPlaneWorkload.Name != "envoy-gateway" || policy.ControlPlanePDBName == "" ||
+		len(policy.RedisPodSelector) != 6 || policy.RedisPodSelector["app.kubernetes.io/name"] != "fs2-edge-rate-limit-redis" ||
+		policy.RedisPodSelector["app.kubernetes.io/component"] != "edge-rate-limit-store" || policy.RedisPodSelector["app.kubernetes.io/managed-by"] != "terraform" ||
+		policy.RedisPodSelector["app.kubernetes.io/part-of"] != "fs2-serve" || policy.RedisPodSelector["fs2.nebius.ai/environment"] != "disposable" ||
+		policy.RedisPodSelector["fs2.nebius.ai/run-id"] == "" || len(policy.RedisPodSelector["fs2.nebius.ai/run-id"]) > 128 ||
+		strings.ContainsAny(policy.RedisPodSelector["fs2.nebius.ai/run-id"], "\x00\r\n") ||
+		policy.RedisServicePort != 6379 || policy.RedisSentinelPort != 26379 || len(policy.RedisSentinelEndpoints) != 3 || !canonicalNonemptyStrings(policy.RedisSentinelEndpoints) ||
+		policy.PublicSourceCIDR != "0.0.0.0/0" || policy.PublicRateLimitRequests != 200 || policy.PublicRateLimitUnit != "Second" ||
+		policy.AdminPathPrefix != "/admin" || policy.AdminRateLimitRequests != 30 || policy.AdminRateLimitUnit != "Minute" ||
+		policy.TrustedHopCount < 1 || policy.ConnectionLimit != 2000 || policy.MaximumRequestsPerConnection != 1000 ||
+		policy.MaximumConnectionDuration != "7800s" || policy.MaximumStreamDuration != "7500s" ||
+		policy.RequestReceivedTimeout != "60s" || policy.IdleTimeout != "5m" || policy.StreamIdleTimeout != "5m" ||
+		policy.MaximumHTTP2ConcurrentStreams != 100 || policy.AudioStreamPath != "/v1/audio/stream" ||
+		policy.AudioStreamRequestTimeout != "7500s" || policy.AudioStreamBackendRequestTimeout != "7500s" || len(policy.PublicRouteHostnames) != 0 ||
+		policy.MinimumPerSourceConnectionLimit < 1 || policy.MaximumPerSourceConnectionLimit > 128 ||
+		policy.MinimumPerSourceConnectionLimit > policy.MaximumPerSourceConnectionLimit || len(policy.NetworkPolicies) == 0 ||
+		len(policy.NetworkPolicies) != len(policy.NetworkPolicySpecs) {
+		return errors.New("snapshot edge policy is incomplete or differs from the source-controlled exact connection, rate-limit, Sentinel and isolation contract")
+	}
+	return nil
+}
+
+func acceptedExactLabelSelector(selector map[string]string, required map[string]string, maximum int) bool {
+	if len(selector) < len(required) || len(selector) > maximum {
+		return false
+	}
+	for name, value := range selector {
+		if name == "" || value == "" || len(name) > 253 || len(value) > 63 || strings.ContainsAny(name+value, "\x00\r\n") {
+			return false
+		}
+	}
+	for name, value := range required {
+		if selector[name] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func digestQualifiedImage(image string) bool {
+	separator := strings.LastIndex(image, "@sha256:")
+	return separator > 0 && !strings.ContainsAny(image, "\x00\r\n ") && isDigestText(image[separator+len("@sha256:"):])
+}
+
+func acceptedEnvoyGatewayReleaseName(name string) bool {
+	if !strings.HasPrefix(name, "fs2-") || !strings.HasSuffix(name, "-envoy") {
+		return false
+	}
+	runID := strings.TrimSuffix(strings.TrimPrefix(name, "fs2-"), "-envoy")
+	if len(runID) < 6 || len(runID) > 12 || runID[0] < 'a' || runID[0] > 'z' {
+		return false
+	}
+	for _, character := range runID {
+		if character < 'a' || character > 'z' {
+			if character < '0' || character > '9' {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func acceptedServiceAccountName(name string) bool {
+	if len(name) < 1 || len(name) > 63 || name[0] < 'a' || name[0] > 'z' || name[len(name)-1] == '-' {
+		return false
+	}
+	for _, character := range name {
+		if character < 'a' || character > 'z' {
+			if character < '0' || character > '9' {
+				if character != '-' {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // ValidateEnrollmentConfig validates the complete canonical configuration before

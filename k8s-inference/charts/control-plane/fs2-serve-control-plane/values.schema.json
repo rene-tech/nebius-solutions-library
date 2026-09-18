@@ -2410,7 +2410,9 @@
           "required": [
             "namespaceLabels",
             "podLabels",
-            "port"
+            "retainedPolicyPodLabels",
+            "port",
+            "rateLimitPort"
           ],
           "properties": {
             "namespaceLabels": {
@@ -2419,14 +2421,36 @@
               }
             },
             "podLabels": {
+              "type": "object",
+              "required": [
+                "app.kubernetes.io/instance",
+                "app.kubernetes.io/name",
+                "control-plane"
+              ],
+              "properties": {
+                "app.kubernetes.io/instance": {
+                  "type": "string",
+                  "pattern": "^fs2-(owner-required|[a-z][a-z0-9]{5,11})-envoy$"
+                },
+                "app.kubernetes.io/name": {
+                  "const": "gateway-helm"
+                },
+                "control-plane": {
+                  "const": "envoy-gateway"
+                }
+              },
+              "additionalProperties": false
+            },
+            "retainedPolicyPodLabels": {
               "const": {
-                "app.kubernetes.io/instance": "envoy-gateway",
-                "app.kubernetes.io/name": "gateway-helm",
-                "control-plane": "envoy-gateway"
+                "fs2.nebius.ai/retained-network-policy": "fs2-serve-control-plane-envoy-controller-xds"
               }
             },
             "port": {
               "const": 18000
+            },
+            "rateLimitPort": {
+              "const": 18001
             }
           }
         },
@@ -2440,6 +2464,7 @@
           "required": [
             "namespaceLabels",
             "podLabels",
+            "retainedPolicyPodLabels",
             "port"
           ],
           "properties": {
@@ -2451,6 +2476,11 @@
             "podLabels": {
               "const": {
                 "fs2.nebius.ai/edge-rate-limit-service": "true"
+              }
+            },
+            "retainedPolicyPodLabels": {
+              "const": {
+                "fs2.nebius.ai/retained-network-policy": "fs2-serve-control-plane-envoy-rate-limit"
               }
             },
             "port": {
@@ -2478,10 +2508,37 @@
               }
             },
             "podLabels": {
-              "const": {
-                "app.kubernetes.io/name": "fs2-edge-rate-limit-redis",
-                "app.kubernetes.io/component": "edge-rate-limit-store"
-              }
+              "type": "object",
+              "required": [
+                "app.kubernetes.io/name",
+                "app.kubernetes.io/component",
+                "app.kubernetes.io/managed-by",
+                "app.kubernetes.io/part-of",
+                "fs2.nebius.ai/environment",
+                "fs2.nebius.ai/run-id"
+              ],
+              "properties": {
+                "app.kubernetes.io/name": {
+                  "const": "fs2-edge-rate-limit-redis"
+                },
+                "app.kubernetes.io/component": {
+                  "const": "edge-rate-limit-store"
+                },
+                "app.kubernetes.io/managed-by": {
+                  "const": "terraform"
+                },
+                "app.kubernetes.io/part-of": {
+                  "const": "fs2-serve"
+                },
+                "fs2.nebius.ai/environment": {
+                  "const": "disposable"
+                },
+                "fs2.nebius.ai/run-id": {
+                  "type": "string",
+                  "pattern": "^(owner-required|[a-z][a-z0-9]{5,11})$"
+                }
+              },
+              "additionalProperties": false
             },
             "port": {
               "const": 6379

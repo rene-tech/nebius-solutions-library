@@ -35,8 +35,20 @@ config:
               maxUnavailable: 0
               maxSurge: 1
           pod:
+            automountServiceAccountToken: false
             labels:
               fs2.nebius.ai/edge-rate-limit-service: "true"
+            # The pinned RLS image runs as nobody (65534). Projected client-key
+            # files are 0440 and kubelet assigns this exact group, so neither a
+            # world-readable key nor an image-specific root workaround is needed.
+            securityContext:
+              runAsNonRoot: true
+              runAsUser: 65534
+              runAsGroup: 65534
+              fsGroup: 65534
+              fsGroupChangePolicy: OnRootMismatch
+              seccompProfile:
+                type: RuntimeDefault
             nodeSelector:
               workload.fs2.nebius/system: "true"
             topologySpreadConstraints:
@@ -46,16 +58,26 @@ config:
                 labelSelector:
                   matchLabels:
                     fs2.nebius.ai/edge-rate-limit-service: "true"
+            volumes:
+              - name: ratelimit-tmp
+                emptyDir:
+                  sizeLimit: 64Mi
           container:
-            env:
-              - name: REDIS_TYPE
-                value: sentinel
-              # Reconnect instead of retaining a pooled connection to a
-              # demoted primary after Sentinel failover.
-              - name: REDIS_CLOSE_CONNECTION_ON_READONLY_ERROR
-                value: "true"
-              - name: REDIS_HEALTH_CHECK_ACTIVE_CONNECTION
-                value: "true"
+            imagePullPolicy: IfNotPresent
+            securityContext:
+              allowPrivilegeEscalation: false
+              privileged: false
+              readOnlyRootFilesystem: true
+              runAsNonRoot: true
+              runAsUser: 65534
+              runAsGroup: 65534
+              capabilities:
+                drop: [ALL]
+              seccompProfile:
+                type: RuntimeDefault
+            volumeMounts:
+              - name: ratelimit-tmp
+                mountPath: /tmp
             resources:
               requests:
                 cpu: 100m

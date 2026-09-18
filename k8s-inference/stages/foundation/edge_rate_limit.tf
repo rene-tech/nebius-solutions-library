@@ -3,6 +3,14 @@ locals {
   edge_rate_limit_redis_headless_name = "${local.edge_rate_limit_redis_name}-headless"
   edge_rate_limit_redis_sentinel_name = "${local.edge_rate_limit_redis_name}-sentinel"
   edge_rate_limit_redis_master_name   = "fs2-edge-rate-limit"
+  edge_rate_limit_redis_server_tls_secret_name = var.public_edge_redis_tls_handoff.server_secret_name
+  edge_rate_limit_redis_client_tls_secret_name = var.public_edge_redis_tls_handoff.client_secret_name
+  edge_rate_limit_redis_tls_handoff_sha256     = sha256(var.public_edge_redis_tls_handoff.envelope_json)
+  edge_rate_limit_redis_cli = local.public_edge_enabled ? "redis-cli --tls --cacert /redis-server-tls/ca.crt --cert /redis-server-tls/tls.crt --key /redis-server-tls/tls.key" : "redis-cli"
+  edge_rate_limit_redis_server_dns_names = sort(concat([
+    "${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local",
+    "${local.edge_rate_limit_redis_sentinel_name}.envoy-gateway-system.svc.cluster.local",
+  ], [for ordinal in range(3) : "${local.edge_rate_limit_redis_name}-${ordinal}.${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"]))
   # Immutable linux/amd64 manifest recorded by docker-library/repo-info for
   # Redis 8.10.0. This source pin still requires the normal independent image
   # scan and promotion gate before any deployment.
@@ -19,6 +27,10 @@ locals {
     "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
     "kubernetes_pod_disruption_budget_v1.edge_rate_limit_service",
     "kubernetes_network_policy_v1.edge_rate_limit_redis",
+    "kubernetes_network_policy_v1.edge_rate_limit_redis_default_deny",
+    "kubernetes_network_policy_v1.edge_rate_limit_service",
+    "kubernetes_network_policy_v1.edge_rate_limit_service_default_deny",
+    "kubernetes_network_policy_v1.edge_gateway_controller_xds",
   ], local.public_edge_enabled ? [
     "terraform_data.public_edge_apply_eligibility[0]",
     "kubernetes_manifest.public_edge_node_authority_cas_policy[0]",
@@ -55,10 +67,20 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
       self_address="$HOSTNAME.$headless_service"
 
       mkdir -p /work/sentinel /data
+      printf '%s\n' 'bind 0.0.0.0' 'protected-mode no' > /work/sentinel.conf
+      if [ "${local.public_edge_enabled}" = "true" ]; then
+        printf '%s\n' \
+          'port 0' \
+          'tls-port 26379' \
+          'tls-cert-file /redis-server-tls/tls.crt' \
+          'tls-key-file /redis-server-tls/tls.key' \
+          'tls-ca-cert-file /redis-server-tls/ca.crt' \
+          'tls-auth-clients yes' \
+          'tls-replication yes' >> /work/sentinel.conf
+      else
+        printf '%s\n' 'port 26379' >> /work/sentinel.conf
+      fi
       printf '%s\n' \
-        'bind 0.0.0.0' \
-        'protected-mode no' \
-        'port 26379' \
         'dir /work/sentinel' \
         'sentinel resolve-hostnames yes' \
         'sentinel announce-hostnames yes' \
@@ -67,7 +89,7 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
         "sentinel monitor $master_name $bootstrap_master 6379 2" \
         "sentinel down-after-milliseconds $master_name 5000" \
         "sentinel failover-timeout $master_name 15000" \
-        "sentinel parallel-syncs $master_name 1" > /work/sentinel.conf
+        "sentinel parallel-syncs $master_name 1" >> /work/sentinel.conf
     EOT
     "run-redis.sh" = <<-EOT
       #!/bin/sh
@@ -76,13 +98,14 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
       master_name="${local.edge_rate_limit_redis_master_name}"
       headless_service="${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"
       self_address="$HOSTNAME.$headless_service"
+      redis_cli="${local.edge_rate_limit_redis_cli}"
 
       while :; do
         candidate=""
         candidate_count=0
         for ordinal in 0 1 2; do
           sentinel="${local.edge_rate_limit_redis_name}-$ordinal.$headless_service"
-          reply="$(redis-cli -h "$sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
+          reply="$($redis_cli -h "$sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
           address="$(printf '%s\n' "$reply" | sed -n '1p')"
           port="$(printf '%s\n' "$reply" | sed -n '2p')"
           case "$address" in
@@ -103,7 +126,7 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
               count=0
               for check_ordinal in 0 1 2; do
                 check_sentinel="${local.edge_rate_limit_redis_name}-$check_ordinal.$headless_service"
-                check_reply="$(redis-cli -h "$check_sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
+                check_reply="$($redis_cli -h "$check_sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
                 [ "$(printf '%s\n' "$check_reply" | sed -n '1p')" = "$exact_candidate" ] && \
                   [ "$(printf '%s\n' "$check_reply" | sed -n '2p')" = "6379" ] && count=$((count + 1))
               done
@@ -121,10 +144,20 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
         sleep 1
       done
 
+      printf '%s\n' 'bind 0.0.0.0' 'protected-mode no' > /work/redis.conf
+      if [ "${local.public_edge_enabled}" = "true" ]; then
+        printf '%s\n' \
+          'port 0' \
+          'tls-port 6379' \
+          'tls-cert-file /redis-server-tls/tls.crt' \
+          'tls-key-file /redis-server-tls/tls.key' \
+          'tls-ca-cert-file /redis-server-tls/ca.crt' \
+          'tls-auth-clients yes' \
+          'tls-replication yes' >> /work/redis.conf
+      else
+        printf '%s\n' 'port 6379' >> /work/redis.conf
+      fi
       printf '%s\n' \
-        'bind 0.0.0.0' \
-        'protected-mode no' \
-        'port 6379' \
         'dir /data' \
         'save ""' \
         'appendonly no' \
@@ -134,7 +167,7 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
         'min-replicas-max-lag 5' \
         'replica-read-only yes' \
         "replica-announce-ip $self_address" \
-        'replica-announce-port 6379' > /work/redis.conf
+        'replica-announce-port 6379' >> /work/redis.conf
       if [ "$self_address" != "$candidate" ]; then
         printf 'replicaof %s 6379\n' "$candidate" >> /work/redis.conf
       fi
@@ -146,6 +179,7 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
       master_name="${local.edge_rate_limit_redis_master_name}"
       headless_service="${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"
       self_address="$HOSTNAME.$headless_service"
+      redis_cli="${local.edge_rate_limit_redis_cli}"
       agreed=""
       for exact_candidate in \
         "${local.edge_rate_limit_redis_name}-0.$headless_service" \
@@ -154,21 +188,21 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
         count=0
         for ordinal in 0 1 2; do
           sentinel="${local.edge_rate_limit_redis_name}-$ordinal.$headless_service"
-          reply="$(redis-cli -h "$sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
+          reply="$($redis_cli -h "$sentinel" -p 26379 --raw SENTINEL get-master-addr-by-name "$master_name" 2>/dev/null || true)"
           [ "$(printf '%s\n' "$reply" | sed -n '1p')" = "$exact_candidate" ] && \
             [ "$(printf '%s\n' "$reply" | sed -n '2p')" = "6379" ] && count=$((count + 1))
         done
         [ "$count" -ge 2 ] && agreed="$exact_candidate"
       done
       [ -n "$agreed" ]
-      role="$(redis-cli --raw ROLE)"
+      role="$($redis_cli -h "$self_address" --raw ROLE)"
       if [ "$agreed" = "$self_address" ]; then
         [ "$(printf '%s\n' "$role" | sed -n '1p')" = "master" ]
         # A primary is ready only while at least one current replica can
         # acknowledge writes inside the same five-second fence enforced by
         # Redis. In a 2/1 partition the isolated former primary therefore
         # becomes read-only instead of serving a second counter authority.
-        replication="$(redis-cli --raw INFO replication)"
+        replication="$($redis_cli -h "$self_address" --raw INFO replication)"
         connected_replicas="$(printf '%s\n' "$replication" | sed -n 's/^connected_slaves:\([0-9][0-9]*\)\r*$/\1/p')"
         [ -n "$connected_replicas" ]
         [ "$connected_replicas" -ge 1 ]
@@ -179,6 +213,19 @@ resource "kubernetes_config_map_v1" "edge_rate_limit_redis" {
         [ "$(printf '%s\n' "$role" | sed -n '4p')" = "connected" ]
       fi
     EOT
+    "ping-redis.sh" = <<-EOT
+      #!/bin/sh
+      set -eu
+      host="$HOSTNAME.${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"
+      exec ${local.edge_rate_limit_redis_cli} -h "$host" ping
+    EOT
+    "ping-sentinel.sh" = <<-EOT
+      #!/bin/sh
+      set -eu
+      host="$HOSTNAME.${local.edge_rate_limit_redis_headless_name}.envoy-gateway-system.svc.cluster.local"
+      exec ${local.edge_rate_limit_redis_cli} -h "$host" -p 26379 ping
+    EOT
+    "tls-handoff-envelope.json" = var.public_edge_redis_tls_handoff.envelope_json
   }
 }
 
@@ -205,6 +252,9 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
     template {
       metadata {
         labels = local.edge_rate_limit_redis_labels
+        annotations = {
+          "fs2.nebius.ai/redis-tls-handoff-sha256" = local.edge_rate_limit_redis_tls_handoff_sha256
+        }
       }
 
       spec {
@@ -322,7 +372,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
 
           liveness_probe {
             exec {
-              command = ["redis-cli", "ping"]
+              command = ["/bin/sh", "/bootstrap/ping-redis.sh"]
             }
             initial_delay_seconds = 10
             period_seconds        = 10
@@ -342,6 +392,14 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
           volume_mount {
             name       = "data"
             mount_path = "/data"
+          }
+          dynamic "volume_mount" {
+            for_each = local.public_edge_enabled ? [1] : []
+            content {
+              name       = "redis-server-tls"
+              mount_path = "/redis-server-tls"
+              read_only  = true
+            }
           }
         }
 
@@ -379,7 +437,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
 
           readiness_probe {
             exec {
-              command = ["redis-cli", "-p", "26379", "ping"]
+              command = ["/bin/sh", "/bootstrap/ping-sentinel.sh"]
             }
             initial_delay_seconds = 2
             period_seconds        = 5
@@ -389,7 +447,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
 
           liveness_probe {
             exec {
-              command = ["redis-cli", "-p", "26379", "ping"]
+              command = ["/bin/sh", "/bootstrap/ping-sentinel.sh"]
             }
             initial_delay_seconds = 10
             period_seconds        = 10
@@ -400,6 +458,19 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
           volume_mount {
             name       = "configuration"
             mount_path = "/work"
+          }
+          volume_mount {
+            name       = "bootstrap"
+            mount_path = "/bootstrap"
+            read_only  = true
+          }
+          dynamic "volume_mount" {
+            for_each = local.public_edge_enabled ? [1] : []
+            content {
+              name       = "redis-server-tls"
+              mount_path = "/redis-server-tls"
+              read_only  = true
+            }
           }
         }
 
@@ -435,6 +506,28 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
             size_limit = "512Mi"
           }
         }
+        dynamic "volume" {
+          for_each = local.public_edge_enabled ? [1] : []
+          content {
+            name = "redis-server-tls"
+            secret {
+              secret_name  = local.edge_rate_limit_redis_server_tls_secret_name
+              default_mode = 288
+              items {
+                key  = "ca.crt"
+                path = "ca.crt"
+              }
+              items {
+                key  = "tls.crt"
+                path = "tls.crt"
+              }
+              items {
+                key  = "tls.key"
+                path = "tls.key"
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -462,6 +555,37 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
       )
       error_message = "The public edge Redis/Sentinel StatefulSet requires the source-trusted provider membership receipt, continuous Node authority policy, and a fresh mutation fence with three eligible hostname domains."
     }
+    precondition {
+      condition = !local.public_edge_enabled || try(
+        var.public_edge_redis_tls_handoff.schema == "fs2-serve.nebius.ai/edge-rate-limit-redis-tls-handoff/v1" &&
+        var.public_edge_redis_tls_handoff.status == "enrolled" &&
+        var.public_edge_redis_tls_handoff.issuer_group == "cert-manager.io" &&
+        contains(["Issuer", "ClusterIssuer"], var.public_edge_redis_tls_handoff.issuer_kind) &&
+        length(trimspace(var.public_edge_redis_tls_handoff.issuer_name)) > 0 &&
+        can(regex("^[a-f0-9]{64}$", var.public_edge_redis_tls_handoff.ca_root_spki_sha256)) &&
+        var.public_edge_redis_tls_handoff.server_secret_name == "fs2-edge-rate-limit-redis-server-tls" &&
+        var.public_edge_redis_tls_handoff.client_secret_name == "fs2-edge-rate-limit-redis-client-tls" &&
+        var.public_edge_redis_tls_handoff.server_secret_name != var.public_edge_redis_tls_handoff.client_secret_name &&
+        var.public_edge_redis_tls_handoff.server_dns_names == local.edge_rate_limit_redis_server_dns_names &&
+        sort(var.public_edge_redis_tls_handoff.server_extended_key_usage) == ["client auth", "server auth"] &&
+        var.public_edge_redis_tls_handoff.client_extended_key_usage == ["client auth"] &&
+        var.public_edge_redis_tls_handoff.client_spiffe_uri == "spiffe://fs2.nebius.ai/edge-rate-limit/client" &&
+        var.public_edge_redis_tls_handoff.maximum_lifetime_seconds == 604800 &&
+        var.public_edge_redis_tls_handoff.minimum_remaining_seconds == 86400 &&
+        var.public_edge_redis_tls_handoff.generation > 0 &&
+        can(timecmp(var.public_edge_redis_tls_handoff.issued_at, var.public_edge_redis_tls_handoff.expires_at)) &&
+        timecmp(var.public_edge_redis_tls_handoff.issued_at, var.public_edge_redis_tls_handoff.expires_at) < 0 &&
+        timecmp(var.public_edge_redis_tls_handoff.issued_at, timestamp()) <= 0 &&
+        timecmp(timestamp(), var.public_edge_redis_tls_handoff.expires_at) < 0 &&
+        can(regex("^[a-f0-9]{64}$", var.public_edge_redis_tls_handoff.predecessor_sha256)) &&
+        can(regex("^[a-f0-9]{64}$", var.public_edge_redis_tls_handoff.evidence_sha256)) &&
+        length(var.public_edge_redis_tls_handoff.envelope_json) >= 256 &&
+        length(var.public_edge_redis_tls_handoff.envelope_json) <= 65536 &&
+        sha256(var.public_edge_redis_tls_handoff.envelope_json) == var.public_edge_redis_tls_handoff.evidence_sha256,
+        false,
+      )
+      error_message = "Public edge Redis requires a current security-owner TLS handoff with distinct server/replication and client identities, exact SAN/EKU/CA/rotation evidence, and no private material in Terraform."
+    }
   }
 
   depends_on = [
@@ -471,6 +595,7 @@ resource "kubernetes_stateful_set_v1" "edge_rate_limit_redis" {
     kubernetes_service_v1.edge_rate_limit_redis_sentinel,
     kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis,
     kubernetes_network_policy_v1.edge_rate_limit_redis,
+    kubernetes_network_policy_v1.edge_rate_limit_redis_default_deny,
   ]
 }
 
@@ -636,6 +761,206 @@ resource "kubernetes_network_policy_v1" "edge_rate_limit_redis" {
       }
       ports {
         port     = "53"
+        protocol = "TCP"
+      }
+    }
+  }
+}
+
+# Isolation is an additive union in Kubernetes. Keep the empty-rule policy as
+# the explicit default-deny member and the policy above as the only reviewed
+# TLS Redis/Sentinel allowlist; neither object is treated as a replacement for
+# the other by the semantic authority.
+resource "kubernetes_network_policy_v1" "edge_rate_limit_redis_default_deny" {
+  metadata {
+    name      = "${local.edge_rate_limit_redis_name}-default-deny"
+    namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
+    labels    = local.edge_rate_limit_redis_labels
+  }
+
+  spec {
+    pod_selector {
+      match_labels = local.edge_rate_limit_redis_labels
+    }
+    policy_types = ["Ingress", "Egress"]
+  }
+}
+
+resource "kubernetes_network_policy_v1" "edge_rate_limit_service_default_deny" {
+  metadata {
+    name      = "fs2-edge-rate-limit-service-default-deny"
+    namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
+    labels    = merge(local.common_labels, local.edge_rate_limit_service_labels)
+  }
+
+  spec {
+    pod_selector {
+      match_labels = local.edge_rate_limit_service_labels
+    }
+    policy_types = ["Ingress", "Egress"]
+  }
+}
+
+resource "kubernetes_network_policy_v1" "edge_rate_limit_service" {
+  metadata {
+    name      = "fs2-edge-rate-limit-service"
+    namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
+    labels    = merge(local.common_labels, local.edge_rate_limit_service_labels)
+  }
+
+  spec {
+    pod_selector {
+      match_labels = local.edge_rate_limit_service_labels
+    }
+    policy_types = ["Ingress", "Egress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = local.edge_gateway_proxy_namespace
+          }
+        }
+        pod_selector {
+          match_labels = local.edge_gateway_proxy_labels
+        }
+      }
+      ports {
+        port     = "8081"
+        protocol = "TCP"
+      }
+    }
+
+    # Envoy calls the RLS on 8081. Preserve the separately required Prometheus
+    # telemetry scrape without broadening the reviewed ingress contract.
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "fs2-observability"
+          }
+        }
+        pod_selector {
+          match_labels = {
+            "app.kubernetes.io/name" = "prometheus"
+          }
+        }
+      }
+      ports {
+        port     = "19001"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        pod_selector {
+          match_labels = local.edge_rate_limit_redis_labels
+        }
+      }
+      ports {
+        port     = "6379"
+        protocol = "TCP"
+      }
+      ports {
+        port     = "26379"
+        protocol = "TCP"
+      }
+    }
+
+    # Envoy Gateway v1.8.3 configures the RLS with GRPC_XDS_SOTW and the
+    # controller endpoint envoy-gateway:18001. Keep that required control
+    # channel scoped to the one controller selector in this namespace.
+    egress {
+      to {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "envoy-gateway-system"
+          }
+        }
+        pod_selector {
+          match_labels = local.edge_gateway_controller_labels
+        }
+      }
+      ports {
+        port     = "18001"
+        protocol = "TCP"
+      }
+    }
+
+    egress {
+      to {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "kube-system"
+          }
+        }
+        pod_selector {
+          match_labels = {
+            "k8s-app" = "kube-dns"
+          }
+        }
+      }
+      ports {
+        port     = "53"
+        protocol = "UDP"
+      }
+      ports {
+        port     = "53"
+        protocol = "TCP"
+      }
+    }
+  }
+}
+
+# Install controller ingress isolation before the Envoy Gateway Helm release
+# creates its controller Pods. The run-scoped Helm instance label prevents a
+# retained controller from another disposable lifecycle from sharing either
+# xDS lane. Egress remains unisolated here so the pinned controller can retain
+# its separately reviewed Kubernetes/DNS control-plane dependencies.
+resource "kubernetes_network_policy_v1" "edge_gateway_controller_xds" {
+  metadata {
+    name      = "fs2-envoy-gateway-controller-xds"
+    namespace = kubernetes_namespace_v1.platform["envoy-gateway-system"].metadata[0].name
+    labels    = merge(local.common_labels, { "app.kubernetes.io/component" = "envoy-controller-xds" })
+  }
+
+  spec {
+    pod_selector {
+      match_labels = local.edge_gateway_controller_labels
+    }
+    policy_types = ["Ingress"]
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = local.edge_gateway_proxy_namespace
+          }
+        }
+        pod_selector {
+          match_labels = local.edge_gateway_proxy_labels
+        }
+      }
+      ports {
+        port     = "18000"
+        protocol = "TCP"
+      }
+    }
+
+    ingress {
+      from {
+        namespace_selector {
+          match_labels = {
+            "kubernetes.io/metadata.name" = "envoy-gateway-system"
+          }
+        }
+        pod_selector {
+          match_labels = local.edge_rate_limit_service_labels
+        }
+      }
+      ports {
+        port     = "18001"
         protocol = "TCP"
       }
     }

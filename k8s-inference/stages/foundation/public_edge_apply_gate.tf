@@ -93,6 +93,10 @@ resource "terraform_data" "public_edge_apply_eligibility" {
     kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis,
     kubernetes_pod_disruption_budget_v1.edge_rate_limit_service,
     kubernetes_network_policy_v1.edge_rate_limit_redis,
+    kubernetes_network_policy_v1.edge_rate_limit_redis_default_deny,
+    kubernetes_network_policy_v1.edge_rate_limit_service,
+    kubernetes_network_policy_v1.edge_rate_limit_service_default_deny,
+    kubernetes_network_policy_v1.edge_gateway_controller_xds,
   ]
 }
 
@@ -154,5 +158,9 @@ data "external" "public_edge_mutation_fence" {
     kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis,
     kubernetes_pod_disruption_budget_v1.edge_rate_limit_service,
     kubernetes_network_policy_v1.edge_rate_limit_redis,
+    kubernetes_network_policy_v1.edge_rate_limit_redis_default_deny,
+    kubernetes_network_policy_v1.edge_rate_limit_service,
+    kubernetes_network_policy_v1.edge_rate_limit_service_default_deny,
+    kubernetes_network_policy_v1.edge_gateway_controller_xds,
   ]
 }

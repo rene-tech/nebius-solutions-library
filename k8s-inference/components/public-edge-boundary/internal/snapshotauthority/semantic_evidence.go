@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -18,10 +20,24 @@ import (
 type authenticationConfigurationEvidence struct {
 	Schema string `json:"schema"`
 	CommandArguments []string `json:"command_arguments"`
-	ClientCABundleBase64 string `json:"client_ca_bundle_base64"`
-	ClientCASHA256 string `json:"client_ca_sha256"`
-	RequestHeaderCABundleBase64 string `json:"request_header_ca_bundle_base64"`
-	RequestHeaderCASHA256 string `json:"request_header_ca_sha256"`
+	NativeSnapshotID string `json:"native_snapshot_id"`
+	NativeSnapshotResourceVersion string `json:"native_snapshot_resource_version"`
+	ClientCAFile frozenNativeFileEvidence `json:"client_ca_file"`
+	RequestHeaderCAFile frozenNativeFileEvidence `json:"request_header_client_ca_file"`
+}
+
+type frozenNativeFileEvidence struct {
+	Path string `json:"path"`
+	ContentBase64 string `json:"content_base64"`
+	SHA256 string `json:"sha256"`
+	UID uint32 `json:"uid"`
+	GID uint32 `json:"gid"`
+	Mode uint32 `json:"mode"`
+	DeviceID uint64 `json:"device_id"`
+	Inode uint64 `json:"inode"`
+	Size int64 `json:"size"`
+	NativeSnapshotID string `json:"native_snapshot_id"`
+	NativeSnapshotResourceVersion string `json:"native_snapshot_resource_version"`
 }
 
 type authenticationTrust struct {
@@ -32,8 +48,9 @@ type authenticationTrust struct {
 type authorizationConfigurationEvidence struct {
 	Schema string `json:"schema"`
 	CommandArguments []string `json:"command_arguments"`
-	WebhookConfigurationBase64 string `json:"webhook_configuration_base64"`
-	WebhookConfigurationSHA256 string `json:"webhook_configuration_sha256"`
+	NativeSnapshotID string `json:"native_snapshot_id"`
+	NativeSnapshotResourceVersion string `json:"native_snapshot_resource_version"`
+	WebhookConfigurationFile *frozenNativeFileEvidence `json:"webhook_configuration_file,omitempty"`
 }
 
 type issuedCredential struct {
@@ -189,21 +206,23 @@ func responsesByCollection(verified *collector.VerifiedEvidenceBundle) map[strin
 func validateAuthenticationEvidence(rawPages [][]byte, policy SemanticPolicy, collectedAt string) (authenticationTrust, error) {
 	if len(rawPages) != 1 { return authenticationTrust{}, errors.New("API-server authentication configuration is not one exact authoritative response") }
 	var evidence authenticationConfigurationEvidence
-	if boundary.DecodeExactJSON(rawPages[0], &evidence) != nil || evidence.Schema != "fs2-serve.nebius.ai/apiserver-authentication-configuration/v2" { return authenticationTrust{}, errors.New("API-server authentication command evidence is incomplete") }
-	clientCA, clientErr := base64.StdEncoding.Strict().DecodeString(evidence.ClientCABundleBase64)
-	requestHeaderCA, requestErr := base64.StdEncoding.Strict().DecodeString(evidence.RequestHeaderCABundleBase64)
-	if clientErr != nil || requestErr != nil || base64.StdEncoding.EncodeToString(clientCA) != evidence.ClientCABundleBase64 || base64.StdEncoding.EncodeToString(requestHeaderCA) != evidence.RequestHeaderCABundleBase64 || digestBytes(clientCA) != evidence.ClientCASHA256 || digestBytes(requestHeaderCA) != evidence.RequestHeaderCASHA256 || !validCABundle(clientCA) || !validCABundle(requestHeaderCA) { return authenticationTrust{}, errors.New("API-server authentication CA bytes are absent, malformed or not content addressed") }
+	if boundary.DecodeExactJSON(rawPages[0], &evidence) != nil || evidence.Schema != "fs2-serve.nebius.ai/apiserver-authentication-configuration/v3" { return authenticationTrust{}, errors.New("API-server authentication command evidence is incomplete") }
+	flags, normalizedArguments, flagsErr := parseCommandFlags(evidence.CommandArguments)
+	clientCAPath := flags["client-ca-file"]
+	requestHeaderCAPath := flags["requestheader-client-ca-file"]
+	clientCA, clientErr := reopenFrozenNativeFile(evidence.ClientCAFile, clientCAPath, evidence.NativeSnapshotID, evidence.NativeSnapshotResourceVersion)
+	requestHeaderCA, requestErr := reopenFrozenNativeFile(evidence.RequestHeaderCAFile, requestHeaderCAPath, evidence.NativeSnapshotID, evidence.NativeSnapshotResourceVersion)
+	if flagsErr != nil || clientErr != nil || requestErr != nil || !validCABundle(clientCA) || !validCABundle(requestHeaderCA) { return authenticationTrust{}, errors.New("API-server authentication CA bytes are absent, malformed or not descriptor-bound to the exact native snapshot") }
 	collected, collectedErr := time.Parse(time.RFC3339, collectedAt)
 	clientRoots, err := caRootSPKIDigests(clientCA, collected)
 	requestHeaderRoots, requestHeaderErr := caRootSPKIDigests(requestHeaderCA, collected)
 	clientCertificates, clientCertificatesErr := caCertificateDigests(clientCA)
 	requestHeaderCertificates, requestHeaderCertificatesErr := caCertificateDigests(requestHeaderCA)
 	if collectedErr != nil || collected.Nanosecond() != 0 || err != nil || requestHeaderErr != nil || clientCertificatesErr != nil || requestHeaderCertificatesErr != nil || !sameStringSet(clientRoots, policy.AllowedClientCARootSPKISHA256) || !sameStringSet(requestHeaderRoots, policy.AllowedRequestHeaderCARootSPKISHA256) { return authenticationTrust{}, errors.New("API-server client and request-header CA bundles do not form their exact independently accepted root and intermediate closures") }
-	flags, normalizedArguments, flagsErr := parseCommandFlags(evidence.CommandArguments)
 	normalizedArgumentsRaw, normalizedArgumentsErr := json.Marshal(normalizedArguments)
 	if flagsErr != nil || normalizedArgumentsErr != nil || digestBytes(normalizedArgumentsRaw) != policy.APIServerAuthenticationArgumentsSHA256 { return authenticationTrust{}, errors.New("API-server authentication argv is ambiguous or differs from the independently accepted normalized full flag set") }
 	issuer := flags["service-account-issuer"]
-	if issuer == "" || !exactFlag(flags, "anonymous-auth", "false") || !exactFlag(flags, "client-ca-sha256", evidence.ClientCASHA256) || !exactFlag(flags, "requestheader-client-ca-sha256", evidence.RequestHeaderCASHA256) ||
+	if issuer == "" || !exactFlag(flags, "anonymous-auth", "false") || clientCAPath != evidence.ClientCAFile.Path || requestHeaderCAPath != evidence.RequestHeaderCAFile.Path ||
 		!exactCSVFlag(flags, "requestheader-allowed-names", policy.AllowedRequestHeaderProxyCommonNames) ||
 		!exactCSVFlag(flags, "requestheader-username-headers", policy.RequestHeaderUsernameHeaders) ||
 		!exactCSVFlag(flags, "requestheader-group-headers", policy.RequestHeaderGroupHeaders) ||
@@ -216,7 +235,7 @@ func validateAuthenticationEvidence(rawPages [][]byte, policy SemanticPolicy, co
 func validateAuthorizationEvidence(rawPages [][]byte) error {
 	if len(rawPages) != 1 { return errors.New("API-server authorization configuration is not one exact authoritative response") }
 	var evidence authorizationConfigurationEvidence
-	if boundary.DecodeExactJSON(rawPages[0], &evidence) != nil || evidence.Schema != "fs2-serve.nebius.ai/apiserver-authorization-configuration/v2" {
+	if boundary.DecodeExactJSON(rawPages[0], &evidence) != nil || evidence.Schema != "fs2-serve.nebius.ai/apiserver-authorization-configuration/v3" {
 		return errors.New("API-server authorization command evidence is incomplete")
 	}
 	flags, _, err := parseCommandFlags(evidence.CommandArguments)
@@ -227,10 +246,26 @@ func validateAuthorizationEvidence(rawPages [][]byte) error {
 		return errors.New("API-server authorization configuration does not enforce the exact RBAC boundary")
 	}
 	if containsString(modes, "Webhook") {
-		webhookRaw, err := base64.StdEncoding.Strict().DecodeString(evidence.WebhookConfigurationBase64)
-		if err != nil || base64.StdEncoding.EncodeToString(webhookRaw) != evidence.WebhookConfigurationBase64 || digestBytes(webhookRaw) != evidence.WebhookConfigurationSHA256 || !exactFlag(flags, "authorization-webhook-config-sha256", evidence.WebhookConfigurationSHA256) { return errors.New("authorization webhook configuration bytes are not reopened and content addressed") }
-	} else if evidence.WebhookConfigurationBase64 != "" || evidence.WebhookConfigurationSHA256 != "" { return errors.New("authorization evidence carries unused webhook configuration") }
+		if evidence.WebhookConfigurationFile == nil { return errors.New("authorization webhook configuration file evidence is absent") }
+		webhookPath := flags["authorization-webhook-config-file"]
+		webhookRaw, err := reopenFrozenNativeFile(*evidence.WebhookConfigurationFile, webhookPath, evidence.NativeSnapshotID, evidence.NativeSnapshotResourceVersion)
+		if err != nil || len(webhookRaw) == 0 || webhookPath != evidence.WebhookConfigurationFile.Path { return errors.New("authorization webhook configuration bytes are not reopened from the exact native snapshot") }
+	} else if evidence.WebhookConfigurationFile != nil { return errors.New("authorization evidence carries unused webhook configuration") }
 	return nil
+}
+
+func reopenFrozenNativeFile(file frozenNativeFileEvidence, expectedPath string, snapshotID string, resourceVersion string) ([]byte, error) {
+	if expectedPath == "" || file.Path != expectedPath || !filepath.IsAbs(file.Path) || filepath.Clean(file.Path) != file.Path || strings.ContainsAny(file.Path, "\x00\r\n") ||
+		snapshotID == "" || resourceVersion == "" || strings.ContainsAny(snapshotID+resourceVersion, "\x00\r\n") || file.NativeSnapshotID != snapshotID || file.NativeSnapshotResourceVersion != resourceVersion ||
+		file.UID != 0 || file.DeviceID == 0 || file.Inode == 0 || file.Size < 1 || file.Size > 16*1024*1024 ||
+		file.Mode != 0o400 && file.Mode != 0o440 && file.Mode != 0o444 {
+		return nil, errors.New("frozen native file identity or protected descriptor metadata is invalid")
+	}
+	raw, err := base64.StdEncoding.Strict().DecodeString(file.ContentBase64)
+	if err != nil || base64.StdEncoding.EncodeToString(raw) != file.ContentBase64 || int64(len(raw)) != file.Size || digestBytes(raw) != file.SHA256 {
+		return nil, errors.New("frozen native file bytes do not match their content address and descriptor size")
+	}
+	return raw, nil
 }
 
 func parseCommandFlags(arguments []string) (map[string]string, []string, error) {

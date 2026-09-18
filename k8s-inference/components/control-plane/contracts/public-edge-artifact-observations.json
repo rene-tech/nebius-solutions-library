@@ -49,10 +49,11 @@
       }
     ],
     "controller_selector": {
-      "app.kubernetes.io/instance": "envoy-gateway",
+      "app.kubernetes.io/instance": "fs2-<run-id>-envoy",
       "app.kubernetes.io/name": "gateway-helm",
       "control-plane": "envoy-gateway"
     },
+    "controller_instance_label_source": "Helm .Release.Name for foundation release fs2-${run_id}-envoy",
     "xds_port": 18000
   },
   "cert_manager": {

@@ -6,6 +6,129 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_public_edge_boundary_webhook_intercepts_main_and_subresources() -> None:
+    webhook = (
+        ROOT / "components/public-edge-boundary/chart/templates/webhook.yaml"
+    ).read_text(encoding="utf-8")
+    helpers = (
+        ROOT / "components/public-edge-boundary/chart/templates/_helpers.tpl"
+    ).read_text(encoding="utf-8")
+    values = yaml.safe_load(
+        (ROOT / "components/public-edge-boundary/chart/values.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert 'apiGroups: ["*", ""]' not in webhook
+    assert webhook.count('apiGroups: ["*"]') == 2
+    assert 'operations: [CREATE, UPDATE, DELETE]\n' in webhook
+    assert 'resources: ["*"]' in webhook
+    assert 'operations: [CREATE, UPDATE, DELETE, CONNECT]' in webhook
+    assert 'resources: ["*/*"]' in webhook
+    assert webhook.count('scope: "*"') == 2
+    assert "matchPolicy: Equivalent" in webhook
+    assert "failurePolicy: Fail" in webhook
+    assert 'failurePolicy: {{ .Values.webhook.failurePolicy }}' not in webhook
+    assert values["webhook"]["failurePolicy"] == "Fail"
+    assert 'ne .Values.webhook.failurePolicy "Fail"' in helpers
+
+
+def test_public_edge_custody_directories_need_no_setgid_capability() -> None:
+    installer = (
+        ROOT / "components/public-edge-boundary/cmd/custody-installer/main.go"
+    ).read_text(encoding="utf-8")
+    compiler = (
+        ROOT / "components/public-edge-boundary/cmd/enrollment-compiler/main.go"
+    ).read_text(encoding="utf-8")
+
+    assert "0o2750" not in installer
+    assert "0o2750" not in compiler
+    assert "item.Mode != 0o700 && item.Mode != 0o750" in installer
+    assert "item.Mode != 0o700 && item.Mode != 0o750" in compiler
+
+
+def test_request_debug_0034_remains_an_explicit_sibling_integration_gate() -> None:
+    gate = yaml.safe_load(
+        (
+            ROOT
+            / "components/control-plane/contracts/request-debug-0034-integration-gate.json"
+        ).read_text(encoding="utf-8")
+    )
+    release = (
+        ROOT / "components/control-plane/src/fs2_serve/postgresql_release.py"
+    ).read_text(encoding="utf-8")
+
+    assert gate["status"] == "blocked-pending-exact-sibling-integration"
+    assert gate["reserved_successor"]["version"] == "0034_request_debug_activations.sql"
+    assert [item["version"] for item in gate["required_siblings"]] == [
+        "0030",
+        "0031",
+        "0032",
+        "0033",
+    ]
+    assert gate["required_siblings"][2]["status"] == "exact-bytes-unavailable"
+    assert gate["required_siblings"][3]["status"] == "exact-bytes-unavailable"
+    assert gate["rejected_handoffs"] == [
+        {
+            "commit": "e85520db9",
+            "status": "rejected-unpushed-no-go",
+            "reason": (
+                "The observed runtime grants reference nonexistent object_version_id "
+                "after the committed migrations, and the new roles lack one coherent "
+                "committed creation, grant and Secret-consumer chain. These bytes await "
+                "a narrow resealed successor and fresh exact review."
+            ),
+        }
+    ]
+    assert "0034_request_debug_activations.sql" not in release
+
+
+def test_snapshot_authority_binds_native_ca_files_and_exact_edge_limits() -> None:
+    evidence = (
+        ROOT
+        / "components/public-edge-boundary/internal/snapshotauthority/semantic_evidence.go"
+    ).read_text(encoding="utf-8")
+    graph = (
+        ROOT
+        / "components/public-edge-boundary/internal/snapshotauthority/semantic_graph.go"
+    ).read_text(encoding="utf-8")
+    authority = (
+        ROOT
+        / "components/public-edge-boundary/internal/snapshotauthority/authority.go"
+    ).read_text(encoding="utf-8")
+
+    assert 'flags["client-ca-file"]' in evidence
+    assert 'flags["requestheader-client-ca-file"]' in evidence
+    assert "client-ca-sha256" not in evidence
+    assert "requestheader-client-ca-sha256" not in evidence
+    assert "reopenFrozenNativeFile" in evidence
+    assert "NativeSnapshotResourceVersion" in evidence
+    assert 'policy.AdminPathPrefix != "/admin"' in authority
+    assert 'policy.PublicSourceCIDR != "0.0.0.0/0"' in authority
+    assert 'policy.MaximumConnectionDuration != "7800s"' in authority
+    assert 'policy.AudioStreamRequestTimeout != "7500s"' in authority
+    assert 'len(matches) != 1' in graph
+    assert '!onlyObjectKeys(match, "path")' in graph
+    assert "RedisBootstrapConfigDataSHA256" in graph
+    assert '"REDIS_TYPE": "sentinel"' in graph
+    assert '"REDIS_TLS": "true"' in graph
+    assert '"CONFIG_TYPE": "GRPC_XDS_SOTW"' in graph
+    assert '"CONFIG_GRPC_XDS_SERVER_URL": policy.RateLimitXDSAddress' in graph
+    assert 'stringValue(container["name"]) != "envoy-ratelimit"' in graph
+    assert 'stringValue(container["image"]) != policy.RateLimitContainerImage' in graph
+    assert 'boolValue(rateLimitPodSpec["shareProcessNamespace"])' in graph
+    assert 'stringValue(rateLimitPodSpec["serviceAccountName"]) != policy.RateLimitServiceAccountName' in graph
+    assert 'stringValue(rateLimitPodSpec["dnsPolicy"]) != "ClusterFirst"' in graph
+    assert "exactRateLimitContainerSecurityContext" in graph
+    assert "exactRateLimitEnvironment" in graph
+    assert "exactRateLimitContainerPorts" in graph
+    assert "rateLimitVolumeBackingIsExact" in graph
+    assert "exactTLSSecretItems" in graph
+    assert "redisVolumeBackingIsExact" in graph
+    assert "validateControllerXDSIngress" in graph
+    assert "policy.RedisPodSelector" in graph
+
+
 def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() -> None:
     values = yaml.safe_load(
         (ROOT / "stages/foundation/values/envoy-gateway.yaml").read_text(encoding="utf-8")
@@ -33,9 +156,33 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
         "rateLimitDeployment"
     ]
     assert rate_limit_deployment["replicas"] >= 2
-    assert {item["name"]: item["value"] for item in rate_limit_deployment["container"]["env"]}[
-        "REDIS_TYPE"
-    ] == "sentinel"
+    assert rate_limit_deployment["pod"]["securityContext"] == {
+        "runAsNonRoot": True,
+        "runAsUser": 65534,
+        "runAsGroup": 65534,
+        "fsGroup": 65534,
+        "fsGroupChangePolicy": "OnRootMismatch",
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
+    assert rate_limit_deployment["pod"]["automountServiceAccountToken"] is False
+    assert rate_limit_deployment["pod"]["volumes"] == [
+        {"name": "ratelimit-tmp", "emptyDir": {"sizeLimit": "64Mi"}}
+    ]
+    assert "env" not in rate_limit_deployment["container"]
+    assert rate_limit_deployment["container"]["volumeMounts"] == [
+        {"name": "ratelimit-tmp", "mountPath": "/tmp"}
+    ]
+    assert rate_limit_deployment["container"]["imagePullPolicy"] == "IfNotPresent"
+    assert rate_limit_deployment["container"]["securityContext"] == {
+        "allowPrivilegeEscalation": False,
+        "privileged": False,
+        "readOnlyRootFilesystem": True,
+        "runAsNonRoot": True,
+        "runAsUser": 65534,
+        "runAsGroup": 65534,
+        "capabilities": {"drop": ["ALL"]},
+        "seccompProfile": {"type": "RuntimeDefault"},
+    }
     assert rate_limit_deployment["container"]["resources"]["requests"]["cpu"]
     assert rate_limit_deployment["container"]["resources"]["limits"]["cpu"]
     assert rate_limit_deployment["pod"]["topologySpreadConstraints"][0]["topologyKey"] == (
@@ -55,7 +202,27 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     assert 'if [ "$self_address" != "$candidate" ]; then' in terraform
     assert "replicaof %s 6379" in terraform
     assert 'pod_management_policy = "Parallel"' in terraform
-    assert 'role="$(redis-cli --raw ROLE)"' in terraform
+    assert 'role="$($redis_cli --raw ROLE)"' in terraform
+    assert terraform.count("'port 0'") == 2
+    assert "'tls-port 6379'" in terraform
+    assert "'tls-port 26379'" in terraform
+    assert "'tls-auth-clients yes'" in terraform
+    assert terraform.count("'tls-replication yes'") == 2
+    assert 'if [ "${local.public_edge_enabled}" = "true" ]; then' in terraform
+    assert "printf '%s\\n' 'port 6379'" in terraform
+    assert "printf '%s\\n' 'port 26379'" in terraform
+    assert "redis-cli --tls --cacert /redis-server-tls/ca.crt" in terraform
+    assert 'for_each = local.public_edge_enabled ? [1] : []' in terraform
+    assert 'port     = "18001"' in terraform
+    assert "match_labels = local.edge_gateway_controller_labels" in terraform
+    assert "match_labels = local.edge_gateway_proxy_labels" in terraform
+    assert '"gateway.envoyproxy.io/owning-gateway-namespace"' in terraform
+    assert "image = var.public_edge_rate_limit_image" in (
+        ROOT / "stages/foundation/locals.tf"
+    ).read_text(encoding="utf-8")
+    assert "digest-qualified rate-limit image" in (
+        ROOT / "stages/foundation/releases.tf"
+    ).read_text(encoding="utf-8")
     assert "edge_rate_limit_redis_sentinel_name" not in terraform.split(
         '"run-redis.sh" = <<-EOT', 1
     )[1].split('"ready.sh" = <<-EOT', 1)[0]
@@ -64,6 +231,9 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     assert 'resource "kubernetes_pod_disruption_budget_v1" "edge_rate_limit_redis"' in terraform
     assert 'min_available = "2"' in terraform
     assert 'resource "kubernetes_network_policy_v1" "edge_rate_limit_redis"' in terraform
+    assert 'resource "kubernetes_network_policy_v1" "edge_rate_limit_redis_default_deny"' in terraform
+    assert 'resource "kubernetes_network_policy_v1" "edge_rate_limit_service_default_deny"' in terraform
+    assert 'resource "kubernetes_network_policy_v1" "edge_rate_limit_service"' in terraform
     assert "min_domains        = local.public_edge_enabled ? var.public_edge_availability_contract.minimum_domains : null" in terraform
     assert 'dynamic "affinity"' in terraform
     assert "required_during_scheduling_ignored_during_execution" in terraform
@@ -86,6 +256,10 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
         "kubernetes_pod_disruption_budget_v1.edge_rate_limit_redis",
         "kubernetes_pod_disruption_budget_v1.edge_rate_limit_service",
         "kubernetes_network_policy_v1.edge_rate_limit_redis",
+        "kubernetes_network_policy_v1.edge_rate_limit_redis_default_deny",
+        "kubernetes_network_policy_v1.edge_rate_limit_service",
+        "kubernetes_network_policy_v1.edge_rate_limit_service_default_deny",
+        "kubernetes_network_policy_v1.edge_gateway_controller_xds",
         "terraform_data.public_edge_apply_eligibility[0]",
         "kubernetes_manifest.public_edge_node_authority_cas_policy[0]",
         "kubernetes_manifest.public_edge_node_authority_cas_binding[0]",
@@ -104,6 +278,14 @@ def test_foundation_configures_one_ha_rate_limit_authority_and_closed_count() ->
     foundation_locals = (ROOT / "stages/foundation/locals.tf").read_text(
         encoding="utf-8"
     )
+    assert 'name = "redis-client-tls"' in foundation_locals
+    assert 'defaultMode = 288' in foundation_locals
+    assert 'name = "REDIS_TLS"' in foundation_locals
+    assert 'value = "/redis-client-tls/tls.key"' in foundation_locals
+    assert "local.public_edge_enabled ? [" in foundation_locals
+    assert '"app.kubernetes.io/instance" = "fs2-${var.run_id}-envoy"' in foundation_locals
+    assert 'resource "kubernetes_network_policy_v1" "edge_gateway_controller_xds"' in terraform
+    assert "kubernetes_network_policy_v1.edge_gateway_controller_xds" in release
     assert foundation_locals.count(
         "minDomains = var.public_edge_availability_contract.minimum_domains"
     ) == 2
@@ -170,6 +352,20 @@ def test_source_contract_does_not_regress_to_one_shared_local_bucket() -> None:
     }
     assert values["edgeConnectionLimits"]["maxStreamDuration"] == "7500s"
     assert values["edgeConnectionLimits"]["maxConnectionDuration"] == "7800s"
+    assert values["edgeConnectionLimits"]["connectionLimit"] == 2000
+    assert values["edgeConnectionLimits"]["maxRequestsPerConnection"] == 1000
+    assert values["edgeConnectionLimits"]["requestReceivedTimeout"] == "60s"
+    assert values["edgeConnectionLimits"]["idleTimeout"] == "5m"
+    assert values["edgeConnectionLimits"]["streamIdleTimeout"] == "5m"
+    assert values["edgeConnectionLimits"]["http2MaxConcurrentStreams"] == 100
+    assert values["edgeRateLimit"] == {
+        "enabled": True,
+        "sourceCidr": "0.0.0.0/0",
+        "requests": 200,
+        "unit": "Second",
+        "adminRequests": 30,
+        "adminUnit": "Minute",
+    }
     assert values["httpRoute"]["audioStreamRequestTimeout"] == "7500s"
     assert values["httpRoute"]["audioStreamBackendRequestTimeout"] == "7500s"
     assert values["envoyProxy"]["topologySpreadConstraints"][0]["minDomains"] == 3

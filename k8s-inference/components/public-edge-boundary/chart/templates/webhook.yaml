@@ -81,15 +81,25 @@ webhooks:
   - name: public-edge-boundary.security.fs2.nebius.ai
     admissionReviewVersions: [v1]
     sideEffects: None
-    failurePolicy: {{ .Values.webhook.failurePolicy }}
+    failurePolicy: Fail
     matchPolicy: Equivalent
     timeoutSeconds: {{ .Values.webhook.timeoutSeconds }}
     clientConfig:
       service: {namespace: {{ .Values.namespace }}, name: fs2-public-edge-boundary, path: /validate, port: 8443}
       caBundle: {{ .Values.webhook.caBundle | quote }}
     rules:
-      - operations: [CREATE, UPDATE, DELETE, CONNECT]
-        apiGroups: ["*", ""]
+      # Protected roots and admission parameter resources are derived from
+      # signed evidence and cannot be exhaustively named at chart render time.
+      # Kubernetes "*" covers main resources only; "*/*" is a distinct
+      # wildcard for subresources such as serviceaccounts/token, pods/exec,
+      # pods/ephemeralcontainers, nodes/proxy and CSR approval/status.
+      - operations: [CREATE, UPDATE, DELETE]
+        apiGroups: ["*"]
         apiVersions: ["*"]
         resources: ["*"]
+        scope: "*"
+      - operations: [CREATE, UPDATE, DELETE, CONNECT]
+        apiGroups: ["*"]
+        apiVersions: ["*"]
+        resources: ["*/*"]
         scope: "*"
