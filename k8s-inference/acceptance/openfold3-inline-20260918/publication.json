@@ -1,0 +1,22 @@
+{
+  "schema": "fs2-model-candidate-publication/v1",
+  "status": "published-candidate-not-production-promoted",
+  "source_commit": "84a466792feb69ac852ffdb6124c47706751646c",
+  "source_tree": "cddf6f04ccdffc29b565116d8491a26d73d2d1ea",
+  "upstream_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+  "upstream_version": "0.5.0",
+  "base_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
+  "unique_tag": "qualification-inline-84a466792-20260918",
+  "linux_amd64_manifest": "sha256:780cf36dee9bcf601cf90dc50ef90a0ce8b0c9e2de88c413a3b40e44473550cd",
+  "image_config": "sha256:97d7ad39b8b78b6295988b1e6a89ec3cf299150d241366aa0cfa57c1ef18fbcf",
+  "sbom_provenance_attestation_manifest": "sha256:e711b38b13ec7b056163d20cdc818a1f0151ef7776713672f798d021f446be15",
+  "adapter_sha256": "f212046db73a125c33f9c490e8d343fe50101a47401c94c159ce8e4b5a11fad3",
+  "dockerfile_sha256": "7b5cf3a427d176c9f9ed0def597bfa9b8814fb431d561dc9ad1df7f19d4da465",
+  "private_build_root": "/home/tux/secure-handoff/openfold3-inline-candidate-20260918-BwsONH",
+  "build_script_sha256": "a24c663fd8466628c9b2ba95675ae430fbdf3af3a7fc8dd0413e7717e87c88d4",
+  "build_log_sha256": "0b9594b2cfa25f65e55f7080380df9c4a803d6aa2f24026f203fd0e3d97a541e",
+  "build_metadata_sha256": "b2178f38ec26286954080c62ae730416126ed5df11e5e1d0cdb584b9b0ab1a1c",
+  "publication": "Exact git-archive context; isolated Docker credentials; explicit sandbox2 profile without changing the default; unique tag absence checked; linux/amd64 Buildx SBOM+provenance; registry digest readback verified.",
+  "scope": "Only run_openfold3.py replaced. Weight files, upstream model/environment, original base runner, model settings and resource limits unchanged. Qualification remains separate from publication. OCI image revision is the adapter commit; inherited FS2_SOURCE_REVISION records upstream c4771653."
+}
