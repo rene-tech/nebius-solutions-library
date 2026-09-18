@@ -5,7 +5,7 @@
     "model_id": "cosmos3-lerobot-augmentation",
     "variant_id": "cosmos3-nano-lerobot-v3",
     "workload_namespace": "fs2-models",
-    "execution_identity_sha256": "b308acf83988e4af68ff08f555896013d226b3bd84953cb2f2b49b2180e4b890",
+    "execution_identity_sha256": "1c906c5ca9a792531215cb26b0834dccb8f5a1491c8b6d2c8d6a96233958a34e",
     "plan_adapter": {
       "module": "fs2_serve.scientific_batch.adapters",
       "function": "compile_adapter_run"
@@ -15,7 +15,7 @@
     "stages": [
       {
         "stage_id": "augment-dataset",
-        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:71047b62303a21d2feec6127a4531b2ad4333f157bdb52cf67d2756dd7ead8c1",
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
         "collector_id": "cosmos3-lerobot-v3-0-6-1",
         "validator_id": "cosmos3-lerobot-v3-0-6-1",
         "mounts": [

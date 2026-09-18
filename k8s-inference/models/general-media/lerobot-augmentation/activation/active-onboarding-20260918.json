@@ -2,11 +2,11 @@
   "schema": "fs2-serve.nebius.ai/lerobot-active-onboarding/v1",
   "state": "active",
   "customer_ready": false,
-  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:71047b62303a21d2feec6127a4531b2ad4333f157bdb52cf67d2756dd7ead8c1",
-  "registry_manifest_digest": "sha256:71047b62303a21d2feec6127a4531b2ad4333f157bdb52cf67d2756dd7ead8c1",
-  "runtime_recipe_sha256": "ef1a5150826003902897edc6ae750ef8c3d0300a53cd62c2f0e47a921fd30ec0",
-  "execution_identity_sha256": "b308acf83988e4af68ff08f555896013d226b3bd84953cb2f2b49b2180e4b890",
-  "execution_map_sha256": "daf297e2ced794b910df757acd7a4dadba3bb17c863c0b38b0c9497601b0cf5d",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
+  "registry_manifest_digest": "sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
+  "runtime_recipe_sha256": "19659652b7766341aefbe8fcc76e15f414b4ac06a22d8484a0d663ff60168baa",
+  "execution_identity_sha256": "1c906c5ca9a792531215cb26b0834dccb8f5a1491c8b6d2c8d6a96233958a34e",
+  "execution_map_sha256": "294aa00ebf9843a865ce70cf031568e1f83509e1cc46f2ecbccff6567115409f",
   "preserved_legacy_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
   "preserved_legacy_models": [
     "boltzgen",
@@ -58,8 +58,8 @@
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/cli.py",
-        "sha256": "924377b0a9b51ca4cbb0fcc6c7829aef948f8e8a1c63ca22259122367657b0f6",
-        "size_bytes": 2419
+        "sha256": "94b9cd061548dbf0bf2ab946d1c7936be6df631e297cb26f73a3ca6fe47ad6de",
+        "size_bytes": 5272
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/contracts.py",
@@ -68,8 +68,8 @@
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/cosmos.py",
-        "sha256": "b0add76945a425488516d2d4298ff4012852812907a24f0d507ec8018d0b0397",
-        "size_bytes": 19261
+        "sha256": "0b0bd7d6ba8efd8975efb5c3c360ca2291d9ca355722d5d7596531234a4e8768",
+        "size_bytes": 19626
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/dataset.py",
