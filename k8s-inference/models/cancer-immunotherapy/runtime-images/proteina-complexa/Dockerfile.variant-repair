@@ -15,4 +15,13 @@ RUN uv pip install --python /opt/venv/bin/python --no-deps --require-hashes \
 ARG FS2_SOURCE_COMMIT
 LABEL ai.nebius.fs2.variant-repair.source-commit="${FS2_SOURCE_COMMIT}" \
       ai.nebius.fs2.variant-repair.scope="Hydra-list-ligands,torch27-compatible-cueq09,rf3-error-propagation"
+# The historical base pointed writable caches at the read-only model-artifact
+# namespace. Match the current full Dockerfile's task-local cache policy.
+ENV HOME=/tmp/fs2-home \
+    HF_HOME=/tmp/fs2-home/huggingface \
+    XDG_CACHE_HOME=/tmp/fs2-home/xdg \
+    MPLCONFIGDIR=/tmp/fs2-home/matplotlib \
+    NUMBA_CACHE_DIR=/tmp/fs2-home/numba \
+    TRITON_CACHE_DIR=/tmp/fs2-home/triton
 USER 10001:10001
+RUN /opt/venv/bin/python -c "import os,pathlib; [pathlib.Path(os.environ[p]).mkdir(parents=True, exist_ok=True) for p in ('HOME','HF_HOME','XDG_CACHE_HOME','MPLCONFIGDIR','NUMBA_CACHE_DIR','TRITON_CACHE_DIR')]"

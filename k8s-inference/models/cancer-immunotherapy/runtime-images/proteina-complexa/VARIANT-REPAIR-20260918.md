@@ -38,6 +38,13 @@ BuildKit host cannot perform it (the unchanged predecessor fails identically).
 The first unpublished build failure is retained. Extension import and real
 kernel execution are mandatory on the H100 candidate, not inferred from build.
 
+The first H100 candidate stopped before model work: the historical base's
+`XDG_CACHE_HOME=/opt/fs2/artifacts/xdg` was not writable by UID10001. With a
+task-local writable XDG cache, both CuEq0.9 accelerated extension imports passed
+on H100 with Torch2.7 unchanged. The successor bakes the already documented full
+Dockerfile `/tmp/fs2-home` cache policy and checks directory creation as UID10001.
+This changes cache placement only, not the checkpoint mounts or model settings.
+
 Before promotion, replay the four exact original ligand/AME payloads and a prior
 successful protein-target payload on a task-owned H100 candidate. Inspect full
 structural/metric outputs, real kernel execution and timing; preserve failures.
