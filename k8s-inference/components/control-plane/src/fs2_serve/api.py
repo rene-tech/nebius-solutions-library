@@ -5,8 +5,7 @@ import json
 import logging
 import math
 import secrets
-import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -24,6 +23,7 @@ from starlette.types import ASGIApp, Message, Receive, Send
 from starlette.types import Scope as ASGIScope
 
 from .access import AdminAccessService
+from .access_logging import AccessLogMiddleware
 from .access_models import (
     BOOTSTRAP_OPERATOR_PRINCIPAL_ID,
     AdminApiKey,
@@ -173,7 +173,6 @@ from .user_storage_routes import user_storage_router
 from .users import UserService
 from .voice_routes import voice_router, voice_stream_router
 
-LOGGER = logging.getLogger("fs2_serve.access")
 SCIENTIFIC_LOGGER = logging.getLogger("fs2_serve.scientific_batch")
 IDENTITY_HEADERS = {
     b"x-fs2-tenant",
@@ -663,25 +662,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     if runtime.settings.request_debug_enabled:
         app.add_middleware(DebugCaptureMiddleware, store=debug_store, principal_resolver=runtime.tokens.verify)
 
-    @app.middleware("http")
-    async def access_log(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        started = time.monotonic()
-        response = await call_next(request)
-        principal = getattr(request.state, "principal", None)
-        record = {
-            "event": "http_request",
-            "method": request.method,
-            "path": request.url.path[:256],
-            "status": response.status_code,
-            "duration_ms": round((time.monotonic() - started) * 1000, 3),
-            "principal_id": principal.principal_id if principal else None,
-            "tenant_id": principal.tenant_id if principal else None,
-            "token_id": str(principal.token_id) if principal else None,
-        }
-        LOGGER.info(json.dumps(record, separators=(",", ":")))
-        response.headers.setdefault("x-content-type-options", "nosniff")
-        response.headers.setdefault("cache-control", "no-store")
-        return response
+    app.add_middleware(AccessLogMiddleware)
 
     async def principal(request: Request, authorization: Annotated[str | None, Header()] = None) -> Principal:
         if runtime.scientific_apps is not None:
