@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID, uuid4
+from builtins import BaseExceptionGroup
 
 import httpx2
 from mcp import Client
@@ -119,6 +120,20 @@ def artifact_view(value):
 
 def operation(value):
     return value.get("operation", value)
+
+
+def safe_error_code(error):
+    # MCP context managers can wrap our terminal assertion in ExceptionGroup.
+    # Preserve a safe semantic code without printing nested transport URLs/data.
+    if isinstance(error, BaseExceptionGroup):
+        for child in error.exceptions:
+            code = safe_error_code(child)
+            if re.fullmatch(r"[a-z0-9_]+", code):
+                return code
+        return type(error).__name__
+    return (
+        str(error) if re.fullmatch(r"[a-z0-9_]+", str(error)) else type(error).__name__
+    )
 
 
 def published_variant(variant, entry, operation_id, index, seed):
@@ -664,11 +679,7 @@ def main():
                     )
                 asyncio.run(execute(args, state, token))
             except Exception as error:
-                code = (
-                    str(error)
-                    if re.fullmatch(r"[a-z0-9_]+", str(error))
-                    else type(error).__name__
-                )
+                code = safe_error_code(error)
                 state.setdefault("failures", []).append(
                     {"at": now(), "code": code, "type": type(error).__name__}
                 )
@@ -687,11 +698,7 @@ def main():
         )
         return 0
     except Exception as error:
-        code = (
-            str(error)
-            if re.fullmatch(r"[a-z0-9_]+", str(error))
-            else type(error).__name__
-        )
+        code = safe_error_code(error)
         print(
             json.dumps(
                 {

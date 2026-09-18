@@ -14,7 +14,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 import sys
 import time
 from pathlib import Path
@@ -98,7 +97,12 @@ async def run_directory(args, state, token, cohort, policy, protocol):
 
 def stage_running(value):
     return client.operation(value).get("status") not in client.TERMINAL and any(
-        stage.get("status") == "running"
+        stage.get("status") == "active"
+        and any(
+            attempt.get("last_phase") == "active_compute"
+            and attempt.get("resource_released") is False
+            for attempt in stage.get("attempts", [])
+        )
         for stage in value.get("batch", {}).get("stages", [])
     )
 
@@ -278,11 +282,7 @@ def main():
         )
         return 0
     except Exception as error:
-        code = (
-            str(error)
-            if re.fullmatch(r"[a-z0-9_]+", str(error))
-            else type(error).__name__
-        )
+        code = client.safe_error_code(error)
         if state:
             state.update(
                 outcome="failed_stop_new_admissions", error=code, failed_at=client.now()

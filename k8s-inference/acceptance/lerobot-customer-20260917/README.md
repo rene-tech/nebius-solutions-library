@@ -6,11 +6,24 @@ follows durable progress, downloads every output, safely unpacks it, and fully
 reopens it with **LeRobot 0.6.1**. Local paths are interpreted only by this client;
 they are never sent to Cosmos as remote paths. The input directory is unchanged.
 
-Current status (2026-09-18): implemented and locally tested; **new public
-LeRobot cohorts have not yet run**. The deployment owner is preparing the fresh
-ordinary robotics canary and digest-pinned worker/catalog rollout. Earlier
-release146 media passes do not qualify this dataset App. No actual LibreChat or
-physical action-alignment claim is made.
+Current status (2026-09-18): the first actual public named-MCP lighting debug
+workflow ran on release147 and **failed**, so no final cohorts or qualification
+are claimed. Parent `842b4692-6587-4dfc-8c1b-0d7f77047962` was accepted at
+00:19:39.492065Z and failed at00:20:45.747370Z. Both input uploads finalized and
+the in-flight replay returned the same parent. Its first attempt reached active
+compute, then ended with public HTTP422 / application failure code `Error`,
+without public error detail or an output dataset; the attempt reports resources
+released. No new admission or blind retry followed. Root/worker owners retain
+the child diagnostics; the owner keeps the disposable key for an explicitly
+authorized follow-up. Earlier release146 media passes do not qualify this App.
+No actual LibreChat or physical action-alignment claim is made.
+
+The negative run is retained privately at
+`/home/tux/secure-handoff/lerobot-release-20260917/debug-lighting-mcp/`.
+Release147 CP index was
+`sha256:58a6ccc0c7a9882e6155c1aefda1798d8f8777aa86faebf7d583bf007e339390`
+(source `182be10e0`), with worker
+`sha256:71047b62303a21d2feec6127a4531b2ad4333f157bdb52cf67d2756dd7ead8c1`.
 
 ## Run a local directory
 
@@ -138,7 +151,7 @@ action arrays are **not proof of physically action-aligned augmented imagery**.
 
 ## Local evidence
 
-Client/cohort suite: **23 passed**. Real pinned-reader tests: **2 passed** on the
+Client/cohort suite: **24 passed**. Real pinned-reader tests: **2 passed** on the
 two-episode/two-view fixture, including a full pack/unpack/rewrite/reopen loop
 and all-camera/all-episode preparation. The rewrite test uses an explicitly
 local FFmpeg brightness transform, not GPU inference or semantic qualification.
@@ -159,3 +172,9 @@ rejected legitimate directory entries in the worker tar; allowing safe normal
 directories fixed it and the full reader regression then passed. LeRobot emits
 upstream deprecation warnings during encoding; these are not silently called
 clean GPU execution. No live public dataset pass is implied by these tests.
+
+The first live status also corrected two acceptance-only diagnostics: public
+stages are `active`, not `running`, and the running-cancellation probe requires
+an unreleased attempt in `active_compute`; MCP context managers' nested
+ExceptionGroup no longer hides the safe `operation_terminal_failure` code.
+These fixes do not repair or relabel the actual worker/application failure.

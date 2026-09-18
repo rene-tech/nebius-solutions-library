@@ -74,7 +74,18 @@ def test_public_negative_contract_and_cancellation(
                 "operation": {"id": OP, "status": "running"},
                 "batch": {
                     "status": "running",
-                    "stages": [{"stage_id": "augment", "status": "running"}],
+                    "stages": [
+                        {
+                            "stage_id": "augment",
+                            "status": "active",
+                            "attempts": [
+                                {
+                                    "last_phase": "active_compute",
+                                    "resource_released": False,
+                                }
+                            ],
+                        }
+                    ],
                 },
             }
 
@@ -113,15 +124,25 @@ def test_public_negative_contract_and_cancellation(
 
 def test_running_stage_is_not_inferred_from_parent_alone():
     assert not driver.stage_running({"operation": {"status": "running"}})
-    assert not driver.stage_running(
-        {
-            "operation": {"status": "succeeded"},
-            "batch": {"stages": [{"status": "running"}]},
-        }
-    )
-    assert driver.stage_running(
-        {
-            "operation": {"status": "running"},
-            "batch": {"stages": [{"status": "running"}]},
-        }
-    )
+    value = {
+        "operation": {"status": "running"},
+        "batch": {
+            "stages": [
+                {
+                    "status": "active",
+                    "attempts": [
+                        {"last_phase": "image_loading", "resource_released": False}
+                    ],
+                }
+            ]
+        },
+    }
+    assert not driver.stage_running(value)
+    attempt = value["batch"]["stages"][0]["attempts"][0]
+    attempt["last_phase"] = "active_compute"
+    assert driver.stage_running(value)
+    attempt["resource_released"] = True
+    assert not driver.stage_running(value)
+    attempt["resource_released"] = False
+    value["operation"]["status"] = "succeeded"
+    assert not driver.stage_running(value)

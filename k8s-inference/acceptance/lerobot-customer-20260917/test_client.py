@@ -4,6 +4,7 @@ import io
 import json
 import tarfile
 from pathlib import Path
+from builtins import ExceptionGroup
 
 import httpx2
 import pytest
@@ -38,6 +39,22 @@ def test_atomic_journal_refuses_secret(tmp_path):
     with pytest.raises(client.harness.AcceptanceError, match="receipt_contains_secret"):
         client.save(path, {"oops": TOKEN}, TOKEN)
     assert json.loads(path.read_text()) == {"operation_id": OP}
+
+
+def test_mcp_exception_group_preserves_terminal_code_without_secret():
+    error = ExceptionGroup(
+        "may contain private transport details",
+        [
+            ExceptionGroup(
+                "nested", [client.harness.AcceptanceError("operation_terminal_failure")]
+            )
+        ],
+    )
+    assert client.safe_error_code(error) == "operation_terminal_failure"
+    assert (
+        client.safe_error_code(RuntimeError("https://secret.example?token=private"))
+        == "RuntimeError"
+    )
 
 
 def test_directory_bundle_is_deterministic_and_input_unchanged(tmp_path):
