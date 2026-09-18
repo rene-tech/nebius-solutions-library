@@ -47,3 +47,38 @@ operator evidence is under
 
 Pending corrected deployment and public dataset acceptance. Exact action-array
 preservation must not be described as proof of physically action-aligned video.
+
+## Corrected integration run (not the final release cohorts)
+
+Helm148 deployed source `0834206d06375c6ea4320dbdaf23da80e1e1509c`, control-plane
+index `sha256:96e197fd0e6d8c48b91c409bb2042e35f6a09d4b94e8c891534b587b30e9617b`
+and worker `sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042`.
+The parser handles both real response shapes. Worker failures now carry bounded
+static codes/details through the public operation API. No quota, native model,
+snapshot, customer-key, or scaling setting changed.
+
+The repeated typed MCP lighting run `e50a8f50-c388-4eb7-a53d-bd943d82070c`
+passed: source upload, one delegated generation, output publication/download,
+full LeRobot 0.6.1 reload, and in-flight/terminal idempotent replay. The client
+ran from `00:37:14.595Z` to `00:39:50.589Z` (156.0 s including local preparation
+and output validation). Generation child `200f9cd2-34a5-4402-9cc8-ed6ffcc9f340`
+measured **38.000323 s GPU cold activation**, on a cached preemptible H100 using
+the unchanged r7 snapshot. This is not a new-node/image-pull benchmark.
+
+Validation covered two 32-frame episodes and two cameras (128 decoded video
+frames), 2,304 exact non-video values, and preserved episode/task/FPS structure.
+All 32 selected frames changed. Untouched streams were re-encoded; their
+maximum per-frame mean absolute pixel error was 2.108/255 (limit 6/255), not
+byte identity. Exact arrays do not establish physical action alignment.
+
+The Admin APIs show both parent and child terminal Runs, usage, logs and metrics.
+Loki retained 95 App log entries at the observation time, including the first
+run's explicit `PLATFORM_RESPONSE_INVALID: operation response is not an object`.
+Thus the initially source-reproduced diagnosis now also has direct runtime-log
+confirmation, despite the original Kubernetes Pod already being removed.
+Raw logs remain private in `observe148-debug/`.
+
+The H100 Terraform variables now pin the deployed control-plane digest and add
+the LeRobot scheduling entry. Formatting and Terraform validation pass. No
+broad Terraform apply was performed against the older unrelated infrastructure
+state.
