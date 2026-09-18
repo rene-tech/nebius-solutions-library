@@ -12,12 +12,14 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
 
 from fs2_serve.deployment_runtimes import _record, deployment_runtime_model_schema
 from fs2_serve.model_deployment import canonical_digest, canonical_json
 from fs2_serve.qualification import _runtime_origin
+from fs2_serve.registry import Registry
 
 ROOT = Path(__file__).resolve().parents[2]
 HELPER = ROOT / "acceptance/scientific-runtime-repair-20260918/prepare_promotion.py"
@@ -238,6 +240,71 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def evidence_sha256(value):
+    """Qualification evidence uses bare SHA256, unlike renderer identities."""
+    return hashlib.sha256(canonical_json(value)).hexdigest()
+
+
+def validate_registry(routes, serving_bindings):
+    """Execute the gateway's real static startup path, without making requests.
+
+    Use captured bindings, not a fabricated disabled binding set. Registry.load
+    runs bind_deployment_runtimes and the lean-route checks in startup order.
+    Retry settings below are inert: this preflight never admits an operation.
+    """
+    bindings = (
+        json.loads(serving_bindings["data"]["serving-bindings.json"])
+        if serving_bindings.get("kind") == "ConfigMap"
+        else serving_bindings
+    )
+    variant_promotions = (
+        serving_bindings["data"].get("model-variant-promotions.json")
+        if serving_bindings.get("kind") == "ConfigMap"
+        else None
+    )
+    directory = ROOT / "catalog/runtime"
+    with tempfile.TemporaryDirectory(prefix="fs2-ct-evo2-registry-") as temporary:
+        files = Path(temporary)
+        (files / "serving-bindings.json").write_bytes(canonical_json(bindings))
+        for name in ("deployment-runtimes.json", "lean-routes.json"):
+            (files / name).write_text(routes[name])
+        promotions_file = None
+        if variant_promotions is not None:
+            promotions_file = files / "model-variant-promotions.json"
+            promotions_file.write_text(variant_promotions)
+        registry = Registry.load(
+            directory,
+            files / "serving-bindings.json",
+            repo_root=directory / "packaged-repository",
+            evidence_root=None,
+            variant_promotions_file=promotions_file,
+            lean_routes_file=files / "lean-routes.json",
+            deployment_runtime_records_file=files / "deployment-runtimes.json",
+            max_attempts=1,
+            max_gpu_seconds_per_attempt=1,
+            retry_base_seconds=1,
+        )
+        selected = json.loads(routes["deployment-runtimes.json"])["models"]
+        for model_id, entry in selected.items():
+            if (
+                registry.get(model_id, require_enabled=False).gateway.runtime_image_digest
+                != entry["record"]["runtime"]["image"]["digest"]
+            ):
+                raise ValueError("registry selected a different runtime:" + model_id)
+        return {
+            "valid": True,
+            "registry_models": len(registry.list()),
+            "selected_runtime_models": sorted(selected),
+            "serving_bindings_sha256": evidence_sha256(bindings),
+            "variant_promotions_sha256": (
+                hashlib.sha256(variant_promotions.encode()).hexdigest() if variant_promotions is not None else None
+            ),
+            "deployment_runtimes_sha256": hashlib.sha256(routes["deployment-runtimes.json"].encode()).hexdigest(),
+            "lean_routes_sha256": hashlib.sha256(routes["lean-routes.json"].encode()).hexdigest(),
+            "scope": "Offline Registry.load with deployment-runtime and static-route binding; no live health claim.",
+        }
+
+
 def source_pin(path, commit):
     path = path.resolve()
     relative = "k8s-inference/" + str(path.relative_to(ROOT))
@@ -366,11 +433,12 @@ def prepare(args):
     for model_id in NEW:
         base = runtimes[model_id]["record"] if model_id in runtimes else catalog().model(model_id).to_dict()
         row = next(item for item in projection if item["model_id"] == model_id)
-        successors[model_id] = successor(base, row, model_id, canonical_digest(evidence[model_id]), SOURCE[model_id])
+        successors[model_id] = successor(base, row, model_id, evidence_sha256(evidence[model_id]), SOURCE[model_id])
     candidate, bundles, new_routes, admin, proposals = extend(
         original, old_bundles, routes, old_admin, owners, successors
     )
     checks = existing.validate_candidate(original, candidate, bundles, owners, proposals)
+    checks["gateway_registry"] = validate_registry(new_routes, read(args.serving_bindings))
     checks["gateway_bootstrap"] = asyncio.run(
         existing.validate_admin_configuration(admin, json.loads(new_routes["deployment-runtimes.json"])["models"])
     )
@@ -435,7 +503,7 @@ def prepare(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    for name in ("baseline", "ct-evidence", "evo2-evidence", "output"):
+    for name in ("baseline", "ct-evidence", "evo2-evidence", "serving-bindings", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
     parser.add_argument("--expected-release", required=True, type=int)

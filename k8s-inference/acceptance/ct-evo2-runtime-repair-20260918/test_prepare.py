@@ -1,9 +1,14 @@
 import copy
+import hashlib
 import json
 
 import prepare as p
 import pytest
 import yaml
+from fs2_serve_catalog.consumer import SERVING_BINDINGS_SCHEMA
+
+from fs2_serve.deployment_runtimes import SET_SCHEMA
+from fs2_serve.registry import RegistryError
 
 
 def bundle(model):
@@ -174,6 +179,91 @@ def test_reject_partial_or_drifted_inputs(mutation):
 def write(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value))
+
+
+def registry_inputs():
+    """Real canonical records/qualification identities; only evidence is synthetic."""
+    original = p.read(p.ROOT / "catalog/runtime/deployment-runtimes/evo2-40b-portable-h100.json")
+    entries = {}
+    catalog = p.catalog()
+    digest = p.evidence_sha256({"test_fixture": "isolated-runtime-acceptance"})
+    for model in p.NEW:
+        record = original["record"] if model == "evo2-40b" else catalog.model(model).to_dict()
+        row = copy.deepcopy(original["qualification"])
+        row["model_id"] = model
+        row["active_runtime"] = {
+            "model_revision": record["model"]["source"]["revision"],
+            "runtime_image_digest": record["runtime"]["image"]["digest"],
+            "service": {"namespace": "fs2-models", "name": model, "port": 8000},
+        }
+        row["policy"] = {
+            "license_id": record["model"]["source"]["license"]["id"],
+            "non_clinical": record["interface"]["policy"]["non_clinical"],
+            "commercial_use": record["interface"]["policy"]["commercial_use"],
+        }
+        entries[model] = p.successor(record, row, model, digest, p.SOURCE[model])
+    directory = p.ROOT / "catalog/runtime"
+    archival = p.existing.load_catalog(directory, repo_root=directory / "packaged-repository")
+    bindings = {"schema": SERVING_BINDINGS_SCHEMA, "catalog_digest": archival.digest, "bindings": {}}
+    routes = {
+        "deployment-runtimes.json": json.dumps({"schema": SET_SCHEMA, "models": entries}),
+        "lean-routes.json": json.dumps({"schema": "fs2-serve.nebius.ai/lean-routes/v4", "routes": []}),
+    }
+    return routes, bindings
+
+
+@pytest.mark.parametrize("configmap", [False, True])
+def test_actual_registry_startup_accepts_bare_evidence_digest_and_both_successors(configmap):
+    routes, bindings = registry_inputs()
+    if configmap:
+        bindings = {"kind": "ConfigMap", "data": {"serving-bindings.json": json.dumps(bindings)}}
+    checks = p.validate_registry(routes, bindings)
+    assert checks["valid"] is True
+    assert checks["selected_runtime_models"] == sorted(p.NEW)
+    assert checks["registry_models"] >= len(p.NEW)
+    evidence = {"test_fixture": "isolated-runtime-acceptance"}
+    digest = p.evidence_sha256(evidence)
+    assert digest == hashlib.sha256(p.canonical_json(evidence)).hexdigest()
+    assert p.canonical_digest(evidence) == "sha256:" + digest
+
+
+@pytest.mark.parametrize("model", p.NEW)
+def test_actual_registry_startup_rejects_the_failed_release_prefixed_evidence_digest(model):
+    routes, bindings = registry_inputs()
+    runtimes = json.loads(routes["deployment-runtimes.json"])
+    evidence = runtimes["models"][model]["qualification"]["evidence"]
+    evidence["retained_deployments_sha256"] = "sha256:" + evidence["retained_deployments_sha256"]
+    routes["deployment-runtimes.json"] = json.dumps(runtimes)
+    with pytest.raises(RegistryError) as failure:
+        p.validate_registry(routes, bindings)
+    cause = failure.value
+    while cause.__cause__ is not None:
+        cause = cause.__cause__
+    assert "retained_deployments_sha256" in str(cause)
+
+
+def test_registry_preflight_does_not_replace_invalid_captured_bindings_with_empty_bindings():
+    routes, bindings = registry_inputs()
+    bindings["catalog_digest"] = hashlib.sha256(b"wrong-catalog").hexdigest()
+    with pytest.raises(RegistryError):
+        p.validate_registry(routes, bindings)
+
+
+def test_registry_preflight_validates_the_captured_variant_promotions_input():
+    routes, bindings = registry_inputs()
+    captured = {
+        "kind": "ConfigMap",
+        "data": {
+            "serving-bindings.json": json.dumps(bindings),
+            "model-variant-promotions.json": json.dumps({"schema": "not-a-supported-promotion-schema"}),
+        },
+    }
+    with pytest.raises(RegistryError) as failure:
+        p.validate_registry(routes, captured)
+    cause = failure.value
+    while cause.__cause__ is not None:
+        cause = cause.__cause__
+    assert "promotion" in str(cause)
 
 
 def test_ct_gate_requires_all_modes_two_matching_cohorts_and_exact_result_bytes(tmp_path):
