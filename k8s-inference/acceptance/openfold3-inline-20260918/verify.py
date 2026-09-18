@@ -9,6 +9,13 @@ import sys
 from prepare import CASES, ROOT
 
 
+def bind_input_identity(confidence, raw_sha):
+    if confidence.get("input_identity", {}).get("sha256") != raw_sha:
+        raise ValueError("Output does not bind the exact original source input")
+    if confidence.get("model_revision") != "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86":
+        raise ValueError("Output model revision changed")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--directory", type=Path, required=True)
@@ -30,8 +37,7 @@ def main():
                                                 expected_seeds=[seed], expected_samples_per_seed=1)
         raw = args.fixtures / "references" / pdb / f"{case_id}-input.json"
         raw_sha = hashlib.sha256(raw.read_bytes()).hexdigest()
-        if confidence.get("raw_input_sha256") != raw_sha:
-            raise ValueError("Output does not bind the exact original source input")
+        bind_input_identity(confidence, raw_sha)
         structures = [(output / r["structure"]["filename"]).read_text() for r in validated["results"]]
         evaluation = evaluate(case, {"structures": structures}, args.fixtures)
         if not evaluation["service_semantic_pass"]:
