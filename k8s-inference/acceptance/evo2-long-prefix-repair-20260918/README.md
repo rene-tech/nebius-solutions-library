@@ -1,8 +1,9 @@
 # Evo2-40B long-prefix memory repair
 
-Status: v1 passed isolated numerical and 96-request acceptance. The v2 successor
-adds responsive health handling and is replaying the full suite. Neither is
-promoted; customer-path qualification remains the release owner's next gate.
+Status: v1 and v2 passed their complete isolated numerical and 96-request suites.
+V2 additionally passed production-timing health and concurrent/duplicate checks.
+The candidate promotion package is prepared, not applied by this lane;
+customer-path qualification remains the release owner's next gate.
 
 ## Observed failure and fixed contract
 
@@ -129,5 +130,29 @@ The retained report is `v1-final-report.json`; its customer-path verdict is fals
 V2 also passed the full 8192-channel × 8192-prefix × 16-state CUDA comparison on
 both H100s. The isolated state workspace peak dropped from 57,043,124,224 to
 2,954,446,848 bytes, bitwise unchanged; this is not total model memory. Its
-96-request replay, production-timing health observer and subsequent actual-GPU
-serialization test must finish before the v2 isolated verdict is recorded.
+96-request replay completed successfully, with 260/260 health probes meeting the
+three-second deadline (maximum 0.3163 seconds). The subsequent concurrent long
+and short requests both passed; the duplicate returned 409 without executing.
+Exactly 98 server receipts prove one active GPU generation and no overlap.
+
+V2 median end-to-end internal HTTP latency was 3.129 seconds (256+64), 6.054
+seconds (1024+128), 12.320 seconds (4096+256), and 24.431 seconds (8192+512).
+The long-shape maximum was 27.226 seconds, including its first-use overhead;
+maximum allocated memory was 56.994/56.850 GB on the two GPUs. All 72 comparisons
+with previously completed shorter customer requests have identical sequences;
+all nine paired full-model comparisons and eight CUDA state comparisons are
+bitwise equal. These timings exclude public queueing and are not cold starts.
+
+Full logs, identity, source-byte hashes and numerical receipts are retained.
+The isolated v2 Pod and both task ConfigMaps were deleted after capture; the
+temporary internal port-forward was stopped. Two H100s were released. The
+combined CT/Evo2 candidate, rollback values/specs and validators are under
+`ct-evo2-candidate/` in the protected evidence root. Recheck its release-159
+baseline before applying over a newer control-plane release.
+
+Known inherited warning: Transformer Engine 2.8 reports its supported
+FlashAttention range through 2.8.1, while the pinned base image contains
+2.8.3.post1. Installed Vortex uses TE Linear/FP8 recipes and its own
+`vortex.ops.local_flash_attn_*` implementation, not TE DotProductAttention,
+whose import emits this warning. The candidate changes neither package.
+This compatibility debt remains documented; numerical tests found no drift.
