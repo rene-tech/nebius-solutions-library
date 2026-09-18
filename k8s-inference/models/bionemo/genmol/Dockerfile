@@ -44,6 +44,7 @@ ENV GENMOL_SOURCE_REVISION=add09fc83b7255bd09c797e527c0f4b51f5fb7c1 \
 
 WORKDIR /opt/fs2
 COPY k8s-inference/models/bionemo/genmol/server.py /opt/fs2/server.py
+COPY k8s-inference/models/bionemo/genmol/generation.py /opt/fs2/generation.py
 
 EXPOSE 8000
 ENTRYPOINT ["python", "-m", "uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

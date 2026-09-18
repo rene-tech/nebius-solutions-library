@@ -5,3 +5,4 @@ FROM ${BASE_IMAGE}
 LABEL ai.nebius.fs2.runtime-portability="dynamic-cuda-capability"
 
 COPY k8s-inference/models/bionemo/genmol/server.py /opt/fs2/server.py
+COPY k8s-inference/models/bionemo/genmol/generation.py /opt/fs2/generation.py
