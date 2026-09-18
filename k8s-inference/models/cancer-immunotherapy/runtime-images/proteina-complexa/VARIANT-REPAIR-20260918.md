@@ -12,12 +12,14 @@ Two independent defects were observed:
   `LigandFeatures` list/tuple check treats as empty. Accepting `Sequence`
   preserves both names, their order, and existing multi-ligand bond validation.
   The v2 architecture was already active; no environment workaround is needed.
-* Ligand `41_7BKC_LIGAND` generation and filtering succeeded. Evaluation failed
+* Ligand `41_7BKC_LIGAND` generation and filtering exited zero. Evaluation failed
   inside RF3's cuEquivariance import: Torch2.7 has `is_fx_tracing`, not the newer
   `is_fx_symbolic_tracing` names. RF3 swallowed that failure into an empty result;
   subsequently reading a `None` structure produced the misleading Biotite
   text-mode error. Failed single-file RF3 predictions now propagate the original
   exception rather than producing synthetic zero-confidence records.
+  Retained generation logs subsequently confirmed RF3 failures there too: the
+  zero exit was **not** proof of successful folding or valid reward scoring.
 
 The thin candidate keeps predecessor `f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca`,
 upstream source54058860, Torch2.7.0+cu126, Triton3.3.0, RF3 version/checkpoint,
@@ -28,7 +30,7 @@ monkeypatch Torch. Exact wheels are hash-locked. The
 [upstream0.10 release](https://github.com/NVIDIA/cuEquivariance/releases/tag/v0.10.0)
 records the tracing-API rename; actual0.9 kernels must still pass the H100 gate.
 
-`patch_variant_runtime.py` verifies both original source hashes before editing;
+`patch_variant_runtime.py` verifies all three original source hashes before editing;
 the original lock and published image remain historical evidence. Tests execute
 the pinned constructor and RF3 method, including actual OmegaConf inputs, before
 and after transformation, without consuming GPU work. Existing runtime tests
@@ -44,6 +46,20 @@ task-local writable XDG cache, both CuEq0.9 accelerated extension imports passed
 on H100 with Torch2.7 unchanged. The successor bakes the already documented full
 Dockerfile `/tmp/fs2-home` cache policy and checks directory creation as UID10001.
 This changes cache placement only, not the checkpoint mounts or model settings.
+
+The second isolated candidate (`5e9cef0e…`) passed those import/cache checks but
+exposed missing `Python.h` during actual Triton CUDA-driver JIT compilation.
+Its generation exited zero because the upstream composite reward layer also
+caught the RF3 failure and returned a zero total reward. This candidate is not
+qualified; its logs and outputs are retained, and its task Pod/ConfigMap removed.
+The successor installs Ubuntu's pinned `libpython3.12-dev=3.12.3-1ubuntu0.17`
+(including matching distro patch dependencies; Python remains3.12.3), checks
+real C-header compilation at build, and requires a tiny real H100 Triton kernel
+before sampling. Configured folding-model errors now propagate through the
+composite layer with their original cause rather than producing a synthetic
+score. Successful score aggregation and weights remain unchanged. The isolated
+matrix stops at its first failed stage instead of spending more model work on
+an already demonstrated runtime defect.
 
 Before promotion, replay the four exact original ligand/AME payloads and a prior
 successful protein-target payload on a task-owned H100 candidate. Inspect full

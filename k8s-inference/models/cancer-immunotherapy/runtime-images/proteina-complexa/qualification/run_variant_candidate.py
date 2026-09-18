@@ -30,6 +30,11 @@ def main():
     from cuequivariance_ops_torch.triangle_multiplicative_update import triangle_multiplicative_update
     assert callable(attention_pair_bias) and callable(triangle_multiplicative_update)
     assert torch.cuda.is_available()
+    # Actual GPU JIT prerequisite, not just import availability. This catches
+    # the observed missing Python.h failure before any full model sampling.
+    result = subprocess.check_output(
+        ["/opt/venv/bin/python", "/opt/fs2/validate_jit_prerequisites.py"], text=True)
+    save(root / "jit-prerequisite.json", json.loads(result))
     (root / "gpu.csv").write_text(subprocess.check_output(
         ["nvidia-smi", "--query-gpu=uuid,name,driver_version,memory.total", "--format=csv,noheader"], text=True))
     # Reuse exact checked-in generation verifier for Complexa/RF3. The AF2
@@ -64,6 +69,8 @@ def main():
             s["returncode"] == 0 for s in record["stages"])
         outcomes.append(record)
         save(root / "summary.json", outcomes)
+        if not record["completed_all_stages"]:
+            raise RuntimeError("Candidate stage failed; remaining model work not started")
     (root / "COMPLETE").touch()
 
 

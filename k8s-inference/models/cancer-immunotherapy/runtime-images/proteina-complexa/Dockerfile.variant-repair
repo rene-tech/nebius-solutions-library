@@ -5,6 +5,13 @@ USER root
 COPY --from=uv /uv /usr/local/bin/uv
 COPY --chmod=0444 variant-repair-requirements.lock /opt/fs2/variant-repair-requirements.lock
 COPY --chmod=0444 patch_variant_runtime.py /opt/fs2/patch_variant_runtime.py
+COPY --chmod=0444 validate_jit_prerequisites.py /opt/fs2/validate_jit_prerequisites.py
+# Triton's CUDA driver helper compiles a Python extension at first GPU use.
+# The predecessor had gcc but no Python.h. Pin the matching Ubuntu 3.12.3
+# development package; apt also applies its matching distro patch revision.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libpython3.12-dev=3.12.3-1ubuntu0.17 && rm -rf /var/lib/apt/lists/* && \
+    /opt/venv/bin/python /opt/fs2/validate_jit_prerequisites.py --cpu-only
 RUN uv pip install --python /opt/venv/bin/python --no-deps --require-hashes \
       -r /opt/fs2/variant-repair-requirements.lock && \
     /opt/venv/bin/python /opt/fs2/patch_variant_runtime.py --source /opt/fs2/source && \
@@ -14,7 +21,7 @@ RUN uv pip install --python /opt/venv/bin/python --no-deps --require-hashes \
 # to the mandatory isolated H100 gate, not a guessed CPU-build success.
 ARG FS2_SOURCE_COMMIT
 LABEL ai.nebius.fs2.variant-repair.source-commit="${FS2_SOURCE_COMMIT}" \
-      ai.nebius.fs2.variant-repair.scope="Hydra-list-ligands,torch27-compatible-cueq09,rf3-error-propagation"
+      ai.nebius.fs2.variant-repair.scope="Hydra-list-ligands,torch27-compatible-cueq09,python-jit-headers,folding-error-propagation"
 # The historical base pointed writable caches at the read-only model-artifact
 # namespace. Match the current full Dockerfile's task-local cache policy.
 ENV HOME=/tmp/fs2-home \

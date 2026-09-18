@@ -16,8 +16,10 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
+import warnings
 
 from omegaconf import OmegaConf
+import torch
 
 
 HERE = Path(__file__).resolve().parents[1]
@@ -27,6 +29,7 @@ spec.loader.exec_module(patcher)
 UPSTREAM = Path(os.environ.get("COMPLEXA_SOURCE_ROOT", "/opt/fs2/source"))
 DATASET = "src/proteinfoundation/datasets/gen_dataset.py"
 REWARD = "src/proteinfoundation/rewards/rf3_reward.py"
+COMPOSITE = "src/proteinfoundation/rewards/base_reward.py"
 
 
 def ligand_constructor(source):
@@ -51,6 +54,18 @@ def predictor(source):
     ns = {"Any": object, "logger": logging.getLogger("variant-repair-test"), "os": os}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[method], type_ignores=[])), "actual_rf3_prediction", "exec"), ns)
     return ns["predict_batch_from_files"]
+
+
+def composite(source):
+    tree = ast.parse(source)
+    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "CompositeRewardModel")
+    ns = {"Any": object, "torch": torch, "os": os, "warnings": warnings,
+          "BaseRewardModel": object, "REWARD_KEY": "reward", "GRAD_KEY": "grad",
+          "TOTAL_REWARD_KEY": "total_reward",
+          "_is_folding_model": lambda model: model.IS_FOLDING_MODEL}
+    exec(compile(ast.fix_missing_locations(ast.Module(body=[cls], type_ignores=[])),
+                 "actual_composite_reward", "exec"), ns)
+    return ns["CompositeRewardModel"]
 
 
 class VariantRepairTests(unittest.TestCase):
@@ -105,6 +120,45 @@ class VariantRepairTests(unittest.TestCase):
         result = {"output_cif_path": "real.cif", "summary_confidence": [{"plddt": 0.67}]}
         runner = SimpleNamespace(dump_dir="unused", predict_from_file=lambda **kwargs: result)
         self.assertEqual(fixed(runner, ["input.pdb"]), [result])
+
+    def test_composite_real_folding_failure_not_converted_to_zero(self):
+        original = composite(self.originals[COMPOSITE])
+        fixed = composite(patcher.transform(COMPOSITE, self.originals[COMPOSITE]))
+        cause = RuntimeError("Python.h compilation failed")
+
+        def fail(**kwargs):
+            raise cause
+
+        model = SimpleNamespace(IS_FOLDING_MODEL=True, score=fail)
+        with self.assertWarnsRegex(UserWarning, "Error computing reward from folding model"):
+            result = original({"rf3": model}).score("input.pdb")
+        self.assertEqual(result["total_reward"].item(), 0)
+        self.assertEqual(result["model_rewards"], {})
+        with self.assertRaisesRegex(RuntimeError, "Required folding reward model 'rf3' failed") as raised:
+            fixed({"rf3": model}).score("input.pdb")
+        self.assertIs(raised.exception.__cause__, cause)
+
+    def test_composite_successful_scores_and_weights_unchanged(self):
+        original = composite(self.originals[COMPOSITE])
+        fixed = composite(patcher.transform(COMPOSITE, self.originals[COMPOSITE]))
+        models = {
+            name: SimpleNamespace(IS_FOLDING_MODEL=True,
+                score=lambda value=value, **kwargs: {
+                    "total_reward": value, "reward": {"confidence": value}, "grad": {}})
+            for name, value in (("rf3", 0.7), ("af2", 0.6))}
+        before = original(models, {"rf3": 2.0, "af2": 0.5}).score("input.pdb")
+        after = fixed(models, {"rf3": 2.0, "af2": 0.5}).score("input.pdb")
+        torch.testing.assert_close(before["total_reward"], after["total_reward"], rtol=0, atol=0)
+        self.assertEqual(before["model_rewards"], after["model_rewards"])
+        for key in before["reward"]:
+            torch.testing.assert_close(before["reward"][key], after["reward"][key], rtol=0, atol=0)
+
+    def test_image_pins_required_headers_and_gpu_gate(self):
+        dockerfile = (HERE / "Dockerfile.variant-repair").read_text()
+        self.assertIn("libpython3.12-dev=3.12.3-1ubuntu0.17", dockerfile)
+        self.assertIn("validate_jit_prerequisites.py --cpu-only", dockerfile)
+        runner = (HERE / "qualification/run_variant_candidate.py").read_text()
+        self.assertLess(runner.index("jit-prerequisite.json"), runner.index('for case in plan["cases"]'))
 
     def test_patch_validates_all_inputs_before_editing(self):
         with tempfile.TemporaryDirectory() as directory:

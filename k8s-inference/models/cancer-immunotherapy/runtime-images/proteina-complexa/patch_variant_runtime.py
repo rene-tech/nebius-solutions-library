@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Apply two fail-closed repairs to the exact pinned Complexa source tree.
+"""Apply fail-closed repairs to the exact pinned Complexa source tree.
 
 The scientific parameters and checkpoint bytes remain unchanged. ListConfig is
 the actual Hydra representation of multi-ligand AME targets. Failed RF3 calls
@@ -18,6 +18,8 @@ SOURCE_HASHES = {
         "ebcc3be71c2a185046adb1c09b640a864dbafdcd0f88a6339a0861faa3f5c030",
     "src/proteinfoundation/rewards/rf3_reward.py":
         "0f2a9354266c2920ed86ca3b4289066656c58fc1fb7b334f6943b74b184861ce",
+    "src/proteinfoundation/rewards/base_reward.py":
+        "4eff56e8aa93e5a044b771154f120b26708cce372d3ea2ccfbe776cfece0a5dc",
 }
 
 
@@ -38,6 +40,14 @@ def transform(relative: str, source: str) -> str:
         return source.replace(
             before,
             'raise RuntimeError("RF3 prediction failed; no valid structure returned") from e',
+        )
+    if relative.endswith("base_reward.py"):
+        before = 'warnings.warn(f"Error computing reward from folding model \'{name}\': {e}")'
+        if source.count(before) != 1:
+            raise ValueError("Unexpected pinned composite folding error handler")
+        return source.replace(
+            before,
+            'raise RuntimeError(f"Required folding reward model \'{name}\' failed") from e',
         )
     raise ValueError("Unrecognized pinned source file")
 
