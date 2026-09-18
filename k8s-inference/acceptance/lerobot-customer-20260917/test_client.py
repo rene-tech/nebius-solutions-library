@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import httpx2
 import pytest
 import zstandard
+from fs2_serve.models import OperationView
 
 import client
 import dataset_io
@@ -17,6 +18,32 @@ import dataset_io
 OP = "00000000-0000-4000-8000-000000000021"
 UPLOAD = "00000000-0000-4000-8000-000000000022"
 TOKEN = "private-test-key-must-not-appear"
+
+
+@pytest.mark.parametrize("status", ["running", "succeeded", "cancelled"])
+def test_actual_native_operation_dto_and_scientific_envelope(status):
+    # Native GET returns this actual server DTO directly; its `operation` is
+    # the action name, not the scientific status envelope's nested object.
+    native = OperationView(
+        id=OP,
+        parent_operation_id=UPLOAD,
+        tenant_id="robotics",
+        principal_id="test-canary",
+        token_id=UPLOAD,
+        model_id="cosmos3-nano",
+        model_revision="pinned-test-revision",
+        protocol="native",
+        operation="generate-media",
+        idempotency_key="test-native-operation-dto",
+        status=status,
+        accepted_at="2026-09-18T02:00:00Z",
+        available_at="2026-09-18T02:00:00Z",
+    ).model_dump(mode="json")
+    assert native["operation"] == "generate-media"
+    assert client.operation(native) is native
+    assert client.operation(native)["parent_operation_id"] == UPLOAD
+    assert client.operation({"operation": native, "batch": {}}) is native
+    assert client.operation(native)["status"] == status
 
 
 def test_key_requires_0600_and_no_symlink(tmp_path):

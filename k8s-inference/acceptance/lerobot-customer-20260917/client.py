@@ -119,7 +119,8 @@ def artifact_view(value):
 
 
 def operation(value):
-    return value.get("operation", value)
+    nested = value.get("operation")
+    return nested if isinstance(nested, dict) else value
 
 
 def safe_error_code(error):
