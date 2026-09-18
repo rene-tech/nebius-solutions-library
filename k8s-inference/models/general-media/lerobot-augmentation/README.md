@@ -6,6 +6,13 @@ typed augmentation policy, and receive one complete LeRobot dataset artifact per
 variant. Cosmos receives individual videos, prompts, and controls; it never
 receives a client-local dataset path.
 
+The real release148 public MCP upload → augment → download → LeRobot reopen
+path passed on 2026-09-18. The [scoped completion receipt](activation/qualification/public-completion-r148.json)
+qualifies dataset/media mechanics, not strict visual preservation or physical
+action alignment. Two unchanged final-release cohorts are a separate acceptance
+step. Use the [ordinary-key directory client](../../../acceptance/lerobot-customer-20260917/README.md)
+to run a local dataset without manually constructing artifact manifests.
+
 ## Frozen compatibility
 
 - LeRobot dataset format: v3.0.
@@ -20,6 +27,34 @@ The LeRobot v3 reader is the acceptance authority. A run is not successful merel
 because Cosmos returned MP4 bytes: every output must be finalized, reopened with
 the pinned `LeRobotDataset`, and have every output frame decoded before the
 artifact is published.
+
+## Generative changes, not calibrated or action-aligned transformations
+
+`augmentation.dimensions[].strength` is a **prompt-only annotation**. For example,
+`0.7` becomes text such as `lighting (strength=0.70)` in `{variation}` or
+`{instruction}`. It is not a native denoising parameter, a 70% edit amount, or a
+calibrated geometry-preservation control. A prompt template that omits both
+placeholders does not use that annotation. The frozen transfer worker separately
+sets each selected edge/blur control's native `control_weight` to `1.0`.
+`guidance_scale` and `num_inference_steps` are native parameters; they do not make
+dimension strength a calibrated quantity.
+
+The first successful public lighting case (edge transfer, 35 steps, guidance 6,
+textual strength 0.7) produced an obvious warm/golden appearance change. In
+beginning/middle/end samples, the broad bin layout and gripper movement remained
+recognizable, but fruit-like objects changed colors/shapes and fine robot
+contours/materials changed. This was **not a strictly lighting-only edit**.
+There was no blank frame or gross scene cut in those three samples; this sparse
+review cannot exclude flicker or other defects between them.
+
+That run's complete two-episode/two-camera output passed the pinned reader,
+decoded all 128 camera frames, and retained its stored nonvideo values exactly.
+Those facts qualify pipeline/data integrity, **not physical action alignment,
+grasp/contact correctness, or downstream training validity**. The reference
+fixture itself contains public model-generated imagery/actions, not calibrated
+robot telemetry. Review generated trajectories, objects and contacts for the
+intended use before treating preserved action arrays as valid labels. No output
+mode guarantees their physical consistency with the generated imagery.
 
 ## Input references
 
@@ -56,8 +91,9 @@ See `fixtures/scientific-run-request.json`.
 
 The [additive activation procedure](activation/README.md) packages the canonical
 profile/schema and preserves the complete existing deployment. Bootstrap
-discovery reports `active` with nullable public/scheduler receipts; this is
-dispatchable onboarding, not a completed qualification claim. A caller needs
+`active` discovery was explicitly unqualified. The new qualified profile binds
+the actual release148 public completion and scheduler receipts; its limitations
+remain part of the contract. A caller needs
 both model grants plus `artifacts.write`, `operations.result`, `inference.invoke`,
 `operations.read` and `catalog.read`; cancellation additionally requires
 `operations.cancel`. The parent and its sequential delegated child share the
@@ -89,7 +125,8 @@ variant it creates a complete new dataset:
 
 - selected camera frames are replaced by Cosmos output;
 - unselected cameras and episodes are copied through the LeRobot reader/writer;
-- timestamps and frame indexes are recreated at the original integer FPS;
+- canonical fixed-rate timestamps and frame indexes are retained at the original
+  integer FPS and source dtype; noncanonical timing is rejected before generation;
 - task, action, state, and other non-index features are preserved by default;
 - the source action trajectory is preserved exactly;
 - `dataset.finalize()` is mandatory before validation and packaging.
@@ -112,9 +149,17 @@ requested variant workspace before GPU generation. Generation caps apply only
 to selected clips; short or smaller untouched streams remain valid. Full
 [runtime limits and numeric-preservation constraints](runtime/README.md) apply.
 
+Source timestamps must already equal `frame_index / fps` in their stored float
+dtype, with canonical first-occurrence task-index ordering; unsupported records
+are rejected rather than silently normalized. Numeric preservation does not
+guarantee matching generated motion: even edge transfer can change object
+appearance and fine robot details. The actual lighting run changed fruit colors,
+shapes/surfaces and gripper details as well as lighting. Inspect all output before
+training; strictly lighting-only edits and physical action fidelity are unproven.
+
 ## Queue, progress, and artifacts
 
-The App is intended to use the existing `scientific-batch-v1` admission,
+The App uses the existing `scientific-batch-v1` admission,
 idempotency, priority, cancellation, Kueue, object-artifact, usage-accounting, and
 Apps-admin paths. The worker writes bounded JSON-lines progress and a terminal
 result manifest for the existing companion collector. It is a CPU dataset worker
@@ -154,10 +199,11 @@ worker expects public bearer authentication and is incompatible with these
 scoped routes. The compiler and collector are installed, while catalog exposure
 remains gated independently by qualification.
 
-No route is customer-ready yet. Promotion requires a digest-pinned worker image,
-catalog/execution-map integration, live public-path runs for two distinct
-augmentation dimensions (one lighting), and successful reload of both published
-datasets through `LeRobotDataset`.
+The release148 debug workflow passed with the pinned worker, actual parent and
+two attributed children, concurrency-one sharing, both idempotent replays, and
+full independent dataset reload. It is not the final customer release: two
+unchanged-release cohorts covering lighting/environment, cancellation and the
+ordinary HTTP/MCP surfaces remain a separately recorded gate.
 
 Local evidence from 2026-09-17 covers the LeRobot reader round trip, the scoped
 client transport, and real PostgreSQL concurrency, accounting, replay, and stale
@@ -171,11 +217,15 @@ The historical CPU image was published as
 `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:a725b52d6b53ff377d05bd87e748d1722399140b08a10dde49918a029734cfc5`.
 The [registry publication receipt](activation/registry-publication-20260917.json)
 records the independent manifest/config check. It has been superseded by
-the [integrity-corrected worker publication](activation/registry-publication-integrity-20260917.json).
+the [integrity-corrected worker publication](activation/registry-publication-integrity-20260917.json)
+and then the [actual-protocol correction](activation/registry-publication-protocol-20260918.json).
 The [active onboarding identity](activation/active-onboarding-20260918.json)
-and canonical execution map bind that successor's registry manifest. Public
-completion and scheduler receipts remain null until the actual deployed App is
-tested; local tests do not manufacture those receipts.
+retains the pre-qualification state. The canonical execution map binds worker
+`sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042`;
+the profile's public and scheduler proofs reference the actual release148 run.
+The initial release147 parser failure remains retained and is not counted as a
+pass. Hugging Face/object-store sources and maximum-size requests have not been
+qualified by this uploaded-bundle test.
 
 Live direct H100 preview tests on 2026-09-17 produced distinct lighting V2V and
 environment transfer MP4s, then rewrote, packaged, extracted and fully decoded
