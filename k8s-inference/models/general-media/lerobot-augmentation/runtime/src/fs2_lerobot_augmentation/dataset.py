@@ -9,19 +9,19 @@ import math
 import os
 import shutil
 import tarfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
-from .contracts import Selection
+from .contracts import MAX_BUNDLE_BYTES, Selection
 
 LEROBOT_VERSION = "0.6.1"
 BUNDLE_MANIFEST_SCHEMA = "fs2-serve.nebius.ai/lerobot-bundle-manifest/v1"
 PROVENANCE_SCHEMA = "fs2-serve.nebius.ai/lerobot-augmentation-provenance/v1"
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_FILES = 100_000
-MAX_EXPANDED_BYTES = 1024**4
+MAX_EXPANDED_BYTES = 8 * 1024**3
 MIN_COSMOS_FRAMES = 16
 MAX_COSMOS_FRAMES = 400
 MAX_PIXELS = 1280 * 720
@@ -273,6 +273,8 @@ def open_and_validate(
     repo_id: str,
     selection: Selection,
     expected_manifest_sha256: str | None = None,
+    generation_bounds: bool = True,
+    checkpoint: Callable[[], None] | None = None,
 ) -> DatasetInspection:
     """Fully load rows/videos and prove frame, timestamp, action, and episode alignment."""
 
@@ -284,6 +286,7 @@ def open_and_validate(
     if installed != LEROBOT_VERSION:
         raise DatasetError(f"lerobot=={LEROBOT_VERSION} is required, found {installed}")
     try:
+        import numpy as np
         from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
         dataset = LeRobotDataset(repo_id, root=root, video_backend="pyav", return_uint8=True)
@@ -301,7 +304,9 @@ def open_and_validate(
     cameras = tuple(sorted(key for key, feature in features.items() if feature.get("dtype") == "video"))
     selected_episodes = selection.resolve_episodes(total_episodes)
     selected_cameras = selection.resolve_cameras(cameras)
-    for camera in selected_cameras:
+    if generation_bounds and (len(selected_episodes) > 256 or len(selected_cameras) > 8):
+        raise DatasetError("generation selection supports at most 256 episodes and 8 cameras, including 'all'")
+    for camera in cameras:
         shape = features[camera].get("shape")
         if (
             not isinstance(shape, list)
@@ -310,9 +315,10 @@ def open_and_validate(
         ):
             raise DatasetError(f"camera {camera} has an invalid RGB video shape")
         channels, height, width = shape
-        if (
-            channels != 3
-            or not 256 <= width <= 1280
+        if channels != 3:
+            raise DatasetError(f"camera {camera} is not RGB")
+        if generation_bounds and camera in selected_cameras and (
+            not 256 <= width <= 1280
             or not 256 <= height <= 720
             or width * height > MAX_PIXELS
             or width % 16
@@ -354,12 +360,14 @@ def open_and_validate(
             raise DatasetError(f"episode {index} has no valid task")
         episodes.append(Episode(index=index, start=start, stop=stop, task=task))
         selected = index in selected_episodes
-        if selected and not MIN_COSMOS_FRAMES <= length <= MAX_COSMOS_FRAMES:
+        if generation_bounds and selected and not MIN_COSMOS_FRAMES <= length <= MAX_COSMOS_FRAMES:
             raise DatasetError(
                 f"episode {index} has {length} frames; the qualified Cosmos bound is "
                 f"{MIN_COSMOS_FRAMES}..{MAX_COSMOS_FRAMES}"
             )
         for offset, row_index in enumerate(range(start, stop)):
+            if checkpoint is not None:
+                checkpoint()
             raw = dataset.get_raw_item(row_index)
             if int(_scalar(raw["episode_index"], "episode_index")) != index:
                 raise DatasetError(f"episode {index} data rows contain another episode index")
@@ -373,6 +381,7 @@ def open_and_validate(
                 or global_index != row_index
                 or task_value != task_index
                 or task_index != first_task_index
+                or not math.isfinite(timestamp)
                 or abs(timestamp - offset / fps) > 1e-4
             ):
                 raise DatasetError(f"episode {index} frame/timestamp alignment is invalid")
@@ -381,14 +390,16 @@ def open_and_validate(
             for key, expected_shape in states.items():
                 if _shape(raw[key]) != expected_shape:
                     raise DatasetError(f"episode {index} state shape for {key} differs from info.json")
-            if selected:
-                decoded_row = dataset[row_index]
-                for camera in selected_cameras:
-                    expected_shape = tuple(int(part) for part in cast(list[int], features[camera]["shape"]))
-                    value_shape = _shape(decoded_row[camera])
-                    if value_shape != expected_shape:
-                        raise DatasetError(f"episode {index} camera {camera} frame shape differs from info.json")
-                    decoded += 1
+            for key in ("action", *states):
+                if not np.isfinite(np.asarray(raw[key])).all():
+                    raise DatasetError(f"episode {index} {key} contains non-finite values")
+            decoded_row = dataset[row_index]
+            for camera in cameras:
+                expected_shape = tuple(int(part) for part in cast(list[int], features[camera]["shape"]))
+                value_shape = _shape(decoded_row[camera])
+                if value_shape != expected_shape:
+                    raise DatasetError(f"episode {index} camera {camera} frame shape differs from info.json")
+                decoded += 1
         expected_start = stop
     if expected_start != total_frames:
         raise DatasetError("episode boundaries do not cover every dataset frame")
@@ -434,7 +445,10 @@ def _rgb_numpy(value: object) -> Any:
     return array
 
 
-def encode_episode_reference(inspection: DatasetInspection, episode: Episode, camera: str, output: Path) -> None:
+def encode_episode_reference(
+    inspection: DatasetInspection, episode: Episode, camera: str, output: Path,
+    *, checkpoint: Callable[[], None] | None = None,
+) -> None:
     """Encode exactly one source episode so Cosmos never receives adjacent shard episodes."""
 
     try:
@@ -464,6 +478,8 @@ def encode_episode_reference(inspection: DatasetInspection, episode: Episode, ca
             stream.pix_fmt = "yuv420p"
             stream.options = {"crf": "18", "preset": "fast", "g": str(inspection.fps)}
             for row_index in range(episode.start, episode.stop):
+                if checkpoint is not None:
+                    checkpoint()
                 frame = av.VideoFrame.from_ndarray(_rgb_numpy(inspection.dataset[row_index][camera]), format="rgb24")
                 for packet in stream.encode(frame):
                     container.mux(packet)
@@ -501,6 +517,7 @@ def rewrite_variant(
     video_replacements: Mapping[tuple[int, str], Path],
     action_replacements: Mapping[int, object],
     provenance: Mapping[str, Any],
+    checkpoint: Callable[[], None] | None = None,
 ) -> DatasetInspection:
     """Create, finalize, reopen, and fully validate one complete dataset variant."""
 
@@ -523,16 +540,19 @@ def rewrite_variant(
         video_backend="pyav",
         batch_encoding_size=1,
     )
-    decoded_replacements: dict[tuple[int, str], Any] = {}
-    for (episode_index, camera), path in video_replacements.items():
-        episode = inspection.episodes[episode_index]
-        frames = decode_generated_video(path, episode=episode, fps=inspection.fps)
-        expected = tuple(int(part) for part in source.features[camera]["shape"])
-        if _shape(frames)[1:] != expected:
-            raise DatasetError(f"generated Cosmos MP4 for episode {episode_index}/{camera} has the wrong shape")
-        decoded_replacements[(episode_index, camera)] = frames
     try:
         for episode in inspection.episodes:
+            if checkpoint is not None:
+                checkpoint()
+            decoded_replacements: dict[str, Any] = {}
+            for camera in inspection.cameras:
+                path = video_replacements.get((episode.index, camera))
+                if path is None:
+                    continue
+                decoded_replacements[camera] = decode_generated_video(path, episode=episode, fps=inspection.fps)
+                expected = tuple(int(part) for part in source.features[camera]["shape"])
+                if _shape(decoded_replacements[camera])[1:] != expected:
+                    raise DatasetError(f"generated Cosmos MP4 for episode {episode.index}/{camera} has the wrong shape")
             replacement_actions = action_replacements.get(episode.index)
             if replacement_actions is not None:
                 action_array = np.asarray(replacement_actions, dtype=source.features["action"]["dtype"])
@@ -541,17 +561,21 @@ def rewrite_variant(
             else:
                 action_array = None
             for offset, row_index in enumerate(range(episode.start, episode.stop)):
+                if checkpoint is not None:
+                    checkpoint()
                 decoded = source[row_index]
                 frame = {key: value for key, value in decoded.items() if key not in AUTO_FEATURES}
                 frame["task"] = episode.task
                 for camera in inspection.cameras:
-                    replacement = decoded_replacements.get((episode.index, camera))
+                    replacement = decoded_replacements.get(camera)
                     if replacement is not None:
                         frame[camera] = replacement[offset]
                 if action_array is not None:
                     frame["action"] = action_array[offset]
                 target.add_frame(frame)
             target.save_episode()
+            # Do not retain earlier episodes' decoded video tensors through frame views.
+            del frame, decoded, replacement, decoded_replacements
         target.finalize()
     except Exception:
         with __import__("contextlib").suppress(Exception):
@@ -567,12 +591,16 @@ def rewrite_variant(
         output_root,
         repo_id=output_repo_id,
         selection=Selection(episodes="all", cameras="all"),
+        generation_bounds=False,
+        checkpoint=checkpoint,
     )
 
 
 def extract_uploaded_bundle(archive: Path, destination: Path, *, expected_sha256: str) -> None:
     """Extract an admitted `.tar.zst` without links, traversal, or special files."""
 
+    if archive.stat().st_size > MAX_BUNDLE_BYTES:
+        raise DatasetError("uploaded dataset bundle exceeds the 5 GiB compressed bound")
     if sha256_file(archive) != expected_sha256:
         raise DatasetError("uploaded dataset artifact digest mismatch")
     try:
@@ -619,10 +647,14 @@ def package_dataset(root: Path, output: Path) -> FileIdentity:
         raise DatasetError("zstandard is required to package a dataset bundle") from error
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_suffix(output.suffix + ".partial")
-    with temporary.open("xb") as raw, zstandard.ZstdCompressor(level=6, threads=-1).stream_writer(raw) as encoded:
+    with temporary.open("xb") as raw, zstandard.ZstdCompressor(level=6, threads=2).stream_writer(raw) as encoded:
         with tarfile.open(fileobj=encoded, mode="w|") as bundle:
             for path in sorted(root.rglob("*")):
                 bundle.add(path, arcname=path.relative_to(root).as_posix(), recursive=False)
+                if raw.tell() > MAX_BUNDLE_BYTES:
+                    raise DatasetError("output dataset exceeds the 5 GiB compressed bound")
+    if temporary.stat().st_size > MAX_BUNDLE_BYTES:
+        raise DatasetError("output dataset exceeds the 5 GiB compressed bound")
     temporary.replace(output)
     return FileIdentity(path=output.name, size_bytes=output.stat().st_size, sha256=sha256_file(output))
 

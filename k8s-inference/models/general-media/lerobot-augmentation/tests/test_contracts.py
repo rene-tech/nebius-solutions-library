@@ -186,6 +186,7 @@ def test_huggingface_localization_materializes_the_common_integrity_manifest(
         (destination / "meta" / "info.json").write_text("{}")
 
     monkeypatch.setattr("huggingface_hub.snapshot_download", snapshot_download)
+    monkeypatch.setattr("huggingface_hub.HfApi.list_repo_tree", lambda *args, **kwargs: [])
     destination = tmp_path / "localized"
     localize_huggingface(
         HuggingFaceSource(

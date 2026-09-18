@@ -91,7 +91,7 @@
         "kind": {"const": "uploaded-bundle"},
         "artifact_id": {"$ref": "#/$defs/artifact_id"},
         "sha256": {"$ref": "#/$defs/sha256"},
-        "size_bytes": {"type": "integer", "minimum": 1, "maximum": 137438953472},
+        "size_bytes": {"type": "integer", "minimum": 1, "maximum": 5368709120},
         "media_type": {"const": "application/x-tar"},
         "compression": {"const": "zstd"}
       }

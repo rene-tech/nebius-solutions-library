@@ -11,7 +11,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any, cast
 
 from .contracts import HuggingFaceSource, ObjectStoreSource, UploadedBundleSource
-from .dataset import DatasetError, extract_uploaded_bundle, sha256_file, write_bundle_manifest
+from .dataset import (
+    MAX_EXPANDED_BYTES,
+    MAX_FILES,
+    DatasetError,
+    extract_uploaded_bundle,
+    sha256_file,
+    write_bundle_manifest,
+)
 
 SOURCE_REFERENCE_SCHEMA = "fs2-serve.nebius.ai/lerobot-source-reference/v1"
 MAX_SOURCE_REFERENCE_BYTES = 64 * 1024
@@ -53,7 +60,7 @@ def verify_source_reference(
 
 def localize_huggingface(source: HuggingFaceSource, destination: Path) -> Path:
     try:
-        from huggingface_hub import snapshot_download
+        from huggingface_hub import HfApi, snapshot_download
     except ImportError as error:
         raise DatasetError("huggingface-hub is required for a Hugging Face dataset source") from error
     token: str | bool | None = False
@@ -72,6 +79,19 @@ def localize_huggingface(source: HuggingFaceSource, destination: Path) -> Path:
         token = token_value
     _new_destination(destination)
     try:
+        files = HfApi(token=token).list_repo_tree(
+            source.repo_id, repo_type="dataset", revision=source.revision, recursive=True
+        )
+        total = 0
+        count = 0
+        for item in files:
+            size = getattr(item, "size", None)
+            if size is None:
+                continue  # RepoFolder
+            count += 1
+            total += int(size)
+            if total > MAX_EXPANDED_BYTES or count > MAX_FILES:
+                raise DatasetError("Hugging Face source exceeds the 8 GiB/file-count localization bound")
         snapshot_download(
             repo_id=source.repo_id,
             repo_type="dataset",
@@ -82,6 +102,9 @@ def localize_huggingface(source: HuggingFaceSource, destination: Path) -> Path:
         # An immutable Hub revision proves the remote source identity. Materialize
         # the complete inventory required of all source forms before validation.
         write_bundle_manifest(destination)
+    except DatasetError:
+        shutil.rmtree(destination, ignore_errors=True)
+        raise
     except Exception as error:
         shutil.rmtree(destination, ignore_errors=True)
         raise DatasetError("Hugging Face dataset localization failed") from error
@@ -125,6 +148,7 @@ def localize_object_store(source: ObjectStoreSource, destination: Path) -> Path:
         prefix = source.object_prefix.rstrip("/") + "/"
         paginator = client.get_paginator("list_objects_v2")
         count = 0
+        total = 0
         for page in paginator.paginate(Bucket=binding["bucket"], Prefix=prefix):
             for item in page.get("Contents", []):
                 key = item.get("Key")
@@ -134,8 +158,12 @@ def localize_object_store(source: ObjectStoreSource, destination: Path) -> Path:
                 if relative.is_absolute() or any(part in {"", ".", ".."} for part in relative.parts):
                     raise DatasetError("object-store source contains an unsafe object key")
                 count += 1
-                if count > 100_000:
-                    raise DatasetError("object-store source exceeds the file-count bound")
+                size = item.get("Size")
+                if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+                    raise DatasetError("object-store source is missing object size metadata")
+                total += size
+                if count > MAX_FILES or total > MAX_EXPANDED_BYTES:
+                    raise DatasetError("object-store source exceeds the 8 GiB/file-count localization bound")
                 target = destination.joinpath(*relative.parts)
                 target.parent.mkdir(parents=True, exist_ok=True)
                 client.download_file(binding["bucket"], key, str(target))

@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Literal, cast
 
 REQUEST_SCHEMA = "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-request/v1"
+MAX_BUNDLE_BYTES = 5 * 1024**3
 ALLOWED_TEMPLATE_FIELDS = frozenset({"task", "episode_index", "camera", "variation", "instruction"})
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _REVISION = re.compile(r"^[0-9a-f]{40}$")
@@ -139,7 +140,7 @@ def parse_source(value: object) -> DatasetSource:
             kind="uploaded-bundle",
             artifact_id=_text(item["artifact_id"], label="artifact_id", maximum=128, pattern=_ARTIFACT_ID),
             sha256=_text(item["sha256"], label="sha256", maximum=64, pattern=_SHA256),
-            size_bytes=_integer(item["size_bytes"], label="size_bytes", minimum=1, maximum=128 * 1024**3),
+            size_bytes=_integer(item["size_bytes"], label="size_bytes", minimum=1, maximum=MAX_BUNDLE_BYTES),
             media_type="application/x-tar",
             compression="zstd",
         )

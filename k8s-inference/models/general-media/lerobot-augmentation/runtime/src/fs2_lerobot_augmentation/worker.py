@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import signal
 import time
 from collections.abc import Mapping
@@ -13,8 +14,8 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-from .contracts import AugmentationRequest
-from .cosmos import MODEL_REVISION, SERVING_REVISION, CosmosClient, CosmosError
+from .contracts import MAX_BUNDLE_BYTES, AugmentationRequest
+from .cosmos import MAX_OUTPUT_BYTES, MAX_REFERENCE_BYTES, MODEL_REVISION, SERVING_REVISION, CosmosClient, CosmosError
 from .dataset import (
     DatasetError,
     DatasetInspection,
@@ -29,6 +30,8 @@ from .localize import localize_huggingface, localize_object_store, localize_uplo
 
 RESULT_SCHEMA = "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-result/v1"
 PROGRESS_SCHEMA = "fs2-serve.nebius.ai/cosmos3-lerobot-progress/v1"
+WORKSPACE_BYTES = 32 * 1024**3
+WORKSPACE_HEADROOM_BYTES = 2 * 1024**3
 
 
 class CancelledError(RuntimeError):
@@ -133,6 +136,45 @@ def _write_json(path: Path, value: object) -> None:
     temporary.replace(path)
 
 
+def workspace_plan(
+    inspection: DatasetInspection, *, variants: int, workspace: Path, source_artifact: Path | None
+) -> Mapping[str, int]:
+    """Conservative admission estimate; actual artifact and pod disk caps still apply."""
+    expanded = sum(path.stat().st_size for path in inspection.root.rglob("*") if path.is_file())
+    rgb_per_frame = sum(
+        int(shape[0]) * int(shape[1]) * int(shape[2])
+        for shape in (inspection.dataset.features[camera]["shape"] for camera in inspection.cameras)
+    )
+    # Rewrites include untouched episodes/cameras. Estimate both retained dataset
+    # directories and their compressed artifacts, not only selected clips.
+    variant_bytes = min(MAX_BUNDLE_BYTES, expanded + 2 * inspection.frames * rgb_per_frame)
+    units = len(inspection.selected_episodes) * len(inspection.selected_cameras)
+    compressed = source_artifact.stat().st_size if source_artifact is not None else 0
+    scratch = 2 * max(episode.frames for episode in inspection.episodes) * rgb_per_frame
+    required = (
+        compressed
+        + expanded
+        + units * MAX_REFERENCE_BYTES
+        + units * variants * MAX_OUTPUT_BYTES
+        + 2 * variants * variant_bytes
+        + scratch
+        + WORKSPACE_HEADROOM_BYTES
+    )
+    if required > WORKSPACE_BYTES:
+        raise DatasetError(
+            f"dataset/selection/variants need an estimated {required} workspace bytes; "
+            f"the supported budget is {WORKSPACE_BYTES}; reduce the dataset or selection/variant count"
+        )
+    materialized = sum(path.stat().st_size for path in workspace.rglob("*") if path.is_file())
+    if shutil.disk_usage(workspace).free < max(0, required - materialized):
+        raise DatasetError("insufficient free workspace for the estimated dataset rewrite; no GPU work started")
+    return {
+        "estimated_peak_bytes": required,
+        "budget_bytes": WORKSPACE_BYTES,
+        "headroom_bytes": WORKSPACE_HEADROOM_BYTES,
+    }
+
+
 def run(
     request: AugmentationRequest,
     *,
@@ -159,13 +201,21 @@ def run(
         return loaded
     cancellation = Cancellation()
     cancellation.install()
+
+    def check_cancelled() -> None:
+        if cancellation.requested:
+            raise CancelledError
+
+    check_cancelled()
     localized = _localize(request, workspace, source_artifact, request_digest)
+    check_cancelled()
     expected_manifest = request.source.manifest_sha256 if request.source.kind == "object-store" else None
     inspection = open_and_validate(
         localized,
         repo_id=_source_repo_id(request),
         selection=request.selection,
         expected_manifest_sha256=expected_manifest,
+        checkpoint=check_cancelled,
     )
     for episode_index in inspection.selected_episodes:
         if any(
@@ -174,8 +224,12 @@ def run(
         ):
             raise DatasetError(f"episode {episode_index} does not contain every requested conditioning frame")
     total_units = len(request.variant_seeds) * len(inspection.selected_episodes) * len(inspection.selected_cameras)
+    storage = workspace_plan(
+        inspection, variants=len(request.variant_seeds), workspace=workspace, source_artifact=source_artifact
+    )
+    check_cancelled()
     progress = Progress(workspace / "progress.jsonl", operation_id=operation_id, total_units=total_units)
-    progress.emit("source-validated", source_tree_sha256=inspection.tree_sha256)
+    progress.emit("source-validated", source_tree_sha256=inspection.tree_sha256, workspace=storage)
     try:
         client = CosmosClient(
             platform_base_url,
@@ -200,7 +254,7 @@ def run(
                     raise CancelledError
                 reference = references / f"episode-{episode_index:06d}" / f"{camera}.mp4"
                 if not reference.is_file():
-                    encode_episode_reference(inspection, episode, camera, reference)
+                    encode_episode_reference(inspection, episode, camera, reference, checkpoint=check_cancelled)
                 output = (
                     generated_root / f"variant-{variant_index:02d}" / f"episode-{episode_index:06d}" / f"{camera}.mp4"
                 )
@@ -229,6 +283,7 @@ def run(
                             unit_key=f"v{variant_index}/e{episode_index}/{camera}/s{seed}",
                             cancelled=lambda: cancellation.requested,
                         )
+                        check_cancelled()
                         video_replacements[(episode_index, camera)] = generation.video_path
                         operations.append(
                             {
@@ -254,6 +309,7 @@ def run(
                         last_error = None
                         break
                     except CosmosError as error:
+                        check_cancelled()
                         last_error = error
                         progress.emit(
                             "generation-attempt-failed",
@@ -305,8 +361,11 @@ def run(
             video_replacements=video_replacements,
             action_replacements={},
             provenance=provenance,
+            checkpoint=check_cancelled,
         )
+        check_cancelled()
         artifact = package_dataset(output_root, workspace / "artifacts" / f"variant-{variant_index:02d}.tar.zst")
+        check_cancelled()
         provenance_digest = sha256_file(output_root / "meta" / "fs2-augmentation-provenance.json")
         variant_results.append(
             {
@@ -339,6 +398,7 @@ def run(
         "variants": variant_results,
         "failures": failures,
     }
+    check_cancelled()
     _write_json(result_path, result)
     _write_json(
         workspace / "artifact-index.json",
