@@ -452,6 +452,7 @@ class RuntimeResult(StrictModel):
     runtime: RuntimeIdentity
     semantic_outcome: str
     failure_code: str | None = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
+    failure_detail: str | None = Field(default=None, max_length=1024)
     usage: ReportedUsage | None = None
     lifecycle: RuntimeLifecycleObservation | None = None
 

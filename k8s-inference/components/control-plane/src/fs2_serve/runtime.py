@@ -13,6 +13,7 @@ import zlib
 from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
+from string import Formatter
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID, uuid4
 
@@ -87,6 +88,31 @@ _MAX_REFLECTED_HEADER_BYTES = 256
 _MAX_USAGE_FIELDS = 16
 _MAX_REPORTED_TOKEN_COUNT = 2**63 - 1
 _DEBUG_CAPTURE_EXTENSION = "fs2_upstream_debug_capture"
+_MAX_SCIENTIFIC_ERROR_BYTES = 16 * 1024
+_SCIENTIFIC_ERROR_DETAILS = {
+    "invalid_molecule": (
+        "MolMIM rejected the molecular input. Supply valid SMILES whose tokens fit "
+        "the supported vocabulary and sequence window."
+    ),
+    "molmim_exhausted": (
+        "MolMIM search exhausted: found {feasible} of {requested} distinct feasible molecules "
+        "in {attempted} model decodes ({invalid} invalid; {below} below minimum similarity; "
+        "{unchanged} unchanged; {duplicates} duplicate). No partial result was accepted. "
+        "Review similarity and search parameters before submitting a new operation."
+    ),
+    "genmol_exhausted": (
+        "GenMol search exhausted: accepted {accepted} of {requested} valid molecules after "
+        "{attempts} sampling attempts ({sampled} sampled; {invalid} invalid; {duplicates} duplicate). "
+        "No partial result was accepted. Review sampling parameters before submitting a new operation."
+    ),
+}
+_SCIENTIFIC_ERROR_DETAIL_PATTERNS = tuple(
+    re.compile("".join(
+        re.escape(literal) + (r"[0-9]{1,3}" if field is not None else "")
+        for literal, field, _, _ in Formatter().parse(template)
+    ))
+    for template in _SCIENTIFIC_ERROR_DETAILS.values()
+)
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -245,6 +271,10 @@ def sanitize_error_detail(value: str, limit: int = 200) -> str:
     del limit
     if not value:
         return ""
+    # These exact CP-owned sentences contain only static text and bounded
+    # aggregate counts. Do not make arbitrary upstream messages ledger data.
+    if len(value) <= 1024 and any(pattern.fullmatch(value) for pattern in _SCIENTIFIC_ERROR_DETAIL_PATTERNS):
+        return value
     cleaned = _SECRET_RE.sub("[redacted]", " ".join(value.replace("\x00", "").split()))
     return "runtime operation failed" if cleaned else ""
 
@@ -702,6 +732,106 @@ class RuntimeClient:
             return None
         return ReportedUsage(input_tokens=input_tokens, output_tokens=output_tokens)
 
+    @staticmethod
+    def _scientific_error(source_model: str, status: int, body: bytes) -> tuple[str, str] | None:
+        """Project known local contracts, never model-supplied messages or traces."""
+        try:
+            payload = json.loads(body)
+        except (ValueError, UnicodeError, RecursionError):
+            return None
+        if not isinstance(payload, dict) or not isinstance(payload.get("detail"), dict):
+            return None
+        detail = payload["detail"]
+        if source_model == "molmim" and status == 422 and detail.get("code") == "INVALID_MOLECULE":
+            return "invalid_molecule", _SCIENTIFIC_ERROR_DETAILS["invalid_molecule"]
+
+        def counts(value: object, names: tuple[str, ...], maximum: int) -> dict[str, int] | None:
+            if not isinstance(value, dict):
+                return None
+            if any(type(value.get(name)) is not int or not 0 <= value[name] <= maximum for name in names):
+                return None
+            return {name: value[name] for name in names}
+
+        if source_model == "molmim" and status == 422 and detail.get("code") == "GENERATION_EXHAUSTED":
+            values = counts(detail.get("counts"), (
+                "requested_molecules", "distinct_feasible_molecules", "attempted_model_decodes",
+                "invalid_decodes", "below_similarity", "unchanged_decodes", "duplicate_decodes", "optimizer_steps",
+            ), 512)
+            if values is None:
+                return None
+            requested, feasible = values["requested_molecules"], values["distinct_feasible_molecules"]
+            attempted = values["attempted_model_decodes"]
+            if (not 1 <= requested <= 16 or feasible >= requested or not 1 <= values["optimizer_steps"] <= 16
+                    or attempted < requested or sum(values[name] for name in (
+                        "invalid_decodes", "below_similarity", "unchanged_decodes", "duplicate_decodes",
+                        "distinct_feasible_molecules",
+                    )) != attempted):
+                return None
+            return "generation_exhausted", _SCIENTIFIC_ERROR_DETAILS["molmim_exhausted"].format(
+                feasible=feasible, requested=requested, attempted=attempted, invalid=values["invalid_decodes"],
+                below=values["below_similarity"], unchanged=values["unchanged_decodes"],
+                duplicates=values["duplicate_decodes"],
+            )
+        if source_model == "genmol" and status == 503 and detail.get("code") == "generation_exhausted":
+            values = counts(detail.get("metrics"), (
+                "requested_molecules", "returned_molecules", "accepted_molecules", "sampling_attempts",
+                "candidate_requests", "sampled_candidates", "upstream_unreturned_candidates",
+                "invalid_candidates", "duplicate_candidates", "nonfinite_score_candidates",
+                "max_sampling_attempts", "max_candidate_requests",
+            ), 128)
+            if values is None:
+                return None
+            requested, accepted = values["requested_molecules"], values["accepted_molecules"]
+            if (not 1 <= requested <= 16 or accepted >= requested or values["returned_molecules"] != 0
+                    or not 1 <= values["sampling_attempts"] <= values["max_sampling_attempts"] <= 8
+                    or not 1 <= values["candidate_requests"] <= values["max_candidate_requests"] <= requested * 8
+                    or values["sampled_candidates"] + values["upstream_unreturned_candidates"]
+                    != values["candidate_requests"]
+                    or sum(values[name] for name in (
+                        "accepted_molecules", "invalid_candidates", "duplicate_candidates",
+                        "nonfinite_score_candidates",
+                    )) != values["sampled_candidates"]):
+                return None
+            return "generation_exhausted", _SCIENTIFIC_ERROR_DETAILS["genmol_exhausted"].format(
+                accepted=accepted, requested=requested, attempts=values["sampling_attempts"],
+                sampled=values["sampled_candidates"], invalid=values["invalid_candidates"],
+                duplicates=values["duplicate_candidates"],
+            )
+        return None
+
+    async def _scientific_error_body(self, response: httpx.Response) -> bytes | None:
+        """Read once within existing bounds while preserving protected debug capture.
+
+        Only small, complete bodies may influence the public classification.
+        Debug capture retains its existing larger bound; read/capture failures
+        must not replace an already known upstream failure status.
+        """
+        content = bytearray()
+        observed = 0
+        capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
+        maximum = self.max_response_bytes if isinstance(capture, _UpstreamCapture) else min(
+            self.max_response_bytes, _MAX_SCIENTIFIC_ERROR_BYTES
+        )
+        if isinstance(capture, _UpstreamCapture):
+            capture.read_started = True
+        try:
+            async for chunk in response.aiter_bytes():
+                observed += len(chunk)
+                if isinstance(capture, _UpstreamCapture):
+                    capture.observe(chunk)
+                content.extend(chunk[:max(0, _MAX_SCIENTIFIC_ERROR_BYTES - len(content))])
+                if observed > maximum:
+                    return None
+            if isinstance(capture, _UpstreamCapture):
+                capture.finished()
+        except asyncio.CancelledError:
+            raise
+        except (httpx.HTTPError, httpx.StreamError) as exc:
+            if isinstance(capture, _UpstreamCapture):
+                capture.failed(exc)
+            return None
+        return bytes(content) if observed <= _MAX_SCIENTIFIC_ERROR_BYTES else None
+
     async def invoke(self, model: OperationalModel, operation: ClaimedOperation, request_body: bytes) -> RuntimeResult:
         try:
             endpoint = model.binding.endpoints[operation.protocol]
@@ -762,6 +892,13 @@ class RuntimeClient:
                 if response.status_code in (409, 410) and preempted is not None and preempted.lower() == "true":
                     raise PreemptedError("runtime reported preemption")
                 if not response.is_success:
+                    scientific_error = None
+                    if (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                            and source_model in {"molmim", "genmol"} and response.status_code in {422, 503}
+                            and content_type == "application/json"):
+                        rejected_body = await self._scientific_error_body(response)
+                        if rejected_body is not None:
+                            scientific_error = self._scientific_error(source_model, response.status_code, rejected_body)
                     if speech and response.status_code == 429:
                         rejected = bytearray()
                         capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
@@ -781,8 +918,9 @@ class RuntimeClient:
                             busy = False
                         if busy:
                             raise RuntimeBusyError("speech worker capacity is occupied")
-                    # Public results/ledger remain payload-free for failures;
-                    # the optional encrypted debug capture owns their bodies.
+                    # Public failures carry only CP-owned wording and validated
+                    # aggregate counts for the recognized scientific contracts.
+                    # The optional encrypted debug capture owns original bodies.
                     runtime, lifecycle = await self._trusted_runtime_observation(operation, model)
                     return RuntimeResult(
                         status_code=response.status_code,
@@ -791,7 +929,8 @@ class RuntimeClient:
                         elapsed_seconds=time.monotonic() - started,
                         runtime=runtime,
                         semantic_outcome="not_evaluated",
-                        failure_code="upstream_http_error",
+                        failure_code=scientific_error[0] if scientific_error else "upstream_http_error",
+                        failure_detail=scientific_error[1] if scientific_error else None,
                         lifecycle=lifecycle,
                     )
                 content = bytearray()

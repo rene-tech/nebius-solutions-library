@@ -759,7 +759,7 @@ class AdmissionService:
                 )
             finally:
                 del request_body
-            if result.status_code >= 500:
+            if result.status_code >= 500 and result.failure_code != "generation_exhausted":
                 failure = RuntimeOperationError("upstream returned a retryable status")
                 if await self._retry(model, claimed, failure):
                     return
@@ -787,7 +787,7 @@ class AdmissionService:
                 response_body=result.body if success else None,
                 response_content_type=result.content_type if success else None,
                 error_code=None if success else result.failure_code or "upstream_failure",
-                error_detail=None,
+                error_detail=None if success else result.failure_detail,
                 runtime=result.runtime,
                 worker_id=claimed.worker_id,
                 fencing_token=claimed.fencing_token,
