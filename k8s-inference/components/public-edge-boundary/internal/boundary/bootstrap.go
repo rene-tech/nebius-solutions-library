@@ -125,7 +125,6 @@ func VerifyLegacyRuntimeBootstrap(
 	}
 	var bootstrap LegacyRuntimeBootstrap
 	var canonical []byte
-	var err error
 	if schemaOnly.Schema == PreviousLegacyRuntimeBootstrapPayloadSchema {
 		var previous legacyRuntimeBootstrapV1
 		if err := decodeExactJSON(payloadRaw, &previous); err != nil {
