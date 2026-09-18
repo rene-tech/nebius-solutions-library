@@ -8,7 +8,10 @@ COPY --chmod=0444 patch_variant_runtime.py /opt/fs2/patch_variant_runtime.py
 RUN uv pip install --python /opt/venv/bin/python --no-deps --require-hashes \
       -r /opt/fs2/variant-repair-requirements.lock && \
     /opt/venv/bin/python /opt/fs2/patch_variant_runtime.py --source /opt/fs2/source && \
-    /opt/venv/bin/python -c "import torch; from cuequivariance_ops_torch.attention_pair_bias_torch import attention_pair_bias; from cuequivariance_ops_torch.triangle_multiplicative_update import triangle_multiplicative_update; assert torch.__version__ == '2.7.0+cu126'"
+    /opt/venv/bin/python -c "import torch; from importlib.metadata import version; from torch.fx._symbolic_trace import is_fx_tracing; assert torch.__version__ == '2.7.0+cu126'; assert all(version(p) == '0.9.0' for p in ('cuequivariance', 'cuequivariance-torch', 'cuequivariance-ops-cu12', 'cuequivariance-ops-torch-cu12'))"
+# CuEq extension import itself requires the GPU driver (libcuda.so.1), which
+# CPU BuildKit does not provide. Actual extension import and execution belong
+# to the mandatory isolated H100 gate, not a guessed CPU-build success.
 ARG FS2_SOURCE_COMMIT
 LABEL ai.nebius.fs2.variant-repair.source-commit="${FS2_SOURCE_COMMIT}" \
       ai.nebius.fs2.variant-repair.scope="Hydra-list-ligands,torch27-compatible-cueq09,rf3-error-propagation"

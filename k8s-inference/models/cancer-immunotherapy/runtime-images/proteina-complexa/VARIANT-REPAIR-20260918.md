@@ -32,8 +32,11 @@ records the tracing-API rename; actual0.9 kernels must still pass the H100 gate.
 the original lock and published image remain historical evidence. Tests execute
 the pinned constructor and RF3 method, including actual OmegaConf inputs, before
 and after transformation, without consuming GPU work. Existing runtime tests
-remain required. The image build imports both repaired kernel modules on the
-unchanged Torch version; that is not a substitute for GPU inference.
+remain required. The image build checks package versions and the required Torch
+tracing symbol. Actual CuEq extension import needs `libcuda.so.1`; the CPU
+BuildKit host cannot perform it (the unchanged predecessor fails identically).
+The first unpublished build failure is retained. Extension import and real
+kernel execution are mandatory on the H100 candidate, not inferred from build.
 
 Before promotion, replay the four exact original ligand/AME payloads and a prior
 successful protein-target payload on a task-owned H100 candidate. Inspect full
