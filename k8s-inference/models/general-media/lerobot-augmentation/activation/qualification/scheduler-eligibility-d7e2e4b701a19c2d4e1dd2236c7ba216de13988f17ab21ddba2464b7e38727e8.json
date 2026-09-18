@@ -1,0 +1,55 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-scheduler-eligibility-receipt/v1",
+  "model_id": "cosmos3-lerobot-augmentation",
+  "variant_id": "cosmos3-nano-lerobot-v3",
+  "execution_identity_sha256": "a632c23d713398965fb2e0e299dfe3be2037c676f5a98697940fd39390182500",
+  "execution_map_sha256": "687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+  "acceptance_execution_map_sha256": "687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+  "model_execution_map_entry_sha256": "97a304ebd0d1a299e771e8a0639ce6edd5ef76057007d7f7472cc37332307d41",
+  "public_completion_receipt_sha256": "002c98ec916bb6ed02f95face15614253dd13092dcaedc5bf48d958fb8f35b76",
+  "fleet_aggregate_sha256": "bf74da485297114a2bc33b12ae159c3762fd37c79eb3d5aeb83b75ac7aef4b6f",
+  "acceptance_input": {
+    "kind": "lerobot-public-acceptance",
+    "path": "models/general-media/lerobot-augmentation/activation/qualification/public-completion-r150.json",
+    "sha256": "002c98ec916bb6ed02f95face15614253dd13092dcaedc5bf48d958fb8f35b76"
+  },
+  "scheduling_snapshot": {
+    "digest": "sha256:63b2ac7a62b0f1d98fdd2d4c0b26b6279a6354c813ea8d0223a28253177c6a26",
+    "policy_revision": "d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+    "captured_at": "2026-09-18T01:27:20.076708Z",
+    "service_class": "customer-batch",
+    "tenant_queue": "general-cpu",
+    "model_lane": "cosmos3-lerobot-augmentation",
+    "stage_decisions": [
+      {
+        "accelerator_count": 0,
+        "accelerator_resource_name": null,
+        "checkpoint_mode": "restart",
+        "max_execution_seconds": null,
+        "max_queue_seconds": null,
+        "preemption_mode": "restartable",
+        "resolved_cluster_queue": "general-cpu",
+        "resolved_local_queue": "general-cpu",
+        "resolved_pool_preference": [],
+        "resource_class": "cpu",
+        "stage_id": "augment-dataset",
+        "workload_priority_class": "standard",
+        "workload_priority_value": 0
+      }
+    ]
+  },
+  "successful_admissions": [
+    {
+      "stage_id": "augment-dataset",
+      "shard_id": "main",
+      "attempt_number": 1,
+      "resolved_pool_id": null,
+      "admitted_resource_flavor": null,
+      "accelerator_resource_name": null,
+      "accelerator_count": 0,
+      "admitted_at": "2026-09-18T01:27:20Z"
+    }
+  ],
+  "prior_profile_qualified_at": "2026-09-18T00:03:50Z",
+  "qualified_at": "2026-09-18T01:37:07.937139+00:00"
+}

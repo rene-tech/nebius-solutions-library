@@ -232,3 +232,38 @@ def test_historical_r148_public_qualification_remains_exact_and_narrowly_scoped(
     assert scheduler["successful_admissions"][0]["resolved_pool_id"] is None
     assert public["generation"]["gpu_count"] == 1
     assert len(public["generation"]["gpu_uuids"]) == 1
+
+
+def test_r150_two_variant_proof_preserves_actual_scope_and_harness_failures():
+    public = json.loads(
+        (path.parent / "qualification/public-completion-r150.json").read_text()
+    )
+    assert public["helm_revision"] == 150 and public["status"] == "succeeded"
+    assert public["variants"]["count"] == len(public["reader_validations"]) == 2
+    assert all(
+        v["validation"]["decoded_frames_each"] == 128
+        and v["validation"]["nonvideo_values_exact"]
+        and not v["physical_alignment_verified"]
+        for v in public["reader_validations"]
+    )
+    assert [c["operation"] for c in public["delegation"]["children"]] == [
+        "upload", "generate-media", "generate-media"
+    ]
+    assert all(g["attempt"] == 1 and len(g["gpu_uuids"]) == 1 for g in public["generations"])
+    behavior = public["observed_failure_behavior"]
+    assert behavior["invalid_selection"]["error_code"] == "INVALID_REQUEST"
+    assert behavior["invalid_selection"]["generation_child_count"] == 0
+    assert behavior["concurrency"]["response_error_field"] == "type"
+    assert behavior["concurrency"]["error_type"] == "concurrency_exceeded"
+    assert behavior["cancellation"]["child_count"] == 0
+    assert behavior["cancellation"]["cpu_resources_released"]
+    harness = public["harness_execution"]
+    assert harness["original_aggregate_outcome"] == "failed_stop_new_admissions"
+    assert harness["continuation_aggregate_outcome"] == "failed_stop_new_admissions"
+    assert harness["original_aggregates_are_not_passes"]
+    assert len(harness["mismatches"]) == 2
+    assert harness["linked_offline_evaluation"]["outcome"] == (
+        "targeted_blur_probes_passed_with_documented_harness_corrections"
+    )
+    assert not public["visual_review"]["semantic_intent_verified"]
+    assert not public["customer_release_ready"]
