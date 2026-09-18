@@ -1,0 +1,16 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-request/v1",
+  "selection": {"episodes": [1], "cameras": ["observation.images.wrist"]},
+  "variants": {"count": 1, "seeds": [2026091703]},
+  "augmentation": {
+    "mode": "transfer",
+    "prompt_template": "Preserve the robot, objects, camera, and motion for task '{task}'. Apply only this visual variation: {variation}.",
+    "negative_prompt": "changed robot motion, missing objects, temporal jitter, blur",
+    "dimensions": [{"name": "lighting", "instruction": "cool diffuse laboratory lighting with a visibly blue-tinted background, preserving robot and object identity", "strength": 0.6}],
+    "conditioning": {"keep": "first", "frame_indexes": [0, 1], "controls": ["blur"]},
+    "num_inference_steps": 35,
+    "guidance_scale": 6.0
+  },
+  "actions": {"mode": "preserve"},
+  "failure_policy": {"mode": "fail-fast", "max_attempts": 2}
+}

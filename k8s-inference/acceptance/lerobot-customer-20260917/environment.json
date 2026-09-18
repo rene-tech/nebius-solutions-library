@@ -1,0 +1,16 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos3-lerobot-augmentation-request/v1",
+  "selection": {"episodes": "all", "cameras": "all"},
+  "variants": {"count": 1, "seeds": [2026091702]},
+  "augmentation": {
+    "mode": "video-to-video",
+    "prompt_template": "Preserve the robot, manipulated objects, camera, and motion for task '{task}'. Apply only this environmental variation: {variation}.",
+    "negative_prompt": "changed robot motion, missing objects, temporal jitter, blur",
+    "dimensions": [{"name": "background", "instruction": "a bright clean laboratory workstation with pale blue background panels, keeping the robot, work surface geometry, and manipulated objects unchanged", "strength": 0.6}],
+    "conditioning": {"keep": "first", "frame_indexes": [0, 1], "controls": []},
+    "num_inference_steps": 35,
+    "guidance_scale": 6.0
+  },
+  "actions": {"mode": "preserve"},
+  "failure_policy": {"mode": "fail-fast", "max_attempts": 2}
+}
