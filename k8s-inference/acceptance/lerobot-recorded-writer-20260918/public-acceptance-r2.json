@@ -1,0 +1,135 @@
+{
+  "schema": "fs2-serve.nebius.ai/lerobot-public-acceptance/v1",
+  "status": "passed",
+  "date": "2026-09-18",
+  "model_id": "cosmos3-lerobot-augmentation",
+  "operation_id": "a04f37db-1c2b-4e8a-b776-d60225078ed5",
+  "prior_failed_operation_preserved": "b46eb725-733c-4543-aab8-91039f11a6bb",
+  "release": 169,
+  "scientist": "scientist-10",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
+  "runtime_image_id_observed": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
+  "coordinator_node": "computeinstance-e00np06w11et5qq9xp",
+  "coordinator_gpu_requests": 0,
+  "native_model_image_ids": [
+    "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+    "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32"
+  ],
+  "native_gpu_node": "computeinstance-e00rdppqt3kg2y00gj",
+  "native_gpu_identity": "GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7, NVIDIA H100 80GB HBM3, 580.159.04",
+  "observed_end_to_end_seconds": 406.8056857585907,
+  "native_image_pull_seconds": 156.202,
+  "native_snapshot_used": false,
+  "children": [
+    {
+      "id": "918ea659-3e4d-4a73-a85c-6143abf59df3",
+      "episode_index": 0,
+      "status": "succeeded",
+      "started_at": "2026-09-18T23:41:06.650260Z",
+      "completed_at": "2026-09-18T23:41:23.224232Z",
+      "active_inference_seconds": 16.573972,
+      "input_video_sha256": "3a7aad57488e57db15ca091b9098662de8e187b4a3cd9b551ccb644ca8f2b1ab",
+      "output_video_sha256": "909639209431e112566cd648569d8fafec94d79614893cfa3593d15e1cb9d2c0",
+      "operation_receipt_sha256": "e6394130485e3ccc9a8dda6e853c2114d6b64f2536c99694030246f340dfa1be"
+    },
+    {
+      "id": "cb53bddd-3915-48a4-9dc4-9be46ca5f30b",
+      "episode_index": 1,
+      "status": "succeeded",
+      "started_at": "2026-09-18T23:41:28.506713Z",
+      "completed_at": "2026-09-18T23:41:43.873345Z",
+      "active_inference_seconds": 15.366632,
+      "input_video_sha256": "e8532ceb7831be935f8a90ea7296adb4cf153ed573d27ae4e7e0a6696e2fe85e",
+      "output_video_sha256": "6dffaffe3136da49e4d1bb70cb0033a2e48899044e2f44f9de8dcf1bc8c5e2b9",
+      "operation_receipt_sha256": "49158ae0abddbb70418139be8c1d20fc91fc9e25ca039f302ed96d3beb4fa992"
+    }
+  ],
+  "scope": "Ordinary customer MCP submission, existing owned source artifact, two genuine recorded ALOHA-derived episodes, 128 frames, 2 cameras, one first-frame V2V variant; no inference retries",
+  "input_manifest_sha256": "0578d4ee984f9e23c51b26aca8bf81d3f63e019b5e176840bb366e6349e484e7",
+  "request_sha256": "bc5e47fe86c04f9b16752749c15a56215efadf350301345c8e107eeff1c88b6d",
+  "independent_validation_sha256": "f5e0a60cc8a5cfd0c99cbe1bc8aea3ea29bc6cb889f2e0ca322753d53197eafe",
+  "result_manifest_sha256": "46f295797fa3f93523369be2b7157931b558c9e0025a8240885f6bb3f987bd97",
+  "source_bundle_sha256": "1721d4018c0e38390695059a8cab79d23f679d70b3bdc878d509c9f68bef7be7",
+  "validation": {
+    "reader": "lerobot==0.6.1",
+    "status": "passed",
+    "episodes": 2,
+    "frames": 128,
+    "cameras": 2,
+    "decoded_frames_each": 256,
+    "nonvideo_values_compared": 6144,
+    "nonvideo_values_exact": true,
+    "unselected_pixels_bit_exact": false,
+    "unselected_max_frame_mae_limit": 6.0,
+    "visual_comparison": [
+      {
+        "episode_index": 0,
+        "camera": "observation.images.cam_high",
+        "selected": true,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 34.50083568319678,
+        "max_frame_mean_absolute_pixel_difference": 51.2737922668457,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 0,
+        "camera": "observation.images.cam_right_wrist",
+        "selected": false,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 1.298381669446826,
+        "max_frame_mean_absolute_pixel_difference": 1.5057562589645386,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 1,
+        "camera": "observation.images.cam_high",
+        "selected": true,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 42.24044115841389,
+        "max_frame_mean_absolute_pixel_difference": 54.14915466308594,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 1,
+        "camera": "observation.images.cam_right_wrist",
+        "selected": false,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 1.2629009177908301,
+        "max_frame_mean_absolute_pixel_difference": 1.6621863842010498,
+        "changed_frames": 63
+      }
+    ],
+    "physical_alignment_verified": false
+  },
+  "outputs": [
+    {
+      "name": "result",
+      "semantic_type": "lerobot-augmentation-result/v1",
+      "artifact": {
+        "artifact_id": "6ff3cd02-7670-4546-8d9b-afe2806b06dd",
+        "compression": "none",
+        "media_type": "application/json",
+        "sha256": "e2d70f8cf17627801a170a276c62939ee76ced1b4ebe7d460ece87707e337fcc",
+        "size_bytes": 686
+      }
+    },
+    {
+      "name": "variant-00",
+      "semantic_type": "lerobot-v3-augmented-bundle/v1",
+      "artifact": {
+        "artifact_id": "39b0350c-f784-4ed4-b199-dda1f8c97f1c",
+        "compression": "zstd",
+        "media_type": "application/x-tar",
+        "sha256": "9de0ab50e8896b702f4d68fb1794d20a8101f3e4786d543c2119e585c8003c60",
+        "size_bytes": 2042050
+      }
+    }
+  ],
+  "limitations": [
+    "Data integrity and usable artifacts are qualified; physical motion preservation, robot-policy efficacy and paper reproduction are not.",
+    "Unselected camera video is re-encoded with declared codec tolerance, not byte-identical.",
+    "Approximately 407 seconds includes cold image/runtime startup; it is not GPU inference duration.",
+    "This run used fresh loading; the new optional warmed snapshot and explicit preset adapter need their separate public acceptance.",
+    "Longer episodes, different cameras/datasets, inverse dynamics, depth/segmentation controls and sustained maximum-bound throughput are not inherited."
+  ]
+}
