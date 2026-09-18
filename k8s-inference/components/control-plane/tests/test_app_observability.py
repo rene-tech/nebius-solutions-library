@@ -256,7 +256,7 @@ async def test_log_cursor_preserves_tied_timestamps_across_pages():
                                 "k8s_pod_name": "a",
                                 "k8s_container_name": "model",
                             },
-                            "values": [[str(at), message] for at, message in messages if at <= end],
+                            "values": [[str(at), message] for at, message in messages if at < end],
                         }
                     ],
                 },
@@ -281,10 +281,25 @@ async def test_log_page_does_not_overfetch_5000_large_model_lines():
         count = int(request.url.params["limit"])
         requested.append(count)
         assert count == 201
-        return httpx.Response(200, json={"status": "success", "data": {
-            "resultType": "streams", "result": [{"stream": {
-                "k8s_namespace_name": "models", "k8s_pod_name": "a", "k8s_container_name": "model"},
-                "values": [[str(stamp - i), "retained multiline model log"] for i in range(count)]}]}})
+        return httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "data": {
+                    "resultType": "streams",
+                    "result": [
+                        {
+                            "stream": {
+                                "k8s_namespace_name": "models",
+                                "k8s_pod_name": "a",
+                                "k8s_container_name": "model",
+                            },
+                            "values": [[str(stamp - i), "retained multiline model log"] for i in range(count)],
+                        }
+                    ],
+                },
+            },
+        )
 
     result = await service([pod()], handler).logs(target(), START - timedelta(seconds=1), END, limit=200)
     assert result.state == "available" and len(result.items) == 200
@@ -301,11 +316,26 @@ async def test_log_read_ahead_expands_only_to_complete_a_timestamp_boundary():
         count = int(request.url.params["limit"])
         requested.append(count)
         end = int(request.url.params["end"])
-        rows = [row for row in values if int(row[0]) <= end][:count]
-        return httpx.Response(200, json={"status": "success", "data": {
-            "resultType": "streams", "result": [{"stream": {
-                "k8s_namespace_name": "models", "k8s_pod_name": "a", "k8s_container_name": "model"},
-                "values": rows}]}})
+        rows = [row for row in values if int(row[0]) < end][:count]
+        return httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "data": {
+                    "resultType": "streams",
+                    "result": [
+                        {
+                            "stream": {
+                                "k8s_namespace_name": "models",
+                                "k8s_pod_name": "a",
+                                "k8s_container_name": "model",
+                            },
+                            "values": rows,
+                        }
+                    ],
+                },
+            },
+        )
 
     observed = service([pod()], handler)
     result = await observed.logs(target(), START - timedelta(seconds=1), END, limit=2)
@@ -316,6 +346,48 @@ async def test_log_read_ahead_expands_only_to_complete_a_timestamp_boundary():
         found.extend(result.items)
     assert [row.message for row in found] == ["d", "c", "b", "a", "old"]
     assert max(requested) <= 5000
+
+
+@pytest.mark.asyncio
+async def test_live_loki_exclusive_end_does_not_skip_one_line_per_page():
+    # Grafana's own backward logcli pagination adds1ns to its last timestamp:
+    # https://github.com/grafana/loki/blob/main/pkg/logcli/query/query.go
+    stamp = int(START.timestamp() * 1e9) + 379664
+    values = [[str(stamp - i * 137), f"line-{i}"] for i in range(600)]
+
+    def handler(request):
+        end, count = int(request.url.params["end"]), int(request.url.params["limit"])
+        rows = [row for row in values if int(row[0]) < end][:count]
+        return httpx.Response(
+            200,
+            json={
+                "status": "success",
+                "data": {
+                    "resultType": "streams",
+                    "result": [
+                        {
+                            "stream": {
+                                "k8s_namespace_name": "models",
+                                "k8s_pod_name": "a",
+                                "k8s_container_name": "model",
+                            },
+                            "values": rows,
+                        }
+                    ],
+                },
+            },
+        )
+
+    observed = service([pod()], handler)
+    cursor, found = None, []
+    for _ in range(4):
+        page = await observed.logs(target(), START - timedelta(seconds=1), END, limit=200, cursor=cursor)
+        found.extend(row.message for row in page.items)
+        cursor = page.next_cursor
+        if cursor is None:
+            break
+    assert cursor is None
+    assert found == [row[1] for row in values]
 
 
 @pytest.mark.asyncio

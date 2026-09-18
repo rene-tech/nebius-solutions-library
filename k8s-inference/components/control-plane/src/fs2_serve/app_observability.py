@@ -294,9 +294,7 @@ class AppObservabilityService:
                     # running GPU container remains attributable during idle
                     # time. Only that live evidence can extend closed history;
                     # a terminated Pod's stale annotation must not reopen it.
-                    active_gpu = any(
-                        row.gpu_resources and row.state == "running" for row in container_rows(raw)
-                    )
+                    active_gpu = any(row.gpu_resources and row.state == "running" for row in container_rows(raw))
                     pod = AppPodIdentity(
                         pod.namespace,
                         pod.name,
@@ -589,7 +587,10 @@ class AppObservabilityService:
             match = re.fullmatch(r"([0-9]{1,20}):([0-9]{1,4})", cursor)
             if match is None or int(match[2]) > 4500:
                 raise ValueError("invalid log cursor")
-            end_ns = min(end_ns, int(match[1]))
+            # Loki's backward-query end is exclusive. Re-include the exact
+            # boundary timestamp before skipping the already consumed ties.
+            # Using the timestamp itself silently loses one line per page.
+            end_ns = min(end_ns, int(match[1]) + 1)
             offset = int(match[2])
         try:
             data, read_limit = await self._log_window(

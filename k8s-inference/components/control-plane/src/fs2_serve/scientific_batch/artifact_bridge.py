@@ -12,6 +12,7 @@ from uuid import UUID
 
 import httpx
 
+from ..lifecycle import LifecycleRepository
 from ..scientific_artifacts import (
     ArtifactAccess,
     ArtifactAccessProfile,
@@ -138,6 +139,7 @@ class ArtifactServiceBridge:
         store: Store,
         content_reader: ArtifactContentReader | None = None,
         service: ScientificArtifactControllerPort | None = None,
+        lifecycle: LifecycleRepository | None = None,
     ) -> None:
         self.artifacts = artifacts
         self.batches = batches
@@ -145,6 +147,7 @@ class ArtifactServiceBridge:
         self.store = store
         self.content_reader = content_reader
         self.service = service
+        self.lifecycle = lifecycle
 
     async def validate_input(self, pointer: Mapping[str, Any], *, tenant_id: str) -> ScientificInputAdmission:
         try:
@@ -282,6 +285,7 @@ class ArtifactServiceBridge:
         if attempt.outcome is AttemptOutcome.ACTIVE or attempt.completed_at is None:
             raise ScientificProfileError("only a durable terminal attempt can close artifact publication")
         admission = attempt.scheduling_admission
+        node_uids, gpu_uuids = await self._runtime_identities(state, attempt)
         await self._require_service().close_attempt(
             CloseStageAttempt(
                 attempt_id=attempt.attempt_id,
@@ -297,7 +301,44 @@ class ArtifactServiceBridge:
                 kueue_workload_uid=attempt.kueue_workload_uid,
                 k8s_job_uid=attempt.workload.uid,
                 pod_uids=attempt.pod_uids,
+                node_uids=node_uids,
+                gpu_uuids=gpu_uuids,
             )
+        )
+
+    async def _runtime_identities(
+        self, state: ScientificBatchState, attempt: ScientificAttemptState
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Publish already observed allocation facts before workload cleanup.
+
+        A batch can cross Pods, nodes and devices. Keep the existing per-attempt
+        result arrays rather than inventing one top-level serving identity.
+        Missing observer facts remain empty; placement preference is not proof.
+        """
+        if self.lifecycle is None:
+            return (), ()
+        detail = await self.lifecycle.get_workload(attempt.attempt_id, tenant_id=state.tenant_id)
+        if detail is None:
+            return (), ()
+        subject = detail.subject
+        if (
+            subject.subject_id != attempt.attempt_id
+            or subject.attempt_id != attempt.attempt_id
+            or subject.operation_id != state.operation_id
+            or subject.tenant_id != state.tenant_id
+        ):
+            raise ScientificProfileError("attempt lifecycle identity differs from the frozen batch")
+        known_pods = set(attempt.pod_uids)
+        correlations = [
+            item
+            for item in detail.correlations
+            if item.subject_id == attempt.attempt_id
+            and item.pod_uid in known_pods
+            and item.job_uid in {None, attempt.workload.uid}
+        ]
+        return (
+            tuple(sorted({item.node_uid for item in correlations if item.node_uid is not None})),
+            tuple(sorted({item.gpu_uuid for item in correlations if item.gpu_uuid is not None})),
         )
 
     async def _attempt_output(

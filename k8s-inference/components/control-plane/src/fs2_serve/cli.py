@@ -449,6 +449,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             store=store,
             content_reader=artifact_content_reader,
             service=artifact_service,
+            lifecycle=lifecycle,
         )
         scientific_controller = PolicyAwareScientificBatchController(
             repository=scientific_repository,
@@ -580,7 +581,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
 
         canonical_catalog = augment_native_catalog(
             load_catalog(settings.catalog_dir, repo_root=settings.repo_root),
-            settings.catalog_dir, repo_root=settings.repo_root,
+            settings.catalog_dir,
+            repo_root=settings.repo_root,
         )
         configuration_repository = StoreConfigurationRepository(store)
         configuration_service = ConfigurationService(
@@ -653,9 +655,15 @@ async def build_app(settings: Settings) -> FastAPI:
 async def serve(settings: Settings) -> None:
     app = await build_app(settings)
     server = uvicorn.Server(
-        uvicorn.Config(app, host=settings.host, port=settings.port, log_level=settings.log_level.lower(),
-                       ws_max_size=65536, ws_max_queue=2,
-                       timeout_graceful_shutdown=settings.shutdown_grace_seconds)
+        uvicorn.Config(
+            app,
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level.lower(),
+            ws_max_size=65536,
+            ws_max_queue=2,
+            timeout_graceful_shutdown=settings.shutdown_grace_seconds,
+        )
     )
     await server.serve()
 

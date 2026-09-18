@@ -3,19 +3,24 @@ from __future__ import annotations
 import hashlib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
 
 from fs2_serve.lifecycle import (
     LifecycleClock,
+    LifecycleCorrelation,
     LifecycleEdge,
+    LifecycleSource,
     MemoryLifecycleRepository,
 )
 from fs2_serve.lifecycle import (
     LifecyclePhase as LedgerPhase,
 )
 from fs2_serve.models import OperationStatus, OperationView
+from fs2_serve.scientific_artifacts import MemoryArtifactRepository, OpenStageAttempt
+from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
 from fs2_serve.scientific_batch.kubernetes import ScientificKubernetesError, _pod_lifecycle
 from fs2_serve.scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
 from fs2_serve.scientific_batch.models import (
@@ -865,3 +870,98 @@ async def test_same_second_init_phase_extension_preserves_prior_facts_and_replay
     with pytest.raises(ValueError, match="event key is already bound to different facts"):
         bridge.source_resolution_seconds = 1
         await observe_end(6)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", [AttemptOutcome.SUCCEEDED, AttemptOutcome.PREEMPTED])
+@pytest.mark.parametrize("observed", [True, False])
+async def test_artifact_close_preserves_only_actual_attempt_runtime_identities(outcome, observed) -> None:
+    state, attempt = terminal_state(outcome)
+    attempt = replace(attempt, pod_uids=("pod-uid-1", "pod-uid-2"))
+    ledger = MemoryLifecycleRepository()
+    bridge = ScientificLifecycleBridge(
+        lifecycle=ledger,
+        batches=EventSource(lifecycle_events(state, attempt, preempted=outcome is AttemptOutcome.PREEMPTED)),
+        operations=OperationSource(operation(state.operation_id, status=OperationStatus.RUNNING)),
+    )
+    if observed:
+        first = pod_observation(attempt, observed_at=at(11))
+        pod = first.pod_lifecycle[0]
+        second = replace(
+            pod, pod_uid="pod-uid-2", node_uid="node-uid-2", gpu_uuids=("GPU-bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee",)
+        )
+        await bridge.observe(state, attempt, replace(first, pod_uids=attempt.pod_uids, pod_lifecycle=(pod, second)))
+        # Even a stray correlation cannot substitute for the attempt's known Pods.
+        await ledger.append_correlations(
+            [
+                LifecycleCorrelation(
+                    correlation_key="unrelated-pod",
+                    subject_id=attempt.attempt_id,
+                    observed_at=at(3),
+                    source=LifecycleSource.KUBERNETES,
+                    pod_uid="not-this-attempt",
+                    node_uid="unrelated-node",
+                )
+            ]
+        )
+    artifacts = MemoryArtifactRepository(clock=lambda: at(12))
+    await artifacts.register_operation(state.operation_id, tenant_id=state.tenant_id)
+    await artifacts.open_attempt(
+        OpenStageAttempt(
+            attempt_id=attempt.attempt_id,
+            operation_id=state.operation_id,
+            tenant_id=state.tenant_id,
+            stage_id=attempt.stage_id,
+            shard_id=attempt.shard_id,
+            attempt_number=attempt.attempt_number,
+            started_at=attempt.started_at,
+        ),
+        retention=timedelta(days=1),
+    )
+    publisher = ArtifactServiceBridge(
+        artifacts=artifacts,
+        batches=object(),
+        profiles=object(),
+        store=object(),  # type: ignore[arg-type]
+        service=SimpleNamespace(close_attempt=artifacts.close_attempt),
+        lifecycle=ledger,
+    )
+    await publisher.close_attempt(state, attempt)
+    saved = await artifacts.get_attempt(attempt.attempt_id, tenant_id=state.tenant_id)
+    public = saved.to_public_attempt()
+    assert public.pod_uids == attempt.pod_uids
+    assert public.node_uids == (("node-uid-1", "node-uid-2") if observed else ())
+    assert public.gpu_uuids == ((GPU_UUID, "GPU-bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee") if observed else ())
+    # Cleanup/restart replays must not change or double-publish the closed record.
+    await publisher.close_attempt(state, attempt)
+    assert await artifacts.get_attempt(attempt.attempt_id, tenant_id=state.tenant_id) == saved
+
+
+@pytest.mark.asyncio
+async def test_artifact_runtime_projection_keeps_cpu_nodes_without_inventing_gpus() -> None:
+    state, attempt = terminal_state(AttemptOutcome.SUCCEEDED)
+    ledger = MemoryLifecycleRepository()
+    bridge = ScientificLifecycleBridge(
+        lifecycle=ledger,
+        batches=EventSource(lifecycle_events(state, attempt, preempted=False)),
+        operations=OperationSource(operation(state.operation_id, status=OperationStatus.RUNNING)),
+    )
+    observation = pod_observation(attempt, observed_at=at(11))
+    cpu = replace(
+        observation.pod_lifecycle[0],
+        gpu_count=0,
+        gpu_uuids=(),
+        device_allocation_observed_at=None,
+        device_observation_resolution_seconds=0,
+    )
+    await bridge.observe(state, attempt, replace(observation, pod_lifecycle=(cpu,)))
+    publisher = ArtifactServiceBridge(
+        artifacts=object(),
+        batches=object(),
+        profiles=object(),
+        store=object(),
+        lifecycle=ledger,  # type: ignore[arg-type]
+    )
+    assert await publisher._runtime_identities(state, attempt) == (("node-uid-1",), ())
+    assert await publisher._runtime_identities(replace(state, tenant_id="another-tenant"), attempt) == ((), ())
+    assert await publisher._runtime_identities(state, replace(attempt, attempt_id=uuid4())) == ((), ())
