@@ -347,31 +347,6 @@ func (j *authorityLedgerJournal) prepareArchiveDestination(segmentID string, ide
 	return j.preparedArchivePath(segmentID, identity)
 }
 
-func renameNoReplace(source string, destination string) error {
-	sourcePointer, err := syscall.BytePtrFromString(source)
-	if err != nil {
-		return err
-	}
-	destinationPointer, err := syscall.BytePtrFromString(destination)
-	if err != nil {
-		return err
-	}
-	directoryFD := linuxATFDCWD
-	_, _, errno := syscall.RawSyscall6(
-		syscall.SYS_RENAMEAT2,
-		uintptr(directoryFD),
-		uintptr(unsafe.Pointer(sourcePointer)),
-		uintptr(directoryFD),
-		uintptr(unsafe.Pointer(destinationPointer)),
-		uintptr(linuxRenameNoReplace),
-		0,
-	)
-	if errno != 0 {
-		return errno
-	}
-	return nil
-}
-
 func (j *authorityLedgerJournal) archivePreparedSlot(segmentID string, identity authorityPreparedIdentity) error {
 	pendingPath := j.pendingPreparedPath(segmentID)
 	archivePath, err := j.prepareArchiveDestination(segmentID, identity)
