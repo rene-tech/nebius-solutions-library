@@ -9,6 +9,16 @@ import subprocess
 import sysconfig
 import tempfile
 
+import torch
+import triton
+import triton.language as tl
+
+
+@triton.jit
+def add_one(x, y):
+    offsets = tl.arange(0, 64)
+    tl.store(y + offsets, tl.load(x + offsets) + 1)
+
 
 def validate(cpu_only: bool = False) -> dict:
     include = sysconfig.get_path("include")
@@ -19,15 +29,6 @@ def validate(cpu_only: bool = False) -> dict:
     result = {"python_header_compile": True, "python_include": include}
     if cpu_only:
         return result
-
-    import torch
-    import triton
-    import triton.language as tl
-
-    @triton.jit
-    def add_one(x, y):
-        offsets = tl.arange(0, 64)
-        tl.store(y + offsets, tl.load(x + offsets) + 1)
 
     assert torch.cuda.is_available()
     x = torch.arange(64, device="cuda", dtype=torch.float32)

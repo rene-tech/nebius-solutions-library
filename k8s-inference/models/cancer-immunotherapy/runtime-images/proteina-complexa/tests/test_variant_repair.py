@@ -160,6 +160,13 @@ class VariantRepairTests(unittest.TestCase):
         runner = (HERE / "qualification/run_variant_candidate.py").read_text()
         self.assertLess(runner.index("jit-prerequisite.json"), runner.index('for case in plan["cases"]'))
 
+    def test_jit_prerequisite_language_is_in_kernel_globals(self):
+        # Triton 3.3 resolves function globals, not a local closure variable.
+        spec = importlib.util.spec_from_file_location("jit_prerequisite", HERE / "validate_jit_prerequisites.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.assertIs(module.add_one.__globals__["tl"], module.tl)
+
     def test_patch_validates_all_inputs_before_editing(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
