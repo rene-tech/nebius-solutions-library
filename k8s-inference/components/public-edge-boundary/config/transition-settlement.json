@@ -1,0 +1,1 @@
+{"schema":"fs2-serve.nebius.ai/public-edge-external-enrollment-gate/v1","component":"transition-settlement","status":"blocked-pending-owner-enrollment","blockers":["dedicated-shared-append-only-volume-enrollment","replica-safe-custody-and-capacity-enrollment"]}

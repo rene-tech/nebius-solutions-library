@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -21,6 +22,8 @@ const runtimeTrustPath = "/var/run/fs2-boundary/snapshot-trust.json"
 const runtimeSnapshotPath = "/var/run/fs2-boundary/snapshot-envelope.json"
 const tlsCertificatePath = "/var/run/fs2-boundary/tls/tls.crt"
 const tlsPrivateKeyPath = "/var/run/fs2-boundary/tls/tls.key"
+const admissionClientTrustPath = "/var/run/fs2-boundary/admission-client-trust.json"
+const transitionSettlementConfigPath = "/usr/local/share/fs2-boundary/transition-settlement.json"
 
 type config struct {
 	listenAddress       string
@@ -34,6 +37,8 @@ type config struct {
 	authoritySnapshotID string
 	authorityClosureSHA256  string
 	tlsCertificate      tls.Certificate
+	admissionAuthenticator *boundary.AdmissionChannelAuthenticator
+	transitionLedger    *boundary.TransitionLedger
 }
 
 func main() {
@@ -53,7 +58,8 @@ func main() {
 			configuration.deploymentID,
 			configuration.authoritySnapshotID,
 			configuration.authorityClosureSHA256,
-		),
+			),
+		transitionLedger: configuration.transitionLedger,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", handler.health)
@@ -70,6 +76,8 @@ func main() {
 		TLSConfig: &tls.Config{
 			MinVersion: tls.VersionTLS13,
 			Certificates: []tls.Certificate{configuration.tlsCertificate},
+			ClientAuth: tls.VerifyClientCertIfGiven,
+			ClientCAs: configuration.admissionAuthenticator.ClientCAs(),
 		},
 	}
 	slog.Info("public-edge admission boundary starting", "address", configuration.listenAddress)
@@ -83,6 +91,7 @@ type admissionHandler struct {
 	config   config
 	provider *boundary.Provider
 	slots    chan struct{}
+	transitionLedger *boundary.TransitionLedger
 }
 
 func (h *admissionHandler) runtime(now time.Time) (*boundary.Runtime, error) {
@@ -126,6 +135,17 @@ func (h *admissionHandler) validate(response http.ResponseWriter, request *http.
 		})
 		return
 	}
+	channel, channelErr := h.config.admissionAuthenticator.Authenticate(request.TLS, request.Host, time.Now())
+	if channelErr != nil {
+		writeReview(response, boundary.AdmissionReview{
+			APIVersion: "admission.k8s.io/v1",
+			Kind:       "AdmissionReview",
+			Response: &boundary.AdmissionResponse{Allowed: false, Status: &boundary.Status{
+				Code: 403, Reason: "Forbidden", Message: "authenticated API-server admission channel is required",
+			}},
+		})
+		return
+	}
 	select {
 	case h.slots <- struct{}{}:
 		defer func() { <-h.slots }()
@@ -161,7 +181,17 @@ func (h *admissionHandler) validate(response http.ResponseWriter, request *http.
 		})
 		return
 	}
-	writeReview(response, runtime.Review(raw, time.Now()))
+	consumer, err := boundary.BindAdmissionChannel(h.transitionLedger, channel)
+	if err != nil {
+		writeReview(response, boundary.AdmissionReview{
+			APIVersion: "admission.k8s.io/v1", Kind: "AdmissionReview",
+			Response: &boundary.AdmissionResponse{Allowed: false, Status: &boundary.Status{
+				Code: 403, Reason: "Forbidden", Message: "admission channel cannot be bound to transition settlement",
+			}},
+		})
+		return
+	}
+	writeReview(response, runtime.Review(raw, time.Now(), consumer))
 }
 
 func writeReview(response http.ResponseWriter, review boundary.AdmissionReview) {
@@ -177,6 +207,19 @@ func loadConfig() (config, error) {
 	if err != nil {
 		return config{}, err
 	}
+	if uint32(os.Getegid()) != acceptance.BoundaryRuntimeReaderGID {
+		return config{}, errors.New("boundary effective GID differs from the independently accepted runtime reader group")
+	}
+	admissionAuthenticator, err := boundary.LoadAdmissionChannelAuthenticator(
+		admissionClientTrustPath,
+		acceptance.BoundaryAdmissionClientTrustSHA256,
+		acceptance.ClusterID,
+		acceptance.DeploymentID,
+		time.Now(),
+	)
+	if err != nil {
+		return config{}, err
+	}
 	tlsIdentity, err := boundary.LoadServerTLSIdentity(
 		tlsCertificatePath,
 		tlsPrivateKeyPath,
@@ -184,6 +227,15 @@ func loadConfig() (config, error) {
 		acceptance.BoundaryTLSPrivateKeySHA256,
 		acceptance.BoundaryTLSSPKISHA256,
 		time.Now(),
+	)
+	if err != nil {
+		return config{}, err
+	}
+	transitionLedger, err := boundary.LoadTransitionLedger(
+		transitionSettlementConfigPath,
+		acceptance.TransitionSettlementConfigSHA256,
+		acceptance.ClusterID,
+		acceptance.DeploymentID,
 	)
 	if err != nil {
 		return config{}, err
@@ -200,5 +252,7 @@ func loadConfig() (config, error) {
 		authoritySnapshotID:    acceptance.AuthoritySnapshotID,
 		authorityClosureSHA256: acceptance.AuthorityClosureSHA256,
 		tlsCertificate:         tlsIdentity,
+		admissionAuthenticator: admissionAuthenticator,
+		transitionLedger:       transitionLedger,
 	}, nil
 }

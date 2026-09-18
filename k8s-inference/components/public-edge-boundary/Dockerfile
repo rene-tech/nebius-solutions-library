@@ -15,6 +15,7 @@ COPY --from=build /out/public-edge-native-authority /usr/local/bin/public-edge-n
 COPY config/trusted-acceptance-issuers.json /usr/local/share/fs2-boundary/trusted-acceptance-issuers.json
 COPY config/native-collector.json /usr/local/share/fs2-boundary/native-collector.json
 COPY config/native-authority.json /usr/local/share/fs2-boundary/native-authority.json
+COPY config/transition-settlement.json /usr/local/share/fs2-boundary/transition-settlement.json
 COPY config/trusted-native-response-issuers.json /usr/local/share/fs2-boundary/trusted-native-response-issuers.json
 COPY config/trusted-snapshot-issuers.json /usr/local/share/fs2-boundary/trusted-snapshot-issuers.json
 USER 65532:65532

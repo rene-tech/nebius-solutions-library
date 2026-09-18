@@ -8,21 +8,29 @@ import (
 	"fmt"
 )
 
-// VerifyExternalEnvelope verifies an exact response envelope against a
-// separately custodied, root-owned trust registry. It is used by the native
-// collector for provider, control-plane, KMS/classifier, CRL/OCSP and snapshot
-// authority responses; digest-shaped assertions are never accepted in place
-// of the signed response bytes.
-func VerifyExternalEnvelope(
+// ExternalTrust is an immutable in-process copy of one independently accepted
+// trust registry. Loading it once prevents a mutable pathname from becoming an
+// authority after acceptance has measured different bytes. Rotation therefore
+// requires a new accepted process/config generation; it cannot be smuggled in
+// by atomically replacing a root-owned file while this process is running.
+type ExternalTrust struct {
+	raw      []byte
+	registry TrustRegistry
+	schema   string
+	sha256   string
+}
+
+func LoadExternalTrust(
 	trustPath string,
+	expectedTrustSHA256 string,
 	expectedTrustSchema string,
-	expectedEnvelopeSchema string,
-	expectedIssuerRole string,
-	envelopeRaw []byte,
-) ([]byte, error) {
+) (*ExternalTrust, error) {
 	trustRaw, err := readProtectedRegular(trustPath, maxTrustBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read external response trust: %w", err)
+	}
+	if !isSHA256(expectedTrustSHA256) || digestHex(trustRaw) != expectedTrustSHA256 {
+		return nil, errors.New("external response trust differs from its independently accepted digest")
 	}
 	var trust TrustRegistry
 	if err := decodeExactJSON(trustRaw, &trust); err != nil {
@@ -30,6 +38,31 @@ func VerifyExternalEnvelope(
 	}
 	if trust.Schema != expectedTrustSchema || len(trust.Issuers) == 0 {
 		return nil, errors.New("external response trust is empty or has the wrong schema")
+	}
+	return &ExternalTrust{
+		raw:      bytes.Clone(trustRaw),
+		registry: trust,
+		schema:   expectedTrustSchema,
+		sha256:   expectedTrustSHA256,
+	}, nil
+}
+
+func (t *ExternalTrust) CanonicalBytes() ([]byte, error) {
+	if t == nil || len(t.raw) == 0 || t.registry.Schema != t.schema || digestHex(t.raw) != t.sha256 {
+		return nil, errors.New("cached external response trust is unavailable or internally inconsistent")
+	}
+	return bytes.Clone(t.raw), nil
+}
+
+// VerifyEnvelope verifies an exact response against the immutable trust bytes
+// loaded from the acceptance-bound file. It never reopens the original path.
+func (t *ExternalTrust) VerifyEnvelope(
+	expectedEnvelopeSchema string,
+	expectedIssuerRole string,
+	envelopeRaw []byte,
+) ([]byte, error) {
+	if t == nil || len(t.raw) == 0 || t.registry.Schema != t.schema || digestHex(t.raw) != t.sha256 {
+		return nil, errors.New("cached external response trust is unavailable or internally inconsistent")
 	}
 	var envelope SignedEnvelope
 	if err := decodeExactJSON(envelopeRaw, &envelope); err != nil {
@@ -42,7 +75,7 @@ func VerifyExternalEnvelope(
 	if err != nil || digestHex(payloadRaw) != envelope.PayloadSHA256 {
 		return nil, errors.New("external response payload does not match its exact bytes")
 	}
-	key, err := trustedKey(trust, envelope.Issuer, envelope.KeyID, expectedIssuerRole)
+	key, err := trustedKey(t.registry, envelope.Issuer, envelope.KeyID, expectedIssuerRole)
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +97,24 @@ func VerifyExternalEnvelope(
 		return nil, errors.New("external response signature verification failed")
 	}
 	return payloadRaw, nil
+}
+
+// VerifyExternalEnvelope remains as a fail-closed compatibility helper for
+// callers that have not yet adopted process-lifetime trust caching. It rechecks
+// the acceptance digest on the same bounded read before every verification.
+func VerifyExternalEnvelope(
+	trustPath string,
+	expectedTrustSHA256 string,
+	expectedTrustSchema string,
+	expectedEnvelopeSchema string,
+	expectedIssuerRole string,
+	envelopeRaw []byte,
+) ([]byte, error) {
+	trust, err := LoadExternalTrust(trustPath, expectedTrustSHA256, expectedTrustSchema)
+	if err != nil {
+		return nil, err
+	}
+	return trust.VerifyEnvelope(expectedEnvelopeSchema, expectedIssuerRole, envelopeRaw)
 }
 
 func CanonicalJSON(raw []byte, destination any) ([]byte, error) {

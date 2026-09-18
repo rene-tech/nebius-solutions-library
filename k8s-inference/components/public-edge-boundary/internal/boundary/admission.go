@@ -9,7 +9,11 @@ import (
 	"time"
 )
 
-func (r *Runtime) Review(raw []byte, now time.Time) AdmissionReview {
+type TransitionConsumer interface {
+	Consume(snapshot Snapshot, transition Transition, admissionUID string, requestSHA256 string, now time.Time) error
+}
+
+func (r *Runtime) Review(raw []byte, now time.Time, consumer TransitionConsumer) AdmissionReview {
 	requestReview := AdmissionReview{}
 	if err := decodeAdmissionJSON(raw, &requestReview); err != nil || requestReview.Request == nil {
 		return deniedReview("", "MalformedRequest", "admission request is not valid JSON")
@@ -24,9 +28,16 @@ func (r *Runtime) Review(raw []byte, now time.Time) AdmissionReview {
 	if !r.Current(now) {
 		return deniedReview(request.UID, "Forbidden", "public-edge authority snapshot is stale or expired")
 	}
-	allowed, reason := r.authorize(request)
+	transition, protected, reason := r.authorize(request)
+	allowed := reason == ""
 	if !allowed {
 		return deniedReview(request.UID, "Forbidden", reason)
+	}
+	if protected && !transition.DryRun {
+		canonicalRequest, err := json.Marshal(request)
+		if err != nil || consumer == nil || consumer.Consume(r.Snapshot, transition, request.UID, digestHex(canonicalRequest), now) != nil {
+			return deniedReview(request.UID, "Forbidden", "exact transition consumption could not be durably settled")
+		}
 	}
 	return AdmissionReview{
 		APIVersion: "admission.k8s.io/v1",
@@ -42,11 +53,12 @@ func validAdmissionIdentifiers(request *AdmissionRequest) bool {
 	return safeText(request.UID, false) && safeText(request.Operation, false) &&
 		safeText(request.Resource.Group, true) && safeText(request.Resource.Version, false) &&
 		safeText(request.Resource.Resource, false) && safeText(request.Subresource, true) &&
-		safeText(request.Namespace, true) && safeText(request.Name, false) &&
+		validGroupVersionKind(request.Kind, false) && validOriginalRequestTuple(request.RequestKind, request.RequestResource, request.RequestSubresource) &&
+		safeText(request.Namespace, true) && (safeText(request.Name, false) || request.Operation == "CREATE" && request.Name == "") &&
 		safeText(request.UserInfo.Username, false) && safeText(request.UserInfo.UID, true)
 }
 
-func (r *Runtime) authorize(request *AdmissionRequest) (bool, string) {
+func (r *Runtime) authorize(request *AdmissionRequest) (Transition, bool, string) {
 	key := identityKey(
 		request.Resource.Group,
 		request.Resource.Version,
@@ -55,21 +67,10 @@ func (r *Runtime) authorize(request *AdmissionRequest) (bool, string) {
 		request.Name,
 	)
 	if _, root := r.protectedRoots[key]; root && request.Operation == "DELETE" {
-		return false, "protected public-edge root deletion requires the external break-glass authority"
+		return Transition{}, true, "protected public-edge root deletion requires the external break-glass authority"
 	}
 
 	objectRaw := request.Object
-	if request.Operation == "DELETE" {
-		objectRaw = request.OldObject
-	}
-	objectSHA, err := canonicalObjectSHA256(objectRaw)
-	if err != nil {
-		if request.Operation == "CONNECT" {
-			objectSHA = admissionTargetSHA256(request)
-		} else {
-			return false, "protected admission object cannot be canonically reconstructed"
-		}
-	}
 
 	requiresTransition := false
 	if _, root := r.protectedRoots[key]; root {
@@ -89,9 +90,9 @@ func (r *Runtime) authorize(request *AdmissionRequest) (bool, string) {
 		}
 	}
 	if credentialNamespace && isWorkloadResource(request.Resource.Group, request.Resource.Resource) && (request.Operation == "CREATE" || request.Operation == "UPDATE") {
-		sensitive, inspectErr := r.workloadReachesCredential(request.Namespace, request.Resource.Resource, objectRaw)
-		if inspectErr != nil {
-			return false, "workload credential reachability cannot be determined"
+			sensitive, inspectErr := r.workloadReachesCredential(request.Namespace, request.Resource.Resource, objectRaw)
+			if inspectErr != nil {
+				return Transition{}, true, "workload credential reachability cannot be determined"
 		}
 		requiresTransition = requiresTransition || sensitive
 	}
@@ -99,33 +100,185 @@ func (r *Runtime) authorize(request *AdmissionRequest) (bool, string) {
 		if guard.SemanticGuard != "inspect-controller-credential-reachability" {
 			continue
 		}
-		sensitive, inspectErr := r.workloadReachesCredential(request.Namespace, request.Resource.Resource, objectRaw)
-		if inspectErr != nil {
-			return false, "guarded workload credential reachability cannot be determined"
+			sensitive, inspectErr := r.workloadReachesCredential(request.Namespace, request.Resource.Resource, objectRaw)
+			if inspectErr != nil {
+				return Transition{}, true, "guarded workload credential reachability cannot be determined"
 		}
 		requiresTransition = requiresTransition || sensitive
 	}
 	if !requiresTransition {
-		return true, ""
+		return Transition{}, false, ""
 	}
 
 	actor := normalizedAdmissionActor(request.UserInfo)
+	requestObjectSHA256, err := canonicalOptionalObjectSHA256(request.Object)
+	if err != nil {
+		return Transition{}, true, "admission request object cannot be canonically reconstructed"
+	}
+	optionsSHA256, err := canonicalOptionalObjectSHA256(request.Options)
+	if err != nil {
+		return Transition{}, true, "admission options cannot be canonically reconstructed"
+	}
+	oldObject := AdmissionObjectBinding{}
+	newObject := AdmissionObjectBinding{}
+	serviceAccountToken := request.Operation == "CREATE" && request.Resource.Group == "" &&
+		request.Resource.Resource == "serviceaccounts" && request.Subresource == "token"
+	tokenAudiences := []string(nil)
+	var tokenExpirationSeconds int64
+	if serviceAccountToken {
+		tokenAudiences, tokenExpirationSeconds, err = serviceAccountTokenRequestScope(request.Object)
+		if err != nil {
+			return Transition{}, true, "TokenRequest audiences or expiration are malformed or outside the bounded contract"
+		}
+	}
+	if request.Operation == "UPDATE" || request.Operation == "DELETE" {
+		oldObject, err = admissionObjectBinding(request.OldObject)
+		if err != nil || bindingEmpty(oldObject) {
+			return Transition{}, true, "old admission object lacks exact UID/resourceVersion identity"
+		}
+	}
+	if (request.Operation == "CREATE" && !serviceAccountToken) || request.Operation == "UPDATE" {
+		newObject, err = admissionObjectBinding(request.Object)
+		if err != nil || bindingEmpty(newObject) {
+			return Transition{}, true, "new admission object lacks exact UID/resourceVersion identity"
+		}
+	}
+	generateName := ""
+	if request.Operation == "CREATE" && !serviceAccountToken {
+		objectName, objectGenerateName, nameErr := admissionObjectNames(request.Object)
+		if nameErr != nil || request.Name != objectName ||
+			(request.Name == "" && objectGenerateName == "") ||
+			(request.Name != "" && objectGenerateName != "") {
+			return Transition{}, true, "CREATE name/generateName identity is ambiguous or inconsistent"
+		}
+		generateName = objectGenerateName
+	}
+	targetObject := AdmissionObjectBinding{}
+	if serviceAccountToken {
+		identity, exists := r.authorityItems[key]
+		if !exists {
+			return Transition{}, true, "TokenRequest target ServiceAccount is absent from the signed authority object closure"
+		}
+		targetObject = AdmissionObjectBinding{UID: identity.UID, ResourceVersion: identity.ResourceVersion, ObjectSHA256: identity.ObjectSHA256}
+		oldObject = AdmissionObjectBinding{}
+		newObject = AdmissionObjectBinding{}
+	}
+	if request.Operation == "CONNECT" {
+		identity, exists := r.authorityItems[key]
+		if !exists {
+			return Transition{}, true, "CONNECT target is absent from the signed authority object closure"
+		}
+		targetObject = AdmissionObjectBinding{UID: identity.UID, ResourceVersion: identity.ResourceVersion, ObjectSHA256: identity.ObjectSHA256}
+		oldObject = AdmissionObjectBinding{}
+		newObject = AdmissionObjectBinding{}
+	}
+	dryRun := request.DryRun != nil && *request.DryRun
 	transition := Transition{
 		Operation:    request.Operation,
+		DryRunSpecified: request.DryRun != nil,
+		DryRun:       dryRun,
+		Kind:         request.Kind,
 		APIGroup:     request.Resource.Group,
 		APIVersion:   request.Resource.Version,
 		Resource:     request.Resource.Resource,
 		Subresource:  request.Subresource,
+		RequestKind: request.RequestKind,
+		RequestResource: request.RequestResource,
+		RequestSubresource: request.RequestSubresource,
 		Namespace:    request.Namespace,
 		Name:         request.Name,
-		ObjectSHA256: objectSHA,
+		GenerateName: generateName,
+		RequestObjectSHA256: requestObjectSHA256,
+		OptionsSHA256: optionsSHA256,
+		OldObject: oldObject,
+		NewObject: newObject,
+		TargetObject: targetObject,
+		TokenAudiences: tokenAudiences,
+		TokenExpirationSeconds: tokenExpirationSeconds,
 		Actor:        actor,
 	}
 	expected, exists := r.transitions[transitionKey(transition)]
 	if !exists || !actorsEqual(expected.Actor, actor) {
-		return false, "no independently signed exact-object transition authorizes this actor"
+		return Transition{}, true, "no independently signed exact-object transition authorizes this actor"
 	}
-	return true, ""
+	return expected, true, ""
+}
+
+func serviceAccountTokenRequestScope(raw []byte) ([]string, int64, error) {
+	var object map[string]any
+	if err := decodeAdmissionJSON(raw, &object); err != nil {
+		return nil, 0, err
+	}
+	spec, ok := objectMap(object["spec"])
+	if !ok {
+		return nil, 0, errors.New("TokenRequest spec is absent")
+	}
+	audiences := []string{}
+	for _, value := range objectSlice(spec["audiences"]) {
+		audience, ok := value.(string)
+		if !ok || !safeText(audience, false) {
+			return nil, 0, errors.New("TokenRequest audience is invalid")
+		}
+		audiences = append(audiences, audience)
+	}
+	sort.Strings(audiences)
+	if !sortedUnique(audiences) {
+		return nil, 0, errors.New("TokenRequest audiences are empty or repeated")
+	}
+	expiration, ok := spec["expirationSeconds"].(json.Number)
+	if !ok {
+		return nil, 0, errors.New("TokenRequest expirationSeconds is absent")
+	}
+	expirationSeconds, err := expiration.Int64()
+	if err != nil || expirationSeconds < 1 || expirationSeconds > 600 {
+		return nil, 0, errors.New("TokenRequest expirationSeconds exceeds the ten-minute authority bound")
+	}
+	return audiences, expirationSeconds, nil
+}
+
+func admissionObjectNames(raw []byte) (string, string, error) {
+	var object map[string]any
+	if err := decodeAdmissionJSON(raw, &object); err != nil {
+		return "", "", err
+	}
+	metadata, ok := objectMap(object["metadata"])
+	if !ok {
+		return "", "", errors.New("admission object metadata is absent")
+	}
+	name, _ := metadata["name"].(string)
+	generateName, _ := metadata["generateName"].(string)
+	if !safeText(name, true) || !safeText(generateName, true) {
+		return "", "", errors.New("admission object name identity is invalid")
+	}
+	return name, generateName, nil
+}
+
+func canonicalOptionalObjectSHA256(raw []byte) (string, error) {
+	if len(bytes.TrimSpace(raw)) == 0 || bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return "", nil
+	}
+	return canonicalObjectSHA256(raw)
+}
+
+func admissionObjectBinding(raw []byte) (AdmissionObjectBinding, error) {
+	objectSHA256, err := canonicalOptionalObjectSHA256(raw)
+	if err != nil || objectSHA256 == "" {
+		return AdmissionObjectBinding{}, err
+	}
+	var object map[string]any
+	if err := decodeAdmissionJSON(raw, &object); err != nil {
+		return AdmissionObjectBinding{}, err
+	}
+	metadata, ok := objectMap(object["metadata"])
+	if !ok {
+		return AdmissionObjectBinding{}, errors.New("admission object metadata is absent")
+	}
+	uid, _ := metadata["uid"].(string)
+	resourceVersion, _ := metadata["resourceVersion"].(string)
+	if !safeText(uid, true) || !safeText(resourceVersion, true) {
+		return AdmissionObjectBinding{}, errors.New("admission object metadata identity is invalid")
+	}
+	return AdmissionObjectBinding{UID: uid, ResourceVersion: resourceVersion, ObjectSHA256: objectSHA256}, nil
 }
 
 func (r *Runtime) matchingResourceGuards(request *AdmissionRequest) []ResourceGuard {

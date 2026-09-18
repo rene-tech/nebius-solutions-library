@@ -15,8 +15,11 @@ import (
 const (
 	AcceptanceTrustSchema    = "fs2-serve.nebius.ai/public-edge-boundary-acceptance-trust/v1"
 	AcceptanceEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance-envelope/v1"
-	AcceptancePayloadSchema  = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v1"
+	LegacyAcceptancePayloadSchema = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v1"
+	AcceptancePayloadSchema  = "fs2-serve.nebius.ai/public-edge-boundary-acceptance/v2"
 	acceptanceIssuerRole     = "platform-security-public-edge-boundary-acceptance"
+	maximumAcceptanceClusterIDBytes = 128
+	maximumAcceptanceDeploymentIDBytes = 128
 )
 
 type Acceptance struct {
@@ -36,6 +39,9 @@ type Acceptance struct {
 	BoundaryTLSCertificateSHA256 string `json:"boundary_tls_certificate_sha256"`
 	BoundaryTLSPrivateKeySHA256 string `json:"boundary_tls_private_key_sha256"`
 	BoundaryTLSSPKISHA256       string `json:"boundary_tls_spki_sha256"`
+	BoundaryAdmissionClientTrustSHA256 string `json:"boundary_admission_client_trust_sha256"`
+	TransitionSettlementConfigSHA256 string `json:"transition_settlement_config_sha256"`
+	BoundaryRuntimeReaderGID uint32 `json:"boundary_runtime_reader_gid"`
 	SourceCommit              string `json:"source_commit"`
 	SourceTree                string `json:"source_tree"`
 }
@@ -92,18 +98,22 @@ func LoadAcceptance(trustPath string, envelopePath string, executableRole string
 	if err := decodeExactJSON(payloadRaw, &acceptance); err != nil {
 		return Acceptance{}, fmt.Errorf("decode acceptance payload: %w", err)
 	}
+	if acceptance.Schema == LegacyAcceptancePayloadSchema {
+		return Acceptance{}, errors.New("legacy acceptance v1 is retained evidence but cannot be reinterpreted as v2; install a separately signed additive v2 acceptance envelope")
+	}
 	canonical, err := json.Marshal(acceptance)
 	if err != nil || !bytes.Equal(canonical, payloadRaw) {
 		return Acceptance{}, errors.New("acceptance payload is not canonical JSON")
 	}
-	if acceptance.Schema != AcceptancePayloadSchema || !safeText(acceptance.ClusterID, false) ||
-		!safeText(acceptance.DeploymentID, false) || !isSHA256(acceptance.AuthoritySnapshotID) ||
+	if acceptance.Schema != AcceptancePayloadSchema || !safeText(acceptance.ClusterID, false) || len(acceptance.ClusterID) > maximumAcceptanceClusterIDBytes ||
+		!safeText(acceptance.DeploymentID, false) || len(acceptance.DeploymentID) > maximumAcceptanceDeploymentIDBytes || !isSHA256(acceptance.AuthoritySnapshotID) ||
 		!isSHA256(acceptance.AuthorityClosureSHA256) || !isSHA256(acceptance.SnapshotTrustSHA256) ||
 		!isSHA256(acceptance.NativeCollectorConfigSHA256) || !isSHA256(acceptance.NativeAuthorityConfigSHA256) ||
 		!isSHA256(acceptance.NativeResponseTrustSHA256) || !isSHA256(acceptance.MandatoryCollectionsSHA256) || !isSHA256(acceptance.BoundaryExecutableSHA256) ||
 		!isSHA256(acceptance.CollectorExecutableSHA256) || !isSHA256(acceptance.NativeAuthorityExecutableSHA256) ||
-		!isSHA256(acceptance.BoundaryTLSCertificateSHA256) || !isSHA256(acceptance.BoundaryTLSPrivateKeySHA256) ||
-		!isSHA256(acceptance.BoundaryTLSSPKISHA256) ||
+			!isSHA256(acceptance.BoundaryTLSCertificateSHA256) || !isSHA256(acceptance.BoundaryTLSPrivateKeySHA256) ||
+			!isSHA256(acceptance.BoundaryTLSSPKISHA256) || !isSHA256(acceptance.BoundaryAdmissionClientTrustSHA256) ||
+			!isSHA256(acceptance.TransitionSettlementConfigSHA256) || acceptance.BoundaryRuntimeReaderGID == 0 ||
 		!isCommit(acceptance.SourceCommit) || !isCommit(acceptance.SourceTree) {
 		return Acceptance{}, errors.New("acceptance payload does not bind exact source, executables and authority evidence")
 	}

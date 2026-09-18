@@ -4,8 +4,12 @@ import "encoding/json"
 
 const (
 	TrustSchema    = "fs2-serve.nebius.ai/public-edge-boundary-trust/v1"
-	EnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v1"
-	SnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v1"
+	LegacyEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v1"
+	PreviousEnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v2"
+	EnvelopeSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot-envelope/v3"
+	LegacySnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v1"
+	PreviousSnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v2"
+	SnapshotSchema = "fs2-serve.nebius.ai/public-edge-boundary-snapshot/v3"
 )
 
 type TrustRegistry struct {
@@ -37,6 +41,11 @@ type Snapshot struct {
 	AuthoritySnapshotID       string           `json:"authority_snapshot_id"`
 	AuthorityClosureSHA256    string           `json:"authority_closure_sha256"`
 	EvidenceBundleSHA256      string           `json:"evidence_bundle_sha256"`
+	ActivationCycleContractSHA256 string        `json:"activation_cycle_contract_sha256"`
+	ActivationCycleID          string           `json:"activation_cycle_id"`
+	ActivationCycleIssuedAt    string           `json:"activation_cycle_issued_at"`
+	ActivationCycleDeadlineAt  string           `json:"activation_cycle_deadline_at"`
+	ActivationPredecessorSelectionSHA256 string `json:"activation_predecessor_selection_sha256"`
 	SnapshotID                string           `json:"snapshot_id"`
 	IssuedAt                  string           `json:"issued_at"`
 	ExpiresAt                 string           `json:"expires_at"`
@@ -47,6 +56,8 @@ type Snapshot struct {
 	ControllerServiceAccounts []ObjectIdentity `json:"controller_service_accounts"`
 	CredentialWorkloads       []ObjectIdentity `json:"credential_workloads"`
 	ProtectedRoots            []ObjectIdentity `json:"protected_roots"`
+	AdmissionParameterRoots   []ObjectIdentity `json:"admission_parameter_roots"`
+	EdgeProtectionRoots       []ObjectIdentity `json:"edge_protection_roots"`
 	ResourceGuards            []ResourceGuard  `json:"resource_guards"`
 	Transitions               []Transition     `json:"transitions"`
 }
@@ -90,19 +101,41 @@ type AuthorityClosure struct {
 	ControllerServiceAccounts []ObjectIdentity `json:"controller_service_accounts"`
 	CredentialWorkloads       []ObjectIdentity `json:"credential_workloads"`
 	ProtectedRoots            []ObjectIdentity `json:"protected_roots"`
+	AdmissionParameterRoots   []ObjectIdentity `json:"admission_parameter_roots"`
+	EdgeProtectionRoots       []ObjectIdentity `json:"edge_protection_roots"`
 	ResourceGuards            []ResourceGuard  `json:"resource_guards"`
 }
 
 type Transition struct {
+	TransitionID string `json:"transition_id"`
 	Operation    string `json:"operation"`
+	DryRunSpecified bool `json:"dry_run_specified"`
+	DryRun       bool   `json:"dry_run"`
+	Kind         GroupVersionKind `json:"kind"`
 	APIGroup     string `json:"api_group"`
 	APIVersion   string `json:"api_version"`
 	Resource     string `json:"resource"`
 	Subresource  string `json:"subresource"`
+	RequestKind        GroupVersionKind `json:"request_kind"`
+	RequestResource    GroupVersionRes  `json:"request_resource"`
+	RequestSubresource string           `json:"request_subresource"`
 	Namespace    string `json:"namespace"`
 	Name         string `json:"name"`
-	ObjectSHA256 string `json:"object_sha256"`
+	GenerateName string `json:"generate_name"`
+	RequestObjectSHA256 string `json:"request_object_sha256"`
+	OptionsSHA256       string `json:"options_sha256"`
+	OldObject           AdmissionObjectBinding `json:"old_object"`
+	NewObject           AdmissionObjectBinding `json:"new_object"`
+	TargetObject        AdmissionObjectBinding `json:"target_object"`
+	TokenAudiences      []string `json:"token_audiences"`
+	TokenExpirationSeconds int64 `json:"token_expiration_seconds"`
 	Actor        Actor  `json:"actor"`
+}
+
+type AdmissionObjectBinding struct {
+	UID             string `json:"uid"`
+	ResourceVersion string `json:"resource_version"`
+	ObjectSHA256    string `json:"object_sha256"`
 }
 
 type AdmissionReview struct {
@@ -119,9 +152,21 @@ type AdmissionRequest struct {
 	Namespace   string          `json:"namespace"`
 	Resource    GroupVersionRes `json:"resource"`
 	Subresource string          `json:"subResource"`
+	Kind              GroupVersionKind `json:"kind"`
+	RequestKind       GroupVersionKind `json:"requestKind"`
+	RequestResource   GroupVersionRes  `json:"requestResource"`
+	RequestSubresource string          `json:"requestSubResource"`
+	DryRun      *bool           `json:"dryRun"`
 	UserInfo    AdmissionUser   `json:"userInfo"`
 	Object      json.RawMessage `json:"object"`
 	OldObject   json.RawMessage `json:"oldObject"`
+	Options     json.RawMessage `json:"options"`
+}
+
+type GroupVersionKind struct {
+	Group   string `json:"group"`
+	Version string `json:"version"`
+	Kind    string `json:"kind"`
 }
 
 type GroupVersionRes struct {

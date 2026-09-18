@@ -36,22 +36,55 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	refreshInterval := time.Duration(runner.Config.RefreshIntervalSeconds) * time.Second
-	collectionDeadline := time.Duration(runner.Config.CollectionDeadlineSeconds) * time.Second
-	ticker := time.NewTicker(refreshInterval)
-	defer ticker.Stop()
+	var lastWall time.Time
 	for {
-		attempt, cancel := context.WithTimeout(ctx, collectionDeadline)
-		err := runner.CollectAndInstall(attempt, time.Now())
+		now := time.Now().UTC()
+		if !lastWall.IsZero() && now.Before(lastWall.Add(-time.Second)) {
+			slog.Error("collector wall clock moved backwards; refusing to derive a second cadence branch")
+			return
+		}
+		lastWall = now
+		cycle, err := runner.AcceptedCycle(now)
+		if err != nil {
+			slog.Error("collector cadence derivation rejected", "error", err)
+			return
+		}
+		issuedAt, issueErr := time.Parse(time.RFC3339, cycle.IssuedAt)
+		deadlineAt, deadlineErr := time.Parse(time.RFC3339, cycle.DeadlineAt)
+		if issueErr != nil || deadlineErr != nil {
+			slog.Error("collector cadence timestamps are not canonical")
+			return
+		}
+		if !now.Before(deadlineAt) {
+			nextBoundary := issuedAt.Add(refreshInterval)
+			timer := time.NewTimer(time.Until(nextBoundary))
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			continue
+		}
+		remaining := time.Until(deadlineAt)
+		if remaining <= 0 {
+			continue
+		}
+		attempt, cancel := context.WithTimeout(ctx, remaining)
+		err = runner.CollectAndInstall(attempt, now)
 		cancel()
 		if err != nil {
 			slog.Error("native authority refresh rejected", "error", err)
 		} else {
 			slog.Info("native authority snapshot refreshed")
 		}
+		nextBoundary := issuedAt.Add(refreshInterval)
+		timer := time.NewTimer(time.Until(nextBoundary))
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }

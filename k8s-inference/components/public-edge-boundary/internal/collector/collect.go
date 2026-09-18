@@ -28,16 +28,99 @@ import (
 
 const (
 	maximumConfigBytes   = 1024 * 1024
-	maximumEnvelopeBytes = 64 * 1024 * 1024
+	// Must remain identical to boundary.maxSnapshotBytes: the collector must
+	// never durably select bytes that the non-root admission runtime cannot open.
+	maximumEnvelopeBytes = boundary.MaxSnapshotBytes
 	maximumEvidenceReferenceBytes = 1024
+	maximumCollectorCycleBytes = 256 * 1024
+	maximumSnapshotActivationReceiptBytes = 4 * 1024
+	maximumSnapshotRuntimeSelectionBytes = 16 * 1024
+	snapshotCycleSettlementSchema = "fs2-serve.nebius.ai/public-edge-snapshot-cycle-settlement/v2"
+	snapshotActivationReceiptSchema = "fs2-serve.nebius.ai/public-edge-snapshot-activation-receipt/v1"
+	snapshotRuntimeSelectionSchema = "fs2-serve.nebius.ai/public-edge-snapshot-runtime-selection/v1"
+	snapshotSelectionCommitSchema = "fs2-serve.nebius.ai/public-edge-snapshot-selection-commit/v1"
+	snapshotCyclePredecessorSchema = "fs2-serve.nebius.ai/public-edge-snapshot-cycle-predecessor/v1"
+	snapshotActivationSafetyMargin = 5 * time.Second
 )
+
+type snapshotCycleSettlement struct {
+	Schema string `json:"schema"`
+	CycleContractSHA256 string `json:"cycle_contract_sha256"`
+	CycleID string `json:"cycle_id"`
+	CycleIssuedAt string `json:"cycle_issued_at"`
+	CycleDeadlineAt string `json:"cycle_deadline_at"`
+	EvidenceBundleSHA256 string `json:"evidence_bundle_sha256"`
+	SnapshotEnvelopeSHA256 string `json:"snapshot_envelope_sha256"`
+}
+
+type snapshotCyclePredecessor struct {
+	Schema string `json:"schema"`
+	CycleContractSHA256 string `json:"cycle_contract_sha256"`
+	CycleID string `json:"cycle_id"`
+	PredecessorSelectionSHA256 string `json:"predecessor_selection_sha256"`
+}
+
+type snapshotActivationReceipt struct {
+	Schema                 string `json:"schema"`
+	ClusterID              string `json:"cluster_id"`
+	DeploymentID           string `json:"deployment_id"`
+	CycleContractSHA256    string `json:"cycle_contract_sha256"`
+	CycleID                string `json:"cycle_id"`
+	CycleIssuedAt          string `json:"cycle_issued_at"`
+	CycleDeadlineAt        string `json:"cycle_deadline_at"`
+	EvidenceBundleSHA256   string `json:"evidence_bundle_sha256"`
+	SnapshotEnvelopeSHA256 string `json:"snapshot_envelope_sha256"`
+	PredecessorSelectionSHA256 string `json:"predecessor_selection_sha256"`
+	ActivatedAt            string `json:"activated_at"`
+	Status                 string `json:"status"`
+}
+
+type snapshotRuntimeSelection struct {
+	Schema                 string                    `json:"schema"`
+	SnapshotEnvelopeName   string                    `json:"snapshot_envelope_name"`
+	SnapshotEnvelopeSHA256 string                    `json:"snapshot_envelope_sha256"`
+	PredecessorSelectionSHA256 string                `json:"predecessor_selection_sha256"`
+	Activation             snapshotActivationReceipt `json:"activation"`
+}
+
+type snapshotSelectionCommit struct {
+	Schema                    string `json:"schema"`
+	ClusterID                 string `json:"cluster_id"`
+	DeploymentID              string `json:"deployment_id"`
+	PredecessorSelectionSHA256 string `json:"predecessor_selection_sha256"`
+	SuccessorSelectionSHA256   string `json:"successor_selection_sha256"`
+	CycleID                    string `json:"cycle_id"`
+	CommittedAt                string `json:"committed_at"`
+	Status                     string `json:"status"`
+}
 
 type Runner struct {
 	Config       Config
 	Acceptance   boundary.Acceptance
-	nativeTrustPath   string
-	snapshotTrustPath string
+	nativeTrust       *boundary.ExternalTrust
+	snapshotTrust     *boundary.ExternalTrust
 	evidenceMu        sync.Mutex
+	runtimeMu         sync.Mutex
+}
+
+type snapshotActivationPlan struct {
+	selectionPath     string
+	envelopePath      string
+	alreadyActive     bool
+	cycle             CollectorCycle
+	bundleSHA256      string
+	envelopeSHA256    string
+	predecessorSelectionSHA256 string
+}
+
+func (r *Runner) AcceptedCycle(now time.Time) (CollectorCycle, error) {
+	return collectorCycleFor(
+		r.Acceptance,
+		r.Config.RefreshIntervalSeconds,
+		r.Config.CollectionDeadlineSeconds,
+		collectorSourceIDs(r.Config.Sources),
+		now.UTC().Truncate(time.Second),
+	)
 }
 
 func LoadRunner(
@@ -56,6 +139,12 @@ func LoadRunner(
 	if err := rejectClosedIntegrationGate(configRaw, "native-collector"); err != nil {
 		return nil, err
 	}
+	var configDiscriminator struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal(configRaw, &configDiscriminator); err == nil && configDiscriminator.Schema == LegacyConfigSchema {
+		return nil, errors.New("legacy native-collector config v1 is retained evidence but cannot be reinterpreted as the cadence/evidence v2 contract")
+	}
 	var config Config
 	if err := canonicalJSON(configRaw, &config); err != nil {
 		return nil, fmt.Errorf("decode native collector config: %w", err)
@@ -72,19 +161,22 @@ func LoadRunner(
 	if err := validateEvidenceCapacity(config, 0, 0); err != nil {
 		return nil, fmt.Errorf("validate native evidence capacity horizon: %w", err)
 	}
-	nativeTrustRaw, err := readRootRegular(nativeTrustPath, maximumConfigBytes)
-	if err != nil || digest(nativeTrustRaw) != acceptance.NativeResponseTrustSHA256 {
-		return nil, errors.New("native response trust differs from independently accepted bytes")
+	if err := validateRuntimeCapacity(config, 0, 0); err != nil {
+		return nil, fmt.Errorf("validate native runtime capacity horizon: %w", err)
 	}
-	snapshotTrustRaw, err := readRootRegular(snapshotTrustPath, maximumConfigBytes)
-	if err != nil || digest(snapshotTrustRaw) != acceptance.SnapshotTrustSHA256 {
-		return nil, errors.New("snapshot response trust differs from independently accepted bytes")
+	nativeTrust, err := boundary.LoadExternalTrust(nativeTrustPath, acceptance.NativeResponseTrustSHA256, NativeTrustSchema)
+	if err != nil {
+		return nil, fmt.Errorf("load immutable native response trust: %w", err)
+	}
+	snapshotTrust, err := boundary.LoadExternalTrust(snapshotTrustPath, acceptance.SnapshotTrustSHA256, boundary.TrustSchema)
+	if err != nil {
+		return nil, fmt.Errorf("load immutable snapshot response trust: %w", err)
 	}
 	return &Runner{
-		Config:            config,
-		Acceptance:        acceptance,
-		nativeTrustPath:   nativeTrustPath,
-		snapshotTrustPath: snapshotTrustPath,
+		Config:        config,
+		Acceptance:    acceptance,
+		nativeTrust:   nativeTrust,
+		snapshotTrust: snapshotTrust,
 	}, nil
 }
 
@@ -109,17 +201,47 @@ func rejectClosedIntegrationGate(raw []byte, component string) error {
 
 func (r *Runner) CollectAndInstall(ctx context.Context, now time.Time) error {
 	now = now.UTC().Truncate(time.Second)
+	cycle, err := r.AcceptedCycle(now)
+	if err != nil {
+		return err
+	}
+	deadlineAt, _ := time.Parse(time.RFC3339, cycle.DeadlineAt)
+	if !now.Before(deadlineAt) {
+		return errors.New("collector cycle deadline has elapsed; wait for the next accepted cadence window")
+	}
+	cycleRaw, err := json.Marshal(cycle)
+	if err != nil || len(cycleRaw) > maximumCollectorCycleBytes {
+		return errors.New("collector cycle exceeds its canonical retained bound")
+	}
+	if err := r.appendEvidence("collection-cycle-"+cycle.CycleID+".json", cycleRaw); err != nil {
+		return err
+	}
+	r.runtimeMu.Lock()
+	_, _, observedPredecessorSHA256, _, predecessorErr := r.loadRuntimeSelection(now)
+	r.runtimeMu.Unlock()
+	if predecessorErr != nil {
+		return fmt.Errorf("load exact runtime predecessor before evidence collection: %w", predecessorErr)
+	}
+	predecessorSelectionSHA256, err := r.settleCyclePredecessor(cycle, observedPredecessorSHA256)
+	if err != nil {
+		return err
+	}
 	bundle := EvidenceBundle{
 		Schema:       EvidenceBundleSchema,
 		ClusterID:    r.Config.ClusterID,
 		DeploymentID: r.Config.DeploymentID,
 		EvidenceStoreID: r.Config.EvidenceStoreID,
+		ActivationPredecessorSelectionSHA256: predecessorSelectionSHA256,
+		CycleContractSHA256: cycle.ContractSHA256,
+		CycleID: cycle.CycleID,
+		CycleIssuedAt: cycle.IssuedAt,
+		CycleDeadlineAt: cycle.DeadlineAt,
 		RefreshIntervalSeconds: r.Config.RefreshIntervalSeconds,
 		CollectionDeadlineSeconds: r.Config.CollectionDeadlineSeconds,
-		CollectedAt:  now.Format(time.RFC3339),
+		Cycle: cycle,
 	}
 	results := make([]SourceEvidence, len(r.Config.Sources))
-	collectionContext, cancel := context.WithCancel(ctx)
+	collectionContext, cancel := context.WithDeadline(ctx, deadlineAt)
 	defer cancel()
 	semaphore := make(chan struct{}, r.Config.MaximumConcurrentSources)
 	errorsByIndex := make([]error, len(r.Config.Sources))
@@ -137,7 +259,7 @@ func (r *Runner) CollectAndInstall(ctx context.Context, now time.Time) error {
 				errorsByIndex[index] = collectionContext.Err()
 				return
 			}
-			results[index], errorsByIndex[index] = r.collectSource(collectionContext, source, now)
+			results[index], errorsByIndex[index] = r.collectSource(collectionContext, source, cycle, now)
 			if errorsByIndex[index] != nil {
 				cancel()
 			}
@@ -150,6 +272,10 @@ func (r *Runner) CollectAndInstall(ctx context.Context, now time.Time) error {
 		}
 	}
 	bundle.Sources = results
+	bundle.CollectedAt, err = deterministicBundleCollectedAt(cycle, results)
+	if err != nil {
+		return err
+	}
 	bundleRaw, err := json.Marshal(bundle)
 	if err != nil || int64(len(bundleRaw)) > r.Config.MaximumBundleBytes {
 		return errors.New("native evidence bundle exceeds its canonical bound")
@@ -157,14 +283,142 @@ func (r *Runner) CollectAndInstall(ctx context.Context, now time.Time) error {
 	if err := r.appendEvidence("native-bundle-"+digest(bundleRaw)+".json", bundleRaw); err != nil {
 		return err
 	}
-	envelopeRaw, err := r.requestSnapshot(ctx, bundleRaw)
+	envelopeRaw, settled, err := r.settledSnapshotForCycle(cycle, bundleRaw)
 	if err != nil {
 		return err
 	}
-	return r.installSnapshot(envelopeRaw, now)
+	if !settled {
+		if !time.Now().UTC().Before(deadlineAt) {
+			return errors.New("snapshot request cannot begin after the accepted collection deadline")
+		}
+		envelopeRaw, err = r.requestSnapshot(collectionContext, bundleRaw)
+		if err != nil {
+			return err
+		}
+		if !time.Now().UTC().Before(deadlineAt) {
+			return errors.New("snapshot response completed after the accepted collection deadline")
+		}
+		if err := r.settleSnapshotCycle(cycle, bundleRaw, envelopeRaw); err != nil {
+			return err
+		}
+	}
+	runtimeBytes, runtimeInodes, err := runtimePerCycleStorageBounds(r.Config)
+	if err != nil {
+		return err
+	}
+	r.runtimeMu.Lock()
+	defer r.runtimeMu.Unlock()
+	if err := validateRuntimeCapacity(r.Config, runtimeBytes, runtimeInodes); err != nil {
+		return fmt.Errorf("reserve native runtime cycle capacity: %w", err)
+	}
+	activationPlan, err := r.stageSnapshot(cycle, envelopeRaw, bundleRaw, time.Now().UTC().Truncate(time.Second))
+	if err != nil {
+		return err
+	}
+	if err := r.activateStagedSnapshot(activationPlan, deadlineAt); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (r *Runner) collectSource(ctx context.Context, source SourceSpec, now time.Time) (SourceEvidence, error) {
+func (r *Runner) settleCyclePredecessor(cycle CollectorCycle, observed string) (string, error) {
+	if observed != "" && !isDigest(observed) {
+		return "", errors.New("runtime predecessor is not content addressed")
+	}
+	name := "snapshot-cycle-predecessor-" + cycle.CycleID + ".json"
+	path := filepath.Join(r.Config.EvidenceRoot, name)
+	if raw, err := readRootRegular(path, maximumConfigBytes); err == nil {
+		var retained snapshotCyclePredecessor
+		if canonicalJSON(raw, &retained) != nil || retained.Schema != snapshotCyclePredecessorSchema ||
+			retained.CycleContractSHA256 != cycle.ContractSHA256 || retained.CycleID != cycle.CycleID ||
+			(retained.PredecessorSelectionSHA256 != "" && !isDigest(retained.PredecessorSelectionSHA256)) {
+			return "", errors.New("retained cycle predecessor is invalid")
+		}
+		return retained.PredecessorSelectionSHA256, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	record := snapshotCyclePredecessor{
+		Schema: snapshotCyclePredecessorSchema,
+		CycleContractSHA256: cycle.ContractSHA256,
+		CycleID: cycle.CycleID,
+		PredecessorSelectionSHA256: observed,
+	}
+	raw, err := json.Marshal(record)
+	if err != nil {
+		return "", err
+	}
+	if err := r.appendEvidence(name, raw); err != nil {
+		return "", fmt.Errorf("settle immutable cycle activation predecessor: %w", err)
+	}
+	return observed, nil
+}
+
+func (r *Runner) snapshotCycleSettlementName(cycleID string) (string, error) {
+	if !isDigest(cycleID) {
+		return "", errors.New("snapshot cycle settlement identity is invalid")
+	}
+	return "snapshot-cycle-settlement-" + cycleID + ".json", nil
+}
+
+func (r *Runner) settledSnapshotForCycle(cycle CollectorCycle, bundleRaw []byte) ([]byte, bool, error) {
+	name, err := r.snapshotCycleSettlementName(cycle.CycleID)
+	if err != nil {
+		return nil, false, err
+	}
+	raw, err := readRootRegular(filepath.Join(r.Config.EvidenceRoot, name), maximumConfigBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	var settlement snapshotCycleSettlement
+	if err := canonicalJSON(raw, &settlement); err != nil || settlement.Schema != snapshotCycleSettlementSchema ||
+		settlement.CycleContractSHA256 != cycle.ContractSHA256 || settlement.CycleID != cycle.CycleID ||
+		settlement.CycleIssuedAt != cycle.IssuedAt || settlement.CycleDeadlineAt != cycle.DeadlineAt ||
+		settlement.EvidenceBundleSHA256 != digest(bundleRaw) || !isDigest(settlement.SnapshotEnvelopeSHA256) {
+		return nil, false, errors.New("retained snapshot cycle settlement conflicts with the exact cycle or evidence bundle")
+	}
+	envelopeRaw, err := readRootRegular(
+		filepath.Join(r.Config.EvidenceRoot, "snapshot-envelope-"+settlement.SnapshotEnvelopeSHA256+".json"),
+		maximumEnvelopeBytes,
+	)
+	if err != nil || digest(envelopeRaw) != settlement.SnapshotEnvelopeSHA256 {
+		return nil, false, errors.New("retained snapshot cycle settlement lacks its exact content-addressed envelope")
+	}
+	if err := r.verifySnapshotEnvelope(bundleRaw, envelopeRaw, time.Now().UTC(), false); err != nil {
+		return nil, false, fmt.Errorf("verify retained snapshot cycle settlement: %w", err)
+	}
+	return envelopeRaw, true, nil
+}
+
+func (r *Runner) settleSnapshotCycle(cycle CollectorCycle, bundleRaw []byte, envelopeRaw []byte) error {
+	envelopeSHA256 := digest(envelopeRaw)
+	if err := r.appendEvidence("snapshot-envelope-"+envelopeSHA256+".json", envelopeRaw); err != nil {
+		return err
+	}
+	settlement := snapshotCycleSettlement{
+		Schema: snapshotCycleSettlementSchema,
+		CycleContractSHA256: cycle.ContractSHA256,
+		CycleID: cycle.CycleID,
+		CycleIssuedAt: cycle.IssuedAt,
+		CycleDeadlineAt: cycle.DeadlineAt,
+		EvidenceBundleSHA256: digest(bundleRaw),
+		SnapshotEnvelopeSHA256: envelopeSHA256,
+	}
+	raw, err := json.Marshal(settlement)
+	if err != nil {
+		return err
+	}
+	name, err := r.snapshotCycleSettlementName(cycle.CycleID)
+	if err != nil {
+		return err
+	}
+	return r.appendEvidence(name, raw)
+}
+
+func (r *Runner) collectSource(ctx context.Context, source SourceSpec, cycle CollectorCycle, now time.Time) (SourceEvidence, error) {
 	authorityClient, err := mutualTLSClient(
 		source.AttestationCABundlePath,
 		source.AttestationCABundleSHA256,
@@ -180,7 +434,7 @@ func (r *Runner) collectSource(ctx context.Context, source SourceSpec, now time.
 		return SourceEvidence{}, err
 	}
 	evidence := SourceEvidence{SourceID: source.ID, Kind: source.Kind, SemanticCollection: source.SemanticCollection}
-	sessionID, err := randomID()
+	sessionID, err := cycleSessionID(cycle, source.ID)
 	if err != nil {
 		return SourceEvidence{}, err
 	}
@@ -188,15 +442,16 @@ func (r *Runner) collectSource(ctx context.Context, source SourceSpec, now time.
 	var totalBytes int64
 	providerRequestIDs := map[string]struct{}{}
 	for pageNumber := 0; pageNumber < source.MaximumPages; pageNumber++ {
-		challenge, err := randomID()
-		if err != nil {
-			return SourceEvidence{}, err
-		}
+		challenge := cycleChallenge(cycle, source.ID, sessionID, pageNumber, pageToken)
 		directive := CollectionRequest{
 			Schema:       CollectionRequestSchema,
 			ClusterID:    r.Acceptance.ClusterID,
 			DeploymentID: r.Acceptance.DeploymentID,
 			SourceID:     source.ID,
+			CycleContractSHA256: cycle.ContractSHA256,
+			CycleID: cycle.CycleID,
+			CycleIssuedAt: cycle.IssuedAt,
+			CycleDeadlineAt: cycle.DeadlineAt,
 			SessionID:    sessionID,
 			PageIndex:    pageNumber,
 			PageToken:    pageToken,
@@ -220,9 +475,7 @@ func (r *Runner) collectSource(ctx context.Context, source SourceSpec, now time.
 			response.TLS == nil || len(response.TLS.PeerCertificates) == 0 {
 			return SourceEvidence{}, errors.New("independent native authority response is unauthenticated, unsuccessful or oversized")
 		}
-		payloadRaw, err := boundary.VerifyExternalEnvelope(
-			r.nativeTrustPath,
-			NativeTrustSchema,
+		payloadRaw, err := r.nativeTrust.VerifyEnvelope(
 			NativeEnvelopeSchema,
 			NativeIssuerRole,
 			envelopeRaw,
@@ -236,6 +489,8 @@ func (r *Runner) collectSource(ctx context.Context, source SourceSpec, now time.
 		}
 		if page.Schema != NativePageSchema || page.SourceID != source.ID || page.SourceKind != source.Kind ||
 			page.SemanticCollection != source.SemanticCollection ||
+			page.CycleContractSHA256 != cycle.ContractSHA256 || page.CycleID != cycle.CycleID ||
+			page.CycleIssuedAt != cycle.IssuedAt || page.CycleDeadlineAt != cycle.DeadlineAt ||
 			page.SessionID != sessionID || page.Challenge != challenge || page.PageIndex != pageNumber || page.ProviderRequestID == "" ||
 			!isDigest(page.TLSPeerCertificateSHA256) || page.HTTPStatus != http.StatusOK {
 			return SourceEvidence{}, errors.New("native authority response does not bind the collection directive")
@@ -278,6 +533,12 @@ func (r *Runner) collectSource(ctx context.Context, source SourceSpec, now time.
 			return SourceEvidence{}, err
 		}
 		evidence.Pages = append(evidence.Pages, CapturedPage{
+			CycleContractSHA256: cycle.ContractSHA256,
+			CycleID: cycle.CycleID,
+			CycleIssuedAt: cycle.IssuedAt,
+			CycleDeadlineAt: cycle.DeadlineAt,
+			DirectiveSHA256: digest(directiveRaw),
+			CollectedAt: page.CollectedAt,
 			EnvelopeObject: envelopeObject,
 			EnvelopeSHA256: envelopeSHA256,
 			PayloadSHA256:  digest(payloadRaw),
@@ -291,6 +552,162 @@ func (r *Runner) collectSource(ctx context.Context, source SourceSpec, now time.
 		pageToken = nextToken
 	}
 	return SourceEvidence{}, errors.New("native source did not reach a signed terminal page")
+}
+
+type collectorCycleIdentity struct {
+	Schema string `json:"schema"`
+	ClusterID string `json:"cluster_id"`
+	DeploymentID string `json:"deployment_id"`
+	ContractSHA256 string `json:"contract_sha256"`
+	IssuedAt string `json:"issued_at"`
+	DeadlineAt string `json:"deadline_at"`
+	RefreshIntervalSeconds int `json:"refresh_interval_seconds"`
+	CollectionDeadlineSeconds int `json:"collection_deadline_seconds"`
+	ChallengeDerivation string `json:"challenge_derivation"`
+	Sources []CollectorCycleSource `json:"sources"`
+}
+
+type collectorCycleContract struct {
+	Schema string `json:"schema"`
+	ClusterID string `json:"cluster_id"`
+	DeploymentID string `json:"deployment_id"`
+	IssuedAt string `json:"issued_at"`
+	DeadlineAt string `json:"deadline_at"`
+	RefreshIntervalSeconds int `json:"refresh_interval_seconds"`
+	CollectionDeadlineSeconds int `json:"collection_deadline_seconds"`
+	CollectorConfigSHA256 string `json:"collector_config_sha256"`
+	AuthorityConfigSHA256 string `json:"authority_config_sha256"`
+	NativeResponseTrustSHA256 string `json:"native_response_trust_sha256"`
+	SnapshotTrustSHA256 string `json:"snapshot_trust_sha256"`
+	MandatoryCollectionsSHA256 string `json:"mandatory_collections_sha256"`
+	AuthoritySnapshotID string `json:"authority_snapshot_id"`
+	AuthorityClosureSHA256 string `json:"authority_closure_sha256"`
+	SourceIDs []string `json:"source_ids"`
+}
+
+func collectorSourceIDs(sources []SourceSpec) []string {
+	ids := make([]string, 0, len(sources))
+	for _, source := range sources {
+		ids = append(ids, source.ID)
+	}
+	return ids
+}
+
+func authoritySourceIDs(sources []AuthoritySourceSpec) []string {
+	ids := make([]string, 0, len(sources))
+	for _, source := range sources {
+		ids = append(ids, source.ID)
+	}
+	return ids
+}
+
+func collectorCycleFor(acceptance boundary.Acceptance, refreshSeconds int, deadlineSeconds int, sourceIDs []string, now time.Time) (CollectorCycle, error) {
+	if refreshSeconds < 1 || deadlineSeconds < 1 || deadlineSeconds >= refreshSeconds || len(sourceIDs) == 0 {
+		return CollectorCycle{}, errors.New("collector cadence cannot derive a bounded cycle")
+	}
+	issuedAt := time.Unix((now.UTC().Unix()/int64(refreshSeconds))*int64(refreshSeconds), 0).UTC()
+	deadlineAt := issuedAt.Add(time.Duration(deadlineSeconds) * time.Second)
+	sortedIDs := append([]string(nil), sourceIDs...)
+	sort.Strings(sortedIDs)
+	sources := make([]CollectorCycleSource, 0, len(sortedIDs))
+	for index, sourceID := range sortedIDs {
+		if !boundedProtocolText(sourceID, maximumSourceIDBytes, false) || index > 0 && sortedIDs[index-1] == sourceID {
+			return CollectorCycle{}, errors.New("collector cycle source inventory is incomplete or duplicated")
+		}
+	}
+	contract := collectorCycleContract{
+		Schema: CollectorCycleSchema, ClusterID: acceptance.ClusterID, DeploymentID: acceptance.DeploymentID,
+		IssuedAt: issuedAt.Format(time.RFC3339), DeadlineAt: deadlineAt.Format(time.RFC3339),
+		RefreshIntervalSeconds: refreshSeconds, CollectionDeadlineSeconds: deadlineSeconds,
+		CollectorConfigSHA256: acceptance.NativeCollectorConfigSHA256,
+		AuthorityConfigSHA256: acceptance.NativeAuthorityConfigSHA256,
+		NativeResponseTrustSHA256: acceptance.NativeResponseTrustSHA256,
+		SnapshotTrustSHA256: acceptance.SnapshotTrustSHA256,
+		MandatoryCollectionsSHA256: acceptance.MandatoryCollectionsSHA256,
+		AuthoritySnapshotID: acceptance.AuthoritySnapshotID,
+		AuthorityClosureSHA256: acceptance.AuthorityClosureSHA256,
+		SourceIDs: sortedIDs,
+	}
+	contractRaw, err := json.Marshal(contract)
+	if err != nil {
+		return CollectorCycle{}, err
+	}
+	contractSHA256 := digest(contractRaw)
+	for _, sourceID := range sortedIDs {
+		sessionID := digest([]byte(strings.Join([]string{
+			"fs2-serve.nebius.ai/public-edge-native-collection-session/v2",
+			contractSHA256, sourceID,
+		}, "\n")))
+		sources = append(sources, CollectorCycleSource{SourceID: sourceID, SessionID: sessionID})
+	}
+	identity := collectorCycleIdentity{
+		Schema: CollectorCycleSchema, ClusterID: acceptance.ClusterID, DeploymentID: acceptance.DeploymentID,
+		ContractSHA256: contractSHA256,
+		IssuedAt: issuedAt.Format(time.RFC3339), DeadlineAt: deadlineAt.Format(time.RFC3339),
+		RefreshIntervalSeconds: refreshSeconds, CollectionDeadlineSeconds: deadlineSeconds,
+		ChallengeDerivation: "sha256-cycle-contract-source-session-page-token/v2", Sources: sources,
+	}
+	identityRaw, err := json.Marshal(identity)
+	if err != nil {
+		return CollectorCycle{}, err
+	}
+	return CollectorCycle{
+		Schema: identity.Schema, ClusterID: identity.ClusterID, DeploymentID: identity.DeploymentID,
+		ContractSHA256: identity.ContractSHA256,
+		CycleID: digest(identityRaw), IssuedAt: identity.IssuedAt, DeadlineAt: identity.DeadlineAt,
+		RefreshIntervalSeconds: identity.RefreshIntervalSeconds,
+		CollectionDeadlineSeconds: identity.CollectionDeadlineSeconds,
+		CollectorConfigSHA256: contract.CollectorConfigSHA256,
+		AuthorityConfigSHA256: contract.AuthorityConfigSHA256,
+		NativeResponseTrustSHA256: contract.NativeResponseTrustSHA256,
+		SnapshotTrustSHA256: contract.SnapshotTrustSHA256,
+		MandatoryCollectionsSHA256: contract.MandatoryCollectionsSHA256,
+		AuthoritySnapshotID: contract.AuthoritySnapshotID,
+		AuthorityClosureSHA256: contract.AuthorityClosureSHA256,
+		ChallengeDerivation: identity.ChallengeDerivation, Sources: identity.Sources,
+	}, nil
+}
+
+func cycleSessionID(cycle CollectorCycle, sourceID string) (string, error) {
+	for _, source := range cycle.Sources {
+		if source.SourceID == sourceID && canonicalNonce(source.SessionID) {
+			return source.SessionID, nil
+		}
+	}
+	return "", errors.New("collector cycle omits the exact source session")
+}
+
+func cycleChallenge(cycle CollectorCycle, sourceID string, sessionID string, pageIndex int, pageToken string) string {
+	return digest([]byte(strings.Join([]string{
+		"fs2-serve.nebius.ai/public-edge-native-collection-challenge/v2",
+		cycle.ContractSHA256, cycle.CycleID, cycle.IssuedAt, cycle.DeadlineAt, sourceID, sessionID,
+		fmt.Sprintf("%d", pageIndex), pageToken,
+	}, "\n")))
+}
+
+func deterministicBundleCollectedAt(cycle CollectorCycle, sources []SourceEvidence) (string, error) {
+	issuedAt, issuedErr := time.Parse(time.RFC3339, cycle.IssuedAt)
+	deadlineAt, deadlineErr := time.Parse(time.RFC3339, cycle.DeadlineAt)
+	latest := time.Time{}
+	pageCount := 0
+	for _, source := range sources {
+		for _, page := range source.Pages {
+			collectedAt, err := time.Parse(time.RFC3339, page.CollectedAt)
+			if err != nil || collectedAt.Nanosecond() != 0 || !strings.HasSuffix(page.CollectedAt, "Z") ||
+				page.CycleContractSHA256 != cycle.ContractSHA256 || page.CycleID != cycle.CycleID ||
+				page.CycleIssuedAt != cycle.IssuedAt || page.CycleDeadlineAt != cycle.DeadlineAt {
+				return "", errors.New("captured page does not bind the exact deterministic collection cycle")
+			}
+			if latest.IsZero() || collectedAt.After(latest) {
+				latest = collectedAt
+			}
+			pageCount++
+		}
+	}
+	if issuedErr != nil || deadlineErr != nil || pageCount == 0 || latest.Before(issuedAt) || !latest.Before(deadlineAt) {
+		return "", errors.New("native evidence bundle lacks a bounded terminal collection time")
+	}
+	return latest.Format(time.RFC3339), nil
 }
 
 func (r *Runner) requestSnapshot(ctx context.Context, bundleRaw []byte) ([]byte, error) {
@@ -323,87 +740,548 @@ func (r *Runner) requestSnapshot(ctx context.Context, bundleRaw []byte) ([]byte,
 	if err != nil || len(envelopeRaw) > maximumEnvelopeBytes || response.StatusCode != http.StatusOK {
 		return nil, errors.New("snapshot authority response is unsuccessful or oversized")
 	}
-	payloadRaw, err := boundary.VerifyExternalEnvelope(
-		r.snapshotTrustPath,
-		boundary.TrustSchema,
+	if err := r.verifySnapshotEnvelope(bundleRaw, envelopeRaw, time.Now().UTC(), true); err != nil {
+		return nil, err
+	}
+	return envelopeRaw, nil
+}
+
+func (r *Runner) verifySnapshotEnvelope(bundleRaw []byte, envelopeRaw []byte, now time.Time, requireFreshIssuance bool) error {
+	var bundle EvidenceBundle
+	if err := canonicalJSON(bundleRaw, &bundle); err != nil || bundle.Schema != EvidenceBundleSchema ||
+		bundle.ClusterID != r.Acceptance.ClusterID || bundle.DeploymentID != r.Acceptance.DeploymentID ||
+		bundle.CycleContractSHA256 != bundle.Cycle.ContractSHA256 || bundle.CycleID != bundle.Cycle.CycleID ||
+		bundle.CycleIssuedAt != bundle.Cycle.IssuedAt || bundle.CycleDeadlineAt != bundle.Cycle.DeadlineAt ||
+		bundle.RefreshIntervalSeconds != bundle.Cycle.RefreshIntervalSeconds ||
+		bundle.CollectionDeadlineSeconds != bundle.Cycle.CollectionDeadlineSeconds ||
+		(bundle.ActivationPredecessorSelectionSHA256 != "" && !isDigest(bundle.ActivationPredecessorSelectionSHA256)) {
+		return errors.New("snapshot evidence bundle does not contain its exact collection cycle")
+	}
+	cycleIssuedAt, cycleIssueErr := time.Parse(time.RFC3339, bundle.CycleIssuedAt)
+	expectedCycle, cycleErr := r.AcceptedCycle(cycleIssuedAt)
+	expectedCycleRaw, expectedMarshalErr := json.Marshal(expectedCycle)
+	actualCycleRaw, actualMarshalErr := json.Marshal(bundle.Cycle)
+	expectedCollectedAt, collectedAtErr := deterministicBundleCollectedAt(bundle.Cycle, bundle.Sources)
+	if cycleIssueErr != nil || cycleErr != nil || expectedMarshalErr != nil || actualMarshalErr != nil ||
+		collectedAtErr != nil || expectedCollectedAt != bundle.CollectedAt ||
+		!bytes.Equal(expectedCycleRaw, actualCycleRaw) {
+		return errors.New("snapshot evidence bundle cycle differs from the independently accepted config and source plan")
+	}
+	payloadRaw, err := r.snapshotTrust.VerifyEnvelope(
 		boundary.EnvelopeSchema,
 		SnapshotIssuerRole,
 		envelopeRaw,
 	)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	var snapshot boundary.Snapshot
-	if _, err := boundary.CanonicalJSON(payloadRaw, &snapshot); err != nil || snapshot.EvidenceBundleSHA256 != digest(bundleRaw) {
-		return nil, errors.New("snapshot response is not bound to the exact native evidence request")
+	if _, err := boundary.CanonicalJSON(payloadRaw, &snapshot); err != nil || snapshot.Schema != boundary.SnapshotSchema ||
+		snapshot.EvidenceBundleSHA256 != digest(bundleRaw) ||
+		snapshot.ActivationCycleContractSHA256 != bundle.CycleContractSHA256 ||
+		snapshot.ActivationCycleID != bundle.CycleID || snapshot.ActivationCycleIssuedAt != bundle.CycleIssuedAt ||
+		snapshot.ActivationCycleDeadlineAt != bundle.CycleDeadlineAt ||
+		snapshot.ActivationPredecessorSelectionSHA256 != bundle.ActivationPredecessorSelectionSHA256 {
+		return errors.New("snapshot response is not bound to the exact native evidence request")
 	}
 	issuedAt, issueErr := time.Parse(time.RFC3339, snapshot.IssuedAt)
 	expiresAt, expiryErr := time.Parse(time.RFC3339, snapshot.ExpiresAt)
 	minimumLifetime := time.Duration(r.Config.RefreshIntervalSeconds+30) * time.Second
-	responseTime := time.Now().UTC()
+	responseTime := now.UTC()
+	requiredThrough := cycleIssuedAt.Add(time.Duration(r.Config.RefreshIntervalSeconds+30) * time.Second)
 	if issueErr != nil || expiryErr != nil || issuedAt.Nanosecond() != 0 || expiresAt.Nanosecond() != 0 ||
 		snapshot.MaximumAgeSeconds < r.Config.RefreshIntervalSeconds+30 ||
-		expiresAt.Sub(issuedAt) < minimumLifetime || expiresAt.Sub(responseTime) < minimumLifetime ||
-		issuedAt.After(responseTime.Add(30*time.Second)) || issuedAt.Before(responseTime.Add(-30*time.Second)) {
-		return nil, errors.New("snapshot response cannot cover the enrolled refresh cadence and safety margin")
+		expiresAt.Sub(issuedAt) < minimumLifetime || !responseTime.Before(expiresAt) || expiresAt.Before(requiredThrough) ||
+		issuedAt.After(responseTime.Add(30*time.Second)) ||
+		(requireFreshIssuance && issuedAt.Before(responseTime.Add(-30*time.Second))) {
+		return errors.New("snapshot response cannot cover the enrolled refresh cadence and safety margin")
 	}
-	return envelopeRaw, nil
+	return nil
 }
 
-func (r *Runner) installSnapshot(envelopeRaw []byte, now time.Time) error {
-	snapshotTrustRaw, err := readRootRegular(r.snapshotTrustPath, maximumConfigBytes)
+func (r *Runner) stageSnapshot(cycle CollectorCycle, envelopeRaw []byte, bundleRaw []byte, now time.Time) (snapshotActivationPlan, error) {
+	plan := snapshotActivationPlan{
+		cycle: cycle,
+		bundleSHA256: digest(bundleRaw),
+		envelopeSHA256: digest(envelopeRaw),
+	}
+	deadlineAt, deadlineErr := time.Parse(time.RFC3339, cycle.DeadlineAt)
+	if deadlineErr != nil || deadlineAt.Nanosecond() != 0 || !now.Before(deadlineAt) {
+		return plan, errors.New("snapshot candidate cannot be staged outside its exact accepted cycle")
+	}
+	if err := r.verifySnapshotEnvelope(bundleRaw, envelopeRaw, now, false); err != nil {
+		return plan, fmt.Errorf("verify exact snapshot bundle binding before staging: %w", err)
+	}
+	var bundle EvidenceBundle
+	if err := canonicalJSON(bundleRaw, &bundle); err != nil {
+		return plan, err
+	}
+	plan.predecessorSelectionSHA256 = bundle.ActivationPredecessorSelectionSHA256
+	snapshotTrustRaw, err := r.snapshotTrust.CanonicalBytes()
 	if err != nil {
-		return err
+		return plan, err
 	}
 	if err := requireRootOwnedDirectory(r.Config.RuntimeRoot); err != nil {
-		return err
+		return plan, err
 	}
-	if err := appendOrMatch(filepath.Join(r.Config.RuntimeRoot, "snapshot-trust.json"), snapshotTrustRaw, 0o444); err != nil {
-		return err
+	if err := r.ensureRuntimeChildDirectory("snapshot-generations"); err != nil {
+		return plan, err
 	}
-	digestValue := digest(envelopeRaw)
+	plan.selectionPath = filepath.Join(r.Config.RuntimeRoot, "snapshot-runtime-selection.json")
+	selected, activeRaw, predecessorSelectionSHA256, activeExists, err := r.loadRuntimeSelection(now)
+	if err != nil {
+		return plan, err
+	}
+	if activeExists && bytes.Equal(activeRaw, envelopeRaw) {
+		if _, err := boundary.LoadRuntimeFromBytes(
+			snapshotTrustRaw,
+			activeRaw,
+			r.Acceptance.SnapshotTrustSHA256,
+			r.Acceptance.ClusterID,
+			r.Acceptance.DeploymentID,
+			r.Acceptance.AuthoritySnapshotID,
+			r.Acceptance.AuthorityClosureSHA256,
+			now,
+		); err != nil {
+			return plan, fmt.Errorf("verify identical selected snapshot before no-op: %w", err)
+		}
+		if !r.activationReceiptIsExact(selected.Activation, plan, now) {
+			return plan, errors.New("identical immutable runtime envelope lacks its exact committed selection receipt")
+		}
+		plan.alreadyActive = true
+		return plan, nil
+	}
+	if predecessorSelectionSHA256 != plan.predecessorSelectionSHA256 {
+		return plan, errors.New("signed snapshot activation predecessor changed during evidence collection")
+	}
+	if err := r.appendRuntimeOrMatch(filepath.Join(r.Config.RuntimeRoot, "snapshot-trust.json"), snapshotTrustRaw, 0o444); err != nil {
+		return plan, err
+	}
+	digestValue := plan.envelopeSHA256
 	if err := r.appendEvidence("snapshot-envelope-"+digestValue+".json", envelopeRaw); err != nil {
-		return err
+		return plan, err
 	}
-	candidatePath := filepath.Join(r.Config.RuntimeRoot, "snapshot-envelope.candidate-"+digestValue+".json")
-	if err := appendOrMatch(candidatePath, envelopeRaw, 0o444); err != nil {
-		return err
+	plan.envelopePath = filepath.Join(r.Config.RuntimeRoot, "snapshot-generations", "snapshot-envelope-"+digestValue+".json")
+	if err := r.appendRuntimeOrMatch(plan.envelopePath, envelopeRaw, 0o444); err != nil {
+		return plan, err
 	}
-	if _, err := boundary.LoadRuntime(
-		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust.json"),
-		candidatePath,
+	candidateRuntime, err := boundary.LoadRuntimeFromBytes(
+		snapshotTrustRaw,
+		envelopeRaw,
 		r.Acceptance.SnapshotTrustSHA256,
 		r.Acceptance.ClusterID,
 		r.Acceptance.DeploymentID,
 		r.Acceptance.AuthoritySnapshotID,
 		r.Acceptance.AuthorityClosureSHA256,
 		now,
-	); err != nil {
-		return fmt.Errorf("verify candidate snapshot before activation: %w", err)
+	)
+	if err != nil {
+		return plan, fmt.Errorf("verify candidate snapshot before activation: %w", err)
 	}
-	activePath := filepath.Join(r.Config.RuntimeRoot, "snapshot-envelope.json")
-	if activeRaw, readErr := readRootRegular(activePath, maximumEnvelopeBytes); readErr == nil {
-		previousCandidate := filepath.Join(r.Config.RuntimeRoot, "snapshot-previous.candidate-"+digest(activeRaw)+".json")
-		if err := appendOrMatch(previousCandidate, activeRaw, 0o444); err != nil {
-			return err
+	if activeExists {
+		activeRuntime, err := boundary.LoadRuntimeFromBytes(
+			snapshotTrustRaw,
+			activeRaw,
+			r.Acceptance.SnapshotTrustSHA256,
+			r.Acceptance.ClusterID,
+			r.Acceptance.DeploymentID,
+			r.Acceptance.AuthoritySnapshotID,
+			r.Acceptance.AuthorityClosureSHA256,
+			now,
+		)
+		if err != nil {
+			return plan, fmt.Errorf("verify active snapshot before monotonic replacement: %w", err)
 		}
-		if err := os.Rename(previousCandidate, filepath.Join(r.Config.RuntimeRoot, "snapshot-previous.json")); err != nil {
-			return err
+		candidateIssuedAt, candidateErr := time.Parse(time.RFC3339, candidateRuntime.Snapshot.IssuedAt)
+		activeIssuedAt, activeErr := time.Parse(time.RFC3339, activeRuntime.Snapshot.IssuedAt)
+		if candidateErr != nil || activeErr != nil || !candidateIssuedAt.After(activeIssuedAt) {
+			return plan, errors.New("snapshot activation refuses a different candidate that is not strictly newer than the active signed runtime")
 		}
-		if err := fsyncDirectory(r.Config.RuntimeRoot); err != nil {
-			return err
-		}
-	} else if !errors.Is(readErr, os.ErrNotExist) {
-		return errors.New("existing active snapshot cannot be preserved as a verified previous slot")
 	}
-	if err := os.Rename(candidatePath, activePath); err != nil {
+	return plan, nil
+}
+
+func (r *Runner) loadRuntimeSelection(now time.Time) (snapshotRuntimeSelection, []byte, string, bool, error) {
+	selectionPath := filepath.Join(r.Config.RuntimeRoot, "snapshot-runtime-selection.json")
+	raw, err := readRootRegular(selectionPath, maximumSnapshotRuntimeSelectionBytes)
+	headPath := selectionPath
+	fixedRaw := raw
+	fixedExists := err == nil
+	if errors.Is(err, os.ErrNotExist) {
+		headPath, err = r.snapshotSuccessorPath("")
+		if err != nil {
+			return snapshotRuntimeSelection{}, nil, "", false, err
+		}
+		raw, err = readRootRegular(headPath, maximumSnapshotRuntimeSelectionBytes)
+		if errors.Is(err, os.ErrNotExist) {
+			return snapshotRuntimeSelection{}, nil, "", false, nil
+		}
+	}
+	if err != nil {
+		return snapshotRuntimeSelection{}, nil, "", false, err
+	}
+	if fixedExists {
+		var hint snapshotRuntimeSelection
+		if canonicalJSON(raw, &hint) != nil {
+			return snapshotRuntimeSelection{}, nil, "", false, errors.New("runtime selection accelerator is not canonical")
+		}
+		committedPath, pathErr := r.snapshotSuccessorPath(hint.PredecessorSelectionSHA256)
+		if pathErr != nil {
+			return snapshotRuntimeSelection{}, nil, "", false, pathErr
+		}
+		committedRaw, readErr := readRootRegular(committedPath, maximumSnapshotRuntimeSelectionBytes)
+		if readErr != nil || !bytes.Equal(committedRaw, raw) {
+			return snapshotRuntimeSelection{}, nil, "", false, errors.New("runtime selection accelerator is not its exact immutable committed successor")
+		}
+		raw = committedRaw
+		headPath = committedPath
+	}
+	var selection snapshotRuntimeSelection
+	var envelopeRaw []byte
+	for depth := 0; depth < 1024; depth++ {
+		selection, envelopeRaw, err = r.decodeRuntimeSelection(raw, now)
+		if err != nil {
+			return snapshotRuntimeSelection{}, nil, "", false, err
+		}
+		nextPath, pathErr := r.snapshotSuccessorPath(digest(raw))
+		if pathErr != nil {
+			return snapshotRuntimeSelection{}, nil, "", false, pathErr
+		}
+		nextRaw, readErr := readRootRegular(nextPath, maximumSnapshotRuntimeSelectionBytes)
+		if errors.Is(readErr, os.ErrNotExist) {
+			if len(fixedRaw) == 0 || !bytes.Equal(fixedRaw, raw) {
+				if err := r.promoteRuntimeSelectionAccelerator(headPath, selectionPath, raw); err != nil {
+					return snapshotRuntimeSelection{}, nil, "", false, err
+				}
+			}
+			return selection, envelopeRaw, digest(raw), true, nil
+		}
+		if readErr != nil {
+			return snapshotRuntimeSelection{}, nil, "", false, readErr
+		}
+		var next snapshotRuntimeSelection
+		if canonicalJSON(nextRaw, &next) != nil || next.PredecessorSelectionSHA256 != digest(raw) {
+			return snapshotRuntimeSelection{}, nil, "", false, errors.New("runtime selection successor does not bind its exact predecessor")
+		}
+		raw = nextRaw
+		headPath = nextPath
+	}
+	return snapshotRuntimeSelection{}, nil, "", false, errors.New("runtime selection successor chain exceeds its bounded recovery depth")
+}
+
+func (r *Runner) decodeRuntimeSelection(raw []byte, now time.Time) (snapshotRuntimeSelection, []byte, error) {
+	var selection snapshotRuntimeSelection
+	if err := canonicalJSON(raw, &selection); err != nil || selection.Schema != snapshotRuntimeSelectionSchema ||
+		!isDigest(selection.SnapshotEnvelopeSHA256) || selection.SnapshotEnvelopeName != "snapshot-envelope-"+selection.SnapshotEnvelopeSHA256+".json" ||
+		filepath.Base(selection.SnapshotEnvelopeName) != selection.SnapshotEnvelopeName ||
+		selection.Activation.SnapshotEnvelopeSHA256 != selection.SnapshotEnvelopeSHA256 ||
+		selection.Activation.PredecessorSelectionSHA256 != selection.PredecessorSelectionSHA256 ||
+		(selection.PredecessorSelectionSHA256 != "" && !isDigest(selection.PredecessorSelectionSHA256)) {
+		return snapshotRuntimeSelection{}, nil, errors.New("runtime selection is not one canonical immutable envelope/receipt pair")
+	}
+	envelopeRaw, err := readRootRegular(filepath.Join(r.Config.RuntimeRoot, "snapshot-generations", selection.SnapshotEnvelopeName), maximumEnvelopeBytes)
+	if err != nil || digest(envelopeRaw) != selection.SnapshotEnvelopeSHA256 {
+		return snapshotRuntimeSelection{}, nil, errors.New("runtime selection lacks its exact immutable envelope")
+	}
+	issuedAt, issueErr := time.Parse(time.RFC3339, selection.Activation.CycleIssuedAt)
+	deadlineAt, deadlineErr := time.Parse(time.RFC3339, selection.Activation.CycleDeadlineAt)
+	activatedAt, activationErr := time.Parse(time.RFC3339, selection.Activation.ActivatedAt)
+	if issueErr != nil || deadlineErr != nil || activationErr != nil || selection.Activation.Schema != snapshotActivationReceiptSchema ||
+		selection.Activation.ClusterID != r.Config.ClusterID || selection.Activation.DeploymentID != r.Config.DeploymentID ||
+		!isDigest(selection.Activation.CycleContractSHA256) || !isDigest(selection.Activation.CycleID) ||
+		!isDigest(selection.Activation.EvidenceBundleSHA256) ||
+		selection.Activation.Status != "activated-before-deadline" || !activatedAt.Before(deadlineAt) ||
+		activatedAt.Before(issuedAt) || now.Before(activatedAt.Add(-30*time.Second)) {
+		return snapshotRuntimeSelection{}, nil, errors.New("runtime selection activation receipt is invalid")
+	}
+	snapshotTrustRaw, trustErr := r.snapshotTrust.CanonicalBytes()
+	if trustErr != nil {
+		return snapshotRuntimeSelection{}, nil, trustErr
+	}
+	runtime, runtimeErr := boundary.LoadRuntimeFromBytes(
+		snapshotTrustRaw, envelopeRaw, r.Acceptance.SnapshotTrustSHA256, r.Acceptance.ClusterID,
+		r.Acceptance.DeploymentID, r.Acceptance.AuthoritySnapshotID, r.Acceptance.AuthorityClosureSHA256, now,
+	)
+	if runtimeErr != nil || runtime.Snapshot.ActivationCycleContractSHA256 != selection.Activation.CycleContractSHA256 ||
+		runtime.Snapshot.ActivationCycleID != selection.Activation.CycleID ||
+		runtime.Snapshot.ActivationCycleIssuedAt != selection.Activation.CycleIssuedAt ||
+		runtime.Snapshot.ActivationCycleDeadlineAt != selection.Activation.CycleDeadlineAt ||
+		runtime.Snapshot.ActivationPredecessorSelectionSHA256 != selection.PredecessorSelectionSHA256 ||
+		runtime.Snapshot.EvidenceBundleSHA256 != selection.Activation.EvidenceBundleSHA256 {
+		return snapshotRuntimeSelection{}, nil, errors.New("runtime selection differs from its signed activation transition")
+	}
+	return selection, envelopeRaw, nil
+}
+
+func (r *Runner) snapshotSuccessorPath(predecessorSHA256 string) (string, error) {
+	key := predecessorSHA256
+	if key == "" {
+		key = "genesis"
+	} else if !isDigest(key) {
+		return "", errors.New("snapshot selection predecessor is not content addressed")
+	}
+	return filepath.Join(r.Config.RuntimeRoot, "snapshot-selection-successor-of-"+key+".json"), nil
+}
+
+func (r *Runner) promoteRuntimeSelectionAccelerator(headPath string, selectionPath string, raw []byte) error {
+	if filepath.Dir(headPath) != r.Config.RuntimeRoot || filepath.Dir(selectionPath) != r.Config.RuntimeRoot || digest(raw) == "" {
+		return errors.New("runtime selection accelerator recovery escaped its accepted root")
+	}
+	candidate := filepath.Join(r.Config.RuntimeRoot, "snapshot-runtime-selection.recovery-"+digest(raw)+".json")
+	if err := validateRuntimeCapacity(r.Config, r.Config.RuntimeFilesystemBlockBytes, 0); err != nil {
+		return err
+	}
+	if err := os.Link(headPath, candidate); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		retained, readErr := readRootRegular(candidate, maximumSnapshotRuntimeSelectionBytes)
+		if readErr != nil || !bytes.Equal(retained, raw) {
+			return errors.New("runtime selection recovery candidate conflicts with the committed head")
+		}
+	}
+	if err := fsyncDirectory(r.Config.RuntimeRoot); err != nil {
+		return err
+	}
+	if err := os.Rename(candidate, selectionPath); err != nil {
 		return err
 	}
 	return fsyncDirectory(r.Config.RuntimeRoot)
 }
 
+func (r *Runner) activationReceiptIsExact(receipt snapshotActivationReceipt, plan snapshotActivationPlan, now time.Time) bool {
+	activatedAt, activationErr := time.Parse(time.RFC3339, receipt.ActivatedAt)
+	deadlineAt, deadlineErr := time.Parse(time.RFC3339, receipt.CycleDeadlineAt)
+	return activationErr == nil && deadlineErr == nil && receipt.Schema == snapshotActivationReceiptSchema &&
+		receipt.ClusterID == r.Config.ClusterID && receipt.DeploymentID == r.Config.DeploymentID &&
+		receipt.CycleContractSHA256 == plan.cycle.ContractSHA256 && receipt.CycleID == plan.cycle.CycleID &&
+		receipt.CycleIssuedAt == plan.cycle.IssuedAt && receipt.CycleDeadlineAt == plan.cycle.DeadlineAt &&
+		receipt.EvidenceBundleSHA256 == plan.bundleSHA256 && receipt.SnapshotEnvelopeSHA256 == plan.envelopeSHA256 &&
+		receipt.PredecessorSelectionSHA256 == plan.predecessorSelectionSHA256 &&
+		receipt.Status == "activated-before-deadline" && activatedAt.Before(deadlineAt) && !now.Before(activatedAt)
+}
+
+func (r *Runner) activationReceiptMatches(plan snapshotActivationPlan, now time.Time) (bool, error) {
+	raw, err := readRootRegular(filepath.Join(r.Config.RuntimeRoot, "snapshot-activation.json"), maximumSnapshotActivationReceiptBytes)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var receipt snapshotActivationReceipt
+	if err := canonicalJSON(raw, &receipt); err != nil {
+		return false, err
+	}
+	activatedAt, activationErr := time.Parse(time.RFC3339, receipt.ActivatedAt)
+	deadlineAt, deadlineErr := time.Parse(time.RFC3339, receipt.CycleDeadlineAt)
+	if activationErr != nil || deadlineErr != nil || activatedAt.Nanosecond() != 0 || deadlineAt.Nanosecond() != 0 {
+		return false, errors.New("retained snapshot activation receipt timestamp is not canonical")
+	}
+	return receipt.Schema == snapshotActivationReceiptSchema && receipt.ClusterID == r.Config.ClusterID &&
+		receipt.DeploymentID == r.Config.DeploymentID && receipt.CycleContractSHA256 == plan.cycle.ContractSHA256 &&
+		receipt.CycleID == plan.cycle.CycleID && receipt.CycleIssuedAt == plan.cycle.IssuedAt &&
+		receipt.CycleDeadlineAt == plan.cycle.DeadlineAt && receipt.EvidenceBundleSHA256 == plan.bundleSHA256 &&
+		receipt.SnapshotEnvelopeSHA256 == plan.envelopeSHA256 && receipt.Status == "activated-before-deadline" &&
+		receipt.PredecessorSelectionSHA256 == plan.predecessorSelectionSHA256 &&
+		activatedAt.Before(deadlineAt) && !now.Before(activatedAt), nil
+}
+
+func (r *Runner) activateStagedSnapshot(plan snapshotActivationPlan, deadlineAt time.Time) error {
+	if deadlineAt.IsZero() || deadlineAt.Nanosecond() != 0 {
+		return errors.New("snapshot activation deadline is not canonical")
+	}
+	if plan.alreadyActive {
+		if !time.Now().UTC().Before(deadlineAt) {
+			return errors.New("identical snapshot retry reached the cycle deadline before durable acknowledgement")
+		}
+		return nil
+	}
+	if plan.selectionPath == "" || plan.envelopePath == "" ||
+		!isDigest(plan.cycle.ContractSHA256) || !isDigest(plan.cycle.CycleID) || !isDigest(plan.bundleSHA256) || !isDigest(plan.envelopeSHA256) {
+		return errors.New("snapshot activation plan is incomplete")
+	}
+	// The immutable envelope is already durable. The complete selector is staged
+	// first; its no-replace successor link is the only reader-visible commit.
+	// A crash before that link consumes no predecessor, while a crash after it is
+	// recovered by following the immutable successor chain.
+	if time.Until(deadlineAt) <= snapshotActivationSafetyMargin {
+		return errors.New("snapshot candidate retained but activation refused because the cycle commit window elapsed")
+	}
+	activatedAt := time.Now().UTC().Truncate(time.Second)
+	if !activatedAt.Before(deadlineAt) {
+		return errors.New("snapshot envelope was retained immutably, but activation was refused at its deadline")
+	}
+	return r.publishSnapshotActivationReceipt(plan, deadlineAt, activatedAt)
+}
+
+func (r *Runner) publishSnapshotActivationReceipt(plan snapshotActivationPlan, deadlineAt time.Time, activatedAt time.Time) error {
+	receipt := snapshotActivationReceipt{
+		Schema: snapshotActivationReceiptSchema,
+		ClusterID: r.Config.ClusterID,
+		DeploymentID: r.Config.DeploymentID,
+		CycleContractSHA256: plan.cycle.ContractSHA256,
+		CycleID: plan.cycle.CycleID,
+		CycleIssuedAt: plan.cycle.IssuedAt,
+		CycleDeadlineAt: plan.cycle.DeadlineAt,
+		EvidenceBundleSHA256: plan.bundleSHA256,
+		SnapshotEnvelopeSHA256: plan.envelopeSHA256,
+		PredecessorSelectionSHA256: plan.predecessorSelectionSHA256,
+		ActivatedAt: activatedAt.Format(time.RFC3339),
+		Status: "activated-before-deadline",
+	}
+	selection := snapshotRuntimeSelection{
+		Schema: snapshotRuntimeSelectionSchema,
+		SnapshotEnvelopeName: filepath.Base(plan.envelopePath),
+		SnapshotEnvelopeSHA256: plan.envelopeSHA256,
+		PredecessorSelectionSHA256: plan.predecessorSelectionSHA256,
+		Activation: receipt,
+	}
+	selectionRaw, err := json.Marshal(selection)
+	if err != nil || len(selectionRaw) > maximumSnapshotRuntimeSelectionBytes {
+		return errors.New("snapshot runtime selection exceeds its exact canonical bound")
+	}
+	selectionCandidate := filepath.Join(r.Config.RuntimeRoot, "snapshot-runtime-selection.candidate-"+plan.cycle.CycleID+".json")
+	if retainedRaw, readErr := readRootRegular(selectionCandidate, maximumSnapshotRuntimeSelectionBytes); readErr == nil {
+		var retained snapshotRuntimeSelection
+		if canonicalJSON(retainedRaw, &retained) != nil || retained.Schema != snapshotRuntimeSelectionSchema ||
+			retained.SnapshotEnvelopeName != filepath.Base(plan.envelopePath) || retained.SnapshotEnvelopeSHA256 != plan.envelopeSHA256 ||
+			!r.activationReceiptIsExact(retained.Activation, plan, time.Now().UTC()) {
+			return errors.New("retained cycle selector candidate conflicts with the exact immutable activation plan")
+		}
+		selection = retained
+		selectionRaw = retainedRaw
+		receipt = retained.Activation
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return readErr
+	}
+	receiptRaw, err := json.Marshal(receipt)
+	if err != nil || len(receiptRaw) > maximumSnapshotActivationReceiptBytes {
+		if err == nil {
+			err = errors.New("snapshot activation receipt exceeds its accepted exact bound")
+		}
+		return err
+	}
+	if err := r.appendEvidence("snapshot-activation-receipt-"+digest(receiptRaw)+".json", receiptRaw); err != nil {
+		return err
+	}
+	if priorRaw, readErr := readRootRegular(plan.selectionPath, maximumSnapshotRuntimeSelectionBytes); readErr == nil {
+		if bytes.Equal(priorRaw, selectionRaw) {
+			return nil
+		}
+		if err := r.appendEvidence("snapshot-runtime-selection-"+digest(priorRaw)+".json", priorRaw); err != nil {
+			return err
+		}
+	} else if !errors.Is(readErr, os.ErrNotExist) {
+		return readErr
+	}
+	if err := r.appendEvidence("snapshot-runtime-selection-"+digest(selectionRaw)+".json", selectionRaw); err != nil {
+		return err
+	}
+	if err := r.appendRuntimeOrMatch(selectionCandidate, selectionRaw, 0o444); err != nil {
+		return err
+	}
+	if time.Until(deadlineAt) <= snapshotActivationSafetyMargin {
+		return errors.New("snapshot envelope and complete runtime selector were retained, but publication was refused at the cycle deadline")
+	}
+	currentRaw, readErr := readRootRegular(plan.selectionPath, maximumSnapshotRuntimeSelectionBytes)
+	if plan.predecessorSelectionSHA256 == "" {
+		if readErr == nil || !errors.Is(readErr, os.ErrNotExist) {
+			return errors.New("snapshot selection genesis CAS lost to another committed generation")
+		}
+	} else if readErr != nil || digest(currentRaw) != plan.predecessorSelectionSHA256 {
+		return errors.New("snapshot selection predecessor changed before atomic commit")
+	}
+	if err := validateRuntimeCapacity(r.Config, 0, 0); err != nil {
+		return err
+	}
+	// The successor link is the one atomic, cross-process commit. Its contents
+	// are the complete selector (including the signed-envelope-bound predecessor),
+	// not a reservation marker. A crash before Link leaves the predecessor free;
+	// a crash after Link exposes a complete successor that readers can follow.
+	successorPath, err := r.snapshotSuccessorPath(plan.predecessorSelectionSHA256)
+	if err != nil {
+		return err
+	}
+	if err := os.Link(selectionCandidate, successorPath); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		retained, readErr := readRootRegular(successorPath, maximumSnapshotRuntimeSelectionBytes)
+		if readErr != nil || !bytes.Equal(retained, selectionRaw) {
+			return errors.New("snapshot selection predecessor already has a different committed successor")
+		}
+	}
+	if err := fsyncDirectory(r.Config.RuntimeRoot); err != nil {
+		return err
+	}
+	// The fixed selector is only a bounded lookup accelerator. Every overwritten
+	// generation remains linked by its immutable successor path and in evidence.
+	// Readers follow successors, so a crash before this rename still observes the
+	// committed head and a crash after it observes the same complete selector.
+	if err := os.Rename(selectionCandidate, plan.selectionPath); err != nil {
+		return fmt.Errorf("advance runtime selection accelerator after successor commit: %w", err)
+	}
+	if err := fsyncDirectory(r.Config.RuntimeRoot); err != nil {
+		return err
+	}
+	return nil
+}
+
+// archiveRuntimeSnapshotLink preserves the exact retained inode, not merely a
+// byte copy. This is required for legacy active/previous slots that predate the
+// append-only attempt namespace and may otherwise have no second link when a
+// fixed publication name is rotated.
+func (r *Runner) archiveRuntimeSnapshotLink(slot string, path string) (string, error) {
+	if slot != "active" && slot != "previous" {
+		return "", errors.New("runtime snapshot archive slot is unsupported")
+	}
+	raw, err := readRootRegular(path, maximumEnvelopeBytes)
+	if err != nil {
+		return "", err
+	}
+	if err := r.appendEvidence("snapshot-envelope-"+digest(raw)+".json", raw); err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return "", errors.New("runtime snapshot archive source is not a regular retained inode")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != 0 {
+		return "", errors.New("runtime snapshot archive source lacks root custody")
+	}
+	if err := r.ensureRuntimeChildDirectory("snapshot-history"); err != nil {
+		return "", err
+	}
+	historyRoot := filepath.Join(r.Config.RuntimeRoot, "snapshot-history")
+	historyName := fmt.Sprintf("%s-%s-%d-%d.json", slot, digest(raw), stat.Dev, stat.Ino)
+	historyPath := filepath.Join(historyRoot, historyName)
+	if err := validateRuntimeCapacity(r.Config, r.Config.RuntimeFilesystemBlockBytes, 0); err != nil {
+		return "", err
+	}
+	if err := os.Link(path, historyPath); err != nil {
+		if !errors.Is(err, os.ErrExist) {
+			return "", err
+		}
+		historyInfo, historyErr := os.Lstat(historyPath)
+		if historyErr != nil || !os.SameFile(info, historyInfo) {
+			return "", errors.New("runtime snapshot immutable history conflicts with the retained inode")
+		}
+	}
+	if err := fsyncDirectory(historyRoot); err != nil {
+		return "", err
+	}
+	return historyPath, nil
+}
+
 func validateConfig(config Config, acceptance boundary.Acceptance) error {
 	if config.Schema != ConfigSchema || config.ClusterID != acceptance.ClusterID || config.DeploymentID != acceptance.DeploymentID ||
+		!boundedProtocolText(config.ClusterID, maximumClusterIDBytes, false) || !boundedProtocolText(config.DeploymentID, maximumDeploymentIDBytes, false) ||
+		!boundedProtocolText(config.SnapshotAuthorityURL, maximumNativeURLBytes, false) ||
+		!boundedProtocolText(config.SnapshotAuthorityName, maximumServerNameBytes, false) ||
+		!boundedProtocolText(config.SnapshotClientSPIFFEURI, maximumSPIFFEURIBytes, false) ||
+		!boundedProtocolText(config.SnapshotCredentialLaneID, maximumCredentialLaneIDBytes, false) ||
 		config.MaximumBundleBytes < 1024 || config.MaximumBundleBytes > 16*1024*1024 || len(config.Sources) == 0 ||
 		!isDigest(config.EvidenceStoreID) || config.RefreshIntervalSeconds < 240 || config.RefreshIntervalSeconds > 270 ||
 		config.CollectionDeadlineSeconds < 30 || config.CollectionDeadlineSeconds >= config.RefreshIntervalSeconds ||
@@ -411,6 +1289,13 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 		config.EvidenceDeviceID == 0 || config.EvidenceOperatingHorizonDays < 365 || config.EvidenceOperatingHorizonDays > 3660 ||
 		config.EvidenceCapacityBytes == 0 || config.EvidenceMinimumFreeBytes < 64*1024*1024 ||
 		config.EvidenceCapacityInodes == 0 || config.EvidenceMinimumFreeInodes < 1024 ||
+		config.RuntimeDeviceID == 0 || config.RuntimeDeviceID == config.EvidenceDeviceID ||
+		config.RuntimeOperatingHorizonDays < 365 || config.RuntimeOperatingHorizonDays > 3660 ||
+		config.RuntimeCapacityBytes == 0 || config.RuntimeMinimumFreeBytes < 64*1024*1024 ||
+		config.RuntimeCapacityInodes == 0 || config.RuntimeMinimumFreeInodes < 1024 ||
+		config.RuntimeFilesystemBlockBytes < 512 || config.RuntimeFilesystemBlockBytes > 1024*1024 ||
+		config.RuntimeFilesystemBlockBytes&(config.RuntimeFilesystemBlockBytes-1) != 0 ||
+		config.RuntimeReaderGID == 0 || config.RuntimeReaderGID != acceptance.BoundaryRuntimeReaderGID || config.RuntimeDirectoryMode != 0o750 ||
 		!sort.StringsAreSorted(config.MandatoryCollections) || digestJSON(config.MandatoryCollections) != acceptance.MandatoryCollectionsSHA256 ||
 		!isDigest(config.SnapshotAuthorityCASHA256) || !isDigest(config.SnapshotClientCertificateSHA256) ||
 		!isDigest(config.SnapshotClientKeySHA256) || !isDigest(config.SnapshotClientSPKISHA256) || config.SnapshotClientSPIFFEURI == "" ||
@@ -442,7 +1327,15 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 	credentialLanes := map[string]laneBinding{config.SnapshotCredentialLaneID: snapshotBinding}
 	credentialDigests := map[string]string{config.SnapshotClientKeySHA256 + ":" + config.SnapshotClientSPKISHA256: config.SnapshotCredentialLaneID}
 	for _, source := range config.Sources {
-		if source.ID == "" || source.Kind == "" || source.SemanticCollection == "" || source.MaximumPages < 1 || source.MaximumPages > 1024 ||
+		if !boundedProtocolText(source.ID, maximumSourceIDBytes, false) || !boundedProtocolText(source.Kind, maximumSourceKindBytes, false) ||
+			!boundedProtocolText(source.SemanticCollection, maximumSemanticCollectionBytes, false) ||
+			!boundedProtocolText(source.InitialURL, maximumNativeURLBytes, false) || !boundedProtocolText(source.ServerName, maximumServerNameBytes, false) ||
+			!boundedProtocolText(source.AttestationURL, maximumNativeURLBytes, false) || !boundedProtocolText(source.AttestationServerName, maximumServerNameBytes, false) ||
+			!boundedProtocolText(source.ProviderRequestIDHeader, maximumProviderRequestHeaderBytes, false) ||
+			!boundedProtocolText(source.AttestationClientSPIFFEURI, maximumSPIFFEURIBytes, false) ||
+			!boundedProtocolText(source.AttestationCredentialLaneID, maximumCredentialLaneIDBytes, false) ||
+			!boundedProtocolText(source.ProviderCredentialLaneID, maximumCredentialLaneIDBytes, false) ||
+			source.MaximumPages < 1 || source.MaximumPages > 1024 ||
 			source.MaximumPageBytes < 1024 || source.MaximumPageBytes > 32*1024*1024 ||
 			source.MaximumTotalBytes < source.MaximumPageBytes || source.MaximumTotalBytes > 128*1024*1024 ||
 			(source.Pagination != "none" && source.Pagination != "kubernetes-continue" && source.Pagination != "provider-page-token") ||
@@ -450,6 +1343,28 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 			!isDigest(source.AttestationClientKeySHA256) || !isDigest(source.AttestationClientSPKISHA256) || source.AttestationClientSPIFFEURI == "" ||
 			source.AttestationCredentialLaneID == "" || strings.ContainsAny(source.AttestationCredentialLaneID, "\x00\r\n") {
 			return errors.New("native source is incomplete or outside its bounds")
+		}
+		bearerFields := []bool{
+			source.ProviderBearerIssuer != "",
+			source.ProviderBearerAudience != "",
+			source.ProviderBearerSubject != "",
+			source.ProviderBearerAlgorithm != "",
+			source.ProviderBearerKeyID != "",
+			source.ProviderBearerJWKSHA256 != "",
+		}
+		bearerPresent := bearerFields[0]
+		for _, present := range bearerFields {
+			if present != bearerPresent {
+				return errors.New("native source provider bearer identity is only partially enrolled")
+			}
+		}
+		if bearerPresent && (!boundedProtocolText(source.ProviderBearerIssuer, maximumBearerClaimBytes, false) ||
+			!boundedProtocolText(source.ProviderBearerAudience, maximumBearerClaimBytes, false) ||
+			!boundedProtocolText(source.ProviderBearerSubject, maximumBearerClaimBytes, false) ||
+			!boundedProtocolText(source.ProviderBearerAlgorithm, maximumBearerAlgorithmBytes, false) ||
+			!boundedProtocolText(source.ProviderBearerKeyID, maximumBearerKeyIDBytes, false) ||
+			!isDigest(source.ProviderBearerJWKSHA256)) {
+			return errors.New("native source provider bearer identity exceeds its exact accepted bounds")
 		}
 		if source.Kind == "ca-revocation" && source.Pagination != "none" {
 			return errors.New("native CRL collection must be exact and non-paginated")
@@ -481,14 +1396,22 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 		if err := requireHTTPS(source.AttestationURL, source.AttestationServerName); err != nil {
 			return err
 		}
-		if source.ProviderRequestIDHeader == "" || strings.ContainsAny(source.ProviderRequestIDHeader, "\x00\r\n") {
-			return errors.New("native source omits its provider request-ID header")
-		}
 		collections = append(collections, source.SemanticCollection)
 	}
 	sort.Strings(collections)
 	if !containsAllStrings(collections, requiredCollections) || !equalStringLists(collections, config.MandatoryCollections) {
 		return errors.New("native collector omits or duplicates a mandatory semantic collection")
+	}
+	cycle, err := collectorCycleFor(
+		acceptance,
+		config.RefreshIntervalSeconds,
+		config.CollectionDeadlineSeconds,
+		collectorSourceIDs(config.Sources),
+		time.Unix(0, 0).UTC(),
+	)
+	cycleRaw, cycleMarshalErr := json.Marshal(cycle)
+	if err != nil || cycleMarshalErr != nil || len(cycleRaw) > maximumCollectorCycleBytes {
+		return errors.New("native collector source inventory cannot fit its accepted canonical cycle bound")
 	}
 	manifestBound, err := maximumEvidenceManifestBytes(config)
 	if err != nil || manifestBound > uint64(config.MaximumBundleBytes) {
@@ -501,13 +1424,21 @@ func validateConfig(config Config, acceptance boundary.Acceptance) error {
 		config.EvidenceCapacityInodes < dailyInodes*uint64(config.EvidenceOperatingHorizonDays)+config.EvidenceMinimumFreeInodes {
 		return errors.New("native evidence store cannot retain its source-derived byte and inode operating horizon")
 	}
+	runtimeHorizonBytes, runtimeHorizonInodes, err := derivedRuntimeHorizonBounds(config)
+	if err != nil || runtimeHorizonBytes > ^uint64(0)-config.RuntimeMinimumFreeBytes ||
+		runtimeHorizonInodes > ^uint64(0)-config.RuntimeMinimumFreeInodes ||
+		config.RuntimeCapacityBytes < runtimeHorizonBytes+config.RuntimeMinimumFreeBytes ||
+		config.RuntimeCapacityInodes < runtimeHorizonInodes+config.RuntimeMinimumFreeInodes {
+		return errors.New("native runtime store cannot retain its source-derived byte and inode operating horizon")
+	}
 	return nil
 }
 
 func derivedEvidenceDailyBounds(config Config) (uint64, uint64, error) {
 	cycles := uint64((86400 + config.RefreshIntervalSeconds - 1) / config.RefreshIntervalSeconds)
-	perCycleBytes := uint64(config.MaximumBundleBytes + maximumEnvelopeBytes)
-	perCycleInodes := uint64(3)
+	perCycleBytes := uint64(config.MaximumBundleBytes + maximumEnvelopeBytes + maximumCollectorCycleBytes +
+		2*maximumConfigBytes + maximumSnapshotActivationReceiptBytes + maximumSnapshotRuntimeSelectionBytes)
+	perCycleInodes := uint64(7)
 	for _, source := range config.Sources {
 		total := uint64(source.MaximumTotalBytes)
 		pages := uint64(source.MaximumPages)
@@ -526,8 +1457,96 @@ func derivedEvidenceDailyBounds(config Config) (uint64, uint64, error) {
 	return perCycleBytes * cycles, perCycleInodes * cycles, nil
 }
 
+func runtimePerCycleStorageBounds(config Config) (uint64, uint64, error) {
+	block := config.RuntimeFilesystemBlockBytes
+	envelopeBytes, err := runtimeAllocatedBytes(maximumEnvelopeBytes, block)
+	if err != nil {
+		return 0, 0, err
+	}
+	selectionBytes, err := runtimeAllocatedBytes(maximumSnapshotRuntimeSelectionBytes, block)
+	if err != nil {
+		return 0, 0, err
+	}
+	// Each cycle retains an immutable envelope generation and one complete
+	// envelope/receipt selector. Keep a third inode in the bound for a failed
+	// selector attempt. Their attempt/fixed hard links do not allocate more
+	// inodes, but conservatively charge one full directory block for each of the
+	// eight possible new directory entries and retained retry aliases.
+	objectBytes, ok := checkedMultiply(envelopeBytes, 2)
+	if !ok {
+		return 0, 0, errors.New("native runtime envelope storage bound overflows")
+	}
+	objectBytes, ok = checkedAdd(objectBytes, selectionBytes)
+	if !ok {
+		return 0, 0, errors.New("native runtime receipt storage bound overflows")
+	}
+	entryBytes, ok := checkedMultiply(block, 8)
+	if !ok {
+		return 0, 0, errors.New("native runtime directory-entry bound overflows")
+	}
+	total, ok := checkedAdd(objectBytes, entryBytes)
+	if !ok {
+		return 0, 0, errors.New("native runtime per-cycle byte bound overflows")
+	}
+	return total, 3, nil
+}
+
+func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
+	perCycleBytes, perCycleInodes, err := runtimePerCycleStorageBounds(config)
+	if err != nil {
+		return 0, 0, err
+	}
+	cyclesPerDay := uint64((86400 + config.RefreshIntervalSeconds - 1) / config.RefreshIntervalSeconds)
+	cycles, ok := checkedMultiply(cyclesPerDay, uint64(config.RuntimeOperatingHorizonDays))
+	if !ok {
+		return 0, 0, errors.New("native runtime cycle horizon overflows")
+	}
+	horizonBytes, ok := checkedMultiply(perCycleBytes, cycles)
+	if !ok {
+		return 0, 0, errors.New("native runtime byte horizon overflows")
+	}
+	horizonInodes, ok := checkedMultiply(perCycleInodes, cycles)
+	if !ok {
+		return 0, 0, errors.New("native runtime inode horizon overflows")
+	}
+	trustBytes, err := runtimeAllocatedBytes(maximumConfigBytes, config.RuntimeFilesystemBlockBytes)
+	if err != nil {
+		return 0, 0, err
+	}
+	// Fixed storage is the cached trust inode plus the root attempt directory,
+	// immutable-generation directory and its attempt directory. Six directory
+	// blocks cover those directories and their initial entries.
+	fixedDirectoryBytes, ok := checkedMultiply(config.RuntimeFilesystemBlockBytes, 6)
+	if !ok {
+		return 0, 0, errors.New("native runtime fixed directory bound overflows")
+	}
+	fixedBytes, ok := checkedAdd(trustBytes, fixedDirectoryBytes)
+	if !ok {
+		return 0, 0, errors.New("native runtime fixed byte bound overflows")
+	}
+	horizonBytes, ok = checkedAdd(horizonBytes, fixedBytes)
+	if !ok || horizonInodes > ^uint64(0)-4 {
+		return 0, 0, errors.New("native runtime fixed horizon overflows")
+	}
+	return horizonBytes, horizonInodes + 4, nil
+}
+
+func runtimeAllocatedBytes(size int, block uint64) (uint64, error) {
+	if size < 1 || block == 0 {
+		return 0, errors.New("native runtime storage size or block bound is invalid")
+	}
+	value := uint64(size)
+	if value > ^uint64(0)-(block-1) {
+		return 0, errors.New("native runtime allocation bound overflows")
+	}
+	return ((value + block - 1) / block) * block, nil
+}
+
 func maximumEvidenceManifestBytes(config Config) (uint64, error) {
-	bound := uint64(4096)
+	bound, ok := checkedAdd(4096, maximumCollectorCycleBytes)
+	if !ok {
+		return 0, errors.New("native evidence cycle framing bound overflows")
+	}
 	for _, source := range config.Sources {
 		pageBytes := uint64(source.MaximumPages) * maximumEvidenceReferenceBytes
 		if uint64(source.MaximumPages) != 0 && pageBytes/uint64(source.MaximumPages) != maximumEvidenceReferenceBytes {
@@ -552,34 +1571,58 @@ func mandatorySemanticCollections() []string {
 		"apiserver-approval-objects",
 		"apiserver-authentication-configuration",
 		"apiserver-authorization-configuration",
+		"apiserver-backend-tls-policies",
+		"apiserver-backend-traffic-policies",
 		"apiserver-clusterrolebindings",
 		"apiserver-clusterroles",
+		"apiserver-client-traffic-policies",
 		"apiserver-crds",
 		"apiserver-csrs",
 		"apiserver-daemonsets",
 		"apiserver-deployments",
+		"apiserver-endpoints",
+		"apiserver-endpointslices",
+		"apiserver-envoy-backends",
+		"apiserver-envoy-extension-policies",
+		"apiserver-gatewayclasses",
+		"apiserver-gateways",
+		"apiserver-grpcroutes",
+		"apiserver-httproutes",
+		"apiserver-ingresses",
 		"apiserver-jobs",
 		"apiserver-cronjobs",
 		"apiserver-csidrivers",
 		"apiserver-csinodes",
 		"apiserver-nodes",
 		"apiserver-namespaces",
+		"apiserver-networkpolicies",
 		"apiserver-persistentvolumeclaims",
 		"apiserver-persistentvolumes",
+		"apiserver-poddisruptionbudgets",
 		"apiserver-pods",
 		"apiserver-replicationcontrollers",
 		"apiserver-replicasets",
+		"apiserver-referencegrants",
 		"apiserver-rolebindings",
 		"apiserver-roles",
 		"apiserver-secrets-metadata",
+		"apiserver-security-policies",
 		"apiserver-serviceaccounts",
+		"apiserver-services",
 		"apiserver-statefulsets",
 		"apiserver-storageclasses",
+		"apiserver-tcproutes",
+		"apiserver-tlsroutes",
+		"apiserver-udproutes",
 		"apiserver-volumeattachments",
 		"ca-issued-credentials",
 		"ca-revocation-status",
 		"provider-iam-bindings",
 		"provider-iam-policies",
+		"provider-load-balancer-backends",
+		"provider-load-balancer-health-checks",
+		"provider-load-balancer-listeners",
+		"provider-load-balancers",
 		"provider-nodegroup-membership",
 		"secret-kms-classification",
 	}
@@ -611,8 +1654,11 @@ func digestJSON(value any) string {
 
 func validatePage(page NativePage, source SourceSpec, directive CollectionRequest, providerRequest NativeRequest, requestRaw []byte, requestedURL string, responseRaw []byte, now time.Time) error {
 	collectedAt, err := time.Parse(time.RFC3339, page.CollectedAt)
+	cycleIssuedAt, issueErr := time.Parse(time.RFC3339, directive.CycleIssuedAt)
+	cycleDeadlineAt, deadlineErr := time.Parse(time.RFC3339, directive.CycleDeadlineAt)
 	if err != nil || collectedAt.Nanosecond() != 0 || !strings.HasSuffix(page.CollectedAt, "Z") ||
-		collectedAt.Before(now.Add(-2*time.Minute)) || collectedAt.After(now.Add(30*time.Second)) {
+		issueErr != nil || deadlineErr != nil || collectedAt.Before(cycleIssuedAt) || !collectedAt.Before(cycleDeadlineAt) ||
+		collectedAt.After(now.Add(30*time.Second)) {
 		return errors.New("native response timestamp is absent or stale")
 	}
 	expectedContentType := "application/json"
@@ -621,7 +1667,11 @@ func validatePage(page NativePage, source SourceSpec, directive CollectionReques
 	}
 	if page.Schema != NativePageSchema || page.SourceID != source.ID || page.SourceKind != source.Kind ||
 		page.SemanticCollection != source.SemanticCollection || page.RequestID != providerRequest.RequestID ||
-		page.ProviderRequestID == "" || strings.ContainsAny(page.ProviderRequestID, "\x00\r\n") || page.SessionID != directive.SessionID ||
+		page.CycleContractSHA256 != directive.CycleContractSHA256 || page.CycleID != directive.CycleID ||
+		page.CycleIssuedAt != directive.CycleIssuedAt || page.CycleDeadlineAt != directive.CycleDeadlineAt ||
+		!boundedProtocolText(page.ProviderRequestID, maximumProviderRequestIDBytes, false) || page.SessionID != directive.SessionID ||
+		!boundedProtocolText(page.RequestedURL, maximumNativeURLBytes, false) ||
+		!boundedProtocolText(page.NextURL, maximumNativeURLBytes, true) || !boundedProtocolText(page.NextToken, maximumPageTokenBytes, true) ||
 		page.Challenge != directive.Challenge || page.PageIndex != directive.PageIndex ||
 		page.RequestSHA256 != digest(requestRaw) || page.RequestBase64 != base64.StdEncoding.EncodeToString(requestRaw) || page.RequestedURL != requestedURL ||
 		!isDigest(page.TLSPeerCertificateSHA256) || page.HTTPStatus != http.StatusOK || page.ResponseContentType != expectedContentType ||
@@ -632,8 +1682,26 @@ func validatePage(page NativePage, source SourceSpec, directive CollectionReques
 	if providerRequest.Schema != NativeRequestSchema || providerRequest.SourceID != source.ID || !canonicalNonce(providerRequest.RequestID) ||
 		providerRequest.Method != http.MethodGet || providerRequest.URL != requestedURL || providerRequest.BodySHA256 != digest(nil) ||
 		len(providerRequest.Headers) != 2 || providerRequest.Headers["accept"] != expectedContentType ||
-		providerRequest.Headers["x-fs2-request-id"] != providerRequest.RequestID {
+		providerRequest.Headers["x-fs2-request-id"] != providerRequest.RequestID ||
+		providerRequest.CredentialLaneID != source.ProviderCredentialLaneID ||
+		providerRequest.CredentialIssuer != source.ProviderBearerIssuer ||
+		providerRequest.CredentialAudience != source.ProviderBearerAudience ||
+		providerRequest.CredentialSubject != source.ProviderBearerSubject ||
+		providerRequest.CredentialAlgorithm != source.ProviderBearerAlgorithm ||
+		providerRequest.CredentialKeyID != source.ProviderBearerKeyID ||
+		providerRequest.CredentialJWKSHA256 != source.ProviderBearerJWKSHA256 {
 		return errors.New("signed native provider request projection is incomplete or inconsistent")
+	}
+	if source.ProviderBearerIssuer == "" {
+		if providerRequest.CredentialExpiresAt != "" || providerRequest.CredentialGeneration != "" {
+			return errors.New("non-bearer native provider request carries an unenrolled credential identity")
+		}
+	} else {
+		expiresAt, expiryErr := time.Parse(time.RFC3339, providerRequest.CredentialExpiresAt)
+		if expiryErr != nil || expiresAt.Nanosecond() != 0 || !isDigest(providerRequest.CredentialGeneration) ||
+			!collectedAt.Before(expiresAt) {
+			return errors.New("signed native provider request carries an invalid or expired verified bearer generation")
+		}
 	}
 	if source.Pagination == "none" && (!page.Complete || page.NextToken != "" || page.NextURL != "") {
 		return errors.New("non-paginated native response is not terminal")
@@ -957,22 +2025,145 @@ func validateEvidenceCapacity(config Config, upcomingBytes uint64, upcomingInode
 	return nil
 }
 
+func validateRuntimeCapacity(config Config, upcomingBytes uint64, upcomingInodes uint64) error {
+	rootInfo, err := os.Lstat(config.RuntimeRoot)
+	if err != nil {
+		return err
+	}
+	parentInfo, err := os.Lstat(filepath.Dir(config.RuntimeRoot))
+	if err != nil {
+		return err
+	}
+	rootStat, rootOK := rootInfo.Sys().(*syscall.Stat_t)
+	parentStat, parentOK := parentInfo.Sys().(*syscall.Stat_t)
+	if !rootOK || !parentOK || rootStat.Dev != config.RuntimeDeviceID || rootStat.Dev == parentStat.Dev ||
+		rootStat.Dev == config.EvidenceDeviceID || rootStat.Uid != 0 || rootStat.Gid != config.RuntimeReaderGID ||
+		rootInfo.Mode().Perm() != os.FileMode(config.RuntimeDirectoryMode) || rootStat.Mode&syscall.S_ISGID == 0 {
+		return errors.New("native runtime root is not its independently accepted dedicated filesystem")
+	}
+	var status syscall.Statfs_t
+	if err := syscall.Statfs(config.RuntimeRoot, &status); err != nil {
+		return err
+	}
+	blockSize := uint64(status.Bsize)
+	if blockSize != config.RuntimeFilesystemBlockBytes || status.Blocks > ^uint64(0)/blockSize ||
+		status.Bavail > ^uint64(0)/blockSize || upcomingBytes > ^uint64(0)-config.RuntimeMinimumFreeBytes ||
+		upcomingInodes > ^uint64(0)-config.RuntimeMinimumFreeInodes {
+		return errors.New("native runtime filesystem identity or capacity cannot be represented safely")
+	}
+	totalBytes := status.Blocks * blockSize
+	availableBytes := status.Bavail * blockSize
+	if totalBytes < config.RuntimeCapacityBytes || uint64(status.Files) < config.RuntimeCapacityInodes ||
+		availableBytes < config.RuntimeMinimumFreeBytes+upcomingBytes ||
+		uint64(status.Ffree) < config.RuntimeMinimumFreeInodes+upcomingInodes {
+		return errors.New("native runtime store cannot preserve its accepted byte and inode reserve")
+	}
+	return nil
+}
+
+func (r *Runner) appendRuntimeOrMatch(path string, raw []byte, mode os.FileMode) error {
+	parent := filepath.Dir(path)
+	generationRoot := filepath.Join(r.Config.RuntimeRoot, "snapshot-generations")
+	if parent != r.Config.RuntimeRoot && parent != generationRoot {
+		return errors.New("runtime append target escaped the accepted runtime root")
+	}
+	if existing, err := readRootRegular(path, int64(len(raw))); err == nil {
+		if !bytes.Equal(existing, raw) {
+			return errors.New("runtime append target contains different retained bytes")
+		}
+		return validateRuntimeCapacity(r.Config, 0, 0)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	attemptRoot := filepath.Join(parent, ".attempts")
+	attemptPath := filepath.Join(attemptRoot, filepath.Base(path)+"-"+digest(raw))
+	upcomingBytes, upcomingInodes := uint64(0), uint64(0)
+	if _, err := os.Lstat(attemptRoot); errors.Is(err, os.ErrNotExist) {
+		upcomingBytes += r.Config.RuntimeFilesystemBlockBytes
+		upcomingInodes++
+	} else if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(attemptPath); errors.Is(err, os.ErrNotExist) {
+		allocated, allocationErr := runtimeAllocatedBytes(len(raw), r.Config.RuntimeFilesystemBlockBytes)
+		if allocationErr != nil {
+			return allocationErr
+		}
+		upcomingBytes += allocated
+		upcomingInodes++
+	} else if err != nil {
+		return err
+	}
+	// Reserve one full block for the new final directory entry even though its
+	// inode is a hard link to the retained attempt.
+	if upcomingBytes > ^uint64(0)-r.Config.RuntimeFilesystemBlockBytes {
+		return errors.New("runtime publication directory bound overflows")
+	}
+	upcomingBytes += r.Config.RuntimeFilesystemBlockBytes
+	if err := validateRuntimeCapacity(r.Config, upcomingBytes, upcomingInodes); err != nil {
+		return err
+	}
+	return appendOrMatch(path, raw, mode)
+}
+
+func (r *Runner) ensureRuntimeChildDirectory(name string) error {
+	if filepath.Base(name) != name || name == "." || name == "" {
+		return errors.New("runtime child directory name is invalid")
+	}
+	path := filepath.Join(r.Config.RuntimeRoot, name)
+	if _, err := os.Lstat(path); errors.Is(err, os.ErrNotExist) {
+		if err := validateRuntimeCapacity(r.Config, r.Config.RuntimeFilesystemBlockBytes, 1); err != nil {
+			return err
+		}
+		if err := os.Mkdir(path, os.FileMode(r.Config.RuntimeDirectoryMode)); err != nil && !errors.Is(err, os.ErrExist) {
+			return err
+		}
+		if err := os.Chown(path, 0, int(r.Config.RuntimeReaderGID)); err != nil {
+			return err
+		}
+		if err := os.Chmod(path, os.FileMode(r.Config.RuntimeDirectoryMode)|os.ModeSetgid); err != nil {
+			return err
+		}
+	} else if err != nil {
+		return err
+	} else if err := validateRuntimeCapacity(r.Config, 0, 0); err != nil {
+		return err
+	}
+	info, err := os.Lstat(path)
+	if err != nil || info == nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 ||
+		info.Mode().Perm() != os.FileMode(r.Config.RuntimeDirectoryMode) {
+		return errors.New("runtime reader directory mode differs from its accepted contract")
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat.Uid != 0 || stat.Gid != r.Config.RuntimeReaderGID || stat.Mode&syscall.S_ISGID == 0 {
+		return errors.New("runtime reader directory custody differs from its accepted root/setgid identity")
+	}
+	return fsyncDirectory(r.Config.RuntimeRoot)
+}
+
 func appendOrMatch(path string, raw []byte, mode os.FileMode) error {
+	attemptPath, err := stageAppendOnlyAttempt(path, raw, mode)
+	if err != nil {
+		return err
+	}
+	return publishStagedAttempt(path, attemptPath, raw, mode)
+}
+
+func stageAppendOnlyAttempt(path string, raw []byte, mode os.FileMode) (string, error) {
 	parent := filepath.Dir(path)
 	if err := requireRootOwnedDirectory(parent); err != nil {
-		return err
+		return "", err
 	}
 	if _, err := os.Lstat(path); err == nil {
 		existing, readErr := readRootRegular(path, int64(len(raw)))
 		if readErr != nil || !bytes.Equal(existing, raw) {
-			return errors.New("append-only evidence path already contains different bytes")
+			return "", errors.New("append-only evidence path already contains different bytes")
 		}
-		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+		return "", err
 	}
 	if err := ensureRootOwnedChildDirectory(parent, ".attempts"); err != nil {
-		return err
+		return "", err
 	}
 	attemptPath := filepath.Join(parent, ".attempts", filepath.Base(path)+"-"+digest(raw))
 	fileDescriptor, err := syscall.Open(attemptPath, syscall.O_RDWR|syscall.O_CREAT|syscall.O_EXCL|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, uint32(mode.Perm()))
@@ -980,18 +2171,18 @@ func appendOrMatch(path string, raw []byte, mode os.FileMode) error {
 		fileDescriptor, err = syscall.Open(attemptPath, syscall.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	file := os.NewFile(uintptr(fileDescriptor), attemptPath)
 	info, statErr := file.Stat()
 	if statErr != nil || info == nil {
 		_ = file.Close()
-		return errors.New("append-only evidence attempt cannot be inspected")
+		return "", errors.New("append-only evidence attempt cannot be inspected")
 	}
 	stat, statOK := info.Sys().(*syscall.Stat_t)
 	if !statOK || stat.Uid != 0 || !info.Mode().IsRegular() || info.Mode().Perm() != mode.Perm() || info.Size() < 0 || info.Size() > int64(len(raw)) {
 		_ = file.Close()
-		return errors.New("append-only evidence attempt is not the exact resumable root-owned file")
+		return "", errors.New("append-only evidence attempt is not the exact resumable root-owned file")
 	}
 	written := int(info.Size())
 	if written > 0 {
@@ -999,37 +2190,49 @@ func appendOrMatch(path string, raw []byte, mode os.FileMode) error {
 		count, readErr := file.ReadAt(prefix, 0)
 		if readErr != nil || count != written || !bytes.Equal(prefix, raw[:written]) {
 			_ = file.Close()
-			return errors.New("append-only evidence attempt prefix differs from intended bytes")
+			return "", errors.New("append-only evidence attempt prefix differs from intended bytes")
 		}
 	}
 	if _, err := file.Seek(int64(written), io.SeekStart); err != nil {
 		_ = file.Close()
-		return err
+		return "", err
 	}
 	for written < len(raw) {
 		count, writeErr := file.Write(raw[written:])
 		if writeErr != nil || count < 1 {
 			_ = file.Close()
 			if writeErr != nil {
-				return writeErr
+				return "", writeErr
 			}
-			return errors.New("append-only evidence attempt made no write progress")
+			return "", errors.New("append-only evidence attempt made no write progress")
 		}
 		written += count
 	}
 	if written != len(raw) {
 		_ = file.Close()
-		return errors.New("append-only evidence attempt was short-written")
+		return "", errors.New("append-only evidence attempt was short-written")
 	}
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
-		return err
+		return "", err
 	}
 	if err := file.Close(); err != nil {
-		return err
+		return "", err
 	}
 	if err := fsyncDirectory(parent); err != nil {
-		return err
+		return "", err
+	}
+	return attemptPath, nil
+}
+
+func publishStagedAttempt(path string, attemptPath string, raw []byte, mode os.FileMode) error {
+	attemptRaw, err := readRootRegular(attemptPath, int64(len(raw)))
+	if err != nil || !bytes.Equal(attemptRaw, raw) {
+		return errors.New("append-only evidence attempt differs from intended bytes")
+	}
+	info, err := os.Lstat(attemptPath)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != mode.Perm() {
+		return errors.New("append-only evidence attempt has the wrong file mode")
 	}
 	if err := os.Link(attemptPath, path); err != nil {
 		if !errors.Is(err, os.ErrExist) {
@@ -1041,7 +2244,7 @@ func appendOrMatch(path string, raw []byte, mode os.FileMode) error {
 		}
 		return nil
 	}
-	return fsyncDirectory(parent)
+	return fsyncDirectory(filepath.Dir(path))
 }
 
 func fsyncDirectory(path string) error {
