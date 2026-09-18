@@ -49,6 +49,25 @@ These are 11 successful generations and one expected queue rejection. They do
 not establish public key fairness, cold-start/scale-out timing or new snapshot
 compatibility. All v1/v2/v3 failures remain in the protected evidence tree.
 
+An independent fresh V4 Pod also passed three differing-frame-rate requests
+against the same recorded 25-FPS source. Edge transfer returned exactly 64 frames
+at requested 24 FPS (50.30 s) and 30 FPS (49.92 s); first-frame V2V returned 64 frames
+at 24 FPS (13.88 s). All outputs are 640x480. This explicitly changes playback duration,
+not the number of frames: 2.666667 s at 24 FPS and 2.133333 s at 30 FPS. LeRobot always
+preserves source FPS for alignment. The pinned video-serving encoder prioritizes
+explicit request FPS over pipeline metadata; pipeline conditioning FPS alone is
+not sufficient to infer final output timing. No FPS patch was necessary.
+Receipts, decoded metadata and pinned encoder source identity are in
+`isolated-fresh-v5`.
+
+A separately warmed V4 snapshot capture is **not qualified**: CUDA checkpoint
+completed in 15.31 s, but CRIU reached the existing 600 s dump timeout after writing
+approximately 42 GiB to shared storage. The helper recovered the donor and the
+isolated Pod was removed. Original r7 and the failed new directory are preserved;
+neither is a valid snapshot for this successor. A private warning-level CRIU
+logging experiment retains the same timeout, resource bounds and runtime.
+Fresh inference and this capture failure are independent acceptance results.
+
 First-frame V2V changed robot pose/motion. Edge transfer better followed the
 recorded pose in visual inspection, but altered materials and details. Neither
 is a verified lighting-only transform or proof of downstream robotics-policy
