@@ -2068,7 +2068,7 @@
       "model_id": "cosmos3-lerobot-augmentation",
       "display_name": "NVIDIA Cosmos3-Nano LeRobot robotics augmentation",
       "execution_mode": "hybrid",
-      "state": "active",
+      "state": "qualified",
       "route_exposed": true,
       "source": {
         "kind": "huggingface",
@@ -2166,13 +2166,13 @@
       },
       "semantic_validation": {
         "validator_id": "cosmos3-lerobot-v3-0-6-1",
-        "state": "active"
+        "state": "qualified"
       },
       "policy": {
         "commercial_use": "allowed",
         "non_clinical": false,
         "limitations": [
-          "Active onboarding permits public submission; public-completion and scheduler receipts remain null until actual uploaded dataset runs and pinned-reader reopen are retained.",
+          "Qualification covers the retained release148 public MCP uploaded-bundle edge-transfer lighting dataset, exact nonvideo records and full LeRobot0.6.1 reopen. Fruit appearance and fine gripper details can also change: strictly lighting-only/physical preservation is not qualified. Final customer cohorts, other source paths and maximum bounds are separate gates.",
           "Appearance augmentation preserves numeric actions, state, timestamps and canonical indices, not proven physical/action alignment. Transfer retains coarse layout; video-to-video may alter trajectories. Inspect output before training.",
           "Selected clips:16–400 frames, integer FPS1–30, RGB256..1280 by256..720 dimensions divisible by16; at most256 selected episodes,8 selected cameras and8 variants. Untouched clips are checked for dataset integrity, not generation caps.",
           "Compressed input/each output≤5GiB; expanded source≤8GiB;32GiB workspace with conservative pre-GPU estimate and2GiB reserve. Fixed-rate canonical timestamps/task ordering are required; no maximum-bound throughput qualification.",
@@ -2181,10 +2181,10 @@
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "2295434692cec27d200dd9f5151324c27485dbb01d1b6cd9f68156545f29c3c1",
-        "public_completion_receipt_sha256": null,
-        "scheduler_eligibility_receipt_sha256": null,
+        "public_completion_receipt_sha256": "013bd1a753c2fa2b440509a50bd14dbee0b068438431567055d1e6052f4b4e7e",
+        "scheduler_eligibility_receipt_sha256": "eecfc6336067ccc4d8fe876eaeeedde58e350d74e4ea4a731ffe6506d2e50eae",
         "execution_map_sha256": "294aa00ebf9843a865ce70cf031568e1f83509e1cc46f2ecbccff6567115409f",
-        "qualified_at": "2026-09-18T00:03:50Z"
+        "qualified_at": "2026-09-18T00:41:50.980231+00:00"
       }
     }
   ]

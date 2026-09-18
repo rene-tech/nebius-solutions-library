@@ -1,0 +1,237 @@
+{
+  "schema": "fs2-serve.nebius.ai/lerobot-public-completion-receipt/v1",
+  "scope": "One real public typed-MCP uploaded LeRobot dataset, edge-transfer lighting; dataset/media mechanics only. Not final customer-cohort, hosted-client, maximum-size or physical-action-fidelity qualification.",
+  "model_id": "cosmos3-lerobot-augmentation",
+  "variant_id": "cosmos3-nano-lerobot-v3",
+  "helm_revision": 148,
+  "control_plane_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:96e197fd0e6d8c48b91c409bb2042e35f6a09d4b94e8c891534b587b30e9617b",
+  "runtime_image_digest": "sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
+  "execution_identity_sha256": "1c906c5ca9a792531215cb26b0834dccb8f5a1491c8b6d2c8d6a96233958a34e",
+  "execution_map_sha256": "294aa00ebf9843a865ce70cf031568e1f83509e1cc46f2ecbccff6567115409f",
+  "operation_id": "e50a8f50-c388-4eb7-a53d-bd943d82070c",
+  "request_sha256": "067aa2dfa28691c2763787f2f594ddc7426968ae8f364867466e345dcd89e514",
+  "protocol": "mcp",
+  "status": "succeeded",
+  "accepted_at": "2026-09-18T00:37:32.688537Z",
+  "completed_at": "2026-09-18T00:39:21.695405Z",
+  "client_completed_at": "2026-09-18T00:39:50.589067+00:00",
+  "semantic_validation": {
+    "receipt_digest": "6297ffe91b0de3ecdc66d98d0b4d756459d34e6aa2b2fe571d16bcee4873ac22",
+    "status": "passed",
+    "validator_id": "cosmos3-lerobot-v3-0-6-1"
+  },
+  "inflight_replay_verified": true,
+  "terminal_replay_verified": true,
+  "max_concurrency": 1,
+  "source": {
+    "artifact_id": "9cdfb4d8-1b89-4e98-a3b9-b4ba71bd6563",
+    "compression": "zstd",
+    "kind": "uploaded-bundle",
+    "media_type": "application/x-tar",
+    "sha256": "6355652f0b89514fda749c8f461d6f770659590e1b96de94b7c6a288cbe33561",
+    "size_bytes": 2657959
+  },
+  "selection": {
+    "cameras": [
+      "observation.images.front"
+    ],
+    "episodes": [
+      0
+    ]
+  },
+  "augmentation": {
+    "conditioning": {
+      "controls": [
+        "edge"
+      ],
+      "frame_indexes": [
+        0,
+        1
+      ],
+      "keep": "first"
+    },
+    "dimensions": [
+      {
+        "instruction": "warm late-afternoon side lighting with visible soft shadows, keeping robot and manipulated object identity",
+        "name": "lighting",
+        "strength": 0.7
+      }
+    ],
+    "guidance_scale": 6.0,
+    "mode": "transfer",
+    "negative_prompt": "changed robot motion, missing objects, temporal jitter, blur",
+    "num_inference_steps": 35,
+    "prompt_template": "Preserve the robot, objects, camera, and motion for task '{task}'. Apply only this visual variation: {variation}."
+  },
+  "variants": {
+    "count": 1,
+    "seeds": [
+      2026091701
+    ]
+  },
+  "input_manifest": {
+    "artifact_id": "36558385-7584-4707-aec3-c09ddab8cb8d",
+    "compression": "none",
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "sha256": "91c86a4286d4ed7c46937fca797990eb525cd9c33be29b3e8e2c9dc2fb063dc0",
+    "size_bytes": 528
+  },
+  "output_manifest": {
+    "artifact_id": "6afd4c0e-1d22-4012-9445-0ee12f88cad8",
+    "compression": "none",
+    "media_type": "application/vnd.fs2.scientific-manifest+json",
+    "sha256": "8defffb884d19360b6afd25b8f8d7a97328d2184e9f50dd279b1bc5429ad913a",
+    "size_bytes": 705
+  },
+  "output_artifacts": [
+    {
+      "artifact": {
+        "artifact_id": "dc04d078-415d-4cf0-b489-aa8609af608b",
+        "compression": "none",
+        "media_type": "application/json",
+        "sha256": "1baed933aa866354a9406bcfed4d2b38b96596622e91ca48dbc610dd51675564",
+        "size_bytes": 687
+      },
+      "name": "result",
+      "semantic_type": "lerobot-augmentation-result/v1"
+    },
+    {
+      "artifact": {
+        "artifact_id": "dc209431-45f0-47c7-90bd-737bf883002a",
+        "compression": "zstd",
+        "media_type": "application/x-tar",
+        "sha256": "826b5866877b2b20f2ec762bb8a36cfa7038d8e23bf4fbd5079a9208cc3df286",
+        "size_bytes": 2492813
+      },
+      "name": "variant-00",
+      "semantic_type": "lerobot-v3-augmented-bundle/v1"
+    }
+  ],
+  "reader_validation": {
+    "output_tree_sha256": "3a75958b9d3321808fb5ececd8472da305a0872b56fc91d132c74b131cd65edc",
+    "physical_alignment_verified": false,
+    "provenance_sha256": "85a1fbdfc583ad76c16dcb23b0919d5b183b0289a6d5abbfb44125352cebfe9d",
+    "reader": "lerobot==0.6.1",
+    "source_tree_sha256": "13f438dc779cd63511cebd0bf471860a1f39211be38c47ddf854921aa10368da",
+    "validation": {
+      "cameras": 2,
+      "decoded_frames_each": 128,
+      "episodes": 2,
+      "frames": 64,
+      "nonvideo_values_compared": 2304,
+      "nonvideo_values_exact": true,
+      "physical_alignment_verified": false,
+      "reader": "lerobot==0.6.1",
+      "status": "passed",
+      "unselected_max_frame_mae_limit": 6.0,
+      "unselected_pixels_bit_exact": false,
+      "visual_comparison": [
+        {
+          "camera": "observation.images.front",
+          "changed_frames": 32,
+          "episode_index": 0,
+          "frames": 32,
+          "max_frame_mean_absolute_pixel_difference": 54.33198547363281,
+          "mean_absolute_pixel_difference": 52.45652937889099,
+          "selected": true
+        },
+        {
+          "camera": "observation.images.wrist",
+          "changed_frames": 32,
+          "episode_index": 0,
+          "frames": 32,
+          "max_frame_mean_absolute_pixel_difference": 2.107658624649048,
+          "mean_absolute_pixel_difference": 1.8641835935413837,
+          "selected": false
+        },
+        {
+          "camera": "observation.images.front",
+          "changed_frames": 32,
+          "episode_index": 1,
+          "frames": 32,
+          "max_frame_mean_absolute_pixel_difference": 1.8180515766143799,
+          "mean_absolute_pixel_difference": 1.7441858053207397,
+          "selected": false
+        },
+        {
+          "camera": "observation.images.wrist",
+          "changed_frames": 32,
+          "episode_index": 1,
+          "frames": 32,
+          "max_frame_mean_absolute_pixel_difference": 1.9872514009475708,
+          "mean_absolute_pixel_difference": 1.8611841164529324,
+          "selected": false
+        }
+      ]
+    }
+  },
+  "delegation": {
+    "same_token_principal_tenant": true,
+    "parent_attempt_id": "5269761f-58b0-5405-a650-6a10e71c5684",
+    "children": [
+      {
+        "id": "bb3f72cb-db16-4150-8f46-4a0177b99dd9",
+        "operation": "upload",
+        "status": "succeeded",
+        "http_status": 201,
+        "parent_attempt_id": "5269761f-58b0-5405-a650-6a10e71c5684"
+      },
+      {
+        "id": "200f9cd2-34a5-4402-9cc8-ed6ffcc9f340",
+        "operation": "generate-media",
+        "status": "succeeded",
+        "http_status": 200,
+        "parent_attempt_id": "5269761f-58b0-5405-a650-6a10e71c5684"
+      }
+    ],
+    "cpu_attempt_resources_released": true
+  },
+  "generation": {
+    "id": "200f9cd2-34a5-4402-9cc8-ed6ffcc9f340",
+    "accepted_at": "2026-09-18 00:38:20.656679+00:00",
+    "activation_started_at": "2026-09-18 00:38:20.707426+00:00",
+    "ready_at": "2026-09-18 00:38:58.657002+00:00",
+    "started_at": "2026-09-18 00:38:58.671852+00:00",
+    "completed_at": "2026-09-18 00:39:06.380181+00:00",
+    "attempt": 1,
+    "cold_start_seconds": 38.000323,
+    "pod_uid": "30cc66f4-bca7-49bc-9655-bd78bb1a47e1",
+    "node_uid": "d595df0c-57da-4818-a104-d8236a5423f6",
+    "gpu_uuids": [
+      "GPU-6cd7e8ce-092e-e92c-0f18-7f07eebddcb5"
+    ],
+    "gpu_count": 1,
+    "preemptible": true,
+    "semantic_outcome": "protocol_valid"
+  },
+  "visual_review": {
+    "scope": "Root-relayed independent reviewer observation of this retained output; no new inference",
+    "warm_golden_lighting_observed": true,
+    "strict_lighting_only_preservation_verified": false,
+    "physical_action_alignment_verified": false,
+    "warning": "Fruit colors, shapes and surfaces and fine gripper details also changed. This qualifies dataset/media execution, not strictly lighting-only or physically action-aligned augmentation."
+  },
+  "customer_release_ready": false,
+  "not_qualified": [
+    "physical action alignment",
+    "robot-training fitness",
+    "maximum supported dataset size/throughput",
+    "Hugging Face and object-store dataset source paths",
+    "hosted LibreChat conversation",
+    "final unchanged release cohorts"
+  ],
+  "private_evidence": {
+    "directory": "/home/tux/secure-handoff/lerobot-release-20260917/debug-lighting-mcp-r148",
+    "files": {
+      "run.json": "1397c50373c3a83e11922c51cfacddcfc2cbe62671309732fc60dfce97ed22f4",
+      "prepared.json": "7f8e3dd34848be131e1edfda780af9c6df4a3e175e1578c8a275d4dc6c0e27a4",
+      "result.json": "1baed933aa866354a9406bcfed4d2b38b96596622e91ca48dbc610dd51675564",
+      "output-manifest.json": "8defffb884d19360b6afd25b8f8d7a97328d2184e9f50dd279b1bc5429ad913a",
+      "variant-00-validation.json": "5ce1b818ccf5d1748ef1f4c17a951b383acc271ca6b1d4b238c176c55451e11a",
+      "qualification-observation-running.json": "8734963c2edb2326d5560df007579a925aa7619bab594626dedea38f66a5709f",
+      "qualification-observation-children.json": "e8b6a3a6891cd13cd069c056f80c6c3229a57f619c4e9d689a6a2dc893525707",
+      "qualification-observation-final.json": "34f0f1fd1294c8ca2c6a70ee5d0a964ff9083303b98cca9e05c53a14ef13f200"
+    },
+    "deployment_receipt_sha256": "c402f13393c815bc2938d5d3459f1fdd49e0b04a8bd116fae55d336d559d9942"
+  }
+}
