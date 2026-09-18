@@ -29,6 +29,7 @@ from .models import (
 )
 from .policy import ScientificDispatchHeldError
 from .protocols import BatchFenceLostError, BatchRepositoryConflictError
+from .worker_errors import worker_error_detail
 
 SCIENTIFIC_BATCH_MIGRATION = "0020_scientific_atomic_admission.sql"
 
@@ -460,7 +461,7 @@ class PostgresScientificBatchRepository:
             """
             UPDATE fs2_operations
             SET status=$2::fs2_operation_status,completed_at=clock_timestamp(),outcome=$2::text,semantic_outcome=$3,
-                http_status=$4,error_code=$5,error_detail=NULL,worker_id=NULL,
+                http_status=$4,error_code=$5,error_detail=$6,worker_id=NULL,
                 heartbeat_at=NULL,lease_expires_at=NULL,reserved_gpu_seconds=0
             WHERE id=$1 AND protocol='scientific-batch-v1' AND status IN ('queued','running')
             RETURNING attempt
@@ -470,6 +471,7 @@ class PostgresScientificBatchRepository:
             semantic,
             http_status,
             current.failure_code,
+            worker_error_detail(current.model_id, current.failure_code),
         )
         if operation is not None:
             await connection.execute(

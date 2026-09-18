@@ -45,6 +45,7 @@ from .podset_envelope import (
 )
 from .protocols import BatchRepositoryConflictError
 from .startup_telemetry import MAX_LOG_BYTES, snapshot_request_started, uses_snapshot_supervisor
+from .worker_errors import LEROBOT_MODEL_ID, worker_error_code
 
 ATTEMPT_LABEL = "fs2.nebius.ai/attempt-id"
 OPERATION_LABEL = "fs2.nebius.ai/operation-id"
@@ -225,6 +226,29 @@ def _kueue_eviction(reason: str) -> tuple[WorkloadState, FailureKind, str]:
     }:
         return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, reason
     return WorkloadState.FAILED, FailureKind.APPLICATION, reason
+
+
+def _reported_failure(
+    reasons: list[str], pod_statuses: list[Mapping[str, Any]], *, model_id: str
+) -> tuple[WorkloadState, FailureKind, str]:
+    fallback = _failure(reasons)
+    if (
+        model_id != LEROBOT_MODEL_ID
+        or fallback[1] is not FailureKind.APPLICATION
+        or fallback[2] == "EXECUTION_TIMEOUT"
+        or any(reason.casefold() == "oomkilled" for reason in reasons)
+    ):
+        return fallback
+    codes: set[str] = set()
+    for pod_status in pod_statuses:
+        stage = _container_termination(pod_status, STAGE_CONTAINER_NAME)
+        if stage is None or type(stage.get("exitCode")) is not int or stage["exitCode"] == 0:
+            continue
+        if (code := worker_error_code(stage.get("message"))) is not None:
+            codes.add(code)
+    # Ambiguous multi-Pod reports retain the existing generic failure. Reporting
+    # enriches public diagnostics, not the established failure/retry taxonomy.
+    return (fallback[0], fallback[1], next(iter(codes))) if len(codes) == 1 else fallback
 
 
 def _utcnow() -> datetime:
@@ -632,6 +656,7 @@ def _stalled_collection(
     pod_statuses: list[Mapping[str, Any]],
     *,
     now: datetime,
+    model_id: str = "",
 ) -> tuple[WorkloadState, FailureKind, str] | None:
     """Settle a staged Pod whose model is finished but whose collector is not.
 
@@ -663,7 +688,7 @@ def _stalled_collection(
             ]
             # Reuse the exact taxonomy the Job-failure path applies, so an
             # OOM-killed or preempted stage keeps its established retry class.
-            return _failure(reasons or ["workload_failed"])
+            return _reported_failure(reasons or ["workload_failed"], [pod_status], model_id=model_id)
         finished_at = _finished_at(stage)
         if finished_at is not None and now - finished_at >= timedelta(seconds=COLLECTION_GRACE_SECONDS):
             # The model published nothing collectable. This is the stage's own
@@ -1204,7 +1229,9 @@ class HttpScientificBatchCluster:
             )
         elif failed:
             reason = str((failed_condition or {}).get("reason", "workload_failed"))
-            workload_state, failure_kind, failure_code = _failure([reason, *failure_reasons])
+            workload_state, failure_kind, failure_code = _reported_failure(
+                [reason, *failure_reasons], pod_statuses, model_id=str(labels.get(MODEL_LABEL, ""))
+            )
             return WorkloadObservation(
                 ref=ref,
                 attempt_id=attempt_id,
@@ -1217,7 +1244,11 @@ class HttpScientificBatchCluster:
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
-        elif (stalled := _stalled_collection(pod_statuses, now=self.clock())) is not None:
+        elif (
+            stalled := _stalled_collection(
+                pod_statuses, now=self.clock(), model_id=str(labels.get(MODEL_LABEL, ""))
+            )
+        ) is not None:
             workload_state, failure_kind, failure_code = stalled
             if workload_state is WorkloadState.PREEMPTED:
                 phases.append(LifecyclePhase.PREEMPTED)
