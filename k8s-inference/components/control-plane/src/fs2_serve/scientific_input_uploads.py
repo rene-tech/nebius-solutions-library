@@ -24,6 +24,7 @@ from .scientific_artifacts import (
     ArtifactAccess,
     ArtifactCompression,
     ArtifactDirection,
+    ArtifactVerificationError,
     AttemptStatus,
     BeginArtifactUpload,
     CloseStageAttempt,
@@ -292,13 +293,35 @@ class ScientificInputUploadService:
         upload_id: UUID,
     ) -> ArtifactRef:
         operation_uuid = await self._authorize(principal, operation_id, upload_id)
-        artifact = await self.artifacts.finalize_upload(
-            FinalizeArtifactUpload(
-                upload_id=upload_id,
-                operation_id=operation_uuid,
-                tenant_id=principal.tenant_id,
+        try:
+            artifact = await self.artifacts.finalize_upload(
+                FinalizeArtifactUpload(
+                    upload_id=upload_id,
+                    operation_id=operation_uuid,
+                    tenant_id=principal.tenant_id,
+                )
             )
-        )
+        except ArtifactVerificationError:
+            # A persisted write-once object cannot be repaired in place. Mark
+            # this operation failed so it cannot indefinitely occupy the
+            # caller's concurrency slot. Missing bytes/transient store errors
+            # remain retryable, as do inline mismatches rejected before a write.
+            failed = await self.store.complete_scientific_artifact_upload(
+                operation_uuid,
+                tenant_id=principal.tenant_id,
+                principal_id=principal.principal_id,
+                verified=False,
+            )
+            await self.artifacts.close_attempt(
+                CloseStageAttempt(
+                    attempt_id=_identity(operation_uuid, "attempt"),
+                    operation_id=operation_uuid,
+                    tenant_id=principal.tenant_id,
+                    status=AttemptStatus.FAILED,
+                    completed_at=failed.completed_at or datetime.now(UTC),
+                )
+            )
+            raise
         await self.store.complete_scientific_artifact_upload(
             operation_uuid,
             tenant_id=principal.tenant_id,

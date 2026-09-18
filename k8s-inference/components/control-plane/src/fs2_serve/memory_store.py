@@ -1687,8 +1687,9 @@ class MemoryStore:
         *,
         tenant_id: str,
         principal_id: str,
+        verified: bool = True,
     ) -> OperationView:
-        """Close one verified customer upload without exposing a worker lease."""
+        """Close a verified or irrecoverably invalid upload without a worker lease."""
 
         async with self._lock:
             row = self.operations.get(operation_id)
@@ -1699,18 +1700,22 @@ class MemoryStore:
                 or row.view.protocol != "scientific-artifact-upload-v1"
             ):
                 raise NotFoundError("scientific artifact upload operation not found")
-            if row.view.status is OperationStatus.SUCCEEDED:
+            status = OperationStatus.SUCCEEDED if verified else OperationStatus.FAILED
+            outcome = "artifact_uploaded" if verified else "artifact_verification_failed"
+            if row.view.status is status:
                 return self._metadata(row, reused=True)
             if row.view.status is not OperationStatus.QUEUED:
                 raise ConflictError("scientific artifact upload operation is not writable")
             now = datetime.now(UTC)
             row.view = row.view.model_copy(
                 update={
-                    "status": OperationStatus.SUCCEEDED,
+                    "status": status,
                     "completed_at": now,
-                    "outcome": "artifact_uploaded",
-                    "semantic_outcome": "verified",
-                    "http_status": 201,
+                    "outcome": outcome,
+                    "semantic_outcome": "verified" if verified else "failed",
+                    "http_status": 201 if verified else 422,
+                    "error_code": None if verified else outcome,
+                    "error_detail": None if verified else "Stored bytes do not match the upload; start a new upload.",
                     "reserved_gpu_seconds": 0,
                 }
             )
@@ -1721,7 +1726,7 @@ class MemoryStore:
                 action="scientific_artifact.upload.complete",
                 target_type="operation",
                 target_id=str(operation_id),
-                outcome="succeeded",
+                outcome=status.value,
             )
             return self._metadata(row)
 

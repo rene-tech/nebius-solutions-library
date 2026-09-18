@@ -3258,8 +3258,9 @@ class PostgresStore:
         *,
         tenant_id: str,
         principal_id: str,
+        verified: bool = True,
     ) -> OperationView:
-        """Atomically terminalize a verified upload operation without a worker lease."""
+        """Terminalize a verified or irrecoverably invalid upload without a worker lease."""
 
         async with self.pool.acquire() as connection, connection.transaction():
             token_id = await connection.fetchval(
@@ -3281,24 +3282,33 @@ class PostgresStore:
                 or current["protocol"] != "scientific-artifact-upload-v1"
             ):
                 raise NotFoundError("scientific artifact upload operation not found")
-            if current["status"] == "succeeded":
+            status = OperationStatus.SUCCEEDED if verified else OperationStatus.FAILED
+            outcome = "artifact_uploaded" if verified else "artifact_verification_failed"
+            if current["status"] == status.value:
                 return self._operation(current, reused=True)
             if current["status"] != "queued":
                 raise ConflictError("scientific artifact upload operation is not writable")
             row = await connection.fetchrow(
                 """
                 UPDATE fs2_operations
-                SET status='succeeded',completed_at=clock_timestamp(),outcome='artifact_uploaded',
-                    semantic_outcome='verified',http_status=201,reserved_gpu_seconds=0,
+                SET status=$2,completed_at=clock_timestamp(),outcome=$3,
+                    semantic_outcome=$4,http_status=$5,reserved_gpu_seconds=0,
+                    error_code=$6,error_detail=$7,
                     worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL
                 WHERE id=$1 AND status='queued' AND protocol='scientific-artifact-upload-v1'
                 RETURNING *
                 """,
                 operation_id,
+                status.value,
+                outcome,
+                "verified" if verified else "failed",
+                201 if verified else 422,
+                None if verified else outcome,
+                None if verified else "Stored bytes do not match the upload; start a new upload.",
             )
             if row is None:
                 raise ConflictError("scientific artifact upload operation changed")
-            await self._event(connection, operation_id, "artifact_uploaded", OperationStatus.SUCCEEDED, row["attempt"])
+            await self._event(connection, operation_id, outcome, status, row["attempt"])
             await self._audit(
                 connection,
                 actor=principal_id,
@@ -3307,7 +3317,7 @@ class PostgresStore:
                 action="scientific_artifact.upload.complete",
                 target_type="operation",
                 target_id=str(operation_id),
-                outcome="succeeded",
+                outcome=status.value,
             )
             return self._operation(row)
 

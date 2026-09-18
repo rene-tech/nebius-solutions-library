@@ -308,6 +308,7 @@ class Store(Protocol):
         *,
         tenant_id: str,
         principal_id: str,
+        verified: bool = True,
     ) -> OperationView: ...
 
     async def get_operation(self, operation_id: UUID, *, tenant_id: str | None = None) -> OperationView: ...

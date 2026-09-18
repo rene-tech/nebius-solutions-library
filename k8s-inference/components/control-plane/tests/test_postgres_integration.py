@@ -92,7 +92,12 @@ from fs2_serve.operation_metrics import customer_operation_metrics
 from fs2_serve.postgres import PostgresMaintenanceStore, PostgresStore, _decode_audit_detail
 from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.runtime import ActivationError, StubRuntimeClient
-from fs2_serve.scientific_artifacts import FinalizeArtifactUpload, PostgresArtifactRepository, ScientificArtifactService
+from fs2_serve.scientific_artifacts import (
+    ArtifactVerificationError,
+    FinalizeArtifactUpload,
+    PostgresArtifactRepository,
+    ScientificArtifactService,
+)
 from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
 from fs2_serve.scientific_batch.controller import ScientificBatchController
 from fs2_serve.scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
@@ -3378,8 +3383,10 @@ async def test_admin_reporting_queries_are_bounded_paginated_and_payload_free(
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+@pytest.mark.parametrize("valid", [True, False])
 async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
     postgres_store: PostgresStore,
+    valid: bool,
 ) -> None:
     principal = await add_token(postgres_store)
     repository = PostgresArtifactRepository(postgres_store.pool)
@@ -3416,7 +3423,24 @@ async def test_customer_input_upload_is_verified_and_terminal_in_postgres(
             tenant_id=principal.tenant_id,
         )
     )
-    object_store.put(intent.storage_key, payload, "text/x-fasta")
+    object_store.put(intent.storage_key, payload if valid else payload + b"X", "text/x-fasta")
+    if not valid:
+        for _ in range(2):
+            with pytest.raises(ArtifactVerificationError):
+                await uploads.finalize(principal=principal, operation_id=begun.operation_id, upload_id=begun.upload_id)
+        operation = await postgres_store.get_operation(begun.operation_id, tenant_id=principal.tenant_id)
+        assert operation.status is OperationStatus.FAILED
+        assert operation.error_code == "artifact_verification_failed"
+        assert operation.reserved_gpu_seconds == 0
+        async with postgres_store.pool.acquire() as connection:
+            assert await connection.fetchval(
+                "SELECT count(*) FROM fs2_scientific_artifacts WHERE operation_id=$1", begun.operation_id,
+            ) == 0
+            assert await connection.fetchval(
+                "SELECT count(*) FROM fs2_operation_events WHERE operation_id=$1 "
+                "AND event='artifact_verification_failed'", begun.operation_id,
+            ) == 1
+        return
     pointer = await uploads.finalize(
         principal=principal,
         operation_id=begun.operation_id,
