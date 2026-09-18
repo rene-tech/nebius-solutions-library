@@ -7,6 +7,9 @@ and the selected Hugging Face weight revision.
 
 from __future__ import annotations
 
+import csv
+import hashlib
+import io
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -32,6 +35,7 @@ from .common import (
     bounded_int,
     build_execution_plan,
     canonical_digest,
+    canonicalize_upstream_csv,
     collect_output_files,
     finite_number,
     load_output_manifest,
@@ -112,6 +116,24 @@ CURRENT_SCALAR_METRIC_FIELDS = frozenset(
         "self_complex_scRMSD_ca",
     }
 )
+RAW_STRUCTURE_TYPE = "protein-complex-structure/v1"
+REFOLDED_STRUCTURE_TYPE = "proteina-complexa-self-refolded-structure/v1"
+PROVENANCE_TYPE = "proteina-complexa-design-provenance-json/v1"
+PROVENANCE_SCHEMA = "fs2-serve.nebius.ai/proteina-complexa-design-provenance/v1"
+_AMINO_ACIDS = dict(
+    zip(
+        "ALA ARG ASN ASP CYS GLN GLU GLY HIS ILE LEU LYS MET PHE PRO SER THR TRP TYR VAL".split(),
+        "ARNDCQEGHILKMFPSTWYV",
+        strict=True,
+    )
+)
+
+
+def _maximum_outputs(parameters: ProteinaParameters) -> int:
+    # Two structures per design, at most one nonempty CSV per design, and one
+    # provenance document. The existing aggregate byte bound is unchanged.
+    return 3 * _maximum_designs(parameters) + 1
+
 
 # AlphaFold2 parameters are published as one 5,587,968,000-byte tar and consumed
 # as a directory of parameter files. ColabDesign resolves
@@ -272,6 +294,10 @@ def _argv(parameters: ProteinaParameters, stage_id: str) -> tuple[str, ...]:
             f"++run_name={parameters.run_name}",
             f"++generation.task_name={parameters.target_id}",
             f"++seed={parameters.seed}",
+            # Evaluation flattens its own config into the results table; it
+            # does not recover these values from the generation handoff.
+            f"++generation.args.nsteps={parameters.diffusion_steps}",
+            f"++generation.dataloader.dataset.nres.nsamples={parameters.num_samples}",
         )
     )
     if stage_id == "filter":
@@ -284,8 +310,6 @@ def _argv(parameters: ProteinaParameters, stage_id: str) -> tuple[str, ...]:
                 f"++ckpt_path={weights_root}",
                 f"++ckpt_name={variant.checkpoint}",
                 f"++autoencoder_ckpt_path={model_file(variant.runtime_artifact_id, variant.autoencoder)}",
-                f"++generation.args.nsteps={parameters.diffusion_steps}",
-                f"++generation.dataloader.dataset.nres.nsamples={parameters.num_samples}",
             )
         )
     if stage_id == "evaluate":
@@ -437,7 +461,7 @@ def compile_run(
                 collector_id=COLLECTOR_ID,
                 validator_id=VALIDATOR_ID,
                 handoff_name=(STAGE_HANDOFF_NAME if stage_id != stage_ids[-1] else None),
-                max_output_artifacts=(1 if stage_id != stage_ids[-1] else _maximum_designs(parameters) + 1),
+                max_output_artifacts=(1 if stage_id != stage_ids[-1] else _maximum_outputs(parameters)),
                 max_output_bytes=(MAX_STAGE_HANDOFF_BYTES if stage_id != stage_ids[-1] else MAX_OUTPUT_BYTES),
                 materializations=(
                     ArtifactMaterialization(
@@ -474,11 +498,52 @@ def compile_run(
     )
 
 
+def _protein_chains(content: bytes) -> dict[str, str]:
+    """Read pinned upstream PDB polymer sequences without inferring missing residues."""
+
+    residues: dict[str, dict[str, str]] = {}
+    try:
+        lines = content.decode("ascii").splitlines()
+    except UnicodeDecodeError as error:
+        raise ScientificAdapterError("Proteina structure is not an ASCII PDB") from error
+    for line in lines:
+        if not line.startswith("ATOM  "):
+            continue
+        if len(line) < 54 or line[17:20] not in _AMINO_ACIDS:
+            raise ScientificAdapterError("Proteina structure has an invalid protein residue")
+        chain = residues.setdefault(line[21:22], {})
+        residue_id, residue = line[22:27], _AMINO_ACIDS[line[17:20]]
+        if residue_id in chain and chain[residue_id] != residue:
+            raise ScientificAdapterError("Proteina structure has conflicting residue identities")
+        chain[residue_id] = residue
+    if not residues:
+        raise ScientificAdapterError("Proteina structure contains no protein chain")
+    return {chain: "".join(values.values()) for chain, values in residues.items()}
+
+
+def _bound_structure(root: Path, value: str) -> Path:
+    if not value.strip():
+        raise ScientificAdapterError("Proteina upstream CSV is missing a referenced structure")
+    path = Path(value)
+    candidate = path if path.is_absolute() else root / path
+    try:
+        relative = candidate.relative_to(root)
+        if ".." in relative.parts or any((root / part).is_symlink() for part in (relative, *relative.parents)):
+            raise ValueError("structure path traverses a workspace boundary")
+        resolved = candidate.resolve(strict=True)
+        if root not in resolved.parents or not resolved.is_file():
+            raise ValueError("structure is outside the workspace")
+    except (OSError, ValueError) as error:
+        raise ScientificAdapterError("Proteina referenced structure is missing or outside the workspace") from error
+    return resolved
+
+
 def validate_output(
     request_value: object,
     output_manifest: object,
     *,
     artifact_loader: ArtifactLoader,
+    _legacy_inflight: bool = False,
 ) -> dict[str, object]:
     """Validate immutable final artifacts without accepting public file paths."""
 
@@ -487,14 +552,17 @@ def validate_output(
     artifacts = load_output_manifest(
         output_manifest,
         artifact_loader=artifact_loader,
-        maximum_entries=maximum_designs + 1,
+        maximum_entries=maximum_designs + 1 if _legacy_inflight else _maximum_outputs(parameters),
         maximum_total_bytes=MAX_OUTPUT_BYTES,
     )
     result_items = [item for item in artifacts if item.semantic_type == "proteina-complexa-results-csv/v1"]
-    structures = [item for item in artifacts if item.semantic_type == "protein-complex-structure/v1"]
+    structures = [item for item in artifacts if item.semantic_type == RAW_STRUCTURE_TYPE]
+    refolded = [item for item in artifacts if item.semantic_type == REFOLDED_STRUCTURE_TYPE]
+    provenance_items = [item for item in artifacts if item.semantic_type == PROVENANCE_TYPE]
     if not result_items or not structures:
         raise ScientificAdapterError("Proteina output requires upstream result CSV and structure artifacts")
     seen: set[str] = set()
+    result_rows: dict[str, tuple[str, Mapping[str, str]]] = {}
     design_count = 0
     for result in result_items:
         fields, rows = parse_csv_artifact(
@@ -523,6 +591,7 @@ def validate_output(
             if design_id in seen:
                 raise ScientificAdapterError("Proteina result CSV contains a duplicate design")
             seen.add(design_id)
+            result_rows[design_id] = (result.name, row)
             observed = 0
             for field in metric_fields:
                 raw = row[field]
@@ -538,23 +607,120 @@ def validate_output(
             if observed == 0:
                 raise ScientificAdapterError("Proteina result row has no finite scalar scientific metric")
         design_count += len(rows)
-    if not 1 <= design_count <= maximum_designs or len(structures) != design_count:
+    if _legacy_inflight:
+        # Only collect_companion_output selects this path, from the exact
+        # immutable bound on a pre-upgrade admitted invocation. It preserves
+        # that result contract without pretending to qualify refolded output.
+        if (
+            not 1 <= design_count <= maximum_designs
+            or len(structures) != design_count
+            or len(artifacts) != len(result_items) + design_count
+        ):
+            raise ScientificAdapterError("Proteina legacy result rows and structures do not match the request bound")
+        return {
+            "validator_id": VALIDATOR_ID,
+            "status": "passed",
+            "request_sha256": canonical_digest(request.to_dict()),
+            "design_count": design_count,
+            "atom_count": sum(structure_atom_count(item, require_two_chains=True) for item in structures),
+            "artifact_contract": "legacy-inflight-generated-only",
+            "scored_refolded_coordinates_available": False,
+            "design_provenance_verified": False,
+            "warning": (
+                "Pre-upgrade admitted contract: coordinates are raw generated designs, "
+                "not the scored self-refolded predictions. Refolded artifact qualification is unavailable."
+            ),
+            "qualification_effect": "none-offline-validation-only",
+        }
+    if (
+        not 1 <= design_count <= maximum_designs
+        or len(structures) != design_count
+        or len(refolded) != design_count
+        or len(provenance_items) != 1
+        or len(artifacts) != len(result_items) + 2 * design_count + 1
+    ):
         raise ScientificAdapterError("Proteina result rows and structures do not match the request bound")
-    atom_count = sum(structure_atom_count(item, require_two_chains=True) for item in structures)
+    try:
+        provenance = json.loads(provenance_items[0].content)
+    except (UnicodeError, json.JSONDecodeError) as error:
+        raise ScientificAdapterError("Proteina design provenance is invalid JSON") from error
+    if (
+        not isinstance(provenance, dict)
+        or provenance.get("schema_version") != PROVENANCE_SCHEMA
+        or provenance.get("source_revision") != SOURCE_REVISION
+        or provenance.get("request_sha256") != canonical_digest(request.to_dict())
+        or not isinstance(provenance.get("designs"), list)
+        or len(provenance["designs"]) != design_count
+    ):
+        raise ScientificAdapterError("Proteina design provenance does not match this request")
+    by_name = {item.name: item for item in artifacts}
+    linked_ids: set[str] = set()
+    linked_names: set[str] = set()
+    for design in provenance["designs"]:
+        if not isinstance(design, dict) or not isinstance(design.get("id_gen"), str):
+            raise ScientificAdapterError("Proteina design provenance has no design identity")
+        design_id = design["id_gen"]
+        if design_id not in result_rows or design_id in linked_ids:
+            raise ScientificAdapterError("Proteina design provenance has duplicate or unknown designs")
+        linked_ids.add(design_id)
+        csv_name, row = result_rows[design_id]
+        sequence = row.get("self_sequence", "")
+        if (
+            not sequence
+            or any(letter not in _AMINO_ACIDS.values() for letter in sequence)
+            or design.get("sequence_sha256") != hashlib.sha256(sequence.encode()).hexdigest()
+            or design.get("results_artifact") != csv_name
+            or design.get("results_row_sha256") != canonical_digest(row)
+            or design.get("metric_prefix") != "self_"
+            or design.get("refolding_model") != ("AlphaFold2" if parameters.variant.name == "protein-target" else "RF3")
+            or design.get("relaxation") != "not-claimed"
+        ):
+            raise ScientificAdapterError("Proteina design sequence, metrics, or provenance linkage is invalid")
+        chains_by_role: list[dict[str, str]] = []
+        for role, semantic, column in (
+            ("generated", RAW_STRUCTURE_TYPE, "generated_structure_artifact"),
+            ("self_refolded", REFOLDED_STRUCTURE_TYPE, "self_refolded_structure_artifact"),
+        ):
+            link = design.get(role)
+            if not isinstance(link, dict) or not isinstance(link.get("artifact_name"), str):
+                raise ScientificAdapterError("Proteina design structure role is missing")
+            name = link["artifact_name"]
+            item = by_name.get(name)
+            if (
+                item is None
+                or item.semantic_type != semantic
+                or name in linked_names
+                or row.get(column) != name
+                or link.get("sha256") != hashlib.sha256(item.content).hexdigest()
+            ):
+                raise ScientificAdapterError("Proteina design structure role or content linkage is invalid")
+            linked_names.add(name)
+            chains = _protein_chains(item.content)
+            binder_chain = link.get("binder_chain")
+            if not isinstance(binder_chain, str) or chains.get(binder_chain) != sequence:
+                raise ScientificAdapterError("Proteina structure binder sequence does not match its result row")
+            chains_by_role.append(chains)
+        if chains_by_role[0] != chains_by_role[1]:
+            raise ScientificAdapterError("Proteina generated and self-refolded protein sequences do not match")
+    atom_count = sum(structure_atom_count(item, require_two_chains=True) for item in (*structures, *refolded))
     return {
         "validator_id": "proteina-complexa-v1",
         "status": "passed",
         "request_sha256": canonical_digest(request.to_dict()),
         "design_count": design_count,
         "atom_count": atom_count,
+        "generated_structure_count": len(structures),
+        "self_refolded_structure_count": len(refolded),
+        "design_provenance_verified": True,
+        "artifact_contract": "generated-and-self-refolded-provenance-v1",
         "qualification_effect": "none-offline-validation-only",
     }
 
 
 def collect_output(request_value: object, workspace: Path) -> CollectedOutput:
-    """Collect upstream combined binder CSV rows and their referenced PDBs."""
+    """Export both coordinate roles, joined by CSV paths rather than filename order."""
 
-    _request_value, parameters = _request(request_value)
+    request, parameters = _request(request_value)
     maximum_designs = _maximum_designs(parameters)
     root = workspace.resolve(strict=True)
     csv_paths = sorted(root.rglob("RAW_*binder*_results_*_combined.csv"))
@@ -563,29 +729,98 @@ def collect_output(request_value: object, workspace: Path) -> CollectedOutput:
     if not csv_paths:
         raise ScientificAdapterError("Proteina collector found no upstream binder result CSV")
     entries: list[tuple[str, str, Path, bool]] = []
-    structure_paths: dict[Path, None] = {}
+    designs: list[dict[str, object]] = []
+    seen_ids: set[str] = set()
+    seen_paths: set[Path] = set()
+    collected_root = root / ".fs2" / "proteina-collected"
+    collected_root.mkdir(parents=True, exist_ok=True)
     for csv_index, csv_path in enumerate(csv_paths, start=1):
+        csv_path = _bound_structure(root, str(csv_path))
         fields, rows = parse_csv_artifact(
             csv_path.read_bytes(),
             label="Proteina upstream results",
             maximum_rows=maximum_designs,
         )
-        if "pdb_path" not in fields:
-            raise ScientificAdapterError("Proteina upstream result CSV has no pdb_path column")
-        for row in rows:
-            raw_path = Path(row["pdb_path"])
-            candidate = raw_path if raw_path.is_absolute() else root / raw_path
-            resolved = candidate.resolve(strict=True)
-            if root not in resolved.parents or not resolved.is_file() or resolved.is_symlink():
-                raise ScientificAdapterError("Proteina upstream CSV references a structure outside the workspace")
-            structure_paths[resolved] = None
-        entries.append((f"results.{csv_index}", "proteina-complexa-results-csv/v1", csv_path, True))
-    if not 1 <= len(structure_paths) <= maximum_designs:
+        if not {"id_gen", "pdb_path", "self_complex_pdb_path", "self_sequence"}.issubset(fields):
+            raise ScientificAdapterError("Proteina upstream result CSV is missing design, sequence or structure roles")
+        sanitized_fields, parsed_sanitized_rows = parse_csv_artifact(
+            canonicalize_upstream_csv(
+                csv_path.read_bytes(), label="Proteina upstream results", maximum_rows=maximum_designs
+            ),
+            label="Proteina sanitized results",
+            maximum_rows=maximum_designs,
+        )
+        sanitized_rows = [dict(row) for row in parsed_sanitized_rows]
+        csv_name = f"results.{csv_index}"
+        role_columns = ("generated_structure_artifact", "self_refolded_structure_artifact")
+        if any(field in sanitized_fields for field in role_columns):
+            raise ScientificAdapterError("Proteina upstream CSV unexpectedly contains collector-owned role columns")
+        for row, sanitized in zip(rows, sanitized_rows, strict=True):
+            design_id = row["id_gen"]
+            if design_id in seen_ids:
+                raise ScientificAdapterError("Proteina upstream result CSV contains a duplicate design")
+            seen_ids.add(design_id)
+            index = len(designs) + 1
+            design: dict[str, object] = {
+                "id_gen": design_id,
+                "sequence_sha256": hashlib.sha256(row["self_sequence"].encode()).hexdigest(),
+                "results_artifact": csv_name,
+                "metric_prefix": "self_",
+                "refolding_model": "AlphaFold2" if parameters.variant.name == "protein-target" else "RF3",
+                "relaxation": "not-claimed",
+            }
+            for role, column, name, semantic, logical_column in (
+                ("generated", "pdb_path", f"structure.{index}", RAW_STRUCTURE_TYPE, role_columns[0]),
+                (
+                    "self_refolded",
+                    "self_complex_pdb_path",
+                    f"self-refolded.{index}",
+                    REFOLDED_STRUCTURE_TYPE,
+                    role_columns[1],
+                ),
+            ):
+                path = _bound_structure(root, row[column])
+                if path in seen_paths:
+                    raise ScientificAdapterError("Proteina result rows reuse a structure across designs or roles")
+                seen_paths.add(path)
+                content = path.read_bytes()
+                chains = _protein_chains(content)
+                # Pinned Complexa writes the designed protein last, including
+                # ligand-target complexes whose target is a HETATM chain.
+                binder_chain = next(reversed(chains))
+                if chains[binder_chain] != row["self_sequence"]:
+                    raise ScientificAdapterError("Proteina CSV sequence does not match its referenced binder")
+                design[role] = {
+                    "artifact_name": name,
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                    "binder_chain": binder_chain,
+                }
+                sanitized[logical_column] = name
+                entries.append((name, semantic, path, False))
+            design["results_row_sha256"] = canonical_digest(sanitized)
+            designs.append(design)
+        buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(buffer, fieldnames=(*sanitized_fields, *role_columns), lineterminator="\n")
+        writer.writeheader()
+        writer.writerows(sanitized_rows)
+        collected_csv = collected_root / f"results-{csv_index}.csv"
+        collected_csv.write_text(buffer.getvalue(), encoding="utf-8")
+        entries.append((csv_name, "proteina-complexa-results-csv/v1", collected_csv, False))
+    if not 1 <= len(designs) <= maximum_designs:
         raise ScientificAdapterError("Proteina collector structure count is outside the request bound")
-    entries.extend(
-        (f"structure.{index}", "protein-complex-structure/v1", path, False)
-        for index, path in enumerate(structure_paths, start=1)
+    provenance = collected_root / "design-provenance.json"
+    provenance.write_text(
+        _canonical_json(
+            {
+                "schema_version": PROVENANCE_SCHEMA,
+                "source_revision": SOURCE_REVISION,
+                "request_sha256": canonical_digest(request.to_dict()),
+                "designs": designs,
+            }
+        ),
+        encoding="utf-8",
     )
+    entries.append(("design-provenance", PROVENANCE_TYPE, provenance, False))
     return collect_output_files(
         root,
         tuple(entries),
@@ -619,8 +854,17 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
         raise ScientificAdapterError("Proteina-Complexa terminal stage declares an intermediate handoff")
     completion_sha256 = completion_marker(invocation, workspace, label="ProteinaComplexa")
     request = _load_public_request(workspace)
-    collected = collect_output(request, workspace)
-    semantic = validate_output(request, collected.manifest, artifact_loader=collected.blobs.__getitem__)
+    _, parameters = _request(request)
+    legacy = invocation.max_output_artifacts == _maximum_designs(parameters) + 1
+    if not legacy and invocation.max_output_artifacts != _maximum_outputs(parameters):
+        raise ScientificAdapterError("Proteina terminal invocation has an unknown frozen output contract")
+    collected = _collect_legacy_inflight_output(request, workspace) if legacy else collect_output(request, workspace)
+    semantic = validate_output(
+        request,
+        collected.manifest,
+        artifact_loader=collected.blobs.__getitem__,
+        _legacy_inflight=legacy,
+    )
     return materialize_collected_output(
         invocation,
         workspace,
@@ -628,4 +872,37 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
         label="ProteinaComplexa",
         completion_sha256=completion_sha256,
         validation=semantic,
+    )
+
+
+def _collect_legacy_inflight_output(request_value: object, workspace: Path) -> CollectedOutput:
+    """Finish only pre-upgrade admitted runs without expanding frozen limits."""
+
+    _, parameters = _request(request_value)
+    root = workspace.resolve(strict=True)
+    csv_paths = sorted(root.rglob("RAW_*binder*_results_*_combined.csv"))
+    if not csv_paths:
+        csv_paths = sorted(root.rglob("binder_results_*.csv"))
+    entries: list[tuple[str, str, Path, bool]] = []
+    paths: dict[Path, None] = {}
+    for index, source in enumerate(csv_paths, start=1):
+        source = _bound_structure(root, str(source))
+        fields, rows = parse_csv_artifact(
+            source.read_bytes(),
+            label="Proteina legacy upstream results",
+            maximum_rows=_maximum_designs(parameters),
+        )
+        if "pdb_path" not in fields:
+            raise ScientificAdapterError("Proteina legacy upstream results contain no generated structure path")
+        for row in rows:
+            paths[_bound_structure(root, row["pdb_path"])] = None
+        entries.append((f"results.{index}", "proteina-complexa-results-csv/v1", source, True))
+    if not 1 <= len(paths) <= _maximum_designs(parameters):
+        raise ScientificAdapterError("Proteina legacy collector structure count is outside the request bound")
+    entries.extend((f"structure.{index}", RAW_STRUCTURE_TYPE, path, False) for index, path in enumerate(paths, start=1))
+    return collect_output_files(
+        root,
+        tuple(entries),
+        manifest_id="proteina-complexa.results",
+        maximum_total_bytes=MAX_OUTPUT_BYTES,
     )
