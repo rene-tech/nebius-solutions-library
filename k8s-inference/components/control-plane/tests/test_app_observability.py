@@ -273,6 +273,52 @@ async def test_log_cursor_preserves_tied_timestamps_across_pages():
 
 
 @pytest.mark.asyncio
+async def test_log_page_does_not_overfetch_5000_large_model_lines():
+    stamp = int(START.timestamp() * 1e9)
+    requested = []
+
+    def handler(request):
+        count = int(request.url.params["limit"])
+        requested.append(count)
+        assert count == 201
+        return httpx.Response(200, json={"status": "success", "data": {
+            "resultType": "streams", "result": [{"stream": {
+                "k8s_namespace_name": "models", "k8s_pod_name": "a", "k8s_container_name": "model"},
+                "values": [[str(stamp - i), "retained multiline model log"] for i in range(count)]}]}})
+
+    result = await service([pod()], handler).logs(target(), START - timedelta(seconds=1), END, limit=200)
+    assert result.state == "available" and len(result.items) == 200
+    assert result.truncated and result.next_cursor and requested == [201]
+
+
+@pytest.mark.asyncio
+async def test_log_read_ahead_expands_only_to_complete_a_timestamp_boundary():
+    stamp = int(START.timestamp() * 1e9)
+    values = [[str(stamp), letter] for letter in ("d", "c", "b", "a")] + [[str(stamp - 1), "old"]]
+    requested = []
+
+    def handler(request):
+        count = int(request.url.params["limit"])
+        requested.append(count)
+        end = int(request.url.params["end"])
+        rows = [row for row in values if int(row[0]) <= end][:count]
+        return httpx.Response(200, json={"status": "success", "data": {
+            "resultType": "streams", "result": [{"stream": {
+                "k8s_namespace_name": "models", "k8s_pod_name": "a", "k8s_container_name": "model"},
+                "values": rows}]}})
+
+    observed = service([pod()], handler)
+    result = await observed.logs(target(), START - timedelta(seconds=1), END, limit=2)
+    assert requested == [3, 6]
+    found = list(result.items)
+    while result.next_cursor:
+        result = await observed.logs(target(), START - timedelta(seconds=1), END, limit=2, cursor=result.next_cursor)
+        found.extend(result.items)
+    assert [row.message for row in found] == ["d", "c", "b", "a", "old"]
+    assert max(requested) <= 5000
+
+
+@pytest.mark.asyncio
 async def test_history_failure_keeps_live_data_but_reports_partial():
     history = AsyncMock()
     history.pods.side_effect = RuntimeError("database unavailable")

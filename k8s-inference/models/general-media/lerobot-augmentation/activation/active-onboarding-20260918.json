@@ -2,32 +2,8 @@
   "schema": "fs2-serve.nebius.ai/lerobot-active-onboarding/v1",
   "state": "active",
   "customer_ready": false,
-  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
-  "registry_manifest_digest": "sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
-  "runtime_recipe_sha256": "c5b3bf8d4d8eac653ce2ff94d2a54116f22abc99eaad39f74462f8403eaf0e58",
-  "execution_identity_sha256": "a632c23d713398965fb2e0e299dfe3be2037c676f5a98697940fd39390182500",
-  "execution_map_sha256": "687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
-  "preserved_legacy_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
-  "preserved_legacy_models": [
-    "boltzgen",
-    "proteina-complexa",
-    "bindcraft",
-    "mosaic",
-    "rfdiffusion",
-    "esmfold2",
-    "esmfold2-fast",
-    "openfold3-openbind",
-    "protenix-v2",
-    "alphafold3"
-  ],
-  "artifact_manifest_scope": "Empty CPU-stage runtime artifact list; Cosmos model/cache identity belongs to the separately admitted delegated child and is not localized into this coordinator.",
-  "h100_backend_receipt": {
-    "path": "acceptance/cosmos3-customer-20260917/snapshot-media-compatibility.json",
-    "sha256": "2295434692cec27d200dd9f5151324c27485dbb01d1b6cd9f68156545f29c3c1",
-    "scope": "Existing exact Cosmos model/runtime/r7 backend transport and dataset-reader mechanics; historical reader image differs from corrected coordinator. Not public parent/child qualification or robot-action fidelity."
-  },
-  "public_completion_receipt_sha256": null,
-  "scheduler_eligibility_receipt_sha256": null,
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
+  "runtime_recipe_sha256": "72037c4c316592104c3a78c3fac9401aaf8d27d5c777b2381673e145623209ca",
   "source_recipe": {
     "schema": "fs2-serve.nebius.ai/lerobot-runtime-recipe/v1",
     "files": [
@@ -38,8 +14,8 @@
       },
       {
         "path": "components/control-plane/src/fs2_serve/scientific_batch/adapters/cosmos_lerobot.py",
-        "sha256": "5bfd293657acb80f735308840a2fc1b05e63d5adfe743c80c8e693f4f86a2a90",
-        "size_bytes": 15122
+        "sha256": "700f37ad23830dd8a7c686a46be253874370bb7cf6e550403683c0584ecf1d34",
+        "size_bytes": 17160
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/Containerfile",
@@ -73,8 +49,8 @@
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/dataset.py",
-        "sha256": "f7e6b48d08dcb24150abcfd96f82caab5e4e15056dc00639c44603e2083ba327",
-        "size_bytes": 32946
+        "sha256": "5a419cbc05216b05a9e87b3257f0b33696fdd80ac4e3bc8da6a6737a13a8a672",
+        "size_bytes": 34339
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/localize.py",
@@ -92,5 +68,10 @@
         "size_bytes": 249466
       }
     ]
-  }
+  },
+  "execution_identity_sha256": "8b2cad7f6ee7167036418e66c38c9876e33e6da6063bd4f0ae7f94f16325bdad",
+  "execution_map_sha256": "05e0e065dd983460e561d3dd907d4387a5a39a10b66062346dc82ae2cb924ff5",
+  "semantic_evidence_sha256": "2897d1da60ac53d1703ce43f3fe5e9dbf3225afa5de34017a6778de151e5818f",
+  "scope": "Exact published CPU coordinator; reuses retained successful H100 child MP4s; no new inference or full public acceptance claim",
+  "public_acceptance_pending": true
 }

@@ -2262,7 +2262,7 @@
       "model_id": "cosmos3-lerobot-augmentation",
       "variant_id": "cosmos3-nano-lerobot-v3",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "a632c23d713398965fb2e0e299dfe3be2037c676f5a98697940fd39390182500",
+      "execution_identity_sha256": "8b2cad7f6ee7167036418e66c38c9876e33e6da6063bd4f0ae7f94f16325bdad",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -2272,7 +2272,7 @@
       "stages": [
         {
           "stage_id": "augment-dataset",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
           "collector_id": "cosmos3-lerobot-v3-0-6-1",
           "validator_id": "cosmos3-lerobot-v3-0-6-1",
           "mounts": [
@@ -2310,7 +2310,7 @@
     }
   ],
   "qualification_baselines": {
-    "b69c2a4e830e69e7943b8c2cb479e8b0f3f88498b52009263d25ed5d76b4a001": [
+    "496102b674fb85b1a3631074848856ca5ae2226628e149a06726f8b0ebf1d72e": [
       "boltzgen",
       "proteina-complexa",
       "bindcraft",
@@ -2318,9 +2318,9 @@
       "rfdiffusion",
       "esmfold2",
       "esmfold2-fast",
+      "openfold3-openbind",
       "protenix-v2",
-      "alphafold3",
-      "cosmos3-lerobot-augmentation"
+      "alphafold3"
     ]
   }
 }

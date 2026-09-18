@@ -527,6 +527,30 @@ class AppObservabilityService:
                     chart.reason = "; ".join(warnings)
         return AppMetrics(app_id=target.app_id, from_at=start, to_at=end, step_seconds=step, charts=list(charts))
 
+    async def _log_window(self, params: dict[str, str], *, offset: int, limit: int) -> tuple[dict[str, Any], int]:
+        """Read a page, expanding only when its timestamp boundary is incomplete.
+
+        Fetching5000 multiline model logs for every200-line page timed out on
+        the live store. Retain the original5000 ceiling for tied timestamps,
+        without paying that cost for every ordinary page.
+        """
+        read_limit = min(5000, offset + limit + 1)
+        while True:
+            data = await self._get(
+                self.loki_url or "", "/loki/api/v1/query_range", {**params, "limit": str(read_limit)}
+            )
+            if data.get("resultType") != "streams":
+                raise AdminAdapterUnavailableError("Loki returned an unexpected log format")
+            stamps = sorted(
+                (int(at) for stream in data.get("result", []) for at, _ in stream.get("values", [])),
+                reverse=True,
+            )
+            selected = stamps[offset : offset + limit]
+            incomplete = len(stamps) >= read_limit and bool(selected) and selected[-1] == stamps[-1]
+            if not incomplete or read_limit == 5000:
+                return data, read_limit
+            read_limit = min(5000, read_limit * 2)
+
     async def logs(
         self,
         target: AppObservabilityTarget,
@@ -568,9 +592,7 @@ class AppObservabilityService:
             end_ns = min(end_ns, int(match[1]))
             offset = int(match[2])
         try:
-            data = await self._get(
-                self.loki_url,
-                "/loki/api/v1/query_range",
+            data, read_limit = await self._log_window(
                 {
                     "query": query,
                     "start": str(int(start.timestamp() * 1_000_000_000)),
@@ -578,9 +600,10 @@ class AppObservabilityService:
                     # Read ahead so equal-timestamp lines have stable ordering.
                     # Loki has no opaque cursor: retain a boundary offset rather
                     # than subtracting 1ns and silently dropping tied log lines.
-                    "limit": "5000",
                     "direction": "backward",
                 },
+                offset=offset,
+                limit=limit,
             )
             if data.get("resultType") != "streams":
                 raise AdminAdapterUnavailableError("Loki returned an unexpected log format")
@@ -617,9 +640,9 @@ class AppObservabilityService:
             selected = rows[offset : offset + limit]
             # If all the read-ahead limit is one timestamp, pagination cannot
             # identify the unseen tied lines. Explain the bound, never skip it.
-            boundary_incomplete = len(rows) == 5000 and bool(selected) and selected[-1][0] == rows[-1][0]
+            boundary_incomplete = len(rows) >= read_limit and bool(selected) and selected[-1][0] == rows[-1][0]
             result.items = [line for _, line in selected]
-            result.truncated = len(rows) > offset + limit or len(rows) == 5000
+            result.truncated = len(rows) > offset + limit or len(rows) >= read_limit
             if result.truncated and selected and not boundary_incomplete:
                 boundary = selected[-1][0]
                 consumed = sum(stamp == boundary for stamp, _ in rows[: offset + limit])
