@@ -1,10 +1,13 @@
 # Cosmos and Stockholm remediation — 17 September 2026
 
-Current successor: **Helm151 deployed on18 September; final LeRobot HTTP/MCP
-cohorts in progress**. Use the [LeRobot release journal](../acceptance/lerobot-customer-20260917/RELEASE.md)
+Current successor: **Helm151 deployed on18 September; bounded LeRobot HTTP/MCP
+cohorts and active-child cancellation passed; existing Timothy key enabled;
+test access revoked and work settled**. Use the [LeRobot release journal](../acceptance/lerobot-customer-20260917/RELEASE.md)
 for current deployment identity, outcome, customer grants and cleanup, and the
 [directory client](../acceptance/lerobot-customer-20260917/README.md) for usage.
 The LeRobot App is now routed; the earlier unrouted state below is historical.
+Physical augmentation fidelity, actual LibreChat and complete GPU hardware
+attribution remain unqualified, as detailed in that current scoped handover.
 
 This document retains the **Helm146 media/Stockholm checkpoint**: upload-demand
 proof and bounded application regressions passed; that checkpoint's disposable

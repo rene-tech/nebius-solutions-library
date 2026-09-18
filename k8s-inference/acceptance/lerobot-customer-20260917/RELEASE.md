@@ -1,7 +1,131 @@
 # LeRobot public workflow release — 18 September 2026
 
-Status: live acceptance in progress. This document does not establish customer
-readiness until the final result and exact release identity below are recorded.
+Status: **LeRobot v3 uploaded-directory workflow deployed; bounded acceptance
+passed; Timothy's existing key enabled; test access revoked and work settled.**
+This is not blanket customer readiness, physical-augmentation qualification, or
+actual hosted-LibreChat acceptance. Those distinctions remain explicit below.
+
+## Final handover
+
+- Gateway: `https://89.169.99.188`; MCP: `https://89.169.99.188/mcp`.
+- HTTP: `POST /v1/models/cosmos3-lerobot-augmentation:submit`.
+- Typed MCP: `submit_cosmos3_lerobot_augmentation`.
+- [Local-directory quickstart](README.md) accepts a local LeRobot v3 directory
+  and returns complete new datasets without modifying the input. No admin or
+  Kubernetes access is needed by the customer client.
+- Frozen server: Helm151, source `440d7c6079a820f6f73b8d6dca2b351ee2ab6832`,
+  CP index `sha256:ab2f802727b29b60a301870771610ec5b9851e2d92f837ee422c52b7fd78f214`.
+  Dataset worker `sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1`.
+  Native Cosmos image/weights/r7 GPU snapshot, capacity and scaling are unchanged.
+- [Sanitized final evidence](../../models/general-media/lerobot-augmentation/activation/qualification/final-cohorts-r151.json)
+  binds exact operations, artifacts, timing, parent/child ownership and retained
+  failures. Private payloads, keys and browser sessions are not committed.
+
+The main suite ran from 01:48:03 to 01:59:50 UTC on 18 September: five successful
+parent workflows, six independently reopened LeRobot 0.6.1 datasets, all 768
+camera frames decoded, and 13,824 nonvideo values compared exactly. Both episodes
+and both cameras were covered, including selection/untouched-stream handling,
+two variants, and in-flight/terminal idempotent replay. All 12 delegated
+generations succeeded on attempt one. The two lighting/environment cohorts
+swapped HTTP and typed MCP on the same unchanged release. No unexpected service
+failure or manual recovery occurred in those main cohorts.
+
+| Main case | Protocol | Complete client workflow | First-child reported activation |
+| --- | --- | ---: | ---: |
+| Lighting, cohort 1 | MCP | 119.14 s | 38.32 s |
+| Environment, cohort 1 | HTTP | 113.58 s | 0.73 s, warm dispatch |
+| Lighting, cohort 2 | HTTP | 117.76 s | 38.00 s |
+| Environment, cohort 2 | MCP | 151.55 s | 37.93 s |
+| Two blur-conditioned variants | MCP | 155.52 s | 37.92 s |
+
+Complete client time includes bundle preparation/upload, server work,
+download and independent reader validation; it is not model inference or cold
+start alone. Cached H100 activation is not new-node/image-pull latency.
+Actual runtime logs record `cuda-criu-restored` for the final blur generation
+`9120fd45-4886-4db4-af69-f98019a037bc` at 01:57:34.488309Z. The CPU dataset
+coordinator is not GPU-snapshotted.
+
+Malformed input returned HTTP 422 without admission. An admitted out-of-range
+selection returned static `INVALID_REQUEST`, released its CPU resources and
+created zero children. Overlapping work respected the existing concurrency-one
+policy with HTTP 429. CPU-stage cancellation passed. The main client receipt is
+`final-cohorts-r151/acceptance.json`, SHA256
+`dc70d3199bcb00ff1cfb62573a53df466b7f0fc42b55a347811c7a4628ea8f58`.
+
+### Active-child cancellation and retained test-helper failures
+
+The additional cancellation proof is separate from the pure-public main
+cohorts. Read-only operator observation supplied a child ID; the ordinary key
+then independently read that child as running and cancelled its parent.
+Parent `13bcffd2-d8c5-45c9-9608-921e85c10881` was cancelled at 02:10:32.987380Z;
+its child started at 02:10:26.889406Z and was cancelled at 02:10:30.537031Z,
+after the public cancel request at 02:10:30.162142Z. Exactly one upload and one
+generation were admitted, with no later units. CPU resources were released.
+This proves durable active-child lifecycle cancellation, not immediate CUDA
+kernel interruption or public discovery of child IDs. Receipt SHA256:
+`e83bf5ad6c953dd41cfe27d5fbb0fda32fb95e349fad14b8003110b830e19a71`.
+
+Two earlier extra probes are retained, not relabelled as passing: the first
+completed before a late observer caught its running window; the second hit a
+test-helper parser error before cancelling and was subsequently cancelled
+during post-generation CPU work. The latter reused the scientific-only helper
+for a native response whose `operation` is a string. Client source `3e49468a6`
+now handles native views and dictionary envelopes; 38 tests plus Ruff passed,
+including actual server DTO regression cases. This client-only fix followed
+the main suite (client source `440d7c607`); the deployed server stayed at 151 throughout.
+The final corrected probe started only after the observer's ready handshake.
+
+### Customer access, availability and cleanup
+
+At 02:11:03 UTC the existing `timmothy-cosmos3` key and its owner received only
+the additional dataset App grant and `artifacts.write`. The key ID/fingerprint,
+existing Cosmos grant, concurrency-one setting and all other limits remained
+unchanged. Readback exactly matched the disposable policy exercised by the
+suite. The real key was not rotated or used for test traffic. Grant receipt
+SHA256: `9cc83585b4213901a2ede86d5ff598efb0bc56b61b0df516ce45837e614af28d`.
+
+Read-only cleanup found zero active operations for the exact canary, all ten
+dataset Jobs and their Pods absent, and Cosmos naturally at zero replicas/no
+Pods. No shared model scaling or resource deletion was forced. Cleanup receipt
+SHA256: `0692eb56438ab1e6f6f2f9ca29c4193dfe84113150cdd23ab2bc5c9430bc4b42`.
+Only the disposable key was revoked at 02:12:43.686334Z; its public request then
+returned HTTP 401 and only its service owner was disabled. Revocation receipt SHA256:
+`d5623a27b1a56f7781a8c07ec85de86179836ee2eebaad248b28f6a34c552d32`.
+Private test artifacts/evidence remain retained; cleanup does not mean they
+were deleted. The platform remains running and can cold-start Cosmos on demand.
+
+Post-main-suite deployment verification at 02:04:35 confirmed the same 151
+images/replicas, 15 GPU observers, three metric targets and 13 evaluated rules.
+All nine public/admin surface reads and both Apps' six section APIs returned HTTP 200.
+The real browser displayed the successful parent, measured queue/execution
+times, requests and artifacts. CPU-parent startup remained unavailable rather
+than a fabricated zero; GPU activation belongs to delegated Cosmos children.
+
+### Explicit limits of this handover
+
+This is the documented v3 contract: selected clips of 16–400 frames, supported RGB
+geometry/integer FPS, up to 5 GiB compressed source and 8 GiB expanded source,
+subject to 32 GiB workspace admission. The live fixtures exercised two 32-frame
+episodes/two cameras, not maximum-size or throughput stress. Uploaded local
+directories were qualified; the other source contracts and hosted LibreChat
+were not silently inferred to pass from these tests.
+
+Visual review found warm lighting changes but object/gripper drift; requested
+pale-blue laboratory environments were not visibly achieved, and motion/contact
+geometry changed. Blur-conditioned variants differ but retain substantial
+softening/detail drift. `strength` is prompt guidance, not a calibrated edit
+control. Exact saved actions/state/timestamps do not establish physical
+alignment, synchronized multi-view generation or training suitability. Inspect
+generated clips before using them as robot training data.
+
+Nine of 12 successful generation rows lack exact Pod/node/GPU identity. Their
+operation, timing and tenant/principal ownership are recorded; missing hardware
+identity must not be treated as measured zero usage. This is not full billing
+qualification. The generic Admin qualification badge remains unconfigured,
+separate from the recipe and linked acceptance evidence. The broad
+`customer_ready`, physical-fidelity and hosted-client gates therefore remain
+false; the scoped dataset workflow is deployed and tested, not a whole-platform
+readiness claim.
 
 ## Deployment and first integration run
 
@@ -242,9 +366,8 @@ private under `cp-build-r151/`; the deployed values are in
 `release.values.yaml`. H100 `terraform.tfvars` pins the same digest and passes
 `terraform fmt -check`; no broad apply against older unrelated state was made.
 
-Fresh `final-cohorts-r151/` acceptance started at01:48:04. The first parent is
-`18c1bb2a-dcd5-4489-a35b-63c1f8da2d6a`. The release is frozen while both customer
-cohorts and the multi-variant/negative probes run. This subsection records the
-rollout, not a final acceptance verdict. Existing Timothy grants are unchanged
-until the full suite passes; the disposable test key is still needed for that
-suite and will be revoked after settlement.
+Fresh `final-cohorts-r151/` acceptance started at 01:48:04 with parent
+`18c1bb2a-dcd5-4489-a35b-63c1f8da2d6a`. The release stayed frozen through both
+customer cohorts and the multi-variant/negative probes. This subsection records
+the rollout; the final scoped verdict, real-key grants and disposable-key
+revocation are recorded in the Final handover section above.
