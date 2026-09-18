@@ -267,6 +267,26 @@ def _shape(value: object) -> tuple[int, ...]:
     return tuple(int(part) for part in shape)
 
 
+def _canonical_timestamp(value: object, *, offset: int, fps: int) -> bool:
+    import numpy as np
+
+    raw = np.asarray(value)
+    if raw.dtype not in (np.dtype("float32"), np.dtype("float64")):
+        return False
+    return bool(np.array_equal(raw, np.asarray(offset / fps, dtype=raw.dtype).reshape(raw.shape)))
+
+
+def source_row(dataset: Any, index: int, *, rows: Any = None) -> Mapping[str, Any]:
+    """Read stored numeric values without HF's default float64→float32 formatter."""
+    import numpy as np
+
+    row = dict((rows if rows is not None else dataset.hf_dataset.with_format(None))[index])
+    for key, feature in dataset.features.items():
+        if feature["dtype"] not in {"video", "image", "string"}:
+            row[key] = np.asarray(row[key], dtype=feature["dtype"])
+    return row
+
+
 def open_and_validate(
     root: Path,
     *,
@@ -317,12 +337,16 @@ def open_and_validate(
         channels, height, width = shape
         if channels != 3:
             raise DatasetError(f"camera {camera} is not RGB")
-        if generation_bounds and camera in selected_cameras and (
-            not 256 <= width <= 1280
-            or not 256 <= height <= 720
-            or width * height > MAX_PIXELS
-            or width % 16
-            or height % 16
+        if (
+            generation_bounds
+            and camera in selected_cameras
+            and (
+                not 256 <= width <= 1280
+                or not 256 <= height <= 720
+                or width * height > MAX_PIXELS
+                or width % 16
+                or height % 16
+            )
         ):
             raise DatasetError(f"camera {camera} shape is outside the qualified Cosmos RGB/multiple-of-16/720p bound")
     action_shape = tuple(int(part) for part in cast(list[int], features["action"].get("shape", [])))
@@ -341,6 +365,8 @@ def open_and_validate(
         raise DatasetError("task metadata is missing or miscounted")
     episodes: list[Episode] = []
     expected_start = 0
+    task_order: dict[str, int] = {}
+    raw_rows = dataset.hf_dataset.with_format(None)
     decoded = 0
     for index in range(total_episodes):
         metadata = episode_rows[index]
@@ -349,7 +375,7 @@ def open_and_validate(
         length = int(metadata.get("length", stop - start))
         if start != expected_start or stop <= start or stop - start != length or stop > total_frames:
             raise DatasetError(f"episode {index} boundaries are not contiguous and aligned")
-        first = dataset.get_raw_item(start)
+        first = source_row(dataset, start, rows=raw_rows)
         first_task_value = _scalar(first["task_index"], "task_index")
         first_task_index = int(first_task_value)
         if first_task_value != first_task_index or not 0 <= first_task_index < total_tasks:
@@ -358,6 +384,12 @@ def open_and_validate(
         task = first_decoded.get("task", "")
         if not isinstance(task, str) or not task:
             raise DatasetError(f"episode {index} has no valid task")
+        expected_task_index = task_order.setdefault(task, len(task_order))
+        if first_task_index != expected_task_index:
+            raise DatasetError(
+                f"episode {index} has unsupported noncanonical task_index ordering; "
+                "tasks must use consecutive first-occurrence indexes so the writer cannot renumber them"
+            )
         episodes.append(Episode(index=index, start=start, stop=stop, task=task))
         selected = index in selected_episodes
         if generation_bounds and selected and not MIN_COSMOS_FRAMES <= length <= MAX_COSMOS_FRAMES:
@@ -368,7 +400,7 @@ def open_and_validate(
         for offset, row_index in enumerate(range(start, stop)):
             if checkpoint is not None:
                 checkpoint()
-            raw = dataset.get_raw_item(row_index)
+            raw = source_row(dataset, row_index, rows=raw_rows)
             if int(_scalar(raw["episode_index"], "episode_index")) != index:
                 raise DatasetError(f"episode {index} data rows contain another episode index")
             frame_index = int(_scalar(raw["frame_index"], "frame_index"))
@@ -376,6 +408,11 @@ def open_and_validate(
             task_value = _scalar(raw["task_index"], "task_index")
             task_index = int(task_value)
             timestamp = float(_scalar(raw["timestamp"], "timestamp"))
+            if not _canonical_timestamp(raw["timestamp"], offset=offset, fps=fps):
+                raise DatasetError(
+                    f"episode {index} has an unsupported noncanonical timestamp; "
+                    "fixed-rate datasets require exact source-dtype frame_index/fps values (float32 or float64)"
+                )
             if (
                 frame_index != offset
                 or global_index != row_index
@@ -446,8 +483,12 @@ def _rgb_numpy(value: object) -> Any:
 
 
 def encode_episode_reference(
-    inspection: DatasetInspection, episode: Episode, camera: str, output: Path,
-    *, checkpoint: Callable[[], None] | None = None,
+    inspection: DatasetInspection,
+    episode: Episode,
+    camera: str,
+    output: Path,
+    *,
+    checkpoint: Callable[[], None] | None = None,
 ) -> None:
     """Encode exactly one source episode so Cosmos never receives adjacent shard episodes."""
 
@@ -540,6 +581,10 @@ def rewrite_variant(
         video_backend="pyav",
         batch_encoding_size=1,
     )
+    # The pinned writer derives auto values but defaults their schema to float32/
+    # int64. Retain admitted source dtypes, including canonical float64 timestamps.
+    target.meta.info.features.update({key: dict(source.features[key]) for key in AUTO_FEATURES})
+    raw_rows = source.hf_dataset.with_format(None)
     try:
         for episode in inspection.episodes:
             if checkpoint is not None:
@@ -565,6 +610,14 @@ def rewrite_variant(
                     checkpoint()
                 decoded = source[row_index]
                 frame = {key: value for key, value in decoded.items() if key not in AUTO_FEATURES}
+                original = source_row(source, row_index, rows=raw_rows)
+                frame.update(
+                    {
+                        key: value
+                        for key, value in original.items()
+                        if key not in AUTO_FEATURES and key not in inspection.cameras
+                    }
+                )
                 frame["task"] = episode.task
                 for camera in inspection.cameras:
                     replacement = decoded_replacements.get(camera)

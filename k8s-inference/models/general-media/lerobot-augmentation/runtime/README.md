@@ -9,6 +9,12 @@ nonvideo value and the decoded unselected streams using
 `../fixtures/validate_variant.py` (codec tolerance: mean absolute pixel error
 at most 6/255 per unselected frame).
 
+Fixed-rate input timestamps must equal `frame_index / fps` exactly in their
+source float32 or float64 dtype. Jittered/noncanonical timestamps and task indices
+not ordered by first occurrence are rejected before GPU work, rather than being
+silently normalized by the pinned writer. Output automatic-feature dtypes are
+retained from source metadata.
+
 ## Practical limits
 
 - Uploaded compressed source and each compressed output artifact: 5 GiB.

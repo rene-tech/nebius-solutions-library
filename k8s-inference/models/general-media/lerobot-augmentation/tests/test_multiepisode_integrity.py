@@ -40,6 +40,7 @@ def source(tmp_path_factory):
         actions=Path(assets) / "official-actions.json",
         episode_frames=(16, 8),
         small_unselected_camera=True,
+        distinct_tasks=True,
     )
     return open_and_validate(root, repo_id=REPO_ID, selection=Selection(episodes=(0,), cameras=(FRONT,)))
 
@@ -47,6 +48,7 @@ def source(tmp_path_factory):
 def test_subset_keeps_short_episode_small_camera_and_full_relocalized_reader(source, tmp_path):
     assert source.frames == 24 and source.decoded_video_frames == 48
     assert [episode.frames for episode in source.episodes] == [16, 8]
+    assert len({episode.task for episode in source.episodes}) == 2
     with pytest.raises(DatasetError, match="shape is outside"):
         open_and_validate(source.root, repo_id=REPO_ID, selection=Selection(episodes="all", cameras="all"))
     reference = tmp_path / "reference.mp4"
@@ -180,3 +182,61 @@ def test_final_generation_cancel_or_error_does_not_publish_dataset(source, tmp_p
     assert not (workspace / "result.json").exists()
     assert not (workspace / "completion-receipt.json").exists()
     assert not (workspace / "artifacts").exists()
+
+
+def test_canonical_float64_timestamps_survive_complete_rewrite(tmp_path):
+    assets = os.environ.get("FS2_LEROBOT_FIXTURE_ASSETS")
+    if assets is None:
+        pytest.skip("requires pinned public robot fixtures")
+    root = tmp_path / "source64"
+    build_fixture(
+        root,
+        video=Path(assets) / "official-robot.mp4",
+        actions=Path(assets) / "official-actions.json",
+        episode_frames=(16, 8),
+        small_unselected_camera=True,
+        timestamp_dtype="float64",
+        distinct_tasks=True,
+    )
+    source64 = open_and_validate(root, repo_id=REPO_ID, selection=Selection((0,), (FRONT,)))
+    output = rewrite_variant(
+        source64,
+        output_root=tmp_path / "variant-64",
+        output_repo_id="fs2/float64-result",
+        video_replacements={},
+        action_replacements={},
+        provenance={},
+    )
+    assert str(dataset_module.source_row(output.dataset, 1)["timestamp"].dtype) == "float64"
+    assert compare_variant(source64, output, replacements=set())["nonvideo_values_exact"]
+
+
+@pytest.mark.parametrize("defect", ["timestamp", "task_index"])
+def test_noncanonical_timing_or_task_order_rejected_before_child(source, tmp_path, monkeypatch, defect):
+    original = dataset_module.source_row
+
+    def changed(dataset, index, **kwargs):
+        row = dict(original(dataset, index, **kwargs))
+        if defect == "timestamp" and index == 1:
+            row["timestamp"] = row["timestamp"] + 0.00001
+        if defect == "task_index":
+            row["task_index"] = 1 - row["task_index"]
+        return row
+
+    monkeypatch.setattr(dataset_module, "source_row", changed)
+    monkeypatch.setattr("lerobot.datasets.lerobot_dataset.LeRobotDataset", lambda *args, **kwargs: source.dataset)
+    monkeypatch.setattr(worker.Cancellation, "install", lambda self: None)
+    monkeypatch.setattr(worker, "_localize", lambda *args: source.root)
+    monkeypatch.setattr(
+        worker, "CosmosClient", lambda *args, **kwargs: pytest.fail("no child before source validation")
+    )
+    value = json.loads((ROOT / "fixtures/fixture-request.json").read_text())
+    value["selection"] = {"episodes": [0], "cameras": [FRONT]}
+    with pytest.raises(DatasetError, match="unsupported noncanonical " + defect):
+        worker.run(
+            AugmentationRequest.parse(value),
+            operation_id="00000000-0000-4000-8000-000000000001",
+            workspace=tmp_path,
+            platform_base_url="https://unused.invalid",
+        )
+    assert not (tmp_path / "result.json").exists()

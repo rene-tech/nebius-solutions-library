@@ -28,10 +28,14 @@ def compare_variant(
         raise ValueError("replacement selection is outside dataset")
     numeric_values = 0
     differences: dict[tuple[int, str], list[float]] = {pair: [] for pair in camera_pairs}
+    from fs2_lerobot_augmentation.dataset import source_row
+
+    source_rows = source.dataset.hf_dataset.with_format(None)
+    output_rows = output.dataset.hf_dataset.with_format(None)
     for episode in source.episodes:
         for index in range(episode.start, episode.stop):
-            left = source.dataset.get_raw_item(index)
-            right = output.dataset.get_raw_item(index)
+            left = source_row(source.dataset, index, rows=source_rows)
+            right = source_row(output.dataset, index, rows=output_rows)
             keys = set(left) - set(source.cameras)
             if keys != set(right) - set(output.cameras):
                 raise ValueError("output nonvideo feature keys differ")

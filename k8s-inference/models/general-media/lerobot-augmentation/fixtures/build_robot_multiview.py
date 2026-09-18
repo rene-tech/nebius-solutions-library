@@ -29,6 +29,8 @@ def build_fixture(
     actions: Path,
     episode_frames: tuple[int, int] = (32, 32),
     small_unselected_camera: bool = False,
+    timestamp_dtype: str = "float32",
+    distinct_tasks: bool = False,
 ) -> Path:
     if output.exists():
         raise ValueError("output must not already exist")
@@ -61,6 +63,9 @@ def build_fixture(
         video_backend="pyav",
         batch_encoding_size=1,
     )
+    if timestamp_dtype not in {"float32", "float64"}:
+        raise ValueError("timestamp fixture dtype must be float32 or float64")
+    dataset.meta.info.features["timestamp"]["dtype"] = timestamp_dtype
     for episode_index, count in enumerate(episode_frames):
         for frame_index in range(count):
             source_index = sum(episode_frames[:episode_index]) + frame_index
@@ -74,7 +79,7 @@ def build_fixture(
                     WRIST: wrist,
                     "action": chunks[source_index // 16, source_index % 16],
                     "observation.state": np.asarray([episode_index, frame_index], dtype=np.float32),
-                    "task": value["prompt"],
+                    "task": value["prompt"] + (f" (fixture episode {episode_index})" if distinct_tasks else ""),
                 }
             )
         dataset.save_episode()
@@ -88,6 +93,8 @@ def build_fixture(
                 "video": "assets/example_action_fd_agibotworld_4chunk_output.mp4",
                 "actions": "assets/example_action_fd_agibotworld_action_chunks.json",
                 "episode_frames": episode_frames,
+                "timestamp_dtype": timestamp_dtype,
+                "distinct_fixture_task_labels": distinct_tasks,
                 "source_frame_ranges": [[0, episode_frames[0]], [episode_frames[0], sum(episode_frames)]],
                 "selection": "contiguous source frames/action chunks in order; top/bottom views trimmed4rows",
                 "classification": (

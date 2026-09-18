@@ -106,3 +106,14 @@ def test_oversized_huggingface_source_rejected_before_download(tmp_path, monkeyp
     )
     with pytest.raises(DatasetError, match="8 GiB"):
         localize_huggingface(HuggingFaceSource("huggingface", "fs2/test", "a" * 40, None), tmp_path / "source")
+
+
+@pytest.mark.parametrize("dtype", ["float32", "float64"])
+def test_canonical_timestamp_uses_exact_source_dtype(dtype):
+    import numpy as np
+    from fs2_lerobot_augmentation.dataset import _canonical_timestamp
+
+    for offset in range(400):
+        value = np.asarray(offset / 30, dtype=dtype)
+        assert _canonical_timestamp(value, offset=offset, fps=30)
+        assert not _canonical_timestamp(value + np.asarray(0.00001, dtype=dtype), offset=offset, fps=30)
