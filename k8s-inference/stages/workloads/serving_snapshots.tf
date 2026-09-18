@@ -14,10 +14,22 @@ locals {
       "${local.fs2_root}/models/scientific-snapshot/${filename}"
     )
   }
+  # Keep historical capture helpers byte-identical. A bundle chooses the exact
+  # reviewed helper bytes by digest, independently of model/GPU/region.
+  serving_snapshot_source_versions = {
+    "process_checkpoint.py" = {
+      for filename in ["process_checkpoint.py", "process_checkpoint_quiet.py"] :
+      filesha256("${local.fs2_root}/models/scientific-snapshot/${filename}") => file(
+        "${local.fs2_root}/models/scientific-snapshot/${filename}"
+      )
+    }
+  }
   serving_snapshot_source_groups = {
     for id, bundle in local.serving_snapshot_bundles : bundle.source_configmap => {
-      for filename, digest in bundle.source_sha256 : filename => file(
-        "${local.fs2_root}/models/scientific-snapshot/${filename}"
+      for filename, digest in bundle.source_sha256 : filename => (
+        contains(keys(local.serving_snapshot_source_versions), filename)
+        ? lookup(local.serving_snapshot_source_versions[filename], digest, "")
+        : file("${local.fs2_root}/models/scientific-snapshot/${filename}")
       )
     }...
   }
@@ -89,9 +101,12 @@ resource "kubernetes_config_map_v1" "serving_snapshot_sources" {
         id == bundle.bundle_id && bundle.pvc == local.serving_snapshot_cache.claim_name &&
         alltrue([
           for filename, digest in bundle.source_sha256 :
-          filesha256("${local.fs2_root}/models/scientific-snapshot/${filename}") == digest
+          sha256(local.serving_snapshot_configmaps[bundle.source_configmap][filename]) == digest
         ]) &&
         contains(keys(local.serving_snapshot_entrypoint_sources), bundle.entrypoint_sha256)
+        ]) && alltrue([
+        for name, versions in local.serving_snapshot_source_groups :
+        alltrue([for sources in versions : sources == versions[0]])
       ])
       error_message = "Serving snapshots must reference this cache and the exact source bytes used to qualify their bundle."
     }

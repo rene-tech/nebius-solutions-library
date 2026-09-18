@@ -26,6 +26,7 @@ from fs2_serve.model_deployment import (
 )
 from fs2_serve.model_deployment_controller import ControllerFiles
 from fs2_serve.serving_snapshot import (
+    CAPTURED_TMP_PATH,
     DEFAULT_SUPERVISOR_PATH,
     ServingSnapshotBundle,
     _isolate_vllm_cache,
@@ -86,6 +87,40 @@ def test_snapshot_vllm_cache_shadows_only_mutable_subtree_and_retains_captured_p
     assert source == {**original_mount, "mountPath": "/snapshot-native-vllm-source", "readOnly": True}
     expected_source = "/snapshot-native-vllm-source/.fs2/runtime/exact-image/exact-weights/exact-abi/vllm"
     assert expected_source in initializer["command"][2]
+
+
+def test_separate_storage_prefix_preserves_captured_runtime_and_scratch_paths():
+    original = fixture()[3]
+    config = ServingSnapshotBundle.model_validate({
+        **original.model_dump(by_alias=True),
+        "bundle_path": "immutable-capture-20260918/cosmos-r7",
+        "captured_directory": "cosmos-r7",
+    })
+    pod = direct_pod(config)
+    runtime = pod["containers"][0]
+    runtime["volumeMounts"] = [
+        {"name": "original-cache", "mountPath": "/runtime-cache"},
+        {"name": "original-tmp", "mountPath": CAPTURED_TMP_PATH},
+    ]
+    configure_serving_snapshot(pod, config=config, runtime_container_name="model", fallback="fail")
+    assert runtime["command"][runtime["command"].index("--directory") + 1] == "/checkpoints/cosmos-r7"
+    assert runtime["command"][runtime["command"].index("--fallback") + 1] == "fail"
+    mounts = {item["mountPath"]: item for item in runtime["volumeMounts"]}
+    assert mounts["/runtime-cache"]["subPath"] == "cosmos-r7/runtime-cache"
+    assert mounts[CAPTURED_TMP_PATH]["subPath"] == "cosmos-r7/tmp"
+    assert mounts["/snapshot-bundle"]["subPath"] == config.bundle_path
+    assert mounts["/checkpoints/cosmos-r7/images"]["subPath"] == config.bundle_path + "/images"
+    assert mounts["/checkpoints/cosmos-r7/images"]["readOnly"] is True
+    init = next(item for item in pod["initContainers"] if item["name"] == "snapshot-tools")
+    assert init["command"][4] == "/checkpoints/cosmos-r7"
+    bundle = next(item for item in init["volumeMounts"] if item["name"] == "snapshot-bundle")
+    assert bundle["subPath"] == config.bundle_path and bundle["readOnly"] is True
+
+
+@pytest.mark.parametrize("value", ["", ".", "..", "../escape", "/absolute", "a/../b", "a/./b", "a//b", "a/"])
+def test_captured_directory_must_be_an_exact_contained_relative_path(value):
+    with pytest.raises(ValueError):
+        ServingSnapshotBundle.model_validate({**fixture()[3].model_dump(by_alias=True), "captured_directory": value})
 
 
 @pytest.mark.parametrize("populated", [True, False])

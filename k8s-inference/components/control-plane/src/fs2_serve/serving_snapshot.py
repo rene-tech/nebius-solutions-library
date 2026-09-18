@@ -51,6 +51,7 @@ class ServingSnapshotBundle(StrictModel):
     address_configmap: str = Field(pattern=r"^[a-z0-9][a-z0-9.-]{0,252}$")
     pvc: str = Field(pattern=r"^[a-z0-9][a-z0-9.-]{0,252}$")
     bundle_path: str = Field(min_length=1, max_length=128)
+    captured_directory: str | None = Field(default=None, min_length=1, max_length=128)
     captured_pod_ip: str
     image_entrypoint: list[str] = Field(min_length=1, max_length=16)
     runtime_command: list[str] = Field(min_length=1, max_length=128)
@@ -110,9 +111,13 @@ class ServingSnapshotBundle(StrictModel):
             raise ValueError("serving snapshot fallback launcher differs")
         if (working_directory_source in source_names) != uses_working_directory_launcher:
             raise ValueError("serving snapshot working-directory source differs from fallback launcher")
-        path = PurePosixPath(self.bundle_path)
-        if path.is_absolute() or path.as_posix() != self.bundle_path or any(part in {".", ".."} for part in path.parts):
-            raise ValueError("serving snapshot requires a contained bundle path")
+        for value in (self.bundle_path, self.captured_directory):
+            if value is None:
+                continue
+            path = PurePosixPath(value)
+            if (not path.parts or path.is_absolute() or path.as_posix() != value
+                    or any(part in {".", ".."} for part in path.parts)):
+                raise ValueError("serving snapshot requires contained bundle and captured-directory paths")
         IPv4Address(self.captured_pod_ip)
         return self
 
@@ -208,7 +213,11 @@ def configure_serving_snapshot(
     original = (runtime.get("command") or config.image_entrypoint) + runtime.get("args", [])
     if runtime["image"] != config.runtime_image or original != config.runtime_command:
         raise ValueError("serving snapshot differs from the current runtime image or original arguments")
-    directory = "/checkpoints/" + config.bundle_path
+    # The immutable storage prefix need not equal the captured absolute process
+    # path. Keep per-Pod writable scratch at the latter; only PVC mounts use the
+    # former. Historical bundles omit this field and render byte-identically.
+    captured_directory = config.captured_directory or config.bundle_path
+    directory = "/checkpoints/" + captured_directory
     runtime["command"] = [
         config.supervisor_python,
         "/snapshot-entrypoint/serving_entrypoint.py",
@@ -254,7 +263,7 @@ def configure_serving_snapshot(
         if mount["mountPath"] in {"/runtime-cache", "/cache", CAPTURED_TMP_PATH}:
             mount["name"] = "snapshot-checkpoints"
             mount["subPath"] = (
-                config.bundle_path + "/" + ("tmp" if mount["mountPath"] == CAPTURED_TMP_PATH else "runtime-cache")
+                captured_directory + "/" + ("tmp" if mount["mountPath"] == CAPTURED_TMP_PATH else "runtime-cache")
             )
     bundle_mount = {
         "name": "snapshot-bundle",

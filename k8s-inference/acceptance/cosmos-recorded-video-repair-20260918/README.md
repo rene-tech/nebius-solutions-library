@@ -84,6 +84,26 @@ The frozen recorded request and ten broader successful video outputs were
 byte-identical to the donor, and two previously unseen shapes/seeds passed.
 A different-node/GPU restore is a separate gate, not implied by these results.
 
+That separate gate subsequently passed on a different reserved H100 node and
+GPU UUID, with the same driver/kernel/runtime and strict fresh-load fallback
+disabled. CRIU took 28.53 s and CUDA restore 6.04 s. The original request plus
+two unseen shapes and six control/repeat calls all passed; all nine outputs
+matched the same-GPU restored outputs byte-for-byte. The previously uncached
+9.19-GB image took 164.59 s to pull, before restore. A snapshot does not remove
+the image dependency; total empty-image-cache start time must include it.
+
+The optional bundle contract separates immutable shared-storage `bundle_path`
+from `captured_directory`, the relative path beneath `/checkpoints` that the
+captured process used. Omission retains historical `bundle_path` behavior and
+byte-identical Pod rendering. Only the storage prefix is used for read-only PVC
+subPaths; scratch/cache/log paths retain the captured directory. This allows a
+unique new capture directory in shared storage without overwriting r7 or
+changing absolute process paths. Both paths must be contained, canonical
+relative paths. Terraform chooses `process_checkpoint.py` content by its
+recorded digest, allowing the separately frozen quiet helper while preserving
+the original source bytes and all historical bundles. These packaging changes
+do not select a snapshot, change a customer cache policy or qualify other GPUs.
+
 The broader run exposed an independent adapter bug: explicitly requested
 derived edge/blur presets were dropped when `control_weight` remained its
 default 1.0. A separately versioned adapter candidate preserves those supplied
