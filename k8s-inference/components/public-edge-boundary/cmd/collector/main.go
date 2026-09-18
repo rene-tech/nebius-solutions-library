@@ -47,6 +47,10 @@ func main() {
 	var lastWall time.Time
 	for {
 		now := time.Now().UTC()
+		if !acceptance.ProductionTrustCurrent(now) {
+			slog.Error("collector production trust provenance expired or fell below its accepted head")
+			return
+		}
 		if !lastWall.IsZero() && now.Before(lastWall.Add(-time.Second)) {
 			slog.Error("collector wall clock moved backwards; refusing to derive a second cadence branch")
 			return

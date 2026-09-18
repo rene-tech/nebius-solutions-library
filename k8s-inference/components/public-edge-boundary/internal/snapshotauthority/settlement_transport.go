@@ -191,6 +191,7 @@ func (custodian *SettlementCustodian) Serve(ctx context.Context) error {
 func (custodian *SettlementCustodian) handleConnection(connection *net.UnixConn) {
 	defer connection.Close()
 	_ = connection.SetDeadline(time.Now().Add(30*time.Second))
+	if !custodian.acceptance.ProductionTrustCurrent(time.Now().UTC()) { _ = writeSettlementResponse(connection, "error", nil); return }
 	credentials, err := unixPeerCredentials(connection)
 	if err != nil || credentials.Uid != custodian.config.RuntimeUID || credentials.Gid != custodian.config.RuntimeGID { _ = writeSettlementResponse(connection, "unauthorized", nil); return }
 	headerRaw, bundleRaw, snapshotRaw, err := readSettlementFrame(connection, maximumSettlementWireHeaderBytes, maximumRequestBytes, boundary.MaxSnapshotBytes)
@@ -218,6 +219,7 @@ func (custodian *SettlementCustodian) handleConnection(connection *net.UnixConn)
 		now := time.Now().UTC().Truncate(time.Second)
 		verified, verifyErr := collector.VerifyEvidenceBundle(bundleRaw, custodian.collectorConfig, custodian.acceptance, custodian.nativeTrust, now)
 		if verifyErr != nil || validateSnapshotResponse(custodian.snapshotTrust, custodian.config, custodian.acceptance, snapshotRaw, bundleRaw, now) != nil { _ = writeSettlementResponse(connection, "refused", nil); return }
+		if !custodian.acceptance.ProductionTrustCurrent(time.Now().UTC()) { _ = writeSettlementResponse(connection, "refused", nil); return }
 		result, err = custodian.store.settle(verified.Bundle, bundleRaw, snapshotRaw, channel)
 	default:
 		_ = writeSettlementResponse(connection, "invalid", nil)
@@ -225,6 +227,7 @@ func (custodian *SettlementCustodian) handleConnection(connection *net.UnixConn)
 	}
 	if errors.Is(err, os.ErrNotExist) { _ = writeSettlementResponse(connection, "not-found", nil); return }
 	if err != nil { _ = writeSettlementResponse(connection, "refused", nil); return }
+	if !custodian.acceptance.ProductionTrustCurrent(time.Now().UTC()) { _ = writeSettlementResponse(connection, "refused", nil); return }
 	_ = writeSettlementResponse(connection, "ok", result)
 }
 

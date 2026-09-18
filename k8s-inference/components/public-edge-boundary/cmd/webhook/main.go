@@ -113,8 +113,9 @@ func (h *admissionHandler) ready(response http.ResponseWriter, request *http.Req
 		response.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	runtime, err := h.runtime(time.Now())
-	if err != nil || runtime.Ready(time.Now()) != nil {
+	now := time.Now().UTC()
+	runtime, err := h.runtime(now)
+	if err != nil || !h.config.acceptance.ProductionTrustCurrent(now) || runtime.Ready(now) != nil {
 		http.Error(response, "boundary snapshot unavailable", http.StatusServiceUnavailable)
 		return
 	}
@@ -125,6 +126,15 @@ func (h *admissionHandler) ready(response http.ResponseWriter, request *http.Req
 
 func (h *admissionHandler) validate(response http.ResponseWriter, request *http.Request) {
 	response.Header().Set("Content-Type", "application/json")
+	if !h.config.acceptance.ProductionTrustCurrent(time.Now().UTC()) {
+		writeReview(response, boundary.AdmissionReview{
+			APIVersion: "admission.k8s.io/v1", Kind: "AdmissionReview",
+			Response: &boundary.AdmissionResponse{Allowed: false, Status: &boundary.Status{
+				Code: 403, Reason: "Forbidden", Message: "production trust provenance is stale",
+			}},
+		})
+		return
+	}
 	if request.Method != http.MethodPost || !strings.HasPrefix(request.Header.Get("Content-Type"), "application/json") {
 		writeReview(response, boundary.AdmissionReview{
 			APIVersion: "admission.k8s.io/v1",

@@ -1,10 +1,35 @@
 # Public-edge boundary enrollment handoff
 
-The checked-in trust registries are deliberately empty development gates. They
-must not be promoted. A production image is built only through the
-`production-runtime` target, whose build-time gate requires nonempty,
-independently supplied current/next public trust registries and their exact
-SHA-256 digests.
+The checked-in trust registries, including the production-provenance root, are
+deliberately empty development gates. They must not be promoted and this source
+tree is not production-enrolled. A production image is built only through the
+`production-runtime` target. Its build-time gate requires three externally
+supplied exact current/next public trust registries plus a canonical provenance
+envelope signed by one of exactly two separately enrolled provenance-root keys.
+It also requires the source-pinned
+`config/accepted-production-trust-head-envelope.json`; this separately signed
+head names the exact current envelope digest and generation and an accepted
+minimum generation. It is deliberately not a Docker build argument, so a
+builder cannot select an older, still-unexpired signed chain alongside the
+other input artifacts.
+The provenance payload binds each registry digest and the exact current and next
+issuer/key identity for every allowed role. After genesis, it also binds and
+reopens the immediate signed predecessor, increments its generation, advances
+its issuance time, and requires every predecessor next identity to become the
+successor current identity. Its signed retirement time equals the successor
+issuance time, and the retired predecessor-current identity cannot be recycled
+as the new next identity. Caller-supplied digest build arguments are not trust
+anchors.
+
+Before the production target can succeed, platform security must add the real
+current/next public provenance roots to
+`config/trusted-production-trust-provenance-issuers.json` through independently
+reviewed source provenance, replace the empty source-pinned accepted-head
+envelope with the owner-signed latest/minimum selection, and supply a signed
+`fs2-serve.nebius.ai/public-edge-production-trust-provenance-envelope/v1`.
+The empty checked-in files intentionally preserve an explicit external-artifact
+blocker; the source must not be described as deployment-ready until those owner
+artifacts exist.
 
 The enrollment compiler is an offline tool. It is not a runtime authority and
 does not compare its own executable digest with the accepted snapshot-authority

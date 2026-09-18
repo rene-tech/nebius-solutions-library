@@ -566,6 +566,10 @@ func (a *Authority) handleReady(response http.ResponseWriter, request *http.Requ
 		response.WriteHeader(http.StatusForbidden)
 		return
 	}
+	if !a.Acceptance.ProductionTrustCurrent(time.Now().UTC()) {
+		response.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
 	response.WriteHeader(http.StatusOK)
 }
 
@@ -573,6 +577,10 @@ func (a *Authority) handleCollect(response http.ResponseWriter, request *http.Re
 	response.Header().Set("Content-Type", "application/fs2-native-response-envelope+json")
 	if request.Method != http.MethodPost || !a.authorizedCollector(request.TLS) {
 		response.WriteHeader(http.StatusForbidden)
+		return
+	}
+	if !a.Acceptance.ProductionTrustCurrent(time.Now().UTC()) {
+		response.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
 	select {
@@ -847,6 +855,7 @@ func (a *Authority) settleCollection(request CollectionRequest, directiveSHA256 
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := time.Now().UTC().Truncate(time.Second)
+	if !a.Acceptance.ProductionTrustCurrent(now) { return errors.New("native authority production trust provenance expired before settlement") }
 	_, cycleDeadline, cycleErr := a.validateCollectionCycle(request, now)
 	if cycleErr != nil || !now.Before(cycleDeadline) {
 		return errors.New("native authority refused settlement after the accepted collection deadline")
@@ -2754,6 +2763,7 @@ func projectSecretMetadataList(raw []byte) ([]byte, error) {
 }
 
 func (a *Authority) signPage(page NativePage) ([]byte, error) {
+	if !a.Acceptance.ProductionTrustCurrent(time.Now().UTC()) { return nil, errors.New("native authority production trust provenance expired before signing") }
 	payloadRaw, err := json.Marshal(page)
 	if err != nil {
 		return nil, err

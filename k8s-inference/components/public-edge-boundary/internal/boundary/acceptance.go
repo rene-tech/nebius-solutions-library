@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 )
 
 const (
@@ -56,6 +57,11 @@ type Acceptance struct {
 	SourceTree                string `json:"source_tree"`
 	trustRaw                  []byte
 	envelopeRaw               []byte
+	productionTrustGeneration uint64
+	productionTrustMinimumGeneration uint64
+	productionTrustEnvelopeSHA256 string
+	productionTrustHeadEnvelopeSHA256 string
+	productionTrustExpiresAt time.Time
 }
 
 type acceptanceV3 struct {
@@ -157,7 +163,29 @@ func LoadAcceptance(trustPath string, envelopePath string, executableRole string
 	if executableSHA256 != expectedExecutableSHA256 {
 		return Acceptance{}, errors.New("running executable bytes differ from the independently accepted digest")
 	}
+	productionTrust, err := verifyRuntimeProductionTrust(acceptance, trustRaw, time.Now().UTC())
+	if err != nil {
+		return Acceptance{}, fmt.Errorf("verify production trust provenance at runtime startup: %w", err)
+	}
+	acceptance.productionTrustGeneration = productionTrust.Generation
+	acceptance.productionTrustMinimumGeneration = productionTrust.MinimumGeneration
+	acceptance.productionTrustEnvelopeSHA256 = productionTrust.EnvelopeSHA256
+	acceptance.productionTrustHeadEnvelopeSHA256 = productionTrust.HeadEnvelopeSHA256
+	acceptance.productionTrustExpiresAt = productionTrust.ExpiresAt
 	return acceptance, nil
+}
+
+// ProductionTrustCurrent fails closed after the independently accepted baked
+// provenance generation expires. LoadAcceptance initializes these private
+// fields only after verifying the exact source-pinned head, predecessor and
+// trust registries; retained historical acceptance parsing never initializes
+// them and therefore cannot authorize a production process.
+func (acceptance Acceptance) ProductionTrustCurrent(now time.Time) bool {
+	now = now.UTC().Truncate(time.Second)
+	return acceptance.productionTrustGeneration >= acceptance.productionTrustMinimumGeneration &&
+		acceptance.productionTrustMinimumGeneration > 0 && isSHA256(acceptance.productionTrustEnvelopeSHA256) &&
+		isSHA256(acceptance.productionTrustHeadEnvelopeSHA256) && !acceptance.productionTrustExpiresAt.IsZero() &&
+		now.Before(acceptance.productionTrustExpiresAt)
 }
 
 // VerifyAcceptanceGeneration authenticates retained acceptance bytes without

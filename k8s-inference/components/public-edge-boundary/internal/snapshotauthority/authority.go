@@ -105,12 +105,14 @@ func (authority *Authority) Serve(ctx context.Context) error {
 func (authority *Authority) handleReady(response http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet { http.Error(response, "method not allowed", http.StatusMethodNotAllowed); return }
 	now := time.Now().UTC()
+	if !authority.Acceptance.ProductionTrustCurrent(now) { http.Error(response, "production trust provenance is stale", http.StatusServiceUnavailable); return }
 	if _, err := authority.channels.currentServer(now); err != nil || authority.channels.currentCollector(now) != nil || authority.settlements.ready() != nil || authority.verifySigningTrust() != nil { http.Error(response, "authority dependency unavailable", http.StatusServiceUnavailable); return }
 	response.WriteHeader(http.StatusNoContent)
 }
 
 func (authority *Authority) handleSnapshot(response http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost { http.Error(response, "method not allowed", http.StatusMethodNotAllowed); return }
+	if !authority.Acceptance.ProductionTrustCurrent(time.Now().UTC()) { http.Error(response, "production trust provenance is stale", http.StatusServiceUnavailable); return }
 	select { case authority.slots <- struct{}{}: defer func(){ <-authority.slots }(); default: http.Error(response, "snapshot authority busy", http.StatusTooManyRequests); return }
 	if request.TLS == nil { http.Error(response, "collector channel rejected", http.StatusUnauthorized); return }
 	channelEvidence, err := authority.channels.authenticateCollector(*request.TLS, time.Now().UTC())
@@ -169,6 +171,7 @@ func (authority *Authority) handleSnapshot(response http.ResponseWriter, request
 }
 
 func (authority *Authority) signCollectorChannelEvidence(evidence CollectorChannelEvidence) ([]byte, error) {
+	if !authority.Acceptance.ProductionTrustCurrent(time.Now().UTC()) { return nil, errors.New("production trust provenance expired before channel signing") }
 	payloadRaw, err := json.Marshal(evidence)
 	if err != nil { return nil, err }
 	payloadSHA256 := digestBytes(payloadRaw)
@@ -224,6 +227,7 @@ func (authority *Authority) verifySigningTrust() error {
 }
 
 func (authority *Authority) signSnapshot(snapshot boundary.Snapshot) ([]byte, error) {
+	if !authority.Acceptance.ProductionTrustCurrent(time.Now().UTC()) { return nil, errors.New("production trust provenance expired before snapshot signing") }
 	payloadRaw, err := json.Marshal(snapshot)
 	if err != nil { return nil, err }
 	payloadSHA256 := digestBytes(payloadRaw)

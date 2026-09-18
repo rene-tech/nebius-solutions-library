@@ -263,40 +263,83 @@ func validateManifestStructure(manifest custodyManifest) error {
 		if !validCustodyPath(item.Destination) || seen[item.Destination] || !strings.HasPrefix(item.Source, "/projected/inputs/") || filepath.Dir(item.Source) != "/projected/inputs" || item.UID != 0 || parent.Destination == "" || parent.GID != item.GID || item.Mode != 0o400 && item.Mode != 0o440 && item.Mode != 0o444 && item.Mode != 0o600 { return errors.New("custody entry or its complete signed ancestry is invalid") }
 		seen[item.Destination] = true
 	}
+	if manifest.Component == "snapshot-authority" || manifest.Component == "settlement-custodian" || manifest.Component == "webhook" {
+		if err := validateRuntimeReaderAncestry(manifest.Entries, directories); err != nil { return err }
+	}
+	return nil
+}
+
+func validateRuntimeReaderAncestry(entries []custodyEntry, directories map[string]directory) error {
+	for _, item := range entries {
+		if item.Mode != 0o440 && item.Mode != 0o444 { return errors.New("nonroot runtime input is not readable under its exact immutable group/world mode") }
+		for parent := filepath.Dir(item.Destination); parent != "/custody"; parent = filepath.Dir(parent) {
+			contract, exists := directories[parent]
+			if !exists || contract.UID != 0 || contract.GID != item.GID || contract.Mode&0o010 == 0 || contract.Mode&0o022 != 0 { return errors.New("nonroot runtime input ancestry lacks its exact root-owned reader group and group-execute contract") }
+		}
+	}
 	return nil
 }
 
 func validateRequiredConfigFiles(manifest custodyManifest, acceptance boundary.Acceptance, config snapshotauthority.Config) error {
-	required := map[string]string{}
+	type requiredFile struct { SHA256 string; GID uint32; Mode uint32 }
+	required := map[string]requiredFile{}
 	invalidRequired := false
-	add := func(path, value string) {
+	add := func(path, value string, gid uint32, mode uint32) {
 		destination := runtimeDestination(path)
 		if destination == "" || !digestText(value) { invalidRequired = true; return }
-		if retained, exists := required[destination]; exists && retained != value { invalidRequired = true; return }
-		required[destination] = value
+		if retained, exists := required[destination]; exists {
+			if retained.SHA256 != value || retained.Mode != 0 && mode != 0 && (retained.Mode != mode || retained.GID != gid) { invalidRequired = true; return }
+			if retained.Mode != 0 { return }
+		}
+		required[destination] = requiredFile{SHA256: value, GID: gid, Mode: mode}
 	}
 	_, acceptanceSHA256, acceptanceErr := acceptance.EnvelopeGeneration()
 	if acceptanceErr != nil { return errors.New("accepted boundary envelope generation is unavailable") }
-	add("/var/run/fs2-boundary/acceptance/accepted-boundary-envelope.json", acceptanceSHA256)
+	acceptanceGID := uint32(0)
+	acceptanceMode := uint32(0)
+	switch manifest.Component {
+	case "webhook":
+		acceptanceGID = acceptance.BoundaryRuntimeReaderGID
+		acceptanceMode = 0o440
+	case "snapshot-authority":
+		acceptanceGID = config.RuntimeGID
+		acceptanceMode = 0o440
+	case "settlement-custodian":
+		acceptanceGID = config.SettlementRuntimeGID
+		acceptanceMode = 0o440
+	}
+	add("/var/run/fs2-boundary/acceptance/accepted-boundary-envelope.json", acceptanceSHA256, acceptanceGID, acceptanceMode)
+	if manifest.Component == "webhook" {
+		readerGID := acceptance.BoundaryRuntimeReaderGID
+		add("/var/run/fs2-boundary/tls/tls.crt", acceptance.BoundaryTLSCertificateSHA256, readerGID, 0o440)
+		add("/var/run/fs2-boundary/tls/tls.key", acceptance.BoundaryTLSPrivateKeySHA256, readerGID, 0o440)
+		add("/var/run/fs2-boundary/admission-client-trust.json", acceptance.BoundaryAdmissionClientTrustSHA256, readerGID, 0o440)
+		add("/var/run/fs2-boundary/config/transition-settlement.json", acceptance.TransitionSettlementConfigSHA256, readerGID, 0o440)
+	}
 	if manifest.Component == "snapshot-authority" || manifest.Component == "settlement-custodian" {
-		add("/var/run/fs2-boundary/config/snapshot-authority.json", acceptance.SnapshotAuthorityConfigSHA256)
-		add(config.NativeCollectorConfigPath, acceptance.NativeCollectorConfigSHA256)
-		add(config.NativeResponseTrustPath, acceptance.NativeResponseTrustSHA256)
-		add(config.SnapshotTrustPath, acceptance.SnapshotTrustSHA256)
-		for _, identity := range config.CollectorIdentities { add(identity.CABundlePath, identity.CABundleSHA256); add(identity.CRLPath, identity.CRLSHA256) }
+		configGID := config.RuntimeGID
+		if manifest.Component == "settlement-custodian" { configGID = config.SettlementRuntimeGID }
+		add("/var/run/fs2-boundary/config/snapshot-authority.json", acceptance.SnapshotAuthorityConfigSHA256, configGID, 0o440)
+		add(config.NativeCollectorConfigPath, acceptance.NativeCollectorConfigSHA256, 0, 0)
+		add(config.NativeResponseTrustPath, acceptance.NativeResponseTrustSHA256, 0, 0)
+		add(config.SnapshotTrustPath, acceptance.SnapshotTrustSHA256, 0, 0)
+		for _, identity := range config.CollectorIdentities { add(identity.CABundlePath, identity.CABundleSHA256, 0, 0); add(identity.CRLPath, identity.CRLSHA256, 0, 0) }
 	}
 	if manifest.Component == "snapshot-authority" {
-		add(config.SigningKeyPath, config.SigningKeySHA256)
-		for _, identity := range config.ServerIdentities { add(identity.CertificatePath, identity.CertificateSHA256); add(identity.PrivateKeyPath, identity.PrivateKeySHA256); add(identity.IssuerBundlePath, identity.IssuerBundleSHA256); add(identity.CRLPath, identity.CRLSHA256) }
+		add(config.SigningKeyPath, config.SigningKeySHA256, config.RuntimeGID, 0o440)
+		for _, identity := range config.ServerIdentities { add(identity.CertificatePath, identity.CertificateSHA256, 0, 0); add(identity.PrivateKeyPath, identity.PrivateKeySHA256, config.RuntimeGID, 0o440); add(identity.IssuerBundlePath, identity.IssuerBundleSHA256, 0, 0); add(identity.CRLPath, identity.CRLSHA256, 0, 0) }
 	}
 	if manifest.Component == "settlement-custodian" {
-		add(config.SettlementSigningKeyPath, config.SettlementSigningKeySHA256)
-		for _, key := range config.SettlementVerificationKeys { add(key.PublicKeyPath, key.PublicKeySHA256) }
+		add(config.SettlementSigningKeyPath, config.SettlementSigningKeySHA256, config.SettlementRuntimeGID, 0o440)
+		for _, key := range config.SettlementVerificationKeys { add(key.PublicKeyPath, key.PublicKeySHA256, 0, 0) }
 	}
 	if invalidRequired { return errors.New("acceptance-bound runtime input has an empty path, invalid digest or conflicting destination") }
-	actual := map[string]string{}
-	for _, item := range manifest.Entries { actual[item.Destination] = item.SHA256 }
-	for destination, expected := range required { if destination == "" || actual[destination] != expected { return errors.New("custody payload omits or changes an acceptance-bound snapshot authority input") } }
+	actual := map[string]custodyEntry{}
+	for _, item := range manifest.Entries { actual[item.Destination] = item }
+	for destination, expected := range required {
+		item, exists := actual[destination]
+		if destination == "" || !exists || item.SHA256 != expected.SHA256 || expected.Mode != 0 && (item.Mode != expected.Mode || item.GID != expected.GID) { return errors.New("custody payload omits or changes an acceptance-bound runtime file identity, mode or reader group") }
+	}
 	return nil
 }
 

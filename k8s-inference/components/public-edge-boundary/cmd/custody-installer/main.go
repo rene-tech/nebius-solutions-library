@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/rene-tech/nebius-solutions-library/k8s-inference/components/public-edge-boundary/internal/boundary"
@@ -75,6 +76,7 @@ type entry struct {
 
 func main() {
 	if os.Geteuid() != 0 || os.Getegid() != 0 || len(os.Args) != 3 || !safeText(os.Args[2], 64) { slog.Error("custody installer requires root, one signed enrollment envelope and one component identity"); os.Exit(1) }
+	if err := requireCurrentProductionTrust(); err != nil { slog.Error("production trust lifecycle rejected before custody enrollment", "error", err); os.Exit(1) }
 	if !filepath.IsAbs(os.Args[1]) || !strings.HasPrefix(filepath.Clean(os.Args[1]), "/projected/manifest/") || filepath.Clean(os.Args[1]) != os.Args[1] { slog.Error("custody enrollment envelope path is outside the projected manifest lane"); os.Exit(1) }
 	envelopeRaw, err := readBounded(os.Args[1], maximumManifestBytes)
 	if err != nil { slog.Error("custody enrollment envelope unavailable", "error", err); os.Exit(1) }
@@ -88,11 +90,13 @@ func main() {
 	if err := decoder.Decode(&plan); err != nil || decoder.Decode(&struct{}{}) != io.EOF || plan.Schema != manifestSchema || !safeText(plan.ClusterID, 128) || !safeText(plan.DeploymentID, 128) || plan.Component != os.Args[2] || !digestText(plan.InstallationID) || len(plan.VolumeRoots) > 8 || len(plan.Directories) > 64 || len(plan.WritableRoots) > 8 || len(plan.Entries) > 256 || len(plan.VolumeRoots)+len(plan.Directories)+len(plan.WritableRoots)+len(plan.Entries) < 1 { slog.Error("custody manifest invalid"); os.Exit(1) }
 	canonical, err := json.Marshal(plan)
 	if err != nil || !bytes.Equal(canonical, raw) { slog.Error("custody manifest is not canonical signed JSON"); os.Exit(1) }
+	if err := requireCurrentProductionTrust(); err != nil { slog.Error("production trust lifecycle expired before custody root mutation", "error", err); os.Exit(1) }
 	if err := sealCustodyRoot(); err != nil { slog.Error("custody root cannot be authenticated and sealed", "error", err); os.Exit(1) }
 	seen := map[string]bool{}
 	directories := map[string]directory{}
 	previous := ""
 	for _, item := range plan.VolumeRoots {
+		if err := requireCurrentProductionTrust(); err != nil { slog.Error("production trust lifecycle expired during custody volume enrollment", "error", err); os.Exit(1) }
 		if item.Destination <= previous { slog.Error("custody volume roots are not strictly ordered"); os.Exit(1) }
 		previous = item.Destination
 		contract, err := sealVolumeRoot(item, seen)
@@ -101,22 +105,31 @@ func main() {
 	}
 	previous = ""
 	for _, item := range plan.Directories {
+		if err := requireCurrentProductionTrust(); err != nil { slog.Error("production trust lifecycle expired during custody directory enrollment", "error", err); os.Exit(1) }
 		if item.Destination <= previous { slog.Error("custody directories are not strictly ordered"); os.Exit(1) }
 		previous = item.Destination
 		if err := installDirectory(item, seen, directories); err != nil { slog.Error("custody directory failed", "destination", item.Destination, "error", err); os.Exit(1) }
 	}
 	previous = ""
 	for _, item := range plan.WritableRoots {
+		if err := requireCurrentProductionTrust(); err != nil { slog.Error("production trust lifecycle expired during custody writer enrollment", "error", err); os.Exit(1) }
 		if item.Destination <= previous { slog.Error("custody writable roots are not strictly ordered"); os.Exit(1) }
 		previous = item.Destination
 		if err := installWritableRoot(item, seen, directories); err != nil { slog.Error("custody writable root failed", "destination", item.Destination, "error", err); os.Exit(1) }
 	}
 	previous = ""
 	for _, item := range plan.Entries {
+		if err := requireCurrentProductionTrust(); err != nil { slog.Error("production trust lifecycle expired during custody file publication", "error", err); os.Exit(1) }
 		if item.Destination <= previous { slog.Error("custody entries are not strictly ordered"); os.Exit(1) }
 		previous = item.Destination
 		if err := install(item, seen, directories); err != nil { slog.Error("custody publication failed", "destination", item.Destination, "error", err); os.Exit(1) }
 	}
+	if err := requireCurrentProductionTrust(); err != nil { slog.Error("production trust lifecycle expired before custody completion", "error", err); os.Exit(1) }
+}
+
+func requireCurrentProductionTrust() error {
+	_, err := boundary.VerifyInstalledProductionTrust(time.Now().UTC())
+	return err
 }
 
 func sealVolumeRoot(item volumeRoot, seen map[string]bool) (directory, error) {

@@ -12,6 +12,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags='-s -w'
  && CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/public-edge-mtls-probe ./cmd/mtls-probe \
  && CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/public-edge-enrollment-compiler ./cmd/enrollment-compiler \
  && CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/public-edge-enrollment-assembler ./cmd/enrollment-assembler \
+ && CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/public-edge-production-trust-gate ./cmd/production-trust-gate \
  && CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false -ldflags='-s -w' -o /out/public-edge-trust-bundle-gate ./cmd/trust-bundle-gate
 
 FROM scratch AS enrollment-tools-output
@@ -38,18 +39,26 @@ USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/public-edge-boundary"]
 
 FROM build AS production-trust-gate
+ARG FS2_PRODUCTION_TRUST_PROVENANCE_FILE=config/production-trust-provenance-envelope.json
+ARG FS2_PRODUCTION_TRUST_PROVENANCE_PREDECESSOR_FILE=config/production-trust-provenance-predecessor-envelope.json
 ARG FS2_PRODUCTION_ACCEPTANCE_TRUST_FILE=config/trusted-acceptance-issuers.json
-ARG FS2_PRODUCTION_ACCEPTANCE_TRUST_SHA256
 ARG FS2_PRODUCTION_NATIVE_TRUST_FILE=config/trusted-native-response-issuers.json
-ARG FS2_PRODUCTION_NATIVE_TRUST_SHA256
 ARG FS2_PRODUCTION_SNAPSHOT_TRUST_FILE=config/trusted-snapshot-issuers.json
-ARG FS2_PRODUCTION_SNAPSHOT_TRUST_SHA256
+COPY config/trusted-production-trust-provenance-issuers.json /production-trust/trusted-production-trust-provenance-issuers.json
+COPY config/accepted-production-trust-head-envelope.json /production-trust/accepted-production-trust-head-envelope.json
+COPY ${FS2_PRODUCTION_TRUST_PROVENANCE_FILE} /production-trust/production-trust-provenance-envelope.json
+COPY ${FS2_PRODUCTION_TRUST_PROVENANCE_PREDECESSOR_FILE} /production-trust/production-trust-provenance-predecessor-envelope.json
 COPY ${FS2_PRODUCTION_ACCEPTANCE_TRUST_FILE} /production-trust/trusted-acceptance-issuers.json
 COPY ${FS2_PRODUCTION_NATIVE_TRUST_FILE} /production-trust/trusted-native-response-issuers.json
 COPY ${FS2_PRODUCTION_SNAPSHOT_TRUST_FILE} /production-trust/trusted-snapshot-issuers.json
-RUN /out/public-edge-trust-bundle-gate /production-trust/trusted-acceptance-issuers.json "${FS2_PRODUCTION_ACCEPTANCE_TRUST_SHA256}" fs2-serve.nebius.ai/public-edge-boundary-acceptance-trust/v1 platform-security-public-edge-boundary-acceptance platform-security-public-edge-boundary-custody-enrollment platform-security-public-edge-boundary-legacy-bootstrap \
- && /out/public-edge-trust-bundle-gate /production-trust/trusted-native-response-issuers.json "${FS2_PRODUCTION_NATIVE_TRUST_SHA256}" fs2-serve.nebius.ai/public-edge-native-response-trust/v1 provider-control-plane-native-response-authority \
- && /out/public-edge-trust-bundle-gate /production-trust/trusted-snapshot-issuers.json "${FS2_PRODUCTION_SNAPSHOT_TRUST_SHA256}" fs2-serve.nebius.ai/public-edge-boundary-trust/v1 platform-security-public-edge-boundary-runtime
+RUN /out/public-edge-production-trust-gate \
+ /production-trust/trusted-production-trust-provenance-issuers.json \
+ /production-trust/accepted-production-trust-head-envelope.json \
+ /production-trust/production-trust-provenance-envelope.json \
+ /production-trust/production-trust-provenance-predecessor-envelope.json \
+ /production-trust/trusted-acceptance-issuers.json \
+ /production-trust/trusted-native-response-issuers.json \
+ /production-trust/trusted-snapshot-issuers.json
 
 FROM developer-runtime AS production-runtime
 LABEL ai.nebius.fs2.public-edge.production="true" \
@@ -57,3 +66,7 @@ LABEL ai.nebius.fs2.public-edge.production="true" \
 COPY --from=production-trust-gate /production-trust/trusted-acceptance-issuers.json /usr/local/share/fs2-boundary/trusted-acceptance-issuers.json
 COPY --from=production-trust-gate /production-trust/trusted-native-response-issuers.json /usr/local/share/fs2-boundary/trusted-native-response-issuers.json
 COPY --from=production-trust-gate /production-trust/trusted-snapshot-issuers.json /usr/local/share/fs2-boundary/trusted-snapshot-issuers.json
+COPY --from=production-trust-gate /production-trust/trusted-production-trust-provenance-issuers.json /usr/local/share/fs2-boundary/trusted-production-trust-provenance-issuers.json
+COPY --from=production-trust-gate /production-trust/accepted-production-trust-head-envelope.json /usr/local/share/fs2-boundary/accepted-production-trust-head-envelope.json
+COPY --from=production-trust-gate /production-trust/production-trust-provenance-envelope.json /usr/local/share/fs2-boundary/production-trust-provenance-envelope.json
+COPY --from=production-trust-gate /production-trust/production-trust-provenance-predecessor-envelope.json /usr/local/share/fs2-boundary/production-trust-provenance-predecessor-envelope.json

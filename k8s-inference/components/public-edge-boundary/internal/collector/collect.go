@@ -255,6 +255,7 @@ func rejectClosedIntegrationGate(raw []byte, component string) error {
 
 func (r *Runner) CollectAndInstall(ctx context.Context, now time.Time) error {
 	now = now.UTC().Truncate(time.Second)
+	if !r.Acceptance.ProductionTrustCurrent(now) { return errors.New("collector production trust provenance is stale") }
 	cycle, err := r.AcceptedCycle(now)
 	if err != nil {
 		return err
@@ -345,6 +346,7 @@ func (r *Runner) CollectAndInstall(ctx context.Context, now time.Time) error {
 		return err
 	}
 	if !settled {
+		if !r.Acceptance.ProductionTrustCurrent(time.Now().UTC()) { return errors.New("collector production trust provenance expired before snapshot request") }
 		if !time.Now().UTC().Before(deadlineAt) {
 			return errors.New("snapshot request cannot begin after the accepted collection deadline")
 		}
@@ -372,6 +374,7 @@ func (r *Runner) CollectAndInstall(ctx context.Context, now time.Time) error {
 	if err != nil {
 		return err
 	}
+	if !r.Acceptance.ProductionTrustCurrent(time.Now().UTC()) { return errors.New("collector production trust provenance expired before runtime activation") }
 	if err := r.activateStagedSnapshot(activationPlan, deadlineAt); err != nil {
 		return err
 	}
@@ -773,6 +776,7 @@ func deterministicBundleCollectedAt(cycle CollectorCycle, sources []SourceEviden
 }
 
 func (r *Runner) requestSnapshot(ctx context.Context, bundleRaw []byte) ([]byte, error) {
+	if !r.Acceptance.ProductionTrustCurrent(time.Now().UTC()) { return nil, errors.New("collector production trust provenance is stale") }
 	client, err := mutualTLSClient(
 		r.Config.SnapshotAuthorityCAPath,
 		r.Config.SnapshotAuthorityCASHA256,
