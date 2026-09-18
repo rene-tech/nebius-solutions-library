@@ -119,3 +119,59 @@ bootstrap configuration baseline, without dropping other model promotions or
 five speech models. The main release owner handles publication, drain/owner
 proposal and exact public-client retest. Pre-155 offline captures are regression
 inputs, not a deployable successor release.
+
+## Combined release-157 successor, prepared only
+
+`prepare_combined.py` reuses the existing molecular promotion helper's immutable
+map format, selected-runtime identity rebase, actual gateway bootstrap validator,
+and owner renderer. It reads fresh release-157 captures and changes only MolMIM's
+selected runtime/qualification plus the canonical Qwen parser template and its
+qualification projection. It does not contact Kubernetes or perform a drain.
+The separate disabled Qwen clone remains unchanged.
+
+The frozen helper is commit `8f85b52b1fe66a9b12f16445a64837eada40b005`;
+21 focused tests and Ruff passed. Input and output receipts are private under
+`/home/tux/secure-handoff/molmim-qwen-promotion-20260918-tFcBrdiz`.
+The candidate contains four maps:
+
+| Contract | Candidate ConfigMap |
+| --- | --- |
+| Infrastructure envelope | `fs2-science-envelope-345313870f897d00` |
+| Renderer bundles | `fs2-science-bundles-733b5128f3e6f84e` |
+| Routes/runtime qualification | `fs2-science-routes-f39c836bbb5e275a` |
+| Admin configuration baseline | `fs2-science-admin-fbf3c6edd180ad9b` |
+
+The admin configuration document SHA256 is
+`c4e057c7ba37611ef727a75722c859bfbbae05e48914aaae8938d4f50a89d625`.
+`candidate/configmaps.json` SHA256 is
+`0a1e6f3fb3026bc2618546d20c47646093ce5be33fb7fae7a6b909973ecca406`;
+`candidate/validation.json` SHA256 is
+`113b4d6b8324bfe10620e5f4c66d41e63d2e4c7386e891f6e81075962b32e8db`.
+
+The actual bootstrap check is valid with three existing unsupported-accelerator
+placement warnings. All 21 current ModelDeployments remain accepted; both target
+proposals render. The Qwen generated Deployment has the parser flags and no
+snapshot wrapper/volume. All 18 sibling qualifications, old bundles/snapshot
+records, five voices and the release-157 GenMol/ProteinMPNN promotions are
+preserved. Lean-route bytes are unchanged. MolMIM changes to the separately
+qualified `9df0b25c…` runtime with the source-pinned `588d0b4f9` record. Qwen's
+semantic/public/cold/elastic flags remain false; its measured parser repair is
+not a blanket task-quality verdict.
+
+The release owner must recheck capture freshness and publish the immutable maps,
+then switch all four references together using `candidate/values.json` and the
+approved CP image. Only at cutover should the owner drain the two canonical
+Apps, wait for active work to settle, and preview/apply `app-proposals.json`
+through the existing owner API. Each proposal retains the captured original
+availability, resources and lifecycle: MolMIM min1/max4 and Off/Never; Qwen
+min0/max8 and Off with Never replacing Prefer and removing the old snapshot
+reference. Do not alter the disabled clone or patch generated Deployments.
+Exact public qualification follows promotion; this preparation is not that
+qualification.
+
+For reversal, the additive candidate still accepts both original owner specs.
+Drain and restore `rollback-app-proposals.json` first through the owner API;
+then restore the four original references in `rollback-values.json` as one
+unit. Do not point controllers at the old envelope while a new template is
+still selected. Previous maps/bundles remain retained; these files do not
+authorize deletion or automatically roll anything back.
