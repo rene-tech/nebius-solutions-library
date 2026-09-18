@@ -115,7 +115,7 @@ def stage_running(value):
     )
 
 
-async def probes(args, state, token, successful):
+async def probes(args, state, token, successful, previous=None):
     output = args.output / "probes"
     output.mkdir(mode=0o700)
     journal = {
@@ -126,22 +126,24 @@ async def probes(args, state, token, successful):
     }
     request = successful["request"]
     async with client.connect(args.endpoint, token, journal, output) as public:
-        invalid = json.loads(json.dumps(request))
-        invalid["parameters"]["variants"]["count"] = 0
-        # Deliberately bypass the local parser to prove the PUBLIC 422 contract.
-        response = await public.http.post(
-            f"/v1/models/{client.MODEL}:submit",
-            headers={"Idempotency-Key": journal["run_id"] + "-invalid"},
-            json=invalid,
-        )
-        journal["invalid_input"] = {
-            "status": response.status_code,
-            "body": response.json(),
-        }
-        public.persist()
-        client.check(response.status_code == 422, "invalid_input_not_public_422")
-
-        await worker_failure_probe(public, args, request)
+        if previous is None:
+            invalid = json.loads(json.dumps(request))
+            invalid["parameters"]["variants"]["count"] = 0
+            # Deliberately bypass the local parser to prove the PUBLIC 422 contract.
+            response = await public.http.post(
+                f"/v1/models/{client.MODEL}:submit",
+                headers={"Idempotency-Key": journal["run_id"] + "-invalid"},
+                json=invalid,
+            )
+            journal["invalid_input"] = {
+                "status": response.status_code,
+                "body": response.json(),
+            }
+            public.persist()
+            client.check(response.status_code == 422, "invalid_input_not_public_422")
+            await worker_failure_probe(public, args, request)
+        else:
+            await verify_existing_worker_failure(public, previous)
 
         journal["cancellation_idempotency_key"] = journal["run_id"] + "-cancel"
         public.persist()
@@ -259,15 +261,44 @@ async def worker_failure_probe(public, args, request):
     public.persist()
     receipt["terminal"] = await public.wait_existing(args.timeout_seconds, "failed")
     public.persist()
-    terminal = client.operation(receipt["terminal"])
+    check_worker_failure(receipt["terminal"])
+    receipt.update(phase="expected_failure_and_released", completed_at=client.now())
+    public.persist()
+
+
+def check_worker_failure(value):
+    # Selection.resolve_episodes raises ContractError, not DatasetError.
+    terminal = client.operation(value)
     client.check(
         terminal.get("http_status") == 422
-        and terminal.get("error_code") == "DATASET_INVALID"
-        and terminal.get("error_detail") == ERROR_DETAILS["DATASET_INVALID"]
-        and client.settled(receipt["terminal"], "failed"),
+        and terminal.get("error_code") == "INVALID_REQUEST"
+        and terminal.get("error_detail") == ERROR_DETAILS["INVALID_REQUEST"]
+        and client.settled(value, "failed"),
         "worker_failure_code_or_detail_mismatch",
     )
-    receipt.update(phase="expected_failure_and_released", completed_at=client.now())
+
+
+async def verify_existing_worker_failure(public, previous):
+    """Read the exact retained failure; never repeat either invalid admission."""
+    client.check(
+        previous["invalid_input"]["status"] == 422,
+        "prior_invalid_input_not_public_422",
+    )
+    identifier = previous["worker_invalid_dataset"]["operation_id"]
+    terminal = await public.response("GET", f"/v1/operations/{identifier}")
+    client.check(
+        client.operation(terminal).get("id") == identifier,
+        "existing_worker_failure_identity_mismatch",
+    )
+    check_worker_failure(terminal)
+    public.state["invalid_input"] = previous["invalid_input"]
+    public.state["worker_invalid_dataset"] = {
+        "operation_id": identifier,
+        "terminal": terminal,
+        "phase": "existing_failure_verified_without_resubmission",
+        "verified_at": client.now(),
+    }
+    public.state["parent_ids"].append(identifier)
     public.persist()
 
 
@@ -284,7 +315,7 @@ async def execute(args, state, token):
     )
 
 
-def main(executor=None):
+def main(executor=None, configure_parser=None):
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ("dataset", "key-file", "reader-python", "output", "release-receipt"):
         parser.add_argument("--" + name, type=Path, required=True)
@@ -293,6 +324,8 @@ def main(executor=None):
     parser.add_argument("--max-bytes", type=int, default=5 * 1024**3)
     parser.add_argument("--max-expanded-bytes", type=int, default=8 * 1024**3)
     parser.add_argument("--include-blur", action="store_true")
+    if configure_parser:
+        configure_parser(parser)
     args = parser.parse_args()
     os.umask(0o077)
     logging.disable(logging.CRITICAL)

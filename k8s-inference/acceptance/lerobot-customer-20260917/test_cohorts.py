@@ -110,8 +110,8 @@ def test_public_negative_contract_and_cancellation(
                         "id": INVALID,
                         "status": "failed",
                         "http_status": 422,
-                        "error_code": "DATASET_INVALID",
-                        "error_detail": driver.ERROR_DETAILS["DATASET_INVALID"],
+                        "error_code": "INVALID_REQUEST",
+                        "error_detail": driver.ERROR_DETAILS["INVALID_REQUEST"],
                     },
                     "batch": {
                         "status": "failed",
@@ -187,7 +187,7 @@ def test_worker_failure_probe_rejects_generic_or_unsafe_detail(tmp_path):
                     "id": INVALID,
                     "status": "failed",
                     "http_status": 422,
-                    "error_code": "DATASET_INVALID",
+                    "error_code": "INVALID_REQUEST",
                     "error_detail": "private exception data",
                 }
             }
