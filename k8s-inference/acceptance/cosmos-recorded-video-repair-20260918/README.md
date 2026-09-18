@@ -139,6 +139,15 @@ that these controls reach the model, not a robotics-task accuracy claim.
 This successor adapter is **not** the immutable V4 adapter in the first public
 promotion package. It must receive its own digest/template and live acceptance.
 
+`prepare_presets.py` prepares that separate adapter-only successor against
+supplied envelope, template-bundle and owner captures. It verifies the frozen
+adapter source hash and measured low/high/repeated edge/blur contrast on both
+GPUs, then adds a content-addressed ConfigMap and allowed template. Images,
+weights, native arguments, every owner setting and historical snapshots remain
+unchanged. The helper performs no apply; the release coordinator must rebase
+on the latest stable maps, preserve sibling records, and run ordinary public
+acceptance after selecting the successor.
+
 The public V4 native replay completed on 18 September at 22:49:53 UTC, operation
 `a3bd2106-64f6-4dda-b7b5-8d0d53c2e532`. The original request produced a hash-verified
 2,085,126-byte MP4 with 64 decoded frames, 640×480 and 25 FPS. Inference was
