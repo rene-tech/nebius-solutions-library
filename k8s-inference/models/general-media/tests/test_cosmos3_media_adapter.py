@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -36,9 +39,7 @@ def adapter() -> ModuleType:
 
 
 class _StreamResponse:
-    def __init__(
-        self, body: bytes, *, status_code: int = 200, content_type: str = "video/mp4"
-    ) -> None:
+    def __init__(self, body: bytes, *, status_code: int = 200, content_type: str = "video/mp4") -> None:
         self.body = body
         self.status_code = status_code
         self.headers = {"content-type": content_type, "content-length": str(len(body))}
@@ -75,9 +76,7 @@ class _VideoClient:
         if self.tmp_path is not None:
             for control in call["extra_params"].values():
                 if isinstance(control, dict) and "control_path" in control:
-                    assert (
-                        self.tmp_path / Path(control["control_path"]).name
-                    ).is_file()
+                    assert (self.tmp_path / Path(control["control_path"]).name).is_file()
         return _StreamContext(_StreamResponse(MP4))
 
 
@@ -110,9 +109,7 @@ async def test_video_to_video_maps_url_compatibility_to_upstream_multipart(adapt
 
 
 @pytest.mark.asyncio
-async def test_transfer_control_is_shared_with_upstream_and_removed(
-    adapter, tmp_path, monkeypatch
-):
+async def test_transfer_control_is_shared_with_upstream_and_removed(adapter, tmp_path, monkeypatch):
     monkeypatch.setattr(adapter, "UPSTREAM_TMP", tmp_path)
     monkeypatch.setattr(adapter, "UPSTREAM_VISIBLE_TMP", Path("/cosmos-control-tmp"))
     request = TypeAdapter(adapter.GenerateRequest).validate_python(
@@ -136,18 +133,14 @@ async def test_transfer_control_is_shared_with_upstream_and_removed(
 
     assert raw == MP4 and media_type == "video/mp4"
     depth = client.calls[0]["extra_params"]["depth"]
-    assert depth["control_path"].startswith(
-        "/cosmos-control-tmp/fs2-cosmos-control-"
-    )
+    assert depth["control_path"].startswith("/cosmos-control-tmp/fs2-cosmos-control-")
     assert depth["control_weight"] == 1.25
     assert client.calls[0]["extra_params"]["resolution"] == 256
     assert list(tmp_path.iterdir()) == []
 
 
 @pytest.mark.asyncio
-async def test_inverse_dynamics_returns_validated_compact_action_json(
-    adapter, monkeypatch
-):
+async def test_inverse_dynamics_returns_validated_compact_action_json(adapter, monkeypatch):
     request = TypeAdapter(adapter.GenerateRequest).validate_python(
         {
             "mode": "inverse-dynamics",
@@ -163,9 +156,7 @@ async def test_inverse_dynamics_returns_validated_compact_action_json(
     class Client(_VideoClient):
         async def post(self, url: str, **kwargs: Any) -> _StreamResponse:
             assert url.endswith("/v1/videos") and "input_reference" in kwargs["files"]
-            return _StreamResponse(
-                b'{"id":"video_gen_action_test"}', content_type="application/json"
-            )
+            return _StreamResponse(b'{"id":"video_gen_action_test"}', content_type="application/json")
 
         async def get(self, url: str) -> _StreamResponse:
             assert url.endswith("/v1/videos/video_gen_action_test")
@@ -253,9 +244,7 @@ async def test_inverse_dynamics_timeout_is_terminal_and_bounded(adapter, monkeyp
     class Client(_VideoClient):
         async def post(self, url: str, **kwargs: Any) -> _StreamResponse:
             del url, kwargs
-            return _StreamResponse(
-                b'{"id":"video_gen_timeout_test"}', content_type="application/json"
-            )
+            return _StreamResponse(b'{"id":"video_gen_timeout_test"}', content_type="application/json")
 
     times = iter((100.0, 2_000.0))
     monkeypatch.setattr(adapter, "time", SimpleNamespace(monotonic=lambda: next(times)))
@@ -287,9 +276,7 @@ async def test_inverse_dynamics_cancellation_deletes_upstream_job(adapter, monke
 
         async def post(self, url: str, **kwargs: Any) -> _StreamResponse:
             del url, kwargs
-            return _StreamResponse(
-                b'{"id":"video_gen_cancel_test"}', content_type="application/json"
-            )
+            return _StreamResponse(b'{"id":"video_gen_cancel_test"}', content_type="application/json")
 
         async def delete(self, url: str) -> None:
             self.deleted.append(url)
@@ -301,6 +288,137 @@ async def test_inverse_dynamics_cancellation_deletes_upstream_job(adapter, monke
     monkeypatch.setattr(adapter.asyncio, "sleep", cancel)
     with pytest.raises(asyncio.CancelledError):
         await adapter.generate_video(client, request)
-    assert client.deleted == [
-        f"{adapter.UPSTREAM_BASE_URL}/v1/videos/video_gen_cancel_test"
-    ]
+    assert client.deleted == [f"{adapter.UPSTREAM_BASE_URL}/v1/videos/video_gen_cancel_test"]
+
+
+@pytest.fixture
+def encoded_video(tmp_path):
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.fail("Cosmos output-contract qualification requires ffmpeg and ffprobe")
+
+    def build(*, frames=9, audio=False):
+        video = tmp_path / f"source-{frames}.mp4"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "testsrc2=size=256x256:rate=25",
+                "-frames:v",
+                str(frames),
+                "-c:v",
+                "libx264",
+                "-bf",
+                "2",
+                "-pix_fmt",
+                "yuv420p",
+                str(video),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        if not audio:
+            return video
+        sound = tmp_path / "audio.m4a"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-nostdin",
+                "-f",
+                "lavfi",
+                "-i",
+                "sine=frequency=440:sample_rate=48000:duration=1",
+                "-c:a",
+                "aac",
+                str(sound),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        joined = tmp_path / "with-audio.mp4"
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-nostdin",
+                "-i",
+                str(video),
+                "-i",
+                str(sound),
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c",
+                "copy",
+                str(joined),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        return joined
+
+    return build
+
+
+def decoded_hash(path, *, frames=None, audio=False):
+    command = ["ffmpeg", "-v", "error", "-nostdin", "-i", str(path)]
+    if audio:
+        command += ["-map", "0:a:0", "-f", "f32le", "-"]
+    else:
+        command += ["-map", "0:v:0", "-pix_fmt", "rgb24", "-frames:v", str(frames), "-f", "rawvideo", "-"]
+    raw = subprocess.run(command, check=True, capture_output=True).stdout
+    return len(raw), hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize("sound", [False, True])
+def test_video_padding_removed_losslessly_with_original_longer_audio(adapter, encoded_video, tmp_path, sound):
+    source = encoded_video(audio=sound)
+    body = SimpleNamespace(
+        size="256x256", fps=25, num_frames=8, generate_sound=sound, sound_duration=1.0 if sound else None
+    )
+    result = adapter.verified_video_output(source.read_bytes(), body)
+    destination = tmp_path / "verified.mp4"
+    destination.write_bytes(result)
+    info, audio = adapter._video_info(destination)
+    assert info["decoded_frames"] == 8
+    assert info["frame_rate"] == 25
+    assert decoded_hash(destination, frames=8) == decoded_hash(source, frames=8)
+    if sound:
+        assert float(audio[0]["duration"]) >= 0.99  # Must not shorten it to 8/25 seconds.
+        assert decoded_hash(destination, audio=True) == decoded_hash(source, audio=True)
+    else:
+        assert not audio
+
+
+def test_exact_video_is_verified_without_reencoding(adapter, encoded_video):
+    raw = encoded_video(frames=9).read_bytes()
+    body = SimpleNamespace(size="256x256", fps=25, num_frames=9, generate_sound=False)
+    assert adapter.verified_video_output(raw, body) == raw
+
+
+@pytest.mark.parametrize(
+    "changes", [{"num_frames": 10}, {"num_frames": 5}, {"size": "272x256"}, {"fps": 24}, {"generate_sound": True}]
+)
+def test_video_contract_mismatch_is_finite_failure(adapter, encoded_video, changes):
+    raw = encoded_video(frames=9).read_bytes()
+    body = SimpleNamespace(**({"size": "256x256", "fps": 25, "num_frames": 9, "generate_sound": False} | changes))
+    with pytest.raises(adapter.AdapterError) as failure:
+        adapter.verified_video_output(raw, body)
+    assert failure.value.code == "invalid_upstream_video"
+    assert failure.value.retryable is False
+
+
+def test_invalid_container_does_not_get_requested_frame_headers(adapter):
+    body = SimpleNamespace(size="256x256", fps=25, num_frames=9, generate_sound=False)
+    with pytest.raises(adapter.AdapterError) as failure:
+        adapter.verified_video_output(MP4, body)
+    assert failure.value.code == "invalid_upstream_video"
+    assert failure.value.retryable is False

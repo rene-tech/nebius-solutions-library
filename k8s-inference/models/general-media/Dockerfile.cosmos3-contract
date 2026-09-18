@@ -1,0 +1,4 @@
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/vllm/vllm-omni@sha256:6d2630c7d637b699557573f2c3fee8df5d4d0cd718977aa22549ed6a6ef30587
+
+COPY cosmos3_contract_patch.py /opt/fs2-contract/cosmos3_contract_patch.py
+RUN python3 /opt/fs2-contract/cosmos3_contract_patch.py

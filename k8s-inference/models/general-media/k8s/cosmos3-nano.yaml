@@ -754,9 +754,12 @@ data:
     import mimetypes
     import os
     import struct
+    import subprocess
+    import tempfile
     import time
     import uuid
     from contextlib import asynccontextmanager
+    from fractions import Fraction
     from pathlib import Path
     from typing import Annotated, Any, Literal, Union
     from urllib.parse import urlsplit
@@ -1688,6 +1691,89 @@ data:
         return PlainTextResponse("\n".join(lines) + "\n", media_type="text/plain; version=0.0.4")
 
 
+    def _media_tool(command: list[str]) -> bytes:
+        try:
+            result = subprocess.run(command, capture_output=True, timeout=120, check=True)
+        except (OSError, subprocess.SubprocessError) as error:
+            print(json.dumps({"event": "cosmos_output_validation_failed", "error": str(error)}), flush=True)
+            raise AdapterError(502, "invalid_upstream_video", "model video could not be decoded and verified", False) from error
+        return result.stdout
+
+
+    def _video_info(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        raw = _media_tool([
+            "ffprobe", "-v", "error", "-count_frames", "-show_entries",
+            "stream=index,codec_type,width,height,avg_frame_rate,nb_read_frames,duration,sample_rate",
+            "-of", "json", str(path),
+        ])
+        try:
+            streams = json.loads(raw)["streams"]
+            videos = [item for item in streams if item.get("codec_type") == "video"]
+            if len(videos) != 1:
+                raise ValueError("expected one video stream")
+            video = videos[0]
+            video["decoded_frames"] = int(video["nb_read_frames"])
+            video["frame_rate"] = Fraction(video["avg_frame_rate"])
+            return video, [item for item in streams if item.get("codec_type") == "audio"]
+        except (KeyError, ValueError, TypeError, ZeroDivisionError) as error:
+            raise AdapterError(502, "invalid_upstream_video", "model video has invalid timing or stream metadata", False) from error
+
+
+    def verified_video_output(raw: bytes, body: Any) -> bytes:
+        """Verify decoded output and remove only causal-VAE padding frames.
+
+        The pinned Cosmos VAE rounds video lengths up to 4*k+1. Public requests
+        (including LeRobot action alignment) specify an exact frame count. A
+        lossless encode preserves decoded pixels: stream-copy can drop future
+        reference packets needed by B-frames. Audio is remuxed separately,
+        without -shortest or a video
+        duration cap: an explicitly longer soundtrack must not be truncated.
+        """
+        with tempfile.TemporaryDirectory(prefix="fs2-cosmos-output-") as temporary:
+            directory = Path(temporary)
+            source = directory / "source.mp4"
+            source.write_bytes(raw)
+            video, audio = _video_info(source)
+            width, height = map(int, body.size.split("x"))
+            if (video["width"], video["height"]) != (width, height) or video["frame_rate"] != body.fps:
+                raise AdapterError(502, "invalid_upstream_video", "model video dimensions or frame rate differ from the request", False)
+            requested = body.num_frames
+            actual = video["decoded_frames"]
+            rounded = math.ceil((requested - 1) / 4) * 4 + 1
+            if actual not in {requested, rounded}:
+                raise AdapterError(502, "invalid_upstream_video", "model video frame count differs from the request and expected VAE padding", False)
+            if bool(audio) != bool(getattr(body, "generate_sound", False)):
+                raise AdapterError(502, "invalid_upstream_video", "model audio presence differs from the request", False)
+            if actual == requested:
+                return raw
+            trimmed = directory / "trimmed-video.mp4"
+            _media_tool([
+                "ffmpeg", "-v", "error", "-nostdin", "-i", str(source),
+                "-map", "0:v:0", "-an", "-c:v", "libx264", "-qp", "0", "-preset", "veryfast",
+                "-frames:v", str(requested), "-fs", str(MAX_RAW_BYTES), str(trimmed),
+            ])
+            delivered = trimmed
+            if audio:
+                delivered = directory / "trimmed-with-original-audio.mp4"
+                _media_tool([
+                    "ffmpeg", "-v", "error", "-nostdin", "-i", str(trimmed), "-i", str(source),
+                    "-map", "0:v:0", "-map", "1:a", "-c", "copy", str(delivered),
+                ])
+            final, final_audio = _video_info(delivered)
+            if (final["decoded_frames"] != requested or final["frame_rate"] != body.fps
+                    or (final["width"], final["height"]) != (width, height)
+                    or len(final_audio) != len(audio)):
+                raise AdapterError(502, "invalid_upstream_video", "model video could not preserve the requested frame alignment", False)
+            if delivered.stat().st_size > MAX_RAW_BYTES:
+                raise AdapterError(502, "output_too_large", "normalized video exceeds the existing output byte limit", False)
+            print(json.dumps({
+                "event": "cosmos_video_padding_removed", "requested_frames": requested,
+                "source_decoded_frames": actual, "delivered_decoded_frames": final["decoded_frames"],
+                "method": "lossless-video-trim-original-audio-preserved", "audio_streams": len(audio),
+            }), flush=True)
+            return delivered.read_bytes()
+
+
     @app.post("/generate")
     async def generate(body: GenerateRequest, request: Request) -> Response:
         global OUTPUT_BYTES, OUTPUT_FRAMES
@@ -1724,6 +1810,8 @@ data:
                 fps = None
             else:
                 raw, mime_type = await generate_video(request.app.state.client, body)
+                if mime_type == "video/mp4":
+                    raw = await asyncio.to_thread(verified_video_output, raw, body)
                 frames = body.num_frames
                 fps = body.fps
             upstream_seconds = time.monotonic() - upstream_started
