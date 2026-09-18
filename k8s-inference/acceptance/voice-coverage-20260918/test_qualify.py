@@ -4,7 +4,7 @@ import wave
 
 import pytest
 
-from qualify import diarization_score, intervals, wav_integrity
+from qualify import diarization_score, intervals, preflight, wav_integrity
 
 
 def result(rows):
@@ -57,3 +57,17 @@ def test_complete_wave_and_silence():
     assert evaluation["frames"] == 3 and len(pcm) == 6
     with pytest.raises(ValueError, match="Silent"):
         wav_integrity(wav([0, 0]))
+
+
+def test_stream_dependencies_are_preflighted(monkeypatch):
+    seen = []
+    monkeypatch.setattr("qualify.importlib.import_module", seen.append)
+    preflight([{"mode": "diar-stream"}])
+    assert seen == ["httpx", "jsonschema", "websockets.asyncio.client"]
+
+
+def test_native_does_not_need_websocket_dependency(monkeypatch):
+    seen = []
+    monkeypatch.setattr("qualify.importlib.import_module", seen.append)
+    preflight([{"mode": "native"}])
+    assert seen == ["httpx", "jsonschema"]

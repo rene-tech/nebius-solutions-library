@@ -14,6 +14,13 @@ frozen complete case. Resume looks up that same key, never invents a replacement
 after ambiguous admission, and stops before the next case on harness/transport
 uncertainty. Streaming sessions are not replayed after accepted audio.
 
+Use the backend control-plane `.venv/bin/python` for the voice runner (httpx,
+jsonschema, websockets are already pinned there). The separate qualification
+evaluator environment is used for subsequent ASR/WER evaluation. Selected
+transports are imported before any admission; a retained initial harness attempt
+used the evaluator environment, which lacked websockets and stopped before that
+stream's admission. It is not recorded as a platform failure.
+
 Required flags are `--campaign` (protected campaign root), `--client-dir`
 (existing workbench `scripts/qualification`), `--assets` (original public speech
 asset root), and `--output` (task-owned private receipt directory). `--only`

@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import base64
 import hashlib
+import importlib
 import io
 import itertools
 import json
@@ -22,6 +23,14 @@ import wave
 MAGPIE = "magpie-tts-multilingual-357m"
 SORTFORMER = "diar-streaming-sortformer-4spk-v2-1"
 TERMINAL = {"succeeded", "failed", "cancelled", "expired", "preempted"}
+
+
+def preflight(cases):
+    """Fail before any admission when the selected transport is unavailable."""
+    for name in ("httpx", "jsonschema"):
+        importlib.import_module(name)
+    if any(case["mode"] == "diar-stream" for case in cases):
+        importlib.import_module("websockets.asyncio.client")
 
 
 def sha(data):
@@ -325,6 +334,9 @@ def main():
     if args.prepare:
         prepare(args, save)
         return
+    cases = [case for case in json.loads((args.output / "cases.json").read_text())["cases"]
+             if not args.only or case["id"] in args.only.split(",")]
+    preflight(cases)
     from run_campaign import MCP, artifact
     from batch_transport import upload
     import fcntl
@@ -336,9 +348,7 @@ def main():
             save(args.output / "initialize.json", mcp.initialize())
             save(args.output / "tools.json", mcp.rpc("tools/list"))
             results = []
-            for case in json.loads((args.output / "cases.json").read_text())["cases"]:
-                if args.only and case["id"] not in args.only.split(","):
-                    continue
+            for case in cases:
                 try:
                     result = run_case(mcp, person, case, args, save, upload, artifact)
                 except Exception as error:
