@@ -1,0 +1,55 @@
+{
+  "schema": "fs2.nebius.ai/proteina-variant-candidate-publication/v1",
+  "state": "published_candidate_real_h100_jit_passed_full_matrix_pending_not_production_selected",
+  "repository": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa",
+  "tag": "qualification-variants-478e4f32a-20260918",
+  "index_digest": "sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+  "runtime_manifest_digest": "sha256:70b1aa87995296894151853df24929f7d7b73bc0bd9f16d7272b17062fa52bf5",
+  "attestation_manifest_digest": "sha256:8d2fd5148f6a3ed75d33b39bd353f01c9c426416569e8008ec5a6dfcf4287c6a",
+  "config_digest": null,
+  "source_commit": "478e4f32ad810cebfdb92277ec01de5532622c3e",
+  "source_tree": "6feb5d575f82d1d9bd8ff989496afd00f9117a8a",
+  "upstream_source_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+  "base_image_digest": "sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+  "build": {
+    "platform": "linux/amd64",
+    "builder": "fs2-serve-release-builder",
+    "provenance": "mode=max",
+    "sbom": true,
+    "nebius_profile": "sandbox2 (explicit; global default unchanged)",
+    "isolated_docker_config": true,
+    "exact_git_archive": true,
+    "non_overwriting_tag_verified": true,
+    "context_permissions": "a+rX",
+    "metadata_sha256": "585b622ed1dd17c6d0a0e8300fef3f2ae4716e4af951725bf2aa6a12817e270d",
+    "image_config_sha256": "f10b1dedd5d5967f175b2c48c4238f20d90cb3775869f0e29000740b4a2eb597"
+  },
+  "files": {
+    "Dockerfile.variant-repair": "87a73f3eb5e80152c22003f52f77342c0575f5707283ace1e0e896f7137b90be",
+    "patch_variant_runtime.py": "85bfa102e8bd22498f1990cac519319ad73570df36312a5c652225d4c9451f3c",
+    "validate_jit_prerequisites.py": "201fb787e369b9b3e5372d2be3848c8621a880b581e501d901a1627aef41f77e",
+    "variant-repair-requirements.lock": "9cb77f33f063329358e74679a064722409364dc0770845d78f5611ae00e9abdd"
+  },
+  "tests": {
+    "exact_upstream_and_jit_namespace_cpu": 11,
+    "existing_runtime": 79,
+    "ruff": "passed",
+    "h100_real_jit_prerequisite": "passed; Python.h C compile + Triton numerical kernel; NVIDIA H10080GB",
+    "five_case_scientific_matrix": "pending"
+  },
+  "superseded_candidates": [
+    {
+      "source": "31bd6df02",
+      "digest": "sha256:5e9cef0e93d022580803c0c88e837ab4ca26f1b279b4a1968f981feacdd3d800",
+      "failure": "Missing Python.h during Triton runtime compilation; composite folding reward masked RF3 failure as zero. No scientific success; task Pod/CM removed."
+    },
+    {
+      "source": "0f186942c",
+      "digest": "sha256:6b8fefa2732b9db92778a268692aea40579a68aafd777adb9aa287eb9f45f20d",
+      "failure": "Qualification prerequisite used local tl closure unsupported by Triton. No model sampling; task Pod/CM removed."
+    }
+  ],
+  "scientific_parameters_weights_resources": "unchanged; exact five-case plan comparison passed",
+  "os_change": "Pinned libpython3.12-dev=3.12.3-1ubuntu0.17 plus matching distro dependencies; Python remains3.12.3",
+  "private_evidence_root": "/home/tux/secure-handoff/proteina-variant-repair-20260918-Mpp6FE"
+}
