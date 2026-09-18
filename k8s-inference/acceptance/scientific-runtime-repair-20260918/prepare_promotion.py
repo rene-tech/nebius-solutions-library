@@ -190,7 +190,7 @@ def configmap(prefix, data):
 
 
 def rebase_admin_configuration(configuration, previous_entries, successors):
-    """Keep operator settings; align only the two immutable artifact identities."""
+    """Keep operator settings; align only explicitly selected artifact identities."""
     result = copy.deepcopy(configuration)
     identity_fields = {
         "artifact_manifest_sha256": "artifact_manifest_sha256",
@@ -200,7 +200,7 @@ def rebase_admin_configuration(configuration, previous_entries, successors):
         "image_digest": "runtime_image_digest",
         "model_revision": "model_revision",
     }
-    for model_id in NEW:
+    for model_id in successors:
         old = deployment_runtime_configuration_identity(previous_entries[model_id])
         new = deployment_runtime_configuration_identity(successors[model_id])
         artifact = result["models"][model_id]["artifact"]
