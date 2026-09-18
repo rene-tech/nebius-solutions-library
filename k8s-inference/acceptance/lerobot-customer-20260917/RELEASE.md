@@ -156,3 +156,39 @@ The H100 Terraform variables now pin the deployed control-plane digest and add
 the LeRobot scheduling entry. Formatting and Terraform validation pass. No
 broad Terraform apply was performed against the older unrelated infrastructure
 state.
+
+## Corrected upload replay release150
+
+Worker source `4dc1ef4850c1d794a5f4cd2a941f12d11b3f7718` fixes the second-variant
+failure through the actual durable upload contract. After begin/replay it reads
+the upload operation: queued uploads receive content, succeeded uploads skip
+PUT, and idempotent finalization returns the immutable reference. The returned
+digest, size and media type must still match. Failed/cancelled/expired or invalid
+states fail explicitly; arbitrary HTTP409 is not swallowed and invocation keys
+are not changed to create duplicate work. Fresh-client replay is covered.
+
+The worker suite passed **78 tests**, Ruff and strict mypy. An initial test
+invocation selected an incompatible older8fps fixture; it was corrected to the
+retained10fps fixture, without relaxing timestamp validation. Offline nonroot,
+read-only, network-disabled image smoke passed. A pre-publication packaging
+smoke caught archive directory permissions inherited from private umask077;
+the generated build context was corrected to readable/traversable source
+permissions and rebuilt. No failing image was deployed. Publication details:
+`models/general-media/lerobot-augmentation/activation/registry-publication-upload-replay-20260918.json`.
+
+Helm150 deployed source `7aa37722bd4989c983aa8c5aaedab5310da90049`, control-plane
+index `sha256:e240fb81a208df7517df8ee7ae3f0fa47d4544b7399f68f02db933d16fed9b6c`
+and worker `sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1`.
+The new worker is initially active with null qualification receipts; historical
+148 proof is retained, not borrowed by a new worker. The explicit replacement
+renderer permits only the LeRobot image/identity change and preserves ten other
+scientific rows, four snapshot bundles and exact scheduler bytes. Its affected
+suite passed23 tests.
+
+An early identity check while Helm was still running rejected the still-old
+deployment; no inference followed that rejection. After Helm reported deployed,
+all three gateways, two controllers, two unchanged admin replicas and15 GPU
+observers were ready on their expected images. The settled check at01:26:33
+passed all three Prometheus targets/13 rules and the separate nine public/admin
+reads returned HTTP200. The targeted two-variant and negative probes are now
+running before a new final qualification/acceptance promotion.
