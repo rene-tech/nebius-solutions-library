@@ -166,7 +166,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
     )
     profile_validator = Draft202012Validator(profile_schema, format_checker=FormatChecker())
     baseline_ids = [
-        item["model_id"] for item in execution_document["models"] if item["model_id"] != "cosmos3-lerobot-augmentation"
+        item["model_id"] for item in execution_document["models"] if item["model_id"] != "openfold3-openbind"
     ]
     baseline = {"schema": execution_document["schema"], "models": [executions[model_id] for model_id in baseline_ids]}
     execution_map_sha256 = _canonical_sha256(baseline)
@@ -200,7 +200,14 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
             recorded_identity = identity_payload.pop("execution_identity_sha256")
             assert recorded_identity == _canonical_sha256(identity_payload)
             assert qualification["h100_semantic_receipt_sha256"] == expected["receipt_sha256"]
-            assert qualification["execution_map_sha256"] == execution_map_sha256
+            if candidate is profile:
+                assert qualification["execution_map_sha256"] == execution_map_sha256
+            else:
+                # Historical activation evidence remains unchanged; only the
+                # canonical reference is rebased to the exact preserved rows.
+                assert qualification["execution_map_sha256"] == (
+                    "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521"
+                )
             if candidate["state"] == "active":
                 assert qualification["public_completion_receipt_sha256"] is None
                 assert qualification["scheduler_eligibility_receipt_sha256"] is None

@@ -6,7 +6,7 @@
     "model_id": "openfold3-openbind",
     "display_name": "OpenFold3 OpenBind v0.5.0",
     "execution_mode": "scientific-batch",
-    "state": "qualified",
+    "state": "active",
     "route_exposed": true,
     "source": {
       "kind": "git",
@@ -17,11 +17,11 @@
     },
     "execution_identity": {
       "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
-      "runtime_image_digest": "sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
-      "runtime_recipe_sha256": "2fda730bc3fb2b796d9aa58eae9b13b0244feda800070eab64293736b0512772",
+      "runtime_image_digest": "sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
+      "runtime_recipe_sha256": "3b971d1b3260d7545469318d88cb47a466c35f8d58fc4a98f4ded4b274ad5d3e",
       "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe",
       "artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
-      "execution_identity_sha256": "dbb486286d17040cebddc3f1ec84a15a10ee61eb8868ddb73ac41871188268d8"
+      "execution_identity_sha256": "addfe43f1d98f84240da0dcc7249fbfdfd0630dbaba737fc77dd950061bcd3b6"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -127,14 +127,14 @@
     },
     "semantic_validation": {
       "validator_id": "openfold3-upstream-openbind-v0-5-0",
-      "state": "qualified"
+      "state": "active"
     },
     "qualification": {
-      "h100_semantic_receipt_sha256": "2590708d8932ddef795957a91215dd20ca7e8f8666b4aa9d50e782b212029d09",
-      "public_completion_receipt_sha256": "0ae693f45e04c06f14de8ad7b2c36a09568a11b88bd8c5f57ce2c83046de67db",
-      "scheduler_eligibility_receipt_sha256": "3689fffba1de4d6ded8eaeb2f65b5ba770492e4f152ef5e991d8892a19495b40",
-      "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
-      "qualified_at": "2026-09-06T22:53:31.879853Z"
+      "h100_semantic_receipt_sha256": "99e1e2672cb010b285d6031e42dd1e7fa903c10e532b942dc9c1444b1ccc62e6",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "9c7fef0e6cc9a50c0ff1cce66282aacc1811a2a0066d372b143b0b2ace328943",
+      "qualified_at": "2026-09-18T22:33:58.366462+00:00"
     },
     "policy": {
       "commercial_use": "allowed",
@@ -143,7 +143,10 @@
         "The r7 localization-compatible successor retains the exact 102-byte baked runner below a traversable 0555 parent and passed exact-artifact H100 semantics with the enriched runtime marker and no runtime ConfigMap projection.",
         "OpenFold3 is an independent, non-equivalent backend to AlphaFold 3: distinct code, weights, license and results; it is never reported as AlphaFold 3.",
         "The public scientific identity is openfold3-openbind so it cannot collide with the existing openfold3 HTTP catalog record; the legacy runtime-emitted openfold3 label is accepted only inside this adapter's output-validation boundary.",
-        "The OpenBind-0 checkpoint and components.bcif are bound to immutable localization receipts; public completion and scheduler-eligibility receipts remain pending."
+        "The OpenBind-0 checkpoint and components.bcif are bound to immutable localization receipts; public completion and scheduler-eligibility receipts remain pending.",
+        "The inline DataLoader successor retains the OpenBind-0 checkpoint, full input sequences and original resource limits; three isolated H100 heteromers complete with the original 64 MiB shared-memory mount.",
+        "Runtime repair is not structural accuracy qualification: 1ACB/1BRS/2PTC C-alpha complex RMSD was 18.717/14.437/18.882 A with native C-alpha contact recall 0/0.0556/0 under the unchanged MSA-free, template-free policy. No biological or clinical accuracy guarantee is made.",
+        "The new image remains active/unqualified pending exact public completion and scheduler receipts; old-image public or GPU snapshot qualification is not inherited."
       ]
     },
     "runtime_artifacts": [

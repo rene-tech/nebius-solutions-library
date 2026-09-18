@@ -1741,7 +1741,7 @@
       "model_id": "openfold3-openbind",
       "variant_id": "upstream-openbind-v0-5-0",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "dbb486286d17040cebddc3f1ec84a15a10ee61eb8868ddb73ac41871188268d8",
+      "execution_identity_sha256": "addfe43f1d98f84240da0dcc7249fbfdfd0630dbaba737fc77dd950061bcd3b6",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -1777,7 +1777,7 @@
       "stages": [
         {
           "stage_id": "data-pipeline",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
           "collector_id": "openfold3-data-collector-v1",
           "validator_id": "openfold3-data-validator-v1",
           "mounts": [
@@ -1813,7 +1813,7 @@
         },
         {
           "stage_id": "inference",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b15da4b2258c0c385adc1dbc7799493f3768cb4881f7990cb957f2c3b6759e4",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
           "collector_id": "openfold3-result-collector-v1",
           "validator_id": "openfold3-upstream-openbind-v0-5-0",
           "mounts": [
@@ -2310,7 +2310,7 @@
     }
   ],
   "qualification_baselines": {
-    "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521": [
+    "b69c2a4e830e69e7943b8c2cb479e8b0f3f88498b52009263d25ed5d76b4a001": [
       "boltzgen",
       "proteina-complexa",
       "bindcraft",
@@ -2318,9 +2318,9 @@
       "rfdiffusion",
       "esmfold2",
       "esmfold2-fast",
-      "openfold3-openbind",
       "protenix-v2",
-      "alphafold3"
+      "alphafold3",
+      "cosmos3-lerobot-augmentation"
     ]
   }
 }
