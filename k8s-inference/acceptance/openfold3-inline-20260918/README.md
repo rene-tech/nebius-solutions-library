@@ -98,3 +98,24 @@ All three task Pods (including earlier attempts) and all three input ConfigMaps
 were verified absent after retaining logs, Pod/events, prepared inputs and
 outputs. Production scientific-profile promotion and public replay remain
 separate parent-coordinated gates.
+# Public release168 completion — 2026-09-18
+
+All three original full heteromer requests completed through ordinary scientist09
+MCP after the parent-owned release168. Each used one successful inference attempt
+on existing `h100-1x`; returned identity is exactly image `6b883e916c86…`, runtime
+recipe `3b971d1b3260…`, execution identity `addfe43f1d98…`. Public and scheduler
+receipts are `public-r168.json` and `scheduler-r168.json`; the protected originals
+remain in campaign `cohorts/openfold3-inline-r168/scientist-09`.
+
+| Request | End-to-end seconds | Complex Cα RMSD Å | Native Cα contact recall |
+| --- | ---: | ---: | ---: |
+| 1ACB seed1 | 84.099 | 18.212 | 0 |
+| 1BRS seed7 | 248.516 | 15.323 | 0.0556 |
+| 2PTC seed42 | 83.177 | 19.053 | 0 |
+
+All chains and seed records match and every returned artifact's bytes/digest
+verify. This establishes runtime/data-delivery repair, **not accurate complex
+prediction**. The poor geometry remains explicit. Durations include queue,
+startup and orchestration. Public result envelopes retain Pod UIDs but not node
+UIDs or GPU UUIDs; missing identities are not backfilled or called zero GPU use.
+No shared catalog qualification status was changed by this lane.

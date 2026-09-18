@@ -1,0 +1,247 @@
+{
+  "schema": "fs2.nebius.ai/openfold3-public-completion-receipt/v1",
+  "release": 168,
+  "observed_at": "2026-09-18T23:12:59Z",
+  "execution_identity": {
+    "model_id": "openfold3-openbind",
+    "variant_id": "upstream-openbind-v0-5-0",
+    "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+    "runtime_image_digest": "sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
+    "runtime_recipe_sha256": "3b971d1b3260d7545469318d88cb47a466c35f8d58fc4a98f4ded4b274ad5d3e",
+    "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe",
+    "model_artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
+    "execution_identity_sha256": "addfe43f1d98f84240da0dcc7249fbfdfd0630dbaba737fc77dd950061bcd3b6"
+  },
+  "state": "public_workflow_completed_artifacts_verified_scientific_accuracy_poor",
+  "cases": [
+    {
+      "case_id": "openfold3-openbind-1acb-heteromer-s1",
+      "operation_id": "d6b1fcd7-6c30-4826-ba1e-1f90ba641f5a",
+      "elapsed_seconds": 84.099376,
+      "seed": 1,
+      "input_sha256": "55811d2cfc86253f6d136d878fef4861d8caa6a32e161355b0d38e87574964f1",
+      "confidence": {
+        "avg_plddt": 38.705391,
+        "disorder": 0,
+        "gpde": 3.789215,
+        "iptm": 0.080619,
+        "ptm": 0.255145,
+        "sample_ranking_score": 0.115524
+      },
+      "artifacts": [
+        {
+          "name": "prediction.1.0",
+          "semantic_type": "protein-structure-mmcif/v1",
+          "sha256": "194cadba06f98c16dfd870ab1c663b997a036821730e78bdb46fe2a87cb13b77",
+          "size_bytes": 244000
+        },
+        {
+          "name": "upstream-summary.1.0",
+          "semantic_type": "structure-upstream-summary-json/v1",
+          "sha256": "d0e39d2e99a1b221e458a7791ae33de89780ae16225a07b4ccd2e4feaa71b7ed",
+          "size_bytes": 362
+        },
+        {
+          "name": "confidence",
+          "semantic_type": "structure-confidence-json/v1",
+          "sha256": "5b0b9be278bd45f7d61099f6df6f243e54caff5804bedad09a3deefd1412f614",
+          "size_bytes": 856
+        }
+      ],
+      "independent_evaluation": {
+        "evaluator": "protein_complex",
+        "case_id": "openfold3-openbind-1acb-heteromer-s1",
+        "service_semantic_pass": true,
+        "paper_reproduction": "not_claimed",
+        "predictions": [
+          {
+            "chains": [
+              {
+                "reference_chain": "E",
+                "prediction_chain": "A",
+                "reference_coverage": 1
+              },
+              {
+                "reference_chain": "I",
+                "prediction_chain": "B",
+                "reference_coverage": 1
+              }
+            ],
+            "complex_ca_rmsd_angstrom": 18.211720533862376,
+            "interface_ca_rmsd_angstrom": 17.995885246582805,
+            "partner_ca_rmsd_after_receptor_fit_angstrom": 23.20733881073345,
+            "native_ca_contacts": 43,
+            "predicted_ca_contacts": 17,
+            "native_ca_contact_recall": 0,
+            "ca_contact_precision": 0,
+            "interface_residues": 28,
+            "all_input_chain_sequences_exact": true,
+            "method": "Sequence-mapped heterodimer; C-alpha contacts under 8 A. Not DockQ/CAPRI or all-atom interface scoring."
+          }
+        ],
+        "scientific_accuracy": "measured_against_experimental_complex",
+        "reference_sha256": "79bca7d835e21ee7015932fc39c74a54458ae115167e665e6f69f1f7318921e5"
+      },
+      "private_receipt_sha256": {
+        "receipt.json": "58345ad636b81807977cdd667ff0514a96e58d2e6ef65a257512123f18df8cea",
+        "result-envelope.json": "718b13cfd497a7add4fd2c6728da2cba8feedb3f9309543727ffef6a7b6f9564",
+        "evaluation.json": "f7ed99aeda8dfaf10beeab5a7f726f4fc8508c4a08f0505b2e3aa5db788cd78e",
+        "output-manifest.json": "65135aeb8bcab579a13b6dad1b98dcbda09e784f08b5c37b20b52571b58b2430",
+        "stage-detail.json": "7842034418026d16c4855a2886cac54078c97600b70ae8323fede8a59dc1fe0c"
+      }
+    },
+    {
+      "case_id": "openfold3-openbind-1brs-heteromer-s7",
+      "operation_id": "a1873d04-8481-4327-ba7c-17f2809b17d4",
+      "elapsed_seconds": 248.516188,
+      "seed": 7,
+      "input_sha256": "10a59a89c1f804575a9d65b5b4cfd3ab679826f51b612ed640447aa86ef2934e",
+      "confidence": {
+        "avg_plddt": 43.305393,
+        "disorder": 0,
+        "gpde": 2.758174,
+        "iptm": 0.048439,
+        "ptm": 0.259467,
+        "sample_ranking_score": 0.090645
+      },
+      "artifacts": [
+        {
+          "name": "prediction.7.0",
+          "semantic_type": "protein-structure-mmcif/v1",
+          "sha256": "3771d03fe75ed8ce4c49604b0d2e48cec599e4503bf9bb90b2c601fe736ab0db",
+          "size_bytes": 161773
+        },
+        {
+          "name": "upstream-summary.7.0",
+          "semantic_type": "structure-upstream-summary-json/v1",
+          "sha256": "65015af46fefd65b418268d81e20883661e2cd4adc2aba16e6b8dbbad8f06c8e",
+          "size_bytes": 361
+        },
+        {
+          "name": "confidence",
+          "semantic_type": "structure-confidence-json/v1",
+          "sha256": "e4f4055aecabd4609d0275b85e3ca35826d830470928d385459c85638a2d5efd",
+          "size_bytes": 856
+        }
+      ],
+      "independent_evaluation": {
+        "evaluator": "protein_complex",
+        "case_id": "openfold3-openbind-1brs-heteromer-s7",
+        "service_semantic_pass": true,
+        "paper_reproduction": "not_claimed",
+        "predictions": [
+          {
+            "chains": [
+              {
+                "reference_chain": "A",
+                "prediction_chain": "A",
+                "reference_coverage": 1
+              },
+              {
+                "reference_chain": "D",
+                "prediction_chain": "B",
+                "reference_coverage": 1
+              }
+            ],
+            "complex_ca_rmsd_angstrom": 15.322537255952078,
+            "interface_ca_rmsd_angstrom": 14.448987480140524,
+            "partner_ca_rmsd_after_receptor_fit_angstrom": 23.44546837075828,
+            "native_ca_contacts": 36,
+            "predicted_ca_contacts": 15,
+            "native_ca_contact_recall": 0.05555555555555555,
+            "ca_contact_precision": 0.13333333333333333,
+            "interface_residues": 27,
+            "all_input_chain_sequences_exact": true,
+            "method": "Sequence-mapped heterodimer; C-alpha contacts under 8 A. Not DockQ/CAPRI or all-atom interface scoring."
+          }
+        ],
+        "scientific_accuracy": "measured_against_experimental_complex",
+        "reference_sha256": "8308fdd0c0e8e3518ec48d87fb226134f72f01472158f1096db2328cdfe911eb"
+      },
+      "private_receipt_sha256": {
+        "receipt.json": "e51b4847d6cc79a34bccf2740366de28701318495b17a0d9b28473d15fd2ae5f",
+        "result-envelope.json": "2f794b88a4b571bf3d466b4641cd4b23efb1a8422eaf17a97c0c2aa8068e16e5",
+        "evaluation.json": "f8f1f1883654ad441442406de1553d07bbc57b0909a7424b248110928e93293c",
+        "output-manifest.json": "f976aecffa7008befeb3f7b8855658f9e62597213e2c07492263cdb91f322345",
+        "stage-detail.json": "c1daf02631f028f5525be53d5af9f243dccfa76358abb58a30c4ca5283b9d8a4"
+      }
+    },
+    {
+      "case_id": "openfold3-openbind-2ptc-heteromer-s42",
+      "operation_id": "f14d4294-aa6c-4f11-b531-55b4f8b20913",
+      "elapsed_seconds": 83.176735,
+      "seed": 42,
+      "input_sha256": "56aea1c7477f4e1387b1577054551cc617bd0cb2c5cb04732ffbaf05684cccb6",
+      "confidence": {
+        "avg_plddt": 29.516514,
+        "disorder": 0,
+        "gpde": 4.28335,
+        "iptm": 0.059731,
+        "ptm": 0.162857,
+        "sample_ranking_score": 0.080356
+      },
+      "artifacts": [
+        {
+          "name": "prediction.42.0",
+          "semantic_type": "protein-structure-mmcif/v1",
+          "sha256": "32b7c2b0d678c7f48e30ce366ca9961c2c63b4bfb233759b1271913e092596ef",
+          "size_bytes": 218670
+        },
+        {
+          "name": "upstream-summary.42.0",
+          "semantic_type": "structure-upstream-summary-json/v1",
+          "sha256": "2cf5dc978fdfbeb9b11e3d92135d2fc3aa08a5af516c8148dde3c6fa2fe6404c",
+          "size_bytes": 360
+        },
+        {
+          "name": "confidence",
+          "semantic_type": "structure-confidence-json/v1",
+          "sha256": "dd8d972b65a383e98996a67956d3fe5b759ee9227141e71c7fdaaf876f008a6b",
+          "size_bytes": 865
+        }
+      ],
+      "independent_evaluation": {
+        "evaluator": "protein_complex",
+        "case_id": "openfold3-openbind-2ptc-heteromer-s42",
+        "service_semantic_pass": true,
+        "paper_reproduction": "not_claimed",
+        "predictions": [
+          {
+            "chains": [
+              {
+                "reference_chain": "E",
+                "prediction_chain": "A",
+                "reference_coverage": 1
+              },
+              {
+                "reference_chain": "I",
+                "prediction_chain": "B",
+                "reference_coverage": 1
+              }
+            ],
+            "complex_ca_rmsd_angstrom": 19.05290086586992,
+            "interface_ca_rmsd_angstrom": 20.40942436891514,
+            "partner_ca_rmsd_after_receptor_fit_angstrom": 44.991284311528375,
+            "native_ca_contacts": 46,
+            "predicted_ca_contacts": 22,
+            "native_ca_contact_recall": 0,
+            "ca_contact_precision": 0,
+            "interface_residues": 31,
+            "all_input_chain_sequences_exact": true,
+            "method": "Sequence-mapped heterodimer; C-alpha contacts under 8 A. Not DockQ/CAPRI or all-atom interface scoring."
+          }
+        ],
+        "scientific_accuracy": "measured_against_experimental_complex",
+        "reference_sha256": "21f4210f8e688874355a1ed9f6600db6b8f4e7cbbfa5a1132afc88a0c13d979f"
+      },
+      "private_receipt_sha256": {
+        "receipt.json": "84f36ade42b800063b002cf5e930b0dc7418d1977d5d362244d7dc2e55948e9a",
+        "result-envelope.json": "ca84542683ef5ee96636da83e70f896cf0e258846d3358d125e4d828da912c58",
+        "evaluation.json": "06f0505dd53b62096b12c08a2f0242426ac6a7ba475f1678781b4b6492cf292a",
+        "output-manifest.json": "d5247fa92b8ef6ab243f6d3911ee761875c50042d8f0789d525b557f8cfa6606",
+        "stage-detail.json": "ebe94cf749e318a971cf5e46718bf3c11b8e07a09cb8de2e455c4ff75b1cb665"
+      }
+    }
+  ],
+  "scope": "Three original full heteromers and seeds through ordinary scientist09 MCP; no model parameter/limit change. Exact returned artifact digests, input chains and seed records verified. Not biological or clinical qualification."
+}

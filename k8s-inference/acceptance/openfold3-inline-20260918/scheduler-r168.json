@@ -1,0 +1,329 @@
+{
+  "schema": "fs2.nebius.ai/openfold3-scheduler-eligibility-receipt/v1",
+  "release": 168,
+  "execution_identity": {
+    "model_id": "openfold3-openbind",
+    "variant_id": "upstream-openbind-v0-5-0",
+    "model_revision": "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86",
+    "runtime_image_digest": "sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
+    "runtime_recipe_sha256": "3b971d1b3260d7545469318d88cb47a466c35f8d58fc4a98f4ded4b274ad5d3e",
+    "workload_recipe_sha256": "73a463f3d28d658780d6a52c10b7826301d9a510e6899e7d117ffaa1d800fcbe",
+    "model_artifact_manifest_digest": "c4cc2c59313470ee7498f37d377485328785e09080ccb2136edfeef754a573bb",
+    "execution_identity_sha256": "addfe43f1d98f84240da0dcc7249fbfdfd0630dbaba737fc77dd950061bcd3b6"
+  },
+  "state": "three_cpu_and_h100_workflows_completed",
+  "cases": [
+    {
+      "case_id": "openfold3-openbind-1acb-heteromer-s1",
+      "operation_id": "d6b1fcd7-6c30-4826-ba1e-1f90ba641f5a",
+      "scheduling_snapshot": {
+        "policy_revision": "d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+        "captured_at": "2026-09-18T23:06:33.772904Z",
+        "service_class": "customer-batch",
+        "tenant_queue": "inference-models",
+        "model_lane": "openfold3-openbind",
+        "stages": [
+          {
+            "stage_id": "data-pipeline",
+            "resource_class": "cpu",
+            "resolved_cluster_queue": "general-cpu",
+            "resolved_local_queue": "general-cpu",
+            "workload_priority_class": "standard",
+            "workload_priority_value": 0,
+            "resolved_pool_preference": [
+              "batch-cpu"
+            ],
+            "accelerator_resource_name": null,
+            "accelerator_count": 0,
+            "max_queue_seconds": null,
+            "max_execution_seconds": null,
+            "checkpoint_mode": "none",
+            "preemption_mode": "restartable"
+          },
+          {
+            "stage_id": "inference",
+            "resource_class": "gpu",
+            "resolved_cluster_queue": "inference-accelerators",
+            "resolved_local_queue": "inference-models",
+            "workload_priority_class": "standard",
+            "workload_priority_value": 0,
+            "resolved_pool_preference": [
+              "h100-ondemand-1x",
+              "h100-reserved-8x",
+              "h100-1x"
+            ],
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "max_queue_seconds": null,
+            "max_execution_seconds": null,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt_id": "2f5e9c0b-8812-5677-8c9b-ee4876ca005d",
+          "stage_id": "data-pipeline",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "status": "succeeded",
+          "started_at": "2026-09-18T23:06:34.016972Z",
+          "completed_at": "2026-09-18T23:06:46.306412Z",
+          "scheduling_admission": {
+            "resolved_pool_id": null,
+            "admitted_resource_flavor": null,
+            "accelerator_resource_name": null,
+            "accelerator_count": 0,
+            "admitted_at": "2026-09-18T23:06:34Z"
+          },
+          "kueue_workload_uid": "7f928ae6-7944-4ccf-953b-5b12827cd8a0",
+          "k8s_job_uid": "a03cc35c-b702-42d9-9d0c-33774b092591",
+          "pod_uids": [
+            "339aa8fa-ae38-4aa7-8d8d-8f81b7f18d65"
+          ],
+          "node_uids": [],
+          "gpu_uuids": [],
+          "checkpoint_input": null,
+          "checkpoint_output": null
+        },
+        {
+          "attempt_id": "9065d887-fa45-56bc-a0cf-43d058e4a543",
+          "stage_id": "inference",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "status": "succeeded",
+          "started_at": "2026-09-18T23:06:48.050457Z",
+          "completed_at": "2026-09-18T23:07:43.677883Z",
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-1x",
+            "admitted_resource_flavor": "inference-h100-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-09-18T23:06:49Z"
+          },
+          "kueue_workload_uid": "82b424f0-6d9b-48c4-b315-c499b6714211",
+          "k8s_job_uid": "42594671-6002-48c3-b616-e7e6c2048c0b",
+          "pod_uids": [
+            "8430e8a8-ae18-4302-b171-42ea405e444e"
+          ],
+          "node_uids": [],
+          "gpu_uuids": [],
+          "checkpoint_input": null,
+          "checkpoint_output": null
+        }
+      ],
+      "result_envelope_sha256": "718b13cfd497a7add4fd2c6728da2cba8feedb3f9309543727ffef6a7b6f9564"
+    },
+    {
+      "case_id": "openfold3-openbind-1brs-heteromer-s7",
+      "operation_id": "a1873d04-8481-4327-ba7c-17f2809b17d4",
+      "scheduling_snapshot": {
+        "policy_revision": "d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+        "captured_at": "2026-09-18T23:00:58.161629Z",
+        "service_class": "customer-batch",
+        "tenant_queue": "inference-models",
+        "model_lane": "openfold3-openbind",
+        "stages": [
+          {
+            "stage_id": "data-pipeline",
+            "resource_class": "cpu",
+            "resolved_cluster_queue": "general-cpu",
+            "resolved_local_queue": "general-cpu",
+            "workload_priority_class": "standard",
+            "workload_priority_value": 0,
+            "resolved_pool_preference": [
+              "batch-cpu"
+            ],
+            "accelerator_resource_name": null,
+            "accelerator_count": 0,
+            "max_queue_seconds": null,
+            "max_execution_seconds": null,
+            "checkpoint_mode": "none",
+            "preemption_mode": "restartable"
+          },
+          {
+            "stage_id": "inference",
+            "resource_class": "gpu",
+            "resolved_cluster_queue": "inference-accelerators",
+            "resolved_local_queue": "inference-models",
+            "workload_priority_class": "standard",
+            "workload_priority_value": 0,
+            "resolved_pool_preference": [
+              "h100-ondemand-1x",
+              "h100-reserved-8x",
+              "h100-1x"
+            ],
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "max_queue_seconds": null,
+            "max_execution_seconds": null,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt_id": "f937c026-95da-556d-a2a8-95f164034d0f",
+          "stage_id": "data-pipeline",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "status": "succeeded",
+          "started_at": "2026-09-18T23:00:58.312052Z",
+          "completed_at": "2026-09-18T23:01:10.316559Z",
+          "scheduling_admission": {
+            "resolved_pool_id": null,
+            "admitted_resource_flavor": null,
+            "accelerator_resource_name": null,
+            "accelerator_count": 0,
+            "admitted_at": "2026-09-18T23:00:58Z"
+          },
+          "kueue_workload_uid": "8f1d5457-057a-4281-8cd1-fa67766002c7",
+          "k8s_job_uid": "25aad517-1e8a-4d53-8add-1696e51c5cf6",
+          "pod_uids": [
+            "9cda3fe9-6013-4335-bb2e-70cfdd34a710"
+          ],
+          "node_uids": [],
+          "gpu_uuids": [],
+          "checkpoint_input": null,
+          "checkpoint_output": null
+        },
+        {
+          "attempt_id": "619c5e70-9b7b-570b-8ead-a237a7f4b9ce",
+          "stage_id": "inference",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "status": "succeeded",
+          "started_at": "2026-09-18T23:01:14.362464Z",
+          "completed_at": "2026-09-18T23:04:49.220926Z",
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-1x",
+            "admitted_resource_flavor": "inference-h100-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-09-18T23:01:15Z"
+          },
+          "kueue_workload_uid": "71c3cb85-5807-4b75-8ebf-700dbbb936a5",
+          "k8s_job_uid": "6e911948-fe1a-4f5c-8952-f8ad28f3421d",
+          "pod_uids": [
+            "4ad91672-4dc2-4381-a373-c9c379dbde13"
+          ],
+          "node_uids": [],
+          "gpu_uuids": [],
+          "checkpoint_input": null,
+          "checkpoint_output": null
+        }
+      ],
+      "result_envelope_sha256": "2f794b88a4b571bf3d466b4641cd4b23efb1a8422eaf17a97c0c2aa8068e16e5"
+    },
+    {
+      "case_id": "openfold3-openbind-2ptc-heteromer-s42",
+      "operation_id": "f14d4294-aa6c-4f11-b531-55b4f8b20913",
+      "scheduling_snapshot": {
+        "policy_revision": "d2dbc266a0ab70aae6c175274b81549ace6bda683172b212da4890ec281353e0",
+        "captured_at": "2026-09-18T23:05:10.850523Z",
+        "service_class": "customer-batch",
+        "tenant_queue": "inference-models",
+        "model_lane": "openfold3-openbind",
+        "stages": [
+          {
+            "stage_id": "data-pipeline",
+            "resource_class": "cpu",
+            "resolved_cluster_queue": "general-cpu",
+            "resolved_local_queue": "general-cpu",
+            "workload_priority_class": "standard",
+            "workload_priority_value": 0,
+            "resolved_pool_preference": [
+              "batch-cpu"
+            ],
+            "accelerator_resource_name": null,
+            "accelerator_count": 0,
+            "max_queue_seconds": null,
+            "max_execution_seconds": null,
+            "checkpoint_mode": "none",
+            "preemption_mode": "restartable"
+          },
+          {
+            "stage_id": "inference",
+            "resource_class": "gpu",
+            "resolved_cluster_queue": "inference-accelerators",
+            "resolved_local_queue": "inference-models",
+            "workload_priority_class": "standard",
+            "workload_priority_value": 0,
+            "resolved_pool_preference": [
+              "h100-ondemand-1x",
+              "h100-reserved-8x",
+              "h100-1x"
+            ],
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "max_queue_seconds": null,
+            "max_execution_seconds": null,
+            "checkpoint_mode": "restart",
+            "preemption_mode": "restartable"
+          }
+        ]
+      },
+      "attempts": [
+        {
+          "attempt_id": "7adad063-4dfb-5cc0-93bc-685e87e450c0",
+          "stage_id": "data-pipeline",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "status": "succeeded",
+          "started_at": "2026-09-18T23:05:10.912570Z",
+          "completed_at": "2026-09-18T23:05:23.811589Z",
+          "scheduling_admission": {
+            "resolved_pool_id": null,
+            "admitted_resource_flavor": null,
+            "accelerator_resource_name": null,
+            "accelerator_count": 0,
+            "admitted_at": "2026-09-18T23:05:11Z"
+          },
+          "kueue_workload_uid": "c18e517e-6d48-48a9-a3d8-5376cf420784",
+          "k8s_job_uid": "4b5834bb-c981-4153-be25-c744f66fc34c",
+          "pod_uids": [
+            "b26c23ce-2b8a-4b9b-9c0a-579aac2c116b"
+          ],
+          "node_uids": [],
+          "gpu_uuids": [],
+          "checkpoint_input": null,
+          "checkpoint_output": null
+        },
+        {
+          "attempt_id": "04b0b014-5fe1-56d4-be8b-259fe7185ab2",
+          "stage_id": "inference",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "status": "succeeded",
+          "started_at": "2026-09-18T23:05:26.389390Z",
+          "completed_at": "2026-09-18T23:06:14.681130Z",
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-1x",
+            "admitted_resource_flavor": "inference-h100-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-09-18T23:05:26Z"
+          },
+          "kueue_workload_uid": "2569e0a7-fe9f-40ef-bfe3-f1d3a2a2fb9c",
+          "k8s_job_uid": "c0e7cd29-ed53-4e8b-8890-3b8d97ed1d72",
+          "pod_uids": [
+            "55ca1160-aa1d-487d-a297-81e52afd6863"
+          ],
+          "node_uids": [],
+          "gpu_uuids": [],
+          "checkpoint_input": null,
+          "checkpoint_output": null
+        }
+      ],
+      "result_envelope_sha256": "ca84542683ef5ee96636da83e70f896cf0e258846d3358d125e4d828da912c58"
+    }
+  ],
+  "limitations": [
+    "All inference stages admitted one GPU on existing h100-1x with one successful attempt.",
+    "Pod UIDs retained by public scientific result; node UIDs and GPU UUIDs absent and not inferred.",
+    "Durations include orchestration; not isolated GPU compute or billing.",
+    "Root owner promotion and production operation artifacts supply image identity; no broad cluster health claim."
+  ]
+}
