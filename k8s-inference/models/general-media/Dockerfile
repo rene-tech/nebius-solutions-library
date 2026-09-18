@@ -1,4 +1,5 @@
-FROM registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+ARG BASE_IMAGE=registry.example.invalid/k8s-inference/models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635
+FROM ${BASE_IMAGE}
 
 ARG DIFFUSERS_VERSION=0.35.1
 ARG HUGGINGFACE_HUB_VERSION=0.36.0
@@ -23,7 +24,7 @@ RUN python3 -m venv --system-site-packages /opt/fs2-media-venv \
     && /opt/fs2-media-venv/bin/python -c \
        'import diffusers, huggingface_hub, monai, nibabel, PIL, torch, transformers; from diffusers import StableDiffusionXLPipeline; assert diffusers.__version__ == "0.35.1"; assert huggingface_hub.__version__ == "0.36.0"; assert monai.__version__ == "1.5.1"; assert nibabel.__version__ == "5.3.2"; assert PIL.__version__ == "11.3.0"; assert transformers.__version__ == "4.57.1"; print(torch.__version__, torch.version.cuda, StableDiffusionXLPipeline.__name__)'
 
-COPY sdxl_server.py nv_segment_ct_server.py /opt/fs2-media/
+COPY sdxl_server.py nv_segment_ct_server.py vista_compat.py /opt/fs2-media/
 
 LABEL org.opencontainers.image.title="FS2 general and medical media runtime" \
       org.opencontainers.image.source="https://github.com/nebius/nebius-solutions-library" \
