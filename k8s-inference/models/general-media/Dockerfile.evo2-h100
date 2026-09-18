@@ -15,7 +15,7 @@ ENV CUDA_VISIBLE_DEVICES=0,1 FS2_EVO2_PROFILE=h100-2x
 COPY --from=attention_builder /opt/conda/lib/python3.11/site-packages/flash_attn/ /opt/conda/lib/python3.11/site-packages/flash_attn/
 COPY --from=attention_builder /opt/conda/lib/python3.11/site-packages/flash_attn_2_cuda.cpython-311-x86_64-linux-gnu.so /opt/conda/lib/python3.11/site-packages/
 COPY --from=attention_builder /opt/conda/lib/python3.11/site-packages/flash_attn-2.8.3.post1.dist-info/ /opt/conda/lib/python3.11/site-packages/flash_attn-2.8.3.post1.dist-info/
-COPY evo2_h100.py evo2_h100_serve.py evo2_serve.py /opt/fs2-evo2/
+COPY evo2_h100.py evo2_h100_serve.py evo2_prefill.py evo2_serve.py /opt/fs2-evo2/
 LABEL org.opencontainers.image.title="FS2 Evo2-40B explicit two-H100 service" \
       ai.nebius.fs2.model.revision="d529aa57c30771814217ad89baaeaf6e2315c7d7" \
       ai.nebius.fs2.parent.digest="sha256:5bee4a3103f4111a5ff4dc597d2e052b39e1d66c782941b5fb64957bb1ab601c" \
