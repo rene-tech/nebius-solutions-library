@@ -2,11 +2,11 @@
   "schema": "fs2-serve.nebius.ai/lerobot-active-onboarding/v1",
   "state": "active",
   "customer_ready": false,
-  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
-  "registry_manifest_digest": "sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
-  "runtime_recipe_sha256": "19659652b7766341aefbe8fcc76e15f414b4ac06a22d8484a0d663ff60168baa",
-  "execution_identity_sha256": "1c906c5ca9a792531215cb26b0834dccb8f5a1491c8b6d2c8d6a96233958a34e",
-  "execution_map_sha256": "294aa00ebf9843a865ce70cf031568e1f83509e1cc46f2ecbccff6567115409f",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
+  "registry_manifest_digest": "sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
+  "runtime_recipe_sha256": "c5b3bf8d4d8eac653ce2ff94d2a54116f22abc99eaad39f74462f8403eaf0e58",
+  "execution_identity_sha256": "a632c23d713398965fb2e0e299dfe3be2037c676f5a98697940fd39390182500",
+  "execution_map_sha256": "687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
   "preserved_legacy_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
   "preserved_legacy_models": [
     "boltzgen",
@@ -68,8 +68,8 @@
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/cosmos.py",
-        "sha256": "0b0bd7d6ba8efd8975efb5c3c360ca2291d9ca355722d5d7596531234a4e8768",
-        "size_bytes": 19626
+        "sha256": "f7ad930909863eafa58cf97b52ed15d52c1a0fbac30c3ad249695d99102b1d38",
+        "size_bytes": 21111
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/dataset.py",

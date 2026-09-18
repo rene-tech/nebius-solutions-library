@@ -6,7 +6,7 @@
     "model_id": "cosmos3-lerobot-augmentation",
     "display_name": "NVIDIA Cosmos3-Nano LeRobot robotics augmentation",
     "execution_mode": "hybrid",
-    "state": "qualified",
+    "state": "active",
     "route_exposed": true,
     "source": {
       "kind": "huggingface",
@@ -17,11 +17,11 @@
     },
     "execution_identity": {
       "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-      "runtime_image_digest": "sha256:df364675b50cd267cb80dab38ad29fa3ec2f5d704e82e30e29ec104cea511042",
-      "runtime_recipe_sha256": "19659652b7766341aefbe8fcc76e15f414b4ac06a22d8484a0d663ff60168baa",
+      "runtime_image_digest": "sha256:1eeb26e239243c3c088b1ce9cb184f6cde9639100a6583d0d39b45d787cd85a1",
+      "runtime_recipe_sha256": "c5b3bf8d4d8eac653ce2ff94d2a54116f22abc99eaad39f74462f8403eaf0e58",
       "workload_recipe_sha256": "c7b9141a9cf8fc4c4363596ed5c1a14f2466a45a7a0a8f1f4fc313df652ebae4",
       "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "execution_identity_sha256": "1c906c5ca9a792531215cb26b0834dccb8f5a1491c8b6d2c8d6a96233958a34e"
+      "execution_identity_sha256": "a632c23d713398965fb2e0e299dfe3be2037c676f5a98697940fd39390182500"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -104,13 +104,13 @@
     },
     "semantic_validation": {
       "validator_id": "cosmos3-lerobot-v3-0-6-1",
-      "state": "qualified"
+      "state": "active"
     },
     "policy": {
       "commercial_use": "allowed",
       "non_clinical": false,
       "limitations": [
-        "Qualification covers the retained release148 public MCP uploaded-bundle edge-transfer lighting dataset, exact nonvideo records and full LeRobot0.6.1 reopen. Fruit appearance and fine gripper details can also change: strictly lighting-only/physical preservation is not qualified. Final customer cohorts, other source paths and maximum bounds are separate gates.",
+        "Active onboarding permits public submission; public-completion and scheduler receipts remain null until actual uploaded dataset runs and pinned-reader reopen are retained.",
         "Appearance augmentation preserves numeric actions, state, timestamps and canonical indices, not proven physical/action alignment. Transfer retains coarse layout; video-to-video may alter trajectories. Inspect output before training.",
         "Selected clips:16–400 frames, integer FPS1–30, RGB256..1280 by256..720 dimensions divisible by16; at most256 selected episodes,8 selected cameras and8 variants. Untouched clips are checked for dataset integrity, not generation caps.",
         "Compressed input/each output≤5GiB; expanded source≤8GiB;32GiB workspace with conservative pre-GPU estimate and2GiB reserve. Fixed-rate canonical timestamps/task ordering are required; no maximum-bound throughput qualification.",
@@ -119,10 +119,10 @@
     },
     "qualification": {
       "h100_semantic_receipt_sha256": "2295434692cec27d200dd9f5151324c27485dbb01d1b6cd9f68156545f29c3c1",
-      "public_completion_receipt_sha256": "013bd1a753c2fa2b440509a50bd14dbee0b068438431567055d1e6052f4b4e7e",
-      "scheduler_eligibility_receipt_sha256": "eecfc6336067ccc4d8fe876eaeeedde58e350d74e4ea4a731ffe6506d2e50eae",
-      "execution_map_sha256": "294aa00ebf9843a865ce70cf031568e1f83509e1cc46f2ecbccff6567115409f",
-      "qualified_at": "2026-09-18T00:41:50.980231+00:00"
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "687b58d5d9fda6bf2382f567730e39c8e4c7855caae462d2181f992ccc20a24a",
+      "qualified_at": "2026-09-18T00:03:50Z"
     }
   }
 }
