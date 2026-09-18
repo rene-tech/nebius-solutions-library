@@ -1,13 +1,20 @@
 # Cosmos and Stockholm remediation — 17 September 2026
 
-Release status: **Helm 146 deployed; upload-demand proof and bounded application
-regressions passed; disposable test work cleaned up; not fully customer-qualified**.
+Current successor: **Helm151 deployed on18 September; final LeRobot HTTP/MCP
+cohorts in progress**. Use the [LeRobot release journal](../acceptance/lerobot-customer-20260917/RELEASE.md)
+for current deployment identity, outcome, customer grants and cleanup, and the
+[directory client](../acceptance/lerobot-customer-20260917/README.md) for usage.
+The LeRobot App is now routed; the earlier unrouted state below is historical.
+
+This document retains the **Helm146 media/Stockholm checkpoint**: upload-demand
+proof and bounded application regressions passed; that checkpoint's disposable
+test work was cleaned up; it did not establish full customer qualification.
 The implementation is integrated on `agent/fs2-cosmos-stockholm-remediation-r20260917`, based on
 `bad3f9cba9cac2762ddbe0b62f8c6ab3a780a6d7`. This baseline preserves the newer
 speech, tenant storage, and workshop APIs. The old dirty `main` checkout was not
 reset or overwritten. This document is not a replacement for live evidence.
 
-## Latest deployed state
+## Historical release146 deployed state
 
 The explicit `sandbox2` profile restored authorized access. The original global
 profile is unchanged. Helm release 146 deploys the corrected CP/controller
