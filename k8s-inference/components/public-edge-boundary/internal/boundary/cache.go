@@ -327,31 +327,25 @@ func (p *Provider) verifyLegacyRuntimeSelection(selectionRaw []byte, envelopeRaw
 	var err error
 	if p.legacyBootstrap != nil {
 		enrolledRaw, _, err = p.legacyBootstrap.EnvelopeGeneration()
-		if err == nil {
-			enrolled, err = p.verifyLegacyBootstrapCandidate(enrolledRaw, selectionSHA256, now)
+		if err != nil {
+			return err
 		}
-		if err == nil && enrolled.Generation > 1 {
-			predecessorRaw, predecessorErr := p.legacyBootstrapGeneration(enrolled.PredecessorBootstrapEnvelopeSHA256, selectionSHA256)
-			if predecessorErr != nil {
-				return predecessorErr
-			}
-			predecessor, predecessorErr := p.verifyLegacyBootstrapCandidate(predecessorRaw, selectionSHA256, now)
-			if predecessorErr != nil || enrolled.SuccessorOf(*predecessor, digestHex(predecessorRaw)) != nil {
-				return errors.New("legacy runtime bootstrap renewal lacks its exact retained predecessor")
-			}
+		enrolled, err = p.verifyLegacyBootstrapCandidate(enrolledRaw, selectionSHA256, now)
+		if err != nil {
+			return err
 		}
 	}
 	stored, storedRaw, storedErr := p.storedLegacyBootstrapHead(selectionSHA256, now)
-	if enrolled == nil && storedErr != nil {
-		return errors.New("legacy runtime selection lacks its signed bootstrap generation")
+	if storedErr != nil && !errors.Is(storedErr, os.ErrNotExist) {
+		return storedErr
 	}
-	bootstrap := enrolled
-	bootstrapRaw := enrolledRaw
-	if bootstrap == nil || storedErr == nil && stored.Generation > bootstrap.Generation {
-		bootstrap = stored
-		bootstrapRaw = storedRaw
-	} else if storedErr == nil && stored.Generation == bootstrap.Generation && digestHex(storedRaw) != digestHex(bootstrapRaw) {
-		return errors.New("legacy runtime bootstrap chain has two generations at the same sequence")
+	if errors.Is(storedErr, os.ErrNotExist) {
+		stored = nil
+		storedRaw = nil
+	}
+	bootstrap, _, err := ReconcileLegacyRuntimeBootstrap(enrolled, enrolledRaw, stored, storedRaw)
+	if err != nil {
+		return err
 	}
 	legacyTrustRaw, err := readProtectedRegular(
 		filepath.Join(runtimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
@@ -426,7 +420,7 @@ func (p *Provider) storedLegacyBootstrapHead(
 	if err != nil {
 		return nil, nil, err
 	}
-	for depth := 0; depth < 64; depth++ {
+	for depth := 0; depth < MaximumLegacyRuntimeBootstrapGeneration; depth++ {
 		nextPath := filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+"-successor-of-"+digestHex(raw)+".json")
 		nextRaw, readErr := readProtectedRegular(nextPath, maxTrustBytes)
 		if errors.Is(readErr, os.ErrNotExist) {

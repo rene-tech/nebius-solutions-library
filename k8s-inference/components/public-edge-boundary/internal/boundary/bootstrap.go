@@ -16,6 +16,7 @@ const (
 	LegacyRuntimeBootstrapPayloadSchema  = "fs2-serve.nebius.ai/public-edge-legacy-runtime-bootstrap/v2"
 	legacyRuntimeBootstrapIssuerRole     = "platform-security-public-edge-boundary-legacy-bootstrap"
 	maximumLegacyRuntimeBootstrapLifetime = 7 * 24 * time.Hour
+	MaximumLegacyRuntimeBootstrapGeneration = 64
 )
 
 // LegacyRuntimeBootstrap authenticates retained bytes only. It never turns a
@@ -159,7 +160,7 @@ func VerifyLegacyRuntimeBootstrap(
 		!isSHA256(bootstrap.LegacySnapshotTrustSHA256) || !isSHA256(bootstrap.SuccessorAcceptanceEnvelopeSHA256) ||
 		!isSHA256(bootstrap.SuccessorAcceptanceTrustSHA256) || issueErr != nil || expiryErr != nil ||
 		!legacySnapshotSchemaPair(bootstrap.LegacySnapshotEnvelopeSchema, bootstrap.LegacySnapshotPayloadSchema) ||
-		bootstrap.Generation < 1 ||
+		bootstrap.Generation < 1 || bootstrap.Generation > MaximumLegacyRuntimeBootstrapGeneration ||
 		(bootstrap.Generation == 1 && bootstrap.PredecessorBootstrapEnvelopeSHA256 != "") ||
 		(bootstrap.Generation > 1 && !isSHA256(bootstrap.PredecessorBootstrapEnvelopeSHA256)) ||
 		!expiresAt.After(issuedAt) || expiresAt.Sub(issuedAt) > maximumLegacyRuntimeBootstrapLifetime ||
@@ -168,6 +169,45 @@ func VerifyLegacyRuntimeBootstrap(
 	}
 	bootstrap.envelopeRaw = append([]byte(nil), envelopeRaw...)
 	return &bootstrap, nil
+}
+
+// ReconcileLegacyRuntimeBootstrap proves that an externally enrolled renewal
+// is a member of the one retained genesis chain. Numeric generation ordering
+// alone is not authority: an enrolled generation must be the byte-identical
+// retained head or its exact direct successor.
+func ReconcileLegacyRuntimeBootstrap(
+	enrolled *LegacyRuntimeBootstrap,
+	enrolledRaw []byte,
+	stored *LegacyRuntimeBootstrap,
+	storedRaw []byte,
+) (*LegacyRuntimeBootstrap, []byte, error) {
+	if enrolled == nil && stored == nil {
+		return nil, nil, errors.New("legacy runtime bootstrap has no authenticated generation")
+	}
+	if stored == nil {
+		if enrolled == nil || len(enrolledRaw) == 0 || enrolled.Generation != 1 ||
+			enrolled.PredecessorBootstrapEnvelopeSHA256 != "" {
+			return nil, nil, errors.New("legacy runtime bootstrap enrollment is not the exact genesis generation")
+		}
+		return enrolled, enrolledRaw, nil
+	}
+	if len(storedRaw) == 0 {
+		return nil, nil, errors.New("retained legacy runtime bootstrap head bytes are unavailable")
+	}
+	if enrolled == nil {
+		return stored, storedRaw, nil
+	}
+	if len(enrolledRaw) == 0 {
+		return nil, nil, errors.New("enrolled legacy runtime bootstrap bytes are unavailable")
+	}
+	if digestHex(enrolledRaw) == digestHex(storedRaw) {
+		return stored, storedRaw, nil
+	}
+	if enrolled.Generation <= stored.Generation ||
+		enrolled.SuccessorOf(*stored, digestHex(storedRaw)) != nil {
+		return nil, nil, errors.New("legacy runtime bootstrap enrollment skips, forks or rolls back the retained head")
+	}
+	return enrolled, enrolledRaw, nil
 }
 
 func (bootstrap LegacyRuntimeBootstrap) SuccessorOf(predecessor LegacyRuntimeBootstrap, predecessorEnvelopeSHA256 string) error {

@@ -35,7 +35,6 @@ const (
 	maximumCollectorCycleBytes = 256 * 1024
 	maximumSnapshotActivationReceiptBytes = 4 * 1024
 	maximumSnapshotRuntimeSelectionBytes = 16 * 1024
-	maximumLegacyBootstrapRenewalDepth = 64
 	snapshotCycleSettlementSchema = "fs2-serve.nebius.ai/public-edge-snapshot-cycle-settlement/v2"
 	snapshotActivationReceiptSchema = "fs2-serve.nebius.ai/public-edge-snapshot-activation-receipt/v1"
 	legacySnapshotRuntimeSelectionSchema = "fs2-serve.nebius.ai/public-edge-snapshot-runtime-selection/v1"
@@ -1180,34 +1179,25 @@ func (r *Runner) legacyRuntimeBootstrap(
 	var err error
 	if r.legacyBootstrap != nil {
 		enrolledRaw, _, err = r.legacyBootstrap.EnvelopeGeneration()
-		if err == nil {
-			enrolled, err = r.verifyLegacyBootstrapCandidate(enrolledRaw, selectionSHA256, now)
+		if err != nil {
+			return nil, nil, nil, err
 		}
-		if err == nil && enrolled.Generation > 1 {
-			predecessorRaw, predecessorErr := r.legacyBootstrapGeneration(
-				enrolled.PredecessorBootstrapEnvelopeSHA256,
-				selectionSHA256,
-			)
-			if predecessorErr != nil {
-				return nil, nil, nil, predecessorErr
-			}
-			predecessor, predecessorErr := r.verifyLegacyBootstrapCandidate(predecessorRaw, selectionSHA256, now)
-			if predecessorErr != nil || enrolled.SuccessorOf(*predecessor, digest(predecessorRaw)) != nil {
-				return nil, nil, nil, errors.New("legacy runtime bootstrap renewal lacks its exact retained predecessor")
-			}
+		enrolled, err = r.verifyLegacyBootstrapCandidate(enrolledRaw, selectionSHA256, now)
+		if err != nil {
+			return nil, nil, nil, err
 		}
 	}
 	stored, storedRaw, storedErr := r.storedLegacyBootstrapHead(selectionSHA256, now)
-	if enrolled == nil && storedErr != nil {
-		return nil, nil, nil, errors.New("legacy runtime selection lacks its signed bootstrap generation")
+	if storedErr != nil && !errors.Is(storedErr, os.ErrNotExist) {
+		return nil, nil, nil, storedErr
 	}
-	bootstrap := enrolled
-	bootstrapRaw := enrolledRaw
-	if bootstrap == nil || storedErr == nil && stored.Generation > bootstrap.Generation {
-		bootstrap = stored
-		bootstrapRaw = storedRaw
-	} else if storedErr == nil && stored.Generation == bootstrap.Generation && digest(storedRaw) != digest(bootstrapRaw) {
-		return nil, nil, nil, errors.New("legacy runtime bootstrap chain has two generations at the same sequence")
+	if errors.Is(storedErr, os.ErrNotExist) {
+		stored = nil
+		storedRaw = nil
+	}
+	bootstrap, bootstrapRaw, err := boundary.ReconcileLegacyRuntimeBootstrap(enrolled, enrolledRaw, stored, storedRaw)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	legacyTrustRaw, err := readRootRegular(
 		filepath.Join(r.Config.RuntimeRoot, "snapshot-trust-generations", "snapshot-trust-"+bootstrap.LegacySnapshotTrustSHA256+".json"),
@@ -1241,7 +1231,7 @@ func (r *Runner) storedLegacyBootstrapHead(
 	if err != nil {
 		return nil, nil, err
 	}
-	for depth := 0; depth < maximumLegacyBootstrapRenewalDepth; depth++ {
+	for depth := 0; depth < boundary.MaximumLegacyRuntimeBootstrapGeneration; depth++ {
 		nextPath := filepath.Join(root, "legacy-bootstrap-for-"+selectionSHA256+"-successor-of-"+digest(raw)+".json")
 		nextRaw, readErr := readRootRegular(nextPath, maximumConfigBytes)
 		if errors.Is(readErr, os.ErrNotExist) {
@@ -2069,7 +2059,7 @@ func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	bootstrapObjects := uint64(2*maximumLegacyBootstrapRenewalDepth + 2)
+	bootstrapObjects := uint64(2*boundary.MaximumLegacyRuntimeBootstrapGeneration + 2)
 	bootstrapBytes, ok := checkedMultiply(trustBytes, bootstrapObjects)
 	if !ok {
 		return 0, 0, errors.New("native runtime bootstrap byte bound overflows")
@@ -2080,7 +2070,7 @@ func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
 	// acceptance-envelope generation directories plus their private attempt
 	// directories. Extra directory blocks conservatively cover their root
 	// entries and the immutable successor namespace.
-	fixedDirectoryEntries := uint64(20 + 2*maximumLegacyBootstrapRenewalDepth)
+	fixedDirectoryEntries := uint64(20 + 2*boundary.MaximumLegacyRuntimeBootstrapGeneration)
 	fixedDirectoryBytes, ok := checkedMultiply(config.RuntimeFilesystemBlockBytes, fixedDirectoryEntries)
 	if !ok {
 		return 0, 0, errors.New("native runtime fixed directory bound overflows")
@@ -2090,7 +2080,7 @@ func derivedRuntimeHorizonBounds(config Config) (uint64, uint64, error) {
 		return 0, 0, errors.New("native runtime fixed byte bound overflows")
 	}
 	horizonBytes, ok = checkedAdd(horizonBytes, fixedBytes)
-	fixedInodes := uint64(16 + 2*maximumLegacyBootstrapRenewalDepth)
+	fixedInodes := uint64(16 + 2*boundary.MaximumLegacyRuntimeBootstrapGeneration)
 	if !ok || horizonInodes > ^uint64(0)-fixedInodes {
 		return 0, 0, errors.New("native runtime fixed horizon overflows")
 	}
