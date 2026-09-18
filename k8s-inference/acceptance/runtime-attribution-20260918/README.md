@@ -63,6 +63,61 @@ read-only existing weights and ephemeral compile caches. It cannot join the
 production Service. Actual GPU and public end-to-end acceptance remain separate
 gates; unit tests do not qualify a live deployment.
 
+## Retained isolated H100 result — 2026-09-18
+
+Six actual responses passed across two simultaneously Ready replicas: JSON,
+streaming SSE and a native HTTP error on each. Four real generations used two
+distinct SHA/length-pinned public CXR inputs, without changing their structured
+output schema or output budget. The JSON/SSE responses completed with `stop` and
+validated against the requested schema. This checks protocol and attribution,
+not diagnostic accuracy or clinical fitness.
+
+The fresh Kubernetes observations span 21:02:33.659297–21:03:13.622891 UTC.
+Both devices were NVIDIA H100 80GB HBM3, driver 580.159.04, on existing
+preemptible nodes. Each response resolved to its actual distinct Pod and node,
+with the GPU UUID independently supplied by the existing node observer:
+
+| Replica Pod UID | Observer-reported GPU UUID |
+| --- | --- |
+| `916aad40-b880-4c35-922d-730a8f66fea2` | `GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7` |
+| `7e748d60-ff7b-4436-8ada-829c1b26a958` | `GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8` |
+
+Exact unchanged runtime image:
+`sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635`.
+Middleware SHA-256:
+`c0cf52479aff5ab5efe334fc154640fd92b39e0aa348ab7705f8966e2dd4ca9c`.
+New template `nv-reason-cxr-3b.response-identity-20260918`:
+`sha256:e84014a61b5cf3ac5eb3247ffb31b1001cd6284ffe092354f08448e4bb31a595`.
+Runtime source is commit `6e3a832ee`; the final direct-probe harness is
+`e41fe5a8f`. Production CXR selection was not changed.
+
+Protected receipts under the evidence root above:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `h100-response-proof-r2/summary.json` | `d6b235efda90ce5519ee40ecb11e16b010bb959c221d3699fe33ce3c9af0458d` |
+| `owner-render-preflight.json` | `8a1ba08de236382a0eb4b8b3622f4c98836d8604434991664ba863c33a12d823` |
+| `cleanup-response-proof.json` | `43f80f27af5616ae4f20d1c5f17061786c071a3cdcf45cc2f5f14848f7232ee3` |
+
+The owner-render preflight used the retained mounted contracts, validated actual
+gateway bootstrap, and rendered hot/burst Deployments with middleware present
+and old snapshot restoration absent. It is not a fresh production promotion.
+The six HTTP receipts and all verification reads are retained privately.
+Both task Pods, their Service and two task ConfigMaps were normally deleted;
+both port-forwards closed. The shared weights PVC was not modified or removed.
+
+Retained qualification corrections: an initial direct probe mistakenly passed a
+platform artifact-reference object to raw vLLM and got HTTP 400; the HTTP body
+was not retained in that failed harness run. The corrected probe resolves the
+manifest-pinned bytes into data URIs and saves raw replies before assertions.
+This negative is not a model failure or an acceptance pass. Initial task Pod
+model labels were corrected before generation to a task-only ID, so candidate
+replicas cannot enter the production metadata candidate set or Service.
+
+Local checks: 205 affected CP regressions plus ten candidate/promotion/Helm
+tests passed. Ruff passed. A targeted mypy run retained five pre-existing
+usage-parser typing errors; it is not reported as a passing full typecheck.
+
 ## Accounting interpretation remains limited
 
 The known sample's lifecycle API reports 0.609478 seconds as
@@ -98,3 +153,20 @@ into the current complete envelope/bundles and qualification projection using
 the existing four-map promotion/bootstrap checks. Root owns CP image/RBAC rollout,
 drain/owner-API template selection and public two-replica acceptance. Do not
 publish or overwrite old templates from this helper.
+
+`prepare_promotion.py` reuses those existing validators, accepts only the exact
+two-replica-qualified template, and requires one freshly mounted envelope and
+bundle, the current routes/admin baseline, and all ModelDeployments. It retains
+all old templates/snapshots and preserves the other 19 model records, voices,
+replica/resource/context limits and operator settings. The admin artifact
+identity is unchanged, but its real bootstrap is still validated. A CXR public,
+semantic, cold or elastic qualification is not inherited from the old process.
+
+Run with the CP virtualenv and `PYTHONPATH=components/control-plane/src:catalog/runtime`,
+using `--live-configmaps`, `--live-routes`, `--live-admin-configuration`,
+`--modeldeployments`, `--source-commit` and a new private `--output` directory.
+Outputs include immutable four-map documents, a minimal Helm values delta,
+owner-API proposals, original rollback proposals and validation. No apply is
+performed. Re-capture/rebase after another lane changes any map; root alone
+serializes publishing, Helm and drain/template/resume. Public durable
+two-replica request attribution remains the post-promotion gate.
