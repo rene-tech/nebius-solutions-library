@@ -67,6 +67,7 @@ def prepare(original, fixtures, image, output, name):
 set -eo pipefail
 source /opt/fs2/activate.sh
 set -u
+trap 'code=$?; if [ "$code" -ne 0 ]; then printf "%s\n" "$code" > /outputs/FAILED; echo "MATRIX_FAILED $code"; sleep 1800; fi' EXIT
 mkdir -p /work/home /cache/openfold3/triton /cache/openfold3/torch-extensions /cache/openfold3/xdg
 test "$(df -B1 --output=size /dev/shm | tail -1 | tr -d ' ')" = 67108864
 nvidia-smi --query-gpu=uuid,name,driver_version,memory.total --format=csv,noheader > /outputs/gpu.csv
