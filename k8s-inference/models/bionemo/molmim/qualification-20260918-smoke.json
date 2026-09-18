@@ -1,0 +1,24 @@
+[
+  {
+    "name": "imatinib-max-p16-i8",
+    "request": {
+      "smi": "Cc1ccc(NC(=O)c2ccc(CN3CCN(C)CC3)cc2)cc1Nc1nccc(-c2cccnc2)n1",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  },
+  {
+    "name": "caffeine-max-p16-i8",
+    "request": {
+      "smi": "CN1C=NC2=C1C(=O)N(C(=O)N2C)C",
+      "num_molecules": 8,
+      "min_similarity": 0.3,
+      "particles": 16,
+      "iterations": 8
+    },
+    "purpose": "explicit new budget profile"
+  }
+]

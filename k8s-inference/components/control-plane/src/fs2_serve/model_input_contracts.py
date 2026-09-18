@@ -247,7 +247,10 @@ _PURPOSES = {
     "diffdock": "Dock a SMILES ligand into a receptor PDB; returns ranked poses and docking confidence.",
     "proteinmpnn": "Design sequences compatible with a protein backbone PDB; returns sampled sequences and scores.",
     "genmol": "Generate de-novo molecules from a length mask; returns generated SMILES and property scores.",
-    "molmim": "Optimize a starting SMILES molecule with CMA-ES; returns molecules with QED and similarity scores.",
+    "molmim": (
+        "Run bounded CMA-ES/QED search from a SMILES molecule; returns distinct changed molecules or explicit "
+        "GENERATION_EXHAUSTED when the requested count is not found. Property improvement is not guaranteed."
+    ),
     "msa-search-pdb70": "Search the pinned local PDB70 database for a protein sequence; returns A3M alignments.",
     "sdxl": "Generate a 512x512 image from text; returns PNG bytes or the selected JSON/base64 envelope.",
     "nv-segment-ct": "Segment a CT NIfTI volume from labels or points; returns encoded segmentation and label counts.",
@@ -314,6 +317,26 @@ def _pydantic_contract(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
         props["noise"]["anyOf"][0]["minimum"] = 0
         schema["description"] = (
             "GenMol de-novo mask generation. Range order and finite numeric strings are checked by the runtime."
+        )
+    elif model_ref == "molmim":
+        schema["description"] = (
+            "The search uses exactly particles * iterations model decodes and never silently expands this budget. "
+            "num_molecules must not exceed that product; the runtime enforces this cross-field constraint. "
+            "Finite-search exhaustion is not proof of chemical infeasibility. QED is a descriptor, not efficacy."
+        )
+        props["algorithm"]["description"] = "Actual adaptive CMA-ES with the requested fixed population and iterations."
+        props["min_similarity"]["description"] = (
+            "Hard final-output Morgan/Tanimoto similarity cutoff. It is also used in the soft CMA-ES objective; "
+            "the hard output filter is stricter than upstream's soft-only score."
+        )
+        props["particles"]["description"] = "CMA-ES population size, at least two; part of the exact decode budget."
+        props["iterations"]["description"] = "Requested CMA-ES ask/tell updates; no automatic increase on exhaustion."
+        props["radius"]["description"] = (
+            "Multiplier of the initial CMA-ES sigma 0.75; not a guaranteed chemical-distance radius."
+        )
+        props["minimize"]["description"] = (
+            "Guide search toward lower QED and sort ascending; "
+            "improvement over the starting molecule is not guaranteed."
         )
     elif model_ref == "altumage":
         props["cpg_sites"]["uniqueItems"] = True

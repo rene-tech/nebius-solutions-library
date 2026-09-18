@@ -73,6 +73,38 @@ window are rejected rather than silently truncated. Eight requested candidates
 under a high similarity threshold can exhaust even when all decodes are valid.
 QED is a computational descriptor, not efficacy, safety or synthesizability.
 
+### Measured request profiles and important limits
+
+On the exact repaired candidate, two isolated H100 repetitions returned eight
+distinct changed molecules for seven chemically varied seeds with explicit
+`particles: 16`, `iterations: 8`, `num_molecules: 8`, `min_similarity: 0.3`,
+`minimize: false`. These are measured examples, not replacement defaults or a
+guarantee for other molecules. The service still honors each supplied budget
+exactly. The unchanged two-particle/one-iteration default exhausts for aspirin.
+
+The original OHT request at similarity 0.7 exhausted in both repetitions, and
+several explicitly requested larger-budget/radius experiments also exhausted.
+Small perturbations decoded the seed repeatedly; larger ones often produced
+valid molecules below the hard threshold. This demonstrates **finite-search
+exhaustion**, not proof that feasible chemistry does not exist. Relaxing the
+similarity threshold in a separate experiment produced eight candidates; that
+does not satisfy or retroactively pass the original stricter request.
+
+The final hard filter is stricter than NVIDIA's
+[documented soft similarity objective](https://build.nvidia.com/nvidia/molmim-generate).
+The pinned upstream implementation uses CMA-ES with sigma 0.75 and a soft
+similarity/QED score; this port additionally rejects unchanged, duplicate and
+below-threshold final outputs. Its radius-to-sigma multiplier and union of
+feasible candidates across iterations are documented port behavior, not a claim
+of exact NVIDIA NIM output parity.
+
+Requested score direction controls optimization and final ordering; it does not
+guarantee improvement over the seed. In the H100 minimize-QED tests, all eight
+imatinib outputs had higher QED than the seed; caffeine improved only six of eight.
+Seven of eight tested input molecules reconstructed exactly at zero perturbation;
+imatinib did not. Decoder reconstruction and complete scientific fidelity are
+therefore not guaranteed. See [the complete bounded evidence](QUALIFICATION-20260918.md).
+
 ## Verification and release boundary
 
 `test_server.py` covers block recurrence, backslash tokenization, full-window
@@ -83,7 +115,8 @@ the optional hash-verified CPU reconstruction check. It reconstructs aspirin
 and caffeine; the old graph produced unrelated structures for both.
 
 CPU regression or a direct isolated GPU response does not qualify public
-HTTP/MCP or the customer workflow. The parent release owner must refresh the
-MolMIM generated request schema (particles minimum and documented budget),
-pin the tested image, and rerun affected customer-shaped tests. Until then,
+HTTP/MCP or the customer workflow. The generated request-schema correction
+(particles minimum and documented budget) is prepared with the qualification
+record. The parent release owner must deploy it, pin the tested image, and
+rerun affected customer-shaped tests. Until then,
 production remains the historical image, not this repaired candidate.

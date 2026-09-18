@@ -248,7 +248,7 @@
         "particles": {
           "default": 2,
           "maximum": 32,
-          "minimum": 1,
+          "minimum": 2,
           "title": "Particles",
           "type": "integer"
         },
