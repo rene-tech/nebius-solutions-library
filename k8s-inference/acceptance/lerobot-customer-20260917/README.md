@@ -6,7 +6,24 @@ follows durable progress, downloads every output, safely unpacks it, and fully
 reopens it with **LeRobot 0.6.1**. Local paths are interpreted only by this client;
 they are never sent to Cosmos as remote paths. The input directory is unchanged.
 
-Current status (2026-09-18): release149 completed **four dataset-mechanics
+Current status (2026-09-18): release150's targeted two-variant blur run passed
+full LeRobot0.6.1 reader checks and both replays. Malformed input returned422;
+out-of-range episode selection returned the expected static `INVALID_REQUEST`
+with zero children and released resources; overlapping admission returned429
+`error.type="concurrency_exceeded"`; active CPU-stage cancellation completed
+with resources released and no child admission. GPU-child cancellation was not
+exercised. This is targeted debugging, **not final unchanged-release cohorts**.
+
+Two harness errors are retained: the initial helper expected `DATASET_INVALID`
+instead of `INVALID_REQUEST`, and its continuation looked for `error.code`
+instead of the actual public `error.type`. Both original failed aggregates stay
+unchanged. A separate offline evaluation binds their exact hashes and operator
+proofs at `/home/tux/secure-handoff/lerobot-release-20260917/targeted-evaluation-r150.json`.
+Neither blur nor invalid selection was resubmitted; final-run assertions are
+corrected and tested. CP index `e240fb81`, source `7aa37722b`, worker `1eeb26e2`;
+full identities and historical debug details are in [release evidence](RELEASE.md).
+
+Historical release149 completed **four dataset-mechanics
 passes**: lighting edge-transfer and all-camera/all-episode environment V2V in
 each of two cohorts, swapping HTTP and named MCP. Every output passed the full
 pinned reader and both idempotent replays. The fifth, two-variant blur parent
@@ -144,7 +161,7 @@ actual admission, cancelled/settled by ID, and **does not** count as the expecte
 
 One additional deliberately invalid worker selection reuses the valid finalized
 input artifacts, changing only `selection.episodes` to `[999]`. This ordinary
-HTTP request must be admitted, then fail with `DATASET_INVALID`, the exact static
+HTTP request must be admitted, then fail with `INVALID_REQUEST`, the exact static
 public detail and released worker resources. It is an explicitly expected
 negative case, not a successful dataset. Its receipt separately records that
 zero generation children still require the operator's exact-parent terminal
@@ -177,7 +194,7 @@ action arrays are **not proof of physically action-aligned augmented imagery**.
 
 ## Local evidence
 
-Client/cohort/targeted-debug suite: **30 passed**. Real pinned-reader tests:
+Client/cohort/targeted-debug/continuation suite: **35 passed**. Real pinned-reader tests:
 **2 passed** on the
 two-episode/two-view fixture, including a full pack/unpack/rewrite/reopen loop
 and all-camera/all-episode preparation. The rewrite test uses an explicitly
@@ -188,7 +205,8 @@ Ruff passes for all owned Python files.
 components/control-plane/.venv/bin/python -m pytest -q \
   acceptance/lerobot-customer-20260917/test_client.py \
   acceptance/lerobot-customer-20260917/test_cohorts.py \
-  acceptance/lerobot-customer-20260917/test_targeted_debug.py
+  acceptance/lerobot-customer-20260917/test_targeted_debug.py \
+  acceptance/lerobot-customer-20260917/test_probe_continuation.py
 FS2_LEROBOT_LOCAL_DATASET=/private/public-robot-2x32 \
   /private/pinned-reader/bin/python -m pytest -q \
   acceptance/lerobot-customer-20260917/test_reader.py
