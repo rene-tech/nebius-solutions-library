@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import hashlib
 import json
 import os
@@ -139,10 +140,33 @@ async def run(args):
     os.umask(0o077)
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     requests = [json.loads(path.read_bytes()) for path in args.requests]
-    for request in requests:
+    manifest = json.loads(args.manifest.read_bytes())
+    input_pins = []
+    for path, request in zip(args.requests, requests, strict=True):
         for key in ("idempotency_key", "wait_seconds"):
             request.pop(key, None)
         request["model"] = MODEL
+        case = next(c for c in manifest["cases"] if c["case_id"] == path.parent.name)
+        for field in case["preparation"]["artifact_fields"]:
+            source = (args.manifest.parent / field["local_path"]).resolve()
+            raw = source.read_bytes()
+            digest = hashlib.sha256(raw).hexdigest()
+            if digest != field["sha256"] or len(raw) != field["size_bytes"]:
+                raise ValueError("retained_input_fixture_identity_changed")
+            target = request
+            for key in field["field"][:-1]:
+                target = target[key]
+            # Raw model HTTP has no platform artifact resolver. Use exactly
+            # the same pinned bytes, not a platform artifact-reference object.
+            target[field["field"][-1]] = (
+                "data:"
+                + field["media_type"]
+                + ";base64,"
+                + base64.b64encode(raw).decode()
+            )
+            input_pins.append(
+                {"case_id": case["case_id"], "sha256": digest, "bytes": len(raw)}
+            )
     if requests[0]["messages"] == requests[1]["messages"]:
         raise ValueError("require_two_distinct_retained_requests")
     reader, summary, seen = Reader(args), [], set()
@@ -184,7 +208,22 @@ async def run(args):
                         model(origin), op, json.dumps(body).encode()
                     )
                     identity = result.runtime
+                    (args.output / f"replica-{index}-{mode}-raw.json").write_text(
+                        json.dumps(
+                            {
+                                "status": result.status_code,
+                                "operation_id": str(op.id),
+                                "runtime": identity.model_dump(mode="json"),
+                                "exchanges": sink.exchanges,
+                            },
+                            indent=2,
+                        )
+                        + "\n"
+                    )
                     if mode == "json":
+                        assert result.status_code == 200, (
+                            "unexpected_runtime_http_status"
+                        )
                         payload = json.loads(result.body)
                         if payload["choices"][0]["finish_reason"] != "stop":
                             raise ValueError("incomplete_json")
@@ -263,6 +302,7 @@ async def run(args):
             {
                 "scope": "direct isolated real-GPU responses; not public admission/billing",
                 "all_passed": True,
+                "input_pins": input_pins,
                 "replicas": sorted(seen),
                 "rows": summary,
             },
@@ -276,6 +316,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--origins", nargs=2, required=True)
     parser.add_argument("--requests", type=Path, nargs=2, required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--kubeconfig", required=True)
     parser.add_argument("--context", required=True)
