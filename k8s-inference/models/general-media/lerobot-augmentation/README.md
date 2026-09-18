@@ -6,17 +6,32 @@ typed augmentation policy, and receive one complete LeRobot dataset artifact per
 variant. Cosmos receives individual videos, prompts, and controls; it never
 receives a client-local dataset path.
 
-The real release148 public MCP upload → augment → download → LeRobot reopen
-path passed on 2026-09-18. The [scoped completion receipt](activation/qualification/public-completion-r148.json)
-qualifies dataset/media mechanics, not strict visual preservation or physical
-action alignment. Two unchanged final-release cohorts are a separate acceptance
-step. Use the [ordinary-key directory client](../../../acceptance/lerobot-customer-20260917/README.md)
+Release151 passed the real ordinary-key upload → augment → download → LeRobot
+reopen path on 2026-09-18: two unchanged lighting/environment HTTP and typed-MCP
+cohorts plus a two-variant transfer case, five positive parents and six validated
+datasets. The [final scoped receipt](activation/qualification/final-cohorts-r151.json)
+binds the exact release, outputs, timing, independent reader and cancellation
+evidence. This qualifies the tested directory-workflow mechanics, **not semantic
+intent, physical action alignment, complete GPU accounting or all clients**.
+Use the [ordinary-key directory client](../../../acceptance/lerobot-customer-20260917/README.md)
 to run a local dataset without manually constructing artifact manifests.
 
 Release149 passed four single-variant HTTP/MCP dataset-reader cases, then its
 two-variant blur case failed on repeated upload content PUT after finalization.
-The [negative receipt](activation/debug-failure-r149.json) retains that failure;
-the corrected successor requires its own public proof and unchanged cohorts.
+The [negative receipt](activation/debug-failure-r149.json) retains that failure.
+Corrected worker `1eeb26e…` acquired its own actual release150 proof and then
+passed the final151 cohorts; historical failures were not rewritten as passes.
+
+The final tests decoded 768 camera frames and compared 13,824 nonvideo values
+exactly. All 12 generation children succeeded on attempt one under the original
+concurrency-one policy. Invalid selection failed before any child admission;
+overlapping work returned 429. CPU-stage cancellation and a separately labeled
+operator-assisted running-child cancellation both released resources. Two
+additional cancellation-harness failures remain recorded, and ledger cancellation
+does not prove immediate CUDA kernel interruption. Nine of the 12 positive
+generation rows lacked exact Pod/node/GPU attribution; unavailable identity is
+not measured-zero usage. The actual LibreChat/agent integration, external
+Hugging Face/object-store inputs and maximum-size/load paths remain unqualified.
 
 ## Frozen compatibility
 
@@ -61,10 +76,13 @@ robot telemetry. Review generated trajectories, objects and contacts for the
 intended use before treating preserved action arrays as valid labels. No output
 mode guarantees their physical consistency with the generated imagery.
 
-The release149 environment samples did not visibly achieve the requested clean
+The release149 and final151 environment samples did not visibly achieve the requested clean
 laboratory/pale-blue background and showed arm trajectory/contact and wrist-pose
 changes. Their successful full-reader checks establish dataset integrity, not
 successful prompt intent, synchronized multi-view edits or action alignment.
+Final151 lighting retained the same appearance/geometry limitations. The two
+distinct blur-conditioned variants were softened/stylized; blur is a conditioning
+method, not proof of the requested cool-relighting transformation.
 
 ## Input references
 
@@ -101,10 +119,12 @@ See `fixtures/scientific-run-request.json`.
 
 The [additive activation procedure](activation/README.md) packages the canonical
 profile/schema and preserves the complete existing deployment. Bootstrap
-`active` discovery is explicitly unqualified. The historical qualified profile
-binds the actual release148 public completion and scheduler receipts. The
-upload-reuse successor clears those current proof pointers until its own public
-run succeeds; historical receipts and limitations remain retained. A caller needs
+`active` discovery is explicitly unqualified. The current qualified recipe binds
+the actual release150 public completion and scheduler receipts for worker
+`1eeb26e…`; the additive final151 report does not change that packaged profile.
+Historical148 proof remains retained. The generic Admin **Last qualification**
+badge uses a separate optional evidence mount, not wired in this release, and
+still reports **No recorded qualification**. A caller needs
 both model grants plus `artifacts.write`, `operations.result`, `inference.invoke`,
 `operations.read` and `catalog.read`; cancellation additionally requires
 `operations.cancel`. The parent and its sequential delegated child share the

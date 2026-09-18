@@ -5,13 +5,53 @@ in the control-plane image. The CPU worker is separately pinned by its registry
 manifest digest. `active` enables ordinary HTTP and typed MCP admission for keys
 with both the LeRobot and Cosmos model grants; it does **not** mean qualified.
 During onboarding the public-completion and scheduler-eligibility receipts stayed
-null. The historical qualified projection binds the actual release148
-[public completion](qualification/public-completion-r148.json) and
-[scoped evidence index](qualification/evidence-index-r148.json), with the exact
-scheduler receipt addressed by its SHA-256 in `workload-profile.json`. This
-proves dataset/media mechanics only; final customer cohorts are separate.
-The upload-reuse successor starts `active` with null public/scheduler proof;
-historical receipts remain intact but cannot qualify its new image identity.
+null. The current qualified projection binds the corrected worker's actual
+release150 [public completion](qualification/public-completion-r150.json) and
+[scoped evidence index](qualification/evidence-index-r150.json), with its exact
+scheduler receipt addressed by SHA-256 in `workload-profile.json`. The historical
+release148 proof remains intact and does not qualify successor image identities.
+
+The [final151 additive receipt](qualification/final-cohorts-r151.json) records
+two unchanged ordinary-key lighting/environment HTTP/typed-MCP cohorts and a
+two-variant transfer case: five positive parents, six datasets, 12 successful
+generation children and 11 reused/sequential delegated uploads. Every generation
+used one attempt; both in-flight and terminal idempotent replays passed. The
+independent LeRobot 0.6.1 reader decoded 768 camera frames and compared 13,824
+nonvideo values exactly. This report changes no packaged profile, runtime,
+execution map, scheduler or deployment.
+
+| Final151 case | Client end-to-end seconds | Server parent seconds | First child activation seconds |
+| --- | ---: | ---: | ---: |
+| Cohort1 lighting, MCP | 119.136 | 80.345 | 38.320 |
+| Cohort1 environment, HTTP | 113.578 | 73.155 | 0.727 |
+| Cohort2 lighting, HTTP | 117.755 | 79.364 | 37.998 |
+| Cohort2 environment, MCP | 151.547 | 109.996 | 37.934 |
+| Supplemental two-variant transfer, MCP | 155.522 | 95.369 | 37.917 |
+
+Client time includes preparation, uploads, polling, downloads and independent
+validation; it is not GPU time. The short warm activation fields are bookkeeping,
+not model-load latency. Reported cold-start intervals do not prove new-node
+provisioning. An actual `cuda-criu-restored` marker is retained for the first
+supplemental transfer child. Only three of the 12 positive generation rows have
+exact Pod/node/GPU identity; nine are unavailable, never measured-zero usage.
+
+Malformed input returned 422; nonexistent episode selection returned
+`INVALID_REQUEST` with zero children. Concurrent parent admission returned
+429 `concurrency_exceeded`. Base cancellation reached CPU `active_compute`
+and released resources before child admission. A separate operator-assisted
+probe confirmed its native child running through the ordinary public key,
+cancelled its parent at 02:10:30.162142 UTC, and observed the child cancelled
+at 02:10:30.537031 and parent cancelled/released at 02:10:32.987380. No further
+generation unit was admitted. This verifies lifecycle fencing, not immediate
+GPU-kernel interruption or public child discovery. The earlier extra probe
+missed its observation window; another hit an acceptance-only native DTO parsing
+bug and cancelled after all generations finished. Both failures are preserved.
+
+Read-only cleanup found zero active operations for the exact disposable
+principal, all ten task CPU Jobs/Pods absent, and native Cosmos naturally at
+zero desired/observed replicas with no Pods. No manual scale/delete was used.
+Grants, canary revocation and final deployment verification belong to the release
+owner's journal; this receipt does not include unrelated app-wide historical usage.
 
 Scientific recipe qualification and the generic Admin **Last qualification**
 badge are separate projections. This release does not mount the optional
@@ -42,7 +82,8 @@ to PUT bytes into the first variant's finalized input upload and received HTTP
 [negative receipt](debug-failure-r149.json) preserves the actual worker log,
 parent and child identities. Further admissions stopped before the negative and
 cancellation probes. These partial cohorts do not complete final acceptance;
-the corrected successor must start active/unqualified and acquire its own proof.
+the corrected successor started active/unqualified and acquired its own150 proof
+before the final151 cohorts above.
 Independent environment review also found that requested laboratory background
 replacement did not visibly succeed and robot trajectories changed. Successful
 dataset mechanics must not be described as semantic-intent or action-fidelity
