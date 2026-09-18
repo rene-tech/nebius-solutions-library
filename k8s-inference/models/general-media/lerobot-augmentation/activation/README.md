@@ -7,6 +7,15 @@ with both the LeRobot and Cosmos model grants; it does **not** mean qualified.
 During onboarding the public-completion and scheduler-eligibility receipts stay
 null. Admin discovery explicitly reports incomplete qualification.
 
+The first release147 public MCP dataset attempt is retained as a
+[failed integration receipt](debug-failure-r147.json), not qualification. Its
+attempt-scoped upload succeeded and generation was admitted under the parent's
+concurrency-one policy, but the worker misread the bare operation response and
+failed before polling. Parent fencing cancelled the activating child; no GPU
+generation or output dataset completed. Corrected worker publication, another
+real public dataset result and pinned-reader validation are required before
+promotion.
+
 The CPU parent requests 2 CPUs, 16 GiB RAM and 32 GiB ephemeral storage, with
 4 CPU/24 GiB RAM/32 GiB storage limits. Its ordinary scientific companion and
 existing general-CPU queue remain unchanged. The worker rejects source bundles
