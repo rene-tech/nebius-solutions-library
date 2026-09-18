@@ -57,7 +57,8 @@
         "kind": {
           "enum": [
             "primary-activation-fragment",
-            "secondary-public-acceptance"
+            "secondary-public-acceptance",
+            "lerobot-public-acceptance"
           ]
         },
         "path": {
