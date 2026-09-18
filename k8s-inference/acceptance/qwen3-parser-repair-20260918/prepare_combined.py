@@ -123,6 +123,7 @@ def extend(envelope, bundles, route_data, configuration, deployments, molmim):
 
 
 def source_pin(path, commit):
+    path = path.resolve()
     relative = "k8s-inference/" + str(path.relative_to(ROOT))
     git = shutil.which("git")
     if git is None:

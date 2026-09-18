@@ -3,7 +3,7 @@ import json
 
 import pytest
 from parser_candidate import ROOT
-from prepare_combined import OLD_MOLMIM, TARGETS, existing, extend
+from prepare_combined import OLD_MOLMIM, TARGETS, existing, extend, source_pin
 from test_candidate import baseline as qwen_bundle
 
 
@@ -78,6 +78,12 @@ def fixture():
     clone["spec"]["lifecycle"]["desiredState"] = "Disabled"
     deployments.append(clone)
     return (envelope, [qwen], routes, admin, deployments, new)
+
+
+def test_source_pin_normalizes_relative_invocation_path():
+    path = ROOT / "components/control-plane/../../acceptance/qwen3-parser-repair-20260918/parser_candidate.py"
+    receipt = source_pin(path, "5c0c93d1d")
+    assert receipt["path"] == "k8s-inference/acceptance/qwen3-parser-repair-20260918/parser_candidate.py"
 
 
 def test_combined_keeps_promoted_siblings_voices_old_templates_and_disabled_clone():
