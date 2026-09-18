@@ -232,6 +232,31 @@ def _reported_failure(
     reasons: list[str], pod_statuses: list[Mapping[str, Any]], *, model_id: str
 ) -> tuple[WorkloadState, FailureKind, str]:
     fallback = _failure(reasons)
+    # The Job controller can count a taint-evicted Pending Pod as failed before
+    # kubelet reports a container termination. The exact disruption condition
+    # is then the only reason available (observed after real H100 node loss).
+    # Keep execution timeouts and OOMs/application evidence non-retryable; only
+    # explicit controller-owned disruption reasons select bounded retry.
+    if (
+        fallback[1] is FailureKind.APPLICATION
+        and fallback[2] != "EXECUTION_TIMEOUT"
+        and not any(reason.casefold() == "oomkilled" for reason in reasons)
+        and not any(
+            (stage := _container_termination(pod_status, STAGE_CONTAINER_NAME)) is not None
+            and type(stage.get("exitCode")) is int
+            and stage["exitCode"] not in {0, 137, 143}
+            for pod_status in pod_statuses
+        )
+    ):
+        disruptions = {
+            str(condition.get("reason"))
+            for pod_status in pod_statuses
+            if (condition := _condition(pod_status, "DisruptionTarget")) is not None
+        }
+        if "DeletionByTaintManager" in disruptions:
+            return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "DeletionByTaintManager"
+        if "PreemptionByScheduler" in disruptions:
+            return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, "PreemptionByScheduler"
     if (
         model_id != LEROBOT_MODEL_ID
         or fallback[1] is not FailureKind.APPLICATION

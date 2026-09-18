@@ -885,7 +885,8 @@ async def test_frozen_queue_deadline_fails_without_retry_before_admission() -> N
 
 
 @pytest.mark.asyncio
-async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent() -> None:
+@pytest.mark.parametrize("failure_code", ["node_lost", "DeletionByTaintManager"])
+async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(failure_code: str) -> None:
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()
     reconciler = controller(repository, cluster)
@@ -930,7 +931,7 @@ async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(
             phases=running.phases,
             scheduling_admission=running.scheduling_admission,
             failure_kind=FailureKind.INFRASTRUCTURE,
-            failure_code="node_lost",
+            failure_code=failure_code,
         ),
     )
     for _ in range(5):
