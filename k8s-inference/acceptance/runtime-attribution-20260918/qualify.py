@@ -137,10 +137,13 @@ def combined(text):
 async def run(args):
     os.umask(0o077)
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
-    request = json.loads(args.request.read_bytes())
-    for key in ("idempotency_key", "wait_seconds"):
-        request.pop(key, None)
-    request["model"] = MODEL
+    requests = [json.loads(path.read_bytes()) for path in args.requests]
+    for request in requests:
+        for key in ("idempotency_key", "wait_seconds"):
+            request.pop(key, None)
+        request["model"] = MODEL
+    if requests[0]["messages"] == requests[1]["messages"]:
+        raise ValueError("require_two_distinct_retained_requests")
     reader, summary, seen = Reader(args), [], set()
     provider = KubernetesRuntimeMetadataProvider(reader)
     pods = await reader.list("/api/v1/namespaces/fs2-models/pods")
@@ -161,6 +164,7 @@ async def run(args):
     expected_uids = {p["metadata"]["uid"] for p in candidates}
     for index, origin in enumerate(args.origins):
         for mode in ("json", "stream", "error"):
+            request = requests[1 if mode == "stream" else 0]
             op, sink = operation(), DebugSink()
             body = dict(request, stream=mode == "stream")
             if mode == "error":
@@ -270,7 +274,7 @@ async def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--origins", nargs=2, required=True)
-    parser.add_argument("--request", type=Path, required=True)
+    parser.add_argument("--requests", type=Path, nargs=2, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--kubeconfig", required=True)
     parser.add_argument("--context", required=True)

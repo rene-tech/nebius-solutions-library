@@ -86,8 +86,8 @@ runtime/debug, scientific-error, speech and accounting regressions. The candidat
 tests exercise immutable template preservation, old snapshot exclusion, isolated
 selectors/resources, and rendered read-only EndpointSlice RBAC.
 
-`qualify.py` takes two explicit Pod port-forward origins and one retained CXR
-JSON-schema request. It requires both real candidate Pods Ready, invokes real
+`qualify.py` takes two explicit Pod port-forward origins and two distinct retained
+CXR JSON-schema requests. It requires both real candidate Pods Ready, invokes real
 JSON/error responses through `RuntimeClient`, checks a streamed response through
 the same verifier, retains full HTTP exchanges and fresh Kubernetes observations,
 and requires both actual Pod UIDs. Its opaque operation IDs are local probes,
