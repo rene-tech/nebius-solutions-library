@@ -40,6 +40,7 @@ release owner):
 uv run --frozen pytest -q ../../acceptance/ct-evo2-runtime-repair-20260918/test_prepare.py
 uv run --frozen python ../../acceptance/ct-evo2-runtime-repair-20260918/prepare.py \
   --baseline /private/release159-baseline \
+  --expected-release 159 \
   --ct-evidence /private/ct-point-candidate-v2 \
   --evo2-evidence /private/evo2-long-prefix-qualification \
   --source-commit COMMITTED_PREPARATION_REVISION \

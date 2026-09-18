@@ -341,8 +341,8 @@ def evo2_evidence(directory):
 def prepare(args):
     baseline = args.baseline
     capture = read(baseline / "capture.json")
-    if capture["release"]["version"] != 159 or capture["release"]["status"] != "deployed":
-        raise ValueError("expected stable release159 capture")
+    if capture["release"]["version"] != args.expected_release or capture["release"]["status"] != "deployed":
+        raise ValueError("capture does not match the explicitly selected deployed release")
     for name, digest in capture["sha256"].items():
         if sha(baseline / name) != digest:
             raise ValueError("baseline capture changed:" + name)
@@ -438,6 +438,7 @@ def main():
     for name in ("baseline", "ct-evidence", "evo2-evidence", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--expected-release", required=True, type=int)
     print(json.dumps(prepare(parser.parse_args())))
 
 
