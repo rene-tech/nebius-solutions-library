@@ -24,6 +24,12 @@ assert loader and loader.loader
 existing = importlib.util.module_from_spec(loader)
 sys.modules[loader.name] = existing
 loader.loader.exec_module(existing)
+REGISTRY_HELPER = ROOT / "acceptance/ct-evo2-runtime-repair-20260918/prepare.py"
+registry_loader = importlib.util.spec_from_file_location("identity_registry_preflight", REGISTRY_HELPER)
+assert registry_loader and registry_loader.loader
+registry_preflight = importlib.util.module_from_spec(registry_loader)
+sys.modules[registry_loader.name] = registry_preflight
+registry_loader.loader.exec_module(registry_preflight)
 PROOF = "d6b235efda90ce5519ee40ecb11e16b010bb959c221d3699fe33ce3c9af0458d"
 QUALIFIED_TEMPLATE = (
     "sha256:e84014a61b5cf3ac5eb3247ffb31b1001cd6284ffe092354f08448e4bb31a595"
@@ -171,6 +177,7 @@ def main():
         "live-routes",
         "live-admin-configuration",
         "modeldeployments",
+        "serving-bindings",
         "output",
     ):
         parser.add_argument("--" + key, type=Path, required=True)
@@ -181,6 +188,7 @@ def main():
         source_pin(HELPER, "b97d1f69b"),
         source_pin(Path(__file__).with_name("prepare_candidate.py"), "dca516ec6"),
         source_pin(ROOT / "models/general-media/fs2_runtime_identity.py", "6e3a832ee"),
+        source_pin(REGISTRY_HELPER, "b8809c614"),
     ]
     maps = json.loads(args.live_configmaps.read_bytes())["items"]
 
@@ -212,6 +220,9 @@ def main():
         existing.validate_admin_configuration(
             admin, json.loads(routes["deployment-runtimes.json"])["models"]
         )
+    )
+    checks["gateway_registry"] = registry_preflight.validate_registry(
+        routes, json.loads(args.serving_bindings.read_bytes())
     )
     objects = [
         existing.configmap(
@@ -256,6 +267,7 @@ def main():
                 "live_routes",
                 "live_admin_configuration",
                 "modeldeployments",
+                "serving_bindings",
             )
         },
     }
