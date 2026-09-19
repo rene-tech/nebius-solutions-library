@@ -21,7 +21,7 @@ from fs2_serve.mcp_server import CLIENT_ONLY_TOOLS, CORE_TOOLS, MCP_HTTP_PATH, m
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.registry import Registry
 from fs2_serve.request_debug import InMemoryDebugStore
-from fs2_serve.scientific_batch.profile_catalog import ScientificRequestError
+from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificRequestError
 
 
 async def _key(runtime, *, tenant="tenant-a", models=("qwen3-8b",), catalog=True, max_concurrency=4):
@@ -565,6 +565,18 @@ async def test_lerobot_input_roles_are_discoverable_without_bloating_tool_list(r
 
     runtime, *_ = scientific_runtime(registry, cipher, hasher)
     runtime.scientific_batches.profiles = profile_catalog_for(MODEL_ID)
+    # This test exercises LeRobot's actual named fields, not the generic
+    # empty protein-design parameter fixture used by unrelated batch tests.
+    catalog = runtime.scientific_batches.profiles
+    runtime.scientific_batches.profiles = ScientificProfileCatalog(
+        profiles={MODEL_ID: catalog.get(MODEL_ID)},
+        validators={
+            **catalog._validators,
+            catalog.get(MODEL_ID).parameter_schema: Draft202012Validator(json.loads(
+                (CATALOG_ROOT / "schema" / "cosmos3-lerobot-augmentation-request.schema.json").read_text(),
+            )),
+        },
+    )
     monkeypatch.setattr(
         "fs2_serve.mcp_server._scientific_tool_profiles",
         lambda _runtime, principal: (
@@ -580,6 +592,10 @@ async def test_lerobot_input_roles_are_discoverable_without_bloating_tool_list(r
             schema = _data(await client.call_tool("get_model_schema", {"model_id": MODEL_ID}))
             assert schema["input_artifact_contract"] == public_input_contract()
             assert schema["artifact_manifest_schema"] == runtime.scientific_batches.profiles.artifact_manifest_schema()
+            selected = _data(await client.call_tool("get_model_schema", {
+                "model_id": MODEL_ID, "tool_name": "submit_protein_design",
+            }))
+            assert selected == schema
             schema["input_artifact_contract"]["source_kinds"].clear()
             assert public_input_contract()["source_kinds"]
         async with _connection(runtime, app, restricted) as client:

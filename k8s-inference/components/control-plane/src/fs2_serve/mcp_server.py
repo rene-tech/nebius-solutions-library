@@ -129,6 +129,14 @@ GATEWAY_SUBMISSION_CONTROLS = frozenset({"idempotency_key", "wait_seconds"})
 CORE_PARAMETER_DESCRIPTIONS = {
     "model_id": "Authorized model/App route from list_models or list_scientific_models; not a download URL.",
     "protocol": "Model protocol (e.g. native or openai-chat); omit in get_model_schema to list all its contracts.",
+    "tool_name": (
+        "Exact published model tool name, without a client-added MCP server suffix. "
+        "Select one contract instead of all sibling schemas; discover names with summary_only=true."
+    ),
+    "summary_only": (
+        "Return only authorized contract names/protocols/model references, without schemas or examples. "
+        "Use for discovery, then request tool_name for the full unchanged contract."
+    ),
     "payload": "Compatibility envelope: inputs from get_model_schema. Prefer the named tool's explicit fields.",
     "request": "Batch run envelope from get_model_schema, with finalized input_manifest and model parameters.",
     "operation_id": "UUID returned by submission. Reuse it for status, result and cancellation; never invent an ID.",
@@ -801,21 +809,29 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal.require(Scope.CATALOG_READ)
         return catalog_metadata(principal)
 
-    def contract_view(contract: ModelInputContract, name: str, *, scientific: bool) -> dict[str, Any]:
+    def contract_view(
+        contract: ModelInputContract, name: str, *, scientific: bool, summary_only: bool = False,
+    ) -> dict[str, Any]:
+        summary = {"tool_name": name, "protocol": contract.protocol, "model_ref": contract.model_ref}
+        if summary_only:
+            return summary
         return {
-            "tool_name": name,
-            "protocol": contract.protocol,
+            **summary,
             "input_schema": tool_input_schema(
                 contract.input_schema, scientific=scientific, max_wait_seconds=runtime.settings.max_sync_wait_seconds
             ),
             "examples": list(contract.examples),
             "source_refs": list(contract.source_refs),
-            "model_ref": contract.model_ref,
         }
 
-    async def get_model_schema(model_id: str, protocol: str | None = None) -> dict[str, Any]:
+    async def get_model_schema(
+        model_id: str, protocol: str | None = None, tool_name: str | None = None, summary_only: bool = False,
+    ) -> dict[str, Any]:
         """Get concrete fields, constraints and examples for an authorized model's selected runtime.
 
+        Prefer tool_name when the published name is known. Otherwise use
+        summary_only=true to discover names before fetching one exact contract.
+        Omitted selectors retain the complete backwards-compatible response.
         The schema is for the named tool's flat arguments, not an opaque payload.
         Scientific artifact examples must be uploaded/finalized by the caller.
         """
@@ -834,12 +850,13 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                         contract_for(model, item),
                         f"{model.binding.mcp_tool_name}_{item.replace('-', '_')}",
                         scientific=False,
+                        summary_only=summary_only,
                     )
                     for item in protocols
                 ]
                 if "native" in protocols and model.id == "cosmos3-nano":
                     contracts.extend(
-                        contract_view(contract, name, scientific=False)
+                        contract_view(contract, name, scientific=False, summary_only=summary_only)
                         for name, contract, _defaults, _title, _description in cosmos_specialized_contracts(model)
                     )
             except InputContractUnavailable:
@@ -847,6 +864,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                     code=INVALID_PARAMS,
                     message="The selected runtime has no published input contract; contact the platform operator.",
                 ) from None
+            if tool_name is not None:
+                contracts = [contract for contract in contracts if contract["tool_name"] == tool_name]
+                if not contracts:
+                    raise MCPError(
+                        code=INVALID_PARAMS, message="No matching tool contract for this authorized model/protocol.",
+                    )
             return {
                 "model_id": model.id,
                 "contracts": contracts,
@@ -858,11 +881,20 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                     catalog = runtime.scientific_batches.profiles
                     profile = catalog.get(model_id)
                     contract = scientific_contract_for(profile, catalog=catalog)
+                    if tool_name is not None and tool_name != profile.mcp_tool_name:
+                        raise MCPError(
+                            code=INVALID_PARAMS,
+                            message="No matching tool contract for this authorized model/protocol.",
+                        )
                     response: dict[str, Any] = {
                         "model_id": model_id,
-                        "contracts": [contract_view(contract, profile.mcp_tool_name, scientific=True)],
-                        "artifact_manifest_schema": catalog.artifact_manifest_schema(),
+                        "contracts": [contract_view(
+                            contract, profile.mcp_tool_name, scientific=True, summary_only=summary_only,
+                        )],
                     }
+                    if summary_only:
+                        return response
+                    response["artifact_manifest_schema"] = catalog.artifact_manifest_schema()
                     if model_id == "proteina-complexa":
                         response["target_catalog"] = public_target_catalog()
                     input_contract = public_input_contract(str(profile.value["model_id"]))
