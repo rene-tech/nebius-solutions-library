@@ -6,6 +6,17 @@ or experimental protein-function qualification from isolated runtime tests.
 MolMIM is deliberately excluded: its retained feasibility failures still require
 work before a production recommendation.
 
+The historical default remains the GenMol/ProteinMPNN pair below. For a separately
+qualified image-only successor, explicitly select each App with
+`--runtime-successor MODEL=catalog/runtime/deployment-runtimes/RECORD.json`
+and its captured previous digest with `--expected-image MODEL=SHA256`.
+The sets must match exactly. The helper verifies committed source bytes, the
+actual current image in both the owner and routes, and preserved model, cache,
+resource, interface and startup contracts. Image-keyed compiler caches require
+a separately reviewed template; they are not silently reused. Every prior
+renderer bundle and unrelated App remains present. Candidate qualification must
+leave public-route, cold-start, elasticity and snapshot acceptance unclaimed.
+
 ## Exact candidates and evidence
 
 Both images use the existing registry prefix

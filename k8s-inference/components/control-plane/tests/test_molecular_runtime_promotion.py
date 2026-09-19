@@ -197,3 +197,44 @@ def test_actual_gateway_bootstrap_rejects_stale_baseline_and_accepts_rebased_ide
     updated = promotion.rebase_admin_configuration(payload, records(), records("-20260918"))
     validation = asyncio.run(promotion.validate_admin_configuration(updated, records("-20260918")))
     assert validation["valid"]
+
+
+def test_explicit_image_only_successor_preserves_every_template_and_unselected_app():
+    before = baseline()
+    selected = {"proteinmpnn": records("-20260918")["proteinmpnn"]}
+    envelope, bundles, routes, proposals = promotion.extend(
+        *before, selected, old_images={"proteinmpnn": promotion.OLD["proteinmpnn"]},
+        new_images={"proteinmpnn": promotion.NEW["proteinmpnn"]},
+    )
+    assert bundles == before[1]
+    assert len(proposals) == 1 and proposals[0]["spec"]["modelRef"] == "proteinmpnn"
+    for name in set(envelope["qualifications"]) - {"proteinmpnn"}:
+        assert envelope["qualifications"][name] == before[0]["qualifications"][name]
+    old_routes = json.loads(before[2]["deployment-runtimes.json"])
+    new_routes = json.loads(routes["deployment-runtimes.json"])
+    assert old_routes["models"]["genmol"] == new_routes["models"]["genmol"]
+    assert proposals[0]["spec"]["runtime"]["templateRef"] == before[3][1]["spec"]["runtime"]["templateRef"]
+
+
+@pytest.mark.parametrize("fault", ["missing_target", "bad_digest", "catalog_drift", "cache_identity"])
+def test_explicit_image_only_successor_rejects_unreviewed_changes(fault):
+    before = baseline()
+    selected = {"proteinmpnn": records("-20260918")["proteinmpnn"]}
+    old = {"proteinmpnn": promotion.OLD["proteinmpnn"]}
+    new = {"proteinmpnn": promotion.NEW["proteinmpnn"]}
+    if fault == "missing_target":
+        old["genmol"] = promotion.OLD["genmol"]
+    elif fault == "bad_digest":
+        new["proteinmpnn"] = "latest"
+    elif fault == "catalog_drift":
+        routes = json.loads(before[2]["deployment-runtimes.json"])
+        routes["models"]["proteinmpnn"]["record"]["runtime"]["image"]["reference"] = "unreviewed"
+        before[2]["deployment-runtimes.json"] = json.dumps(routes)
+    else:
+        bundle = copy.deepcopy(before[1][0])
+        bundle["modelRef"] = "proteinmpnn"
+        env = bundle["resources"][0]["spec"]["template"]["spec"]["containers"][0]["env"][0]
+        env["value"] = "/cache/" + promotion.OLD["proteinmpnn"]
+        before[1].append(bundle)
+    with pytest.raises(ValueError):
+        promotion.extend(*before, selected, old_images=old, new_images=new)

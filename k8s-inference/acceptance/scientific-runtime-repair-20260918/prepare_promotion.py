@@ -14,6 +14,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -86,22 +87,31 @@ def genmol_template(previous, image):
     return candidate
 
 
-def extend(envelope, bundles, route_data, deployments, successors):
+def extend(envelope, bundles, route_data, deployments, successors, *, old_images=None, new_images=None):
+    old_images = OLD if old_images is None else old_images
+    new_images = NEW if new_images is None else new_images
+    targets = set(new_images)
+    if not targets or targets != set(old_images) or targets != set(successors):
+        raise ValueError("exact_successor_target_set_required")
+    if any(not re.fullmatch(r"[0-9a-f]{64}", value) for value in [*old_images.values(), *new_images.values()]):
+        raise ValueError("exact_runtime_digest_required")
+    if "genmol" in targets and (old_images["genmol"] != OLD["genmol"] or new_images["genmol"] != NEW["genmol"]):
+        raise ValueError("new_genmol_cache_template_requires_separate_qualification")
     before = copy.deepcopy((envelope, bundles, route_data, deployments))
     envelope, bundles, route_data = copy.deepcopy((envelope, bundles, route_data))
     models = set(envelope["qualifications"])
-    if len(models) != 20 or not VOICES <= models or not set(NEW) <= models:
-        raise ValueError("expected_complete_twenty_model_contract")
+    if not VOICES <= models or not targets <= models:
+        raise ValueError("expected_complete_retained_model_contract")
     runtimes = json.loads(route_data["deployment-runtimes.json"])
     projection = json.loads(route_data["qualification-projection.json"])
     proposals = []
-    for model_id, digest in NEW.items():
+    for model_id, digest in new_images.items():
         matches = [item for item in deployments if item["spec"]["modelRef"] == model_id]
         if len(matches) != 1:
             raise ValueError("expected_one_target_modeldeployment")
         item, successor = matches[0], successors[model_id]
         current = item["spec"]
-        if not current["runtime"]["image"].endswith("@sha256:" + OLD[model_id]):
+        if not current["runtime"]["image"].endswith("@sha256:" + old_images[model_id]):
             raise ValueError("unexpected_current_runtime_image")
         if current["cache"]["snapshotPreference"] != "Never" or current["fastStart"]["level"] != "Off":
             raise ValueError("target_requires_reviewed_conventional_loading")
@@ -110,6 +120,8 @@ def extend(envelope, bundles, route_data, deployments, successors):
                 or successor["qualification"]["active_runtime"]["runtime_image_digest"] != "sha256:" + digest):
             raise ValueError("successor_candidate_identity_mismatch")
         historical = runtimes["models"][model_id]
+        if historical["record"]["runtime"]["image"]["reference"] != current["runtime"]["image"]:
+            raise ValueError("captured_deployment_and_catalog_runtime_disagree")
         for key in ("model", "cache", "resources", "interface", "startup"):
             if successor["record"][key] != historical["record"][key]:
                 raise ValueError("non_runtime_record_contract_changed")
@@ -125,6 +137,17 @@ def extend(envelope, bundles, route_data, deployments, successors):
         proposal = {"name": item["metadata"]["name"], "namespace": item["metadata"]["namespace"],
                     "spec": copy.deepcopy(current)}
         proposal["spec"]["runtime"]["image"] = image
+        if model_id != "genmol":
+            template = current["runtime"]["templateRef"]["digest"]
+            selected = [b for b in bundles if b["modelRef"] == model_id and b["templateDigest"] == template]
+            # Never reuse compiler caches that are explicitly keyed to the old
+            # image. Such Apps need a separately qualified template successor.
+            for bundle in selected:
+                for resource in bundle["resources"]:
+                    for container in resource.get("spec", {}).get("template", {}).get("spec", {}).get("containers", []):
+                        for env in container.get("env", []):
+                            if env["name"] in CACHE_ENV and old_images[model_id] in env.get("value", ""):
+                                raise ValueError("image_keyed_cache_requires_template_successor")
         if model_id == "genmol":
             template = current["runtime"]["templateRef"]["digest"]
             previous = next(b for b in bundles if b["modelRef"] == model_id and b["templateDigest"] == template)
@@ -146,8 +169,8 @@ def extend(envelope, bundles, route_data, deployments, successors):
     envelope["revision"] = canonical_digest(envelope)
     route_data["deployment-runtimes.json"] = canonical_json(runtimes).decode()
     route_data["qualification-projection.json"] = canonical_json(projection).decode()
-    assert bundles[:-1] == before[1]
-    assert all(envelope["qualifications"][m] == before[0]["qualifications"][m] for m in models - set(NEW))
+    assert bundles[:len(before[1])] == before[1]
+    assert all(envelope["qualifications"][m] == before[0]["qualifications"][m] for m in models - targets)
     return envelope, bundles, route_data, proposals
 
 
@@ -235,18 +258,43 @@ def main():
     for name in ("live-configmaps", "live-routes", "live-admin-configuration", "modeldeployments", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--runtime-successor", action="append", default=[], metavar="MODEL=CATALOG_JSON",
+                        help="Committed successor path relative to k8s-inference; omit for the historical pair")
+    parser.add_argument("--expected-image", action="append", default=[], metavar="MODEL=SHA256",
+                        help="Exact previous image digest for each explicitly selected successor")
     args = parser.parse_args()
     git = shutil.which("git")
     if git is None:
         raise ValueError("git_unavailable")
+    def pairs(values):
+        result = {}
+        for value in values:
+            key, separator, item = value.partition("=")
+            if not separator or not key or not item or key in result:
+                raise ValueError("expected_unique_model_value_pairs")
+            result[key] = item
+        return result
+    selected = pairs(args.runtime_successor)
+    expected = pairs(args.expected_image)
+    if bool(selected) != bool(expected) or set(selected) != set(expected):
+        raise ValueError("explicit_successors_require_exact_previous_images")
+    selected = selected or {model_id: f"catalog/runtime/deployment-runtimes/{model_id}-portable-h100-20260918.json"
+                            for model_id in NEW}
+    old_images = expected or OLD
     successors = {}
-    for model_id in NEW:
-        path = ROOT / f"catalog/runtime/deployment-runtimes/{model_id}-portable-h100-20260918.json"
+    for model_id, relative in selected.items():
+        path = (ROOT / relative).resolve()
+        if not path.is_relative_to((ROOT / "catalog/runtime/deployment-runtimes").resolve()) or path.suffix != ".json":
+            raise ValueError("successor_must_be_a_catalog_runtime_record")
         command = [git, "-C", str(ROOT), "show", f"{args.source_commit}:k8s-inference/{path.relative_to(ROOT)}"]
         committed = subprocess.check_output(command)  # noqa: S603 - fixed Git source read, explicit operator revision
         if committed != path.read_bytes():
             raise ValueError("candidate_source_differs_from_commit")
         successors[model_id] = json.loads(committed)
+        if successors[model_id]["model_id"] != model_id:
+            raise ValueError("successor_model_identity_mismatch")
+    new_images = {model_id: entry["record"]["runtime"]["image"]["digest"].removeprefix("sha256:")
+                  for model_id, entry in successors.items()}
     maps = json.loads(args.live_configmaps.read_bytes())["items"]
     def document(key):
         return json.loads(next(item["data"][key] for item in maps if key in item["data"]))
@@ -254,7 +302,8 @@ def main():
     deployments = json.loads(args.modeldeployments.read_bytes())["items"]
     routes = json.loads(args.live_routes.read_bytes())
     candidate, bundles, route_data, proposals = extend(original, document("renderer-bundles.json"),
-                                                       routes["data"], deployments, successors)
+                                                       routes["data"], deployments, successors,
+                                                       old_images=old_images, new_images=new_images)
     validation = validate_candidate(original, candidate, bundles, deployments, proposals)
     admin_map = json.loads(args.live_admin_configuration.read_bytes())
     old_configuration = json.loads(admin_map["data"]["admin-configuration.json"])
@@ -273,9 +322,11 @@ def main():
               "adminConfiguration": {"configMapName": objects[3]["metadata"]["name"],
                   "sha256": hashlib.sha256(canonical_json(new_configuration)).hexdigest()}}
     receipt = {"applied": False, "source_commit": args.source_commit, "values": values, "validation": validation,
-               "model_count": len(candidate["qualifications"]), "preserved_sibling_models": 18,
-               "all_prior_bundles_preserved": True, "added_genmol_template": TEMPLATE_NAME,
-               "genmol_compiler_cache_paths_rekeyed": sorted(CACHE_ENV),
+               "model_count": len(candidate["qualifications"]),
+               "preserved_sibling_models": len(candidate["qualifications"]) - len(successors),
+               "all_prior_bundles_preserved": True,
+               "added_genmol_template": TEMPLATE_NAME if "genmol" in successors else None,
+               "genmol_compiler_cache_paths_rekeyed": sorted(CACHE_ENV) if "genmol" in successors else [],
                "new_images_have_snapshot_evidence": False,
                "input_sha256": {name: hashlib.sha256(path.read_bytes()).hexdigest() for name, path in (
                    ("live_configmaps", args.live_configmaps), ("live_routes", args.live_routes),
@@ -290,10 +341,10 @@ def main():
                "values.json": values, "app-proposals.json": proposals, "validation.json": receipt,
                "rollback-app-proposals.json": [{"name": item["metadata"]["name"],
                    "namespace": item["metadata"]["namespace"], "spec": item["spec"]}
-                   for item in deployments if item["spec"]["modelRef"] in NEW]}
+                   for item in deployments if item["spec"]["modelRef"] in successors]}
     for name, value in outputs.items():
         (args.output / name).write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
-    print(json.dumps({"applied": False, "values": values, "models": sorted(NEW)}))
+    print(json.dumps({"applied": False, "values": values, "models": sorted(successors)}))
 
 
 if __name__ == "__main__":
