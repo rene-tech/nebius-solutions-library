@@ -22,6 +22,7 @@ from .adapters import (
     rfdiffusion,
 )
 from .adapters.cosmos_lerobot import public_input_contract as lerobot_input_contract
+from .adapters import video_augmentation
 from .models import ScientificInputArtifact
 from .profile_catalog import ScientificRequestError
 
@@ -41,6 +42,8 @@ def _entry(
 
 def public_input_contract(model_id: str) -> dict[str, Any] | None:
     """Return a fresh, caller-visible descriptor; never infer by model name."""
+    if model_id == video_augmentation.MODEL_ID:
+        return video_augmentation.public_input_contract()
     if model_id == "cosmos3-lerobot-augmentation":
         return lerobot_input_contract()
     entry = None
@@ -106,6 +109,12 @@ def validate_input_roles(
     model_id: str, request: Mapping[str, Any], entries: tuple[ScientificInputArtifact, ...]
 ) -> None:
     """Reject caller metadata before compiling a runtime plan or admitting work."""
+    if model_id == video_augmentation.MODEL_ID:
+        try:
+            video_augmentation.validate_entries(request, entries)
+        except video_augmentation.ScientificAdapterError as error:
+            raise ScientificRequestError("video input artifact roles are invalid", public_detail=str(error)) from error
+        return
     contract = public_input_contract(model_id)
     if contract is None:
         return

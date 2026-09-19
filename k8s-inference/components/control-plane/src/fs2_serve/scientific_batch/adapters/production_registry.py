@@ -19,6 +19,7 @@ from . import (
     bindcraft,
     boltzgen,
     cosmos_lerobot,
+    video_augmentation,
     esmfold2,
     esmfold2_fast,
     mosaic,
@@ -52,6 +53,10 @@ def _primary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[st
     """
 
     return {
+        video_augmentation.MODEL_ID: (
+            _COMPILERS[video_augmentation.MODEL_ID], video_augmentation.VARIANT_ID,
+            {video_augmentation.COLLECTOR_ID: video_augmentation.collect_companion_output},
+        ),
         cosmos_lerobot.MODEL_ID: (
             _COMPILERS[cosmos_lerobot.MODEL_ID], cosmos_lerobot.VARIANT_ID,
             {cosmos_lerobot.COLLECTOR_ID: cosmos_lerobot.collect_companion_output},

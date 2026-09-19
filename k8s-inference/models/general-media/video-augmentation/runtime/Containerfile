@@ -1,0 +1,22 @@
+# Build context: k8s-inference. Upstream source/dependencies are locked by commit + uv.lock.
+FROM python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+ARG PAIDF_REVISION=bc5719362492a1e3b40bd7d33b43c46dd89efad5
+LABEL org.opencontainers.image.title="Scientific AI NVIDIA PAIDF video augmentation" \
+      org.opencontainers.image.licenses="Apache-2.0"
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/fs2:/opt/paidf/modules
+RUN apt-get update && apt-get install --yes --no-install-recommends git ca-certificates ffmpeg=7:7.1.5-0+deb13u1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip install --no-cache-dir uv==0.11.7
+WORKDIR /opt/paidf
+RUN git init && git remote add origin https://github.com/NVIDIA/paidf-augmentation.git \
+    && git fetch --depth=1 origin ${PAIDF_REVISION} && git checkout --detach FETCH_HEAD \
+    && test "$(git rev-parse HEAD)" = "${PAIDF_REVISION}" \
+    && uv sync --python /usr/local/bin/python --frozen --no-dev \
+    && uv pip install --python .venv/bin/python pillow==11.3.0
+COPY models/general-media/video-augmentation/runtime/fs2_video /opt/fs2/fs2_video
+COPY models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation /opt/fs2/fs2_lerobot_augmentation
+RUN groupadd --gid 10001 fs2 && useradd --uid 10001 --gid 10001 --create-home fs2 \
+    && mkdir -p /mnt/fs2-scientific && chown 10001:10001 /mnt/fs2-scientific
+USER 10001:10001
+ENTRYPOINT ["/opt/paidf/.venv/bin/python", "-m", "fs2_video.worker"]

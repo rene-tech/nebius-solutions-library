@@ -47,7 +47,10 @@ from fs2_serve.users import UserService
 pytest_plugins = ("test_scientific_batch_postgres_state",)
 
 
-async def parent_fixture(store, *, request_budget=10, gpu_budget=100):
+async def parent_fixture(store, *, request_budget=10, gpu_budget=100, video=False):
+    parent_model = "physical-ai-video-augmentation" if video else "cosmos3-lerobot-augmentation"
+    stage = "augment-videos" if video else "augment-dataset"
+    collector = "paidf-video-v1" if video else "cosmos3-lerobot-v3-0-6-1"
     token_id = uuid4()
     token = await store.issue_token(
         token_id=token_id,
@@ -58,7 +61,7 @@ async def parent_fixture(store, *, request_budget=10, gpu_budget=100):
             principal_id="scientist",
             tenant_id="tenant-lerobot",
             scopes={Scope.INFERENCE_INVOKE},
-            models={"cosmos3-nano", "cosmos3-lerobot-augmentation"},
+            models={"cosmos3-nano", parent_model},
             max_concurrency=1,
             request_budget=request_budget,
             gpu_seconds_budget=gpu_budget,
@@ -77,8 +80,8 @@ async def parent_fixture(store, *, request_budget=10, gpu_budget=100):
     parent = await store.append_operation(
         principal=principal,
         admission=AdmissionRequest(
-            model_id="cosmos3-lerobot-augmentation",
-            operation="augment-lerobot-dataset",
+            model_id=parent_model,
+            operation="augment-videos" if video else "augment-lerobot-dataset",
             protocol="scientific-batch-v1",
             idempotency_key="parent-augmentation",
             request_body=b"{}",
@@ -89,7 +92,7 @@ async def parent_fixture(store, *, request_budget=10, gpu_budget=100):
     )
     artifact_id = uuid4()
     await durable_input_artifact(store, parent.id, artifact_id=artifact_id, tenant_id=principal.tenant_id)
-    plan = ScientificBatchPlan((ScientificStagePlan(stage_id="augment-dataset", resource_class=ResourceClass.CPU),))
+    plan = ScientificBatchPlan((ScientificStagePlan(stage_id=stage, resource_class=ResourceClass.CPU),))
     scheduling = SchedulingSnapshot(
         policy_revision="a" * 64,
         captured_at=datetime.now(UTC),
@@ -100,7 +103,7 @@ async def parent_fixture(store, *, request_budget=10, gpu_budget=100):
         route_namespace="fs2-models",
         stages=(
             StageSchedulingDecision(
-                stage_id="augment-dataset",
+                stage_id=stage,
                 resource_class=ResourceClass.CPU,
                 resolved_cluster_queue="cpu",
                 resolved_local_queue="scientific",
@@ -118,15 +121,15 @@ async def parent_fixture(store, *, request_budget=10, gpu_budget=100):
     )
     batches = PostgresScientificBatchRepository(store.pool)
     invocation = StageInvocation(
-        stage_id="augment-dataset",
+        stage_id=stage,
         shard_id="main",
         argv=("lerobot-worker",),
         environment=(),
         working_directory="/mnt/fs2-scientific/test",
         consumes=(),
         produces="augmentation-result",
-        collector_id="cosmos3-lerobot-v3-0-6-1",
-        validator_id="cosmos3-lerobot-v3-0-6-1",
+        collector_id=collector,
+        validator_id=collector,
     )
     state = await batches.create(
         operation_id=parent.id,
@@ -165,12 +168,12 @@ async def parent_fixture(store, *, request_budget=10, gpu_budget=100):
     attempt_id = uuid4()
     attempt = ScientificAttemptState(
         attempt_id=attempt_id,
-        stage_id="augment-dataset",
+        stage_id=stage,
         shard_id="main",
         attempt_number=1,
         workload=WorkloadRef(namespace="fs2-models", name="lerobot-test", kind=WorkloadKind.JOB),
     )
-    value = state_to_value(replace(state, stages=(ScientificStageState("augment-dataset", attempts=(attempt,)),)))
+    value = state_to_value(replace(state, stages=(ScientificStageState(stage, attempts=(attempt,)),)))
     async with store.pool.acquire() as connection:
         await connection.execute(
             "UPDATE fs2_scientific_batches SET state=$2::jsonb WHERE operation_id=$1", parent.id, json.dumps(value)
@@ -200,8 +203,9 @@ async def admit_child(store, principal, parent, attempt_id, *, key="first-cosmos
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_child_shares_parent_slot_but_preserves_identity_budget_and_exact_replay(store):
-    principal, parent, attempt, _ = await parent_fixture(store)
+@pytest.mark.parametrize("video", [False, True])
+async def test_child_shares_parent_slot_but_preserves_identity_budget_and_exact_replay(store, video):
+    principal, parent, attempt, _ = await parent_fixture(store, video=video)
     child = await admit_child(store, principal, parent, attempt)
     assert (child.tenant_id, child.principal_id, child.token_id) == (
         parent.tenant_id,
@@ -260,8 +264,9 @@ async def test_delegation_never_bypasses_budgets(store, kind):
 @pytest.mark.postgres
 @pytest.mark.asyncio
 @pytest.mark.parametrize("fence", ["cancel", "parent-terminal", "attempt-replaced", "token-revoked"])
-async def test_parent_fence_stops_running_child_and_new_admissions(store, fence):
-    principal, parent, attempt, batches = await parent_fixture(store)
+@pytest.mark.parametrize("video", [False, True])
+async def test_parent_fence_stops_running_child_and_new_admissions(store, fence, video):
+    principal, parent, attempt, batches = await parent_fixture(store, video=video)
     child = await admit_child(store, principal, parent, attempt)
     claimed = await store.claim_operation("worker-test", lease_seconds=30)
     assert claimed is not None and claimed.id == child.id

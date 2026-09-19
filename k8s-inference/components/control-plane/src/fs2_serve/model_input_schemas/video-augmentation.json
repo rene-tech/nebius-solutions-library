@@ -1,0 +1,164 @@
+{
+  "$defs": {
+    "Recipe": {
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "const": "cosmos3-nano-transfer",
+          "default": "cosmos3-nano-transfer",
+          "title": "Backend",
+          "type": "string"
+        },
+        "weather": {
+          "enum": [
+            "overcast",
+            "clear",
+            "rain"
+          ],
+          "title": "Weather",
+          "type": "string"
+        },
+        "instruction": {
+          "default": "Change only the weather; preserve the scene and recorded motion.",
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Instruction",
+          "type": "string"
+        },
+        "seed": {
+          "default": 42,
+          "maximum": 2147483647,
+          "minimum": 0,
+          "title": "Seed",
+          "type": "integer"
+        },
+        "num_inference_steps": {
+          "default": 35,
+          "maximum": 50,
+          "minimum": 1,
+          "title": "Num Inference Steps",
+          "type": "integer"
+        },
+        "guidance_scale": {
+          "default": 7.0,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Guidance Scale",
+          "type": "number"
+        },
+        "control_weight": {
+          "default": 1.0,
+          "exclusiveMinimum": 0,
+          "maximum": 2,
+          "title": "Control Weight",
+          "type": "number"
+        },
+        "control_guidance": {
+          "default": 1.5,
+          "maximum": 20,
+          "minimum": 0,
+          "title": "Control Guidance",
+          "type": "number"
+        },
+        "motion_threshold": {
+          "default": 0.682,
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Motion Threshold",
+          "type": "number"
+        },
+        "max_retries": {
+          "default": 1,
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Max Retries",
+          "type": "integer"
+        },
+        "audio": {
+          "default": "preserve",
+          "enum": [
+            "preserve",
+            "drop"
+          ],
+          "title": "Audio",
+          "type": "string"
+        }
+      },
+      "required": [
+        "weather"
+      ],
+      "title": "Recipe",
+      "type": "object"
+    },
+    "VideoItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^video-[0-9]{4}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "source_name": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Source Name",
+          "type": "string"
+        },
+        "sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "source_name",
+        "sha256"
+      ],
+      "title": "VideoItem",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/video-augmentation-request/v1",
+      "title": "Schema",
+      "type": "string"
+    },
+    "recipe": {
+      "$ref": "#/$defs/Recipe"
+    },
+    "items": {
+      "items": {
+        "$ref": "#/$defs/VideoItem"
+      },
+      "maxItems": 64,
+      "minItems": 1,
+      "title": "Items",
+      "type": "array"
+    },
+    "approved_recipe_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Approved Recipe Sha256"
+    }
+  },
+  "required": [
+    "schema",
+    "recipe",
+    "items"
+  ],
+  "title": "AugmentationRequest",
+  "type": "object",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/video-augmentation-request/v1"
+}
