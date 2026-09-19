@@ -42,6 +42,7 @@
     },
     "diffusion_steps": {
       "type": "integer",
+      "description": "Required explicit denoising step count; never silently replaced. The pinned upstream model_sampling baseline is 400 steps. Its 100-step example is a quick local test, not equivalent quality: shorter sampling trades runtime for potentially severe raw-backbone distortion, particularly for ligand-target and AME. Choose explicitly and inspect raw/refolded geometry; successful execution does not guarantee useful designs. This API does not infer a default.",
       "minimum": 1,
       "maximum": 2000
     }

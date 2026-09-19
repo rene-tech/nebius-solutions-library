@@ -1,0 +1,888 @@
+{
+  "schema": "fs2.nebius.ai/proteina-variant-h100-qualification/v1",
+  "recorded_at": "2026-09-19T00:08:28.271060+00:00",
+  "scope": "isolated_runtime_and_structural_measurements_not_public_or_biological_qualification",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+  "source_commit": "478e4f32ad810cebfdb92277ec01de5532622c3e",
+  "upstream_revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+  "execution_pass": true,
+  "cases": [
+    {
+      "case_id": "proteina-ame-m0584_1ldm-s42",
+      "parameters": {
+        "variant": "ame",
+        "target_id": "M0584_1ldm",
+        "run_name": "proteina-ame-m0584-1ldm-s42",
+        "seed": 42,
+        "num_samples": 1,
+        "diffusion_steps": 100
+      },
+      "stages": [
+        {
+          "stage_id": "generate",
+          "returncode": 0,
+          "started_at_epoch": 1789774693.549914,
+          "elapsed_seconds": 39.429054498672485
+        },
+        {
+          "stage_id": "filter",
+          "returncode": 0,
+          "started_at_epoch": 1789774732.9792578,
+          "elapsed_seconds": 20.910550117492676
+        },
+        {
+          "stage_id": "evaluate",
+          "returncode": 0,
+          "started_at_epoch": 1789774753.8901315,
+          "elapsed_seconds": 60.37601900100708
+        },
+        {
+          "stage_id": "analyze",
+          "returncode": 0,
+          "started_at_epoch": 1789774814.266459,
+          "elapsed_seconds": 22.618915557861328
+        }
+      ],
+      "geometry_receipt_sha256": "505479fa10d0469d0d3f4977c3ea62e792d90602b7b0bc6eae251b1bf4d1848f",
+      "designs": [
+        {
+          "id_gen": "0",
+          "sequence_sha256": "f78fcdadf666cbe3f87b9151c67cb34bbed6ca396df186bd6f96ffb658064da8",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ame_local_pipeline_M0584_1ldm_proteina-ame-m0584-1ldm-s42/job_0_n_180_id_0_single_orig0/job_0_n_180_id_0_single_orig0.pdb",
+              "sha256": "579d52c674d30f3712901560249f8d8abc188635539c38d658cdf7130a8bde60",
+              "atoms": 1508,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "NAD",
+                "OXM"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ame_local_pipeline_M0584_1ldm_proteina-ame-m0584-1ldm-s42/job_0_n_180_id_0_single_orig0/rf3_outputs/complex_job_0_n_180_id_0_single_orig0_self_seq0_complex/complex_job_0_n_180_id_0_single_orig0_self_seq0_complex_model.pdb",
+              "sha256": "afb2a6e95a61050bccbaa36c1de64c58d5921629c6528c9c218ec993b54f8be6",
+              "atoms": 1508,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "NAD",
+                "OXM"
+              ]
+            }
+          },
+          "csv_sha256": "9fea4cefd31d530a50fe2af0a6ad1eab85cf60e5c9c764cae5f1b63050ae9a9a",
+          "independent_binder_ca_rmsd_angstrom": 44.85778305671482,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": false,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.49162011173184356
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "proteina-ame-m0584_1ldm-s7",
+      "parameters": {
+        "variant": "ame",
+        "target_id": "M0584_1ldm",
+        "run_name": "proteina-ame-m0584-1ldm-s7",
+        "seed": 7,
+        "num_samples": 1,
+        "diffusion_steps": 100
+      },
+      "stages": [
+        {
+          "stage_id": "generate",
+          "returncode": 0,
+          "started_at_epoch": 1789774551.9903111,
+          "elapsed_seconds": 39.135509967803955
+        },
+        {
+          "stage_id": "filter",
+          "returncode": 0,
+          "started_at_epoch": 1789774591.1261039,
+          "elapsed_seconds": 20.45881676673889
+        },
+        {
+          "stage_id": "evaluate",
+          "returncode": 0,
+          "started_at_epoch": 1789774611.5852582,
+          "elapsed_seconds": 59.38555288314819
+        },
+        {
+          "stage_id": "analyze",
+          "returncode": 0,
+          "started_at_epoch": 1789774670.9711373,
+          "elapsed_seconds": 22.56145167350769
+        }
+      ],
+      "geometry_receipt_sha256": "505479fa10d0469d0d3f4977c3ea62e792d90602b7b0bc6eae251b1bf4d1848f",
+      "designs": [
+        {
+          "id_gen": "0",
+          "sequence_sha256": "a4e99378084f9f8e7cfd64cf429ce0e6f17ececfa2c508325d5e99ecf44b588d",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ame_local_pipeline_M0584_1ldm_proteina-ame-m0584-1ldm-s7/job_0_n_180_id_0_single_orig0/job_0_n_180_id_0_single_orig0.pdb",
+              "sha256": "39ab31a7601a42008ad2eb56c7b9b5bff555594a1cf91b6c45fca0622a01ce4e",
+              "atoms": 1406,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "NAD",
+                "OXM"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ame_local_pipeline_M0584_1ldm_proteina-ame-m0584-1ldm-s7/job_0_n_180_id_0_single_orig0/rf3_outputs/complex_job_0_n_180_id_0_single_orig0_self_seq0_complex/complex_job_0_n_180_id_0_single_orig0_self_seq0_complex_model.pdb",
+              "sha256": "f83f1fd5b894d03dc1406f98318c3253948b2060b48078aaf0df5884cc4c3f83",
+              "atoms": 1406,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "NAD",
+                "OXM"
+              ]
+            }
+          },
+          "csv_sha256": "32f3600974a43649d934db354e2bbf5b94965066d9b6c1af28a6acd95a996d27",
+          "independent_binder_ca_rmsd_angstrom": 32.831827150378295,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": false,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.3854748603351955
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "proteina-complexa-pdl1-s1-n1",
+      "parameters": {
+        "variant": "protein-target",
+        "target_id": "02_PDL1",
+        "run_name": "qualification-pdl1-s1-n1",
+        "seed": 1,
+        "num_samples": 1,
+        "diffusion_steps": 100
+      },
+      "stages": [
+        {
+          "stage_id": "generate",
+          "returncode": 0,
+          "started_at_epoch": 1789774836.8866568,
+          "elapsed_seconds": 63.618051290512085
+        },
+        {
+          "stage_id": "filter",
+          "returncode": 0,
+          "started_at_epoch": 1789774900.5049658,
+          "elapsed_seconds": 20.574754238128662
+        },
+        {
+          "stage_id": "evaluate",
+          "returncode": 0,
+          "started_at_epoch": 1789774921.0800383,
+          "elapsed_seconds": 50.79940056800842
+        },
+        {
+          "stage_id": "analyze",
+          "returncode": 0,
+          "started_at_epoch": 1789774971.8797898,
+          "elapsed_seconds": 22.604371309280396
+        }
+      ],
+      "geometry_receipt_sha256": "505479fa10d0469d0d3f4977c3ea62e792d90602b7b0bc6eae251b1bf4d1848f",
+      "designs": [
+        {
+          "id_gen": "0",
+          "sequence_sha256": "b7ca189e18b4c87e98f544be781b7e5f56ce02815e896093dd590c1b4d2b8394",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_binder_local_pipeline_02_PDL1_qualification-pdl1-s1-n1/job_0_n_203_id_1_bon_orig0_r1/job_0_n_203_id_1_bon_orig0_r1.pdb",
+              "sha256": "a8b2e212e6411c219e448100936d5ef47d9f31d490042bdffa4656f497d9038f",
+              "atoms": 1579,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": []
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_binder_local_pipeline_02_PDL1_qualification-pdl1-s1-n1/job_0_n_203_id_1_bon_orig0_r1/AF2/job_0_n_203_id_1_bon_orig0_r1_self_seq_0_model1.pdb",
+              "sha256": "ae19b2272a1fd1441d0c3a5169583d010d16029786444522e618ed907aec0f32",
+              "atoms": 1579,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": []
+            }
+          },
+          "csv_sha256": "fd3ad816df2bec761732e5a245804690bd317c9eb7ee3cdd7bcd803995c08e5d",
+          "independent_binder_ca_rmsd_angstrom": 1.870793487940792,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": false,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.6206896551724138
+          ]
+        },
+        {
+          "id_gen": "1",
+          "sequence_sha256": "749dc0fa7b349ccfdfbd308a213cfde5184b391f1ad4537dee82637da0a364d0",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_binder_local_pipeline_02_PDL1_qualification-pdl1-s1-n1/job_0_n_203_id_0_bon_orig0_r0/job_0_n_203_id_0_bon_orig0_r0.pdb",
+              "sha256": "c78690afbceb66e9288ce6ce1152196566f29e007075896f2fe1d001a615a76d",
+              "atoms": 1548,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": []
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_binder_local_pipeline_02_PDL1_qualification-pdl1-s1-n1/job_0_n_203_id_0_bon_orig0_r0/AF2/job_0_n_203_id_0_bon_orig0_r0_self_seq_0_model1.pdb",
+              "sha256": "ca540e837f9b3078fb78038b2a4cd69982da948be6dd05a643560f805c8c294e",
+              "atoms": 1548,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": []
+            }
+          },
+          "csv_sha256": "fd3ad816df2bec761732e5a245804690bd317c9eb7ee3cdd7bcd803995c08e5d",
+          "independent_binder_ca_rmsd_angstrom": 2.0393302982895785,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": false,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.5747126436781609
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "proteina-ligand-target-41_7bkc_ligand-s42",
+      "parameters": {
+        "variant": "ligand-target",
+        "target_id": "41_7BKC_LIGAND",
+        "run_name": "proteina-ligand-target-41-7bkc-ligand-s42",
+        "seed": 42,
+        "num_samples": 1,
+        "diffusion_steps": 100
+      },
+      "stages": [
+        {
+          "stage_id": "generate",
+          "returncode": 0,
+          "started_at_epoch": 1789774313.4860058,
+          "elapsed_seconds": 103.29170513153076
+        },
+        {
+          "stage_id": "filter",
+          "returncode": 0,
+          "started_at_epoch": 1789774416.7779932,
+          "elapsed_seconds": 20.803913116455078
+        },
+        {
+          "stage_id": "evaluate",
+          "returncode": 0,
+          "started_at_epoch": 1789774437.5822299,
+          "elapsed_seconds": 91.4463758468628
+        },
+        {
+          "stage_id": "analyze",
+          "returncode": 0,
+          "started_at_epoch": 1789774529.028926,
+          "elapsed_seconds": 22.96021795272827
+        }
+      ],
+      "geometry_receipt_sha256": "505479fa10d0469d0d3f4977c3ea62e792d90602b7b0bc6eae251b1bf4d1848f",
+      "designs": [
+        {
+          "id_gen": "0",
+          "sequence_sha256": "96ee1e0e2d03c97d856f6267f3ae60dd5ddc9912e30ee8fcc4e9cb15b39897a8",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s42/job_0_n_100_id_0_bon_orig0_r0/job_0_n_100_id_0_bon_orig0_r0.pdb",
+              "sha256": "488288e09949a180bfb5dce69cf66539d87071ce2c7d15891de6009e4afb4e30",
+              "atoms": 791,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s42/job_0_n_100_id_0_bon_orig0_r0/rf3_outputs/complex_job_0_n_100_id_0_bon_orig0_r0_self_seq0_complex/complex_job_0_n_100_id_0_bon_orig0_r0_self_seq0_complex_model.pdb",
+              "sha256": "c06657c10fb378bb9bcc6325a1010bbacaf00af1ed5dd52c42f58a7b612b6170",
+              "atoms": 791,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            }
+          },
+          "csv_sha256": "07817ec4e1eef47fcf7697b8cca767c19c23fd3798577b6c3b843466b4ab9a17",
+          "independent_binder_ca_rmsd_angstrom": 57.938999529553975,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": false,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.6161616161616161
+          ]
+        },
+        {
+          "id_gen": "1",
+          "sequence_sha256": "53c1db56e6fe979b9f6f2d754eb391d0bb7fe697b135854548ef99c0da6a5905",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s42/job_0_n_100_id_1_bon_orig0_r1/job_0_n_100_id_1_bon_orig0_r1.pdb",
+              "sha256": "d5c115bc4e90b45e742a54c85b7914d96d36f11495d3cbc467724d27a715dcff",
+              "atoms": 886,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s42/job_0_n_100_id_1_bon_orig0_r1/rf3_outputs/complex_job_0_n_100_id_1_bon_orig0_r1_self_seq0_complex/complex_job_0_n_100_id_1_bon_orig0_r1_self_seq0_complex_model.pdb",
+              "sha256": "0242140baa613547856b831b709936345ab1822ea093c64dd5c22c76f0d58b21",
+              "atoms": 886,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            }
+          },
+          "csv_sha256": "07817ec4e1eef47fcf7697b8cca767c19c23fd3798577b6c3b843466b4ab9a17",
+          "independent_binder_ca_rmsd_angstrom": 61.11929363857214,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": false,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.5757575757575758
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "proteina-ligand-target-41_7bkc_ligand-s7",
+      "parameters": {
+        "variant": "ligand-target",
+        "target_id": "41_7BKC_LIGAND",
+        "run_name": "proteina-ligand-target-41-7bkc-ligand-s7",
+        "seed": 7,
+        "num_samples": 1,
+        "diffusion_steps": 100
+      },
+      "stages": [
+        {
+          "stage_id": "generate",
+          "returncode": 0,
+          "started_at_epoch": 1789774080.7026727,
+          "elapsed_seconds": 104.16222214698792
+        },
+        {
+          "stage_id": "filter",
+          "returncode": 0,
+          "started_at_epoch": 1789774184.8651788,
+          "elapsed_seconds": 20.21919846534729
+        },
+        {
+          "stage_id": "evaluate",
+          "returncode": 0,
+          "started_at_epoch": 1789774205.0846982,
+          "elapsed_seconds": 86.52816820144653
+        },
+        {
+          "stage_id": "analyze",
+          "returncode": 0,
+          "started_at_epoch": 1789774291.6131954,
+          "elapsed_seconds": 21.87173581123352
+        }
+      ],
+      "geometry_receipt_sha256": "505479fa10d0469d0d3f4977c3ea62e792d90602b7b0bc6eae251b1bf4d1848f",
+      "designs": [
+        {
+          "id_gen": "0",
+          "sequence_sha256": "194ff59d9d3287fefb1bfa89a103325c7fe2a4e730520160bd2e058a0b050a58",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s7/job_0_n_100_id_1_bon_orig0_r1/job_0_n_100_id_1_bon_orig0_r1.pdb",
+              "sha256": "4cdf74c45beea62f405a82597eb40cde162ea50bc52eed6fcf217e32bd5783ed",
+              "atoms": 886,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s7/job_0_n_100_id_1_bon_orig0_r1/rf3_outputs/complex_job_0_n_100_id_1_bon_orig0_r1_self_seq0_complex/complex_job_0_n_100_id_1_bon_orig0_r1_self_seq0_complex_model.pdb",
+              "sha256": "3614420f36b27ebd4d6e2cd15bd44d9e8f3e301c870767f72689c845912c0a54",
+              "atoms": 886,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            }
+          },
+          "csv_sha256": "bfe9f056b506466fbc619937d1cc3e523476be5b0ed30191f37750ef9c1a78ce",
+          "independent_binder_ca_rmsd_angstrom": 55.67218789401899,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": false,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.6666666666666666
+          ]
+        },
+        {
+          "id_gen": "1",
+          "sequence_sha256": "8b4bad3eb098b99ea189cdce525440673e642db16d96e5ec949a5474e187aef0",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s7/job_0_n_100_id_0_bon_orig0_r0/job_0_n_100_id_0_bon_orig0_r0.pdb",
+              "sha256": "a32383819732a73585674152f7c81fdb0dff65a019b5d8de0e0f3bfdf73b7301",
+              "atoms": 891,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s7/job_0_n_100_id_0_bon_orig0_r0/rf3_outputs/complex_job_0_n_100_id_0_bon_orig0_r0_self_seq0_complex/complex_job_0_n_100_id_0_bon_orig0_r0_self_seq0_complex_model.pdb",
+              "sha256": "a56a5a2d52460efcc4b684efa3eaa912c7d3046829e09163875e978856fbb1a5",
+              "atoms": 891,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            }
+          },
+          "csv_sha256": "bfe9f056b506466fbc619937d1cc3e523476be5b0ed30191f37750ef9c1a78ce",
+          "independent_binder_ca_rmsd_angstrom": 56.12349398852582,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": false,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.5959595959595959
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "proteina-ligand-target-41_7bkc_ligand-s7-matched-n400",
+      "parameters": {
+        "variant": "ligand-target",
+        "target_id": "41_7BKC_LIGAND",
+        "run_name": "proteina-ligand-target-41-7bkc-ligand-s7-matched-n400",
+        "seed": 7,
+        "num_samples": 1,
+        "diffusion_steps": 400
+      },
+      "stages": [
+        {
+          "stage_id": "generate",
+          "returncode": 0,
+          "started_at_epoch": 1789775388.0102692,
+          "elapsed_seconds": 110.56145405769348
+        },
+        {
+          "stage_id": "filter",
+          "returncode": 0,
+          "started_at_epoch": 1789775498.572036,
+          "elapsed_seconds": 19.02973222732544
+        },
+        {
+          "stage_id": "evaluate",
+          "returncode": 0,
+          "started_at_epoch": 1789775517.60212,
+          "elapsed_seconds": 86.27186679840088
+        },
+        {
+          "stage_id": "analyze",
+          "returncode": 0,
+          "started_at_epoch": 1789775603.8743203,
+          "elapsed_seconds": 21.627447843551636
+        }
+      ],
+      "geometry_receipt_sha256": "e090b65aa06e0f4954e3b5b2fbe68bd2eebcb9a79d013ad82b3113421cc9676e",
+      "designs": [
+        {
+          "id_gen": "0",
+          "sequence_sha256": "969a95121b6c733ae561cb77a7543537b5b80f331469d7b1e9cea0d466e0184f",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s7-matched-n400/job_0_n_100_id_1_bon_orig0_r1/job_0_n_100_id_1_bon_orig0_r1.pdb",
+              "sha256": "a45edf970ba12bbd59e4e1ca6c8aa929ef398f7a1cbdc3b061ef089b354c26d7",
+              "atoms": 863,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s7-matched-n400/job_0_n_100_id_1_bon_orig0_r1/rf3_outputs/complex_job_0_n_100_id_1_bon_orig0_r1_self_seq0_complex/complex_job_0_n_100_id_1_bon_orig0_r1_self_seq0_complex_model.pdb",
+              "sha256": "84d74e08968503fbdc3aefb5fd7d4650acb03fa4564ced0c6bcd4bda8b405531",
+              "atoms": 863,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            }
+          },
+          "csv_sha256": "ace47e168df9403315505f5da7902a643d022c716bbb8d132db7b59f6b23b6dd",
+          "independent_binder_ca_rmsd_angstrom": 1.6663234614172426,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": true,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.0
+          ]
+        },
+        {
+          "id_gen": "1",
+          "sequence_sha256": "a607968e6105395d8df12e43d07c4d6318bc1329176cd8ef922bdb96d7a853ec",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s7-matched-n400/job_0_n_100_id_0_bon_orig0_r0/job_0_n_100_id_0_bon_orig0_r0.pdb",
+              "sha256": "2fd454f4d85aa7079bb495979e5dc74bef4cc774bb1ce7d2d96ea753dddbea58",
+              "atoms": 887,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s7-matched-n400/job_0_n_100_id_0_bon_orig0_r0/rf3_outputs/complex_job_0_n_100_id_0_bon_orig0_r0_self_seq0_complex/complex_job_0_n_100_id_0_bon_orig0_r0_self_seq0_complex_model.pdb",
+              "sha256": "0f0a188092e5d0d07066b04cacd9822c2e5d89e60ad84e3cc04918ba98636ffe",
+              "atoms": 887,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            }
+          },
+          "csv_sha256": "ace47e168df9403315505f5da7902a643d022c716bbb8d132db7b59f6b23b6dd",
+          "independent_binder_ca_rmsd_angstrom": 0.8109643076499555,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": true,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "proteina-ame-m0584_1ldm-s7-matched-n400",
+      "parameters": {
+        "variant": "ame",
+        "target_id": "M0584_1ldm",
+        "run_name": "proteina-ame-m0584-1ldm-s7-matched-n400",
+        "seed": 7,
+        "num_samples": 1,
+        "diffusion_steps": 400
+      },
+      "stages": [
+        {
+          "stage_id": "generate",
+          "returncode": 0,
+          "started_at_epoch": 1789776224.784276,
+          "elapsed_seconds": 46.448458194732666
+        },
+        {
+          "stage_id": "filter",
+          "returncode": 0,
+          "started_at_epoch": 1789776271.2333758,
+          "elapsed_seconds": 18.98504066467285
+        },
+        {
+          "stage_id": "evaluate",
+          "returncode": 0,
+          "started_at_epoch": 1789776290.2189727,
+          "elapsed_seconds": 57.70101261138916
+        },
+        {
+          "stage_id": "analyze",
+          "returncode": 0,
+          "started_at_epoch": 1789776347.936777,
+          "elapsed_seconds": 20.448976516723633
+        }
+      ],
+      "geometry_receipt_sha256": "525120c7d58ee2feece3bb6eb99a41c95463c954455d21fb657ca19f4a69e952",
+      "designs": [
+        {
+          "id_gen": "0",
+          "sequence_sha256": "7127704ecf99291e8d63e70e4b90880fb3c18ec243c57bd38ab321e013b2396f",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ame_local_pipeline_M0584_1ldm_proteina-ame-m0584-1ldm-s7-matched-n400/job_0_n_180_id_0_single_orig0/job_0_n_180_id_0_single_orig0.pdb",
+              "sha256": "016317ef80c41cfc92877594c67e23ed4dd463f0d1a367fcc50569cdc1a6648a",
+              "atoms": 1552,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "NAD",
+                "OXM"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ame_local_pipeline_M0584_1ldm_proteina-ame-m0584-1ldm-s7-matched-n400/job_0_n_180_id_0_single_orig0/rf3_outputs/complex_job_0_n_180_id_0_single_orig0_self_seq0_complex/complex_job_0_n_180_id_0_single_orig0_self_seq0_complex_model.pdb",
+              "sha256": "5acb15541c6dcd7dbc05823ee9c55a779f217cb56262866a046f700295403d52",
+              "atoms": 1552,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "NAD",
+                "OXM"
+              ]
+            }
+          },
+          "csv_sha256": "abaf6d075efe93571ebc8fdc3e6e3b2d06b7332f01abf175b304c19e07694eea",
+          "independent_binder_ca_rmsd_angstrom": 0.7363342875886246,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": true,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.0
+          ]
+        }
+      ]
+    },
+    {
+      "case_id": "proteina-ligand-target-41_7bkc_ligand-s42-matched-n400",
+      "parameters": {
+        "variant": "ligand-target",
+        "target_id": "41_7BKC_LIGAND",
+        "run_name": "proteina-ligand-target-41-7bkc-ligand-s42-matched-n400",
+        "seed": 42,
+        "num_samples": 1,
+        "diffusion_steps": 400
+      },
+      "stages": [
+        {
+          "stage_id": "generate",
+          "returncode": 0,
+          "started_at_epoch": 1789775986.1044724,
+          "elapsed_seconds": 114.8649890422821
+        },
+        {
+          "stage_id": "filter",
+          "returncode": 0,
+          "started_at_epoch": 1789776100.969833,
+          "elapsed_seconds": 18.50509786605835
+        },
+        {
+          "stage_id": "evaluate",
+          "returncode": 0,
+          "started_at_epoch": 1789776119.475634,
+          "elapsed_seconds": 85.12183952331543
+        },
+        {
+          "stage_id": "analyze",
+          "returncode": 0,
+          "started_at_epoch": 1789776204.5982156,
+          "elapsed_seconds": 20.184492111206055
+        }
+      ],
+      "geometry_receipt_sha256": "525120c7d58ee2feece3bb6eb99a41c95463c954455d21fb657ca19f4a69e952",
+      "designs": [
+        {
+          "id_gen": "0",
+          "sequence_sha256": "a1e84297ead24e102385e6fc6f8bd117545b054cb273a4e056ecce12704332c5",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s42-matched-n400/job_0_n_100_id_0_bon_orig0_r0/job_0_n_100_id_0_bon_orig0_r0.pdb",
+              "sha256": "0241c9a65927fcb354618b2d3ea6f109cf559a832726e9afdecccb01637b2f7a",
+              "atoms": 874,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s42-matched-n400/job_0_n_100_id_0_bon_orig0_r0/rf3_outputs/complex_job_0_n_100_id_0_bon_orig0_r0_self_seq0_complex/complex_job_0_n_100_id_0_bon_orig0_r0_self_seq0_complex_model.pdb",
+              "sha256": "383cbdc8ba34afe0a9b24179bd54322c1d5574a3cf15a3864ed3cced9ce9a14d",
+              "atoms": 874,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            }
+          },
+          "csv_sha256": "fd94cd51076af164e60295cba038aa0f1c440cdbd1599d87028339e83d299299",
+          "independent_binder_ca_rmsd_angstrom": 2.619662318409025,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": true,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.0
+          ]
+        },
+        {
+          "id_gen": "1",
+          "sequence_sha256": "2b746a58284047f659750ee6a11dec0f82236b8dc643440b630dbb6c9ec8ead6",
+          "coordinate_linkage": {
+            "generated": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s42-matched-n400/job_0_n_100_id_1_bon_orig0_r1/job_0_n_100_id_1_bon_orig0_r1.pdb",
+              "sha256": "84b9706e9e9b84eb51f06f9b3a85cf0d1f85f4dd4f0c5cb896bb873bbb973760",
+              "atoms": 803,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            },
+            "self_refolded": {
+              "path": "evaluation_results/search_ligand_binder_local_pipeline_41_7BKC_LIGAND_proteina-ligand-target-41-7bkc-ligand-s42-matched-n400/job_0_n_100_id_1_bon_orig0_r1/rf3_outputs/complex_job_0_n_100_id_1_bon_orig0_r1_self_seq0_complex/complex_job_0_n_100_id_1_bon_orig0_r1_self_seq0_complex_model.pdb",
+              "sha256": "40dbce079af99726922bc495c77ec73effb26b5430fd54fd561d6c27387388ea",
+              "atoms": 803,
+              "all_atom_coordinates_finite": true,
+              "hetero_residue_names": [
+                "FAD"
+              ]
+            }
+          },
+          "csv_sha256": "fd94cd51076af164e60295cba038aa0f1c440cdbd1599d87028339e83d299299",
+          "independent_binder_ca_rmsd_angstrom": 1.453515454335225,
+          "reported_rmsd_reproduced_within_0_01A": true,
+          "raw_backbone_geometry_pass": true,
+          "refold_backbone_geometry_pass": true,
+          "raw_ca_step_outside_2_5_to_4_5_fraction": [
+            0.0
+          ]
+        }
+      ]
+    }
+  ],
+  "pods": [
+    {
+      "name": "fs2-proteina-variants-20260918-r4",
+      "pod_uid": "99d47a91-b637-4ac6-81ca-ea69000f1155",
+      "node": "computeinstance-e00ww2rd4vzp8qdm22",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+      "resources": {
+        "limits": {
+          "cpu": "8",
+          "ephemeral-storage": "32Gi",
+          "memory": "96Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "requests": {
+          "cpu": "8",
+          "ephemeral-storage": "32Gi",
+          "memory": "96Gi",
+          "nvidia.com/gpu": "1"
+        }
+      },
+      "gpu": "GPU-3a02010a-1266-1a19-c6b2-846a38fcabd4, NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
+      "jit_prerequisite": {
+        "python_header_compile": true,
+        "python_include": "/usr/include/python3.12",
+        "triton_jit_kernel": true,
+        "device": "NVIDIA H100 80GB HBM3"
+      },
+      "generation_verification_sha256": "9bc8bcc28933dabcc86178d20db38002273a47302df8536363e1f174effd4ee7",
+      "pod_capture_sha256": "358eff9638815bec52c4962fdc8579d149e84017882c4879f1b14da105d2dd54"
+    },
+    {
+      "name": "fs2-proteina-variants-20260918-r5",
+      "pod_uid": "19455199-f864-4ae9-9560-1ce16946c86c",
+      "node": "computeinstance-e00rdppqt3kg2y00gj",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+      "resources": {
+        "limits": {
+          "cpu": "8",
+          "ephemeral-storage": "32Gi",
+          "memory": "96Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "requests": {
+          "cpu": "8",
+          "ephemeral-storage": "32Gi",
+          "memory": "96Gi",
+          "nvidia.com/gpu": "1"
+        }
+      },
+      "gpu": "GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7, NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
+      "jit_prerequisite": {
+        "python_header_compile": true,
+        "python_include": "/usr/include/python3.12",
+        "triton_jit_kernel": true,
+        "device": "NVIDIA H100 80GB HBM3"
+      },
+      "generation_verification_sha256": "fbf683d11cbd16de0eb40ad2fb6ff06289757e2b616969ad463650e583ba488e",
+      "pod_capture_sha256": "9f30d41d8177d4b69ef79d91b9eb4193451b45aaaed6c0e3511a72a6f5859c8b"
+    },
+    {
+      "name": "fs2-proteina-variants-20260918-r6",
+      "pod_uid": "9929fcfb-f4f9-4896-97b1-8c99a108e4bb",
+      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+      "resources": {
+        "limits": {
+          "cpu": "8",
+          "ephemeral-storage": "32Gi",
+          "memory": "96Gi",
+          "nvidia.com/gpu": "1"
+        },
+        "requests": {
+          "cpu": "8",
+          "ephemeral-storage": "32Gi",
+          "memory": "96Gi",
+          "nvidia.com/gpu": "1"
+        }
+      },
+      "gpu": "GPU-eb9c2898-bf6f-83b6-b76c-2c3b5b02500c, NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
+      "jit_prerequisite": {
+        "python_header_compile": true,
+        "python_include": "/usr/include/python3.12",
+        "triton_jit_kernel": true,
+        "device": "NVIDIA H100 80GB HBM3"
+      },
+      "generation_verification_sha256": "ee439fa9b1f5852cca96df7024e55d6c2ad4ec211f945d790dcde3a14f398c6d",
+      "pod_capture_sha256": "a6ff45b56c5479cb50e63713c0b5362025880a6f27fff694f3d8078877d879df"
+    }
+  ],
+  "cleanup": {
+    "all_task_resources_absent": true,
+    "resources": [
+      {
+        "kind": "pod",
+        "name": "fs2-proteina-variants-20260918-r4",
+        "absent": true
+      },
+      {
+        "kind": "configmap",
+        "name": "fs2-proteina-variants-20260918-r4-input",
+        "absent": true
+      },
+      {
+        "kind": "pod",
+        "name": "fs2-proteina-variants-20260918-r5",
+        "absent": true
+      },
+      {
+        "kind": "configmap",
+        "name": "fs2-proteina-variants-20260918-r5-input",
+        "absent": true
+      },
+      {
+        "kind": "pod",
+        "name": "fs2-proteina-variants-20260918-r6",
+        "absent": true
+      },
+      {
+        "kind": "configmap",
+        "name": "fs2-proteina-variants-20260918-r6-input",
+        "absent": true
+      }
+    ]
+  },
+  "original_protocol": "Five original100-step cases unchanged. All8raw designs fail basic CA geometry; refolds are separate and all8pass the limited geometry check.",
+  "explicit_comparisons": "Three separate400-step cases follow pinned upstream model_sampling baseline; same respective target/seed/sample count/weights/image. All5raw+refold designs pass basic CA geometry. No hidden request modification.",
+  "sampling_reference": {
+    "repository": "https://github.com/NVIDIA-BioNeMo/Proteina-Complexa",
+    "revision": "54058860d43444c7289873f77d3e50b5b02348cd",
+    "config": "configs/pipeline/model_sampling.yaml",
+    "default_nsteps": 400,
+    "shorter_steps": "Runtime/quality tradeoff;100step protein example labeled Quick Local Test upstream."
+  },
+  "node_loss": {
+    "pod": "fs2-proteina-variants-20260918-r4",
+    "node": "computeinstance-e00ww2rd4vzp8qdm22",
+    "ready_unknown_at": "2026-09-18T23:45:49Z",
+    "node_receipt_sha256": "0eba92f655cf1cda244a65ba3c1eb59783949113bf63872ca662530194ecb65c",
+    "effect": "Original5caseoutputs copiedbeforeloss. First matched400generate interrupted; no completed result claimed. Only thatcomparison replayed on a new isolatedPod."
+  },
+  "limits": "No affinity,catalysis,experimental,clinical or broad model-quality qualification. Sparse matched cases; basic CA geometry is not all-atom validity. No production/public/scheduler/snapshot qualification inherited.",
+  "private_evidence_root": "/home/tux/secure-handoff/proteina-variant-repair-20260918-Mpp6FE",
+  "independent_evaluator_sha256": "b8b15aaecc0d43074febe321a6cf2014d5aafd2f1c38da38f4fc5a8bbc2d74b3"
+}
