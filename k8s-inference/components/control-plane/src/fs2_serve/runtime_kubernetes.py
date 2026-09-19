@@ -39,6 +39,7 @@ PHASE_ANNOTATION_PREFIX = "telemetry.fs2.nebius.ai/phase-"
 RESPONSE_IDENTITY_ANNOTATION = "telemetry.fs2.nebius.ai/response-identity"
 RESPONSE_IDENTITY_VERSION = "asgi-v1"
 COSMOS_RESPONSE_IDENTITY_VERSION = "asgi-cosmos-adapter-v1"
+OPEN_HTTP_RESPONSE_IDENTITY_VERSION = "http-open-runtime-v1"
 
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
@@ -250,7 +251,7 @@ class KubernetesRuntimeMetadataProvider:
         if (
             metadata.get("namespace") != self.namespace
             or annotations.get(RESPONSE_IDENTITY_ANNOTATION) not in {
-                RESPONSE_IDENTITY_VERSION, COSMOS_RESPONSE_IDENTITY_VERSION,
+                RESPONSE_IDENTITY_VERSION, COSMOS_RESPONSE_IDENTITY_VERSION, OPEN_HTTP_RESPONSE_IDENTITY_VERSION,
             }
             or annotations.get("fs2.nebius/model-revision") != binding["model_revision"]
             or annotations.get("fs2.nebius/runtime-image-digest") != binding["runtime_image_digest"]
@@ -258,6 +259,7 @@ class KubernetesRuntimeMetadataProvider:
             return False
         containers = [_mapping(c) for c in _sequence(spec.get("containers"))]
         is_cosmos_adapter = annotations.get(RESPONSE_IDENTITY_ANNOTATION) == COSMOS_RESPONSE_IDENTITY_VERSION
+        is_open_http = annotations.get(RESPONSE_IDENTITY_ANNOTATION) == OPEN_HTTP_RESPONSE_IDENTITY_VERSION
         upstream: list[Mapping[str, Any]] = []
         if is_cosmos_adapter:
             # The media Service terminates on a CPU adapter, not vLLM's port.
@@ -275,20 +277,32 @@ class KubernetesRuntimeMetadataProvider:
             ]
             if len(upstream) != 1 or binding["service_port"] != 8080:
                 return False
+
+        def instrumented_entrypoint(container: Mapping[str, Any]) -> bool:
+            if is_cosmos_adapter:
+                return (
+                    container.get("name") == "bounded-json-adapter"
+                    and _sequence(container.get("command")) == ["python3", "/adapter/adapter.py"]
+                    and not _sequence(container.get("args"))
+                    and not any(
+                        _GPU_RESOURCE.fullmatch(str(resource))
+                        for kind in ("requests", "limits")
+                        for resource in _mapping(_mapping(container.get("resources")).get(kind))
+                    )
+                )
+            if is_open_http:
+                return (
+                    _sequence(container.get("command")) == ["python3", "/opt/fs2/runtime/common/server.py"]
+                    and not _sequence(container.get("args"))
+                    and pod_gpu_count({"spec": {"containers": [container]}}) is not None
+                )
+            return "fs2_runtime_identity.RuntimeIdentityMiddleware" in _sequence(container.get("args"))
+
         instrumented = [
             c
             for c in containers
             if str(c.get("image", "")).endswith("@" + binding["runtime_image_digest"])
-            and (
-                (c.get("name") == "bounded-json-adapter"
-                 and _sequence(c.get("command")) == ["python3", "/adapter/adapter.py"]
-                 and not _sequence(c.get("args"))
-                 and not any(_GPU_RESOURCE.fullmatch(str(resource))
-                             for kind in ("requests", "limits")
-                             for resource in _mapping(_mapping(c.get("resources")).get(kind))))
-                if is_cosmos_adapter else
-                "fs2_runtime_identity.RuntimeIdentityMiddleware" in _sequence(c.get("args"))
-            )
+            and instrumented_entrypoint(c)
             and any(
                 _mapping(e).get("name") == "FS2_RUNTIME_POD_UID"
                 and _mapping(_mapping(_mapping(e).get("valueFrom")).get("fieldRef")).get("fieldPath") == "metadata.uid"
@@ -296,6 +310,11 @@ class KubernetesRuntimeMetadataProvider:
             )
         ]
         if len(instrumented) != 1:
+            return False
+        gpu_containers = [c for c in containers if pod_gpu_count({"spec": {"containers": [c]}}) is not None]
+        if is_open_http and len(gpu_containers) != 1:
+            # A CPU relay beside an unrelated GPU worker does not prove which
+            # model produced the response. This protocol terminates on the GPU.
             return False
         for component in [*instrumented, *upstream]:
             running_images = [
@@ -333,6 +352,11 @@ class KubernetesRuntimeMetadataProvider:
         ]
         if len(selected) != 1:
             return False
+        if is_open_http:
+            listener = [_mapping(e).get("value") for e in _sequence(instrumented[0].get("env"))
+                        if _mapping(e).get("name") == "FS2_PORT"]
+            if listener != [str(selected[0].get("containerPort"))]:
+                return False
         slices = await self.reader.list(f"/apis/discovery.k8s.io/v1/namespaces/{self.namespace}/endpointslices")
         for item in slices:
             slice_meta = _mapping(item.get("metadata"))
