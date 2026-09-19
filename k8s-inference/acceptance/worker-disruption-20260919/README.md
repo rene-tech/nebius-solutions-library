@@ -51,3 +51,40 @@ On19September at17:24UTC,142 focused adapter/controller/production tests passed
 CPU-only Job carrying the exact policy passed `kubectl create --dry-run=server`
 against the target1.35.6 API server; no Job or Pod was created by that check.
 The test policy retains `backoffLimit: 0` and uses no `Ignore` rule.
+
+## Deployed190 and fresh live recovery
+
+Helm190 deployed source`c154d77654a16b5cfdf732f505467ac981b6479f`, index
+`sha256:e4319840c1d9378c2942f2e389785917e045af4b5733f93da3b535c3f33e3dad`.
+Gateway3/controller2 replicas are ready; the existing admin image remains
+`sha256:72581f9f4035742e8c0b52a197c9b9a702f17fe8a6a837990dd2f7bf42ce4ae4`.
+Live Helm values/manifest comparison changed only the control-plane image;
+no model policy, capacity, quota, deadline or retry budget changed. Follow-up
+API reads returned200 for the37-App operator catalog, retained accounting and
+new recovery accounting; Cellpose/scVI and existing model entries are present.
+
+The separately labelled RF48-residue/seed1 qualification operation
+`2a1bc85e-b31f-479d-a245-6ea16b112d2f` ran17:34:16–17:36:40UTC. Exactly one
+owned Pod was evicted at17:34:38; watch evidence retained the Job's exact
+`PodFailurePolicy`/rule1 terminal reason. The application observer classified
+attempt1 as `infrastructure/JobDisruptionTarget`. Attempt2 completed, both GPU
+reservations and the CPU collector reservation were released, and two artifacts
+passed result validation and hash readback. The unchanged policy allows two
+attempts. Idempotent replay returned the original operation/workload, not new work.
+
+`verify_recovery.py` independently confirms the terminal Job reason, accounting
+and identity invariants, plus192 finite atoms/48 CA residues and adjacent CA
+distances3.686–3.773Å. PDB SHA256:
+`043cde973829934b39e94f441052d14fd3708abcbb0f3a008f4ffbcfb70fbc5d`.
+This is coarse integrity and maintenance-eviction recovery, not a biological
+efficacy test, whole-node outage or provider-preemption qualification.
+
+Protected evidence directory: `worker-eviction-r190-rfdiffusion` under the
+private run root cited above. Independent receipt SHA256:
+`32191728cf392bd688fd69ad881c0aee9dc697805ac424ada8d65db34f608920`;
+original recovery receipt SHA256:
+`704b95ed70a8425a46649c63fae337fbb48c21addb3e1ff593094de1a003f64b`;
+Job watch SHA256:
+`68bed9f111f870e89791f8084ab52902f6c00dac4fc753ad61bbe2b5f1862c8f`.
+The original failed v52 natural study remains failed. This separate test does
+not claim that its full RF→ProteinMPNN→ESMFold customer workflow has passed.
