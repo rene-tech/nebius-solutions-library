@@ -462,7 +462,36 @@ def test_catalog_recipe_hashes_retain_the_accepted_source_and_canonical_workload
         assert recipe["source_revision"] == "897c04aafbb4bb7b1879ae459527caf70aeeb94e"
         assert recipe["algorithm"] == "fs2-path-set-sha256-v1"
         assert "components/control-plane/src/fs2_serve/scientific_batch/execution.py" in recipe["paths"]
-        assert identity == fragment["profile_projection"]["profile"]["execution_identity"]
+        historical = fragment["profile_projection"]["profile"]
+        historical_identity = historical["execution_identity"]
+        historical_workload = json.dumps(historical["workload"], separators=(",", ":"), sort_keys=True).encode()
+        assert historical_identity["workload_recipe_sha256"] == hashlib.sha256(historical_workload).hexdigest()
+        # Successors retain these historical receipts, but must not inherit
+        # their qualification or pretend to be the same execution identity.
+        receipt_name = (
+            "variant-h100-20260919.json" if model_id == "proteina-complexa" else "protocol-repair-20260919.json"
+        )
+        evidence_path = (
+            SOLUTION_ROOT / "models/cancer-immunotherapy/runtime-images" / model_id / "qualification" / receipt_name
+        )
+        evidence_bytes = evidence_path.read_bytes()
+        evidence = json.loads(evidence_bytes)
+        assert candidate["qualification"]["h100_semantic_receipt_sha256"] == hashlib.sha256(evidence_bytes).hexdigest()
+        assert evidence["image"].endswith("@" + identity["runtime_image_digest"])
+        assert identity != historical_identity
+        assert candidate["state"] == "active"
+        assert candidate["qualification"]["public_completion_receipt_sha256"] is None
+        assert candidate["qualification"]["scheduler_eligibility_receipt_sha256"] is None
+        if model_id == "boltzgen":
+            assert identity["runtime_recipe_sha256"] == evidence["runtime_recipe_sha256"]
+        else:
+            publication = json.loads(
+                (evidence_path.parents[1] / "variant-repair-publication-r4-20260918.json").read_text()
+            )
+            assert publication["source_commit"] == evidence["source_commit"]
+            assert publication["index_digest"] == identity["runtime_image_digest"]
+            assert publication["upstream_source_revision"] == identity["model_revision"]
+            assert evidence["execution_pass"] is True
         workload_bytes = json.dumps(workload, separators=(",", ":"), sort_keys=True).encode()
         workload_hash = hashlib.sha256(workload_bytes).hexdigest()
         assert identity["workload_recipe_sha256"] == workload_hash

@@ -136,16 +136,18 @@ def test_complete_fleet_has_consistent_public_acceptance_evidence_state() -> Non
         assert profile["semantic_validation"]["state"] == profile["state"]
         qualification = profile["qualification"]
         assert qualification["h100_semantic_receipt_sha256"] == expected["receipt"]
+        # LeRobot was added separately; the declared preserved-row baseline is
+        # the evidence scope, not whichever other models happen to be current.
+        baseline_digest = qualification["execution_map_sha256"]
+        baseline_ids = execution_document["qualification_baselines"][baseline_digest]
+        assert model_id in baseline_ids
+        baseline = {"schema": execution_document["schema"], "models": [executions[key] for key in baseline_ids]}
+        assert (
+            baseline_digest
+            == hashlib.sha256(json.dumps(baseline, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        )
         if model_id == "openfold3-openbind":
-            normal_map = {"schema": execution_document["schema"], "models": execution_document["models"]}
-            assert qualification["execution_map_sha256"] == hashlib.sha256(
-                json.dumps(normal_map, sort_keys=True, separators=(",", ":")).encode()
-            ).hexdigest()
             assert profile["state"] == "active"
-        else:
-            assert qualification["execution_map_sha256"] == (
-                profiles["boltzgen"]["qualification"]["execution_map_sha256"]
-            )
         if profile["state"] == "active":
             assert qualification["public_completion_receipt_sha256"] is None
             assert qualification["scheduler_eligibility_receipt_sha256"] is None

@@ -208,7 +208,13 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     assert all(item.workload_profile == "published" for item in by_candidate.values())
     boltzgen = by_candidate["boltzgen"]
     assert boltzgen.workload_profile == "published"
-    assert boltzgen.readiness == "qualified"
+    # The repaired protocol recipe is active but deliberately does not inherit
+    # the predecessor's public/scheduler qualification. Visibility is not a
+    # claim that the new complete evidence set has been published.
+    assert boltzgen_profile["state"] == "active"
+    assert boltzgen_profile["qualification"]["public_completion_receipt_sha256"] is None
+    assert boltzgen_profile["qualification"]["scheduler_eligibility_receipt_sha256"] is None
+    assert boltzgen.readiness == "candidate"
     assert boltzgen.backend.source_repository == "HannesStark/boltzgen"
     assert boltzgen.backend.source_revision == "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0"
     assert boltzgen.backend.model_revision == "31d9d9b9c72245b4ed6fe8742d6fbf4e1a3552a0"
@@ -223,7 +229,7 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     assert boltzgen.available_upgrade.source_repository == "HannesStark/boltzgen"
     assert boltzgen.available_upgrade.source_revision == "a3149cf18eeb58648d1abbb27539bd73f746cdda"
     assert boltzgen.available_upgrade.state == "available-unqualified"
-    assert "qualified-evidence" not in boltzgen.missing_evidence
+    assert "qualified-evidence" in boltzgen.missing_evidence
     assert "source-identity-agreement" not in boltzgen.missing_evidence
     assert not any(
         issue.candidate_id == "boltzgen" and issue.source == "workload-profile"
@@ -232,11 +238,11 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     assert by_candidate["proteina-complexa"].workload_profile == "published"
     openfold = by_candidate["openfold3-openbind"]
     assert openfold.workload_profile == "published"
-    assert openfold.readiness == "qualified"
+    assert openfold.readiness == "candidate"
     assert openfold.backend.source_repository == "aqlaboratory/openfold-3"
     assert openfold.backend.source_revision == "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
     assert openfold.backend.model_revision == "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
-    assert "qualified-evidence" not in openfold.missing_evidence
+    assert "qualified-evidence" in openfold.missing_evidence
     assert by_candidate["mosaic"].workload_profile == "published"
     assert by_candidate["mosaic"].readiness == "qualified"
     assert "qualified-evidence" not in by_candidate["mosaic"].missing_evidence

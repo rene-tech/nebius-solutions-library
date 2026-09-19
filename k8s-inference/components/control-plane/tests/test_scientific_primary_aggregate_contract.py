@@ -140,6 +140,28 @@ PRIMARY_ACTIVE_BRIDGE = {
     },
 }
 
+# These are separate, bounded successor receipts, not replacements for the
+# original activation evidence above. Both intentionally await complete public
+# and scheduler qualification in the canonical profile.
+PRIMARY_SUCCESSORS = {
+    "boltzgen": {
+        "digest": "sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+        "receipt": "models/cancer-immunotherapy/runtime-images/boltzgen/qualification/protocol-repair-20260919.json",
+        "receipt_sha256": "d083aad907af1a10c7bd13316487b8fd8be561021b4b3c87459d0fd1dedb712c",
+        "source_commit": "80659b63800f11a4726635569b6a7c7f5b203784",
+        "qualified_at": "2026-09-19T01:06:50.179223+00:00",
+    },
+    "proteina-complexa": {
+        "digest": "sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+        "receipt": (
+            "models/cancer-immunotherapy/runtime-images/proteina-complexa/qualification/variant-h100-20260919.json"
+        ),
+        "receipt_sha256": "718a9d0e29fb0d0c65cec2f35b5a33776316acd94948599c456ad2965355d0bb",
+        "source_commit": "478e4f32ad810cebfdb92277ec01de5532622c3e",
+        "qualified_at": "2026-09-19T00:08:28.271060+00:00",
+    },
+}
+
 
 def _canonical_sha256(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
@@ -165,12 +187,11 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
         (CATALOG_ROOT / "schema/scientific-workload-profile.schema.json").read_text(encoding="utf-8")
     )
     profile_validator = Draft202012Validator(profile_schema, format_checker=FormatChecker())
-    baseline_ids = [
-        item["model_id"] for item in execution_document["models"] if item["model_id"] != "openfold3-openbind"
-    ]
-    baseline = {"schema": execution_document["schema"], "models": [executions[model_id] for model_id in baseline_ids]}
-    execution_map_sha256 = _canonical_sha256(baseline)
-    assert execution_document["qualification_baselines"][execution_map_sha256] == baseline_ids
+    # Baselines name their exact preserved row set. Adding the independently
+    # qualified LeRobot workflow must not rewrite historical scientific proof.
+    for baseline_digest, baseline_ids in execution_document["qualification_baselines"].items():
+        baseline = {"schema": execution_document["schema"], "models": [executions[key] for key in baseline_ids]}
+        assert _canonical_sha256(baseline) == baseline_digest
     assert set(PRIMARY_ACTIVE_BRIDGE).issubset(profiles)
     assert set(PRIMARY_ACTIVE_BRIDGE).issubset(executions)
 
@@ -180,8 +201,10 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
         fragment = json.loads((SOLUTION_ROOT / expected["fragment"]).read_text(encoding="utf-8"))
         projected_profile = fragment["profile_projection"]["profile"]
         artifact_manifest_digest = _canonical_sha256(execution["runtime_artifacts"])
+        current_expected = {**expected, **PRIMARY_SUCCESSORS.get(model_id, {})}
 
         for candidate in (profile, projected_profile):
+            selected_evidence = current_expected if candidate is profile else expected
             profile_validator.validate(candidate)
             identity = candidate["execution_identity"]
             mcp = candidate["interface"]["mcp"]
@@ -193,15 +216,16 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
             assert mcp["discoverable"] is True
             assert mcp["invocable"] is True
             assert candidate["semantic_validation"]["state"] == candidate["state"]
-            assert identity["runtime_image_digest"] == expected["digest"]
+            assert identity["runtime_image_digest"] == selected_evidence["digest"]
             assert artifact_manifest_digest == expected["artifact_manifest_digest"]
             assert identity["artifact_manifest_digest"] == artifact_manifest_digest
             identity_payload = dict(identity)
             recorded_identity = identity_payload.pop("execution_identity_sha256")
             assert recorded_identity == _canonical_sha256(identity_payload)
-            assert qualification["h100_semantic_receipt_sha256"] == expected["receipt_sha256"]
+            assert qualification["h100_semantic_receipt_sha256"] == selected_evidence["receipt_sha256"]
             if candidate is profile:
-                assert qualification["execution_map_sha256"] == execution_map_sha256
+                baseline_ids = execution_document["qualification_baselines"][qualification["execution_map_sha256"]]
+                assert model_id in baseline_ids
             else:
                 # Historical activation evidence remains unchanged; only the
                 # canonical reference is rebased to the exact preserved rows.
@@ -211,7 +235,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
             if candidate["state"] == "active":
                 assert qualification["public_completion_receipt_sha256"] is None
                 assert qualification["scheduler_eligibility_receipt_sha256"] is None
-                assert qualification["qualified_at"] == expected["qualified_at"]
+                assert qualification["qualified_at"] == selected_evidence["qualified_at"]
             else:
                 assert re.fullmatch(
                     r"[a-f0-9]{64}",
@@ -222,7 +246,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
                     qualification["scheduler_eligibility_receipt_sha256"],
                 )
 
-        if profile["state"] == "qualified":
+        if projected_profile["state"] == "qualified":
             assert fragment["accepted_evidence"]["h100"]["state"] == ("semantic-qualified-public-accepted")
             assert fragment["activation_gate"]["public_platform_run_required"] is False
         else:
@@ -230,6 +254,28 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
                 "semantic-qualified-active-awaiting-public-acceptance"
             )
             assert fragment["activation_gate"]["public_platform_run_required"] is True
+
+        if model_id in PRIMARY_SUCCESSORS:
+            raw = (SOLUTION_ROOT / current_expected["receipt"]).read_bytes()
+            successor = json.loads(raw)
+            assert hashlib.sha256(raw).hexdigest() == current_expected["receipt_sha256"]
+            assert successor["source_commit"] == current_expected["source_commit"]
+            assert successor["image"].endswith("@" + current_expected["digest"])
+            assert profile["state"] == "active"
+            assert profile["execution_identity"] != projected_profile["execution_identity"]
+            assert profile["qualification"]["public_completion_receipt_sha256"] is None
+            assert profile["qualification"]["scheduler_eligibility_receipt_sha256"] is None
+            if model_id == "boltzgen":
+                assert successor["state"] == "candidate-stage-qualified-public-replay-pending"
+                assert successor["runtime_recipe_sha256"] == profile["execution_identity"]["runtime_recipe_sha256"]
+                assert successor["upstream_source"]["revision"] == profile["source"]["revision"]
+            else:
+                assert (
+                    successor["scope"]
+                    == "isolated_runtime_and_structural_measurements_not_public_or_biological_qualification"
+                )
+                assert successor["execution_pass"] is True
+                assert successor["upstream_revision"] == profile["source"]["revision"]
 
         receipt_path = SOLUTION_ROOT / expected["receipt"]
         receipt_bytes = receipt_path.read_bytes()
@@ -268,7 +314,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
             if "file_manifest" in localization:
                 assert localization["file_manifest"] == requirement["file_manifest"]
         for stage in execution["stages"]:
-            assert stage["image"].endswith("@" + expected["digest"])
+            assert stage["image"].endswith("@" + current_expected["digest"])
             assert stage["workspace_uid"] == 10001
             assert stage["workspace_gid"] == 10001
             assert stage["collector_id"]

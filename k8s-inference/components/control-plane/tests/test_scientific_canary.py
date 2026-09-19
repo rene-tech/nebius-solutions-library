@@ -14,6 +14,20 @@ from fs2_serve.scientific_batch.execution import (
 )
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificProfileError
 
+EXPECTED_FLEET = {
+    "alphafold3",
+    "bindcraft",
+    "boltzgen",
+    "cosmos3-lerobot-augmentation",
+    "esmfold2",
+    "esmfold2-fast",
+    "mosaic",
+    "openfold3-openbind",
+    "proteina-complexa",
+    "protenix-v2",
+    "rfdiffusion",
+}
+
 
 def test_internal_cpu_canary_is_deterministic_and_never_a_discoverable_profile() -> None:
     catalog = ScientificProfileCatalog.load(CATALOG_ROOT)
@@ -25,22 +39,23 @@ def test_internal_cpu_canary_is_deterministic_and_never_a_discoverable_profile()
     assert first.canary_id == CANARY_ID
     assert first.input_sha256 == "1e20635aeb8036a584a2b6f69da8c707b12f1f44ed452e78a472c3e0f064928e"
     assert first.output_sha256 == "b18338dda9fda75dbca256a7982778de61d6f0a1317ae1b0d0c2adb98ca68457"
-    assert first.profile_count == 10
-    # All ten requested models are dispatchable through the active bridge. The canary
+    assert first.profile_count == len(EXPECTED_FLEET)
+    assert {profile.model_id for profile in catalog.list(runnable_only=False)} == EXPECTED_FLEET
+    # The scientific fleet now also includes the recorded LeRobot workflow. The canary
     # itself is still never one of them, which the discoverability assertions prove.
-    assert first.runnable_profile_count == 10
+    assert first.runnable_profile_count == len(EXPECTED_FLEET)
     assert CANARY_ID not in {profile.model_id for profile in catalog.list(runnable_only=False)}
 
 
 def test_empty_public_execution_map_is_refused_once_a_profile_is_runnable(tmp_path: Path) -> None:
     """An empty map may not be published while a profile claims to be servable.
 
-    It was valid while nothing was runnable. Now that the ten-model fleet is dispatchable
+    It was valid while nothing was runnable. Now that the published fleet is dispatchable
     the map must cover every runnable stage, so an empty one is a configuration error.
     """
     catalog = ScientificProfileCatalog.load(CATALOG_ROOT)
     receipt = run_internal_cpu_canary(catalog)
-    assert receipt.runnable_profile_count == 10
+    assert receipt.runnable_profile_count == len(EXPECTED_FLEET)
 
     execution_map = tmp_path / "execution-map.json"
     execution_map.write_text(
@@ -59,18 +74,7 @@ def test_empty_public_execution_map_is_refused_once_a_profile_is_runnable(tmp_pa
     renderer = FileScientificManifestRenderer(
         path=CATALOG_ROOT / "contracts/scientific-execution-map.json", profiles=catalog
     )
-    assert set(renderer.variants) == {
-        "alphafold3",
-        "bindcraft",
-        "boltzgen",
-        "esmfold2",
-        "esmfold2-fast",
-        "mosaic",
-        "openfold3-openbind",
-        "proteina-complexa",
-        "protenix-v2",
-        "rfdiffusion",
-    }
+    assert set(renderer.variants) == EXPECTED_FLEET
     assert receipt.canary_id not in renderer.variants
 
 
