@@ -32,6 +32,27 @@ artifact IDs are not already uploaded on your behalf.
 JSON-schema validity does not guarantee valid biology, imaging geometry, or a
 valid external asset; the model performs those additional checks.
 
+Scientific discovery also returns top-level `artifact_manifest_schema` and
+`input_artifact_contract`. Preserve both when selecting an item from `contracts`.
+The input contract identifies logical entry names, semantic types, payload MIME
+types, compression and byte bounds. Fixed-input Apps use `entry`; RFdiffusion
+selects from `operations`; LeRobot selects from `source_kinds`. For example,
+Protenix requires `protenix-input` / `protenix-input-json/v1` / `application/json`.
+The outer manifest uses `application/vnd.fs2.scientific-manifest+json`; that is
+not the MIME type of its nested model JSON payload. Experiment names belong in
+client context, not in place of the contracted logical entry name.
+
+Validate these roles before upload. A wrong role or payload MIME produces an
+actionable input error without admitting an operation; it is not an unavailable
+model or a capacity failure. Reuse verified payloads only when their immutable
+metadata matches. Do not silently change scientific bytes or artifact metadata.
+
+When onboarding a scientific App, publish its descriptor from the same constants
+used by its executable adapter in `scientific_batch/input_contracts.py`, and test
+both discovery and admission with a real client-shaped manifest. Include aliases,
+operation-dependent inputs and alternate supported compression formats. A typed
+parameter schema alone does not document how to construct the input artifacts.
+
 | Protocol family | Inputs and model behavior |
 |---|---|
 | OpenAI chat | Structured `messages`, supported generation/tool options; the named App selects the model. Multimodal Apps require the image/content format in their actual schema. |
