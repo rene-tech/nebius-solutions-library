@@ -305,3 +305,36 @@ and skips terminating Pods. Strict public snapshot qualification must capture
 its actual restored marker and CRIU/CUDA records, not inherit this fresh-loading
 result. Data preservation and media integrity do not establish physical motion
 correctness, action-safe augmentation or downstream policy-training efficacy.
+
+## Exact-size coordinator promotion preparation
+
+Later inspection of the retained edge-transfer child artifacts found448×256
+native video silently resized to640×480 by the old coordinator. The earlier
+dataset readback is still valid at its stated scope, but is not evidence of
+camera geometry preservation. The41a01714… successor forwards the exact source
+dimensions and rejects incorrect geometry/timing rather than repairing it after
+inference. Its exact-image CPU receipt is
+[`exact-alignment-image-cpu.json`](exact-alignment-image-cpu.json); it does not
+qualify a new public execution or physical action alignment.
+
+`prepare_promotion.py` composes that successor after the explicitly approved
+Proteina proposal, without writing source or calling Kubernetes. Run it from
+the control-plane environment:
+
+```bash
+uv run --frozen python ../../acceptance/cosmos-recorded-video-repair-20260918/prepare_promotion.py \
+  --baseline CAPTURED_RELEASE172_DIRECTORY \
+  --pending-proteina APPROVED_PROTEINA_PROPOSAL_DIRECTORY \
+  --evidence ../../acceptance/cosmos-recorded-video-repair-20260918/exact-alignment-image-cpu.json \
+  --output NEW_PRIVATE_OUTPUT_DIRECTORY
+```
+
+Preparation requires captured live profiles/execution to equal the pending
+proposal's original rollback configuration, current canonical source to equal
+that approved candidate, and unchanged sibling execution rows and snapshots.
+It hashes the derivative Containerfile explicitly, resets LeRobot's public and
+scheduler qualification, and runs real Registry/admin bootstrap, all scientific
+renderer/scheduler joins and Helm rendering. Outputs include portable/full maps,
+activation profile and execution projections, onboarding metadata and true live
+rollback files. The release owner reviews/applies them and separately performs
+customer-shaped acceptance. Native Cosmos owner/snapshot policies are untouched.
