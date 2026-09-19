@@ -27,8 +27,8 @@
       "additionalProperties": false,
       "required": ["mode", "prompt_template", "dimensions", "conditioning"],
       "properties": {
-        "mode": {"enum": ["video-to-video", "transfer"]},
-        "prompt_template": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "mode": {"enum": ["video-to-video", "transfer"], "description": "Use transfer for full-sequence appearance augmentation of recorded trajectories: edge/blur controls guide every source frame. video-to-video conditions only selected prefix/suffix latent frames and generates the remaining motion; it does not preserve the recorded trajectory. Neither mode establishes physical action alignment or policy-training validity."},
+        "prompt_template": {"type": "string", "minLength": 1, "maxLength": 4096, "description": "Generation prompt with optional {task}, {episode_index}, {camera}, {variation}, {instruction} placeholders. Include {variation} or {instruction} to insert the dimensions' instructions and strengths; without either placeholder those dimension descriptions are not inserted into the prompt."},
         "negative_prompt": {"type": "string", "maxLength": 4096, "default": ""},
         "dimensions": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"$ref": "#/$defs/dimension"}},
         "conditioning": {"$ref": "#/$defs/conditioning"},
@@ -48,7 +48,7 @@
       "additionalProperties": false,
       "required": ["mode"],
       "properties": {
-        "mode": {"const": "preserve"}
+        "mode": {"const": "preserve", "description": "Preserve numeric action values and dataset timestamps. This does not prove that generated robot motion, contacts or object positions remain aligned with those actions; validate that separately."}
       }
     },
     "failure_policy": {
@@ -115,16 +115,16 @@
       "properties": {
         "name": {"enum": ["lighting", "weather", "background", "viewpoint", "object-appearance", "custom"]},
         "instruction": {"type": "string", "minLength": 1, "maxLength": 1024},
-        "strength": {"type": "number", "minimum": 0, "maximum": 1, "default": 1}
+        "strength": {"type": "number", "minimum": 0, "maximum": 1, "default": 1, "description": "Descriptive strength inserted into the generation prompt, not a numeric denoising parameter or spatial-control weight."}
       }
     },
     "conditioning": {
       "type": "object", "additionalProperties": false,
       "required": ["keep", "frame_indexes", "controls"],
       "properties": {
-        "keep": {"enum": ["first", "last"]},
-        "frame_indexes": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 100}},
-        "controls": {"type": "array", "maxItems": 2, "uniqueItems": true, "items": {"enum": ["edge", "blur"]}}
+        "keep": {"enum": ["first", "last"], "description": "Prefix/suffix selection for video-to-video only. Required for the common request shape but not used to truncate transfer's full-sequence controls."},
+        "frame_indexes": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 100}, "description": "Video-to-video latent-frame indexes, not arbitrary decoded-video frame numbers. In the pinned runtime the conditioning pixel-frame budget is max(index)*4+1. Required but not used for full-sequence transfer; [0] is the usual shared-shape value."},
+        "controls": {"type": "array", "maxItems": 2, "uniqueItems": true, "items": {"enum": ["edge", "blur"]}, "description": "For transfer, choose at least one control extracted from the complete source clip: edge, blur, or both. Each uses control weight 1.0 in this coordinator. For prefix/suffix video-to-video this list must be empty."}
       }
     }
   }
