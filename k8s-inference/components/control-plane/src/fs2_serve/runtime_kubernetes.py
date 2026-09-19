@@ -21,6 +21,11 @@ from uuid import UUID
 
 from .admin import AdminAdapterUnavailableError
 from .admin_adapters import KubernetesListReader
+from .gpu_identity import GPU_ALLOCATION_OBSERVED_AT_ANNOTATION as GPU_ALLOCATION_OBSERVED_AT_ANNOTATION
+from .gpu_identity import GPU_OBSERVER_RESOLUTION_ANNOTATION as GPU_OBSERVER_RESOLUTION_ANNOTATION
+from .gpu_identity import GPU_RESOURCE_PATTERN as _GPU_RESOURCE
+from .gpu_identity import GPU_UUIDS_ANNOTATION as GPU_UUIDS_ANNOTATION
+from .gpu_identity import pod_gpu_count as pod_gpu_count
 from .model_deployment import MODEL_ID_LABEL
 from .models import (
     RuntimeIdentity,
@@ -30,15 +35,11 @@ from .models import (
     RuntimePhaseObservation,
 )
 
-GPU_UUIDS_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-uuids"
-GPU_ALLOCATION_OBSERVED_AT_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-allocation-observed-at"
-GPU_OBSERVER_RESOLUTION_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-observer-resolution-seconds"
 PHASE_ANNOTATION_PREFIX = "telemetry.fs2.nebius.ai/phase-"
 RESPONSE_IDENTITY_ANNOTATION = "telemetry.fs2.nebius.ai/response-identity"
 RESPONSE_IDENTITY_VERSION = "asgi-v1"
 COSMOS_RESPONSE_IDENTITY_VERSION = "asgi-cosmos-adapter-v1"
 
-_GPU_RESOURCE = re.compile(r"^(?:nvidia\.com/(?:gpu|mig-[A-Za-z0-9_.-]+)|amd\.com/gpu|gpu\.intel\.com/(?:i915|xe))$")
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
 _DNS_LABEL = re.compile(r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$")
 
@@ -61,37 +62,6 @@ def _timestamp(value: object) -> datetime | None:
     if parsed.tzinfo is None:
         return None
     return parsed.astimezone(UTC)
-
-
-def _positive_int(value: object) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, str | int):
-        return None
-    text = str(value)
-    if not text.isdigit():
-        return None
-    parsed = int(text)
-    return parsed if 1 <= parsed <= 64 else None
-
-
-def pod_gpu_count(pod: Mapping[str, Any]) -> int | None:
-    total = 0
-    containers = _sequence(_mapping(pod.get("spec")).get("containers"))
-    if not containers:
-        return None
-    for raw_container in containers:
-        container = _mapping(raw_container)
-        resources = _mapping(container.get("resources"))
-        requests = _mapping(resources.get("requests"))
-        limits = _mapping(resources.get("limits"))
-        for name, raw_request in requests.items():
-            if not isinstance(name, str) or _GPU_RESOURCE.fullmatch(name) is None:
-                continue
-            request = _positive_int(raw_request)
-            limit = _positive_int(limits.get(name))
-            if request is None or request != limit:
-                return None
-            total += request
-    return total if 1 <= total <= 64 else None
 
 
 def _condition_time(pod: Mapping[str, Any], condition_type: str) -> datetime | None:

@@ -64,6 +64,7 @@ from .fast_start_mechanisms import (
     scheduled_pod_memory_bytes,
 )
 from .fast_start_policy import FastStartHistoryWindow
+from .gpu_identity import MODEL_ID_LABEL as MODEL_ID_LABEL
 from .models import KubernetesModel
 from .scientific_batch.podset_envelope import effective_pod_requests
 from .serving_snapshot import ServingSnapshotBundle, configure_serving_snapshot
@@ -74,7 +75,6 @@ FINALIZER = "inference.fs2.nebius.ai/model-cleanup"
 FIELD_MANAGER = "fs2-model-controller"
 SPEC_DIGEST_ANNOTATION = "fs2-serve.nebius.ai/spec-digest"
 MODEL_DEPLOYMENT_LABEL = "fs2-serve.nebius.ai/model-deployment"
-MODEL_ID_LABEL = "fs2-serve.nebius.ai/model-id"
 KUEUE_QUEUE_LABEL = "kueue.x-k8s.io/queue-name"
 KUEUE_PRIORITY_LABEL = "kueue.x-k8s.io/priority-class"
 EFFECTIVE_HOT_FLOOR_ANNOTATION = "fs2-serve.nebius.ai/effective-hot-floor"

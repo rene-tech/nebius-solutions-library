@@ -64,7 +64,7 @@ from .configuration_models import ConfigurationRevision, PlatformConfiguration
 from .crypto import KeyedHasher, PayloadCipher
 from .entrypoint import SCIENTIFIC_COMPANION_COMMANDS
 from .federation import FederationRouter
-from .gpu_allocation_observer import KubernetesGpuAllocationPublisher, run_gpu_allocation_observer
+from .gpu_allocation_observer_cli import observe_gpu_allocations
 from .lifecycle import PostgresLifecycleRepository
 from .mcp_server import mount_mcp
 from .model_deployment_admin import ModelDeploymentReadService, StoreModelDeploymentRepository
@@ -121,22 +121,6 @@ async def _store(settings: Settings) -> PostgresStore:
         cipher,
         hasher,
         settings.payload_ttl_seconds,
-    )
-
-
-async def observe_gpu_allocations(settings: Settings) -> None:
-    if settings.gpu_allocation_observer_node_name is None:
-        raise RuntimeError("GPU allocation observer requires its Kubernetes node name")
-    await run_gpu_allocation_observer(
-        publisher=KubernetesGpuAllocationPublisher(
-            base_url=settings.gpu_allocation_observer_api_url,
-            token_file=settings.gpu_allocation_observer_token_file,
-            ca_file=settings.gpu_allocation_observer_ca_file,
-            namespaces=settings.gpu_allocation_observer_namespace_set(),
-            node_name=settings.gpu_allocation_observer_node_name,
-            poll_seconds=settings.gpu_allocation_observer_poll_seconds,
-        ),
-        checkpoint_file=settings.gpu_allocation_observer_checkpoint_file,
     )
 
 

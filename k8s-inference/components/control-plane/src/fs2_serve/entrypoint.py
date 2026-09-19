@@ -21,6 +21,12 @@ def main() -> None:
         from .scientific_companion_cli import main as companion_main
 
         companion_main()
+    elif len(sys.argv) > 1 and sys.argv[1] == "gpu-allocation-observer":
+        # One small process per GPU node must not load API/MCP/controller
+        # schemas merely to publish kubelet allocation annotations.
+        from .gpu_allocation_observer_cli import main as observer_main
+
+        observer_main()
     else:
         from .cli import main as gateway_main
 
