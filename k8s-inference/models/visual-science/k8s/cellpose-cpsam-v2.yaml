@@ -19,7 +19,9 @@ spec:
   template:
     metadata:
       labels:
+        app.kubernetes.io/component: model-runtime
         app.kubernetes.io/name: cellpose-cpsam-v2
+        app.kubernetes.io/part-of: fs2-serve
         fs2-serve.nebius.ai/model-id: cellpose-cpsam-v2
     spec:
       automountServiceAccountToken: false
