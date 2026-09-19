@@ -75,6 +75,68 @@ def test_pool_and_reference_labels_are_actual_renderer_constraints():
     assert result([node(pool="other")]).blocking_reasons == {"no_current_nodes_in_pool": 1}
 
 
+@pytest.mark.parametrize("pool,extra_labels", [
+    ("batch-cpu", {"capacity.fs2.nebius/pool": "general-cpu", "workload.fs2.nebius/general-cpu": "true"}),
+    ("reference-data-cpu", {"storage.fs2.nebius/reference-data": "true"}),
+])
+def test_cpu_pool_uses_frozen_capacity_identity_not_accelerator_alias(pool, extra_labels):
+    labels = {"capacity.fs2.nebius/pool-id": pool, **extra_labels}
+    cpu = node(cpu="7900m", memory="32Gi", pool="unrelated-gpu-pool")
+    cpu["metadata"]["labels"] = labels
+    del cpu["status"]["allocatable"]["nvidia.com/gpu"]
+    # A GPU with the same textual accelerator pool ID must not be selected.
+    impostor = node(cpu="128", pool=pool)
+    value = result([cpu, impostor], eligible_pool_ids=[pool], required_node_labels=labels,
+                   accelerator_count=0, accelerator_resource_name=None, pod_cpu_millis=4100)
+    assert value.state == "possible" and value.nodes_observed == value.possible_nodes == 1
+    assert value.max_allocatable_cpu_millis == 7900
+    assert value.max_allocatable_accelerators is None
+    assert value.blocking_reasons == {}
+
+
+def test_cpu_capacity_identity_still_checks_reference_labels_and_whole_pod_requests():
+    cpu = node(cpu="4000m")
+    cpu["metadata"]["labels"] = {"capacity.fs2.nebius/pool-id": "batch-cpu"}
+    value = result([cpu], eligible_pool_ids=["batch-cpu"],
+                   required_node_labels={"capacity.fs2.nebius/pool-id": "batch-cpu",
+                                         "storage.fs2.nebius/reference-data": "true"},
+                   accelerator_count=0, accelerator_resource_name=None, pod_cpu_millis=4100)
+    assert value.state == "blocked" and value.nodes_observed == 1
+    assert value.blocking_reasons == {
+        "cpu_request_exceeds_node_allocatable": 1, "required_node_label_mismatch": 1,
+    }
+
+
+def test_legacy_cpu_class_without_pool_label_uses_exact_frozen_selector():
+    selector = {"capacity.fs2.nebius/pool": "reference-data",
+                "workload.fs2.nebius/reference-data": "true"}
+    cpu = node(cpu="32")
+    cpu["metadata"]["labels"] = selector
+    other = node(cpu="128")
+    other["metadata"]["labels"] = {"capacity.fs2.nebius/pool": "reference-data"}
+    value = result([cpu, other], eligible_pool_ids=["reference-cpu"], required_node_labels=selector,
+                   accelerator_count=0, accelerator_resource_name=None)
+    assert value.state == "possible" and value.nodes_observed == value.possible_nodes == 1
+    assert value.max_allocatable_cpu_millis == 32000
+
+
+@pytest.mark.parametrize("pools,selector", [
+    (["batch-cpu"], {}),
+    (["cpu-one", "cpu-two"], {"workload.fs2.nebius/general-cpu": "true"}),
+])
+def test_cpu_pool_without_resolvable_selector_stays_unknown(pools, selector):
+    value = result([node(cpu="128")], eligible_pool_ids=pools, required_node_labels=selector,
+                   accelerator_count=0, accelerator_resource_name=None)
+    assert value.state == "unknown" and value.nodes_observed == value.possible_nodes == 0
+    assert value.blocking_reasons == {"cpu_pool_selector_unavailable": 1}
+
+
+def test_accelerator_pool_does_not_accept_matching_cpu_identity():
+    cpu = node(cpu="128")
+    cpu["metadata"]["labels"] = {"capacity.fs2.nebius/pool-id": "h100-1x"}
+    assert result([cpu]).blocking_reasons == {"no_current_nodes_in_pool": 1}
+
+
 def test_unknown_quantities_stay_unknown_and_resource_maxima_do_not_invent_a_node():
     incomplete = node(cpu="32")
     del incomplete["status"]["allocatable"]["memory"]
