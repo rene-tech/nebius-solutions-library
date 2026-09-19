@@ -20,6 +20,7 @@ import asyncpg
 from .apps_scientific import AppScientificModels, ScientificAppsInventory
 from .lifecycle import LifecycleSignal, _signal_from_row
 from .registry import Registry
+from .scientific_activity import activity_capture_reason, activity_summaries
 from .scientific_admin import (
     ScientificAdminQueryError,
     ScientificAdminReadService,
@@ -502,6 +503,8 @@ def _stages(
         joined = [row for row in correlations if row["attempt_id"] == attempt.attempt_id]
         result = _attempt(attempt, tuple(by_attempt.get(attempt.attempt_id, ())), resource_class=resource_class)
         return result.model_copy(update={
+            "device_activity": activity_summaries(observed),
+            "activity_capture_reason": activity_capture_reason(observed),
             "lifecycle_subject_id": str(attempt.attempt_id) if observed else None,
             "lifecycle_phases": project_phase_times(observed),
             "observed_pod_uids": sorted({row["pod_uid"] for row in joined if row["pod_uid"]}),
@@ -779,6 +782,21 @@ class PostgresScientificRunAdminAdapter:
             detail = detail.model_copy(
                 update={"run": detail.run.model_copy(update={"gpu_accounting": accounting[operation_id]})}
             )
+        sample_count = sum(
+            item.sample_count for stage in detail.stages
+            for attempt in stage.attempts for item in attempt.device_activity
+        )
+        if sample_count:
+            detail = detail.model_copy(update={"run": detail.run.model_copy(update={
+                "gpu_accounting": detail.run.gpu_accounting.model_copy(update={
+                    "sampled_device_activity": ScientificMeasurement(
+                        value=sample_count, unit="count", evidence=ScientificEvidenceState.MEASURED,
+                        source="lifecycle-ledger",
+                        reason=("Verified raw sample observations; see attempt gaps/phase counts. "
+                                "Not busy or billable GPU-seconds."),
+                    ),
+                }),
+            })})
         return ScientificRunDetailSnapshot(data=detail, observed_at=observed_at)
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
@@ -1461,6 +1462,20 @@ class HttpPrometheusScalarReader:
             if isinstance(exc, AdminAdapterUnavailableError):
                 raise
             raise AdminAdapterUnavailableError("Prometheus scalar is invalid") from exc
+
+    async def scientific_activity_matrix(
+        self, *, operation_id: UUID, attempt_id: UUID, from_at: datetime, to_at: datetime,
+    ) -> Mapping[str, Any]:
+        from .scientific_activity import MAX_WINDOW_SECONDS, METRIC
+
+        seconds = (to_at - from_at).total_seconds()
+        if not 0 < seconds <= MAX_WINDOW_SECONDS:
+            raise ValueError("scientific activity window is outside the bound")
+        # An instant query with a range selector returns actual scrape timestamps;
+        # query_range would synthesize grid evaluations/repeat last-known values.
+        query = (f'{METRIC}{{fs2_nebius_ai_operation_id="{UUID(str(operation_id))}",'
+                 f'fs2_nebius_ai_attempt_id="{UUID(str(attempt_id))}"}}[{math.ceil(seconds)}s]')
+        return await self._instant(query, at=to_at)
 
     async def model_vector(
         self,

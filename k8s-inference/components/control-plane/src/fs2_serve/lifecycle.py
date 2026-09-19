@@ -88,6 +88,10 @@ _SAFE_DETAIL_KEYS = frozenset(
         "resource_version",
         "service_class",
         "source_event_uid",
+        "dcgm_sample_count", "dcgm_zero_samples", "dcgm_positive_samples",
+        "dcgm_first_sample_at", "dcgm_last_sample_at", "dcgm_allocation_start", "dcgm_allocation_end",
+        "dcgm_max_gap_seconds", "dcgm_min_percent", "dcgm_max_percent", "dcgm_samples_sha256",
+        "dcgm_phase_samples", "dcgm_phase_zero_samples", "dcgm_phase_positive_samples", "dcgm_rejected_groups",
     }
 )
 

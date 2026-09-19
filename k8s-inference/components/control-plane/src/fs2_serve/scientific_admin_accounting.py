@@ -136,7 +136,7 @@ def project_gpu_accounting(
         quota_reserved=clock("quota_reserved_gpu_seconds", "quota_reservation_clock_missing"),
         device_allocated=clock("device_allocated_gpu_seconds", "device_allocation_clock_missing"),
         sampled_device_activity=unavailable(
-            "No attempt-correlated device activity samples are retained. Execution wall time is not GPU busy time."
+            "Device samples are joined separately in run detail. Execution wall time is not GPU busy time."
         ),
         data_gaps=data_gaps,
     )

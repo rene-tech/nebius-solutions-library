@@ -26,6 +26,7 @@ from ..lifecycle import (
     LifecyclePhase as LedgerPhase,
 )
 from ..models import OperationView
+from ..scientific_activity import ScientificActivityCapture
 from .models import (
     AttemptOutcome,
     BatchEvent,
@@ -115,6 +116,7 @@ class ScientificLifecycleBridge:
         operations: ScientificOperationSource,
         cluster: str | None = None,
         source_resolution_seconds: float = 5.0,
+        activity: ScientificActivityCapture | None = None,
     ) -> None:
         if cluster is not None and (not cluster or len(cluster) > 128):
             raise ValueError("scientific lifecycle cluster identity is invalid")
@@ -125,6 +127,7 @@ class ScientificLifecycleBridge:
         self.operations = operations
         self.cluster = cluster
         self.source_resolution_seconds = source_resolution_seconds
+        self.activity = activity
 
     async def _events(self, state: ScientificBatchState) -> list[BatchEvent]:
         result: list[BatchEvent] = []
@@ -987,6 +990,8 @@ class ScientificLifecycleBridge:
                 assert teardown_at is not None
                 await self._append_unobserved_phases(state, attempt, teardown_at)
                 await self._close_open_intervals(attempt, teardown_at, tenant_id=state.tenant_id)
+                if self.activity is not None:
+                    await self.activity.capture(state, attempt, teardown_at)
             await self.lifecycle.reconcile(
                 attempt.attempt_id,
                 terminal=terminal,

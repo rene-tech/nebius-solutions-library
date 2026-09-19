@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import AwareDatetime, Field, model_validator
 
 from .models import StrictModel
+from .scientific_activity import DeviceActivitySummary
 
 
 class ScientificServiceClass(StrEnum):
@@ -271,6 +272,8 @@ class ScientificAttempt(StrictModel):
     observed_pod_uids: list[str] = Field(default_factory=list, max_length=1024)
     observed_node_uids: list[str] = Field(default_factory=list, max_length=1024)
     observed_gpu_uuids: list[str] = Field(default_factory=list, max_length=1024)
+    device_activity: list[DeviceActivitySummary] = Field(default_factory=list, max_length=1024)
+    activity_capture_reason: str = "dcgm_not_captured"
 
 
 class ScientificStage(StrictModel):

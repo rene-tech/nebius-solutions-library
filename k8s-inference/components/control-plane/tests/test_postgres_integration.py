@@ -484,6 +484,14 @@ async def test_scientific_bridge_replays_directly_into_postgres_lifecycle_reposi
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
+async def test_scientific_dcgm_capture_replays_into_existing_postgres_ledger(postgres_store: PostgresStore) -> None:
+    from test_scientific_activity import verify_durable_capture
+
+    await verify_durable_capture(PostgresLifecycleRepository(postgres_store.pool))
+
+
+@pytest.mark.postgres
+@pytest.mark.asyncio
 async def test_admin_configuration_receipt_is_atomic_durable_and_exactly_replayable(
     postgres_store: PostgresStore,
 ) -> None:

@@ -81,6 +81,7 @@ from .request_debug import PostgresDebugStore
 from .route_revalidation import RouteRevalidator
 from .runtime import RuntimeClient
 from .runtime_kubernetes import KubernetesRuntimeMetadataProvider
+from .scientific_activity import ScientificActivityCapture
 from .scientific_admin_postgres import postgres_scientific_admin_read_service
 from .scientific_artifacts import (
     PostgresArtifactRepository,
@@ -448,6 +449,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 operations=store,
                 cluster=settings.admin_context_cluster,
                 source_resolution_seconds=settings.scientific_batch_poll_seconds,
+                activity=ScientificActivityCapture(
+                    lifecycle=lifecycle,
+                    reader=HttpPrometheusScalarReader(base_url=settings.admin_prometheus_url),
+                ) if settings.admin_prometheus_url else None,
             ),
             lease_seconds=settings.scientific_batch_lease_seconds,
         )

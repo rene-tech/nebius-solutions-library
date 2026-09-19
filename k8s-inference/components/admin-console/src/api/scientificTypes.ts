@@ -198,6 +198,26 @@ export interface ScientificError {
   retryable: boolean;
 }
 
+export interface ScientificDeviceActivity {
+  pod_uid: string;
+  node_uid: string | null;
+  gpu_uuid: string;
+  sample_count: number;
+  zero_samples: number;
+  positive_samples: number;
+  first_sample_at: string;
+  last_sample_at: string;
+  allocation_start: string;
+  allocation_end: string;
+  max_gap_seconds: number;
+  min_percent: number;
+  max_percent: number;
+  samples_sha256: string;
+  phase_samples: Record<string, number>;
+  phase_zero_samples: Record<string, number>;
+  phase_positive_samples: Record<string, number>;
+}
+
 export interface ScientificAttempt {
   id: string;
   number: number;
@@ -224,6 +244,8 @@ export interface ScientificAttempt {
   observed_pod_uids?: string[];
   observed_node_uids?: string[];
   observed_gpu_uuids?: string[];
+  device_activity?: ScientificDeviceActivity[];
+  activity_capture_reason?: string;
 }
 
 export interface ScientificStage {

@@ -21,6 +21,60 @@ and scientific-batch attempts. OpenTelemetry preserves causality; Kubernetes,
 Kueue, kubelet and DCGM provide independently observed allocation facts. The
 ledger never derives GPU allocation from request latency.
 
+## Bounded DCGM sample capture (separate from allocation clocks)
+
+The existing scientific lifecycle bridge optionally reads the existing configured
+Prometheus origin once when an attempt is terminal and its resources are released.
+It uses an instant query with a raw range selector, not `query_range` resampling.
+Operation, attempt, model, tenant, stage, Pod UID/name/namespace and GPU UUID must
+match the durable attempt and kubelet allocation correlation. Samples must lie
+inside the exact observed half-open device-allocation interval. A node UID is
+reported only from the exact Pod's unambiguous durable node correlation. Duplicate
+exporter points must agree; a conflict rejects that device's samples.
+
+The existing append-only lifecycle table stores one compact immutable summary
+per verified allocation, plus a capture-outcome marker. It retains sample count,
+zero/positive counts, min/max utilization, first/last timestamps, maximum gap
+including unsampled edges, phase-associated counts, and the canonical raw-vector
+SHA-256. Missing/overlapping phase evidence stays unclassified. This is not a
+second telemetry table or poller. Replay reuses the marker without querying or
+rewriting the capture. All reservation, occupancy, execution and idle clocks and
+retry decisions are unchanged.
+
+Run detail displays these observed sample counts separately from GPU-seconds.
+Raw vectors remain subject to existing Prometheus retention (observed live: ten
+days; DCGM scrape interval five seconds), while summaries remain in the ledger.
+The source's device measurement window is not a kernel-exact phase boundary:
+zero samples do not prove continuous idle, positive samples do not establish a
+busy duration, and neither becomes billable time. Phase wall time is not device
+utilization. No interpolation or average-utilization integration is performed.
+
+Limits are explicit: terminal attempts only, no retrospective rewrite of old
+rows, no capture when the existing Prometheus URL is unset, and no automatic
+re-query after a persisted unsuccessful capture. Scrape lag can leave the tail
+unobserved; short attempts may have no samples. Per capture, the reader keeps the
+existing HTTP timeout/response-size bounds and permits at most ten days, 128 raw
+series and 100,000 raw samples. Missing identity, source errors, conflicting
+samples and partial device coverage remain visible; telemetry read/parse failure
+does not fail inference. These are telemetry bounds, not workload limits.
+
+Candidate verification: 63 focused backend tests (three PostgreSQL cases run
+separately), 140 lifecycle/controller/disruption regressions, five actual
+PostgreSQL-backed tests plus six associated projection tests, 14 run-detail UI
+tests, production admin build, scoped Ruff and seven-module mypy.
+
+A read-only retrospective projection of the two actual release183 maintenance
+eviction/recovery attempts joined 13 and 14 raw samples (one and three positive),
+with zero rejected identity groups and maximum gaps 5.018s and 5.007s. The second
+attempt included a positive device sample labelled application-observed resident
+idle and zero samples labelled active compute, illustrating the clock distinction.
+Protected receipt SHA-256:
+`a88f730defca0c93ffdb8d5fcb97214debfa37b2bc4161f996a45a2118352bad`.
+This is candidate join evidence, not deployed ingestion qualification. The actual
+release183 eviction test separately proved automatic bounded retry, successful
+semantic artifacts and same-operation idempotent replay; original182 failure is
+retained. Root owns the next exact-image deployment and ingestion/browser checks.
+
 ## Immutable identity
 
 `fs2_telemetry_subjects` binds one subject to tenant, opaque principal and API
@@ -248,7 +302,9 @@ zero. The legacy `idle_total` includes startup/unknown non-execution occupancy;
 it is not a classified idle or utilization measurement.
 
 No attempt-correlated device-utilization samples are retained by the current
-observer/DCGM join. `sampled_device_activity` therefore remains unavailable.
+observer/DCGM join in the first source candidate. The bounded terminal-attempt
+DCGM capture described above adds observed sample counts in run detail; historical
+or unavailable captures remain unavailable, never fabricated busy GPU-seconds.
 Container execution spans are not kernel-exact busy time. Neither this view nor
 allocation counters establish billing or physically free/placeable capacity.
 The legacy API field `cold_start_seconds` retains its numeric contract but is

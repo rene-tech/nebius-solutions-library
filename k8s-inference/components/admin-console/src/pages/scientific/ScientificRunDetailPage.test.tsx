@@ -57,6 +57,25 @@ function renderPage(
 }
 
 describe("scientific run detail", () => {
+  it("shows exact device sample counts and gaps without claiming busy GPU-seconds", async () => {
+    const detail = detailFixture();
+    const attempt = detail.data.stages[1].attempts[0];
+    attempt.activity_capture_reason = "dcgm_capture_partial";
+    attempt.device_activity = [{
+      pod_uid: "exact-pod", node_uid: "exact-node", gpu_uuid: "exact-gpu", sample_count: 3,
+      positive_samples: 1, zero_samples: 2, min_percent: 0, max_percent: 80, max_gap_seconds: 5,
+      allocation_start: "2026-09-19T13:30:00Z", allocation_end: "2026-09-19T13:30:10Z",
+      first_sample_at: "2026-09-19T13:30:04Z", last_sample_at: "2026-09-19T13:30:09Z",
+      samples_sha256: "a".repeat(64), phase_samples: {active_compute: 3},
+      phase_zero_samples: {active_compute: 2}, phase_positive_samples: {active_compute: 1},
+    }];
+    renderPage(() => Promise.resolve(detail));
+    expect(await screen.findByText(/3 samples: 1 positive, 2 zero/)).toBeInTheDocument();
+    expect(screen.getByText(/Capture: dcgm_capture_partial/)).toHaveTextContent("No kernel-exact or billable busy/idle time is inferred");
+    expect(screen.getByText("exact-pod")).toBeInTheDocument();
+    expect(screen.getByText(/Maximum unsampled gap/)).toHaveTextContent("5s");
+  });
+
   it("separates unavailable activity, observed phases and frozen whole-Pod fit requirements", async () => {
     const detail = detailFixture();
     const accounting = detail.data.run.gpu_accounting;
