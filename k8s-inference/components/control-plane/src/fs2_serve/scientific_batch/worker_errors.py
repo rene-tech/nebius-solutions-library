@@ -26,7 +26,10 @@ ERROR_DETAILS: Mapping[str, str] = MappingProxyType(
         "RUNTIME_DEPENDENCY_MISSING": "The worker is missing a required runtime dependency; contact the operator.",
         "COSMOS_MEDIA_UNREADABLE": "A Cosmos video could not be read.",
         "COSMOS_MEDIA_INVALID": "A Cosmos video is invalid or exceeds its supported size bound.",
-        "COSMOS_MEDIA_ALIGNMENT_INVALID": "The generated video frame count differs from the source episode.",
+        "COSMOS_MEDIA_ALIGNMENT_INVALID": (
+            "Generated video dimensions, frame count or FPS differ from the source episode; "
+            "no resizing or retiming was applied."
+        ),
         "COSMOS_MEDIA_NORMALIZATION_FAILED": (
             "The generated video could not be restored to the source dataset geometry."
         ),
@@ -38,6 +41,12 @@ ERROR_DETAILS: Mapping[str, str] = MappingProxyType(
     }
 )
 RETRYABLE_CODES = frozenset({"PLATFORM_UPSTREAM_ERROR", "COSMOS_OPERATION_TIMEOUT", "COSMOS_TRANSPORT_ERROR"})
+# A controller can observe an already-running worker from the prior image during
+# a rollout. Accept that one published static wording as well; public projection
+# still uses ERROR_DETAILS, never arbitrary received termination text.
+LEGACY_ERROR_DETAILS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {"COSMOS_MEDIA_ALIGNMENT_INVALID": frozenset({"The generated video frame count differs from the source episode."})}
+)
 
 
 def _unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -68,7 +77,7 @@ def worker_error_code(message: object) -> str | None:
         or code not in ERROR_DETAILS
         or not isinstance(detail, str)
         or len(detail) > 256
-        or detail != ERROR_DETAILS[code]
+        or (detail != ERROR_DETAILS[code] and detail not in LEGACY_ERROR_DETAILS.get(code, frozenset()))
         or type(retryable) is not bool
         or (retryable and code not in RETRYABLE_CODES)
     ):

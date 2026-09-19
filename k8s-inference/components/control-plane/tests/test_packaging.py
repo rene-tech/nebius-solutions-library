@@ -16,6 +16,7 @@ from pathlib import Path
 from conftest import CONTROL_ROOT
 
 from fs2_serve import cli
+from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS
 from fs2_serve.settings import Settings
 
 
@@ -319,7 +320,11 @@ def test_default_migration_path_resolves_the_source_tree_and_runtime_has_no_ddl(
     assert dockerfile.count("WORKDIR /workspace/k8s-inference/components/control-plane") == 2
     assert "COPY k8s-inference/components/control-plane/migrations ./migrations" in dockerfile
     assert "Settings.model_fields['migrations_dir'].default" in dockerfile
-    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == 31" in dockerfile
+    assert "from fs2_serve.postgresql_release import EXPECTED_MIGRATIONS" in dockerfile
+    assert "migration_dir.glob('[0-9][0-9][0-9][0-9]_*.sql'))) == len(EXPECTED_MIGRATIONS)" in dockerfile
+    assert migration_names == [name for name, _ in EXPECTED_MIGRATIONS]
+    for name, expected_digest in EXPECTED_MIGRATIONS:
+        assert hashlib.sha256((migration_dir / name).read_bytes()).hexdigest() == expected_digest
     assert "store.migrate" not in inspect.getsource(cli.build_runtime)
     assert "store.migrate" not in inspect.getsource(cli.maintain)
     assert "PostgresStore.migrate_database" in inspect.getsource(cli.migrate)

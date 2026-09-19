@@ -19,6 +19,7 @@ from fs2_serve.scientific_batch.worker_errors import (
     RETRYABLE_CODES,
     TERMINATION_SCHEMA,
     worker_error_code,
+    worker_error_detail,
 )
 
 
@@ -67,6 +68,18 @@ def test_unrecognized_or_unsafe_reports_are_not_propagated(raw: object) -> None:
 def test_only_declared_transient_codes_accept_retryable_flag(code: str) -> None:
     assert worker_error_code(report(code, retryable=True)) == code
     assert worker_error_code(report(code, retryable=False)) == code
+
+
+def test_prior_alignment_worker_report_remains_readable_during_rollout() -> None:
+    old = "The generated video frame count differs from the source episode."
+    code = "COSMOS_MEDIA_ALIGNMENT_INVALID"
+    assert worker_error_code(report(code, detail=old)) == code
+    assert worker_error_detail(LEROBOT_MODEL_ID, code) == ERROR_DETAILS[code]
+    assert "dimensions, frame count or FPS" in ERROR_DETAILS[code]
+    assert "no resizing or retiming" in ERROR_DETAILS[code]
+    assert worker_error_code(report("DATASET_INVALID", detail=old)) is None
+    assert worker_error_code(report(code, detail=old + " private input")) is None
+    assert worker_error_code(report(code, detail=old, retryable=True)) is None
 
 
 def test_worker_and_control_plane_static_tables_do_not_drift() -> None:
