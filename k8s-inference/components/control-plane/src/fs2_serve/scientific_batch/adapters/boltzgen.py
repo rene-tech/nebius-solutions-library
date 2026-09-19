@@ -130,6 +130,11 @@ MAX_TOTAL_DESIGNS = 24
 # independently of the host's visible CPU count.
 ANALYSIS_MAX_PROCESSES = 1
 ANALYSIS_DATA_WORKERS = 0
+# A worker process sends feature tensors through POSIX shared memory. The
+# default 64 MiB container /dev/shm is insufficient for legitimate Fab inputs,
+# even with one worker. Upstream supports zero workers for inline loading;
+# preserve samples, model settings and memory limits instead of enlarging shm.
+PREDICTION_DATA_WORKERS = 0
 INPUT_MANIFEST_MEDIA_TYPE = "application/vnd.fs2.scientific-manifest+json"
 CAMPAIGN_INPUT_ID = "campaign-input"
 CAMPAIGN_INPUT_SEMANTIC_TYPE = "boltzgen-campaign-input/v1"
@@ -279,7 +284,7 @@ def _configure_argv(parameters: BoltzGenParameters, batch: DesignBatch, operatio
         "--devices",
         "1",
         "--num_workers",
-        "1",
+        str(PREDICTION_DATA_WORKERS),
         "--num_designs",
         str(batch.num_designs),
         "--budget",
