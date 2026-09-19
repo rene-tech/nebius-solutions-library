@@ -24,7 +24,7 @@ From `templates/hcls-librechat/scripts/qualification` in the workbench tree:
 ```bash
 python run_campaign.py \
   --manifest "$CAMPAIGN_ROOT/datasets/diffdock-frozen-public-v1/cases.json" \
-  --scientists "$CAMPAIGN_ROOT/private/scientists-private.json" \
+  --scientists "$CAMPAIGN_ROOT/scientists-private.json" \
   --only scientist-06 --parallel 1 \
   --cohort diffdock-http-identity-public-r1 \
   --output "$CAMPAIGN_ROOT/cohorts/diffdock-http-identity-public-r1" \
