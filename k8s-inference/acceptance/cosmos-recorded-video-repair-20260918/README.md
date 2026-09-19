@@ -1,5 +1,35 @@
 # Recorded Cosmos video repair — 18 September 2026
 
+## Public strict snapshot qualification — 19 September, release170
+
+The parent selected the new immutable warmed bundle with `Require`, not a
+fresh-load fallback. Three ordinary scientist10 operations passed with recorded
+H100 identity, strict restore logs and the restored readiness marker:
+
+| Customer workflow | Accepted to complete | Runtime result |
+| --- | ---: | --- |
+| Original recorded640x480,64frames,25FPS | 64.30s |15.94s inference; exact warmed-donor output hash |
+| Held-out512x288,41frames,25FPS dedicated tool |43.16s |4.75s inference; exact isolated-restored output hash |
+| Two recorded ALOHA episodes via LeRobot |174.54s observed |16.14s +14.56s children;128frames and6144 nonvideo values preserved |
+
+`public-strict-snapshot-r1.json` and
+`public-recorded-lerobot-strict-r3.json` contain exact runtime/bundle identities,
+operation IDs, output hashes, timing boundaries and scientific limitations.
+The dataset request restored on a different physical H100 from the original
+native request. CRIU restore took30.55s and CUDA restore5.75s for that dataset
+runtime; these do not include scheduling or image/cache preparation.
+
+Both native submissions initially encountered **harness**, not model failures:
+a read-only diagnostic log timeout and a direct-operation response parser
+mismatch. Both original operations were recovered by GET, without a second
+inference submission. The retained reports preserve those failures rather than
+claiming flawless client execution. Prior production failures also remain.
+
+This establishes the measured snapshot/media/data contract only, not physical
+robot alignment, policy-training efficacy or all advertised media modes. The
+broader dedicated-tool mode matrix is a separate live gate. No empty-node cold
+start is inferred from these cache-dependent observations.
+
 This is a preparation and evidence gate, not a declaration that the public
 LeRobot customer workflow is complete. `prepare.py` never applies resources.
 

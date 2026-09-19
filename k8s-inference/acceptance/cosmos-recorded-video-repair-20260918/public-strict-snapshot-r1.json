@@ -1,0 +1,133 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos-public-strict-snapshot-qualification/v1",
+  "release": 170,
+  "snapshot_id": "cosmos3-nano-h100-cuda-criu-warmed-20260918",
+  "snapshot_digest": "sha256:573bf6acacb90461ca0cc06f850f550dc48e34579d79f866da2b1691097ff120",
+  "snapshot_policy": "Require",
+  "native": [
+    {
+      "trial": "public-strict-native-r1",
+      "operation_id": "92ced158-0362-4a4a-9765-254f9aab8447",
+      "status": "passed",
+      "attempt": 1,
+      "model_revision": "dynamic:sha256:b9f13043c39e87ea05b29cd756873eb0ddccdc8efaca462d900250b544b2b2f3",
+      "media": {
+        "bytes": 2038165,
+        "sha256": "cd877ba99a0c75c7f8b5bc726bd4d561926e9e8e7f9ddc337e3a718ac2f57385",
+        "width": 640,
+        "height": 480,
+        "frames": 64,
+        "fps": 25,
+        "audio_streams": 0
+      },
+      "runtime_witnesses": [
+        {
+          "pod": "cosmos3-nano-burst-h100-1x-6d89757c76-fc6dh",
+          "pod_uid": "26af16a4-5959-4efa-a4c4-0a65a7981fe1",
+          "node": "computeinstance-e00k0hdq51xykanvqs",
+          "runtime_identity": {
+            "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+            "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+            "kernel_release": "6.11.0-1016-nvidia",
+            "runtime_id": "cosmos3-nano",
+            "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+            "gpu_uuid": "GPU-a49a2242-2714-1f6d-f372-97b06758b88e",
+            "gpu_name": "NVIDIA H100 80GB HBM3",
+            "driver_version": "580.159.04",
+            "compute_capability": "9.0",
+            "snapshot_source_sha256": {
+              "process_checkpoint.py": "4378066b4aa7e73c4bb605e320f4ce8aecfd9eafe306b30e07b801bbc4194124",
+              "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+              "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+              "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+              "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+              "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+              "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+            }
+          },
+          "restore_log_sha256": "3b834f0a97fba8864d927cd23249a103e4b33884956d82fd0ac584640fae17b3",
+          "criu_restore_seconds": 29.390386156999966,
+          "cuda_restore_seconds": 5.314119661999939
+        }
+      ],
+      "authoritative_seconds": {
+        "accepted_to_complete": 64.302585,
+        "accepted_to_ready": 48.324947,
+        "active_inference": 15.93856
+      },
+      "validation_receipt_sha256": "1dee93e3759d10829956ff8c614c850584cd39e879932102b482f348d3a35f9c",
+      "harness_recovery": {
+        "required": true,
+        "new_inference_submissions": 0,
+        "reason": "Read-only diagnostic log timeout after admission"
+      }
+    },
+    {
+      "trial": "public-strict-heldout-r1",
+      "operation_id": "aba07f72-3724-4981-8e82-ee5bffcf89eb",
+      "status": "passed",
+      "attempt": 1,
+      "model_revision": "dynamic:sha256:b9f13043c39e87ea05b29cd756873eb0ddccdc8efaca462d900250b544b2b2f3",
+      "media": {
+        "status": "passed",
+        "sha256": "e8e727ee3d7ea89429e6f5b8e535221a3630203435882fae84f056fe9d46b71a",
+        "media": "video",
+        "width": 512,
+        "height": 288,
+        "frames": 41,
+        "fps": "25/1",
+        "scope": "Artifact and requested media contract, not physical correctness"
+      },
+      "runtime_witnesses": [
+        {
+          "pod": "cosmos3-nano-burst-h100-1x-6d89757c76-xrv9j",
+          "pod_uid": "23c4e603-c94b-4ac2-b5d8-950ba4e7f49f",
+          "node": "computeinstance-e00p2817cbemf7w6q5",
+          "runtime_identity": {
+            "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32",
+            "tools_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4",
+            "kernel_release": "6.11.0-1016-nvidia",
+            "runtime_id": "cosmos3-nano",
+            "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
+            "gpu_uuid": "GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8",
+            "gpu_name": "NVIDIA H100 80GB HBM3",
+            "driver_version": "580.159.04",
+            "compute_capability": "9.0",
+            "snapshot_source_sha256": {
+              "process_checkpoint.py": "4378066b4aa7e73c4bb605e320f4ce8aecfd9eafe306b30e07b801bbc4194124",
+              "serving_checkpoint.py": "0cc5f0b80b38a894fb4e0bc6119fc6012e3af7979664cefccbe96b239d73235d",
+              "serving_filesystem.py": "0af2a36d69f2c809a9a9f15070ab7f196cda39361724ccbbe724cc994b1b2fd7",
+              "serving_launcher.py": "8f076ab23bb5d6ecf56b9c06f7f3040a092cf3321836556413c9e84ba667aa7b",
+              "serving_supervisor.py": "a27ef49260796bbc90f68db2e1e74437e2b70dd41c57aeb0bfd3d14cb0389524",
+              "sitecustomize.py": "4051136270e8c7446e699484bbc1890489c34e346286b8845af741c0d5c4aad5",
+              "supervisor.py": "4ec20b525ba38f979c67d8ab46e85a9f8243c0b2990d9e65871839318fdab83c"
+            }
+          },
+          "restore_log_sha256": "84e82978d982f893a85064f7fe93a104fc88693674ee637d3acecf6041e954dc",
+          "criu_restore_seconds": 18.51008014800027,
+          "cuda_restore_seconds": 5.6061708300003374
+        }
+      ],
+      "authoritative_seconds": {
+        "accepted_to_complete": 43.161984,
+        "accepted_to_ready": 38.401445,
+        "active_inference": 4.752167
+      },
+      "validation_receipt_sha256": "5310edc37546f525f3d9a599558a60a23d2c80a4ef7d583f88ba1836019f5270",
+      "harness_recovery": {
+        "required": true,
+        "new_inference_submissions": 0,
+        "reason": "Direct operation envelope parser mismatch after admission"
+      }
+    }
+  ],
+  "recorded_dataset_report_sha256": "8d631d33dbd1fa183f620b918fef2212c1244dc8f8618d20458edb3f963984f5",
+  "recorded_dataset_operation": "b6875f1d-49d3-4696-a5bb-5f13e93f5f71",
+  "recorded_dataset_status": "passed",
+  "limitations": [
+    "Contract/runtime/data integrity, not robot-policy efficacy or physical alignment.",
+    "Not all advertised media modes: broader dedicated-tool matrix is a separate gate.",
+    "No empty-node coldstart claim; image and filesystem cache conditions differ.",
+    "Original runtime failures and both harness failures preserved; GET-only recovery did not resubmit."
+  ]
+}
