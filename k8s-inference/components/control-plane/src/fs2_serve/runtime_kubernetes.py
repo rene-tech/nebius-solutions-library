@@ -36,6 +36,7 @@ GPU_OBSERVER_RESOLUTION_ANNOTATION = "telemetry.fs2.nebius.ai/gpu-observer-resol
 PHASE_ANNOTATION_PREFIX = "telemetry.fs2.nebius.ai/phase-"
 RESPONSE_IDENTITY_ANNOTATION = "telemetry.fs2.nebius.ai/response-identity"
 RESPONSE_IDENTITY_VERSION = "asgi-v1"
+COSMOS_RESPONSE_IDENTITY_VERSION = "asgi-cosmos-adapter-v1"
 
 _GPU_RESOURCE = re.compile(r"^(?:nvidia\.com/(?:gpu|mig-[A-Za-z0-9_.-]+)|amd\.com/gpu|gpu\.intel\.com/(?:i915|xe))$")
 _GPU_UUID = re.compile(r"^(?:GPU|MIG)-[A-Za-z0-9_.:/-]{1,123}$")
@@ -278,17 +279,46 @@ class KubernetesRuntimeMetadataProvider:
         annotations = _mapping(metadata.get("annotations"))
         if (
             metadata.get("namespace") != self.namespace
-            or annotations.get(RESPONSE_IDENTITY_ANNOTATION) != RESPONSE_IDENTITY_VERSION
+            or annotations.get(RESPONSE_IDENTITY_ANNOTATION) not in {
+                RESPONSE_IDENTITY_VERSION, COSMOS_RESPONSE_IDENTITY_VERSION,
+            }
             or annotations.get("fs2.nebius/model-revision") != binding["model_revision"]
             or annotations.get("fs2.nebius/runtime-image-digest") != binding["runtime_image_digest"]
         ):
             return False
         containers = [_mapping(c) for c in _sequence(spec.get("containers"))]
+        is_cosmos_adapter = annotations.get(RESPONSE_IDENTITY_ANNOTATION) == COSMOS_RESPONSE_IDENTITY_VERSION
+        upstream: list[Mapping[str, Any]] = []
+        if is_cosmos_adapter:
+            # The media Service terminates on a CPU adapter, not vLLM's port.
+            # Its pinned implementation forwards only to 127.0.0.1:8000. Bind
+            # that same Pod's actual GPU container as well as the responding
+            # adapter; a hint from a separate relay Pod is never sufficient.
+            upstream = [
+                c for c in containers
+                if c.get("name") == "vllm-omni"
+                and str(c.get("image", "")).endswith("@" + binding["runtime_image_digest"])
+                and pod_gpu_count({"spec": {"containers": [c]}}) is not None
+                and any(_mapping(p).get("containerPort") == 8000
+                        and _mapping(p).get("protocol", "TCP") == "TCP"
+                        for p in _sequence(c.get("ports")))
+            ]
+            if len(upstream) != 1 or binding["service_port"] != 8080:
+                return False
         instrumented = [
             c
             for c in containers
             if str(c.get("image", "")).endswith("@" + binding["runtime_image_digest"])
-            and "fs2_runtime_identity.RuntimeIdentityMiddleware" in _sequence(c.get("args"))
+            and (
+                (c.get("name") == "bounded-json-adapter"
+                 and _sequence(c.get("command")) == ["python3", "/adapter/adapter.py"]
+                 and not _sequence(c.get("args"))
+                 and not any(_GPU_RESOURCE.fullmatch(str(resource))
+                             for kind in ("requests", "limits")
+                             for resource in _mapping(_mapping(c.get("resources")).get(kind))))
+                if is_cosmos_adapter else
+                "fs2_runtime_identity.RuntimeIdentityMiddleware" in _sequence(c.get("args"))
+            )
             and any(
                 _mapping(e).get("name") == "FS2_RUNTIME_POD_UID"
                 and _mapping(_mapping(_mapping(e).get("valueFrom")).get("fieldRef")).get("fieldPath") == "metadata.uid"
@@ -297,17 +327,18 @@ class KubernetesRuntimeMetadataProvider:
         ]
         if len(instrumented) != 1:
             return False
-        running_images = [
-            _mapping(c).get("imageID")
-            for c in _sequence(status.get("containerStatuses"))
-            if _mapping(c).get("name") == instrumented[0].get("name")
-        ]
-        if (
-            len(running_images) != 1
-            or not isinstance(running_images[0], str)
-            or not running_images[0].endswith("@" + binding["runtime_image_digest"])
-        ):
-            return False
+        for component in [*instrumented, *upstream]:
+            running_images = [
+                _mapping(c).get("imageID")
+                for c in _sequence(status.get("containerStatuses"))
+                if _mapping(c).get("name") == component.get("name")
+            ]
+            if (
+                len(running_images) != 1
+                or not isinstance(running_images[0], str)
+                or not running_images[0].endswith("@" + binding["runtime_image_digest"])
+            ):
+                return False
         services = await self.reader.list(f"/api/v1/namespaces/{self.namespace}/services")
         services = [s for s in services if _mapping(s.get("metadata")).get("name") == binding["service_name"]]
         if len(services) != 1:
