@@ -46,6 +46,7 @@ from .fast_start_identity import mechanism_config_digest
 from .fast_start_mechanisms import (
     DECLARED_MECHANISMS,
     MECHANISM_ANNOTATION,
+    FastStartCacheMechanismPool,
     FastStartCacheMechanismStatus,
     FastStartMechanism,
     project_cache_mechanisms,
@@ -79,7 +80,9 @@ from .model_deployment import (
     RenderContext,
     RenderedResource,
     RenderPlan,
+    SnapshotPreference,
     ValidationDisposition,
+    _validate_serving_snapshot_selection,
     bounded_label_value,
     canonical_digest,
     effective_hot_floor,
@@ -1742,6 +1745,68 @@ def _automatic_fast_start_assessment(
     return updated, automatic
 
 
+def _project_serving_snapshot_mechanism(
+    *,
+    spec: ModelDeploymentSpec,
+    envelope: InfrastructureEnvelope,
+    mechanisms: dict[str, FastStartCacheMechanismStatus],
+    converged: bool,
+) -> None:
+    """Report the exact snapshot loader already selected by the renderer.
+
+    Serving snapshots predate the generic mechanism selector: that selector's
+    conventional default means "no additional loader", not that the rendered
+    CUDA/CRIU supervisor loads weights conventionally. A registered bundle is
+    checked against this App's image, artifact and every selected GPU class.
+    It does not grant snapshot capability to other Apps on the pool, prove an
+    individual restore succeeded, or qualify a customer fast-start level.
+    """
+    reference = spec.cache.snapshot_ref
+    qualification = envelope.qualifications.get(spec.model_ref)
+    if (
+        spec.cache.snapshot_preference is SnapshotPreference.NEVER
+        or reference is None
+        or qualification is None
+        or qualification.model_express is not None
+        or any(pool_ref not in envelope.pools for pool_ref in spec.placement.pool_refs)
+    ):
+        return
+    bundle = qualification.gpu_snapshot_bundles.get(reference.name)
+    if bundle is None:
+        return
+    try:
+        _validate_serving_snapshot_selection(
+            spec,
+            bundle,
+            [envelope.pools[pool_ref].accelerator_class for pool_ref in spec.placement.pool_refs],
+        )
+    except ValueError:
+        return
+    conventional = mechanisms.get(FastStartMechanism.CONVENTIONAL.value)
+    if conventional is not None:
+        mechanisms[FastStartMechanism.CONVENTIONAL.value] = conventional.model_copy(
+            update={"selected": False, "reason": "ConventionalLoaderAvailable"}
+        )
+    mechanisms[FastStartMechanism.SHARED_RESTORE.value] = FastStartCacheMechanismStatus(
+        state="Configured" if converged else "Pending",
+        selected=True,
+        availability="Available",
+        reason="ServingSnapshotRenderConverged" if converged else "ServingSnapshotRenderPending",
+        config_digest=canonical_digest(bundle.model_dump(mode="json", by_alias=True)),
+        pool_refs=sorted(spec.placement.pool_refs),
+        pools={
+            pool_ref: FastStartCacheMechanismPool(
+                availability="Available",
+                reason="ExactServingSnapshotBundleQualified",
+                # Compatibility comes from the exact App bundle, not from a
+                # broad node label or a fabricated benchmark identity.
+                evidence_selector={},
+            )
+            for pool_ref in sorted(spec.placement.pool_refs)
+        },
+    )
+
+
 def _fast_start_status(
     *,
     spec: ModelDeploymentSpec,
@@ -1871,6 +1936,13 @@ def _fast_start_status(
             configured_max_replicas=spec.availability.max_replicas,
             mechanism_config_digest=mechanism_config_digest,
         )
+        if mechanism_decision.mechanism is FastStartMechanism.CONVENTIONAL:
+            _project_serving_snapshot_mechanism(
+                spec=spec,
+                envelope=envelope,
+                mechanisms=cache_mechanisms,
+                converged=converged,
+            )
     return FastStartStatus(
         **assessment.model_dump(),
         effective_level=effective,
