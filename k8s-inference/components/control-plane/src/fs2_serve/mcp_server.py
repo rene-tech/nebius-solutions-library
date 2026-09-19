@@ -69,8 +69,8 @@ from .request_telemetry import (
 )
 from .runtime import RuntimeOperationError
 from .scientific_artifacts import ArtifactNotFoundError, ArtifactServiceError
-from .scientific_batch.adapters.cosmos_lerobot import public_input_contract as lerobot_input_contract
 from .scientific_batch.adapters.proteina_targets import public_target_catalog
+from .scientific_batch.input_contracts import public_input_contract
 from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
 from .scientific_batch.service import ScientificProfileDiscovery
 from .scientific_input_uploads import ScientificInputUploadRequest
@@ -865,8 +865,9 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                     }
                     if model_id == "proteina-complexa":
                         response["target_catalog"] = public_target_catalog()
-                    if model_id == "cosmos3-lerobot-augmentation":
-                        response["input_artifact_contract"] = lerobot_input_contract()
+                    input_contract = public_input_contract(str(profile.value["model_id"]))
+                    if input_contract is not None:
+                        response["input_artifact_contract"] = input_contract
                     return response
         raise MCPError(code=INVALID_PARAMS, message="model or protocol is outside token policy")
 

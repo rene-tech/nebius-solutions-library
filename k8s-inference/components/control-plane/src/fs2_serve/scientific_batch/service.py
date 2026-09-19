@@ -18,6 +18,7 @@ from ..store import ConflictError, Store
 from .catalog_adapter import CatalogProfileAdapterError, scientific_plan_from_catalog_profile
 from .codec import state_from_value, state_to_value
 from .controller import ScientificBatchController
+from .input_contracts import validate_input_roles
 from .models import (
     AdapterExecutionPlan,
     ArtifactAccessContext,
@@ -520,6 +521,7 @@ class ScientificBatchService:
         input_admission = await self.artifacts.validate_input(
             validated["input_manifest"], tenant_id=principal.tenant_id
         )
+        validate_input_roles(str(profile.value["model_id"]), validated, input_admission.manifest.entries)
         # Input artifacts are caller-owned scientific data, not license
         # credentials. Academic runtime authorization is deployment-bound and
         # projected from the reviewed execution handoff, never supplied by a
