@@ -75,6 +75,40 @@ release183 eviction test separately proved automatic bounded retry, successful
 semantic artifacts and same-operation idempotent replay; original182 failure is
 retained. Root owns the next exact-image deployment and ingestion/browser checks.
 
+### Bounded release184 public ingestion proof
+
+On 2026-09-19, one ordinary scientist02 ESMFold2-Fast request on source
+`3dccbdc878225fb7b26fa79fd5295f5c646d71a8` completed without a fault or policy
+change. Control-plane image
+`sha256:be36dc7cf85618de274a50b08ff890261c70596e0b531d7681c8e368c1f5d089`
+and admin image
+`sha256:72581f9f4035742e8c0b52a197c9b9a702f17fe8a6a837990dd2f7bf42ce4ae4`
+were observed installed. Both output artifacts passed hash/semantic validation;
+same-key replay returned the same operation and workload. No new scientific
+quality, recovery, concurrency or combined customer-readiness claim follows.
+
+The released GPU attempt durably retained 12 exact-identity samples: two
+positive and ten zero, maximum unsampled gap 5.006 seconds. Its 65 scheduler
+GPU-seconds partitioned into one image-pull, 34 artifact-load, 29 execution-span
+and one unclassified second. The independent device clock was 64.341259 seconds.
+Reconciliation passed; `trace_context_missing` remained visible. A later ledger
+read preserved the same event digest/watermark. The actual admin browser showed
+the exact Pod/node/GPU join, phase counts and sampling limitations. Samples are
+not continuous busy/idle duration or billing. Protected combined receipt SHA256:
+`a3fc87b396652917ae2c9360e2d74bccfa83e7765e3bafa89ac2699d3b0118cb`.
+
+This proof also exposed a real display defect: the successful CPU prepare stage
+was falsely shown as `batch-cpu: blocked` because node-fit matched only the GPU
+pool label. Its original184 API/browser evidence is retained. The narrow
+successor projection uses CPU capacity pool identity and its frozen selector;
+older single-pool reference-data classes without a pool-ID label use their exact
+frozen selector. Missing/ambiguous CPU selectors remain unknown, not a guessed
+match. GPU label matching and scheduler decisions are unchanged. Local replay
+against the retained admission and a read-only current node capture finds two
+possible CPU nodes and identical GPU pool results; this is not successor live
+deployment evidence. Replay receipt SHA256:
+`17a612e7d094b68464ec408c097c195fdc7b0d17ef44ab13eb6f250c12e03c58`.
+
 ## Immutable identity
 
 `fs2_telemetry_subjects` binds one subject to tenant, opaque principal and API

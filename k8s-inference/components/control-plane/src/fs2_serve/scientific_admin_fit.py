@@ -16,9 +16,10 @@ from .scientific_admin_models import (
 )
 from .scientific_batch.podset_envelope import parse_resource_quantity
 
-# The renderer's required nodeAffinity uses this exact identity, not semantic
-# hot/burst labels or GPU product names that may span multiple pools.
+# GPU affinity and CPU class selectors use separate identities. A CPU class's
+# pool ID is not an accelerator pool alias, even on a GPU-capable node.
 POOL_LABEL = "accelerator.fs2.nebius/pool-id"
+CPU_POOL_LABEL = "capacity.fs2.nebius/pool-id"
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -43,8 +44,26 @@ def project_node_upper_bounds(
     pools = placement.eligible_pool_ids or ["selector-only"]
     results: list[ScientificPoolUpperBoundFit] = []
     for pool in pools:
-        members = [node for node in nodes if not placement.eligible_pool_ids
-                   or _mapping(_mapping(node.get("metadata")).get("labels")).get(POOL_LABEL) == pool]
+        cpu = placement.accelerator_count == 0
+        selector = placement.required_node_labels
+        # Older reference-data CPU classes bind their single logical pool by an
+        # exact selector without a pool-id label. Use that frozen selector, not
+        # a guessed label/alias. Missing or ambiguous selectors stay unknown.
+        selector_only_cpu = cpu and CPU_POOL_LABEL not in selector
+        if selector_only_cpu and (not selector or len(pools) != 1):
+            results.append(ScientificPoolUpperBoundFit(
+                pool_id=pool, state="unknown", nodes_observed=0, possible_nodes=0, unknown_nodes=0,
+                blocking_reasons={"cpu_pool_selector_unavailable": 1},
+            ))
+            continue
+        members = []
+        for node in nodes:
+            labels = _mapping(_mapping(node.get("metadata")).get("labels"))
+            matches = (all(labels.get(key) == value for key, value in selector.items())
+                       if selector_only_cpu else
+                       not placement.eligible_pool_ids or labels.get(CPU_POOL_LABEL if cpu else POOL_LABEL) == pool)
+            if matches:
+                members.append(node)
         reasons: Counter[str] = Counter()
         maxima: dict[str, int] = {}
         possible = unknown = 0

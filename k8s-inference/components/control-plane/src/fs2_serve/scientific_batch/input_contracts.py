@@ -91,15 +91,31 @@ def public_input_contract(model_id: str) -> dict[str, Any] | None:
             **common,
             "operation_parameter": "operation",
             "operations": {
-                "design-backbone": _entry(
-                    rfdiffusion.DESIGN_INPUT_ID, rfdiffusion.DESIGN_INPUT_SEMANTIC_TYPE, "text/plain", 64 * 1024
-                ),
-                "scaffold-motif": _entry(
-                    rfdiffusion.TARGET_INPUT_ID,
-                    rfdiffusion.TARGET_INPUT_SEMANTIC_TYPE,
-                    "chemical/x-pdb",
-                    rfdiffusion.MAX_INPUT_BYTES,
-                ),
+                "design-backbone": {
+                    **_entry(
+                        rfdiffusion.DESIGN_INPUT_ID, rfdiffusion.DESIGN_INPUT_SEMANTIC_TYPE, "text/plain", 64 * 1024
+                    ),
+                    "description": (
+                        "A nonempty UTF-8 plain-text note recording the requested unconditional design. "
+                        "This artifact is retained for provenance; its text is not parsed as executable "
+                        "constraints and does not configure inference. The typed parameters (contigs, "
+                        "num_designs, seed, diffuser_T and optional length) are authoritative. "
+                        "No target PDB, motif spans or hotspot residues are used for this operation."
+                    ),
+                    "example_content": "RFdiffusion unconditional backbone length 76\n",
+                },
+                "scaffold-motif": {
+                    **_entry(
+                        rfdiffusion.TARGET_INPUT_ID,
+                        rfdiffusion.TARGET_INPUT_SEMANTIC_TYPE,
+                        "chemical/x-pdb",
+                        rfdiffusion.MAX_INPUT_BYTES,
+                    ),
+                    "description": (
+                        "The actual target PDB containing the motif residues named by the typed contigs. "
+                        "Unlike the unconditional design note, these structure coordinates are used in inference."
+                    ),
+                },
             },
         }
     return {**common, "entry": entry} if entry is not None else None
