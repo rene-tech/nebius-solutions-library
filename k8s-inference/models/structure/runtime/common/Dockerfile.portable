@@ -3,6 +3,7 @@
 # immutable open runtime. Model code and checkpoint bytes remain unchanged.
 ARG BASE_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/proteinmpnn@sha256:13d195ac5e24ca9d75de058f08141ece37e60962dcdffb50b6d24ea474313d47
 FROM ${BASE_IMAGE}
+ENV CUBLAS_WORKSPACE_CONFIG=:4096:8
 
 LABEL ai.nebius.fs2.runtime-portability="nim-health-aliases"
 

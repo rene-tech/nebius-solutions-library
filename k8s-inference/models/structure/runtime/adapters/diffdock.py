@@ -38,7 +38,7 @@ class Adapter:
         "relationship": "same-named-upstream-fallback-parity-unproven",
         "nim_version": "2.3.0",
         "scope": "molecular-docking/research",
-        "compatibility_shims": ["torch_cluster:pytorch-native", "torch_scatter:pytorch-native", "rdkit:request-seeded-conformers"],
+        "compatibility_shims": ["torch_cluster:pytorch-native", "torch_scatter:pytorch-native", "rdkit:request-seeded-conformers", "torch:deterministic-kernels"],
     }
 
     def __init__(self) -> None:
@@ -55,6 +55,14 @@ class Adapter:
     def load(self) -> None:
         if not torch.cuda.is_available():
             raise RuntimeError("CUDA is required")
+        # A seeded conformer alone does not make CUDA scatter reductions
+        # reproducible. Select PyTorch's deterministic implementations; never
+        # silently downgrade to warn_only when a kernel lacks an equivalent.
+        # The image sets CUBLAS_WORKSPACE_CONFIG before CUDA is initialized.
+        torch.use_deterministic_algorithms(True)
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
+        torch.backends.cuda.matmul.allow_tf32 = False
         from esm.pretrained import load_model_and_alphabet_core
         from utils.diffusion_utils import get_t_schedule, t_to_sigma as t_to_sigma_impl
         from utils.utils import get_model
