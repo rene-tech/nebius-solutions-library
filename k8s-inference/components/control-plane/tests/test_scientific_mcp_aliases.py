@@ -54,11 +54,12 @@ async def assert_alias_rejected(client, arguments):
 
 
 @pytest.mark.asyncio
-async def test_schema_exposes_authoritative_input_roles_at_top_level(registry, cipher, hasher, monkeypatch):
+@pytest.mark.parametrize("model_id", ["protenix-v2", "rfdiffusion"])
+async def test_schema_exposes_authoritative_input_roles_at_top_level(registry, cipher, hasher, monkeypatch, model_id):
     from fs2_serve.scientific_batch.input_contracts import public_input_contract
 
     runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
-    expected = public_input_contract("protenix-v2")
+    expected = public_input_contract(model_id)
     monkeypatch.setattr("fs2_serve.mcp_server.public_input_contract", lambda model_id: expected)
     async with scientific_client(runtime) as client:
         schema = _mcp_result(await client.call_tool("get_model_schema", {"model_id": "protein-design"}))
