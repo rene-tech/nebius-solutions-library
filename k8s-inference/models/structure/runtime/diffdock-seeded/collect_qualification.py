@@ -1,9 +1,10 @@
 """Retain completed GPU probe output before deleting its task-owned Pod."""
+
 import argparse
 import hashlib
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 
 
 def main():
@@ -18,7 +19,10 @@ def main():
     if pod["metadata"]["labels"].get("fs2.nebius.ai/qualification") != args.pod:
         raise ValueError("Wrong task-owned Pod identity")
     logs = subprocess.check_output(kube + ["logs", args.pod, "-c", "qualifier"], text=True)
-    events = subprocess.check_output(kube + ["get", "events", "--field-selector", "involvedObject.uid=" + pod["metadata"]["uid"], "-o", "json"], text=True)
+    events = subprocess.check_output(
+        kube + ["get", "events", "--field-selector", "involvedObject.uid=" + pod["metadata"]["uid"], "-o", "json"],
+        text=True,
+    )
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "pod.json").write_text(json.dumps(pod, indent=2) + "\n")
     (args.output / "events.json").write_text(events)
@@ -41,9 +45,21 @@ def main():
         if hashlib.sha256((args.output / run["result_file"]).read_bytes()).hexdigest() != run["result_sha256"]:
             raise ValueError("Captured result differs from runtime digest")
     (args.output / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
-    print(json.dumps({"pod": args.pod, "node": pod["spec"]["nodeName"], "gpu": receipt["gpu"],
-                     "passed": receipt["passed"], "run_count": len(receipt["runs"]),
-                     "preprocessing": receipt["preprocessing"], "pairs": receipt["repeated_pairs"]}))
+    print(
+        json.dumps(
+            {
+                "pod": args.pod,
+                "node": pod["spec"]["nodeName"],
+                "gpu": receipt["gpu"],
+                "passed": receipt["passed"],
+                "run_count": len(receipt["runs"]),
+                "schema": receipt["schema"],
+                "preprocessing": receipt.get("preprocessing", []),
+                "pairs": receipt.get("repeated_pairs", []),
+                "scope": receipt.get("scope", receipt.get("scientific_accuracy")),
+            }
+        )
+    )
 
 
 if __name__ == "__main__":
