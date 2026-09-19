@@ -22,6 +22,7 @@ def original():
     }
     owner = {
         "modelRef": "diffdock",
+        "artifact": {"revision": "exact-test-revision"},
         "runtime": {
             "image": "registry.test/diffdock@" + p.BASE_DIGEST,
             "templateRef": {"name": "legacy", "digest": bundle["templateDigest"]},
@@ -37,13 +38,14 @@ def original():
 def test_immutable_template_only_changes_wrapper_identity_and_image():
     before, owner = original()
     saved = copy.deepcopy(before)
-    after = p.candidate_template(before, IMAGE)
+    after = p.candidate_template(before, IMAGE, owner["artifact"]["revision"])
     assert before == saved
     expected = copy.deepcopy(before)
     deployment = next(r for r in expected["resources"] if r["kind"] == "Deployment")
     pod = deployment["spec"]["template"]
     for meta in [deployment["metadata"], pod["metadata"]]:
         meta["annotations"]["fs2.nebius/runtime-image-digest"] = IMAGE.split("@")[1]
+        meta["annotations"]["fs2.nebius/model-revision"] = owner["artifact"]["revision"]
     pod["metadata"]["annotations"][p.ANNOTATION] = p.VERSION
     runtime = pod["spec"]["containers"][0]
     runtime["image"] = IMAGE
@@ -79,13 +81,13 @@ def test_unreviewed_template_rejected(fault):
     else:
         bundle["resources"].append(copy.deepcopy(deployment))
     with pytest.raises(ValueError):
-        p.candidate_template(bundle, IMAGE)
+        p.candidate_template(bundle, IMAGE, "exact-test-revision")
 
 
 @pytest.mark.parametrize("fault", ["image", "template", "fast_start"])
 def test_stale_owner_or_unqualified_fast_start_rejected(fault):
     bundle, owner = original()
-    candidate = p.candidate_template(bundle, IMAGE)
+    candidate = p.candidate_template(bundle, IMAGE, owner["artifact"]["revision"])
     if fault == "image":
         owner["runtime"]["image"] = IMAGE
     elif fault == "template":

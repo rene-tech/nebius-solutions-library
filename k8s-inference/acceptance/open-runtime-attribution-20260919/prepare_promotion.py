@@ -49,8 +49,8 @@ def evidence(directory):
     receipt, pod = read(directory / "results/receipt.json"), read(directory / "results/pod.json")
     preparation = read(directory / "preparation.json")
     runs = receipt["runs"]
-    source = subprocess.check_output(
-        ["git", "-C", str(ROOT), "show", SOURCE + ":k8s-inference/models/structure/runtime/common/server.py"]
+    source = subprocess.check_output(  # noqa: S603 - fixed source revision and read-only git command.
+        ["git", "-C", str(ROOT), "show", SOURCE + ":k8s-inference/models/structure/runtime/common/server.py"]  # noqa: S607
     )
     if (
         receipt["schema"] != "fs2-diffdock-wrapper-http-regression/v1"
@@ -179,7 +179,7 @@ def extend(envelope, bundles, routes, admin, owners, entry):
     selected = [b for b in bundles if b["modelRef"] == "diffdock" and b["templateDigest"] == old_template]
     if len(selected) != 1:
         raise ValueError("exact owner template required")
-    new_template = candidate.candidate_template(selected[0], IMAGE)
+    new_template = candidate.candidate_template(selected[0], IMAGE, owner["spec"]["artifact"]["revision"])
     result, new_bundles, new_routes, proposals = existing.extend(
         envelope,
         bundles,

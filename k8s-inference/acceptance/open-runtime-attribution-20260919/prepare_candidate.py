@@ -21,6 +21,7 @@ BASE_DIGEST = "sha256:9766b4fb2a22787874bd8d90306980a4cb1ff9808941f0f1ae429d8b8f
 TEMPLATE_BASE_DIGEST = "sha256:471db264f4c544e1798c090f13b6cf94b3fbd304fb2c91e9f63a3dd33c9d81d7"
 COMMAND = ["python3", "/opt/fs2/runtime/common/server.py"]
 TEMPLATE_NAME = "diffdock.http-response-identity-20260919"
+REVISION_TEMPLATE_NAME = "diffdock.http-response-identity-revision-20260919"
 UID_ENV = {"name": "FS2_RUNTIME_POD_UID", "valueFrom": {"fieldRef": {"fieldPath": "metadata.uid"}}}
 PIN = re.compile(r"^[^\s@]+@sha256:[0-9a-f]{64}$")
 
@@ -33,7 +34,18 @@ def terraform_digest(resources):
     return module.terraform_digest(resources)
 
 
-def candidate_template(previous, image):
+def _bind_revision(deployment, model_revision):
+    if not isinstance(model_revision, str) or not model_revision.strip():
+        raise ValueError("exact owner model revision required")
+    for metadata in (deployment["metadata"], deployment["spec"]["template"]["metadata"]):
+        annotations = metadata.setdefault("annotations", {})
+        current = annotations.get("fs2.nebius/model-revision")
+        if current is not None and current != model_revision:
+            raise ValueError("template revision conflicts with exact owner")
+        annotations["fs2.nebius/model-revision"] = model_revision
+
+
+def candidate_template(previous, image, model_revision):
     if not PIN.fullmatch(image) or image.endswith("@" + BASE_DIGEST):
         raise ValueError("new immutable wrapper image required")
     if previous["modelRef"] != MODEL or previous["runtimeContainerName"] != "runtime":
@@ -66,9 +78,43 @@ def candidate_template(previous, image):
     runtime["image"] = image
     runtime["command"] = list(COMMAND)
     runtime["env"].append(copy.deepcopy(UID_ENV))
+    _bind_revision(deployment, model_revision)
     candidate["templateDigest"] = terraform_digest(candidate["resources"])
     LegacyTemplateBundle.model_validate(candidate)
     return candidate
+
+
+def complete_revision_template(previous, owner):
+    """Repair only absent revision metadata in an already instrumented template."""
+    if (
+        owner["modelRef"] != MODEL
+        or owner["runtime"]["templateRef"]["digest"] != previous["templateDigest"]
+        or previous["modelRef"] != MODEL
+        or previous["runtimeContainerName"] != "runtime"
+    ):
+        raise ValueError("exact instrumented owner/template required")
+    result = copy.deepcopy(previous)
+    deployments = [r for r in result["resources"] if r["kind"] == "Deployment"]
+    if len(deployments) != 1:
+        raise ValueError("one existing Deployment template required")
+    deployment = deployments[0]
+    pod = deployment["spec"]["template"]
+    [runtime] = [c for c in pod["spec"]["containers"] if c["name"] == "runtime"]
+    if (
+        runtime["image"] != owner["runtime"]["image"]
+        or runtime.get("command") != COMMAND
+        or runtime.get("args")
+        or pod["metadata"]["annotations"].get(ANNOTATION) != VERSION
+        or [e for e in runtime["env"] if e["name"] == "FS2_RUNTIME_POD_UID"] != [UID_ENV]
+        or [e.get("value") for e in runtime["env"] if e["name"] == "FS2_PORT"] != [str(previous["primaryServicePort"])]
+    ):
+        raise ValueError("existing response-identity template differs from qualified wrapper")
+    _bind_revision(deployment, owner["artifact"]["revision"])
+    result["templateDigest"] = terraform_digest(result["resources"])
+    if result["templateDigest"] == previous["templateDigest"]:
+        raise ValueError("revision metadata already present; no repair needed")
+    LegacyTemplateBundle.model_validate(result)
+    return result
 
 
 def proposal(original, previous, candidate, image):
@@ -112,7 +158,7 @@ def prepare(configmaps, owner, image):
     if len(templates) != 1:
         raise ValueError("exact current owner template not found")
     previous = templates[0]
-    candidate = candidate_template(previous, image)
+    candidate = candidate_template(previous, image, owner["spec"]["artifact"]["revision"])
     proposed = proposal(owner["spec"], previous, candidate, image)
     ModelDeploymentSpec.model_validate(proposed)
     return {
