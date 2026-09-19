@@ -1,0 +1,45 @@
+{
+  "schema": "fs2.h100-placement-bootstrap-validation/v1",
+  "baseline": "backend-baseline177",
+  "captured_maps_sha256": "c46a594966e50cc3a1b37bbc3805b22d5bb749fc62909fbcc174ccb5d051e4d6",
+  "registry": {
+    "valid": true,
+    "registry_models": 23,
+    "selected_runtime_models": [
+      "altumage", "boltz2", "cosmos3-nano", "diar-streaming-sortformer-4spk-v2-1",
+      "diffdock", "evo2-40b", "genmol", "magpie-tts-multilingual-357m", "molmim",
+      "msa-search-pdb70", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
+      "nv-segment-ct", "openfold2", "openfold3", "parakeet-realtime-eou-120m-v1",
+      "phenoage", "proteinmpnn"
+    ],
+    "serving_bindings_sha256": "c0ac8754f75d649c697a19cda3b755cd9a887cd50660864f6f8fc56c1899ad76",
+    "variant_promotions_sha256": "a1f4c5a2e76e1f7e98770fc64a16dc79a354e84011f9fc5360cc0ee072931a97",
+    "deployment_runtimes_sha256": "78a8408da33e3b2f0b93b4b804738e0319946e8c868530712ea0c83131c5f112",
+    "lean_routes_sha256": "d080ad486f9e7e5766436d0613dcec55a4e124d2f81dd698f46ffda21c9b9dff",
+    "scope": "Offline Registry.load with deployment-runtime and static-route binding; no live health claim."
+  },
+  "before": {
+    "valid": true,
+    "proposed_etag": "61b0459cd90f68a424dcca2e3cd052a4c41cde16800955f03da92d58d7a4d771",
+    "issues": [
+      {
+        "severity": "warning",
+        "code": "unsupported_accelerator_placement",
+        "path": "$.models.nv-reason-cxr-3b.placement.pool_ids",
+        "message": "Terraform baseline is running on an accelerator without catalog qualification; placement changes and later activation of a disabled model remain blocked"
+      },
+      {
+        "severity": "warning",
+        "code": "unsupported_accelerator_placement",
+        "path": "$.models.sdxl.placement.pool_ids",
+        "message": "Terraform baseline is running on an accelerator without catalog qualification; placement changes and later activation of a disabled model remain blocked"
+      }
+    ]
+  },
+  "after": {
+    "valid": true,
+    "proposed_etag": "61b0459cd90f68a424dcca2e3cd052a4c41cde16800955f03da92d58d7a4d771",
+    "issues": []
+  },
+  "live_mutations": false
+}

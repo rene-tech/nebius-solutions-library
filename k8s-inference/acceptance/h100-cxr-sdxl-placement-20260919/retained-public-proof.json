@@ -1,0 +1,1904 @@
+{
+  "baseline_owner_list_sha256": "a820c128cb0a160114d35e8d272ddbd5100110e180832bb1bab558e8abfdd44e",
+  "models": {
+    "nv-reason-cxr-3b": {
+      "catalog_record_sha256": "41e6a679a9ce39a88e74f0f3ad5444896c96074781ff47aa29e1331f5ddac413",
+      "content_digest": "8122f69972fb3af557c0011b72fe66c61da49c60d30f0affaa09deb0ec315a4c",
+      "owner_template": {
+        "digest": "sha256:e84014a61b5cf3ac5eb3247ffb31b1001cd6284ffe092354f08448e4bb31a595",
+        "name": "nv-reason-cxr-3b.response-identity-20260918"
+      },
+      "public_completed_requests": 20,
+      "rows": [
+        {
+          "case_id": "nv-reason-cxr-nih-test-row0-json-schema-v1",
+          "completed_at": "2026-09-18T23:01:05.888254Z",
+          "operation_id": "f3410c26-3e53-4132-9388-efe97092c439",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://469a03ff769104281602912a94ff5cca0500ee0248600a8225af961c55aeda65",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00rdppqt3kg2y00gj",
+            "node_uid": "c36d3b47-6536-4feb-aa5e-1b18bcdd4ccf",
+            "pod_uid": "7bd39d88-c7dd-4b13-bccc-8128eaccd70a",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:55:38Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row0-json-schema-v1/evaluation.json": "6999fbd80e379c9b1749fcaa3045056b15e4615e1e047dbd12b9d49099183e0b",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row0-json-schema-v1/operation.json": "c8252277907754847e71852b1f6a0b7c4cdb7a65471f9b09665623465e658420",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row0-json-schema-v1/receipt.json": "9278fdca1221a2e228107023614f22f9dbbbc0d1991605a17123b58fe68a3f54",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row0-json-schema-v1/request.json": "a3b5d50eb6da4d44db3a34d2c1fc2b7772bc426d81b5d801d025c008dcdda5a5",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row0-json-schema-v1/result.json": "6509902fdc6f9701b12e24ab14f31007be2d5107e24406c9c4701c4e540188be",
+            "observations/20260918T230046Z/nodes.json": "84e854b2892c3b6ad494b6956f82b651987b14cd75a5274befe12587d2b24918",
+            "observations/20260918T230046Z/pods.json": "f3a61595ef80dade4ced38c8606e3b62409775508d7983d89225ec87297bdacd",
+            "observations/20260918T230146Z/nodes.json": "6da7ca88d930cb6f78f7affbdec29207aad1a4557b903622377dce23fe5bc41c",
+            "observations/20260918T230146Z/pods.json": "837866955eca45de31842d7fb0b9995c9418bbb7ef2038b1ebb0c9ee8364bdf0"
+          },
+          "started_at": "2026-09-18T23:01:02.675761Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row1-json-schema-v1",
+          "completed_at": "2026-09-18T23:01:17.231883Z",
+          "operation_id": "67442733-aa5f-43ae-82d0-5b56883e352b",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row1-json-schema-v1/evaluation.json": "e75ccdc09aef28eb5042ba4bd3e89b3e7346e298f7347efa2f88ace8806fce0c",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row1-json-schema-v1/operation.json": "2fa564216d471fae95a5cad15245e8611410abd950f7f843c27cc4e9c9874633",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row1-json-schema-v1/receipt.json": "dadcbee2a0c4a52ee56071c99d8a93cf9f209b0839288317ec0336e46731abc6",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row1-json-schema-v1/request.json": "b56cfb8679280f518714a492bdff0170362bbd6a25dda89b5786d342e65e25e3",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row1-json-schema-v1/result.json": "7563b9e3eb5480455a8623aa9452507d2824496cc6135407b25a365821fc4a0f",
+            "observations/20260918T230046Z/nodes.json": "84e854b2892c3b6ad494b6956f82b651987b14cd75a5274befe12587d2b24918",
+            "observations/20260918T230046Z/pods.json": "f3a61595ef80dade4ced38c8606e3b62409775508d7983d89225ec87297bdacd",
+            "observations/20260918T230146Z/nodes.json": "6da7ca88d930cb6f78f7affbdec29207aad1a4557b903622377dce23fe5bc41c",
+            "observations/20260918T230146Z/pods.json": "837866955eca45de31842d7fb0b9995c9418bbb7ef2038b1ebb0c9ee8364bdf0"
+          },
+          "started_at": "2026-09-18T23:01:14.308722Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row10-json-schema-v1",
+          "completed_at": "2026-09-18T23:04:31.626281Z",
+          "operation_id": "1f64ceaf-0be6-448a-a5be-cb436fe6481a",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row10-json-schema-v1/evaluation.json": "cb6b8af6b1292b594f226c3f8003ae598c5714b37b3edbe2e85855a0c214e4d0",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row10-json-schema-v1/operation.json": "34bf33c4edd099cc353bfc3f9698f8938742d1844a215c750bbdc05c1883fdfd",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row10-json-schema-v1/receipt.json": "a830727443f3622c5eaaa13b3fb965c070ea205df8b80c71420c2e43e39630e1",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row10-json-schema-v1/request.json": "80a96bff19336ac5b7a3814ed62a0be321b97de4885fd46fcf020a32eb9f2aa4",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row10-json-schema-v1/result.json": "dd7382e20e45c0f121b0ed6092ca447b60c03ddffd704f3821f0652a77e3c036",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772",
+            "observations/20260918T230446Z/nodes.json": "bae039ce7d2323a452a70aee8195188c807197a02ac98efb9dcfa192b7c54103",
+            "observations/20260918T230446Z/pods.json": "6358f576156b8501f2f0ec99164156ef6cb39d83a9b28ddfc6c0972b588e53ff"
+          },
+          "started_at": "2026-09-18T23:04:29.163324Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row11-json-schema-v1",
+          "completed_at": "2026-09-18T23:04:45.807691Z",
+          "operation_id": "137f0e3a-d756-45e1-949b-d6ea520e12e3",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://b563e655d570e848238e5f47c3f5f2346bf20e8414da68ca3b4858962aff5840",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00p2817cbemf7w6q5",
+            "node_uid": "564e4831-80ef-4b39-a43c-88d9cdf7087e",
+            "pod_uid": "64ab5079-542e-4386-b3f1-9b7e12a2737a",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T23:02:58Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row11-json-schema-v1/evaluation.json": "916e1d74fc1d597a7f3d768942a49c1afc71bc7783d9912cc9db2d136dd834d8",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row11-json-schema-v1/operation.json": "845a19f7dc0ef18493296c16005c2eb1ea11d7fb2cd3182bbe7273f75d8c1491",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row11-json-schema-v1/receipt.json": "2d1b4c2987d273c55e1f9262d198e274e8c7ed758276b0dfdd12e72b88184a8d",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row11-json-schema-v1/request.json": "91db380fa4840e21cc71d4a1907014c14668120766c0e9a159ce8cffeb385055",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row11-json-schema-v1/result.json": "6cfbe3d033a5fedcb12c89d235078e979bf951f01417c71d2151a36913d6f3f3",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772",
+            "observations/20260918T230446Z/nodes.json": "bae039ce7d2323a452a70aee8195188c807197a02ac98efb9dcfa192b7c54103",
+            "observations/20260918T230446Z/pods.json": "6358f576156b8501f2f0ec99164156ef6cb39d83a9b28ddfc6c0972b588e53ff"
+          },
+          "started_at": "2026-09-18T23:04:42.682928Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row12-json-schema-v1",
+          "completed_at": "2026-09-18T23:04:52.589003Z",
+          "operation_id": "0780bb84-a3e5-4bc6-af24-eb1be98c85d2",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://b563e655d570e848238e5f47c3f5f2346bf20e8414da68ca3b4858962aff5840",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00p2817cbemf7w6q5",
+            "node_uid": "564e4831-80ef-4b39-a43c-88d9cdf7087e",
+            "pod_uid": "64ab5079-542e-4386-b3f1-9b7e12a2737a",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T23:02:58Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row12-json-schema-v1/evaluation.json": "012114ccad0be37a06ffeb9953176691b301a66f14730e93c04a39d4cb40b15a",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row12-json-schema-v1/operation.json": "e72918727ed5d0a31539ca81687733bed82bc38cbefe9aae7f402fc7b0b15f6e",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row12-json-schema-v1/receipt.json": "8092b7dd88f5e3a8961cd5b465fd1b8e97e40329c2cc71c368c5484814667450",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row12-json-schema-v1/request.json": "1535d42950f73536417225b318aa93cf6c01f7e3558eadbec1ebde482161e17f",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row12-json-schema-v1/result.json": "35a8d7deb6317ca00ab711507a5027590dd7d564bacb033722a5099652dc9e05",
+            "observations/20260918T230446Z/nodes.json": "bae039ce7d2323a452a70aee8195188c807197a02ac98efb9dcfa192b7c54103",
+            "observations/20260918T230446Z/pods.json": "6358f576156b8501f2f0ec99164156ef6cb39d83a9b28ddfc6c0972b588e53ff",
+            "observations/20260918T230546Z/nodes.json": "9750011ee60c3938f6dc469c108a9d19bd70e0f76ad42bbe00b9c873ec3dda07",
+            "observations/20260918T230546Z/pods.json": "d3c07f9e53e0f93fb5362e7a9d821d0aeebd9d9454f0cfeb3290199aed4faf68"
+          },
+          "started_at": "2026-09-18T23:04:51.711243Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row15-json-schema-v1",
+          "completed_at": "2026-09-18T23:02:20.451963Z",
+          "operation_id": "9034ebc5-b068-45bd-97f6-0e63fb259fee",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row15-json-schema-v1/evaluation.json": "52d6231787d326416ac74a91668f702164776afc85949b82297b6fbdf45a6769",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row15-json-schema-v1/operation.json": "52eddb481e3670a397f05f55ffc223ff732ace47cbbaaa0c7fecef84166f5ccc",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row15-json-schema-v1/receipt.json": "aa607ce95eb3da206e7a7bead17db4f7e3732f55c2c3d05278e089a8d6fd9cc4",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row15-json-schema-v1/request.json": "dedbb79c7313c98f016f63f0ed7d8253ad305fc55a94aa6a03f48785f7b119d1",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row15-json-schema-v1/result.json": "cd60e04507637b3c5eab6cdcdd9af3d80dc990710bb15a5d69a1e75ff96d59eb",
+            "observations/20260918T230146Z/nodes.json": "6da7ca88d930cb6f78f7affbdec29207aad1a4557b903622377dce23fe5bc41c",
+            "observations/20260918T230146Z/pods.json": "837866955eca45de31842d7fb0b9995c9418bbb7ef2038b1ebb0c9ee8364bdf0",
+            "observations/20260918T230246Z/nodes.json": "f7dcdfbb8968767351ccc620fd114b2f110a641fd6bde5cd5dd5dc31f820afa0",
+            "observations/20260918T230246Z/pods.json": "1961b194eef60ddd5e6d77575a212961b943ec099d073d4dba43c4f312da144d"
+          },
+          "started_at": "2026-09-18T23:02:17.555472Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row19-json-schema-v1",
+          "completed_at": "2026-09-18T23:02:31.109727Z",
+          "operation_id": "b14a12b2-ded8-4a0e-b2cc-e8f8f6ec3061",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row19-json-schema-v1/evaluation.json": "e5b7a428f5edcbc69c40b6447d5de83534ca2498b3b3d9da0cd5335f5b839b98",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row19-json-schema-v1/operation.json": "99acea464625559ac8ce00b465c104e2025f72c007e61deb02999172e10b2a7d",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row19-json-schema-v1/receipt.json": "aac91ade3404a42c9693b2240bd109d60e688c0fd1bd32b9228051e54bce59f2",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row19-json-schema-v1/request.json": "047257cf6838179f13ba6115e5b64825cbc135ae97d876ef348c6b08485c1786",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row19-json-schema-v1/result.json": "d45fe496c2316637ffd7e7a79f10cc0c1ea4c075d4e52a54232f6eea84292cbd",
+            "observations/20260918T230146Z/nodes.json": "6da7ca88d930cb6f78f7affbdec29207aad1a4557b903622377dce23fe5bc41c",
+            "observations/20260918T230146Z/pods.json": "837866955eca45de31842d7fb0b9995c9418bbb7ef2038b1ebb0c9ee8364bdf0",
+            "observations/20260918T230246Z/nodes.json": "f7dcdfbb8968767351ccc620fd114b2f110a641fd6bde5cd5dd5dc31f820afa0",
+            "observations/20260918T230246Z/pods.json": "1961b194eef60ddd5e6d77575a212961b943ec099d073d4dba43c4f312da144d"
+          },
+          "started_at": "2026-09-18T23:02:28.771972Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row2-json-schema-v1",
+          "completed_at": "2026-09-18T23:01:29.035808Z",
+          "operation_id": "c1bfee2c-6e3e-48e4-b34f-3d1b6d10d3c2",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://d0e8210978a65b4b2c1c0fab7464d523994ae7718b9de989d45ca51c9e36201a",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00p2817cbemf7w6q5",
+            "node_uid": "564e4831-80ef-4b39-a43c-88d9cdf7087e",
+            "pod_uid": "bb5a8536-cc76-4eb3-bbe5-70b7a7d7b821",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:54:43Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row2-json-schema-v1/evaluation.json": "6fc1cb2a18d10cc6b9959d62367e13c792fa7f67e610af52b384822770b1411e",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row2-json-schema-v1/operation.json": "a4a0ac9cedf7347ad085be934d83cf3daed97aba082de85c2a25dc45bf163784",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row2-json-schema-v1/receipt.json": "8d275d2fd324743c0adab0c1eb7d6523c3ca2cfb3978ca2807e1873e8bda6167",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row2-json-schema-v1/request.json": "130c07c4f6c40ee2ecc846461c74150a4e1c69d41b0102d4e7a9ecf3bf68862e",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row2-json-schema-v1/result.json": "c49295c482f1993f14b3add690b317e2ac245e519bb72f56454f9a728134ffc6",
+            "observations/20260918T230046Z/nodes.json": "84e854b2892c3b6ad494b6956f82b651987b14cd75a5274befe12587d2b24918",
+            "observations/20260918T230046Z/pods.json": "f3a61595ef80dade4ced38c8606e3b62409775508d7983d89225ec87297bdacd",
+            "observations/20260918T230146Z/nodes.json": "6da7ca88d930cb6f78f7affbdec29207aad1a4557b903622377dce23fe5bc41c",
+            "observations/20260918T230146Z/pods.json": "837866955eca45de31842d7fb0b9995c9418bbb7ef2038b1ebb0c9ee8364bdf0"
+          },
+          "started_at": "2026-09-18T23:01:26.508142Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row21-json-schema-v1",
+          "completed_at": "2026-09-18T23:02:43.868076Z",
+          "operation_id": "fe23e6e4-61d3-44f3-b6e3-24b020e821df",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row21-json-schema-v1/evaluation.json": "0836c7055a1078619fb82667ff8a08b86440aa2a4bea642e372b949eadcb97f1",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row21-json-schema-v1/operation.json": "d090e51059ca9f6625898cbb8cac630a2c14d9986f20b84bd13a3dcd47fa1c65",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row21-json-schema-v1/receipt.json": "01caa58fe31c981c57ac1c0099f49790c29c7bbb53080ffaba8ce9cd100c2da1",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row21-json-schema-v1/request.json": "3f95ebb71afc17f783c38591449aed086461854a533cdbb103322c405768db82",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row21-json-schema-v1/result.json": "cee30f76d6812ef02c0f8fc35d4e075f3c91b49b2f5cdaee79ae9a0ab3717e53",
+            "observations/20260918T230146Z/nodes.json": "6da7ca88d930cb6f78f7affbdec29207aad1a4557b903622377dce23fe5bc41c",
+            "observations/20260918T230146Z/pods.json": "837866955eca45de31842d7fb0b9995c9418bbb7ef2038b1ebb0c9ee8364bdf0",
+            "observations/20260918T230246Z/nodes.json": "f7dcdfbb8968767351ccc620fd114b2f110a641fd6bde5cd5dd5dc31f820afa0",
+            "observations/20260918T230246Z/pods.json": "1961b194eef60ddd5e6d77575a212961b943ec099d073d4dba43c4f312da144d"
+          },
+          "started_at": "2026-09-18T23:02:42.700372Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row22-json-schema-v1",
+          "completed_at": "2026-09-18T23:02:54.652973Z",
+          "operation_id": "e46fe05b-139b-4dca-9f65-e79e62fa63e0",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row22-json-schema-v1/evaluation.json": "20411abb6fa68ddad1568dff9127b302c1069d225393d27d7ab837dc068781ad",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row22-json-schema-v1/operation.json": "78470f6f96f3ce2626dadf2b2e9d0f0a9e08bf8d5277614633334662977f3368",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row22-json-schema-v1/receipt.json": "2252d8e2292843fe27fb41b1d5c33fed52dbe99630b8c540b5eaf1de190db6e5",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row22-json-schema-v1/request.json": "62a5d1dac658a25500f1e859e26010ded68726c43ad7ded5c611a7c54925da81",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row22-json-schema-v1/result.json": "da400d616e9aa914f4f3241f18214e94d78250c26b35ed7bf37cdf508efa0002",
+            "observations/20260918T230246Z/nodes.json": "f7dcdfbb8968767351ccc620fd114b2f110a641fd6bde5cd5dd5dc31f820afa0",
+            "observations/20260918T230246Z/pods.json": "1961b194eef60ddd5e6d77575a212961b943ec099d073d4dba43c4f312da144d",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772"
+          },
+          "started_at": "2026-09-18T23:02:53.422046Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row3-json-schema-v1",
+          "completed_at": "2026-09-18T23:03:30.490918Z",
+          "operation_id": "439f6401-3529-4c5a-8e41-e1a1cf7bd1b1",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row3-json-schema-v1/evaluation.json": "61faec1efde48fdc2bc5b3a3bc2c499083c7d66696fa9f9e6a2e48b3d234a61b",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row3-json-schema-v1/operation.json": "34ade4b75fd3ca8bb4c7ef7a3f580ea539a68ed387eafdcd3c4ed233812a9ffc",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row3-json-schema-v1/receipt.json": "4da245373434a03d8d384d14287e00c275038ef1645b7701eae4336aae41ab2c",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row3-json-schema-v1/request.json": "57d3f959adb8cae3e8d9d8b7256eb62b16b331a3d9a7b52b9c08e84db6791a2d",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row3-json-schema-v1/result.json": "3acc42ad8342d81009e84dbd3ae81d4e05159af4cf062a155d94b4fb73b0c8eb",
+            "observations/20260918T230246Z/nodes.json": "f7dcdfbb8968767351ccc620fd114b2f110a641fd6bde5cd5dd5dc31f820afa0",
+            "observations/20260918T230246Z/pods.json": "1961b194eef60ddd5e6d77575a212961b943ec099d073d4dba43c4f312da144d",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772"
+          },
+          "started_at": "2026-09-18T23:03:28.109033Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row31-json-schema-v1",
+          "completed_at": "2026-09-18T23:03:06.734824Z",
+          "operation_id": "a11804af-7021-4e58-95f8-32ac18ad9149",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row31-json-schema-v1/evaluation.json": "b3d2f27a0070087d76a27a401f45e7edd8b406522b034b9fb65a88b55ff7ebc4",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row31-json-schema-v1/operation.json": "4a6639c3a0bc0ca606d7fa801a83cd3f3b03575f25d112faf0d5c1901f02185d",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row31-json-schema-v1/receipt.json": "cf7280fdf426e7d7e0475ebfada3171579a6afa16e66db62d0e9415c82d45831",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row31-json-schema-v1/request.json": "3be9654268f0e31c78a2eb54efc5b2feaa7ca30f3a9333dad6f3aff9d9c1a74d",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row31-json-schema-v1/result.json": "df6c935666608d3f104da36f6b593a7b96ea75307b90d3fe70734ad628b423be",
+            "observations/20260918T230246Z/nodes.json": "f7dcdfbb8968767351ccc620fd114b2f110a641fd6bde5cd5dd5dc31f820afa0",
+            "observations/20260918T230246Z/pods.json": "1961b194eef60ddd5e6d77575a212961b943ec099d073d4dba43c4f312da144d",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772"
+          },
+          "started_at": "2026-09-18T23:03:04.428267Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row4-json-schema-v1",
+          "completed_at": "2026-09-18T23:03:43.455139Z",
+          "operation_id": "a37c403f-230b-42ff-a9c3-d442533a5b35",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row4-json-schema-v1/evaluation.json": "8b317a6671cbe4bccd576289a9ac4e27d54be02e48397c93ba3875b6dc3794fe",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row4-json-schema-v1/operation.json": "05ed687c7ee114e3ba5abcbfb11bd7238bb4f887686cd5b4f9337a03f9d38cf6",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row4-json-schema-v1/receipt.json": "850da13402b30b7b387bb2b05b35cc6487930132a9d2efa41b1210a0b52b01ee",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row4-json-schema-v1/request.json": "585076cc7018b30510bcde06c79e93ecf08c9456a15f7d11903b360155428742",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row4-json-schema-v1/result.json": "bf66778b2ba44a659a0c2ec1b8bfeeb6131af562a493cac068eeda664456017b",
+            "observations/20260918T230246Z/nodes.json": "f7dcdfbb8968767351ccc620fd114b2f110a641fd6bde5cd5dd5dc31f820afa0",
+            "observations/20260918T230246Z/pods.json": "1961b194eef60ddd5e6d77575a212961b943ec099d073d4dba43c4f312da144d",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772"
+          },
+          "started_at": "2026-09-18T23:03:42.018410Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row43-json-schema-v1",
+          "completed_at": "2026-09-18T23:03:18.830240Z",
+          "operation_id": "41d35f45-f28c-4372-bd77-b036b2833e80",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row43-json-schema-v1/evaluation.json": "022451c047edfc4c41df5332d1722c7477f398edac86da0a20285724c9c31e0a",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row43-json-schema-v1/operation.json": "517034be715bb83c9b72ed5bd60740077dae85ffc746baa085cd67b20832ecb3",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row43-json-schema-v1/receipt.json": "f754615e27a4ba9ba996219cf5f734e04d4e3e1837d3e8e7c2c407f76333c7df",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row43-json-schema-v1/request.json": "e3a395f97ce9a7fe5f1c371daf237f1ababc984851c2bbdb10660420e47dc5d9",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row43-json-schema-v1/result.json": "f530a6eeef5594168282efea75afea21b02cdcc3e068876e370e27d2e0163f68",
+            "observations/20260918T230246Z/nodes.json": "f7dcdfbb8968767351ccc620fd114b2f110a641fd6bde5cd5dd5dc31f820afa0",
+            "observations/20260918T230246Z/pods.json": "1961b194eef60ddd5e6d77575a212961b943ec099d073d4dba43c4f312da144d",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772"
+          },
+          "started_at": "2026-09-18T23:03:16.773664Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row5-json-schema-v1",
+          "completed_at": "2026-09-18T23:03:53.955261Z",
+          "operation_id": "8e758c9d-671d-4cc2-bfb1-e5389c4945ff",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row5-json-schema-v1/evaluation.json": "7db47592e3823490926a3bd634de60154e64429909992405631194aea657b248",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row5-json-schema-v1/operation.json": "f2e9d19270663a27f1b2715b031a2396726f6c17c3c40a977c89654fd97eb63d",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row5-json-schema-v1/receipt.json": "1fced4829c8daaa0a54701ee1c2717bb2692b3f19676bafbe154a96447120e64",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row5-json-schema-v1/request.json": "51ebdfbef2c1e223d747ec66eee393904bc77824929c4af2504cd914419dee2b",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row5-json-schema-v1/result.json": "4e637ed2db7f64352d5ec74abc013c9f801a3120dc0214b69e48f88d7e3beea9",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772",
+            "observations/20260918T230446Z/nodes.json": "bae039ce7d2323a452a70aee8195188c807197a02ac98efb9dcfa192b7c54103",
+            "observations/20260918T230446Z/pods.json": "6358f576156b8501f2f0ec99164156ef6cb39d83a9b28ddfc6c0972b588e53ff"
+          },
+          "started_at": "2026-09-18T23:03:52.941788Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row6-json-schema-v1",
+          "completed_at": "2026-09-18T23:01:42.567753Z",
+          "operation_id": "f8b96dc0-c571-4c12-b2a8-cb99f2f4b2db",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://d0e8210978a65b4b2c1c0fab7464d523994ae7718b9de989d45ca51c9e36201a",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-1462b7c3-181d-f4ac-fa60-d9122abbc5d8"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00p2817cbemf7w6q5",
+            "node_uid": "564e4831-80ef-4b39-a43c-88d9cdf7087e",
+            "pod_uid": "bb5a8536-cc76-4eb3-bbe5-70b7a7d7b821",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:54:43Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row6-json-schema-v1/evaluation.json": "6cc72f0bb8c95043c032f874b3dd2f2e381fc6e27ef9ae122c25d2cd5497fa07",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row6-json-schema-v1/operation.json": "3b8a3431da4d99d36c3b61976c10fbc8c8c78daa6f632e237103baa4c9b0a611",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row6-json-schema-v1/receipt.json": "9df49431e16e42fbd8eba0c2b4caa4b9926ebe8bc3a42c5d1f32153f2663e85a",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row6-json-schema-v1/request.json": "42939d22f71ab9d4af59a30e20cdb83897a39bec3a7eb6ea71a1067fe5db6c1f",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row6-json-schema-v1/result.json": "880ea319fb40d9b1df4c7d01b5c45f6a29d8acde5cf0708aa413a3a958fb2077",
+            "observations/20260918T230046Z/nodes.json": "84e854b2892c3b6ad494b6956f82b651987b14cd75a5274befe12587d2b24918",
+            "observations/20260918T230046Z/pods.json": "f3a61595ef80dade4ced38c8606e3b62409775508d7983d89225ec87297bdacd",
+            "observations/20260918T230146Z/nodes.json": "6da7ca88d930cb6f78f7affbdec29207aad1a4557b903622377dce23fe5bc41c",
+            "observations/20260918T230146Z/pods.json": "837866955eca45de31842d7fb0b9995c9418bbb7ef2038b1ebb0c9ee8364bdf0"
+          },
+          "started_at": "2026-09-18T23:01:41.274247Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row7-json-schema-v1",
+          "completed_at": "2026-09-18T23:04:03.435123Z",
+          "operation_id": "9f410b5e-bd05-4f01-8545-eeec7bbba6ab",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row7-json-schema-v1/evaluation.json": "711236871001f54457fb62d9a122aed1e13cb11a3c0680d61875ab04cf765064",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row7-json-schema-v1/operation.json": "4dc8bee6bd240f33a08d23b7962f68802331bc9a9b75c14091da6ae667fc3400",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row7-json-schema-v1/receipt.json": "a44ebb39236706a915fc1d04a2fbf4cb8f9f23a449b4e6f22f62fc2a292ad234",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row7-json-schema-v1/request.json": "e03c8af0f7220d92dfb095764151590a3d585a6a717cc5ffbaeb2d5bfaeb9cf1",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row7-json-schema-v1/result.json": "0870e9c3e6d7e256092c6ac3373d7506775814ccbf26bb1e62a88435568f7890",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772",
+            "observations/20260918T230446Z/nodes.json": "bae039ce7d2323a452a70aee8195188c807197a02ac98efb9dcfa192b7c54103",
+            "observations/20260918T230446Z/pods.json": "6358f576156b8501f2f0ec99164156ef6cb39d83a9b28ddfc6c0972b588e53ff"
+          },
+          "started_at": "2026-09-18T23:04:02.372092Z"
+        },
+        {
+          "case_id": "nv-reason-cxr-nih-test-row9-json-schema-v1",
+          "completed_at": "2026-09-18T23:04:17.133831Z",
+          "operation_id": "bb0e58cc-c9a6-4760-b213-b4ddd981a8b8",
+          "result_artifact_sha256": null,
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "container_id": "containerd://557f00e218d953c3a7f5a782c5a2c477315ccb20ca0bb3cc6b6b9a3b7aa728c6",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-602bc86c-20bf-6908-d2ef-cc0f35d9803b"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+            "node_name": "computeinstance-e00m0hsph76ajt9sdb",
+            "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+            "pod_uid": "af2c6992-3277-4364-8294-a1b620f70646",
+            "pool": "h100-reserved-8x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T22:52:25Z"
+          },
+          "source_sha256": {
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row9-json-schema-v1/evaluation.json": "5e962c246655ff364a445ea71e5043a885042ba3ac28aef255c6ca33eebeccd4",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row9-json-schema-v1/operation.json": "69307aaf36c5af79a8261d264ba4e6d582c470df4ac40bf82410b44d3d6a3bdd",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row9-json-schema-v1/receipt.json": "1351c70df82f832dff63fc667eec9e6aa194b3c8be3c074bcc3daff3f1792e30",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row9-json-schema-v1/request.json": "a8f9dd1957a0f7053f14af2167b5bad3265768612a3cc69295c7d32718ad0c36",
+            "cohorts/cxr-schema-attribution-repaired-r1/scientist-06/nv-reason-cxr-nih-test-row9-json-schema-v1/result.json": "6a31ea077894e21f127a6c48013cbb5aa6515ac485f0fab3d316b323e4b86f28",
+            "observations/20260918T230346Z/nodes.json": "6de3e0f50372c031aab42b53f7f4ce1503dfe867fc3b1c00a3e6a3a8b1b7d071",
+            "observations/20260918T230346Z/pods.json": "1c03e7e4715abf66c153558848e09abf0a1d35c5cdd30d5e44901a77e53f1772",
+            "observations/20260918T230446Z/nodes.json": "bae039ce7d2323a452a70aee8195188c807197a02ac98efb9dcfa192b7c54103",
+            "observations/20260918T230446Z/pods.json": "6358f576156b8501f2f0ec99164156ef6cb39d83a9b28ddfc6c0972b588e53ff"
+          },
+          "started_at": "2026-09-18T23:04:15.765460Z"
+        }
+      ],
+      "source_artifact_manifest_file_sha256": "9a7344b7ec5b0850a1dc11068483527b186714b40a2a75cab70f133fc901d034",
+      "timestamp_bracketed_requests": 18,
+      "unmatched": [
+        {
+          "operation_id": "de96a6c8-b5a3-41d7-a733-fc08a8c3c2ea",
+          "reason": "no_conservative_timestamp_bracket"
+        },
+        {
+          "operation_id": "337aa0bf-bb5d-4d7f-a8a8-bfb9b16cea80",
+          "reason": "no_conservative_timestamp_bracket"
+        }
+      ]
+    },
+    "sdxl": {
+      "catalog_record_sha256": "fbc6422ac62eb83e750dae5352e6c084dc45072a3d73e9983959a6004aa26c83",
+      "content_digest": "8699099d13a60f34bd19470fa56abd7a8614260b09838bd61a876d5b9d080c81",
+      "owner_template": {
+        "digest": "sha256:cdf765ee8269d2f10797ebb5ce571436e787fb0902d0564fe5bee062ac87b1af",
+        "name": "sdxl.legacy-v1"
+      },
+      "public_completed_requests": 36,
+      "rows": [
+        {
+          "case_id": "sdxl-cryo-grid-s1-steps20",
+          "completed_at": "2026-09-18T19:36:39.917672Z",
+          "operation_id": "dec3c3de-6e95-4736-96f1-3bc678038ac7",
+          "result_artifact_sha256": "5c620387ae72ca837c8107db6ac24dda91dac856798a0386e64f6bd578dcc7c2",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps20/evaluation.json": "0d05718d8fe09a35ca05cfec8be88358f38ef81e82d1b6d8fc066a3defea5693",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps20/operation.json": "6cbc7ef8eef7d70242765aeed845a8e647b653da146985d123c55cac3530655d",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps20/receipt.json": "0885af25b3ba2f0ccc44eafed4b00d4bcd12f08b35f8168219195cd6ff34a86f",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps20/request.json": "40e268512ab7c9ea8cc4e256547da9f0006db2cc8be4500e2f085934fd0f1a38",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps20/result.json": "5febe6bc98752e59e6d3c56f7628479997ec61ac6c5e36ecef08377c464fcdda",
+            "observations/20260918T193631Z/nodes.json": "3a8ebb5927c0151b2354d574d3bdad5cfff7e88b902eb2e119a12b61d8afa9a4",
+            "observations/20260918T193631Z/pods.json": "1e9812b30a7cd8aa5974961c6c95e893b7d576d82c870e4fe086008c45e2d955",
+            "observations/20260918T193731Z/nodes.json": "ca39957921030cac6dd830044bbf701e51b6500b7d1f233a860b15a2edd1ff3f",
+            "observations/20260918T193731Z/pods.json": "d1b1192e9c07e1ef7b546ba94adc1d6593132c4c6a98c5c261e6bb8f28385f4c"
+          },
+          "started_at": "2026-09-18T19:36:37.915443Z"
+        },
+        {
+          "case_id": "sdxl-cryo-grid-s1-steps40",
+          "completed_at": "2026-09-18T19:37:10.946715Z",
+          "operation_id": "f2c026a8-fa4a-4915-915f-dc3fa394d8c2",
+          "result_artifact_sha256": "88ab7eec2140d0f530243333670fe90e4a9578e1220b422492462235ca360e3b",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps40/evaluation.json": "b792accef9ff3a528d3e512b8c8317f28ddaab916faba9322a01e64fdb2d49fc",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps40/operation.json": "c21d791c52fe07b6e6c452567f1fbd14a8ed76cff70bd2d02e810a42d04c1f94",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps40/receipt.json": "3010e81ac35af32d64df4e4446a7c9d1475e0e0d3097e1c1f94e80ba39d0602f",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps40/request.json": "61a3f5f5a9d147de62b56b91080009f6d341a065fc92e08f5d795f1fb4d53074",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s1-steps40/result.json": "13df4cfa68be4ce278d835e1c8a31b60f44d116aa32c2ac0ee7032b732228af9",
+            "observations/20260918T193631Z/nodes.json": "3a8ebb5927c0151b2354d574d3bdad5cfff7e88b902eb2e119a12b61d8afa9a4",
+            "observations/20260918T193631Z/pods.json": "1e9812b30a7cd8aa5974961c6c95e893b7d576d82c870e4fe086008c45e2d955",
+            "observations/20260918T193731Z/nodes.json": "ca39957921030cac6dd830044bbf701e51b6500b7d1f233a860b15a2edd1ff3f",
+            "observations/20260918T193731Z/pods.json": "d1b1192e9c07e1ef7b546ba94adc1d6593132c4c6a98c5c261e6bb8f28385f4c"
+          },
+          "started_at": "2026-09-18T19:37:07.909377Z"
+        },
+        {
+          "case_id": "sdxl-cryo-grid-s42-steps20",
+          "completed_at": "2026-09-18T19:38:15.428786Z",
+          "operation_id": "cbaaf752-9850-4971-ae6f-301324461aef",
+          "result_artifact_sha256": "3e784d9d8e536551c366ef5735e5786ba207a194401167f9a25323dbc2c9d149",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps20/evaluation.json": "1e14ec88b655c58d6c8df9132d77064bcc1c45f662c2bcf9f34746fcb496f4f0",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps20/operation.json": "f8f0de25e53f64ef20947cde5af6fc620f84db012a46febc1802bfd61d4bfce6",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps20/receipt.json": "7cd56c5950e1b02185c98533c2f8a6c317babae11189dbb266a39e316921d562",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps20/request.json": "e47c1d66a77919b6212f5137a23cd101a707f269e36900a59aa123fb7f6a9cf3",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps20/result.json": "584ce2474670073284da2bb048e7f36420d6b1c7207b114ca860baf44a9cdf5d",
+            "observations/20260918T193731Z/nodes.json": "ca39957921030cac6dd830044bbf701e51b6500b7d1f233a860b15a2edd1ff3f",
+            "observations/20260918T193731Z/pods.json": "d1b1192e9c07e1ef7b546ba94adc1d6593132c4c6a98c5c261e6bb8f28385f4c",
+            "observations/20260918T193831Z/nodes.json": "3f3cb137f5f1eb0a3d8c07128270567895fc17f7501beeefcd651f8c261f7404",
+            "observations/20260918T193831Z/pods.json": "b9b87cf351435390ad1fd0fa38b4e0677e8bf247ffa73d258933a0436e6468a6"
+          },
+          "started_at": "2026-09-18T19:38:12.798730Z"
+        },
+        {
+          "case_id": "sdxl-cryo-grid-s42-steps40",
+          "completed_at": "2026-09-18T19:38:35.756136Z",
+          "operation_id": "7f79d481-d70b-42fe-8447-5f419af2cede",
+          "result_artifact_sha256": "9683e87f32b1dbd7bd3aee69f28782426b25bafca96b8588a3a559785d00e1f9",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps40/evaluation.json": "82580a139c06309e57f54bfbe5019cfd05d7a66afa90d289868dfb35cfe00b16",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps40/operation.json": "7325807aa1dcbe354aa0aa5b0516b1552584512af0563bccee4e3f68e6284443",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps40/receipt.json": "654e9866a9ff302b1442d86a7c05d165b2b35c95ce778682875bf2fb1082e8d6",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps40/request.json": "451c1bb9df85e448ad05bb7c03414c6e118e9f296787e03885973ea78f03bf43",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s42-steps40/result.json": "bb10df0759f69b9c95bd913cdf7738b9d1f43987b8a8791b6e3181d4da516eaf",
+            "observations/20260918T193731Z/nodes.json": "ca39957921030cac6dd830044bbf701e51b6500b7d1f233a860b15a2edd1ff3f",
+            "observations/20260918T193731Z/pods.json": "d1b1192e9c07e1ef7b546ba94adc1d6593132c4c6a98c5c261e6bb8f28385f4c",
+            "observations/20260918T193931Z/nodes.json": "13329296b37b6ee8e2cc7b0a128c2811e7334398aa3f149758409b502f104cfa",
+            "observations/20260918T193931Z/pods.json": "5c271fac3030ef5ed635ccc5c59e3fa5f67a905659125a5a9c7d6e0fbb8a47b8"
+          },
+          "started_at": "2026-09-18T19:38:32.714691Z"
+        },
+        {
+          "case_id": "sdxl-cryo-grid-s7-steps20",
+          "completed_at": "2026-09-18T19:37:31.117858Z",
+          "operation_id": "75e30b48-0c63-4e64-9318-3be852a9783a",
+          "result_artifact_sha256": "221b8a60dfc9ff7ca5ebba29fd5ba300b1e5bed1ada38eeda4fd3b07ee945bf5",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps20/evaluation.json": "df69ce16a8e6251e2ae89a6126782344c58c4666bc0b05b0de4e4395b2dc5a1c",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps20/operation.json": "ea80fee8b3051b36356b3b5963dea870c41071fac4966562e5c28f36ee01f2fd",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps20/receipt.json": "508c29519d5d6ed1a491d817dbe8814bf08fd9771475a621800d105a430b88c2",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps20/request.json": "61f73da53feb5f7fb6657264c5f81e58bafdb7c052fb412ae6208faa5b4eb337",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps20/result.json": "ac895a00e4d2703c8bf5b1fc2c4409050b355071a073bf43b3bc51f6ddd5b020",
+            "observations/20260918T193631Z/nodes.json": "3a8ebb5927c0151b2354d574d3bdad5cfff7e88b902eb2e119a12b61d8afa9a4",
+            "observations/20260918T193631Z/pods.json": "1e9812b30a7cd8aa5974961c6c95e893b7d576d82c870e4fe086008c45e2d955",
+            "observations/20260918T193831Z/nodes.json": "3f3cb137f5f1eb0a3d8c07128270567895fc17f7501beeefcd651f8c261f7404",
+            "observations/20260918T193831Z/pods.json": "b9b87cf351435390ad1fd0fa38b4e0677e8bf247ffa73d258933a0436e6468a6"
+          },
+          "started_at": "2026-09-18T19:37:29.216313Z"
+        },
+        {
+          "case_id": "sdxl-cryo-grid-s7-steps40",
+          "completed_at": "2026-09-18T19:37:56.721762Z",
+          "operation_id": "40c7ae2a-1b11-4f46-a227-ed34e4ce1db2",
+          "result_artifact_sha256": "3a80b4422e72bb847fe664db738b86753af95f018b9f2cce7a721bc80981a51a",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps40/evaluation.json": "428151ef653c0a5c5f2051761d4b63d820e585eb79f0bec94d3c4e708fdbf49b",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps40/operation.json": "61bb4b6e831503fcfc6a66517fae10d90c35f116896b6d04b8d53fc9d7636ca0",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps40/receipt.json": "6c7dc4265fbf54388bc80af15e43547ffd9644d18af9558dda34e9e34663dc20",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps40/request.json": "06c63c1f7d1eb9096dd1497f0d9779369f3a752e6981d0b2ef6e83d2d9257295",
+            "cohorts/general-r1/scientist-05/sdxl-cryo-grid-s7-steps40/result.json": "5d7fd43cd01ee6b403e7460855513a4cc148672954fbab75c7b05b9cb302119b",
+            "observations/20260918T193731Z/nodes.json": "ca39957921030cac6dd830044bbf701e51b6500b7d1f233a860b15a2edd1ff3f",
+            "observations/20260918T193731Z/pods.json": "d1b1192e9c07e1ef7b546ba94adc1d6593132c4c6a98c5c261e6bb8f28385f4c",
+            "observations/20260918T193831Z/nodes.json": "3f3cb137f5f1eb0a3d8c07128270567895fc17f7501beeefcd651f8c261f7404",
+            "observations/20260918T193831Z/pods.json": "b9b87cf351435390ad1fd0fa38b4e0677e8bf247ffa73d258933a0436e6468a6"
+          },
+          "started_at": "2026-09-18T19:37:53.657048Z"
+        },
+        {
+          "case_id": "sdxl-dna-helix-s1-steps20",
+          "completed_at": "2026-09-18T19:38:57.923672Z",
+          "operation_id": "0092c75c-175f-49f0-af03-1feadc0e23bd",
+          "result_artifact_sha256": "fac6246e1890e973d6a0c8d095d3c7550dcc6111b938c50efd30010562d33300",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps20/evaluation.json": "b80578c2e66b3c777d9319076d0950ef5447187010493d26198427500db51a07",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps20/operation.json": "14964453d287b5ad62a216794894bb6888110fa29e8baf530586773bdf03f689",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps20/receipt.json": "90b0d63c391663b2fa00b66921cd8a6302b6937ee0367131781f0eec60db05a7",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps20/request.json": "1ccee6677818ba92fa976560d16c21897ee8604981f228dc1162e7b3e32dbb0b",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps20/result.json": "93fc58bd47957418006c2af241e4cfecffeae38678c173c8c22cd8caa2306f94",
+            "observations/20260918T193831Z/nodes.json": "3f3cb137f5f1eb0a3d8c07128270567895fc17f7501beeefcd651f8c261f7404",
+            "observations/20260918T193831Z/pods.json": "b9b87cf351435390ad1fd0fa38b4e0677e8bf247ffa73d258933a0436e6468a6",
+            "observations/20260918T193931Z/nodes.json": "13329296b37b6ee8e2cc7b0a128c2811e7334398aa3f149758409b502f104cfa",
+            "observations/20260918T193931Z/pods.json": "5c271fac3030ef5ed635ccc5c59e3fa5f67a905659125a5a9c7d6e0fbb8a47b8"
+          },
+          "started_at": "2026-09-18T19:38:55.819398Z"
+        },
+        {
+          "case_id": "sdxl-dna-helix-s1-steps40",
+          "completed_at": "2026-09-18T19:39:19.556860Z",
+          "operation_id": "9f8f61ca-f163-4b00-9469-c783d3bbefff",
+          "result_artifact_sha256": "9517244dbba2e8e4782936f9e413fb2c90ffaa269bb0cc397d52cd409866328b",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps40/evaluation.json": "036091c6d1d214576990787a033583616b03e0dda2d02c73fe8cfad61afd05ac",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps40/operation.json": "a711693a06886eed48bd284490ce7b12e7634c0ef363d026a6ff8230d5ec8a5f",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps40/receipt.json": "6bf24aa87e54a4241dd6a6d858bf52e51a7b71dd437f38626758bea987640703",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps40/request.json": "40cc0eef531fd35dd2dccdd467c82fa8f70fe5da3faab53e4a789d2937944696",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s1-steps40/result.json": "aecdce2b2a5955825cac6141ffd4c225f7033fa6f56cc149b501270aecd02fc3",
+            "observations/20260918T193831Z/nodes.json": "3f3cb137f5f1eb0a3d8c07128270567895fc17f7501beeefcd651f8c261f7404",
+            "observations/20260918T193831Z/pods.json": "b9b87cf351435390ad1fd0fa38b4e0677e8bf247ffa73d258933a0436e6468a6",
+            "observations/20260918T193931Z/nodes.json": "13329296b37b6ee8e2cc7b0a128c2811e7334398aa3f149758409b502f104cfa",
+            "observations/20260918T193931Z/pods.json": "5c271fac3030ef5ed635ccc5c59e3fa5f67a905659125a5a9c7d6e0fbb8a47b8"
+          },
+          "started_at": "2026-09-18T19:39:16.533148Z"
+        },
+        {
+          "case_id": "sdxl-dna-helix-s42-steps20",
+          "completed_at": "2026-09-18T19:40:41.367370Z",
+          "operation_id": "b9304e72-5d8d-410e-93de-78cd525daf45",
+          "result_artifact_sha256": "380a6930db05982e8ca24562c5c381219abadef23806b548de50ead0b6add6ce",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s42-steps20/evaluation.json": "fceaeb012e45659d5991542bd485c54a3da39cc809aab3d8e24911617112778c",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s42-steps20/operation.json": "1fb3b2a9372bc449a52be59f6544850d6545ebc721bc99f36bf78f557e579bab",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s42-steps20/receipt.json": "c14de69748c252b38c66e907f74f191576a5123923c48da0ec4c1a7eec2985a7",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s42-steps20/request.json": "ba951431f142be4cfb7712b20122d4e17ff7eded20095fd419c18c006186e799",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s42-steps20/result.json": "591ca6232aa864a0d5dce181672f5d4c72edb665f831ea6d8d8c914c186ab5a5",
+            "observations/20260918T194031Z/nodes.json": "2373819f4f2844fbc20513b73cea31363de9390604519c5d04304ec279f3480e",
+            "observations/20260918T194031Z/pods.json": "ba20bab215a5b0b6a36ba821caa755a55c7907a1a467539efce724b0dd0e9fd2",
+            "observations/20260918T194131Z/nodes.json": "04d80fbd479b0b99f6f24eef4aa86741e3195dae5fdc5a01117bb68bc196a30e",
+            "observations/20260918T194131Z/pods.json": "82003b634efcac3e26352440ace4b7882a8d44ccc0887e236b437db81a02181b"
+          },
+          "started_at": "2026-09-18T19:40:39.367328Z"
+        },
+        {
+          "case_id": "sdxl-dna-helix-s42-steps40",
+          "completed_at": "2026-09-18T19:42:58.935983Z",
+          "operation_id": "0a4aa649-c0a5-44cb-a9a7-bb48958f3fc8",
+          "result_artifact_sha256": "6cc3ae8e5a690a17c8442dc7c69152945a46be08d00524f14890363bb4bdae7f",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s42-steps40/evaluation.json": "a6ceb5e33313c6b415625882cd17758377cc133d84f3eca5d50f6b3e212efc10",
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s42-steps40/operation.json": "8935e983c747bb94289a4d98271a9e5e00dc02a8f256b5eb97b8abe8bb2f4315",
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s42-steps40/receipt.json": "6ee1c4e382db6e121bd582e459872dbc1322680ba794818a3551dfdd4b96a30f",
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s42-steps40/request.json": "6fc313ab7beae1c461a0af1e20a7fe86524c2caca0063def5004985c2bc9d5f8",
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s42-steps40/result.json": "6f16177ab1713aae44d98e60f66e78ffc18c68ccbf385cb85e06cc39cf2e815d",
+            "observations/20260918T194231Z/nodes.json": "0a52ab9759d0a64652cda9d4ed1bf30aad233e4bf47db59b99d1b083a35b4d8b",
+            "observations/20260918T194231Z/pods.json": "82bdedf4328d83568b46de1a3e85956dadd7f47222734a19c532683004a62914",
+            "observations/20260918T194331Z/nodes.json": "4ff0475948b0526507cbe8306ad45f69a36219fa0097b5c8e5ee11af7ebe23e0",
+            "observations/20260918T194331Z/pods.json": "a4468a8075b30529e03b0f60d784687bc8ba0fe18a34473b33d14aa2a7087ad6"
+          },
+          "started_at": "2026-09-18T19:42:55.788141Z"
+        },
+        {
+          "case_id": "sdxl-dna-helix-s7-steps20",
+          "completed_at": "2026-09-18T19:39:50.652222Z",
+          "operation_id": "cb280eae-05db-422a-924d-916a54886a6c",
+          "result_artifact_sha256": "de07e2eba2940c02333c2ffb680608d832b770e29af64c39da805d4c4b3b08de",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s7-steps20/evaluation.json": "7e5ee055febb5fc084bb07df8417dbe76829d9bcc89ec5e59d018a5e5505a6cd",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s7-steps20/operation.json": "d87485f2cf8dd0174f3e0047a23aedcc9a71092dd66391297863d3ac6b1c217a",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s7-steps20/receipt.json": "f142702c6c261f4afef55d8f53fbc9cce832ac3419e8a7566417f3fcca041e09",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s7-steps20/request.json": "dd1f786941a24cc85978880167d09165f6604375b3820120d98edd7359163ba9",
+            "cohorts/general-r1/scientist-05/sdxl-dna-helix-s7-steps20/result.json": "82500bc5b19de723061a82397d6e89626c05c416a3c4c09b2bdaf9c2012d28ed",
+            "observations/20260918T193931Z/nodes.json": "13329296b37b6ee8e2cc7b0a128c2811e7334398aa3f149758409b502f104cfa",
+            "observations/20260918T193931Z/pods.json": "5c271fac3030ef5ed635ccc5c59e3fa5f67a905659125a5a9c7d6e0fbb8a47b8",
+            "observations/20260918T194031Z/nodes.json": "2373819f4f2844fbc20513b73cea31363de9390604519c5d04304ec279f3480e",
+            "observations/20260918T194031Z/pods.json": "ba20bab215a5b0b6a36ba821caa755a55c7907a1a467539efce724b0dd0e9fd2"
+          },
+          "started_at": "2026-09-18T19:39:48.158101Z"
+        },
+        {
+          "case_id": "sdxl-dna-helix-s7-steps40",
+          "completed_at": "2026-09-18T19:42:24.773785Z",
+          "operation_id": "6df491bb-f577-43df-8be0-d207d14c7a78",
+          "result_artifact_sha256": "570849fa88fada75b266b85bc6a68047c09ce603450254041b2a3f430b99b485",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s7-steps40/evaluation.json": "33812c93e2a328c506cea2debd4c9e27ac66bb2c330d7606d68bffde9a7c8dbb",
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s7-steps40/operation.json": "e5273ec153dd7263f8482a35f451700ecd18f6853bb35c818b03f95d59473309",
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s7-steps40/receipt.json": "503b77760c5e18b67c78d0dfc1af4534db21dc003a43d6517f8663aa0c342d91",
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s7-steps40/request.json": "29deb19ff8d0ae43d1fab76cb336be285439f859e2a45c40902148e3af905b25",
+            "cohorts/general-r1/scientist-06/sdxl-dna-helix-s7-steps40/result.json": "9952def2a5c16896df46c6db2e56c823324ee55b792ef5b2fd240bc19c55e6c2",
+            "observations/20260918T194131Z/nodes.json": "04d80fbd479b0b99f6f24eef4aa86741e3195dae5fdc5a01117bb68bc196a30e",
+            "observations/20260918T194131Z/pods.json": "82003b634efcac3e26352440ace4b7882a8d44ccc0887e236b437db81a02181b",
+            "observations/20260918T194231Z/nodes.json": "0a52ab9759d0a64652cda9d4ed1bf30aad233e4bf47db59b99d1b083a35b4d8b",
+            "observations/20260918T194231Z/pods.json": "82bdedf4328d83568b46de1a3e85956dadd7f47222734a19c532683004a62914"
+          },
+          "started_at": "2026-09-18T19:42:21.275737Z"
+        },
+        {
+          "case_id": "sdxl-microscope-s1-steps20",
+          "completed_at": "2026-09-18T19:41:10.898152Z",
+          "operation_id": "5c235136-01e5-4f89-be58-9d7f38114d75",
+          "result_artifact_sha256": "1d257f7e21e9e7e96357656bd382d1a30ec6f24bdfcc768463cc24cca3ca71db",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s1-steps20/evaluation.json": "0d4aac71390501eddfb5b410b50390b5cdb1465b9f34b17316b4a70c032e44ad",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s1-steps20/operation.json": "8f431e6b1735cba43310ff4cd0e4ee431ef1fd69328a20641a8528dc61a411b9",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s1-steps20/receipt.json": "a3cfb2367587e625863aca1892f21cbb26e39e0196d5a64e0289a4443e26e522",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s1-steps20/request.json": "2945e9418603d4101c200f8d1f2053379026812e6b211ac0a76da3e7aacc27ed",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s1-steps20/result.json": "9ef06266e95ae76c99103fc667e36ab2d4b639f9de5f0fcdbff5cd2596728b70",
+            "observations/20260918T194031Z/nodes.json": "2373819f4f2844fbc20513b73cea31363de9390604519c5d04304ec279f3480e",
+            "observations/20260918T194031Z/pods.json": "ba20bab215a5b0b6a36ba821caa755a55c7907a1a467539efce724b0dd0e9fd2",
+            "observations/20260918T194131Z/nodes.json": "04d80fbd479b0b99f6f24eef4aa86741e3195dae5fdc5a01117bb68bc196a30e",
+            "observations/20260918T194131Z/pods.json": "82003b634efcac3e26352440ace4b7882a8d44ccc0887e236b437db81a02181b"
+          },
+          "started_at": "2026-09-18T19:41:08.597547Z"
+        },
+        {
+          "case_id": "sdxl-microscope-s1-steps40",
+          "completed_at": "2026-09-18T19:43:28.158257Z",
+          "operation_id": "985a9df9-1d18-480a-9c92-5510cf5be9c1",
+          "result_artifact_sha256": "6b508dd5c73d2c85f3e2cdcc761b2eab00c5d79e62e7b6fcf2efd4f9a16d523f",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s1-steps40/evaluation.json": "e55991d34941512fe874b7eeedc88f0b8856a5214bb7d9497810b2300aa36985",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s1-steps40/operation.json": "db3e157f60edf45f526fc521c4d346473af9fbab2f8b3f7729c5178e97848199",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s1-steps40/receipt.json": "c16c05f14773365725a9352b77cadc19c3c196ec1589c9ab69420ddf1b71f7df",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s1-steps40/request.json": "811b43249c3e0253553fc0434cd92fd0e263b98500074211c0df3e3c6f405040",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s1-steps40/result.json": "47428f8eb15c88a9ee2f8fbddbe1e7935bbc497ed2c3a837f73d226f0315c48c",
+            "observations/20260918T194231Z/nodes.json": "0a52ab9759d0a64652cda9d4ed1bf30aad233e4bf47db59b99d1b083a35b4d8b",
+            "observations/20260918T194231Z/pods.json": "82bdedf4328d83568b46de1a3e85956dadd7f47222734a19c532683004a62914",
+            "observations/20260918T194331Z/nodes.json": "4ff0475948b0526507cbe8306ad45f69a36219fa0097b5c8e5ee11af7ebe23e0",
+            "observations/20260918T194331Z/pods.json": "a4468a8075b30529e03b0f60d784687bc8ba0fe18a34473b33d14aa2a7087ad6"
+          },
+          "started_at": "2026-09-18T19:43:24.423432Z"
+        },
+        {
+          "case_id": "sdxl-microscope-s42-steps20",
+          "completed_at": "2026-09-18T19:42:35.843136Z",
+          "operation_id": "f9715cb3-2d71-4842-a228-d34d63e34853",
+          "result_artifact_sha256": "5cfdff77fc66f0c892357501ebd43230226dcb6606b49db0c0f6917c235315e8",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s42-steps20/evaluation.json": "c12cfdb46a72a5a2eabd0d29693a3c0b7dc60e5cbec9bc9826a2eab840f49a9b",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s42-steps20/operation.json": "88f2780384b5cafc2ad7d867b645ceee749ca47bf048fa01e371f26e1d6eab6b",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s42-steps20/receipt.json": "c9a25d0ad4722fa843a5382b3799159aa2d1f2083e3b2abf33ca002578292d11",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s42-steps20/request.json": "6d0526c58cd6ab5a22e6ac2e23dcb98c33144f09cce3188be25f51cd5d98de8f",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s42-steps20/result.json": "9c433c53b3ff661192b8a6c708858ad3a15a7a3da1de04198a80401e2dcd4a5f",
+            "observations/20260918T194131Z/nodes.json": "04d80fbd479b0b99f6f24eef4aa86741e3195dae5fdc5a01117bb68bc196a30e",
+            "observations/20260918T194131Z/pods.json": "82003b634efcac3e26352440ace4b7882a8d44ccc0887e236b437db81a02181b",
+            "observations/20260918T194331Z/nodes.json": "4ff0475948b0526507cbe8306ad45f69a36219fa0097b5c8e5ee11af7ebe23e0",
+            "observations/20260918T194331Z/pods.json": "a4468a8075b30529e03b0f60d784687bc8ba0fe18a34473b33d14aa2a7087ad6"
+          },
+          "started_at": "2026-09-18T19:42:33.159684Z"
+        },
+        {
+          "case_id": "sdxl-microscope-s42-steps40",
+          "completed_at": "2026-09-18T19:44:40.812768Z",
+          "operation_id": "7fbe0ca9-24be-4505-8650-67142c1a1df2",
+          "result_artifact_sha256": "84ed49bf2557bd131960c76a60c82cf8b280a7f961739d40ad62bad4d35c7204",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s42-steps40/evaluation.json": "3a64762dacb522d1925796f7981e088263d6b6574859cf71976e8359e8c46b54",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s42-steps40/operation.json": "7acaffdf8463fa26fcc08382b4823e9e99f1f07c60d67b4f9a2922d330d13684",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s42-steps40/receipt.json": "ef8843255de803387bc3a25aca677a81467f3d256899420b9b9dccd270419529",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s42-steps40/request.json": "5ac94cd33ac5ddf07b569ce3dfc600dc9fea3a02687b97b67fb7a72302fa3e80",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s42-steps40/result.json": "da79023156ffac84a304f1905e15353e65dfb99e93b4f9dc739824b7b11b2772",
+            "observations/20260918T194431Z/nodes.json": "2773fef5728e4fbf43ec090404c2f052021670088aa6bbcdd98fd48157a309e1",
+            "observations/20260918T194431Z/pods.json": "4cdc3d449a93fcf131173d052bd3d3616a1a9171c0b7402c9a6271c05c70708e",
+            "observations/20260918T194531Z/nodes.json": "466468b607c6f01a34f136eea20a4c80dd806e62a809609fae85991cf1d0e902",
+            "observations/20260918T194531Z/pods.json": "30edfd8df5ba5f6ca79abeca77755e4ea3b29a09594001b19c75a1fef5f1c507"
+          },
+          "started_at": "2026-09-18T19:44:37.784677Z"
+        },
+        {
+          "case_id": "sdxl-microscope-s7-steps20",
+          "completed_at": "2026-09-18T19:41:44.765122Z",
+          "operation_id": "5d23dce8-a615-4de9-a119-beaba727305b",
+          "result_artifact_sha256": "87bbfbae88f10ce2681b08918016a5600df244f405b0298190e55b540a581ab7",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s7-steps20/evaluation.json": "d1936768af581407f0b8f93cbf6a38bf6509388d437726e8939013ff172170dd",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s7-steps20/operation.json": "598f4d375547ff81b80df44218a2df3dd806f1872262d3bdc2e0989f71fc15b9",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s7-steps20/receipt.json": "d21d4fd168341fa581f1fc785f68dbf264056f394aa1465498bf2a42f1b9071f",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s7-steps20/request.json": "ec3f3fd67ad4a8da64d09504636a716d8e2b386bc7945b0cd492110f3c5d5796",
+            "cohorts/general-r1/scientist-05/sdxl-microscope-s7-steps20/result.json": "e67cca66d6ff9f311178b126a4dc893bf86fbb7f955b210b8f469fda141cfa2f",
+            "observations/20260918T194131Z/nodes.json": "04d80fbd479b0b99f6f24eef4aa86741e3195dae5fdc5a01117bb68bc196a30e",
+            "observations/20260918T194131Z/pods.json": "82003b634efcac3e26352440ace4b7882a8d44ccc0887e236b437db81a02181b",
+            "observations/20260918T194231Z/nodes.json": "0a52ab9759d0a64652cda9d4ed1bf30aad233e4bf47db59b99d1b083a35b4d8b",
+            "observations/20260918T194231Z/pods.json": "82bdedf4328d83568b46de1a3e85956dadd7f47222734a19c532683004a62914"
+          },
+          "started_at": "2026-09-18T19:41:41.908548Z"
+        },
+        {
+          "case_id": "sdxl-microscope-s7-steps40",
+          "completed_at": "2026-09-18T19:44:02.031322Z",
+          "operation_id": "103b6e75-23dd-45d4-a815-bad078a4d56c",
+          "result_artifact_sha256": "7e6a800994ac3955eb367b9bd865b8895d773306bf4b0e22de089047a866218a",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s7-steps40/evaluation.json": "d3374a18c316778b44c9d27aa47844ce5387c0b8f14ba21fff2730d0beba5b08",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s7-steps40/operation.json": "c3391a37f30f1ca77a52b9ab510478d56b0fa1c3a19dcdad2be7bba4e4204d00",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s7-steps40/receipt.json": "c386ffbb7195e161419473d57e37e09a82bbde9de6ad6a80d60f35510f0db52a",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s7-steps40/request.json": "83423a1c0f1a558737a6e1e0d5173ded5382a77ad20b4624c3fa41195f95a799",
+            "cohorts/general-r1/scientist-06/sdxl-microscope-s7-steps40/result.json": "9dd6505f007d4ff035447f1245fcde269ce646fece715a8bb0d40430232a78b8",
+            "observations/20260918T194331Z/nodes.json": "4ff0475948b0526507cbe8306ad45f69a36219fa0097b5c8e5ee11af7ebe23e0",
+            "observations/20260918T194331Z/pods.json": "a4468a8075b30529e03b0f60d784687bc8ba0fe18a34473b33d14aa2a7087ad6",
+            "observations/20260918T194431Z/nodes.json": "2773fef5728e4fbf43ec090404c2f052021670088aa6bbcdd98fd48157a309e1",
+            "observations/20260918T194431Z/pods.json": "4cdc3d449a93fcf131173d052bd3d3616a1a9171c0b7402c9a6271c05c70708e"
+          },
+          "started_at": "2026-09-18T19:43:58.475765Z"
+        },
+        {
+          "case_id": "sdxl-plant-cell-s1-steps40",
+          "completed_at": "2026-09-18T19:31:56.971344Z",
+          "operation_id": "deeec85b-147d-4297-bfb6-68d48d49bcd8",
+          "result_artifact_sha256": "388a20dd1dd818e82abb0c1255c1aabf3c39e7c302e42fa055187db10918ecc6",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s1-steps40/evaluation.json": "1c071db352f054ff3770f44820d311ed9fbe47e6f869966552245259c52e9834",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s1-steps40/operation.json": "57a70bc8a86b39aa81bc0cbe9e597b4cab51dba668c3317cd9e54cde6fa8d71e",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s1-steps40/receipt.json": "ed671c6399560fb81bd377a4cd05c0c9a7e7c4e04c7e1497c53efb5013929e4d",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s1-steps40/request.json": "839dc1384cfdf1c70a7844f71efaa05410fad7b18a27c42ef5e5d6afc3a33db8",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s1-steps40/result.json": "25505332027b95fc0f47f2ff6950a55e390ebffe3d0e6e27d49b039571637ec6",
+            "observations/20260918T193131Z/nodes.json": "afeb9802328730d22a3ab4b474b9614765b096632f2443435b0025c3069a8f28",
+            "observations/20260918T193131Z/pods.json": "c4b41feb8f1dbf4d9e31317c5ee755cf1a85550a281cb3973e6a99045d6cd94e",
+            "observations/20260918T193231Z/nodes.json": "9393d41fce4ee40c944a8ba912bfade3d4aef4b5e5c87967601932a9eb142679",
+            "observations/20260918T193231Z/pods.json": "d31ce5b8900cecfb1bb23ead178ad51940bea1fec206cd9004c5bfd986b20027"
+          },
+          "started_at": "2026-09-18T19:31:54.023773Z"
+        },
+        {
+          "case_id": "sdxl-plant-cell-s42-steps20",
+          "completed_at": "2026-09-18T19:33:24.579065Z",
+          "operation_id": "8098a1a7-43a2-41d6-8540-65a3d5643567",
+          "result_artifact_sha256": "1c1e520d0906c5fd06ff01f8f0cb921785813edd55081d4eb6d9993e6f130ef9",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps20/evaluation.json": "5c18e6eaa5f9248352125dc17630f4076e74cd2d5107ca96597edcbdd77d28ec",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps20/operation.json": "80214e07e1204836d2596ff737c75584b745f1d25f61263eab01897684ee3ab6",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps20/receipt.json": "1fd07e68166f0ce756de9adca98594921e7c2b4bd0b939f628bb6fc20ecd0e7f",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps20/request.json": "7eb63f8e5c0065a519357da85b0758a21f1f79463d17a4bd065cd2ace1f712d9",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps20/result.json": "f388959368898ab8067af5236ac7a270c4c2806d901ac7209ef8e40698e27893",
+            "observations/20260918T193231Z/nodes.json": "9393d41fce4ee40c944a8ba912bfade3d4aef4b5e5c87967601932a9eb142679",
+            "observations/20260918T193231Z/pods.json": "d31ce5b8900cecfb1bb23ead178ad51940bea1fec206cd9004c5bfd986b20027",
+            "observations/20260918T193331Z/nodes.json": "ac02261ed10713c63db082516ec99d1e350143828e3b4af000dec31a97a803a9",
+            "observations/20260918T193331Z/pods.json": "cc5f02d5e2ec99aec82a0eee25510bfc97f462286b4a6b975fd5117d5d3ee7f0"
+          },
+          "started_at": "2026-09-18T19:33:22.549591Z"
+        },
+        {
+          "case_id": "sdxl-plant-cell-s42-steps40",
+          "completed_at": "2026-09-18T19:33:55.944006Z",
+          "operation_id": "2e5d10fa-bec0-43ee-ac5e-c8f21d327660",
+          "result_artifact_sha256": "923699bde92e0ce584c3cf4757d858f5db70519388338101f3d77ffecd9377b0",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps40/evaluation.json": "7551ceef316611e88b2d62098d464413daf945f845da780f9cd1e19060caf526",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps40/operation.json": "2df82a09f58e0046230169489b3d1b9e286a6e0bb8a61197f19afe0c81bf5575",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps40/receipt.json": "1b92aac5788c003396666353d7bb8324c5647e3cb35073070bfaf5fcfb0fe81f",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps40/request.json": "89ff22f6bc1fef725fda1c3d56ba6c015aec004ceaf30372875da0a16a962b8c",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s42-steps40/result.json": "bb11c45b0258dd696a4cf40f6a169218575df393c15899894bb24035e4c27f88",
+            "observations/20260918T193331Z/nodes.json": "ac02261ed10713c63db082516ec99d1e350143828e3b4af000dec31a97a803a9",
+            "observations/20260918T193331Z/pods.json": "cc5f02d5e2ec99aec82a0eee25510bfc97f462286b4a6b975fd5117d5d3ee7f0",
+            "observations/20260918T193431Z/nodes.json": "e875da2b4462dcb252973628edfcdafab208ce2ed05e3a0c2b064e2b2598237b",
+            "observations/20260918T193431Z/pods.json": "373803fcd7f46abd4fd7b7074082dfe7d20aad5ce9b1befcbc89d5828836a814"
+          },
+          "started_at": "2026-09-18T19:33:52.280006Z"
+        },
+        {
+          "case_id": "sdxl-plant-cell-s7-steps20",
+          "completed_at": "2026-09-18T19:32:25.646456Z",
+          "operation_id": "782487b3-b556-49b1-a152-0ce7b8141d8c",
+          "result_artifact_sha256": "f7366759f0216f3c28625968cd8bcf23f5b167ea9e340fb58e59b68f1694c6e2",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps20/evaluation.json": "7f6591cc5ea4f773272b205dd26448f8ae27625e35a78e5e67df052f2cbbfb97",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps20/operation.json": "638a0d4eb1c9644abdb1adb11593b36da39b585adffb3b34a17748052f4a19b5",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps20/receipt.json": "afdeba00ff123a50a15462b4f3d51a4f65e57d828ac758844b4dbcfc5d71064c",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps20/request.json": "0080ff4c7e5f99c2f49a84f2f4e4985a2736e3579ffa8492f222f9fb57376d91",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps20/result.json": "e66bcec8068f1ebceef4c03b5ab332fe17d5ce6772d725eb8ecbc47876869b9d",
+            "observations/20260918T193131Z/nodes.json": "afeb9802328730d22a3ab4b474b9614765b096632f2443435b0025c3069a8f28",
+            "observations/20260918T193131Z/pods.json": "c4b41feb8f1dbf4d9e31317c5ee755cf1a85550a281cb3973e6a99045d6cd94e",
+            "observations/20260918T193231Z/nodes.json": "9393d41fce4ee40c944a8ba912bfade3d4aef4b5e5c87967601932a9eb142679",
+            "observations/20260918T193231Z/pods.json": "d31ce5b8900cecfb1bb23ead178ad51940bea1fec206cd9004c5bfd986b20027"
+          },
+          "started_at": "2026-09-18T19:32:23.740970Z"
+        },
+        {
+          "case_id": "sdxl-plant-cell-s7-steps40",
+          "completed_at": "2026-09-18T19:32:53.665817Z",
+          "operation_id": "ecbf2611-712a-4ce1-af3c-6adb9c89ce27",
+          "result_artifact_sha256": "dba751367e75b56579f9125b6f9abd10bbb92809f5935b707ea9d93de9f729d5",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps40/evaluation.json": "fa94825aace0b74bcac4b0f835fb2509a842d7bccdabb4d39608daf9664aeb10",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps40/operation.json": "f461ac3c8f5f63d9ca2e2ae2668acea06efc551b2e96c7017a0a041157c96b49",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps40/receipt.json": "92a9b926becd9d6ee352fca3b8f7be886908d829431f8bd15e33767aada93c08",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps40/request.json": "6f5e778125151e93a82976da1fa5a70869d07d1f0b0120ea1d764e3376a8bb07",
+            "cohorts/general-r1/scientist-05/sdxl-plant-cell-s7-steps40/result.json": "93887f4564e3c29696f45bfa2c245975eb42f6fbeb52251f970673603d482398",
+            "observations/20260918T193231Z/nodes.json": "9393d41fce4ee40c944a8ba912bfade3d4aef4b5e5c87967601932a9eb142679",
+            "observations/20260918T193231Z/pods.json": "d31ce5b8900cecfb1bb23ead178ad51940bea1fec206cd9004c5bfd986b20027",
+            "observations/20260918T193331Z/nodes.json": "ac02261ed10713c63db082516ec99d1e350143828e3b4af000dec31a97a803a9",
+            "observations/20260918T193331Z/pods.json": "cc5f02d5e2ec99aec82a0eee25510bfc97f462286b4a6b975fd5117d5d3ee7f0"
+          },
+          "started_at": "2026-09-18T19:32:48.680398Z"
+        },
+        {
+          "case_id": "sdxl-protein-fold-s1-steps20",
+          "completed_at": "2026-09-18T19:34:19.051786Z",
+          "operation_id": "db1386f0-ee06-462e-83af-482e064edbc2",
+          "result_artifact_sha256": "53190d4b86291521276051c149a143a3edc3c483e5b079df131c901e7c8d9d58",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps20/evaluation.json": "1a2245c4a22839df069fed5def3fc2e86dc43701ca2c7b8fb01830bc6098c4b9",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps20/operation.json": "0ed70121fbdafdd9f80722df5cbf374e0b4a30caf523547d78b2eb55dd1c27ad",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps20/receipt.json": "3966ce4be98bf43af6918c5e2d90fcbac70c566a08d6884db5e627b361c30ac8",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps20/request.json": "3067948238c8f5dbc03973d6ff5d454f3a80a9bbad0ffab5b9b11f678cf04c9f",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps20/result.json": "08014cd28c960149eca8a57849fe8e503ae88c4609ba8bfbd7713f94c52d5b24",
+            "observations/20260918T193331Z/nodes.json": "ac02261ed10713c63db082516ec99d1e350143828e3b4af000dec31a97a803a9",
+            "observations/20260918T193331Z/pods.json": "cc5f02d5e2ec99aec82a0eee25510bfc97f462286b4a6b975fd5117d5d3ee7f0",
+            "observations/20260918T193431Z/nodes.json": "e875da2b4462dcb252973628edfcdafab208ce2ed05e3a0c2b064e2b2598237b",
+            "observations/20260918T193431Z/pods.json": "373803fcd7f46abd4fd7b7074082dfe7d20aad5ce9b1befcbc89d5828836a814"
+          },
+          "started_at": "2026-09-18T19:34:16.901704Z"
+        },
+        {
+          "case_id": "sdxl-protein-fold-s1-steps40",
+          "completed_at": "2026-09-18T19:34:41.393489Z",
+          "operation_id": "444a2243-6059-4539-a0ae-74894588648b",
+          "result_artifact_sha256": "b914b9694213daf4060261211c0ab9a58af46e40225af8431fd0f3b693fcca1f",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps40/evaluation.json": "d1fda2758cc24589b119726dc726235babff33b5ca2e1350d31bc59598fb8ccc",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps40/operation.json": "b2980758436fc6b1e1874a8b19c86b342c0ffed565c1ec878bf4928ef08d260a",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps40/receipt.json": "f3d76fd140a1652d6d2f51de27207262b1a730de14bdfc9a6d241b197502799b",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps40/request.json": "cc972547cc13cc959cd35d04588447ad7859c00351ffe4e3ec43f0036da6a0c8",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s1-steps40/result.json": "b68794e196fe131f7e46b87d02ddc0635c22eff1278f92820dc854d29b912ef6",
+            "observations/20260918T193431Z/nodes.json": "e875da2b4462dcb252973628edfcdafab208ce2ed05e3a0c2b064e2b2598237b",
+            "observations/20260918T193431Z/pods.json": "373803fcd7f46abd4fd7b7074082dfe7d20aad5ce9b1befcbc89d5828836a814",
+            "observations/20260918T193531Z/nodes.json": "669a188608f496d7b64131e254edce1b156cc13164992ac704815a3574eb8d5c",
+            "observations/20260918T193531Z/pods.json": "cae67fde7b8180ca091d5a87b22a70d0d21b78748bfacb0b1eecdc8ab83b2db2"
+          },
+          "started_at": "2026-09-18T19:34:38.465081Z"
+        },
+        {
+          "case_id": "sdxl-protein-fold-s42-steps20",
+          "completed_at": "2026-09-18T19:35:44.324030Z",
+          "operation_id": "80d450da-bbd0-4e16-a97f-76b29660cbc0",
+          "result_artifact_sha256": "75cebdb8a7973c55382f72dd92694b4bd484d116574686f69b25533fa6166081",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps20/evaluation.json": "a59442878a441588cd841faf91451e677a0e6b0d301420eae5b21b4a007a69ac",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps20/operation.json": "02170ecbd7e5e33a6f70ed5ff6c66545b24613d0be4de07a063f96e1ecbcc042",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps20/receipt.json": "5a0a9a118380a4ad0997fe607eb42169599c81601cb23bceeeef390b74481b63",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps20/request.json": "9e4fb0ca02a05dc162454e4b555299835b7550cc7258c0dae3f6990cd2467e3c",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps20/result.json": "aed4474c505f437516f2eb982c05ed1a39130cc9ac56e52f2655fa4786506359",
+            "observations/20260918T193531Z/nodes.json": "669a188608f496d7b64131e254edce1b156cc13164992ac704815a3574eb8d5c",
+            "observations/20260918T193531Z/pods.json": "cae67fde7b8180ca091d5a87b22a70d0d21b78748bfacb0b1eecdc8ab83b2db2",
+            "observations/20260918T193631Z/nodes.json": "3a8ebb5927c0151b2354d574d3bdad5cfff7e88b902eb2e119a12b61d8afa9a4",
+            "observations/20260918T193631Z/pods.json": "1e9812b30a7cd8aa5974961c6c95e893b7d576d82c870e4fe086008c45e2d955"
+          },
+          "started_at": "2026-09-18T19:35:40.393924Z"
+        },
+        {
+          "case_id": "sdxl-protein-fold-s42-steps40",
+          "completed_at": "2026-09-18T19:36:08.372468Z",
+          "operation_id": "aa4d0b28-405f-462f-9641-ba8e188f1160",
+          "result_artifact_sha256": "8367e147f2a2a401ca401343ab62a428104dc0c44c67585ecdd0bce697281665",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps40/evaluation.json": "5a21f6e13301786af0c32f44751f33edb7f28077f8557b905874292c8b12690c",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps40/operation.json": "9eb0e3c875341b023cb906d87dbc21540053cd4438fec9d215db14e3a7d9bc61",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps40/receipt.json": "99e04959a79fc231347dd786e95aef4716b1b9e08b09798d3a15fde81d1d2c8b",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps40/request.json": "3f96a811827648d9f1d86199970bf44f6c654c93c3f8d611f7a1938fc7d94e68",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s42-steps40/result.json": "22707014be19595c42a333ad7ce7ca76c7e648cb1ff564549940160073de8f85",
+            "observations/20260918T193531Z/nodes.json": "669a188608f496d7b64131e254edce1b156cc13164992ac704815a3574eb8d5c",
+            "observations/20260918T193531Z/pods.json": "cae67fde7b8180ca091d5a87b22a70d0d21b78748bfacb0b1eecdc8ab83b2db2",
+            "observations/20260918T193631Z/nodes.json": "3a8ebb5927c0151b2354d574d3bdad5cfff7e88b902eb2e119a12b61d8afa9a4",
+            "observations/20260918T193631Z/pods.json": "1e9812b30a7cd8aa5974961c6c95e893b7d576d82c870e4fe086008c45e2d955"
+          },
+          "started_at": "2026-09-18T19:36:04.755013Z"
+        },
+        {
+          "case_id": "sdxl-protein-fold-s7-steps20",
+          "completed_at": "2026-09-18T19:35:00.092257Z",
+          "operation_id": "5c93ca33-6384-4171-ae3b-989e6d54092c",
+          "result_artifact_sha256": "4a0c0806148481f78b2cdec724873aab47462c36a4519c7decc36e2e76a567d7",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps20/evaluation.json": "f788427812b9a9d13f9db60ffd49ac221ce1e00d85f5f680dbadcafbf837c897",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps20/operation.json": "400fdca26a56296c29a9732207b4ac1ec6c1866fc66dfe2c8ef9c33882473668",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps20/receipt.json": "88062aa484d09a9cfd4517e09ef31e4ad4a6f361f07293d2c944603fa2e805bf",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps20/request.json": "bd6b299d0a967def406d11fcd7dcdfd8b881a8262cead07a92acf3f9695e82cf",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps20/result.json": "c61d706e5ac78fbc81dfb9d97e9010c0dda486d0eb220a6d84630582e48f7b42",
+            "observations/20260918T193431Z/nodes.json": "e875da2b4462dcb252973628edfcdafab208ce2ed05e3a0c2b064e2b2598237b",
+            "observations/20260918T193431Z/pods.json": "373803fcd7f46abd4fd7b7074082dfe7d20aad5ce9b1befcbc89d5828836a814",
+            "observations/20260918T193531Z/nodes.json": "669a188608f496d7b64131e254edce1b156cc13164992ac704815a3574eb8d5c",
+            "observations/20260918T193531Z/pods.json": "cae67fde7b8180ca091d5a87b22a70d0d21b78748bfacb0b1eecdc8ab83b2db2"
+          },
+          "started_at": "2026-09-18T19:34:58.068028Z"
+        },
+        {
+          "case_id": "sdxl-protein-fold-s7-steps40",
+          "completed_at": "2026-09-18T19:35:19.122746Z",
+          "operation_id": "00e33fc7-3bce-4aa2-bef1-249765b8683f",
+          "result_artifact_sha256": "656ecc1511a07ef6f6bf54c5cfaa78d2e798ed0720228bfde9f829a2dbcbd1b4",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps40/evaluation.json": "82776cacdd6f66e8263c1f65a74d60705f26d851553b5c32a017dece5f994d63",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps40/operation.json": "13b5c0bb6358ab83def90617e19bf67422d6114fa41f6c3a0d7363b2e68d480a",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps40/receipt.json": "4828bf206b1a6f4ee3a35dc9f443b8f111863d56156ca20ec3d84d32b716337b",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps40/request.json": "877956d0b008990c8574d0d01005665631d5fcd4669140ada9ff8f216e51c3c7",
+            "cohorts/general-r1/scientist-05/sdxl-protein-fold-s7-steps40/result.json": "fd2e75d2515ccda1557e39beee6d2fc26f1a8c7506ac1cf11b236ffe00dedcf2",
+            "observations/20260918T193431Z/nodes.json": "e875da2b4462dcb252973628edfcdafab208ce2ed05e3a0c2b064e2b2598237b",
+            "observations/20260918T193431Z/pods.json": "373803fcd7f46abd4fd7b7074082dfe7d20aad5ce9b1befcbc89d5828836a814",
+            "observations/20260918T193531Z/nodes.json": "669a188608f496d7b64131e254edce1b156cc13164992ac704815a3574eb8d5c",
+            "observations/20260918T193531Z/pods.json": "cae67fde7b8180ca091d5a87b22a70d0d21b78748bfacb0b1eecdc8ab83b2db2"
+          },
+          "started_at": "2026-09-18T19:35:16.314846Z"
+        },
+        {
+          "case_id": "sdxl-study-workflow-s1-steps20",
+          "completed_at": "2026-09-18T19:43:05.607876Z",
+          "operation_id": "701937ac-2a47-4e65-9d9c-fb1b0e418c67",
+          "result_artifact_sha256": "958276b339f7e31de345671742896b8ee697b70777bdf1460bb47ee28272447c",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-05/sdxl-study-workflow-s1-steps20/evaluation.json": "22ad903b639db7eb43eb28790939bdcce213250fcd22eab506029b806185512b",
+            "cohorts/general-r1/scientist-05/sdxl-study-workflow-s1-steps20/operation.json": "1ae2006057620c0aac4f2643245b5d2947c4680bcc0c2769ee4870d3bad3faff",
+            "cohorts/general-r1/scientist-05/sdxl-study-workflow-s1-steps20/receipt.json": "ba9edc9dc54f9e6cb939812c499f582b1667918cc69e30c3e8abbf62fefb68b3",
+            "cohorts/general-r1/scientist-05/sdxl-study-workflow-s1-steps20/request.json": "b784ca729d91b9635663cf6d5297c1f97742040261c6d6c44a5388bf3f9b4f65",
+            "cohorts/general-r1/scientist-05/sdxl-study-workflow-s1-steps20/result.json": "83d968c49a23905751f68401b8bb0032a74e46c0f33e3753253714fbd2fb55f4",
+            "observations/20260918T194231Z/nodes.json": "0a52ab9759d0a64652cda9d4ed1bf30aad233e4bf47db59b99d1b083a35b4d8b",
+            "observations/20260918T194231Z/pods.json": "82bdedf4328d83568b46de1a3e85956dadd7f47222734a19c532683004a62914",
+            "observations/20260918T194331Z/nodes.json": "4ff0475948b0526507cbe8306ad45f69a36219fa0097b5c8e5ee11af7ebe23e0",
+            "observations/20260918T194331Z/pods.json": "a4468a8075b30529e03b0f60d784687bc8ba0fe18a34473b33d14aa2a7087ad6"
+          },
+          "started_at": "2026-09-18T19:43:03.269855Z"
+        },
+        {
+          "case_id": "sdxl-study-workflow-s1-steps40",
+          "completed_at": "2026-09-18T19:45:14.760369Z",
+          "operation_id": "57f026c1-752d-4ac7-a548-e3af9956418a",
+          "result_artifact_sha256": "f9715bc80c6934584a5ce9f1dc631bf7f9940815bd407d07d019c88e029cf436",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s1-steps40/evaluation.json": "797d59e078a02c139d170390779b43e352040085456dd24b47bfc09ae5f5a5ce",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s1-steps40/operation.json": "ef653a1e26126f15d2860bea16d9e13871817704b03946813f1bcaa3d6c0434c",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s1-steps40/receipt.json": "41e6f711e024eeeb5a278926f954422f21d20cb60019280904615f28ce0c3140",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s1-steps40/request.json": "e376b7f5d9a04ea3edb89d69080af372849337fff8386484147d1bbc088d650e",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s1-steps40/result.json": "b5df1c896d7a1f749f2065f76761576a325ff85b29f6133f343cd2a035798bee",
+            "observations/20260918T194431Z/nodes.json": "2773fef5728e4fbf43ec090404c2f052021670088aa6bbcdd98fd48157a309e1",
+            "observations/20260918T194431Z/pods.json": "4cdc3d449a93fcf131173d052bd3d3616a1a9171c0b7402c9a6271c05c70708e",
+            "observations/20260918T194531Z/nodes.json": "466468b607c6f01a34f136eea20a4c80dd806e62a809609fae85991cf1d0e902",
+            "observations/20260918T194531Z/pods.json": "30edfd8df5ba5f6ca79abeca77755e4ea3b29a09594001b19c75a1fef5f1c507"
+          },
+          "started_at": "2026-09-18T19:45:11.150436Z"
+        },
+        {
+          "case_id": "sdxl-study-workflow-s42-steps20",
+          "completed_at": "2026-09-18T19:45:46.340300Z",
+          "operation_id": "f88327af-3063-49ea-83ef-8ca9ea577615",
+          "result_artifact_sha256": "b49d8f40c7c666ed2f7f9cd077315b595e8bd400a902ba317654afa99667bb75",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps20/evaluation.json": "717a1dca32811987205c9a9d954f9acf4043ffd06e2c9188769f84fe4635f7d8",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps20/operation.json": "32367404209ae4c1c725f561f07bcc4c063d280391352cad200dc073d24ebb48",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps20/receipt.json": "c89f51f631333e302add013dc0e64c7cfc875f25f03f52bbb79ac4dfcd2e4005",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps20/request.json": "8392feaa3f32c9162175b35b83cefb4a0cec6b79b906e04febf7c29a95515a26",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps20/result.json": "31cd568b40c3300b469cade90e9a3e8cf0b02229655d70037cb57a82467f0d65",
+            "observations/20260918T194531Z/nodes.json": "466468b607c6f01a34f136eea20a4c80dd806e62a809609fae85991cf1d0e902",
+            "observations/20260918T194531Z/pods.json": "30edfd8df5ba5f6ca79abeca77755e4ea3b29a09594001b19c75a1fef5f1c507",
+            "observations/20260918T194631Z/nodes.json": "0a79ae4418311ca1ff04d9cb8ed3651307f8637a2cab989c96a3b9345edd9f52",
+            "observations/20260918T194631Z/pods.json": "9347cdd1357b513528b94d375991d2caed71b4e99406e1fcdd5596e5a5822613"
+          },
+          "started_at": "2026-09-18T19:45:44.203083Z"
+        },
+        {
+          "case_id": "sdxl-study-workflow-s42-steps40",
+          "completed_at": "2026-09-18T19:45:56.524023Z",
+          "operation_id": "cb8d70b7-3d23-4572-aff4-cdf496587edb",
+          "result_artifact_sha256": "feb7cab41319926989ace326f64ba4cca52ee93f41f65610d70f3bd740acf6da",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps40/evaluation.json": "e024616ed124d42d6ab169abf522417404174bb07373cf8bd588d86d50ca0ec6",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps40/operation.json": "71b6e5d9ec2c1ef685d76cbf5dbde7905e17d615aec4ea5bf83ceb8a171c0666",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps40/receipt.json": "a759312eec7dfc8ec6bd422f40b4d0b03b9aebb8b4fcd3e18c0cd0e1672e7bec",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps40/request.json": "810325dd21f0d4bddd53c45fe15ccae372e5d2b382c92311110ebe71869fa9c0",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s42-steps40/result.json": "e530e50b34d219a586355d04140f52e35ceae6724e6fc55586ddcfe9708ce0fa",
+            "observations/20260918T194531Z/nodes.json": "466468b607c6f01a34f136eea20a4c80dd806e62a809609fae85991cf1d0e902",
+            "observations/20260918T194531Z/pods.json": "30edfd8df5ba5f6ca79abeca77755e4ea3b29a09594001b19c75a1fef5f1c507",
+            "observations/20260918T194631Z/nodes.json": "0a79ae4418311ca1ff04d9cb8ed3651307f8637a2cab989c96a3b9345edd9f52",
+            "observations/20260918T194631Z/pods.json": "9347cdd1357b513528b94d375991d2caed71b4e99406e1fcdd5596e5a5822613"
+          },
+          "started_at": "2026-09-18T19:45:52.913840Z"
+        },
+        {
+          "case_id": "sdxl-study-workflow-s7-steps20",
+          "completed_at": "2026-09-18T19:45:26.401614Z",
+          "operation_id": "0e2e7018-08da-411c-9c77-a2b3cabce10e",
+          "result_artifact_sha256": "8ef9c0c79761a5db7d496b64d7569a3ccce28230927ee46deba77e343403ebb9",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps20/evaluation.json": "4be27d2e2e967cde6f5135d6a4df6758c2e9dd8f1c319121152e065c6b9d8cb8",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps20/operation.json": "1aca17b4d301404f33947aef2a731018ed9fec526734d1245d6cf48eafab607f",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps20/receipt.json": "2ec95ec0967a7fe88482396a72347b4ce4e19fa1a133492291318b2175aaa48e",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps20/request.json": "8d46dfcf1f2fb87429806e3aff281d87bb30499b518d5e441c2e285f4f2d465b",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps20/result.json": "be72973ade564513af1a8017a207c48e0d02703cc77ba1426b79fdfa2a502ed0",
+            "observations/20260918T194431Z/nodes.json": "2773fef5728e4fbf43ec090404c2f052021670088aa6bbcdd98fd48157a309e1",
+            "observations/20260918T194431Z/pods.json": "4cdc3d449a93fcf131173d052bd3d3616a1a9171c0b7402c9a6271c05c70708e",
+            "observations/20260918T194531Z/nodes.json": "466468b607c6f01a34f136eea20a4c80dd806e62a809609fae85991cf1d0e902",
+            "observations/20260918T194531Z/pods.json": "30edfd8df5ba5f6ca79abeca77755e4ea3b29a09594001b19c75a1fef5f1c507"
+          },
+          "started_at": "2026-09-18T19:45:23.684229Z"
+        },
+        {
+          "case_id": "sdxl-study-workflow-s7-steps40",
+          "completed_at": "2026-09-18T19:45:36.670283Z",
+          "operation_id": "aceaa1a9-98e5-440c-93c2-70f24d395826",
+          "result_artifact_sha256": "1025c5ddebc8271d4cffd285438cceaaf3bc118be8073c7d10feb73696150c57",
+          "runtime": {
+            "actual_image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "container_id": "containerd://2d157df8e33a24b9c323af2d2c748c7f5afc5a72eb4d8e5af5db37de4dfb912e",
+            "driver_version": "580.159.04-1ubuntu1",
+            "gpu_class": "nvidia-h100-sxm5-80gb",
+            "gpu_uuids": [
+              "GPU-d90ed78c-e42d-2698-6fcc-23628551186c"
+            ],
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media-runtime@sha256:8ea08b1a5eabf0ed9c5193e7f49c5546fcbd8452692bbd4ba13accecd7fc8e07",
+            "node_name": "computeinstance-e00fc4r4xw3jvmgqna",
+            "node_uid": "5c5a3396-e032-4d52-87c7-36b27cbd6a07",
+            "pod_uid": "b4c45495-a76c-4950-b536-ed7953d1303d",
+            "pool": "h100-1x",
+            "provider_instance_type": "gpu-h100-sxm",
+            "restart_count": 0,
+            "started_at": "2026-09-18T19:31:03Z"
+          },
+          "source_sha256": {
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps40/evaluation.json": "10e5078b9c91a530df65bf1dd5019f2b0472bca841e1fcfde089304de3eefd14",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps40/operation.json": "e20e9b6ab23c950265438748522d980f6e4be6746db1f40d12943e401e34c30b",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps40/receipt.json": "7f4c1a46680c3a3b7153d8cf1de795634959dc4b898d432c342fe7255d3bccae",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps40/request.json": "689c9873a4f6874a6bd4f2deb6732a0d53c31ffcccbacbc8389d2b43b40f5e77",
+            "cohorts/general-r1/scientist-06/sdxl-study-workflow-s7-steps40/result.json": "d51e06b2719a9397f329e340905f29ffc19bd64b05d92163b9c243113acaddff",
+            "observations/20260918T194531Z/nodes.json": "466468b607c6f01a34f136eea20a4c80dd806e62a809609fae85991cf1d0e902",
+            "observations/20260918T194531Z/pods.json": "30edfd8df5ba5f6ca79abeca77755e4ea3b29a09594001b19c75a1fef5f1c507",
+            "observations/20260918T194631Z/nodes.json": "0a79ae4418311ca1ff04d9cb8ed3651307f8637a2cab989c96a3b9345edd9f52",
+            "observations/20260918T194631Z/pods.json": "9347cdd1357b513528b94d375991d2caed71b4e99406e1fcdd5596e5a5822613"
+          },
+          "started_at": "2026-09-18T19:45:33.896938Z"
+        }
+      ],
+      "source_artifact_manifest_file_sha256": "506a1cebe648356d9540b4b4f457ac2d2e355372dc2f4f3b657a8698c361a67e",
+      "timestamp_bracketed_requests": 35,
+      "unmatched": [
+        {
+          "operation_id": "0e9d8337-ab49-44fb-b04d-60651c255d22",
+          "reason": "exact image/revision/content/Pod/node/GPU SKU witness mismatch"
+        }
+      ]
+    }
+  },
+  "schema": "fs2.h100-retained-public-placement-evidence/v1",
+  "scope": "Exact-image one-H100 runtime and public semantic compatibility only; not clinical efficacy, image prompt fidelity, cold latency, scale-out or snapshots."
+}

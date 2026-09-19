@@ -244,7 +244,11 @@ def catalog_configuration_contracts(
     """Project exact model/acquisition/semantic identities from the canonical loader."""
 
     contracts: dict[str, CatalogModelContract] = {}
-    observed = _reviewed_runtime_qualification()
+    observed = [
+        (receipt["accelerator"]["class"], qualification)
+        for receipt in _reviewed_runtime_qualifications()
+        for qualification in receipt["models"]
+    ]
     for model_id, record in catalog.records.items():
         value = record.to_dict()
         acquisition = catalog.acquisition_plans.get(model_id)
@@ -256,7 +260,7 @@ def catalog_configuration_contracts(
         classes = {str(gpu["class"])}
         classes.update(str(item["class"]) for item in alternatives if isinstance(item, dict) and item.get("class"))
         artifact = value["cache"]["artifact"]
-        for qualification in observed.get("models", []):
+        for accelerator_class, qualification in observed:
             if (
                 qualification["model_id"] == model_id
                 and qualification["revision"] == value["model"]["source"]["revision"]
@@ -266,7 +270,7 @@ def catalog_configuration_contracts(
                 and gpu["count"] == 1
                 and gpu["topology"] == "single-gpu"
             ):
-                classes.add(observed["accelerator"]["class"])
+                classes.add(accelerator_class)
         contracts[model_id] = CatalogModelContract(
             model_id=model_id,
             artifact_manifest_sha256=artifact.get("manifest_digest"),
@@ -298,14 +302,61 @@ def _reviewed_runtime_qualification() -> dict[str, Any]:
     family/name as qualification. It does not qualify snapshot/latency tiers.
     """
 
-    path = Path(__file__).parent / "runtime_qualifications/h100-qwen-cosmos-20260902.json"
+    return _load_reviewed_runtime_qualification(
+        "h100-qwen-cosmos-20260902.json",
+        "0d66f4fab33908b15a9a89bc9977752e21c9f819307198ac72d3e770ee8b208f",
+    )
+
+
+def _load_reviewed_runtime_qualification(name: str, digest: str) -> dict[str, Any]:
+    path = Path(__file__).parent / "runtime_qualifications" / name
     try:
         payload = path.read_bytes()
     except OSError:
         return {}
-    if hashlib.sha256(payload).hexdigest() != "0d66f4fab33908b15a9a89bc9977752e21c9f819307198ac72d3e770ee8b208f":
+    if hashlib.sha256(payload).hexdigest() != digest:
         return {}
-    return dict(json.loads(payload))
+    try:
+        receipt = json.loads(payload)
+        if (
+            receipt["schema"] != "fs2-serve.nebius.ai/h100-runtime-qualification-receipt/v1"
+            or receipt["authority"] != "reviewed-live-runtime-qualification"
+            or receipt["accelerator"]["class"] != "nvidia-h100-sxm5-80gb"
+            or not isinstance(receipt["models"], list)
+        ):
+            return {}
+        identities = [_runtime_qualification_key(receipt, row) for row in receipt["models"]]
+        flags = ("runtime_ready", "semantic_qualified", "http_mcp_qualified")
+        if (
+            len(identities) != len(set(identities))
+            or any(not all(isinstance(value, str) and value for value in identity) for identity in identities)
+            or any(not all(isinstance(row[name], bool) for name in flags) for row in receipt["models"])
+        ):
+            return {}
+    except (KeyError, TypeError, ValueError):
+        return {}
+    return receipt
+
+
+def _runtime_qualification_key(receipt: Mapping[str, Any], row: Mapping[str, Any]) -> tuple[str, ...]:
+    return (
+        receipt["accelerator"]["class"],
+        *(row[key] for key in ("model_id", "revision", "runtime_image_digest", "artifact_manifest_digest")),
+    )
+
+
+def _reviewed_runtime_qualifications() -> tuple[dict[str, Any], ...]:
+    """Only reviewed content-addressed receipts; conflicting grants fail closed."""
+    receipts = (
+        _reviewed_runtime_qualification(),
+        _load_reviewed_runtime_qualification(
+            "h100-cxr-sdxl-20260919.json",
+            "65b682a6e4c84d95965665816d6247c478165a07c860524b1a132e3fce684ef3",
+        ),
+    )
+    accepted = tuple(receipt for receipt in receipts if receipt)
+    identities = [_runtime_qualification_key(receipt, row) for receipt in accepted for row in receipt["models"]]
+    return accepted if len(identities) == len(set(identities)) else ()
 
 
 @dataclass(frozen=True)
