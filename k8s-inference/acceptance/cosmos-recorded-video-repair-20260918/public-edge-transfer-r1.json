@@ -1,0 +1,163 @@
+{
+  "schema": "fs2-serve.nebius.ai/lerobot-public-acceptance/v1",
+  "status": "passed",
+  "operation_id": "ea93d6e7-c3a3-496e-9c88-cd566068bcf5",
+  "release": 170,
+  "scientist": "scientist-10",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
+  "coordinator_node": "computeinstance-e00tq9jk3nbvh4ceck",
+  "native_runtime_witnesses": [
+    {
+      "pod": "cosmos3-nano-burst-h100-1x-76dd467d74-j4wgt",
+      "uid": "84d42971-dcee-4b8b-abc8-2bc24917f1e9",
+      "node": "computeinstance-e00k0hdq51xykanvqs",
+      "images": [
+        {
+          "name": "bounded-json-adapter",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32"
+        },
+        {
+          "name": "vllm-omni",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cosmos3-contract@sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5456d32aa916839e32"
+        }
+      ],
+      "gpu_identity": null,
+      "gpu_identity_observation": "not captured before normal cooldown; do not infer UUID",
+      "ready_pod_captured": false,
+      "strict_snapshot": false,
+      "events_receipt": "runtime-witness/cosmos3-nano-burst-h100-1x-76dd467d74-j4wgt-events.json"
+    }
+  ],
+  "native_snapshot_used": false,
+  "observed_end_to_end_seconds": 619.1292221546173,
+  "children": [
+    {
+      "id": "dece89f1-6bdf-4b3f-8ebc-06c092d3e715",
+      "episode_index": 0,
+      "status": "succeeded",
+      "started_at": "2026-09-19T00:08:47.883772Z",
+      "completed_at": "2026-09-19T00:09:03.274083Z",
+      "active_inference_seconds": 15.390311,
+      "input_video_sha256": "3a7aad57488e57db15ca091b9098662de8e187b4a3cd9b551ccb644ca8f2b1ab",
+      "output_video_sha256": "18fc11ac370b74d8d857474725e3487f97aedaf8e6bfa858ef2fb41abf884f19"
+    },
+    {
+      "id": "f9905c6f-700c-4f25-8914-3435dd862fb5",
+      "episode_index": 1,
+      "status": "succeeded",
+      "started_at": "2026-09-19T00:09:09.917584Z",
+      "completed_at": "2026-09-19T00:09:22.962178Z",
+      "active_inference_seconds": 13.044594,
+      "input_video_sha256": "e8532ceb7831be935f8a90ea7296adb4cf153ed573d27ae4e7e0a6696e2fe85e",
+      "output_video_sha256": "1c9a6b554b07a1ed07e04b574d1f0e018b21cbf82a66156bb2e44acd048e0d95"
+    }
+  ],
+  "augmentation": {
+    "conditioning": {
+      "controls": [
+        "edge"
+      ],
+      "frame_indexes": [
+        0
+      ],
+      "keep": "first"
+    },
+    "dimensions": [
+      {
+        "instruction": "cooler indoor lighting, blue-shifted color temperature",
+        "name": "lighting",
+        "strength": 1.0
+      }
+    ],
+    "guidance_scale": 6.0,
+    "mode": "transfer",
+    "num_inference_steps": 35,
+    "prompt_template": "Change the recorded indoor scene lighting to cooler indoor lighting (blue-shifted color temperature) while strictly preserving the ALOHA robot, objects, camera geometry, camera viewpoint and all motion."
+  },
+  "scope": "Two genuine recorded ALOHA-derived episodes,128 frames,two cameras; actual ordinary MCP GPU children and complete output readback",
+  "validation": {
+    "reader": "lerobot==0.6.1",
+    "status": "passed",
+    "episodes": 2,
+    "frames": 128,
+    "cameras": 2,
+    "decoded_frames_each": 256,
+    "nonvideo_values_compared": 6144,
+    "nonvideo_values_exact": true,
+    "unselected_pixels_bit_exact": false,
+    "unselected_max_frame_mae_limit": 6.0,
+    "visual_comparison": [
+      {
+        "episode_index": 0,
+        "camera": "observation.images.cam_high",
+        "selected": true,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 63.07498914003372,
+        "max_frame_mean_absolute_pixel_difference": 66.96228790283203,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 0,
+        "camera": "observation.images.cam_right_wrist",
+        "selected": false,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 1.298381669446826,
+        "max_frame_mean_absolute_pixel_difference": 1.5057562589645386,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 1,
+        "camera": "observation.images.cam_high",
+        "selected": true,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 63.82619297504425,
+        "max_frame_mean_absolute_pixel_difference": 67.32037353515625,
+        "changed_frames": 64
+      },
+      {
+        "episode_index": 1,
+        "camera": "observation.images.cam_right_wrist",
+        "selected": false,
+        "frames": 64,
+        "mean_absolute_pixel_difference": 1.2629009177908301,
+        "max_frame_mean_absolute_pixel_difference": 1.6621863842010498,
+        "changed_frames": 63
+      }
+    ],
+    "physical_alignment_verified": false
+  },
+  "source_bundle_sha256": "1721d4018c0e38390695059a8cab79d23f679d70b3bdc878d509c9f68bef7be7",
+  "request_sha256": "52491ae59396d9529e586dee346f2017b9d44cc17548a4a8ac6d2d6ccfecbd55",
+  "independent_validation_sha256": "6e678e15a9a62bf329d53336896aa4de2c79eab11999509b2a2c5f73a4d458f5",
+  "outputs": [
+    {
+      "artifact": {
+        "artifact_id": "6b271e46-4492-4e6d-ac28-d852f87e9ff6",
+        "compression": "none",
+        "media_type": "application/json",
+        "sha256": "6f4af095905dca201159855e265465b7e3258ff7c60f636a436f7d524c595e0b",
+        "size_bytes": 686
+      },
+      "name": "result",
+      "semantic_type": "lerobot-augmentation-result/v1"
+    },
+    {
+      "artifact": {
+        "artifact_id": "fb3de395-d59f-4741-9398-3369f446efdb",
+        "compression": "zstd",
+        "media_type": "application/x-tar",
+        "sha256": "4da27aab5fcbb70fb066cbc1c693f56de96a8b39b36a3598beed0efdd1e6a30a",
+        "size_bytes": 2302927
+      },
+      "name": "variant-00",
+      "semantic_type": "lerobot-v3-augmented-bundle/v1"
+    }
+  ],
+  "limitations": [
+    "Data/format/workflow evidence is not physical-motion correctness or robot-policy efficacy.",
+    "Unselected cameras are reencoded within declared codec tolerance, not pixel-bit-identical.",
+    "End-to-end waiting, image pulls, startup and artifact work are not GPU inference time.",
+    "Other datasets/cameras/controls and sustained maximum-bound throughput require separate coverage.",
+    "The initial read-only observer stalled on an older terminating Pod and missed the ready-state GPU exec; running Pod/image/node samples and successful child operations remain, but no GPU UUID is claimed."
+  ]
+}

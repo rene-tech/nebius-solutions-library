@@ -216,3 +216,28 @@ its digest; it does not replace a global default. The release owner must retain
 that image selection alongside the accepted dynamic owner proposal. Later admin
 scaling/placement edits remain authoritative and must not be overwritten by an
 old promotion capture. This step changes no live Terraform values.
+
+## Public recorded edge-transfer, 19 September
+
+Release170 registered the optional warmed bundle and selected the repaired
+preset adapter while retaining `snapshotPreference: Never`. Ordinary scientist10
+operation `ea93d6e7-c3a3-496e-9c88-cd566068bcf5` completed the two recorded ALOHA
+episodes using explicit edge transfer. The downloaded LeRobot bundle reopens in
+the pinned reader, independently decodes all256 camera frames and preserves all
+6144 nonvideo values across128 frames. Its unchanged source/prompt/seed and
+explicit mode difference are retained with the request.
+
+[The scoped public receipt](public-edge-transfer-r1.json) records619.129s
+observed end-to-end versus15.390s and13.045s active child calls. This includes
+real scheduling wait, ordinary autoscaling5-to-6 and a new node's130.946s9.19GB
+image pull. An older terminating warmup Pod separately had an image-pull EOF;
+node preemption is not established for that failure.
+
+The first read-only observer spent too long collecting logs from that terminating
+Pod and missed the ready successor's GPU-UUID exec before cooldown. Its running
+Pod/node/imageID samples and successful child operations remain; the receipt
+explicitly leaves GPU UUID unknown. The observer now prioritizes ready identity
+and skips terminating Pods. Strict public snapshot qualification must capture
+its actual restored marker and CRIU/CUDA records, not inherit this fresh-loading
+result. Data preservation and media integrity do not establish physical motion
+correctness, action-safe augmentation or downstream policy-training efficacy.
