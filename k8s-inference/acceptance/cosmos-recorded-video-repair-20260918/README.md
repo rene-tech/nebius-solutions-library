@@ -1,5 +1,39 @@
 # Recorded Cosmos video repair — 18 September 2026
 
+## Scientific motion and coordinator-geometry correction
+
+The complete recorded-trajectory comparison found a material gap, not a mere
+presentation issue. First-frame V2V generated different future robot motion.
+Across both64-frame episodes, exploratory flow-direction agreement was0.026/
+0.111, versus0.907/0.902 for edge transfer. These uncalibrated image-space metrics
+support a candidate lane choice; they do not establish contact or action-label
+validity. Object/appliance appearance also changed. See
+`recorded-motion-scope-r1.json` and the source-backed LeRobot README.
+
+The older LeRobot worker omitted transfer size and resized448x256 child outputs
+to640x480. Its final-reader pass therefore does **not** qualify geometry. Candidate
+worker`41a01714…` retains exact dimensions and rejects dimensions, FPS, frame-count
+or timestamp mismatch without touching bytes. It records the real conditioning
+scope and explicitly unverified physical alignment in output provenance.
+
+`exact-alignment-image-cpu.json` qualifies that exact published CPU image using
+two retained640x480 H100 child videos and two original mismatched448x256 children.
+Positive bytes remain unchanged; both negatives fail with the expected finite
+error. Pinned writer/readback preserves all6144 nonvideo values across128frames.
+This is **not** fresh public transfer acceptance; rollout/replay remains separate.
+The first CPU harness attempt omitted the required provenance operation mapping
+and failed after writer output. Its logs are retained; the corrected second
+attempt changed only that test mapping and made no GPU call.
+
+The reproducible image harness is `qualify_alignment_image.py`: mount public
+source LeRobot files at `/input/source`, the repository fixture validator at
+`/input/fixtures`, the request at `/input/request.json`, and a manifest listing
+positive/negative video filenames, SHA256s, episode indices and original positive
+operation IDs at `/input/manifest.json`. Mount an empty writable `/output` and
+execute it with the candidate's pinned Python, UID10001 and network disabled.
+The recorded build/publication identity is in the model's
+`activation/registry-publication-exact-alignment-20260919.json`.
+
 ## Public strict snapshot qualification — 19 September, release170
 
 The parent selected the new immutable warmed bundle with `Require`, not a

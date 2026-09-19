@@ -1,0 +1,102 @@
+{
+  "schema": "fs2-exploratory-recorded-motion-comparison/v1",
+  "opencv_version": "4.13.0",
+  "method": {
+    "analysis_dimensions": [
+      320,
+      240
+    ],
+    "optical_flow": "Farneback",
+    "source_motion_threshold_pixels": 0.75,
+    "flow_parameters": [
+      0.5,
+      3,
+      15,
+      3,
+      5,
+      1.2,
+      0
+    ],
+    "edge_thresholds": [
+      70,
+      140
+    ],
+    "edge_match_radius_pixels": 2
+  },
+  "scope": "Full recorded two-episode imagery versus same-index generated imagery; exploratory image-space proxy, not calibrated robot action/contact validity.",
+  "limitations": [
+    "Generative texture and lighting affect optical-flow estimates.",
+    "Old edge output was silently resized448x256 to640x480; this known defect invalidates geometric calibration.",
+    "No robot masks, camera calibration, contact labels or downstream policy evaluation.",
+    "No pass threshold is inferred from these two episodes."
+  ],
+  "rows": [
+    {
+      "trial": "public-v4-lerobot-original-v2v-r3",
+      "episode_index": 0,
+      "source_sha256": "3a7aad57488e57db15ca091b9098662de8e187b4a3cd9b551ccb644ca8f2b1ab",
+      "output_sha256": "d716e7fed05112c894cca8440c93c3fec027c42f2803d5020a3eda08beef994f",
+      "frames": 64,
+      "transitions": 63,
+      "source_motion_pixels": 536843,
+      "flow_endpoint_error_mean_pixels": 4.289971961545611,
+      "flow_endpoint_error_p90_pixels": 10.690170860290527,
+      "flow_direction_cosine_mean": 0.02593834789218375,
+      "temporal_activity_correlation": 0.10257832695715709,
+      "edge_f1_radius2_mean": 0.6518969184672407
+    },
+    {
+      "trial": "public-v4-lerobot-original-v2v-r3",
+      "episode_index": 1,
+      "source_sha256": "e8532ceb7831be935f8a90ea7296adb4cf153ed573d27ae4e7e0a6696e2fe85e",
+      "output_sha256": "d716e7fed05112c894cca8440c93c3fec027c42f2803d5020a3eda08beef994f",
+      "frames": 64,
+      "transitions": 63,
+      "source_motion_pixels": 597036,
+      "flow_endpoint_error_mean_pixels": 4.270067384872377,
+      "flow_endpoint_error_p90_pixels": 9.356934547424316,
+      "flow_direction_cosine_mean": 0.11065333067314959,
+      "temporal_activity_correlation": 0.1578365013381745,
+      "edge_f1_radius2_mean": 0.5320882690384436
+    },
+    {
+      "trial": "public-v4-lerobot-edge-transfer-r1",
+      "episode_index": 0,
+      "source_sha256": "3a7aad57488e57db15ca091b9098662de8e187b4a3cd9b551ccb644ca8f2b1ab",
+      "output_sha256": "1f695c7451a6fa6413f797947ae5637a2c488aa44831d4206af9278e337863a1",
+      "frames": 64,
+      "transitions": 63,
+      "source_motion_pixels": 536843,
+      "flow_endpoint_error_mean_pixels": 1.9727814214352934,
+      "flow_endpoint_error_p90_pixels": 5.01819953918457,
+      "flow_direction_cosine_mean": 0.9068891004402101,
+      "temporal_activity_correlation": 0.9746446402928419,
+      "edge_f1_radius2_mean": 0.6437499326145857
+    },
+    {
+      "trial": "public-v4-lerobot-edge-transfer-r1",
+      "episode_index": 1,
+      "source_sha256": "e8532ceb7831be935f8a90ea7296adb4cf153ed573d27ae4e7e0a6696e2fe85e",
+      "output_sha256": "1f695c7451a6fa6413f797947ae5637a2c488aa44831d4206af9278e337863a1",
+      "frames": 64,
+      "transitions": 63,
+      "source_motion_pixels": 597036,
+      "flow_endpoint_error_mean_pixels": 1.6510268640075,
+      "flow_endpoint_error_p90_pixels": 3.749307632446289,
+      "flow_direction_cosine_mean": 0.9019510973674799,
+      "temporal_activity_correlation": 0.9546894513089517,
+      "edge_f1_radius2_mean": 0.6668247426448142
+    }
+  ],
+  "raw_evidence_path": "/home/tux/secure-handoff/scientific-qualification-20260918/lerobot-admission-diagnosis/recorded-motion-comparison-r1.json",
+  "findings": [
+    "First-frame V2V changed the recorded later robot trajectory; action array equality is insufficient.",
+    "Old edge children were448x256 and silently resized to640x480; old output is not geometry qualified.",
+    "Edge motion proxies improved substantially, but object/appliance appearance changed; no action/contact/policy readiness."
+  ],
+  "references": [
+    "https://huggingface.co/docs/diffusers/en/api/pipelines/cosmos3",
+    "https://github.com/vllm-project/vllm-omni/blob/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/vllm_omni/diffusion/models/cosmos3/utils.py",
+    "https://github.com/vllm-project/vllm-omni/blob/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/vllm_omni/diffusion/models/cosmos3/pipeline_cosmos3.py"
+  ]
+}
