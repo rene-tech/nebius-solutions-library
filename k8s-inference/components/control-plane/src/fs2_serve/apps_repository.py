@@ -135,7 +135,11 @@ class PostgresAppsRepository:
                         AND protocol<>'scientific-artifact-upload-v1'
                 ), attempts AS (
                     SELECT s.operation_id,r.* FROM fs2_telemetry_subjects s JOIN operations o ON o.id=s.operation_id
-                    LEFT JOIN fs2_reporting_lifecycle_latest r USING(subject_id)
+                    LEFT JOIN LATERAL (
+                        SELECT rollup.* FROM fs2_lifecycle_rollups rollup
+                        WHERE rollup.subject_id=s.subject_id
+                        ORDER BY event_watermark DESC,generated_at DESC,rollup_id DESC LIMIT 1
+                    ) r ON true
                     WHERE s.workload_kind='scientific_batch'
                 ), phase_usage AS (
                     SELECT *,
@@ -207,6 +211,26 @@ class PostgresAppsRepository:
         for user in values["users"]:
             user["user_id"] = str(owner_id(user["tenant_id"], user["principal_id"]))
         return values
+
+    async def usage_summary(self, model_id: str, context: AdminContext, tenant_id: str | None) -> dict[str, Any]:
+        """Read only the two usage fields exposed by the App summary.
+
+        Count is windowed; last-used remains lifetime. Full lifecycle/user/time
+        series and request telemetry belong to the separate usage endpoint.
+        """
+        async with self.pool.acquire() as connection:
+            row = await connection.fetchrow(
+                """SELECT count(*) FILTER(WHERE accepted_at >= $2 AND accepted_at < $3) AS logical_runs,
+                    max(accepted_at) AS last_used_at
+                FROM fs2_operations WHERE model_id=$1 AND ($4::text IS NULL OR tenant_id=$4)
+                    AND protocol<>'scientific-artifact-upload-v1'""",
+                model_id,
+                context.from_at,
+                context.to_at,
+                tenant_id,
+            )
+        assert row is not None
+        return dict(row)
 
     async def last_used(self, model_id: str, tenant_id: str | None) -> Any:
         async with self.pool.acquire() as connection:

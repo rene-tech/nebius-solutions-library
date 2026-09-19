@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -185,6 +187,88 @@ async def test_actual_apps_usage_is_independent_windowed_and_owner_attributed(da
         query.model_copy(update={"exclude_protocols": (), "limit": 200})
     )
     assert len(original_history) == 3 and original_history[0].protocol == "scientific-artifact-upload-v1"
+
+
+async def test_app_summary_matches_full_usage_counts_and_lifetime_with_tenant_route_and_boundaries(database):
+    repository = PostgresAppsRepository(database.pool)
+    own = await token(database)
+    foreign = await token(database, tenant="tenant-b")
+    for key, model, at, protocol in (
+        (own, "qwen3-8b", NOW, "openai-chat"),
+        (own, "qwen3-8b", CONTEXT.from_at, "scientific-batch-v1"),
+        (own, "qwen3-8b", CONTEXT.to_at, "openai-chat"),
+        (own, "qwen3-8b", NOW - timedelta(days=3), "openai-chat"),
+        (own, "qwen3-8b", NOW + timedelta(days=3), "scientific-artifact-upload-v1"),
+        (foreign, "qwen3-8b", NOW + timedelta(minutes=1), "openai-chat"),
+        (own, "app-independent", NOW + timedelta(minutes=2), "openai-chat"),
+    ):
+        await operation(database, key, model=model, at=at, protocol=protocol)
+    for model in ("qwen3-8b", "app-independent", "never-used"):
+        for tenant in (None, "tenant-a", "tenant-b", "empty-tenant"):
+            summary = await repository.usage_summary(model, CONTEXT, tenant)
+            full = await repository.usage(model, CONTEXT, tenant)
+            assert summary == {"logical_runs": full["logical_runs"],
+                               "last_used_at": await repository.last_used(model, tenant)}
+    assert await repository.usage_summary("qwen3-8b", CONTEXT, "tenant-a") == {
+        "logical_runs": 2, "last_used_at": CONTEXT.to_at,
+    }
+    quiet = CONTEXT.model_copy(update={"from_at": NOW + timedelta(days=10), "to_at": NOW + timedelta(days=11)})
+    assert await repository.usage_summary("qwen3-8b", quiet, "tenant-a") == {
+        "logical_runs": 0, "last_used_at": CONTEXT.to_at,
+    }
+
+
+async def test_app_usage_scoped_latest_rollup_matches_original_view_and_keeps_missing_unknown(database):
+    key = await token(database)
+    op = await operation(database, key, protocol="scientific-batch-v1")
+    foreign_op = await operation(database, key, model="app-independent", protocol="scientific-batch-v1")
+    subjects = []
+    repository = PostgresLifecycleRepository(database.pool)
+    for operation_id, model in ((op, "qwen3-8b"), (foreign_op, "app-independent")):
+        subject = LifecycleSubject(
+            subject_id=uuid4(), workload_kind="scientific_batch", operation_id=operation_id,
+            request_id=operation_id, batch_id=uuid4(), workload_id=uuid4(), attempt_id=uuid4(),
+            tenant_id=key.tenant_id, principal_id=key.principal_id, model_id=model, model_revision="test",
+            protocol="scientific-batch-v1", trace_id="1" * 32, parent_span_id="2" * 16, accepted_at=NOW,
+        )
+        await repository.register_subject(subject)
+        subjects.append(subject)
+    insert = """INSERT INTO fs2_lifecycle_rollups(
+        rollup_id,subject_id,generated_at,event_watermark,events_sha256,terminal,outcome,
+        quota_reserved_gpu_seconds,scheduler_occupied_gpu_seconds,device_allocated_gpu_seconds,
+        active_gpu_seconds,occupied_idle_gpu_seconds,phase_gpu_seconds,reconciliation_delta_seconds,
+        device_scheduler_delta_seconds,tolerance_seconds,reconciled,quality,data_gaps,output_shape)
+        VALUES($1,$2,$3,$4,$5,true,'succeeded',100,$6,0,0,0,'{}',0,0,1,true,'estimated','{}','{}')"""
+    ids = sorted(uuid4() for _ in range(4))
+    for index, watermark, offset in ((0, 1, 100), (1, 2, 0), (2, 2, 1), (3, 2, 1)):
+        await database.pool.execute(insert, ids[index], subjects[0].subject_id, NOW + timedelta(seconds=offset),
+                                    watermark, f"{index:064x}", float(index + 1))
+    await database.pool.executemany(insert, [
+        (uuid4(), subjects[1].subject_id, NOW, index, f"{index:064x}", 999.0) for index in range(1000)
+    ])
+
+    class OriginalViewPool:
+        @asynccontextmanager
+        async def acquire(self):
+            async with database.pool.acquire() as connection:
+                async def fetchrow(query, *args):
+                    old, substitutions = re.subn(
+                        r"LEFT JOIN LATERAL \(.*?\) r ON true",
+                        "LEFT JOIN fs2_reporting_lifecycle_latest r USING(subject_id)", query, flags=re.S,
+                    )
+                    assert substitutions == 1
+                    return await connection.fetchrow(old, *args)
+                yield SimpleNamespace(fetchrow=fetchrow)
+
+    scoped = PostgresAppsRepository(database.pool)
+    original = PostgresAppsRepository(OriginalViewPool())
+    assert await scoped.usage("qwen3-8b", CONTEXT, None) == await original.usage("qwen3-8b", CONTEXT, None)
+    assert (await scoped.usage("qwen3-8b", CONTEXT, None))["scientific_gpu"]["occupied_seconds"] == 4
+    await database.pool.execute(
+        insert.replace("'estimated'", "'unavailable'"), uuid4(), subjects[0].subject_id, NOW, 3, "a" * 64, 4.0
+    )
+    assert (await scoped.usage("qwen3-8b", CONTEXT, None))["scientific_gpu"] is None
+    assert await scoped.usage("qwen3-8b", CONTEXT, None) == await original.usage("qwen3-8b", CONTEXT, None)
 
 
 async def test_actual_scientific_attempt_join_reports_missing_rollup_not_zero(database):

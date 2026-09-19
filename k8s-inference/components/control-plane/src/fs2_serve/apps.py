@@ -287,9 +287,18 @@ class AppsService:
             enabled = model.enabled if model else False
             state = "available" if model and model.enabled else "unavailable"
             reason = settings.unsupported_reason
-        usage = await self.usage(record.app_id, context, tenant_id)
-        lifetime_reader = getattr(self.repository, "last_used", None)
-        last_used = await lifetime_reader(record.public_model_id, tenant_id) if lifetime_reader else usage.last_used_at
+        summary_reader = getattr(self.repository, "usage_summary", None)
+        if summary_reader is not None:
+            usage_summary = await summary_reader(record.public_model_id, context, tenant_id)
+            logical_run_count, last_used = usage_summary["logical_runs"], usage_summary["last_used_at"]
+        else:
+            # Embedded stores retain their existing operation projection.
+            usage = await self.usage(record.app_id, context, tenant_id)
+            lifetime_reader = getattr(self.repository, "last_used", None)
+            last_used = (
+                await lifetime_reader(record.public_model_id, tenant_id) if lifetime_reader else usage.last_used_at
+            )
+            logical_run_count = usage.logical_runs
         readiness = self.customer_readiness()
         return AppSummary(
             **record.model_dump(),
@@ -297,7 +306,7 @@ class AppsService:
             status=state,
             status_reason=reason,
             capabilities=settings.capabilities,
-            logical_run_count=usage.logical_runs,
+            logical_run_count=logical_run_count,
             last_used_at=last_used,
             customer_readiness=readiness.get(str(record.app_id)) or readiness.get(record.public_model_id),
         )
