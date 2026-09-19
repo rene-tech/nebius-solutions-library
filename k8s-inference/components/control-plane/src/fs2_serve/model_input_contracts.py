@@ -743,7 +743,8 @@ def _cosmos_properties() -> Schema:
         ),
         "condition_frame_indexes_vision": _array(
             _field("integer", "Nonnegative conditioned latent-frame index.", minimum=0, maximum=100),
-            "Clean reference-video latent frames used for V2V conditioning.",
+            "Selected latent frames used for V2V continuation, not full-trajectory preservation. "
+            "[0] reads one source pixel frame; [0,1] reads five. Unconditioned future motion is generated.",
             minItems=1,
             maxItems=16,
             uniqueItems=True,
@@ -968,14 +969,16 @@ def cosmos_specialized_contracts(
             "cosmos3_nano_video_to_video",
             "video-to-video",
             "Cosmos video to video",
-            "Transform or continue an MP4 of at most 512 MiB while conditioning selected first/last latent "
-            "frames. The queued result is an MP4 artifact; use transfer-video for typed structural controls.",
+            "Continue an MP4 of at most 512 MiB from selected first/last latent frames. Future motion is "
+            "generated, not preserved from the full source clip or recorded robot actions. The queued result "
+            "is an MP4 artifact; use transfer-video for full-sequence spatial controls and validate motion separately.",
         ),
         (
             "cosmos3_nano_transfer_video",
             "transfer-video",
             "Cosmos controlled video transfer",
-            "Generate a queued MP4 guided by bounded edge, blur, depth, segmentation or WSM controls. "
+            "Generate a queued MP4 guided across the reference sequence by edge, blur, depth, segmentation "
+            "or WSM controls. This does not guarantee object identity, robot contacts or action alignment. "
             "The result can take minutes; transfer cannot be combined with sound or robotics action.",
         ),
     )
@@ -1549,7 +1552,7 @@ def scientific_contract_for(
             "source": "LeRobot dataset source: an immutable uploaded zstd tar bundle, pinned Hugging Face revision, or authorized object-store binding; client-local paths are not accessible.",
             "selection": "Explicit episode indices and observation.images camera names to augment; unselected camera streams and recorded non-video fields are preserved.",
             "variants": "Number of augmented variants and exactly that many unique seeds, so each requested variation has a reproducible identity.",
-            "augmentation": "Video-to-video or transfer-video appearance transformation, including prompt, conditioning, dimensions to vary, and generation settings; this does not establish robot-policy efficacy.",
+            "augmentation": "Video-to-video continues selected prefix/suffix frames and may change future motion. Transfer uses full-sequence spatial controls. Neither guarantees recorded-action alignment or policy-training validity; review generated trajectories before use.",
             "actions": "Recorded action policy. Only preserve is supported: original actions and states remain unchanged; inverse-dynamics replacement actions are not qualified.",
             "failure_policy": "Whether an exhausted segment failure stops the run (fail-fast) or permits other segments to continue, and the bounded maximum attempts per segment.",
         }

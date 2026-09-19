@@ -526,6 +526,15 @@ def test_cosmos_transfer_default_and_runtime_dimension_bounds_are_unchanged(regi
             adapter.validate_python(payload | defaults | {"size": invalid})
 
 
+def test_cosmos_continuation_describes_motion_scope_without_claiming_action_alignment(registry):
+    contracts = {name: (contract, description) for name, contract, _, _, description
+                 in cosmos_specialized_contracts(selected(registry, "cosmos3-nano"))}
+    v2v, description = contracts["cosmos3_nano_video_to_video"]
+    assert "not preserved from the full source clip" in description
+    assert "one source pixel frame" in v2v.input_schema["properties"]["condition_frame_indexes_vision"]["description"]
+    assert "does not guarantee" in contracts["cosmos3_nano_transfer_video"][1]
+
+
 @pytest.mark.parametrize(
     "mode", ["text-to-image", "text-to-video", "image-to-video", "video-to-video", "transfer-video"]
 )
