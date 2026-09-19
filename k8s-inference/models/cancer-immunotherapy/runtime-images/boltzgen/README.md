@@ -85,6 +85,30 @@ analysis and filtering gates.
 
 ## Semantic boundary
 
+### September 19 protocol-repair candidate (not yet public-qualified)
+
+`qualification/protocol-repair-20260919.json` records two later recipe-only
+repairs while retaining the image and historical receipts. Prediction uses
+the upstream-supported `num_workers=0`: the original antibody request
+completed all twenty design outputs on a preemptible H100 with the ordinary
+64 MiB `/dev/shm`, unchanged resource limits, checkpoints and diffusion
+settings. This evidence covers configure plus design, not the complete
+antibody pipeline. The old qualification renderer above is historical and
+is not the 64 MiB repair test.
+
+Single-protein `protein-redesign` now validates whole-structure pTM and may
+return one chain. Upstream deliberately excludes target-interface metrics
+for this protocol; a single-chain scaffold's zero inter-chain iPTM is not a
+failed binder interaction. Other protocols still require a positive target
+interface score and multiple chains. Existing sequence/composition, finite
+coordinate, refold-RMSD and exact output-budget checks remain in effect.
+The original failed redesign's retained GPU output passes these corrected
+checks after CPU-only filtering, and independent fixed-region geometry was
+measured separately. Neither corrected collection nor model scores establish
+binding, biological efficacy or experimental suitability.
+Both affected protocols still require explicit new public successor replays;
+the original failures have not been relabeled as successes.
+
 The independent validator imports neither the BoltzGen runtime nor the
 platform adapter.  It parses the emitted mmCIF and NPZ with Gemmi and NumPy and
 requires one physical 60–80-residue non-target designed chain, the unchanged PD-L1 target
