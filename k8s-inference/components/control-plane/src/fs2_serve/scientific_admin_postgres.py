@@ -106,6 +106,25 @@ from .scientific_run_result import ArtifactRef
 
 _TERMINAL_BATCH_STATUS = {BatchStatus.SUCCEEDED, BatchStatus.FAILED, BatchStatus.CANCELLED}
 
+# Same columns and total ordering as fs2_reporting_lifecycle_latest, scoped to
+# each selected subject before reading history. Joining the global DISTINCT ON
+# view can repeatedly sort all rollups for one small run during admin reads.
+_SCIENTIFIC_GPU_ACCOUNTING_QUERY = """
+    SELECT subject.operation_id,subject.attempt_id,rollup.*
+    FROM fs2_telemetry_subjects subject
+    LEFT JOIN LATERAL (
+        SELECT rollup_id,subject_id,generated_at,event_watermark,events_sha256,terminal,outcome,
+               quota_reserved_gpu_seconds,scheduler_occupied_gpu_seconds,device_allocated_gpu_seconds,
+               active_gpu_seconds,occupied_idle_gpu_seconds,phase_gpu_seconds,
+               reconciliation_delta_seconds,device_scheduler_delta_seconds,tolerance_seconds,
+               reconciled,quality,data_gaps,output_shape
+        FROM fs2_lifecycle_rollups
+        WHERE subject_id=subject.subject_id
+        ORDER BY event_watermark DESC,generated_at DESC,rollup_id DESC LIMIT 1
+    ) rollup ON true
+    WHERE subject.operation_id=ANY($1::uuid[]) AND subject.workload_kind='scientific_batch'
+"""
+
 
 def _bounded(value: object, maximum: int, fallback: str) -> str:
     text = str(value) if value is not None else fallback
@@ -482,10 +501,7 @@ class PostgresScientificRunAdminAdapter:
             return {}
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
-                """SELECT subject.operation_id,subject.attempt_id,rollup.*
-                   FROM fs2_telemetry_subjects subject
-                   LEFT JOIN fs2_reporting_lifecycle_latest rollup USING(subject_id)
-                   WHERE subject.operation_id=ANY($1::uuid[]) AND subject.workload_kind='scientific_batch'""",
+                _SCIENTIFIC_GPU_ACCOUNTING_QUERY,
                 [state.operation_id for state in states],
             )
         grouped: dict[UUID, list[Mapping[str, Any]]] = defaultdict(list)
