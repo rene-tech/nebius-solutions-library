@@ -885,7 +885,7 @@ async def test_frozen_queue_deadline_fails_without_retry_before_admission() -> N
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("failure_code", ["node_lost", "DeletionByTaintManager"])
+@pytest.mark.parametrize("failure_code", ["node_lost", "DeletionByTaintManager", "EvictionByEvictionAPI"])
 async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(failure_code: str) -> None:
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()
@@ -939,6 +939,15 @@ async def test_infrastructure_failure_is_retried_but_phase_replay_is_idempotent(
     latest = repository.records[operation_id].stage("dock").latest_attempt("main")
     assert latest is not None and latest.attempt_number == 2
     assert len(cluster.apply_history) == 2
+    cluster.set_observation(latest.workload, WorkloadObservation(
+        ref=latest.workload, attempt_id=latest.attempt_id, state=WorkloadState.FAILED,
+        phases=running.phases, failure_kind=FailureKind.INFRASTRUCTURE, failure_code=failure_code,
+        scheduling_admission=running.scheduling_admission,
+    ))
+    for _ in range(5):
+        await reconciler.reconcile_once()
+    assert repository.records[operation_id].status is BatchStatus.FAILED
+    assert len(cluster.apply_history) == 2  # No Job Ignore policy or attempt-budget bypass.
 
 
 @pytest.mark.asyncio

@@ -14,7 +14,7 @@ import pytest
 import pytest_asyncio
 
 from fs2_serve.crypto import KeyedHasher, PayloadCipher
-from fs2_serve.lifecycle import LifecycleSignal, LifecycleSubject, PostgresLifecycleRepository
+from fs2_serve.lifecycle import LifecycleCorrelation, LifecycleSignal, LifecycleSubject, PostgresLifecycleRepository
 from fs2_serve.models import AdmissionRequest, Principal, Scope, TokenCreate
 from fs2_serve.postgres import PostgresStore
 from fs2_serve.scientific_admin import ScientificModelSnapshot, ScientificRunQuery
@@ -349,6 +349,10 @@ async def test_postgres_list_and_detail_join_durable_gpu_rollups_once_per_page()
 
     class AccountingConnection(FakeConnection):
         async def fetch(self, query: str, *args: object) -> list[dict[str, Any]]:
+            if "fs2_telemetry_correlations" in query:
+                self.queries.append(query)
+                assert args == (OPERATION_ID, state.tenant_id)
+                return []
             if "fs2_lifecycle_signals" in query:
                 self.queries.append(query)
                 assert args == (OPERATION_ID, state.tenant_id)
@@ -667,6 +671,11 @@ async def test_real_postgres_phase_projection_uses_actual_restore_clocks_and_ten
         for row in fixture["signals"]
     ]
     await repository.append_signals(signals)
+    await repository.append_correlations([LifecycleCorrelation.model_validate({
+        "correlation_key": f"test:{attempt.attempt_id}:device", "subject_id": attempt.attempt_id,
+        "observed_at": NOW, "source": "kubernetes", "pod_uid": "observed-pod-uid",
+        "node_uid": "observed-node-uid", "gpu_uuid": "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "gpu_rank": 0,
+    })])
     adapter = PostgresScientificRunAdminAdapter(
         pool=postgres_admin_store.pool,
         batches=PostgresScientificBatchRepository(postgres_admin_store.pool),
@@ -677,6 +686,13 @@ async def test_real_postgres_phase_projection_uses_actual_restore_clocks_and_ten
     restore = next(item.duration for item in phases if item.phase == "restore")
     assert restore.value == pytest.approx(3.946846)
     assert restore.evidence.value == "estimated"
+    identities = await adapter._lifecycle_correlations(state)
+    assert len(identities) == 1
+    assert identities[0]["attempt_id"] == attempt.attempt_id
+    assert identities[0]["pod_uid"] == "observed-pod-uid"
+    assert identities[0]["node_uid"] == "observed-node-uid"
+    assert identities[0]["gpu_uuid"] == "GPU-aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    assert await adapter._lifecycle_correlations(replace(state, tenant_id="other-tenant")) == ()
     foreign = await adapter._phase_times(replace(state, tenant_id="other-tenant"))
     assert all(item.duration.value is None for item in foreign)
 

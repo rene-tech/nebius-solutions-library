@@ -397,8 +397,8 @@ def derive_operational_model_state(
     )
 
 
-def _available(value: float, unit: str, source: str) -> AdminMeasurement:
-    return AdminMeasurement(value=value, unit=unit, state=AdminValueState.AVAILABLE, source=source)
+def _available(value: float, unit: str, source: str, *, reason: str | None = None) -> AdminMeasurement:
+    return AdminMeasurement(value=value, unit=unit, state=AdminValueState.AVAILABLE, source=source, reason=reason)
 
 
 def _estimated(value: float, unit: str, source: str, *, reason: str | None = None) -> AdminMeasurement:
@@ -1004,7 +1004,11 @@ class AdminReadService:
                 ),
                 latency=self._latency(prom if prom_ready else None, usage if database_ready else None),
                 cold_start_seconds=(
-                    _available(usage.cold_start_seconds if usage is not None else 0.0, "seconds", "postgresql")
+                    _available(
+                        usage.cold_start_seconds if usage is not None else 0.0, "seconds", "postgresql",
+                        reason=("Legacy field: sum of accepted-to-ready spans, "
+                                "including queue/dispatch; not pure cold start."),
+                    )
                     if database_ready
                     else _unavailable("seconds", "postgresql", "cold-start accounting is unavailable")
                 ),
@@ -1453,7 +1457,11 @@ class AdminReadService:
                     unavailable_reason="queue completion timestamp is not recorded yet",
                 ),
                 cold_start_seconds=(
-                    _available(record.cold_start_seconds, "seconds", "postgresql")
+                    _available(
+                        record.cold_start_seconds, "seconds", "postgresql",
+                        reason=("Legacy field: accepted-to-ready including queue/dispatch; "
+                                "overlaps queue, not pure cold start."),
+                    )
                     if record.cold_start_seconds is not None
                     else _unavailable("seconds", "postgresql", "cold-start timing is unavailable")
                 ),

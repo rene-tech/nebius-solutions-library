@@ -20,6 +20,11 @@ rules:
   - apiGroups: [""]
     resources: ["pods"]
     verbs: ["get", "list"]
+  # Exact image-pull boundaries for each configured scientific namespace.
+  # The existing reconcile reads a bounded list; it does not watch or mutate.
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["list"]
   # Read the existing timestamped supervisor marker for restore/compute
   # accounting. This role is scoped to configured scientific namespaces.
   - apiGroups: [""]

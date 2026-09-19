@@ -43,7 +43,7 @@ export function ModelDetailPage() {
               <MetricCard label="Requests" value={metrics.requests_per_second} />
               <MetricCard label="Tokens" value={metrics.tokens_per_second} />
               <MetricCard label="Error rate" value={metrics.error_rate} />
-              <MetricCard label="Cold start" value={metrics.cold_start_seconds} />
+              <MetricCard label="Accepted to ready" value={metrics.cold_start_seconds} />
             </div>
             <div className="split-grid">
               <section className="panel"><div className="section-heading"><div><span className="eyebrow">Runtime</span><h2>Serving state</h2></div></div><dl className="definition-grid"><div><dt>Ready replicas</dt><dd>{runtime.ready_replicas ?? "—"}</dd></div><div><dt>Desired replicas</dt><dd>{runtime.desired_replicas ?? "—"}</dd></div><div><dt>Queued operations</dt><dd>{runtime.queued_operations ?? "—"}</dd></div><div><dt>Last observed</dt><dd>{formatTimestamp(runtime.observed_at)}</dd></div><div><dt>Serving health</dt><dd>{runtime.semantic_healthy === null ? "Unknown" : runtime.semantic_healthy ? "Passing" : "Failing"}</dd></div><div><dt>Activation</dt><dd>{runtime.activation_phase ?? "Unknown"}</dd></div></dl></section>

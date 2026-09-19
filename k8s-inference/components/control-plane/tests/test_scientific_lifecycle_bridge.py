@@ -277,7 +277,7 @@ def pod_observation(
         device_observation_resolution_seconds=5,
         completed_at=at(10),
         phases=(
-            PodPhaseInterval(LifecyclePhase.IMAGE_LOADING, at(2), at(3)),
+            PodPhaseInterval(LifecyclePhase.IMAGE_LOADING, at(2), at(3), ("pull-start", "pull-end")),
             PodPhaseInterval(LifecyclePhase.ARTIFACT_LOADING, at(3), at(4)),
             PodPhaseInterval(LifecyclePhase.RESTORING, at(4), at(5)),
             PodPhaseInterval(LifecyclePhase.SEMANTIC_WARMUP, at(5), at(6)),

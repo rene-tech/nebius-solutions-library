@@ -15,6 +15,7 @@ from uuid import UUID
 
 import httpx
 
+from ..runtime_kubernetes import _image_pull_observations
 from .models import (
     COLLECTION_GRACE_SECONDS,
     COLLECTOR_CONTAINER_NAME,
@@ -255,6 +256,8 @@ def _reported_failure(
         }
         if "DeletionByTaintManager" in disruptions:
             return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "DeletionByTaintManager"
+        if "EvictionByEvictionAPI" in disruptions:
+            return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "EvictionByEvictionAPI"
         if "PreemptionByScheduler" in disruptions:
             return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, "PreemptionByScheduler"
     if (
@@ -390,9 +393,9 @@ def _canonical_phase_intervals(
     independently for every immutable Pod UID, so retries remain distinct.
     """
 
-    canonical: dict[tuple[LifecyclePhase, datetime], PodPhaseInterval] = {}
+    canonical: dict[tuple[LifecyclePhase, datetime, tuple[str, ...]], PodPhaseInterval] = {}
     for interval in intervals:
-        identity = (interval.phase, interval.started_at)
+        identity = (interval.phase, interval.started_at, interval.source_event_uids)
         existing = canonical.get(identity)
         if existing is None:
             canonical[identity] = interval
@@ -406,6 +409,7 @@ def _canonical_phase_intervals(
             phase=interval.phase,
             started_at=interval.started_at,
             ended_at=ended_at,
+            source_event_uids=interval.source_event_uids,
         )
     return tuple(canonical.values())
 
@@ -844,6 +848,51 @@ class HttpScientificBatchCluster:
         if self._owns_client:
             await self.client.aclose()
 
+    async def _pull_events(self, namespace: str) -> list[dict[str, Any]]:
+        """Use the existing observer reconcile, not a second telemetry poller.
+
+        Missing/expired/aggregated events leave startup unclassified. Event
+        messages and image names are neither parsed nor retained.
+        """
+        try:
+            response = await self._request(
+                "GET", f"/api/v1/namespaces/{quote(namespace, safe='')}/events"
+                "?fieldSelector=involvedObject.kind=Pod&limit=1000"
+            )
+            if response.status_code != 200:
+                return []
+            document = response.json()
+            if not isinstance(document, dict) or not isinstance(document.get("items"), list):
+                return []
+            metadata = document.get("metadata", {})
+            if not isinstance(metadata, dict) or metadata.get("continue"):
+                return []
+            events = [event for event in document.get("items", []) if isinstance(event, dict)
+                      and event.get("count", 1) == 1 and not event.get("series")]
+        except (ScientificKubernetesError, ValueError, TypeError):
+            return []
+        return events
+
+    @staticmethod
+    def _image_pull_intervals(
+        events: list[dict[str, Any]], pod: PodLifecycleObservation,
+    ) -> tuple[PodPhaseInterval, ...]:
+        # A Pod can pull init/stage/collector images concurrently. Missing
+        # container coordinates must not pair another container's boundaries.
+        scoped = [event for event in events
+                  if isinstance(event.get("involvedObject"), Mapping)
+                  and isinstance(event["involvedObject"].get("fieldPath"), str)
+                  and event["involvedObject"]["fieldPath"]]
+        return tuple(
+            PodPhaseInterval(
+                phase=LifecyclePhase.IMAGE_LOADING, started_at=value.started_at, ended_at=value.completed_at,
+                source_event_uids=(value.start_event_uid, value.end_event_uid),
+            )
+            for value in _image_pull_observations(scoped, pod.pod_uid)
+            if value.start_event_uid and value.end_event_uid and pod.scheduled_at is not None
+            and pod.scheduled_at <= value.started_at <= value.completed_at <= pod.observed_at
+        )
+
     def _headers(self) -> dict[str, str]:
         try:
             token = self.token_file.read_text().strip()
@@ -1168,6 +1217,12 @@ class HttpScientificBatchCluster:
         pending_codes: list[str] = []
         scheduled = False
         observed_at = self.clock()
+        # One bounded event read for this reconcile, not one per gang Pod.
+        pull_events = await self._pull_events(ref.namespace) if any(
+            isinstance(pod, Mapping) and isinstance(pod.get("status"), Mapping)
+            and _condition(pod["status"], "PodScheduled") is not None
+            for pod in (pods if isinstance(pods, list) else [])
+        ) else []
         for raw_pod in pods if isinstance(pods, list) else []:
             if not isinstance(raw_pod, Mapping):
                 continue
@@ -1182,6 +1237,10 @@ class HttpScientificBatchCluster:
                 snapshot_request_at=await self._snapshot_request_at(raw_pod, ref.namespace),
             )
             if lifecycle is not None:
+                lifecycle = replace(
+                    lifecycle,
+                    phases=(*lifecycle.phases, *self._image_pull_intervals(pull_events, lifecycle)),
+                )
                 pod_lifecycle.append(lifecycle)
             pod_status = raw_pod.get("status")
             if not isinstance(pod_status, Mapping):

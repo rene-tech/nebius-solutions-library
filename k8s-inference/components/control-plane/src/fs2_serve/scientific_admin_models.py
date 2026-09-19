@@ -143,14 +143,19 @@ class ScientificFastStartObservation(StrictModel):
 class ScientificLifecyclePhase(StrictModel):
     phase: Literal[
         "queue",
+        "dispatch",
         "admission",
         "image-pull",
         "artifact-load",
         "restore",
+        "compile",
         "semantic-warmup",
         "active-compute",
         "allocated-idle",
         "grace-drain",
+        "cooldown",
+        "checkpoint-drain",
+        "unknown",
         "teardown",
     ]
     duration: ScientificMeasurement
@@ -178,6 +183,34 @@ class ScientificGpuAccounting(StrictModel):
     idle_by_cause: list[ScientificIdleCause] = Field(max_length=16)
     grace_drain: ScientificMeasurement
     reconciliation_delta: ScientificMeasurement
+    # Additive projection; legacy idle_total includes startup/unknown and is
+    # deliberately retained for old API clients, never labelled classified idle.
+    phase_partition: dict[str, ScientificMeasurement] = Field(default_factory=dict, max_length=16)
+    quota_reserved: ScientificMeasurement | None = None
+    device_allocated: ScientificMeasurement | None = None
+    sampled_device_activity: ScientificMeasurement | None = None
+    data_gaps: list[str] = Field(default_factory=list, max_length=128)
+
+
+class ScientificPlacementConstraints(StrictModel):
+    source: Literal["frozen-admission-contract"] = "frozen-admission-contract"
+    scheduling_digest: str
+    eligible_pool_ids: list[str]
+    namespace: str
+    required_node_labels: dict[str, str]
+    stage_cpu_millis: int | None = None
+    stage_memory_bytes: int | None = None
+    stage_ephemeral_storage_bytes: int | None = None
+    pod_cpu_millis: int | None = None
+    pod_memory_bytes: int | None = None
+    pod_ephemeral_storage_bytes: int | None = None
+    accelerator_count: int
+    reference_data_required: bool | None = None
+    live_fit: Literal["not-observed"] = "not-observed"
+    reason: str = (
+        "Frozen eligibility and stage plus collector requests, not currently placeable capacity. "
+        "Live CPU/RAM/disk, taints, reference-data labels and gang placement still apply."
+    )
 
 
 class ScientificError(StrictModel):
@@ -207,6 +240,11 @@ class ScientificAttempt(StrictModel):
     phase: str | None = Field(default=None, max_length=64)
     phase_reason: str | None = Field(default=None, max_length=300)
     phase_observed_at: AwareDatetime | None = None
+    lifecycle_subject_id: str | None = None
+    lifecycle_phases: list[ScientificLifecyclePhase] = Field(default_factory=list, max_length=32)
+    observed_pod_uids: list[str] = Field(default_factory=list, max_length=1024)
+    observed_node_uids: list[str] = Field(default_factory=list, max_length=1024)
+    observed_gpu_uuids: list[str] = Field(default_factory=list, max_length=1024)
 
 
 class ScientificStage(StrictModel):
@@ -219,6 +257,7 @@ class ScientificStage(StrictModel):
     checkpoint_mode: Literal["none", "restart", "resume"]
     status: Literal["pending", "queued", "admitted", "running", "succeeded", "failed", "cancelled", "skipped"]
     attempts: list[ScientificAttempt] = Field(max_length=1024)
+    placement: ScientificPlacementConstraints | None = None
 
 
 class ScientificArtifactDownload(StrictModel):

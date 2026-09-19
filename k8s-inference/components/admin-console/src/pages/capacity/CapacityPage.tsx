@@ -170,7 +170,7 @@ export function CapacityPage() {
                     <th>Ready nodes</th>
                     <th>GPUs</th>
                     <th>Allocated</th>
-                    <th>Schedulable free</th>
+                    <th>Unreserved GPU units</th>
                     <th>Workers</th>
                     <th>Configured expansion</th>
                   </tr>

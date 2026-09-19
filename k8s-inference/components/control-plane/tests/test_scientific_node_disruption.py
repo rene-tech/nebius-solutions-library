@@ -1,6 +1,8 @@
 """Regression for the real Pending Pod eviction observed on18September2026."""
 
+import json
 from datetime import timedelta
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -44,7 +46,8 @@ def test_exact_scheduler_preemption_condition_is_retryable():
     [
         ("DeletionByTaintManager", "False"),
         ("DeletionByTaintManager", "Unknown"),
-        ("EvictionByEvictionAPI", "True"),
+        ("EvictionByEvictionAPI", "False"),
+        ("EvictionByEvictionAPI", "Unknown"),
         ("GenericEviction", "True"),
         ("", "True"),
     ],
@@ -67,6 +70,37 @@ def test_model_exception_is_not_retried_due_to_later_disruption():
         {"name": STAGE_CONTAINER_NAME, "state": {"terminated": {"exitCode": 1, "reason": "Error"}}}
     ]
     assert _reported_failure(["Error"], [pod], model_id="esmfold2")[1] is FailureKind.APPLICATION
+
+
+@pytest.mark.parametrize("exit_code", [None, 137, 143])
+def test_exact_api_eviction_is_retryable_without_changing_the_attempt_budget(exit_code):
+    pod = disrupted("EvictionByEvictionAPI")
+    if exit_code is not None:
+        pod["containerStatuses"] = [
+            {"name": STAGE_CONTAINER_NAME, "state": {"terminated": {"exitCode": exit_code, "reason": "Error"}}}
+        ]
+    assert _reported_failure(["workload_failed"], [pod], model_id="esmfold2") == (
+        WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "EvictionByEvictionAPI",
+    )
+
+
+@pytest.mark.parametrize("reason,exit_code", [("OOMKilled", 137), ("MaximumExecutionTimeExceeded", 143), ("Error", 1)])
+def test_api_eviction_does_not_override_known_model_failure(reason, exit_code):
+    pod = disrupted("EvictionByEvictionAPI")
+    pod["containerStatuses"] = [
+        {"name": STAGE_CONTAINER_NAME, "state": {"terminated": {"exitCode": exit_code, "reason": reason}}}
+    ]
+    assert _reported_failure([reason], [pod], model_id="esmfold2")[1] is FailureKind.APPLICATION
+
+
+def test_retained_real_h100_api_eviction_is_infrastructure():
+    # Public baseline ba2003cd failed under 182. Preserve that original outcome;
+    # replay only the bounded observed Pod fields, not a claimed live recovery.
+    receipt = json.loads((Path(__file__).parent / "fixtures/api_eviction_20260919.json").read_text())
+    assert receipt["source_sha256"] == "a743d05cbdcf861c1789addbfe75a58d60d6771a7782dadbe69bf57ec783cf88"
+    assert _reported_failure(["workload_failed"], [receipt["status"]], model_id="esmfold2") == (
+        WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "EvictionByEvictionAPI",
+    )
 
 
 @pytest.mark.asyncio

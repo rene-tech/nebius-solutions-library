@@ -57,6 +57,33 @@ function renderPage(
 }
 
 describe("scientific run detail", () => {
+  it("separates unavailable activity, observed phases and frozen whole-Pod fit requirements", async () => {
+    const detail = detailFixture();
+    const accounting = detail.data.run.gpu_accounting;
+    accounting.phase_partition = {unclassified: {...accounting.allocated, value: 5}};
+    accounting.sampled_device_activity = {
+      value: null, unit: "gpu-seconds", evidence: "unavailable", source: "lifecycle-ledger",
+      reason: "No attempt-correlated device activity samples are retained.",
+    };
+    detail.data.stages[1].placement = {
+      source: "frozen-admission-contract", scheduling_digest: "sha256:test", eligible_pool_ids: ["h100-1x"],
+      namespace: "fs2-models", required_node_labels: {"gpu.family": "h100"},
+      stage_cpu_millis: 16000, stage_memory_bytes: 1024, stage_ephemeral_storage_bytes: 1024,
+      pod_cpu_millis: 16100, pod_memory_bytes: 268436480, pod_ephemeral_storage_bytes: 1024,
+      accelerator_count: 1, reference_data_required: true, live_fit: "not-observed",
+      reason: "Frozen eligibility is not current placeable capacity.",
+    };
+    renderPage(() => Promise.resolve(detail));
+    expect(await screen.findByText("Sampled device activity")).toBeInTheDocument();
+    expect(screen.getByText("No attempt-correlated device activity samples are retained.")).toBeInTheDocument();
+    const constraints = screen.getByRole("region", {name: "Frozen placement constraints"});
+    expect(constraints).toHaveTextContent("CPU 16100m");
+    expect(constraints).toHaveTextContent("gpu.family=h100");
+    expect(constraints).toHaveTextContent("Reference data: required");
+    expect(constraints).toHaveTextContent("not current placeable capacity");
+    expect(screen.getByText(/Not a bill or a measurement of device utilization/)).toBeInTheDocument();
+  });
+
   it("waits for successful result publication without polling failed or cancelled runs forever", () => {
     const detail = detailFixture().data;
     expect(scientificRunNeedsRefresh(undefined)).toBe(true);
@@ -166,7 +193,7 @@ describe("scientific run detail", () => {
     expect(await screen.findByRole("heading", { name: "CD8 binder backbone screen" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Phase durations" })).toBeInTheDocument();
     expect(screen.getByText(/Observed wall-time union per phase/)).toHaveTextContent("Parallel intervals count once");
-    expect(screen.getByRole("heading", { name: "GPU idle by cause" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "GPU occupancy partition" })).toBeInTheDocument();
     expect(screen.getByText("Reconciliation", { exact: false })).toHaveTextContent("0 GPU-s measured");
 
     const gpuStage = screen.getByRole("heading", { name: "Diffuse candidate backbones" }).closest("li");

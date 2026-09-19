@@ -59,7 +59,7 @@ export function ModelsPage() {
           <div className="table-frame">
             <table className="resource-table">
               <caption className="sr-only">Models and current serving state</caption>
-              <thead><tr><th scope="col">Model</th><th scope="col">Runtime state</th><th scope="col">Catalog support</th><th scope="col">Replicas</th><th scope="col">GPU profile</th><th scope="col">Requests</th><th scope="col">Errors</th><th scope="col">Cold start</th></tr></thead>
+              <thead><tr><th scope="col">Model</th><th scope="col">Runtime state</th><th scope="col">Catalog support</th><th scope="col">Replicas</th><th scope="col">GPU profile</th><th scope="col">Requests</th><th scope="col">Errors</th><th scope="col">Accepted to ready</th></tr></thead>
               <tbody>
                 {items.map((item) => (
                   <tr key={item.identity.id}>

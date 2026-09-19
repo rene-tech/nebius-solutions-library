@@ -20,27 +20,37 @@ from .scientific_admin_models import ScientificEvidenceState, ScientificLifecycl
 
 AdminPhase = Literal[
     "queue",
+    "dispatch",
     "admission",
     "image-pull",
     "artifact-load",
     "restore",
+    "compile",
     "semantic-warmup",
     "active-compute",
     "allocated-idle",
     "grace-drain",
+    "cooldown",
+    "checkpoint-drain",
+    "unknown",
     "teardown",
 ]
 _PHASES: dict[AdminPhase, frozenset[LifecyclePhase]] = {
     "queue": frozenset({LifecyclePhase.ADMISSION_WAIT}),
+    "dispatch": frozenset({LifecyclePhase.NODE_REQUEST}),
     # Admission is an instant in this ledger, not a measured duration.
     "admission": frozenset(),
     "image-pull": frozenset({LifecyclePhase.IMAGE_PULL}),
     "artifact-load": frozenset({LifecyclePhase.ARTIFACT_LOAD}),
     "restore": frozenset({LifecyclePhase.RESTORE}),
-    "semantic-warmup": frozenset({LifecyclePhase.COMPILE, LifecyclePhase.WARMUP}),
+    "compile": frozenset({LifecyclePhase.COMPILE}),
+    "semantic-warmup": frozenset({LifecyclePhase.WARMUP}),
     "active-compute": frozenset({LifecyclePhase.ACTIVE_COMPUTE}),
     "allocated-idle": frozenset({LifecyclePhase.WORKFLOW_WAIT, LifecyclePhase.RESIDENT_IDLE}),
     "grace-drain": frozenset({LifecyclePhase.COOLDOWN_GRACE, LifecyclePhase.CHECKPOINT_DRAIN}),
+    "cooldown": frozenset({LifecyclePhase.COOLDOWN_GRACE}),
+    "checkpoint-drain": frozenset({LifecyclePhase.CHECKPOINT_DRAIN}),
+    "unknown": frozenset({LifecyclePhase.UNCLASSIFIED}),
     "teardown": frozenset({LifecyclePhase.TEARDOWN}),
 }
 

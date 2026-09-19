@@ -34,15 +34,21 @@ def project_gpu_accounting(
         if stage.stage_id in gpu_stages
         for attempt in stage.attempts
     }
-    selected = {
-        UUID(str(row["attempt_id"])): row
-        for row in rows
-        if UUID(str(row["attempt_id"])) in expected and row.get("rollup_id") is not None
-    }
+    selected: dict[UUID, Mapping[str, Any]] = {}
+    for row in rows:
+        attempt_id = UUID(str(row["attempt_id"]))
+        if attempt_id not in expected or row.get("rollup_id") is None or row.get("quality") == "unavailable":
+            continue
+        previous = selected.setdefault(attempt_id, row)
+        if previous != row:
+            raise ValueError("conflicting latest lifecycle rollups for one immutable attempt")
     if not selected:
         return None
     complete = len(selected) == len(expected)
-    exact = complete and all(
+    data_gaps = sorted({gap for row in selected.values() for gap in row.get("data_gaps", ())})
+    if not complete:
+        data_gaps.append("attempt_coverage_incomplete")
+    exact = complete and not data_gaps and all(
         row["quality"] == "measured" and row["reconciled"] and row["terminal"] for row in selected.values()
     )
     reason = (
@@ -63,6 +69,17 @@ def project_gpu_accounting(
             reason=reason,
         )
 
+    def unavailable(reason: str) -> ScientificMeasurement:
+        return ScientificMeasurement(
+            value=None, unit="gpu-seconds", evidence=ScientificEvidenceState.UNAVAILABLE,
+            source="lifecycle-ledger", reason=reason,
+        )
+
+    def clock(field: str, missing_gap: str) -> ScientificMeasurement:
+        if any(row.get(field) is None or missing_gap in row.get("data_gaps", ()) for row in selected.values()):
+            return unavailable("This clock lacks an independently observed boundary for one or more attempts.")
+        return measurement(sum(float(row[field]) for row in selected.values()))
+
     totals: dict[str, float] = defaultdict(float)
     for row in selected.values():
         phases = row["phase_gpu_seconds"]
@@ -73,6 +90,17 @@ def project_gpu_accounting(
     active = sum(float(row["active_gpu_seconds"]) for row in selected.values())
     grace = sum(totals[phase] for phase in ("cooldown_grace", "checkpoint_drain", "teardown"))
     idle = max(0.0, sum(float(row["occupied_idle_gpu_seconds"]) for row in selected.values()) - grace)
+    partition = {
+        phase: (
+            unavailable("Phase not observed; unclassified occupancy cannot be reassigned to this phase.")
+            if totals[phase] == 0 and totals["unclassified"] > 0
+            else measurement(totals[phase])
+        )
+        for phase in (
+            "image_pull", "artifact_load", "restore", "compile", "warmup", "active_compute",
+            "workflow_wait", "resident_idle", "cooldown_grace", "checkpoint_drain", "teardown", "unclassified",
+        )
+    }
     idle_causes: dict[
         Literal["image-pull", "artifact-load", "restore", "warmup", "between-stages", "unattributed"], float
     ] = {
@@ -89,7 +117,10 @@ def project_gpu_accounting(
     return ScientificGpuAccounting(
         gpu_count=max(gpu_counts) if gpu_counts else None,
         capacity_type="unknown",
-        allocated=measurement(occupied),
+        allocated=(
+            unavailable("Scheduler occupancy boundaries are missing; device allocation is a different clock.")
+            if "scheduler_occupancy_clock_missing" in data_gaps else measurement(occupied)
+        ),
         active=measurement(active),
         idle_total=measurement(idle),
         idle_by_cause=[
@@ -101,4 +132,11 @@ def project_gpu_accounting(
         reconciliation_delta=measurement(
             sum(abs(float(row["reconciliation_delta_seconds"])) for row in selected.values())
         ),
+        phase_partition=partition,
+        quota_reserved=clock("quota_reserved_gpu_seconds", "quota_reservation_clock_missing"),
+        device_allocated=clock("device_allocated_gpu_seconds", "device_allocation_clock_missing"),
+        sampled_device_activity=unavailable(
+            "No attempt-correlated device activity samples are retained. Execution wall time is not GPU busy time."
+        ),
+        data_gaps=data_gaps,
     )

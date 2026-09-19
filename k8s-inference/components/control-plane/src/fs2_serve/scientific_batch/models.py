@@ -1809,8 +1809,15 @@ class PodPhaseInterval:
     phase: LifecyclePhase
     started_at: datetime
     ended_at: datetime | None = None
+    # Only exact UID-fenced Kubernetes Pulling/Pulled pairs establish image pull.
+    source_event_uids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
+        if self.source_event_uids and (
+            self.phase is not LifecyclePhase.IMAGE_LOADING or len(self.source_event_uids) != 2
+            or any(not uid or len(uid) > 128 for uid in self.source_event_uids)
+        ):
+            raise ValueError("image-pull evidence requires the exact start/end event UIDs")
         if self.phase not in {
             LifecyclePhase.IMAGE_LOADING,
             LifecyclePhase.ARTIFACT_LOADING,
@@ -1903,7 +1910,7 @@ class PodLifecycleObservation:
             raise ValueError("device allocation resolution has no observation")
         if self.device_allocation_observed_at is not None and self.scheduled_at is None:
             raise ValueError("device allocation observation has no Pod scheduling evidence")
-        identities = [(item.phase, item.started_at) for item in self.phases]
+        identities = [(item.phase, item.started_at, item.source_event_uids) for item in self.phases]
         if len(identities) != len(set(identities)):
             raise ValueError("observed Pod phase starts must be unique")
 

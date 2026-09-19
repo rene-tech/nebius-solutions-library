@@ -120,14 +120,19 @@ export interface ScientificFastStartObservation {
 export interface ScientificLifecyclePhase {
   phase:
     | "queue"
+    | "dispatch"
     | "admission"
     | "image-pull"
     | "artifact-load"
     | "restore"
+    | "compile"
     | "semantic-warmup"
     | "active-compute"
     | "allocated-idle"
     | "grace-drain"
+    | "cooldown"
+    | "checkpoint-drain"
+    | "unknown"
     | "teardown";
   duration: ScientificEvidenceMeasurement;
 }
@@ -144,6 +149,29 @@ export interface ScientificGpuAccounting {
   }>;
   grace_drain: ScientificEvidenceMeasurement;
   reconciliation_delta: ScientificEvidenceMeasurement;
+  phase_partition?: Record<string, ScientificEvidenceMeasurement>;
+  quota_reserved?: ScientificEvidenceMeasurement | null;
+  device_allocated?: ScientificEvidenceMeasurement | null;
+  sampled_device_activity?: ScientificEvidenceMeasurement | null;
+  data_gaps?: string[];
+}
+
+export interface ScientificPlacementConstraints {
+  source: "frozen-admission-contract";
+  scheduling_digest: string;
+  eligible_pool_ids: string[];
+  namespace: string;
+  required_node_labels: Record<string, string>;
+  stage_cpu_millis: number | null;
+  stage_memory_bytes: number | null;
+  stage_ephemeral_storage_bytes: number | null;
+  pod_cpu_millis: number | null;
+  pod_memory_bytes: number | null;
+  pod_ephemeral_storage_bytes: number | null;
+  accelerator_count: number;
+  reference_data_required: boolean | null;
+  live_fit: "not-observed";
+  reason: string;
 }
 
 export interface ScientificError {
@@ -173,6 +201,11 @@ export interface ScientificAttempt {
   phase?: string | null;
   phase_reason?: string | null;
   phase_observed_at?: string | null;
+  lifecycle_subject_id?: string | null;
+  lifecycle_phases?: ScientificLifecyclePhase[];
+  observed_pod_uids?: string[];
+  observed_node_uids?: string[];
+  observed_gpu_uuids?: string[];
 }
 
 export interface ScientificStage {
@@ -185,6 +218,7 @@ export interface ScientificStage {
   checkpoint_mode: "none" | "restart" | "resume";
   status: ScientificStageState;
   attempts: ScientificAttempt[];
+  placement?: ScientificPlacementConstraints | null;
 }
 
 export interface ScientificArtifact {

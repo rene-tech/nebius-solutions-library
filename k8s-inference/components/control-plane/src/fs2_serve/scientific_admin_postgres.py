@@ -18,7 +18,7 @@ from uuid import UUID
 import asyncpg
 
 from .apps_scientific import AppScientificModels, ScientificAppsInventory
-from .lifecycle import _signal_from_row
+from .lifecycle import LifecycleSignal, _signal_from_row
 from .registry import Registry
 from .scientific_admin import (
     ScientificAdminQueryError,
@@ -60,6 +60,7 @@ from .scientific_admin_models import (
     ScientificModelPolicyUpdate,
     ScientificModelReadiness,
     ScientificObservabilityLink,
+    ScientificPlacementConstraints,
     ScientificQueueState,
     ScientificRetry,
     ScientificRunDetail,
@@ -94,6 +95,7 @@ from .scientific_batch.models import (
     StageStatus,
     WorkloadKind,
 )
+from .scientific_batch.placement import execution_resource_envelope, stage_pod_request
 from .scientific_batch.policy import (
     PostgresScientificModelPolicyRepository,
     ScientificModelPolicyRecord,
@@ -449,11 +451,62 @@ def _attempt(
     )
 
 
-def _stages(state: ScientificBatchState, events: tuple[BatchEvent, ...]) -> list[ScientificStage]:
+def _placement(state: ScientificBatchState, stage_id: str) -> ScientificPlacementConstraints:
+    decision = state.scheduling.stage(stage_id)
+    plan = next(item for item in state.plan.stages if item.stage_id == stage_id)
+    binding = next(
+        (item for item in state.execution_plan.stage_bindings if item.stage_id == stage_id), None
+    ) if state.execution_plan else None
+    resources = plan.resources or (execution_resource_envelope(binding) if binding else None)
+    # Same canonical stage + concurrent collector arithmetic as admission.
+    # This is a frozen envelope, not a query of available resources on nodes.
+    pod = stage_pod_request(
+        resources, accelerator_resource=decision.accelerator_resource_name or "nvidia.com/gpu",
+        accelerator_count=decision.accelerator_count,
+    ) if resources else None
+    labels = dict(decision.node_selector)
+    if binding:
+        labels.update(binding.required_node_labels)
+    return ScientificPlacementConstraints(
+        scheduling_digest=state.scheduling.digest,
+        eligible_pool_ids=list(decision.resolved_pool_preference),
+        namespace=decision.workload_namespace or state.scheduling.workload_namespace,
+        required_node_labels=labels,
+        stage_cpu_millis=resources.cpu_millis if resources else None,
+        stage_memory_bytes=resources.memory_bytes if resources else None,
+        stage_ephemeral_storage_bytes=resources.ephemeral_storage_bytes if resources else None,
+        pod_cpu_millis=pod.cpu_millis if pod else None,
+        pod_memory_bytes=pod.memory_bytes if pod else None,
+        pod_ephemeral_storage_bytes=pod.ephemeral_storage_bytes if pod else None,
+        accelerator_count=decision.accelerator_count,
+        reference_data_required=(any(mount.kind == "reference" for mount in binding.mounts) if binding else None),
+    )
+
+
+def _stages(
+    state: ScientificBatchState, events: tuple[BatchEvent, ...], signals: tuple[LifecycleSignal, ...] = (),
+    correlations: tuple[Mapping[str, Any], ...] = (),
+) -> list[ScientificStage]:
     by_attempt: dict[UUID, list[BatchEvent]] = defaultdict(list)
     for event in events:
         if event.draft.attempt_id is not None:
             by_attempt[event.draft.attempt_id].append(event)
+    by_subject: dict[UUID, list[LifecycleSignal]] = defaultdict(list)
+    for signal in signals:
+        by_subject[signal.subject_id].append(signal)
+
+    def observed_attempt(attempt: ScientificAttemptState, resource_class: ResourceClass) -> ScientificAttempt:
+        observed = by_subject.get(attempt.attempt_id, [])
+        joined = [row for row in correlations if row["attempt_id"] == attempt.attempt_id]
+        result = _attempt(attempt, tuple(by_attempt.get(attempt.attempt_id, ())), resource_class=resource_class)
+        return result.model_copy(update={
+            "lifecycle_subject_id": str(attempt.attempt_id) if observed else None,
+            "lifecycle_phases": project_phase_times(observed),
+            "observed_pod_uids": sorted({row["pod_uid"] for row in joined if row["pod_uid"]}),
+            "observed_node_uids": sorted({row["node_uid"] for row in joined if row["node_uid"]}),
+            "observed_gpu_uuids": sorted({row["gpu_uuid"] for row in joined if row["gpu_uuid"]}),
+            "node_count": len({row["node_uid"] for row in joined if row["node_uid"]}) or None,
+        })
     result: list[ScientificStage] = []
     for ordinal, plan in enumerate(state.plan.stages, start=1):
         stage = state.stage(plan.stage_id)
@@ -467,14 +520,8 @@ def _stages(state: ScientificBatchState, events: tuple[BatchEvent, ...]) -> list
                 admission_mode=plan.mode.value,
                 checkpoint_mode=plan.checkpoint_mode.value,
                 status=cast(Any, _stage_status(stage)),
-                attempts=[
-                    _attempt(
-                        attempt,
-                        tuple(by_attempt.get(attempt.attempt_id, ())),
-                        resource_class=plan.resource_class,
-                    )
-                    for attempt in stage.attempts
-                ],
+                attempts=[observed_attempt(attempt, plan.resource_class) for attempt in stage.attempts],
+                placement=_placement(state, plan.stage_id),
             )
         )
     return result
@@ -513,9 +560,9 @@ class PostgresScientificRunAdminAdapter:
             if (accounting := project_gpu_accounting(state, grouped[state.operation_id])) is not None
         }
 
-    async def _phase_times(self, state: ScientificBatchState) -> list[ScientificLifecyclePhase]:
+    async def _lifecycle_signals(self, state: ScientificBatchState) -> tuple[LifecycleSignal, ...]:
         if not self.lifecycle_accounting:
-            return project_phase_times(())
+            return ()
         expected = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
@@ -524,19 +571,37 @@ class PostgresScientificRunAdminAdapter:
                    JOIN fs2_lifecycle_signals signal USING(subject_id)
                    WHERE subject.operation_id=$1 AND subject.tenant_id=$2
                      AND subject.workload_kind='scientific_batch'
-                     AND signal.clock IN ('phase','lifecycle')
                    ORDER BY signal.id LIMIT 100001""",
                 state.operation_id,
                 state.tenant_id,
             )
         # Match the existing lifecycle detail's bounded signal projection.
         if len(rows) > 100000:
-            return project_phase_times(())
+            return ()
         selected = [row for row in rows if row["attempt_id"] in expected]
+        return tuple(_signal_from_row(row) for row in selected)
+
+    async def _phase_times(self, state: ScientificBatchState) -> list[ScientificLifecyclePhase]:
+        signals = await self._lifecycle_signals(state)
+        expected = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
         return project_phase_times(
-            tuple(_signal_from_row(row) for row in selected),
-            incomplete_attempts={row["attempt_id"] for row in selected} != expected,
+            signals, incomplete_attempts={row.subject_id for row in signals} != expected,
         )
+
+    async def _lifecycle_correlations(self, state: ScientificBatchState) -> tuple[Mapping[str, Any], ...]:
+        if not self.lifecycle_accounting:
+            return ()
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """SELECT subject.attempt_id,correlation.pod_uid,correlation.node_uid,correlation.gpu_uuid
+                   FROM fs2_telemetry_subjects subject
+                   JOIN fs2_telemetry_correlations correlation USING(subject_id)
+                   WHERE subject.operation_id=$1 AND subject.tenant_id=$2
+                     AND subject.workload_kind='scientific_batch'
+                   ORDER BY correlation.observed_at,correlation.correlation_key LIMIT 10001""",
+                state.operation_id, state.tenant_id,
+            )
+        return tuple(rows) if len(rows) <= 10000 else ()
 
     async def _model_map(self, *, tenant_id: str | None) -> dict[str, ScientificModelReadiness]:
         snapshot = await self.models.list_models(tenant_id=tenant_id)
@@ -680,10 +745,15 @@ class PostgresScientificRunAdminAdapter:
             raise ScientificAdminSourceUnavailableError("scientific run model identity is absent") from error
         events = tuple(await self.batches.list_events(operation_id, tenant_id=state.tenant_id, limit=1000))
         max_attempts = max(stage.max_attempts for stage in state.plan.stages)
+        signals = await self._lifecycle_signals(state)
+        correlations = await self._lifecycle_correlations(state)
+        expected_subjects = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
         detail = ScientificRunDetail(
             run=_summary(cast(Mapping[str, Any], record), state, model),
-            lifecycle_phases=await self._phase_times(state),
-            stages=_stages(state, events),
+            lifecycle_phases=project_phase_times(
+                signals, incomplete_attempts={row.subject_id for row in signals} != expected_subjects,
+            ),
+            stages=_stages(state, events, signals, correlations),
             artifacts=[],
             retry=ScientificRetry(max_attempts_per_stage=max_attempts, retryable_exit_codes=[]),
             semantic_validation=ScientificSemanticValidation(

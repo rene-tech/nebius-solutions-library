@@ -202,6 +202,65 @@ hardware usage. Historical totals are not relabelled when deployment placement
 changes. Use the lifecycle clocks and immutable node/GPU correlations above
 for measured allocation and occupied-idle analysis.
 
+## Scientific attempt accounting and placement visibility (2026-09-19)
+
+The scientific admin detail joins existing durable lifecycle subjects and
+correlations by operation, tenant and immutable attempt ID. Each attempt exposes
+only its observed Pod/node/GPU identities, plus its own phase durations. Retries
+are separate subjects; shared online serving requests must not be summed as if
+each owned the whole serving Pod. Conflicting latest rollups fail closed.
+
+New scientific Pod observations retain an admission-to-PodScheduled dispatch
+interval on the lifecycle clock (zero GPU attribution). The existing controller
+reconcile also reads at most 1,000 namespace Events once, not once per Pod. Exact
+Pod-UID/container matched, single-occurrence Pulling/Pulled pairs become durable
+image-pull intervals with both source Event UIDs. Missing, expired, aggregated or
+truncated Event lists leave startup unknown. Generic ContainerCreating is no
+longer labelled measured image pull: mounts, networking and other setup cannot
+be separated without evidence. Historical immutable ledger rows are not rewritten.
+
+The GPU partition displays load, restore, compile, warmup, execution span,
+workflow wait, resident idle, cooldown, checkpoint drain, teardown and unknown.
+Existing collector completion and cleanup edges supply occupied non-execution
+boundaries. Queue/dispatch does not enter this GPU occupancy partition. Phase
+wall-time unions may overlap; the GPU partition uses the existing ledger's
+single-assignment precedence. The compatibility `grace-drain` wall-time field
+overlaps the new cooldown/checkpoint-drain fields and must not be added to them.
+Quota reservation, scheduler occupancy and observed device allocation remain
+three different clocks. Missing clocks are unavailable, never substituted with
+zero. The legacy `idle_total` includes startup/unknown non-execution occupancy;
+it is not a classified idle or utilization measurement.
+
+No attempt-correlated device-utilization samples are retained by the current
+observer/DCGM join. `sampled_device_activity` therefore remains unavailable.
+Container execution spans are not kernel-exact busy time. Neither this view nor
+allocation counters establish billing or physically free/placeable capacity.
+The legacy API field `cold_start_seconds` retains its numeric contract but is
+labelled accepted-to-ready, including queue/dispatch, not pure cold start.
+
+Stage placement shows the frozen eligible pools, namespace, required labels,
+reference-data requirement and stage/whole-Pod CPU, memory and disk requests.
+Whole-Pod requests use the actual renderer calculation, including the concurrent
+collector. For example, a 16-CPU stage plus 100m collector requires 16,100m and
+cannot fit a 15,900m node merely because a GPU is unreserved. This is an immutable
+eligibility explanation, not a fresh node-fit claim; `live_fit` is not-observed.
+The existing observed Pending reason remains the source for current scheduler
+rejections. No resource, queue, quota, timeout or attempt limit changes.
+
+Exact true Kubernetes `DisruptionTarget/EvictionByEvictionAPI` is classified as
+infrastructure loss under the existing bounded retry policy. Known application
+errors, OOM and execution timeout retain priority and remain non-retryable.
+The retained 182 API-eviction failure is preserved in a payload-free status
+fixture; offline classification/retry tests are not live recovery qualification.
+
+Candidate verification: 327 control-plane/controller/admin/chart tests passed
+(three PostgreSQL tests excluded from that run); the three excluded tests then
+passed against a task-owned PostgreSQL 16 instance. Sixteen admin UI tests and
+the production UI build passed. Mypy passed for all eight changed Python source
+modules. Ruff passed the changed Python source/test files except three existing
+long lines in `test_helm_chart.py` unrelated to the namespaced Event-list rule.
+Root-owned deployed API/UI and automatic-recovery acceptance remains required.
+
 ## Verification
 
 ```bash

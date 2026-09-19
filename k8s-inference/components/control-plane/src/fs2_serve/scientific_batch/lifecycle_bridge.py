@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Protocol
@@ -606,6 +607,18 @@ class ScientificLifecycleBridge:
     ) -> list[LifecycleSignal]:
         prefix = f"scientific:{attempt.attempt_id}:pod:{pod.pod_uid}"
         signals: list[LifecycleSignal] = []
+        admission = attempt.scheduling_admission
+        dispatch_start = (admission.quota_reserved_at or admission.admitted_at) if admission else None
+        if dispatch_start is not None and pod.scheduled_at is not None and pod.scheduled_at >= dispatch_start:
+            interval = f"{prefix}:dispatch"
+            for edge, boundary in ((LifecycleEdge.START, dispatch_start), (LifecycleEdge.END, pod.scheduled_at)):
+                signals.append(self._signal(
+                    event_key=f"{interval}:{edge.value}", subject_id=attempt.attempt_id,
+                    occurred_at=boundary, phase=LedgerPhase.NODE_REQUEST, edge=edge,
+                    clock=LifecycleClock.LIFECYCLE, interval_key=interval, attempt=attempt,
+                    source=LifecycleSource.KUBERNETES, quality=MeasurementQuality.MEASURED,
+                    source_resolution_seconds=self.source_resolution_seconds, cluster=self.cluster, pod=pod,
+                ))
         if pod.scheduled_at is not None and pod.gpu_count > 0:
             interval = f"{prefix}:scheduler"
             signals.append(
@@ -696,7 +709,14 @@ class ScientificLifecycleBridge:
                     )
         for value in pod.phases:
             phase = _phase_for_event(state, attempt, value.phase)
+            exact_pull = bool(value.source_event_uids)
+            if value.phase is LifecyclePhase.IMAGE_LOADING and not exact_pull:
+                # ContainerCreating includes mounts/network/setup and missing
+                # pull evidence. Keep observed occupancy, not guessed image time.
+                phase = LedgerPhase.UNCLASSIFIED
             interval = f"{prefix}:phase:{phase.value}:{value.started_at.timestamp():.6f}"
+            if exact_pull:
+                interval += ":" + hashlib.sha256("|".join(value.source_event_uids).encode()).hexdigest()[:32]
             signals.append(
                 self._signal(
                     event_key=f"{interval}:start",
@@ -709,10 +729,11 @@ class ScientificLifecycleBridge:
                     interval_key=interval,
                     attempt=attempt,
                     source=LifecycleSource.KUBERNETES,
-                    quality=MeasurementQuality.APPLICATION_OBSERVED,
-                    source_resolution_seconds=self.source_resolution_seconds,
+                    quality=MeasurementQuality.MEASURED if exact_pull else MeasurementQuality.APPLICATION_OBSERVED,
+                    source_resolution_seconds=1.0 if exact_pull else self.source_resolution_seconds,
                     cluster=self.cluster,
                     pod=pod,
+                    detail={"source_event_uid": value.source_event_uids[0]} if exact_pull else None,
                 )
             )
             if value.ended_at is not None:
@@ -728,10 +749,11 @@ class ScientificLifecycleBridge:
                         interval_key=interval,
                         attempt=attempt,
                         source=LifecycleSource.KUBERNETES,
-                        quality=MeasurementQuality.APPLICATION_OBSERVED,
-                        source_resolution_seconds=self.source_resolution_seconds,
+                        quality=MeasurementQuality.MEASURED if exact_pull else MeasurementQuality.APPLICATION_OBSERVED,
+                        source_resolution_seconds=1.0 if exact_pull else self.source_resolution_seconds,
                         cluster=self.cluster,
                         pod=pod,
+                        detail={"source_event_uid": value.source_event_uids[1]} if exact_pull else None,
                     )
                 )
         return signals

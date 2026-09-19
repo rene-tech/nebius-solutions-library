@@ -386,6 +386,8 @@ def test_context_overview_models_and_model_detail_are_typed_and_explicit(
     assert model["metrics"]["terminal_operations"]["value"] == 0
     assert model["metrics"]["error_operations"]["value"] == 0
     assert model["metrics"]["error_rate"]["value"] == 0
+    assert "accepted-to-ready" in model["metrics"]["cold_start_seconds"]["reason"]
+    assert "not pure cold start" in model["metrics"]["cold_start_seconds"]["reason"]
     assert detail.json()["data"]["snapshot_restore_seconds"]["value"] is None
     assert detail.json()["data"]["cold_start_phase_breakdown"]["reason"]
     assert all(

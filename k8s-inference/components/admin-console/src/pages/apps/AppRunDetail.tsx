@@ -135,7 +135,7 @@ export function AppRunDetail({
                 value={operation.timings.queue_seconds}
               />
               <MetricCard
-                label="Startup"
+                label="Accepted to ready"
                 value={operation.timings.cold_start_seconds}
               />
               <MetricCard

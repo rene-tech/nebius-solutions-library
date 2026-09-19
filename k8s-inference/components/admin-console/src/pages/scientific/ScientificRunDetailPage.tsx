@@ -153,7 +153,6 @@ export function ScientificRunDetailPage() {
     <DataBoundary data={query.data} error={query.error} pending={query.isPending} loadingLabel="Loading scientific run detail…">
       {({ data }) => {
         const { run } = data;
-        const measuredIdleCauses = run.gpu_accounting.idle_by_cause.filter((entry) => entry.duration.evidence === "measured");
         const waitingReasons = [...new Set(data.stages.flatMap((stage) => stage.attempts)
           .filter((attempt) => attempt.status === "queued" && attempt.phase_reason)
           .map((attempt) => attempt.phase_reason))];
@@ -186,8 +185,8 @@ export function ScientificRunDetailPage() {
 
             <div className="metric-grid">
               <ScientificMetricCard label="GPU occupied" value={run.gpu_accounting.allocated} detail={`Scheduler occupancy · ${run.gpu_accounting.gpu_count === null ? "GPU count unavailable" : `${run.gpu_accounting.gpu_count} GPU per attempt`} · ${run.gpu_accounting.capacity_type}`} />
-              <ScientificMetricCard label="GPU active" value={run.gpu_accounting.active} detail="Active compute from the lifecycle ledger" />
-              <ScientificMetricCard label="GPU idle" value={run.gpu_accounting.idle_total} detail={`${measuredIdleCauses.length} measured idle causes`} />
+              <ScientificMetricCard label="GPU execution span" value={run.gpu_accounting.active} detail="Application/container execution boundaries, not measured kernel-busy time" />
+              <ScientificMetricCard label="Non-execution occupancy (legacy)" value={run.gpu_accounting.idle_total} detail="Includes startup and unclassified time; not classified idle" />
               <ScientificMetricCard label="GPU grace / drain" value={run.gpu_accounting.grace_drain} detail="Measured separately from active compute" />
             </div>
 
@@ -250,11 +249,17 @@ export function ScientificRunDetailPage() {
             </section>
 
             <section className="panel" aria-labelledby="scientific-gpu-accounting-title">
-              <div className="section-heading"><div><span className="eyebrow">No double counting</span><h2 id="scientific-gpu-accounting-title">GPU idle by cause</h2></div><span className="section-heading__meta">Reconciliation <ScientificMeasurement compact value={run.gpu_accounting.reconciliation_delta} /></span></div>
+              <div className="section-heading"><div><span className="eyebrow">No double counting</span><h2 id="scientific-gpu-accounting-title">GPU occupancy partition</h2></div><span className="section-heading__meta">Reconciliation <ScientificMeasurement compact value={run.gpu_accounting.reconciliation_delta} /></span></div>
               <div className="scientific-accounting-grid">
-                {run.gpu_accounting.idle_by_cause.map((entry) => <div key={entry.cause}><span>{entry.cause}</span><strong><ScientificMeasurement value={entry.duration} /></strong><small>{entry.duration.reason ?? entry.duration.source}</small></div>)}
+                {Object.entries(run.gpu_accounting.phase_partition ?? {}).map(([phase, duration]) => <div key={phase}><span>{phase.replaceAll("_", " ")}</span><strong><ScientificMeasurement value={duration} /></strong><small>{duration.reason ?? duration.source}</small></div>)}
               </div>
-              <p className="supporting-copy">Scheduler-occupied GPU time is partitioned into active, idle-by-cause, and grace/drain across every attempt, including retries. It is not GPU-memory allocation or DCGM utilization. Estimated or incomplete boundaries remain labelled.</p>
+              <p className="supporting-copy">Exclusive scientific attempts, including retries. Loading, restore, execution, classified idle, cooldown and unknown are separate. These GPU-second phases are partitioned once; wall-time phase unions above may overlap. Not a bill or a measurement of device utilization.</p>
+              <div className="metric-grid">
+                {run.gpu_accounting.quota_reserved ? <ScientificMetricCard label="Quota reserved" value={run.gpu_accounting.quota_reserved} detail="Scheduler reservation, not GPU busy" /> : null}
+                {run.gpu_accounting.device_allocated ? <ScientificMetricCard label="Observed device allocation" value={run.gpu_accounting.device_allocated} /> : null}
+                {run.gpu_accounting.sampled_device_activity ? <ScientificMetricCard label="Sampled device activity" value={run.gpu_accounting.sampled_device_activity} /> : null}
+              </div>
+              {run.gpu_accounting.data_gaps?.length ? <p>Measurement gaps: {run.gpu_accounting.data_gaps.join(", ")}</p> : null}
             </section>
 
             <section className="section-stack" aria-labelledby="scientific-dag-title">
@@ -267,12 +272,18 @@ export function ScientificRunDetailPage() {
                       <ScientificStatusChip state={stage.status} reason={`Stage ${stage.display_name} is ${stage.status}.`} />
                     </header>
                     <div className="chip-list"><span className="mini-chip">{stage.resource_class}</span><span className="mini-chip">{stage.admission_mode}</span><span className="mini-chip">checkpoint {stage.checkpoint_mode}</span></div>
+                    {stage.placement ? <section aria-label="Frozen placement constraints">
+                      <p><strong>Eligible pools:</strong> {stage.placement.eligible_pool_ids.join(", ") || "not recorded"}. Namespace {stage.placement.namespace}.</p>
+                      <p>Whole Pod including collector: CPU {stage.placement.pod_cpu_millis === null ? "unknown" : `${stage.placement.pod_cpu_millis}m`}; memory {stage.placement.pod_memory_bytes === null ? "unknown" : `${stage.placement.pod_memory_bytes} bytes`}; disk {stage.placement.pod_ephemeral_storage_bytes === null ? "unknown" : `${stage.placement.pod_ephemeral_storage_bytes} bytes`}; {stage.placement.accelerator_count} accelerator units.</p>
+                      <p>Required node labels: {Object.entries(stage.placement.required_node_labels).map(([key, value]) => `${key}=${value}`).join(", ") || "none recorded"}. Reference data: {stage.placement.reference_data_required === null ? "unknown" : stage.placement.reference_data_required ? "required" : "not required"}.</p>
+                      <p className="supporting-copy">{stage.placement.reason} Contract <code>{stage.placement.scheduling_digest}</code>.</p>
+                    </section> : null}
                     <div className="table-frame scientific-attempts">
                       <table className="resource-table">
                         <caption className="sr-only">Attempts for {stage.display_name}</caption>
                         <thead><tr><th scope="col">Attempt</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Completed</th><th scope="col">Workload / job</th><th scope="col">Admission / placement</th><th scope="col">Checkpoint</th><th scope="col">Error</th></tr></thead>
                         <tbody>{stage.attempts.map((attempt) => <tr key={attempt.id}>
-                          <th scope="row">#{attempt.number}<span className="secondary-line">{attempt.id}</span></th>
+                          <th scope="row">#{attempt.number}<span className="secondary-line">{attempt.id}</span>{attempt.lifecycle_subject_id ? <details><summary>Observed attempt identity and phases</summary><p>Pod UIDs: {attempt.observed_pod_uids?.join(", ") || "unknown"}</p><p>Node UIDs: {attempt.observed_node_uids?.join(", ") || "unknown"}</p><p>GPU UUIDs: {attempt.observed_gpu_uuids?.join(", ") || "unknown"}</p>{attempt.lifecycle_phases?.map((phase) => <p key={phase.phase}>{phase.phase}: <ScientificMeasurement value={phase.duration} /></p>)}</details> : null}</th>
                           <td><ScientificStatusChip state={attempt.status} reason={attempt.error?.message ?? attempt.phase_reason ?? `Attempt is ${attempt.status}.`} />{attempt.phase ? <span className="secondary-line">{attempt.phase.replaceAll("_", " ")}</span> : null}{attempt.phase_reason ? <span className="secondary-line scientific-secondary">{attempt.phase_reason}</span> : null}</td>
                           <td>{formatTimestamp(attempt.started_at)}</td>
                           <td>{formatTimestamp(attempt.completed_at)}</td>
