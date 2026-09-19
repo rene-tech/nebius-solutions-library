@@ -14,6 +14,21 @@ spec.loader.exec_module(promotion)
 def inputs():
     profiles, execution = [json.loads((promotion.ROOT / "catalog/runtime/contracts" / name).read_text()) for name in
         ("scientific-workload-profiles.json", "scientific-execution-map.json")]
+    # A test predecessor must remain a predecessor after the real catalog has
+    # promoted. Reconstruct only its image identity, then bind this synthetic
+    # baseline normally; live preparation still requires exact captured maps.
+    target = next(p for p in profiles["profiles"] if p["model_id"] == promotion.MODEL)
+    identity = target["execution_identity"]
+    identity["runtime_image_digest"] = promotion.OLD
+    identity["execution_identity_sha256"] = promotion.digest({k: v for k, v in identity.items() if k != "execution_identity_sha256"})
+    row = next(p for p in execution["models"] if p["model_id"] == promotion.MODEL)
+    row["execution_identity_sha256"] = identity["execution_identity_sha256"]
+    for stage in row["stages"]:
+        stage["image"] = promotion.IMAGE.split("@", 1)[0] + "@" + promotion.OLD
+    execution["qualification_baselines"] = {}
+    normal = promotion.digest({"schema": execution["schema"], "models": execution["models"]})
+    for profile in profiles["profiles"]:
+        profile["qualification"]["execution_map_sha256"] = normal
     cases = sorted(promotion.ORIGINAL_CASES) + [name + "-matched-n400" for name in (
         "proteina-ligand-target-41_7bkc_ligand-s7", "proteina-ligand-target-41_7bkc_ligand-s42", "proteina-ame-m0584_1ldm-s7")]
     evidence = {"image": promotion.IMAGE, "recorded_at": "2026-09-19T00:00:00Z",
