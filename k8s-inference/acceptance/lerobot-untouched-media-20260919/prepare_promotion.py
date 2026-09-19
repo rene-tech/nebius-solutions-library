@@ -24,6 +24,9 @@ def validate_evidence(publication, evidence):
             or evidence.get("dataset_source_sha256") != publication["context_files"]["src/fs2_lerobot_augmentation/dataset.py"]
             or evidence.get("frames") != 128 or evidence.get("decoded_frames_each") != 256
             or evidence.get("nonvideo_values_exact") != 6144
+            or evidence.get("thread_settings", {}).get("torch_intraop") != 4
+            or evidence.get("thread_settings", {}).get("environment") != {
+                "OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4", "OPENBLAS_NUM_THREADS": "4"}
             or evidence.get("selected_reference_and_data_shard_bytes_unchanged") is not True
             or evidence.get("public_end_to_end_qualified") is not False):
         raise ValueError("Require exact published-image recorded-dataset preservation evidence")

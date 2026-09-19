@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pyarrow.parquet as pq
+import torch
 
 from fs2_lerobot_augmentation import dataset as module
 from fs2_lerobot_augmentation.contracts import Selection
@@ -24,6 +27,13 @@ def metadata(root):
 
 
 def main():
+    started = time.monotonic()
+    thread_settings = {"torch_intraop": torch.get_num_threads(),
+                       "torch_interop": torch.get_num_interop_threads(),
+                       "environment": {name: os.environ.get(name) for name in
+                                       ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS")}}
+    print(json.dumps({"event": "qualification_start", "at": datetime.now(timezone.utc).isoformat(),
+                      "thread_settings": thread_settings}), flush=True)
     inputs, outputs = Path("/input"), Path("/output")
     manifest = json.loads((inputs / "manifest.json").read_bytes())
     code_sha = module.sha256_file(Path(module.__file__))
@@ -110,6 +120,7 @@ def main():
                "frames": 128, "decoded_frames_each": 256, "nonvideo_values_exact": numeric_values,
                "selected_reference_and_data_shard_bytes_unchanged": True, "media": comparisons,
                "public_end_to_end_qualified": False, "physical_alignment_verified": False,
+               "thread_settings": thread_settings, "elapsed_seconds": time.monotonic() - started,
                "container_finished_at": datetime.now(timezone.utc).isoformat()}
     (outputs / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({"status": "passed", "receipt_sha256": hashlib.sha256((outputs / "receipt.json").read_bytes()).hexdigest()}))

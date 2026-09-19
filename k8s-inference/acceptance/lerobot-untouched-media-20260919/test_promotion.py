@@ -1,4 +1,5 @@
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,8 @@ def records():
     evidence = {"status": "passed", "runtime_image": publication["runtime_image"],
                 "dataset_source_sha256": "b" * 64, "frames": 128, "decoded_frames_each": 256,
                 "nonvideo_values_exact": 6144, "selected_reference_and_data_shard_bytes_unchanged": True,
+                "thread_settings": {"torch_intraop": 4, "torch_interop": 64, "environment": {
+                    "OMP_NUM_THREADS": "4", "MKL_NUM_THREADS": "4", "OPENBLAS_NUM_THREADS": "4"}},
                 "public_end_to_end_qualified": False, "media": []}
     for episode in (0, 1):
         for camera in ("observation.images.cam_high", "observation.images.cam_right_wrist"):
@@ -56,5 +59,23 @@ def test_missing_camera_and_unchanged_selected_generation_are_rejected():
         validate_evidence(publication, evidence)
     publication, evidence = records()
     evidence["media"][0]["changed_frames"] = 0
+    with pytest.raises(ValueError):
+        validate_evidence(publication, evidence)
+
+
+def test_image_defaults_bind_only_current_library_thread_limit():
+    path = Path(__file__).resolve().parents[2] / "models/general-media/lerobot-augmentation/runtime/Containerfile.untouched-media"
+    text = path.read_text()
+    assert "ENV OMP_NUM_THREADS=4 MKL_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4" in text
+    assert "set_num_interop_threads" not in text
+
+
+@pytest.mark.parametrize("change", ["torch_intraop", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"])
+def test_unqualified_thread_configuration_is_rejected(change):
+    publication, evidence = records()
+    if change == "torch_intraop":
+        evidence["thread_settings"][change] = 64
+    else:
+        evidence["thread_settings"]["environment"][change] = "64"
     with pytest.raises(ValueError):
         validate_evidence(publication, evidence)
