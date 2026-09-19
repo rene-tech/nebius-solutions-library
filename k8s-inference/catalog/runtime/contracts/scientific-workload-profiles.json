@@ -219,7 +219,7 @@
         "h100_semantic_receipt_sha256": "d083aad907af1a10c7bd13316487b8fd8be561021b4b3c87459d0fd1dedb712c",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "18c9ab6169530281693ef23ad0d0dba77cec6edb1713321d5c869aafb87894a9",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-19T01:06:50.179223+00:00"
       },
       "runtime_artifacts": [
@@ -402,7 +402,7 @@
         "h100_semantic_receipt_sha256": "718a9d0e29fb0d0c65cec2f35b5a33776316acd94948599c456ad2965355d0bb",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-19T00:08:28.271060+00:00"
       },
       "policy": {
@@ -591,7 +591,7 @@
         "h100_semantic_receipt_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
         "public_completion_receipt_sha256": "5e105c7c53f129a7a7719ae720811c14f167217db5d9c55b780e3f77737cf189",
         "scheduler_eligibility_receipt_sha256": "4381714913c69643c3ef0fe2cc32734b8367c21a58c9e066651e8fff44e12a8e",
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:53:07.977893Z"
       },
       "policy": {
@@ -774,7 +774,7 @@
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
         "public_completion_receipt_sha256": "df57f86a7e936b9dc693879c3af084121e591f7c8febc9b7e0600e7c6fe3ff5f",
         "scheduler_eligibility_receipt_sha256": "db8e9a979429a1cff6cd4803faa850729ce33de659152beb6a62e0ba194c5dd2",
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:52:32.995117Z"
       },
       "policy": {
@@ -948,7 +948,7 @@
         "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
         "public_completion_receipt_sha256": "80c3759306c6d10817ca9f31876607b02426a66732cb54d163d93e1f3f12bd4a",
         "scheduler_eligibility_receipt_sha256": "a09fc3116de46369353308e418aea6ee570a93f570475ea1220a7d8442b592c1",
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:48:25.077842Z"
       },
       "policy": {
@@ -1236,7 +1236,7 @@
         "h100_semantic_receipt_sha256": "e52236de244cfb52ec5e6d6486812e1518d0f6c9e0ade18608b9d063cc8971c2",
         "public_completion_receipt_sha256": "1f3b9ef318fdaa3a00108a772dcced96d65490fd3dae00a241388a76e16905a3",
         "scheduler_eligibility_receipt_sha256": "ed35358de43ba630f13ba6a990ba9d446b191d5f58932fd1f60ed70c36b2d0cd",
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:45:13.300156Z"
       }
     },
@@ -1505,7 +1505,7 @@
         "h100_semantic_receipt_sha256": "b78dce5a942472b9427ca4f84a2a0b00baed1c3beca40d230913f1745c7df545",
         "public_completion_receipt_sha256": "d970dad8f184c15f09d1c6556dfa2ac5492f6b66eea9b7f92babc7e671b1571b",
         "scheduler_eligibility_receipt_sha256": "f32ad35d5c3992bc6255e15ce97fda84f854e54fe69180a8d8ed9e5a8d14b6d3",
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:51:46.640834Z"
       }
     },
@@ -1641,7 +1641,7 @@
         "h100_semantic_receipt_sha256": "99e1e2672cb010b285d6031e42dd1e7fa903c10e532b942dc9c1444b1ccc62e6",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-18T22:33:58.366462+00:00"
       },
       "policy": {
@@ -1828,7 +1828,7 @@
         "h100_semantic_receipt_sha256": "e2935d0c8596573d7934a25468a6740dace8cb1e53fec3b8bf8cd5c5e52cb33a",
         "public_completion_receipt_sha256": "07578f238ccb4a2ecc540b083ec0c1609f66369acd5d49db13aeaf80200386d1",
         "scheduler_eligibility_receipt_sha256": "9a06de39243ff565e4e44032f912d1bb102e7052d2c61b225ffd742fef4ac085",
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:46:13.905481Z"
       },
       "policy": {
@@ -2030,7 +2030,7 @@
         "h100_semantic_receipt_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
         "public_completion_receipt_sha256": "533836c49169edaadbcce9dc587e1b40aafb196bab4165e5cb2fc893aea6058c",
         "scheduler_eligibility_receipt_sha256": "db490a792ade3513474b09194b3c6bb1d09c4797a76bdb1bd2876b76cca88a36",
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:44:00.468714Z"
       },
       "policy": {
@@ -2090,11 +2090,11 @@
       },
       "execution_identity": {
         "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-        "runtime_image_digest": "sha256:41a01714ed6d89b90a5b4a4527e2eb9907433f7932970544d2a712333996de04",
-        "runtime_recipe_sha256": "fcb032065e36386ecabb73659d2cb056a44141353d04549c6dae714510645181",
+        "runtime_image_digest": "sha256:69fe161d370fac4cc9517d24ecfee7b025bb569a935ffadab8eb31e49c783a11",
+        "runtime_recipe_sha256": "68871cd26b62f00a1c436fd24bf73a961acb2f691d2ae9a5c3eb13d1e5bb5dda",
         "workload_recipe_sha256": "c7b9141a9cf8fc4c4363596ed5c1a14f2466a45a7a0a8f1f4fc313df652ebae4",
         "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "execution_identity_sha256": "d540d6c7cdb04476732cc8d7e50bce0cb4370e2b00199324e9766d6c067ef18e"
+        "execution_identity_sha256": "8a92680d991ff52e57de2188575cfc9748acf95f2684eb10f5fc2a561575acb2"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -2113,7 +2113,7 @@
           "discoverable": true,
           "invocable": true,
           "tool_name": "submit_cosmos3_lerobot_augmentation",
-          "description": "NVIDIA Cosmos3-Nano robotics augmentation for LeRobot v3: transfer/V2V, numeric actions preserved; physical fidelity unproven. Clips16–400 frames; bundles≤5GiB. Download output_manifest public artifact UUIDs, not logical worker labels."
+          "description": "NVIDIA Cosmos3-Nano robotics augmentation for LeRobot v3: transfer/V2V, numeric actions preserved; physical fidelity unproven. Clips16\u2013400 frames; bundles\u22645GiB. Download output_manifest public artifact UUIDs, not logical worker labels."
         }
       },
       "access": {
@@ -2185,8 +2185,8 @@
         "limitations": [
           "Qualification covers the retained release150 public MCP uploaded-bundle two-variant blur-transfer dataset, exact nonvideo records and full LeRobot0.6.1 reopen. Valid data and distinct variants do not prove semantic intent, physical action alignment or multi-view synchronization. Final customer cohorts, other source paths and maximum bounds are separate gates.",
           "Appearance augmentation preserves numeric actions, state, timestamps and canonical indices, not proven physical/action alignment. Transfer retains coarse layout; video-to-video may alter trajectories. Inspect output before training.",
-          "Selected clips:16–400 frames, integer FPS1–30, RGB256..1280 by256..720 dimensions divisible by16; at most256 selected episodes,8 selected cameras and8 variants. Untouched clips are checked for dataset integrity, not generation caps.",
-          "Compressed input/each output≤5GiB; expanded source≤8GiB;32GiB workspace with conservative pre-GPU estimate and2GiB reserve. Fixed-rate canonical timestamps/task ordering are required; no maximum-bound throughput qualification.",
+          "Selected clips:16\u2013400 frames, integer FPS1\u201330, RGB256..1280 by256..720 dimensions divisible by16; at most256 selected episodes,8 selected cameras and8 variants. Untouched clips are checked for dataset integrity, not generation caps.",
+          "Compressed input/each output\u22645GiB; expanded source\u22648GiB;32GiB workspace with conservative pre-GPU estimate and2GiB reserve. Fixed-rate canonical timestamps/task ordering are required; no maximum-bound throughput qualification.",
           "Forward/inverse dynamics and policy-model rollout are unsupported. Source action trajectories are preserved; episodes longer than400 frames need a separately qualified chunk/stitch contract.",
           "Recorded-data writer successor normalizes scalar storage to declared singleton shape without changing numeric values. Exact published CPU coordinator reopened two episodes/128 frames and preserved all 6144 nonvideo values using retained successful H100 child videos.",
           "The legacy h100_semantic_receipt field here identifies explicitly scoped CPU-coordinator plus retained-H100-child evidence, not fresh whole-public-path qualification. New image is active/unqualified until public completion and scheduler receipts are captured.",
@@ -2194,15 +2194,18 @@
           "Exact-size successor forwards recorded dimensions and rejects mismatched geometry, frame count or time base rather than silently resizing or retiming native output.",
           "The legacy h100_semantic_receipt field identifies exact-image CPU-coordinator checks using retained H100 child videos: 2 positive/2 negative alignment checks, 2 episodes, 128 frames, and all 6144 nonvideo values. Timestamp is receipt completion, not fresh GPU measurement.",
           "New coordinator remains active/unqualified pending exact public execution. Retained action values do not prove physical label validity; V2V generates future motion after a short prefix; full-sequence transfer is not guaranteed to preserve contact, camera calibration, or policy-training suitability.",
-          "No old public completion, scheduler eligibility, whole-workflow snapshot or scientific-quality qualification is inherited by this successor."
+          "No old public completion, scheduler eligibility, whole-workflow snapshot or scientific-quality qualification is inherited by this successor.",
+          "Q64 exact published CPU coordinator preserves untouched source MP4 bytes, original offsets and every decoded pixel after packaging/reload on a 128-row recorded dataset with retained public GPU generation; no new inference.",
+          "The legacy h100_semantic_receipt field binds CPU-coordinator/retained-GPU-media evidence only. Fresh public completion and scheduler evidence are pending; customer_ready remains false.",
+          "Temporary redundant encoding precedes source-shard preservation. No physical action alignment, training quality, maximum-size throughput or new snapshot qualification is claimed."
         ]
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "9c7709fcebae90fa911f1e283f409da3e86ef4cb28e0226e4f87712e5e00b46b",
+        "h100_semantic_receipt_sha256": "c3ba08f056c6f9cbe42125308741aa011b7a44a7ba21a56e00359bc66181cba9",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae",
-        "qualified_at": "2026-09-19T00:44:47.539638499Z"
+        "execution_map_sha256": "09874ec38b45b64b8341ea0cc4c90f07aa2b8562bd85c20e1e14ab380c0df68c",
+        "qualified_at": "2026-09-19T03:20:25.816657+00:00"
       }
     }
   ]

@@ -1,0 +1,71 @@
+{
+  "status": "passed",
+  "scope": "Published CPU coordinator plus retained public GPU generation; no fresh inference",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:69fe161d370fac4cc9517d24ecfee7b025bb569a935ffadab8eb31e49c783a11",
+  "source_commit": "4177c2a2cabd99a8e5882f29a392105d859b16f2",
+  "dataset_source_sha256": "6f381ddc359b8ac7371d888586d051fceef4ba5f48600df0b7023b50b9ab7418",
+  "reader": "lerobot==0.6.1",
+  "source_tree_sha256": "fe9d371bb56d51424ff5ef70139aa58e1f1a35ad7c774635484cd4c3447e387b",
+  "generated_tree_sha256": "f67e78ff51b6a75a4a7f823bb5b0273acbfe78a002c68dbffa6b391d0cbdc0db",
+  "artifact_sha256": "123f53e67c8f92a3d162c7871c0c388162b46249ea23d603605a9393bea3944a",
+  "artifact_size_bytes": 3198269,
+  "frames": 128,
+  "decoded_frames_each": 256,
+  "nonvideo_values_exact": 6144,
+  "selected_reference_and_data_shard_bytes_unchanged": true,
+  "media": [
+    {
+      "episode_index": 0,
+      "camera": "observation.images.cam_high",
+      "selected": true,
+      "frames": 64,
+      "changed_frames": 64,
+      "maximum_absolute_pixel_difference": 238,
+      "source_mp4_sha256": "17295d7774e461893b7eb7ec4f44a495bc9df5b512b07970cfa42cd907bffb4d",
+      "output_mp4_sha256": "c74ec8b36e9ee70f463f1a13ce28ff98b60ce8329e32900f875799600418cda5"
+    },
+    {
+      "episode_index": 0,
+      "camera": "observation.images.cam_right_wrist",
+      "selected": false,
+      "frames": 64,
+      "changed_frames": 0,
+      "maximum_absolute_pixel_difference": 0,
+      "source_mp4_sha256": "51bae67eb87e3ee61f631720de6970406ecb9ce485cdfd31402cc1f6ec99ac24",
+      "output_mp4_sha256": "51bae67eb87e3ee61f631720de6970406ecb9ce485cdfd31402cc1f6ec99ac24"
+    },
+    {
+      "episode_index": 1,
+      "camera": "observation.images.cam_high",
+      "selected": false,
+      "frames": 64,
+      "changed_frames": 0,
+      "maximum_absolute_pixel_difference": 0,
+      "source_mp4_sha256": "17295d7774e461893b7eb7ec4f44a495bc9df5b512b07970cfa42cd907bffb4d",
+      "output_mp4_sha256": "17295d7774e461893b7eb7ec4f44a495bc9df5b512b07970cfa42cd907bffb4d"
+    },
+    {
+      "episode_index": 1,
+      "camera": "observation.images.cam_right_wrist",
+      "selected": false,
+      "frames": 64,
+      "changed_frames": 0,
+      "maximum_absolute_pixel_difference": 0,
+      "source_mp4_sha256": "51bae67eb87e3ee61f631720de6970406ecb9ce485cdfd31402cc1f6ec99ac24",
+      "output_mp4_sha256": "51bae67eb87e3ee61f631720de6970406ecb9ce485cdfd31402cc1f6ec99ac24"
+    }
+  ],
+  "public_end_to_end_qualified": false,
+  "physical_alignment_verified": false,
+  "thread_settings": {
+    "torch_intraop": 4,
+    "torch_interop": 64,
+    "environment": {
+      "OMP_NUM_THREADS": "4",
+      "MKL_NUM_THREADS": "4",
+      "OPENBLAS_NUM_THREADS": "4"
+    }
+  },
+  "elapsed_seconds": 69.37411401607096,
+  "container_finished_at": "2026-09-19T03:20:25.816657+00:00"
+}
