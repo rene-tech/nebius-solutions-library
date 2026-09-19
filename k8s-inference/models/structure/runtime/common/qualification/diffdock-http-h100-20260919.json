@@ -1,0 +1,256 @@
+{
+  "completed_at": "2026-09-19T02:55:44Z",
+  "file_sha256": {
+    "cases.json": "38d5cdc85e16ff52855f5e20c5013a44a3cef7b365efae94a9f9739ee761878b",
+    "launch-recovery.json": "deb9e34f9d5346504d8548639d770ac829b5f319ad1269fbaa79c28b15bd1473",
+    "preparation.json": "8582ba12df5b984af17e9cca3954d0ae3eac8276557680c029d48238c5a3d66b",
+    "results/events.json": "696cbc91449422e759b3fc10e927110868a9f436240aa67c2547bd17567751ff",
+    "results/pod.json": "5f18ff836dfc6251d21aa3cb4043259c6e8f3ed740bee190bb665b41296fefab",
+    "results/receipt.json": "7cdff03e0d905bf73b97f66b53e4efb23affc92767147e4ef3ca235fccb33292",
+    "results/runtime.log": "d18efad20af9bafe165cf5be46a09aa805861604a78513eef2c5ec558228154d"
+  },
+  "gpu": "NVIDIA H100 80GB HBM3, GPU-a49a2242-2714-1f6d-f372-97b06758b88e, 580.159.04",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/h100-fleet/diffdock@sha256:0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9",
+  "limitations": [
+    "One ordered actual-HTTP pass on one H100 against frozen r6 first-pass outputs; not all-input byte identity.",
+    "Isolated wrapper identity is proven; public multi-replica attribution, cold start, scaling and snapshots remain pending.",
+    "Unchanged weights and model logic retain variable docking accuracy, warnings and the earlier distant low-confidence pose.",
+    "Client-side ConfigMap apply exceeded the annotation limit; the exact missing ConfigMap was created without recreating the Pod. This launch failure remains retained."
+  ],
+  "model_id": "diffdock",
+  "node": "computeinstance-e00k0hdq51xykanvqs",
+  "passed": true,
+  "pod_uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0",
+  "poses": 48,
+  "receipt": {
+    "adapter_identity": {
+      "candidate_id": "diffdock-upstream-v1-1",
+      "compatibility_shims": [
+        "torch_cluster:pytorch-native",
+        "torch_scatter:pytorch-native",
+        "rdkit:request-seeded-conformers",
+        "torch:deterministic-kernels",
+        "torus:fixed-local-normalization-rng"
+      ],
+      "esm_checkpoint_sha256": "ea9d0522b335a8778dea6535a65301f10208dece28cd5865482b0b1fc446168c",
+      "license": "MIT",
+      "model_id": "gcorso/DiffDock",
+      "nim_version": "2.3.0",
+      "relationship": "same-named-upstream-fallback-parity-unproven",
+      "release": "v1.1",
+      "release_archive_sha256": "5a95b6a1555be47ab1d6f0a8ffd25152f7fe32f5956005bb821e13e7a37d4a3d",
+      "revision": "85c49b60d3e0b0182a59ee43a34a6d7036981284",
+      "scope": "molecular-docking/research"
+    },
+    "cases_sha256": "38d5cdc85e16ff52855f5e20c5013a44a3cef7b365efae94a9f9739ee761878b",
+    "confidence_tolerance": 0.001,
+    "coordinate_tolerance_angstrom": 0.01,
+    "gpu": "NVIDIA H100 80GB HBM3, GPU-a49a2242-2714-1f6d-f372-97b06758b88e, 580.159.04",
+    "model_load_seconds": 18.395406562000062,
+    "passed": true,
+    "pod_uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0",
+    "references_sha256": "258c356c778502c234e3883202d3d1117b5e7b52d36c9f7510311ccdedd5c560",
+    "requests": 12,
+    "runs": [
+      {
+        "case_id": "diffdock-1a52-est-s19-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "edf9a55f-31a3-453d-91aa-e4cd1f025b5d",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "28f3fe2ec8a22f10f2c3e2fb21d8952ceb9256dbfea989db26998b11306ddc82",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-1a52-est-s19-n4-repeat1.json",
+        "result_sha256": "7474c842f6eee40fd5da1c72546f3b15ca1d6028df54a3cd23a36e8719b6a898",
+        "seconds": 9.284039682999719
+      },
+      {
+        "case_id": "diffdock-1a52-est-s23-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "6e519c47-0027-4dad-900f-395576e199cb",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "ccbd633a402d1d6395968d41035d02b9d89553b5761c120a864e267fa524ef97",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-1a52-est-s23-n4-repeat1.json",
+        "result_sha256": "679d6b10146a033705c5e2f2aa7ecdd7bba9af9b32659e172b8ea77f5d0fa548",
+        "seconds": 6.89639444400018
+      },
+      {
+        "case_id": "diffdock-1iep-sti-s19-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "e4648600-c218-4820-943e-6034146295f1",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "e14c1d5999568b8cd7bb43903c8105c7f4ecc92f23001c056d2e565b33211446",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-1iep-sti-s19-n4-repeat1.json",
+        "result_sha256": "c505d31c1794179c4ab7d392f0971c080224aaba7c9b9308b6017487f0605719",
+        "seconds": 8.341935189999276
+      },
+      {
+        "case_id": "diffdock-1iep-sti-s23-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "daf07342-0bf9-4635-ac18-0eb496058c66",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "a214ec55a737f71503ad427e7005fd3eda7e1381c26559a310d373df807592ac",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-1iep-sti-s23-n4-repeat1.json",
+        "result_sha256": "a1e4a7c13fe091eda6f0f525aa88bf2b73c35a7dca573d6266f9b261593ff285",
+        "seconds": 8.84938612500082
+      },
+      {
+        "case_id": "diffdock-1stp-btn-s19-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "bc28401b-23e8-41ac-b82e-e5d33fd4100a",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "a9380f844b3633ecf15c447fa4a27266df9b844dd7fd8ed3004cf8b355bcb9b8",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-1stp-btn-s19-n4-repeat1.json",
+        "result_sha256": "16a87aab4957dcb4e22ab9baec3b9d72a77e9576845e58776f6bbf4412091bbb",
+        "seconds": 2.7690379739997297
+      },
+      {
+        "case_id": "diffdock-1stp-btn-s23-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "39b92341-0996-4316-b135-dda2b8c4db35",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "e346f39f78b72176ed71b352e42ecc356f44fa82024dfe16917e373d6458807a",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-1stp-btn-s23-n4-repeat1.json",
+        "result_sha256": "1fab5bef71de0c9fbe39a3da88120fcdf4f9b98d6d0db870f347b2309bf9af8b",
+        "seconds": 3.288180448998901
+      },
+      {
+        "case_id": "diffdock-3ert-oht-s19-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "e73ca8d3-423f-4f63-9633-897828e1477d",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "f2b90a165cdc97699969a575c1f5b8224f51ecba3ac4a4604f909eb64deb56ab",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-3ert-oht-s19-n4-repeat1.json",
+        "result_sha256": "04b15e2696773f38448b0368725af036385fbf5b3f61a578b6d37fcb5ee8e564",
+        "seconds": 5.850343827998586
+      },
+      {
+        "case_id": "diffdock-3ert-oht-s23-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "0b41779f-0fa7-4b4b-bfc2-035760f1aa69",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "eb16e4b3a9a37723376e55923c4dceedc10c0084404c022dc00e6bb31e0e44c3",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-3ert-oht-s23-n4-repeat1.json",
+        "result_sha256": "c90b367bd753736b8fa545c1d0675a355ba5a0ef82ea70c57206c53b34176c9c",
+        "seconds": 5.939494528998694
+      },
+      {
+        "case_id": "diffdock-3o96-iqo-s19-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "f86b237e-1f98-4970-ac3c-5bbbcc275737",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "a1b0618e00b6c27cbc96fa6de8e9cefaf8870186d4c00c68f87a9eb4b86453a1",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-3o96-iqo-s19-n4-repeat1.json",
+        "result_sha256": "123c9f50b42c5d9918c3d3ea083ad4929c5de2fde98ea87d3996f38e44542030",
+        "seconds": 11.301238553000076
+      },
+      {
+        "case_id": "diffdock-3o96-iqo-s23-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "9e7c07f1-02a9-4dd3-8321-5ad63dc3b697",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "873575f4b0022bd1272a58554a672a698b6f1a8390ecf56848159e38411dbfab",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-3o96-iqo-s23-n4-repeat1.json",
+        "result_sha256": "c6e1f216c1cccd0296a027303799432a05a0d8f2507d6e402ee27bb482e840c8",
+        "seconds": 11.325236288999804
+      },
+      {
+        "case_id": "diffdock-3ptb-ben-s19-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "0163ad8f-af78-4412-ad55-7668ba538e11",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "76bcdaa5c66a4dc8a20f82e0623c58c1be755fad869a4bf06d74b7cce5db96e5",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-3ptb-ben-s19-n4-repeat1.json",
+        "result_sha256": "abb1d42209675ff4a2c8337bbaf2882c04b6b1103bc30b8fdb18351a8920c8b9",
+        "seconds": 4.226395579999007
+      },
+      {
+        "case_id": "diffdock-3ptb-ben-s23-n4",
+        "http_status": 200,
+        "identity_headers": {
+          "X-FS2-Runtime-Attempt": "1",
+          "X-FS2-Runtime-Operation-Id": "61f40ed6-20da-4dd5-852c-6dc68da5de34",
+          "X-FS2-Runtime-Pod-Uid": "1c1933e9-3e4c-4262-b9c0-0f38d33b65d0"
+        },
+        "input_sha256": "483b5db2b8b71db6e668782f894a1327a979767550b29aaa8ba32ffa0e2e8213",
+        "maximum_confidence_difference": 0.0,
+        "maximum_coordinate_difference_angstrom": 0.0,
+        "numerical_repeatability_pass": true,
+        "result_file": "diffdock-3ptb-ben-s23-n4-repeat1.json",
+        "result_sha256": "f3b7b6b243b16d08f20d2d6f6d76ee57275944a9be77e44e0f56d9a4a2ecbafd",
+        "seconds": 4.040811543000018
+      }
+    ],
+    "schema": "fs2-diffdock-wrapper-http-regression/v1",
+    "scope": "One ordered pass through actual wrapper, compared with r6 first pass; not all-input scientific accuracy or public attribution.",
+    "wrapper_sha256": "c9a9417141f84748da6e8b7fbd92ef7c9dc66638b035a7905c5860674fceb0f8"
+  },
+  "requests": 12,
+  "schema": "fs2-diffdock-http-wrapper-qualification/v1",
+  "source_commit": "7e8c0f0f830b071505c53756aa6644a4f36dda6d",
+  "started_at": "2026-09-19T02:54:03Z"
+}

@@ -69,3 +69,38 @@ Run `common/tests/test_native_adapters.py` in a separate pytest process: its
 pre-existing module-level NumPy stub otherwise contaminates `pytest.approx` in
 the lifecycle suite (`numpy.isscalar` is absent). The initial combined-suite
 failure is retained as test-harness interference, not hidden as a runtime pass.
+
+## Exact-image evidence and prepared promotion
+
+Wrapper index `0c717984c438bb3cac1a139297a06dc39c5fe7fc6ab387c130c0c464a48ba4f9`
+passed twelve actual HTTP requests on an H100. All48 generated 3D poses matched
+the frozen r6 first-pass coordinates and confidence values exactly in this
+ordered pass. The portable receipt is
+`models/structure/runtime/common/qualification/diffdock-http-h100-20260919.json`.
+This is not general byte-identical reproducibility, experimental affinity,
+public replica attribution or snapshot qualification.
+
+For new uniquely named isolated resources, use `kubectl create -f manifest.yaml`,
+not client-side apply: its last-applied annotation duplicates the large reference
+ConfigMap and exceeds the Kubernetes annotation limit. The original partial
+apply (Pod created, ConfigMap rejected) and recovery by creating only the exact
+missing ConfigMap are retained in `launch-recovery.json`; no limits or test
+inputs were changed and the Pod was not recreated.
+
+`prepare_promotion.py --baseline CAPTURE --isolated RETAINED_TEST --output NEW_DIR`
+checks immutable GPU receipts, both Kubernetes/admin owner specs, all current
+owner compatibility, candidate rendering, actual Registry.load and admin
+bootstrap. It emits four immutable maps, a minimal values delta, complete
+preserved values, rollback values/owner, and the successor descriptor. It never
+applies resources. The new template records the wrapper command, downward Pod
+UID and explicit `http-open-runtime-v1` annotation; historical templates and
+snapshot records remain unchanged. Snapshot preference stays Never.
+
+Before root applies a serialized release, recheck the captured ETag/map refs and
+render the full Helm chart. A later release must rebase the candidate if unrelated
+values changed. Root must still run ordinary scientist06 requests while at least
+two exact-image replicas are Ready, retain EndpointSlices and contemporaneous
+Pod/node/GPU observer identities, and verify returned operation identities match
+the actual serving Pod. Do not infer success merely from two Ready replicas: at
+least two distinct response Pod UIDs must be witnessed to claim cross-replica
+coverage. Preserve the24 historical unattributed operations without backfilling.
