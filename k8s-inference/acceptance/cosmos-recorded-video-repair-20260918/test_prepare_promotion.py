@@ -115,12 +115,14 @@ def test_real_successor_resets_qualification_and_projection_is_exact():
     root = promotion.ROOT
     profiles = json.loads((root / "catalog/runtime/contracts/scientific-workload-profiles.json").read_bytes())
     execution = json.loads((root / "catalog/runtime/contracts/scientific-execution-map.json").read_bytes())
+    previous = promotion.indexed(profiles, "profiles")[promotion.MODEL]["execution_identity"]["runtime_image_digest"]
+    candidate = "registry.example/test-worker@sha256:" + "d" * 64
     profiles, execution, _ = promotion.prepare(
         profiles,
         execution,
         model_id=promotion.MODEL,
-        previous_digest=promotion.OLD,
-        candidate_image=promotion.IMAGE,
+        previous_digest=previous,
+        candidate_image=candidate,
         recipe_sha256="a" * 64,
         semantic_receipt_sha256=promotion.EVIDENCE_SHA,
         measured_at=promotion.MEASURED_AT,
@@ -132,7 +134,7 @@ def test_real_successor_resets_qualification_and_projection_is_exact():
     assert profile["qualification"]["scheduler_eligibility_receipt_sha256"] is None
     assert profile["state"] == profile["semantic_validation"]["state"] == "active"
     assert row["execution_identity_sha256"] == profile["execution_identity"]["execution_identity_sha256"]
-    assert all(stage["image"] == promotion.IMAGE for stage in row["stages"])
+    assert all(stage["image"] == candidate for stage in row["stages"])
     assert (
         promotion.projection("scientific-execution-map-projection", "scientific-execution-map.json", "model", row)[
             "model"
