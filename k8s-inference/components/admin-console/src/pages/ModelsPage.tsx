@@ -59,7 +59,7 @@ export function ModelsPage() {
           <div className="table-frame">
             <table className="resource-table">
               <caption className="sr-only">Models and current serving state</caption>
-              <thead><tr><th scope="col">Model</th><th scope="col">Runtime state</th><th scope="col">Catalog support</th><th scope="col">Replicas</th><th scope="col">GPU profile</th><th scope="col">Requests</th><th scope="col">Errors</th><th scope="col">Accepted to ready</th></tr></thead>
+              <thead><tr><th scope="col">Model</th><th scope="col">Runtime state</th><th scope="col">Catalog support</th><th scope="col">Replicas</th><th scope="col">GPU profile</th><th scope="col">Requests</th><th scope="col">Errors</th><th scope="col">Accepted-to-ready total (window)</th></tr></thead>
               <tbody>
                 {items.map((item) => (
                   <tr key={item.identity.id}>
@@ -70,7 +70,7 @@ export function ModelsPage() {
                     <td>{item.identity.gpu_count} × {item.identity.gpu_class}<span className="secondary-line">{item.identity.execution_mode}</span></td>
                     <td><Measurement compact value={item.metrics.requests_per_second} /></td>
                     <td><Measurement compact value={item.metrics.error_rate} /></td>
-                    <td><Measurement compact value={item.metrics.cold_start_seconds} /></td>
+                    <td title={item.metrics.cold_start_seconds.reason ?? undefined}><Measurement compact value={item.metrics.cold_start_seconds} /><span className="secondary-line">{item.metrics.cold_start_seconds.reason}</span></td>
                   </tr>
                 ))}
               </tbody>

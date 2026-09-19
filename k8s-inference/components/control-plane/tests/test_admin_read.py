@@ -387,13 +387,41 @@ def test_context_overview_models_and_model_detail_are_typed_and_explicit(
     assert model["metrics"]["error_operations"]["value"] == 0
     assert model["metrics"]["error_rate"]["value"] == 0
     assert "accepted-to-ready" in model["metrics"]["cold_start_seconds"]["reason"]
-    assert "not pure cold start" in model["metrics"]["cold_start_seconds"]["reason"]
+    assert "No samples" in model["metrics"]["cold_start_seconds"]["reason"]
+    assert model["metrics"]["cold_start_seconds"]["value"] is None
     assert detail.json()["data"]["snapshot_restore_seconds"]["value"] is None
     assert detail.json()["data"]["cold_start_phase_breakdown"]["reason"]
     assert all(
         response.headers["cache-control"] == "no-store"
         for response in (context, overview, models, detail, capacity, observability)
     )
+
+
+@pytest.mark.parametrize("recorded", [None, 0.0, 3.5])
+def test_model_window_total_distinguishes_missing_spans_from_a_measured_zero(
+    registry: Registry, cipher: Any, hasher: Any, recorded: float | None,
+) -> None:
+    runtime = _runtime(registry, cipher, hasher)
+    _seed_operations(runtime)
+    assert isinstance(runtime.store, MemoryStore)
+    rows = list(runtime.store.operations.values())
+    for ordinal, row in enumerate(rows):
+        row.view = row.view.model_copy(update={"cold_start_seconds": recorded if ordinal == 0 else None})
+    usage = asyncio.run(runtime.store.admin_usage_window(
+        from_at=FIXED_NOW - timedelta(hours=1), to_at=FIXED_NOW,
+    ))
+    assert usage.rows[0].accepted_to_ready_operations == (0 if recorded is None else 1)
+    with _client(runtime) as client:
+        response = client.get("/admin/api/v1/models?search=qwen", headers=ADMIN_AUTH)
+    assert response.status_code == 200
+    value = response.json()["data"]["items"][0]["metrics"]["cold_start_seconds"]
+    assert value["value"] == recorded
+    if recorded is None:
+        assert value["state"] == "unavailable" and "No samples" in value["reason"]
+    else:
+        assert value["state"] == "available"
+        assert "Window total" in value["reason"] and "Recorded spans: 1" in value["reason"]
+        assert "not per-start latency" in value["reason"]
 
 
 def test_h100_runtime_views_override_portable_catalog_gpu_metadata_without_rewriting_it(

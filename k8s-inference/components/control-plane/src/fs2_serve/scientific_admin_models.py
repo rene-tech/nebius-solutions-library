@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import AwareDatetime, Field, model_validator
 
 from .models import StrictModel
+from .scientific_activity import DeviceActivitySummary
 
 
 class ScientificServiceClass(StrEnum):
@@ -192,6 +193,30 @@ class ScientificGpuAccounting(StrictModel):
     data_gaps: list[str] = Field(default_factory=list, max_length=128)
 
 
+class ScientificPoolUpperBoundFit(StrictModel):
+    pool_id: str
+    state: Literal["blocked", "possible", "unknown"]
+    nodes_observed: int = Field(ge=0)
+    possible_nodes: int = Field(ge=0)
+    unknown_nodes: int = Field(ge=0)
+    blocking_reasons: dict[str, int] = Field(default_factory=dict)
+    max_allocatable_cpu_millis: int | None = None
+    max_allocatable_memory_bytes: int | None = None
+    max_allocatable_ephemeral_storage_bytes: int | None = None
+    max_allocatable_accelerators: int | None = None
+
+
+class ScientificNodeUpperBoundFit(StrictModel):
+    source: Literal["kubernetes-node-allocatable"] = "kubernetes-node-allocatable"
+    observed_at: AwareDatetime
+    pools: list[ScientificPoolUpperBoundFit] = Field(max_length=128)
+    reason: str = (
+        "Current node allocatable upper bounds, not free resources or a scheduling promise. "
+        "Other Pod requests, taints/tolerations, gang placement and reference-data contents are not assessed. "
+        "A possible node may be occupied; historical runs are compared with the current inventory."
+    )
+
+
 class ScientificPlacementConstraints(StrictModel):
     source: Literal["frozen-admission-contract"] = "frozen-admission-contract"
     scheduling_digest: str
@@ -205,7 +230,9 @@ class ScientificPlacementConstraints(StrictModel):
     pod_memory_bytes: int | None = None
     pod_ephemeral_storage_bytes: int | None = None
     accelerator_count: int
+    accelerator_resource_name: str | None = None
     reference_data_required: bool | None = None
+    node_upper_bound_fit: ScientificNodeUpperBoundFit | None = None
     live_fit: Literal["not-observed"] = "not-observed"
     reason: str = (
         "Frozen eligibility and stage plus collector requests, not currently placeable capacity. "
@@ -245,6 +272,8 @@ class ScientificAttempt(StrictModel):
     observed_pod_uids: list[str] = Field(default_factory=list, max_length=1024)
     observed_node_uids: list[str] = Field(default_factory=list, max_length=1024)
     observed_gpu_uuids: list[str] = Field(default_factory=list, max_length=1024)
+    device_activity: list[DeviceActivitySummary] = Field(default_factory=list, max_length=1024)
+    activity_capture_reason: str = "dcgm_not_captured"
 
 
 class ScientificStage(StrictModel):

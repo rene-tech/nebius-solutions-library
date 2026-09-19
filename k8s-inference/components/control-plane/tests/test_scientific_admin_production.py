@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fs2_serve.scientific_admin_catalog import ScientificProfileDiscoveryAdapter
+from fs2_serve.scientific_admin_fit import ScientificNodeFitAdapter
 from fs2_serve.scientific_admin_postgres import (
     PostgresScientificArtifactAdminAdapter,
     PostgresScientificRunAdminAdapter,
@@ -15,7 +16,7 @@ from fs2_serve.scientific_admin_postgres import (
 DELIVERED_CATALOG = Path(__file__).resolve().parents[3] / "catalog/runtime"
 
 
-def _service(*, artifact_service: object | None):
+def _service(*, artifact_service: object | None, placement: ScientificNodeFitAdapter | None = None):
     return postgres_scientific_admin_read_service(
         pool=cast(Any, object()),
         registry=cast(Any, object()),
@@ -24,6 +25,7 @@ def _service(*, artifact_service: object | None):
         scientific_batches=None,
         source_max_age_seconds=90,
         adapter_timeout_seconds=2,
+        placement=placement,
     )
 
 
@@ -47,3 +49,10 @@ def test_artifact_capability_requires_the_real_result_service() -> None:
     capabilities = service.capabilities()
     assert capabilities.run_history.available is True
     assert capabilities.artifacts.available is True
+
+
+def test_production_uses_optional_existing_capacity_reader_without_a_parallel_inventory() -> None:
+    placement = ScientificNodeFitAdapter(cast(Any, object()))
+    service = _service(artifact_service=None, placement=placement)
+    assert service.placement is placement
+    assert _service(artifact_service=None).placement is None

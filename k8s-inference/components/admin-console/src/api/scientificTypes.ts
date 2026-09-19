@@ -169,6 +169,24 @@ export interface ScientificPlacementConstraints {
   pod_memory_bytes: number | null;
   pod_ephemeral_storage_bytes: number | null;
   accelerator_count: number;
+  accelerator_resource_name?: string | null;
+  node_upper_bound_fit?: {
+    source: "kubernetes-node-allocatable";
+    observed_at: string;
+    reason: string;
+    pools: Array<{
+      pool_id: string;
+      state: "blocked" | "possible" | "unknown";
+      nodes_observed: number;
+      possible_nodes: number;
+      unknown_nodes: number;
+      blocking_reasons: Record<string, number>;
+      max_allocatable_cpu_millis: number | null;
+      max_allocatable_memory_bytes: number | null;
+      max_allocatable_ephemeral_storage_bytes: number | null;
+      max_allocatable_accelerators: number | null;
+    }>;
+  } | null;
   reference_data_required: boolean | null;
   live_fit: "not-observed";
   reason: string;
@@ -178,6 +196,26 @@ export interface ScientificError {
   code: string;
   message: string;
   retryable: boolean;
+}
+
+export interface ScientificDeviceActivity {
+  pod_uid: string;
+  node_uid: string | null;
+  gpu_uuid: string;
+  sample_count: number;
+  zero_samples: number;
+  positive_samples: number;
+  first_sample_at: string;
+  last_sample_at: string;
+  allocation_start: string;
+  allocation_end: string;
+  max_gap_seconds: number;
+  min_percent: number;
+  max_percent: number;
+  samples_sha256: string;
+  phase_samples: Record<string, number>;
+  phase_zero_samples: Record<string, number>;
+  phase_positive_samples: Record<string, number>;
 }
 
 export interface ScientificAttempt {
@@ -206,6 +244,8 @@ export interface ScientificAttempt {
   observed_pod_uids?: string[];
   observed_node_uids?: string[];
   observed_gpu_uuids?: string[];
+  device_activity?: ScientificDeviceActivity[];
+  activity_capture_reason?: string;
 }
 
 export interface ScientificStage {

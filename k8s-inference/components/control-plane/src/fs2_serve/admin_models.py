@@ -389,6 +389,7 @@ class AdminUsageRow(StrictModel):
     estimated_gpu_seconds: float = Field(ge=0)
     duration_seconds: float = Field(ge=0)
     cold_start_seconds: float = Field(ge=0)
+    accepted_to_ready_operations: int | None = Field(default=None, ge=0)
     input_tokens: int = Field(ge=0)
     output_tokens: int = Field(ge=0)
     token_reported_operations: int = Field(ge=0)

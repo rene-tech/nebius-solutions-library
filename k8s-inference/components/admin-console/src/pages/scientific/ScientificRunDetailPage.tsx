@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { adminApi, AdminApiError } from "../../api/client";
-import type { ScientificCapabilities, ScientificObservabilityLink, ScientificRunDetail, ScientificRunSummary } from "../../api/scientificTypes";
+import type { ScientificAttempt, ScientificCapabilities, ScientificObservabilityLink, ScientificRunDetail, ScientificRunSummary } from "../../api/scientificTypes";
 import type { AdminEnvelope } from "../../api/types";
 import { useSession } from "../../auth/SessionContext";
 import { DataBoundary } from "../../components/DataBoundary";
@@ -24,6 +24,20 @@ export function scientificRunNeedsRefresh(detail: ScientificRunDetail | undefine
   if (!detail) return true;
   if (detail.run.status === "succeeded") return detail.semantic_validation.status === "not-run";
   return !["failed", "cancelled"].includes(detail.run.status);
+}
+
+function DeviceSamples({ attempt }: { attempt: ScientificAttempt }) {
+  return <details>
+    <summary>Device sample evidence</summary>
+    <p>Capture: {attempt.activity_capture_reason ?? "dcgm_not_captured"}. Terminal-attempt raw scrape samples; gaps and zero samples do not prove continuous idle. No kernel-exact or billable busy/idle time is inferred.</p>
+    {attempt.device_activity?.map((item) => <div key={`${item.pod_uid}:${item.gpu_uuid}:${item.allocation_start}`}>
+      <p>Pod UID: <code>{item.pod_uid}</code>; GPU UUID: <code>{item.gpu_uuid}</code>; node UID: <code>{item.node_uid ?? "unknown"}</code>.</p>
+      <p>{item.sample_count} samples: {item.positive_samples} positive, {item.zero_samples} zero; utilization range {item.min_percent}–{item.max_percent}%. Maximum unsampled gap (including edges): {item.max_gap_seconds}s.</p>
+      <p>Allocation: {formatTimestamp(item.allocation_start)} – {formatTimestamp(item.allocation_end)}. First/last sample: {formatTimestamp(item.first_sample_at)} – {formatTimestamp(item.last_sample_at)}.</p>
+      <p>Phase-tagged sample counts (phase boundaries are independently observed): {Object.entries(item.phase_samples).map(([phase, count]) => `${phase}: ${count} (${item.phase_positive_samples[phase] ?? 0} positive, ${item.phase_zero_samples[phase] ?? 0} zero)`).join("; ")}. Overlapping or missing phase labels remain unclassified.</p>
+      <p>Canonical raw-vector SHA256: <code>{item.samples_sha256}</code>. Raw vectors follow existing Prometheus retention; this summary is retained in the attempt ledger.</p>
+    </div>)}
+  </details>;
 }
 
 function safeHref(link: ScientificObservabilityLink): string | null {
@@ -277,13 +291,22 @@ export function ScientificRunDetailPage() {
                       <p>Whole Pod including collector: CPU {stage.placement.pod_cpu_millis === null ? "unknown" : `${stage.placement.pod_cpu_millis}m`}; memory {stage.placement.pod_memory_bytes === null ? "unknown" : `${stage.placement.pod_memory_bytes} bytes`}; disk {stage.placement.pod_ephemeral_storage_bytes === null ? "unknown" : `${stage.placement.pod_ephemeral_storage_bytes} bytes`}; {stage.placement.accelerator_count} accelerator units.</p>
                       <p>Required node labels: {Object.entries(stage.placement.required_node_labels).map(([key, value]) => `${key}=${value}`).join(", ") || "none recorded"}. Reference data: {stage.placement.reference_data_required === null ? "unknown" : stage.placement.reference_data_required ? "required" : "not required"}.</p>
                       <p className="supporting-copy">{stage.placement.reason} Contract <code>{stage.placement.scheduling_digest}</code>.</p>
+                      {stage.placement.node_upper_bound_fit ? <section aria-label="Current node upper-bound fit">
+                        <p><strong>Node upper bounds observed {formatTimestamp(stage.placement.node_upper_bound_fit.observed_at)}</strong></p>
+                        <p>{stage.placement.node_upper_bound_fit.reason}</p>
+                        <ul>{stage.placement.node_upper_bound_fit.pools.map((pool) => <li key={pool.pool_id}>
+                          <strong>{pool.pool_id}: {pool.state}</strong> · {pool.nodes_observed} observed nodes; {pool.possible_nodes} possible, {pool.unknown_nodes} unknown.
+                          <span className="secondary-line">Largest observed node allocatable: CPU {pool.max_allocatable_cpu_millis === null ? "unknown" : `${pool.max_allocatable_cpu_millis}m`}; RAM {pool.max_allocatable_memory_bytes ?? "unknown"} bytes; disk {pool.max_allocatable_ephemeral_storage_bytes ?? "unknown"} bytes; accelerator units {pool.max_allocatable_accelerators ?? "unknown"}. Resource maxima may describe different nodes.</span>
+                          <span className="secondary-line">{Object.entries(pool.blocking_reasons).map(([reason, count]) => `${reason.replaceAll("_", " ")}: ${count}`).join("; ") || "No upper-bound failure observed; scheduling remains unproven."}</span>
+                        </li>)}</ul>
+                      </section> : <p>Current node upper-bound fit is unavailable.</p>}
                     </section> : null}
                     <div className="table-frame scientific-attempts">
                       <table className="resource-table">
                         <caption className="sr-only">Attempts for {stage.display_name}</caption>
                         <thead><tr><th scope="col">Attempt</th><th scope="col">Status</th><th scope="col">Started</th><th scope="col">Completed</th><th scope="col">Workload / job</th><th scope="col">Admission / placement</th><th scope="col">Checkpoint</th><th scope="col">Error</th></tr></thead>
                         <tbody>{stage.attempts.map((attempt) => <tr key={attempt.id}>
-                          <th scope="row">#{attempt.number}<span className="secondary-line">{attempt.id}</span>{attempt.lifecycle_subject_id ? <details><summary>Observed attempt identity and phases</summary><p>Pod UIDs: {attempt.observed_pod_uids?.join(", ") || "unknown"}</p><p>Node UIDs: {attempt.observed_node_uids?.join(", ") || "unknown"}</p><p>GPU UUIDs: {attempt.observed_gpu_uuids?.join(", ") || "unknown"}</p>{attempt.lifecycle_phases?.map((phase) => <p key={phase.phase}>{phase.phase}: <ScientificMeasurement value={phase.duration} /></p>)}</details> : null}</th>
+                          <th scope="row">#{attempt.number}<span className="secondary-line">{attempt.id}</span>{attempt.lifecycle_subject_id ? <details><summary>Observed attempt identity and phases</summary><p>Pod UIDs: {attempt.observed_pod_uids?.join(", ") || "unknown"}</p><p>Node UIDs: {attempt.observed_node_uids?.join(", ") || "unknown"}</p><p>GPU UUIDs: {attempt.observed_gpu_uuids?.join(", ") || "unknown"}</p>{attempt.lifecycle_phases?.map((phase) => <p key={phase.phase}>{phase.phase}: <ScientificMeasurement value={phase.duration} /></p>)}</details> : null}<DeviceSamples attempt={attempt} /></th>
                           <td><ScientificStatusChip state={attempt.status} reason={attempt.error?.message ?? attempt.phase_reason ?? `Attempt is ${attempt.status}.`} />{attempt.phase ? <span className="secondary-line">{attempt.phase.replaceAll("_", " ")}</span> : null}{attempt.phase_reason ? <span className="secondary-line scientific-secondary">{attempt.phase_reason}</span> : null}</td>
                           <td>{formatTimestamp(attempt.started_at)}</td>
                           <td>{formatTimestamp(attempt.completed_at)}</td>

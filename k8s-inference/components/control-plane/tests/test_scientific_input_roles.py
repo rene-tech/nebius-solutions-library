@@ -107,6 +107,28 @@ def test_rfdiffusion_roles_are_operation_dependent(operation):
     validate_input_roles("rfdiffusion", request, (artifact(entry),))
 
 
+def test_rfdiffusion_discovery_distinguishes_provenance_note_from_target_coordinates():
+    from pathlib import Path
+
+    operations = public_input_contract("rfdiffusion")["operations"]
+    design = operations["design-backbone"]
+    fixture = (
+        Path(__file__).resolve().parents[3]
+        / "models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/unconditional-target.txt"
+    )
+    assert design["example_content"] == fixture.read_text()
+    assert design["name"] == "design_constraint"
+    assert design["media_type"] == "text/plain"
+    assert "does not configure inference" in design["description"]
+    assert "parameters" in design["description"]
+    scaffold = operations["scaffold-motif"]
+    assert scaffold["media_type"] == "chemical/x-pdb"
+    assert "coordinates are used in inference" in scaffold["description"]
+    assert "example_content" not in scaffold
+    design["description"] = "caller mutation"
+    assert public_input_contract("rfdiffusion")["operations"]["design-backbone"]["description"] != "caller mutation"
+
+
 @pytest.mark.parametrize("kind", ["uploaded-bundle", "huggingface", "object-store"])
 def test_lerobot_existing_source_kinds_remain_compatible(kind):
     entry = public_input_contract("cosmos3-lerobot-augmentation")["source_kinds"][kind]
