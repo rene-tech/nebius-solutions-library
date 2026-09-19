@@ -239,7 +239,15 @@ def test_segment_contract_publishes_a_real_deterministic_nifti_fixture(registry)
 
 def test_every_scientific_profile_uses_canonical_schema_and_examples():
     catalog = ScientificProfileCatalog.load(CATALOG_ROOT)
-    assert len(catalog._profiles) == 10
+    declared = json.loads((CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text())["profiles"]
+    declared_models = {profile["model_id"] for profile in declared}
+    assert declared_models == {
+        "boltzgen", "proteina-complexa", "bindcraft", "mosaic", "rfdiffusion",
+        "esmfold2", "esmfold2-fast", "openfold3-openbind", "protenix-v2", "alphafold3",
+        "cosmos3-lerobot-augmentation",
+    }
+    assert len(declared) == len(declared_models)
+    assert set(catalog._profiles) == declared_models
     before = json.dumps({name: validator.schema for name, validator in catalog._validators.items()}, sort_keys=True)
     for profile in catalog._profiles.values():
         contract = scientific_contract_for(profile, catalog=catalog)
@@ -418,9 +426,10 @@ def test_cosmos_media_contracts_are_mode_specific_and_unqualified_actions_are_re
         },
         {
             "mode": "transfer-video",
-            "prompt": "transfer uses a pinned resolution bucket, not free-form size",
+            "prompt": "transfer size must use the existing WIDTHxHEIGHT syntax",
             "controls": [{"control_type": "edge"}],
-            "size": "640x480",
+            "input_reference": artifact,
+            "size": "640by480",
         },
         {
             "mode": "forward-dynamics",
@@ -479,6 +488,42 @@ def cosmos_adapter_request():
     )
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(path), "exec", dont_inherit=True), namespace)  # noqa: S102
     return pydantic.TypeAdapter(namespace["GenerateRequest"])
+
+
+@pytest.mark.parametrize("size", ["256x256", "512x288", "640x480", "1280x720"])
+def test_cosmos_transfer_exposes_existing_exact_size_in_both_tool_contracts(registry, size):
+    model = selected(registry, "cosmos3-nano")
+    contract, defaults = next(
+        (contract, defaults)
+        for name, contract, defaults, _, _ in cosmos_specialized_contracts(model)
+        if name == "cosmos3_nano_transfer_video"
+    )
+    payload = {"prompt": "Recorded robot scene", "input_reference": "https://media.example.test/robot.mp4",
+               "controls": [{"control_type": "edge"}], "size": size}
+    Draft202012Validator(contract.input_schema).validate(payload)
+    Draft202012Validator(contract_for(model, "native").input_schema).validate(payload | defaults)
+    assert cosmos_adapter_request().validate_python(payload | defaults).size == size
+    description = contract.input_schema["properties"]["resolution"]["description"]
+    assert "explicit size" in description and "does not preserve source aspect ratio" in description
+
+
+def test_cosmos_transfer_default_and_runtime_dimension_bounds_are_unchanged(registry):
+    model = selected(registry, "cosmos3-nano")
+    contract, defaults = next(
+        (contract, defaults)
+        for name, contract, defaults, _, _ in cosmos_specialized_contracts(model)
+        if name == "cosmos3_nano_transfer_video"
+    )
+    payload = {"prompt": "Recorded robot scene", "input_reference": "https://media.example.test/robot.mp4",
+               "controls": [{"control_type": "edge"}]}
+    Draft202012Validator(contract.input_schema).validate(payload)
+    adapter = cosmos_adapter_request()
+    assert adapter.validate_python(payload | defaults).size == "448x256"
+    assert contract.input_schema["properties"]["resolution"]["enum"] == [256, 480, 704, 720]
+    assert contract.input_schema["properties"]["resolution"]["default"] == 480
+    for invalid in ("255x256", "641x480", "1280x736", "1296x720"):
+        with pytest.raises(pydantic.ValidationError):
+            adapter.validate_python(payload | defaults | {"size": invalid})
 
 
 @pytest.mark.parametrize(
