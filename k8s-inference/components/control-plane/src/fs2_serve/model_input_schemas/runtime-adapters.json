@@ -78,5 +78,15 @@
     "variant_id": "diar-streaming-sortformer-4spk-v2-1-nemo-cuda-v1",
     "runtime_kind": "custom",
     "source": "k8s-inference/catalog/runtime/deployment-runtimes/diar-streaming-sortformer-4spk-v2-1.json"
+  },
+  "cellpose-cpsam-v2": {
+    "variant_id": "cellpose-cpsam-v2-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/cellpose-cpsam-v2.json"
+  },
+  "scvi-scanvi": {
+    "variant_id": "scvi-scanvi-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/scvi-scanvi.json"
   }
 }

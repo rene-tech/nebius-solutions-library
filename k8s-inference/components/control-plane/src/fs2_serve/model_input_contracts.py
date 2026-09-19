@@ -265,6 +265,14 @@ _PURPOSES = {
     "msa-search-pdb70": "Search the pinned local PDB70 database for a protein sequence; returns A3M alignments.",
     "sdxl": "Generate a 512x512 image from text; returns PNG bytes or the selected JSON/base64 envelope.",
     "nv-segment-ct": "Segment a CT NIfTI volume from labels or points; returns encoded segmentation and label counts.",
+    "cellpose-cpsam-v2": (
+        "Segment a bounded 2D microscopy image with Cellpose CPSAM v2; returns a labeled PNG mask, "
+        "object count and per-object pixel areas."
+    ),
+    "scvi-scanvi": (
+        "Fit scVI or scANVI to a bounded raw-count AnnData file; returns an integrated AnnData object, "
+        "latent embeddings, run manifest and saved model as a ZIP artifact."
+    ),
     "cosmos3-nano": (
         "Generate or transform image/video from text and bounded media controls; large MP4 results are artifacts."
     ),
@@ -592,6 +600,111 @@ def _segment() -> Schema:
         {"if": {"required": ["points", "label_prompt"]}, "then": {"properties": {"label_prompt": {"maxItems": 1}}}}
     ]
     return schema
+
+
+def _cellpose() -> Schema:
+    return _object(
+        {
+            "image_base64": _transportable(
+                _field(
+                    "string",
+                    "Base64-encoded 2D microscopy image, at most 4 megapixels.",
+                    minLength=4,
+                    contentEncoding="base64",
+                ),
+                materialization="base64",
+                media_types=("image/png", "image/jpeg", "image/tiff"),
+                max_bytes=16 * 1024 * 1024,
+            ),
+            "media_type": _field(
+                "string",
+                "Exact media type of the image bytes.",
+                enum=["image/png", "image/jpeg", "image/tiff"],
+                default="image/png",
+            ),
+            "diameter": {
+                "type": ["number", "null"],
+                "exclusiveMinimum": 0,
+                "maximum": 2048,
+                "default": None,
+                "description": "Optional expected object diameter in pixels; null lets CPSAM infer scale.",
+            },
+            "research_only": _constant(
+                True,
+                "Required acknowledgement for the research-only Cellpose checkpoint and its training-data terms.",
+            ),
+        },
+        ("image_base64", "media_type", "research_only"),
+        "Bounded 2D instance segmentation. The runtime rejects images above 4 megapixels.",
+    )
+
+
+def _scvi_scanvi() -> Schema:
+    optional_key = {
+        "type": ["string", "null"],
+        "minLength": 1,
+        "maxLength": 128,
+    }
+    return _object(
+        {
+            "anndata_base64": _transportable(
+                _field(
+                    "string",
+                    "Base64-encoded raw-count AnnData .h5ad file for the bounded interactive lane.",
+                    minLength=4,
+                    contentEncoding="base64",
+                ),
+                materialization="base64",
+                media_types=("application/x-hdf5", "application/octet-stream"),
+                max_bytes=64 * 1024 * 1024,
+            ),
+            "filename": _field(
+                "string",
+                "Display filename ending in .h5ad; no path components.",
+                pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]{0,126}\.h5ad$",
+                default="input.h5ad",
+            ),
+            "method": _field(
+                "string",
+                "scvi performs unsupervised integration; scanvi performs semi-supervised annotation after scVI.",
+                enum=["scvi", "scanvi"],
+                default="scvi",
+            ),
+            "batch_key": {
+                **optional_key,
+                "description": "Optional AnnData obs column containing batch labels.",
+            },
+            "labels_key": {
+                **optional_key,
+                "description": "AnnData obs label column; required for scanvi.",
+            },
+            "unlabeled_category": _field(
+                "string",
+                "Value in labels_key used for unlabeled cells during scanvi.",
+                minLength=1,
+                maxLength=128,
+                default="Unknown",
+            ),
+            "max_epochs": _integer(
+                "Training epochs in this interactive lane; scanvi applies the bound to both training stages.",
+                1,
+                20,
+                20,
+            ),
+            "n_latent": _integer("Latent embedding dimensions.", 2, 64, 10),
+            "seed": _field(
+                "integer",
+                "Nonnegative reproducibility seed.",
+                minimum=0,
+                maximum=2_147_483_647,
+                default=0,
+            ),
+            "research_only": _constant(True, "Required acknowledgement that this is a research integration workflow."),
+        },
+        ("anndata_base64", "filename", "method", "max_epochs", "n_latent", "seed", "research_only"),
+        "Bounded interactive scVI/scANVI lane. Use folder fan-out for multiple small files; larger studies need a "
+        "scientific-batch profile rather than this synchronous adapter.",
+    )
 
 
 def _cosmos() -> Schema:
@@ -1268,6 +1381,14 @@ _NATIVE_BUILDERS = {
     "proteinmpnn": (_proteinmpnn, "k8s-inference/models/structure/runtime/adapters/proteinmpnn.py"),
     "sdxl": (_sdxl, "k8s-inference/models/general-media/sdxl_server.py"),
     "nv-segment-ct": (_segment, "k8s-inference/models/general-media/nv_segment_ct_server.py"),
+    "cellpose-cpsam-v2": (
+        _cellpose,
+        "k8s-inference/models/visual-science/cellpose-cpsam-v2/app.py",
+    ),
+    "scvi-scanvi": (
+        _scvi_scanvi,
+        "k8s-inference/models/visual-science/scvi-scanvi/app.py",
+    ),
 }
 
 
@@ -1467,6 +1588,34 @@ def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
         "nv-segment-ct": {
             "input_nifti_base64": {"fixture_id": "nifti/nv-segment-ct-synthetic-ellipsoid-v1"},
             "label_prompt": [1],
+        },
+        "cellpose-cpsam-v2": {
+            "image_base64": {
+                "artifact_id": "00000000-0000-4000-8000-000000000021",
+                "sha256": "4" * 64,
+                "size_bytes": 4096,
+                "media_type": "image/png",
+                "compression": "none",
+            },
+            "media_type": "image/png",
+            "diameter": None,
+            "research_only": True,
+        },
+        "scvi-scanvi": {
+            "anndata_base64": {
+                "artifact_id": "00000000-0000-4000-8000-000000000022",
+                "sha256": "5" * 64,
+                "size_bytes": 1048576,
+                "media_type": "application/x-hdf5",
+                "compression": "none",
+            },
+            "filename": "cells.h5ad",
+            "method": "scvi",
+            "batch_key": "batch",
+            "max_epochs": 20,
+            "n_latent": 10,
+            "seed": 0,
+            "research_only": True,
         },
     }
     # Asset-bearing examples use immutable artifact or packaged fixture

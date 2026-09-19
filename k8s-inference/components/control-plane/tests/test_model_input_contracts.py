@@ -99,6 +99,8 @@ NATIVE_MODELS = (
     "nv-segment-ct",
     "phenoage",
     "altumage",
+    "cellpose-cpsam-v2",
+    "scvi-scanvi",
 )
 
 
@@ -237,6 +239,23 @@ def test_segment_contract_publishes_a_real_deterministic_nifti_fixture(registry)
     assert gzip.decompress(first)[344:348] == b"n+1\x00"
 
 
+def test_visual_science_contracts_keep_file_bytes_out_of_model_context(registry):
+    cellpose = contract_for(selected(registry, "cellpose-cpsam-v2"), "native")
+    scvi = contract_for(selected(registry, "scvi-scanvi"), "native")
+    for contract, field, media_type in (
+        (cellpose, "image_base64", "image/png"),
+        (scvi, "anndata_base64", "application/x-hdf5"),
+    ):
+        schema = contract.input_schema["properties"][field]
+        assert schema["x-fs2-artifact-materialization"] == "base64"
+        assert media_type in schema["x-fs2-artifact-media-types"]
+        assert contract.examples[0][field]["artifact_id"].startswith("00000000-")
+        Draft202012Validator(contract.input_schema).validate(contract.examples[0])
+    assert cellpose.input_schema["properties"]["research_only"]["const"] is True
+    assert scvi.input_schema["properties"]["max_epochs"]["maximum"] == 20
+    assert scvi.input_schema["properties"]["research_only"]["const"] is True
+
+
 def test_every_scientific_profile_uses_canonical_schema_and_examples():
     catalog = ScientificProfileCatalog.load(CATALOG_ROOT)
     declared = json.loads((CATALOG_ROOT / "contracts/scientific-workload-profiles.json").read_text())["profiles"]
@@ -326,7 +345,7 @@ def test_all_catalog_source_endpoints_are_covered(registry):
         for protocol in record["interface"]["protocols"]:
             result = contract_for(selected(registry, model_id, protocol), protocol)
             assert len(result.input_schema["description"]) > 80
-    assert ids == set(NATIVE_MODELS) - {"altumage", "phenoage"} | {
+    assert ids == set(NATIVE_MODELS) - {"altumage", "phenoage", "cellpose-cpsam-v2", "scvi-scanvi"} | {
         "qwen3-8b",
         "nv-reason-cxr-3b",
         "glm-5-2-fp8",

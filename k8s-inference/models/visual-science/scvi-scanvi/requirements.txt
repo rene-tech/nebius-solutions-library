@@ -1,0 +1,13 @@
+anndata==0.12.3
+fastapi==0.141.1
+jaraco.context==6.1.2
+msgpack==1.2.2
+pydantic==2.13.5
+python-multipart==0.0.32
+scvi-tools==1.5.0.post1
+setuptools==84.0.0
+starlette==1.6.0
+umap-learn==0.5.12
+urllib3==2.8.0
+uvicorn[standard]==0.35.0
+wheel==0.46.2
