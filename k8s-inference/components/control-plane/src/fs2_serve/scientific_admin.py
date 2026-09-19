@@ -18,6 +18,7 @@ from .admin_models import (
     AdminSourceState,
     AdminWarning,
 )
+from .scientific_admin_fit import ScientificNodeFitAdapter
 from .scientific_admin_models import (
     ScientificArtifact,
     ScientificCapabilities,
@@ -253,6 +254,7 @@ class ScientificAdminReadService:
         artifacts: ScientificArtifactAdminAdapter | None = None,
         controls: ScientificRunControlAdapter | None = None,
         policies: ScientificModelPolicyAdminAdapter | None = None,
+        placement: ScientificNodeFitAdapter | None = None,
         source_max_age_seconds: float = 90,
         adapter_timeout_seconds: float = 2,
         clock: Callable[[], datetime] | None = None,
@@ -272,6 +274,7 @@ class ScientificAdminReadService:
         self.controls = controls
         self.policies = policies
         self.models = models
+        self.placement = placement
         self.source_max_age_seconds = source_max_age_seconds
         self.adapter_timeout_seconds = adapter_timeout_seconds
         self.clock = clock or (lambda: datetime.now(UTC))
@@ -494,6 +497,21 @@ class ScientificAdminReadService:
 
         sources = [self._available_source("scientific-controller", run_snapshot.observed_at, now)]
         detail = run_snapshot.data
+        if self.placement is not None:
+            try:
+                stages, fit_observed_at = await asyncio.wait_for(
+                    self.placement.enrich(detail.stages), timeout=self.adapter_timeout_seconds,
+                )
+            except asyncio.CancelledError:
+                raise
+            except (OSError, RuntimeError, TimeoutError, ValueError):
+                sources.append(_source(
+                    "scientific-node-fit", AdminSourceState.UNAVAILABLE, now=now,
+                    reason="Current node inventory is unavailable; frozen placement constraints remain available.",
+                ))
+            else:
+                sources.append(self._available_source("scientific-node-fit", fit_observed_at, now))
+                detail = detail.model_copy(update={"stages": stages})
         artifacts = self.artifacts
         if artifacts is None:
             sources.append(

@@ -547,6 +547,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
     )
+    from .scientific_admin_fit import ScientificNodeFitAdapter
+
     scientific_admin = postgres_scientific_admin_read_service(
         pool=store.pool,
         registry=registry,
@@ -556,6 +558,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_apps=scientific_apps,
         source_max_age_seconds=settings.admin_source_max_age_seconds,
         adapter_timeout_seconds=settings.admin_adapter_timeout_seconds,
+        placement=ScientificNodeFitAdapter(capacity.reader) if isinstance(capacity, KubernetesCapacityAdminAdapter)
+        else None,
     )
     configure_tracing(settings.otlp_endpoint)
     configuration_service: ConfigurationService | None = None

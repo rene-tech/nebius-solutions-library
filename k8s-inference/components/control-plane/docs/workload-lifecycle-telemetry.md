@@ -247,6 +247,28 @@ eligibility explanation, not a fresh node-fit claim; `live_fit` is not-observed.
 The existing observed Pending reason remains the source for current scheduler
 rejections. No resource, queue, quota, timeout or attempt limit changes.
 
+The additive `node_upper_bound_fit` on each stage compares that frozen whole-Pod
+request with a single current node inventory obtained through the existing
+capacity reader. Exact renderer pool labels and required selectors fence the
+comparison. CPU/RAM/disk/accelerator bounds, required-label mismatches and
+unready/cordoned nodes produce explicit per-pool negative reasons. Missing
+quantities stay unknown. Maxima are descriptive only: CPU on one node and RAM
+on another never combine into a fictitious fit. Passing all tested upper bounds
+is only `possible`, not available, free or schedulable. Other Pods' requests,
+taints/tolerations, gang placement and actual reference-data contents remain
+unassessed. The observation timestamp is current even for a historical run.
+
+This optional node read happens only after existing tenant/run authorization,
+with the existing per-source timeout. Its failure yields an unavailable source
+warning and leaves durable run details/frozen constraints usable. It never
+changes scheduling, pool preference, snapshot compatibility or admission. No
+new poller, endpoint, permission or limit is introduced for this follow-up.
+The fit follow-up passed 85 focused backend/source-composition tests (three
+PostgreSQL tests deselected, with no SQL change), 13 run-detail UI tests and the
+production UI build. Its four accounting/fit modules pass mypy and scoped Ruff
+passes; checking the CLI wiring also reports the pre-existing Uvicorn
+`timeout_graceful_shutdown` float-versus-int annotation mismatch, left unchanged.
+
 Exact true Kubernetes `DisruptionTarget/EvictionByEvictionAPI` is classified as
 infrastructure loss under the existing bounded retry policy. Known application
 errors, OOM and execution timeout retain priority and remain non-retryable.

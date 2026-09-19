@@ -277,6 +277,15 @@ export function ScientificRunDetailPage() {
                       <p>Whole Pod including collector: CPU {stage.placement.pod_cpu_millis === null ? "unknown" : `${stage.placement.pod_cpu_millis}m`}; memory {stage.placement.pod_memory_bytes === null ? "unknown" : `${stage.placement.pod_memory_bytes} bytes`}; disk {stage.placement.pod_ephemeral_storage_bytes === null ? "unknown" : `${stage.placement.pod_ephemeral_storage_bytes} bytes`}; {stage.placement.accelerator_count} accelerator units.</p>
                       <p>Required node labels: {Object.entries(stage.placement.required_node_labels).map(([key, value]) => `${key}=${value}`).join(", ") || "none recorded"}. Reference data: {stage.placement.reference_data_required === null ? "unknown" : stage.placement.reference_data_required ? "required" : "not required"}.</p>
                       <p className="supporting-copy">{stage.placement.reason} Contract <code>{stage.placement.scheduling_digest}</code>.</p>
+                      {stage.placement.node_upper_bound_fit ? <section aria-label="Current node upper-bound fit">
+                        <p><strong>Node upper bounds observed {formatTimestamp(stage.placement.node_upper_bound_fit.observed_at)}</strong></p>
+                        <p>{stage.placement.node_upper_bound_fit.reason}</p>
+                        <ul>{stage.placement.node_upper_bound_fit.pools.map((pool) => <li key={pool.pool_id}>
+                          <strong>{pool.pool_id}: {pool.state}</strong> · {pool.nodes_observed} observed nodes; {pool.possible_nodes} possible, {pool.unknown_nodes} unknown.
+                          <span className="secondary-line">Largest observed node allocatable: CPU {pool.max_allocatable_cpu_millis === null ? "unknown" : `${pool.max_allocatable_cpu_millis}m`}; RAM {pool.max_allocatable_memory_bytes ?? "unknown"} bytes; disk {pool.max_allocatable_ephemeral_storage_bytes ?? "unknown"} bytes; accelerator units {pool.max_allocatable_accelerators ?? "unknown"}. Resource maxima may describe different nodes.</span>
+                          <span className="secondary-line">{Object.entries(pool.blocking_reasons).map(([reason, count]) => `${reason.replaceAll("_", " ")}: ${count}`).join("; ") || "No upper-bound failure observed; scheduling remains unproven."}</span>
+                        </li>)}</ul>
+                      </section> : <p>Current node upper-bound fit is unavailable.</p>}
                     </section> : null}
                     <div className="table-frame scientific-attempts">
                       <table className="resource-table">

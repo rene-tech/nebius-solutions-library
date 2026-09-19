@@ -41,6 +41,7 @@ from .scientific_admin_catalog import (
     ScientificProfileDiscoveryAdapter,
     scientific_receipts_file,
 )
+from .scientific_admin_fit import ScientificNodeFitAdapter
 from .scientific_admin_models import (
     ScientificArtifact,
     ScientificArtifactDownload,
@@ -479,6 +480,7 @@ def _placement(state: ScientificBatchState, stage_id: str) -> ScientificPlacemen
         pod_memory_bytes=pod.memory_bytes if pod else None,
         pod_ephemeral_storage_bytes=pod.ephemeral_storage_bytes if pod else None,
         accelerator_count=decision.accelerator_count,
+        accelerator_resource_name=decision.accelerator_resource_name,
         reference_data_required=(any(mount.kind == "reference" for mount in binding.mounts) if binding else None),
     )
 
@@ -1147,6 +1149,7 @@ def postgres_scientific_admin_read_service(
     source_max_age_seconds: float,
     adapter_timeout_seconds: float,
     scientific_apps: ScientificAppsInventory | None = None,
+    placement: ScientificNodeFitAdapter | None = None,
 ) -> ScientificAdminReadService:
     """Build the production admin service over canonical durable sources."""
 
@@ -1176,6 +1179,7 @@ def postgres_scientific_admin_read_service(
             startup_options=getattr(renderer, "startup_policy_options", None),
         ),
         models=models,
+        placement=placement,
         source_max_age_seconds=source_max_age_seconds,
         adapter_timeout_seconds=adapter_timeout_seconds,
     )

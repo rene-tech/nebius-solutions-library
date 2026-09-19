@@ -72,6 +72,14 @@ describe("scientific run detail", () => {
       pod_cpu_millis: 16100, pod_memory_bytes: 268436480, pod_ephemeral_storage_bytes: 1024,
       accelerator_count: 1, reference_data_required: true, live_fit: "not-observed",
       reason: "Frozen eligibility is not current placeable capacity.",
+      node_upper_bound_fit: {
+        source: "kubernetes-node-allocatable", observed_at: "2026-09-19T13:30:00Z",
+        reason: "Current node allocatable upper bounds, not free resources or a scheduling promise.",
+        pools: [{pool_id: "h100-1x", state: "blocked", nodes_observed: 1, possible_nodes: 0, unknown_nodes: 0,
+          blocking_reasons: {cpu_request_exceeds_node_allocatable: 1}, max_allocatable_cpu_millis: 15900,
+          max_allocatable_memory_bytes: 30000000000, max_allocatable_ephemeral_storage_bytes: 50000000000,
+          max_allocatable_accelerators: 1}],
+      },
     };
     renderPage(() => Promise.resolve(detail));
     expect(await screen.findByText("Sampled device activity")).toBeInTheDocument();
@@ -81,6 +89,10 @@ describe("scientific run detail", () => {
     expect(constraints).toHaveTextContent("gpu.family=h100");
     expect(constraints).toHaveTextContent("Reference data: required");
     expect(constraints).toHaveTextContent("not current placeable capacity");
+    expect(constraints).toHaveTextContent("h100-1x: blocked");
+    expect(constraints).toHaveTextContent("CPU 15900m");
+    expect(constraints).toHaveTextContent("cpu request exceeds node allocatable: 1");
+    expect(constraints).toHaveTextContent("not free resources or a scheduling promise");
     expect(screen.getByText(/Not a bill or a measurement of device utilization/)).toBeInTheDocument();
   });
 
