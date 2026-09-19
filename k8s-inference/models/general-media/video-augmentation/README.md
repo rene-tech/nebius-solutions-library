@@ -75,7 +75,7 @@ See `acceptance/local-validation.json` for exact local builds and test scope. No
 
 ## Safe activation and remaining acceptance
 
-The shared Stockholm backend advanced after this branch was created. **Do not deploy this branch's old platform base over the current release.** Integrate the additive changes into the current release first, resolving overlapping execution/delegation changes without removing others' work.
+The shared Stockholm backend advanced after this branch was created. Mainline changes through `27d4d688b7d40f447d7aa028369c4fcedec3f937` have now been merged into this candidate and the expanded regression suite rerun. **Do not replace a newer shared release with an older baseline.** Recheck the actual deployment and integrate any subsequent backend/workbench changes first, without removing other owners' work.
 
 1. Publish immutable worker and integrated control-plane/workbench images. Record registry digests, not local Docker image IDs as registry receipts.
 2. Complete onboarding: additive workload profile and execution-map row for `augment-videos/main`, `paidf-video-v1`; exact image/execution identity; provider environment/Secret; appropriate CPU service account and artifact workspace. Keep existing qualification identities unchanged. Add public-site/catalog metadata before any customer publication.
