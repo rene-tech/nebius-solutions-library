@@ -27,6 +27,7 @@ PathPart = str | None
 _MATERIALIZATION_KEY: Final = "x-fs2-artifact-materialization"
 _MAX_BYTES_KEY: Final = "x-fs2-artifact-max-bytes"
 _MEDIA_TYPES_KEY: Final = "x-fs2-artifact-media-types"
+_MAX_SERIALIZED_REFERENCE_CHARS: Final = 2048
 
 
 class ArtifactInputError(RuntimeOperationError):
@@ -161,6 +162,26 @@ class ArtifactInputMaterializer:
         return bytes(chunks), reference.media_type
 
     @staticmethod
+    def _descriptor(value: Any) -> dict[str, Any] | None:
+        if isinstance(value, dict):
+            return value
+        # Some OpenAI-compatible tool adapters preserve a nested object as a
+        # JSON string. Decode only a small, exact reference-shaped value at an
+        # explicitly transport-enabled field; ordinary inline strings remain
+        # untouched and the existing ArtifactRef validation stays authoritative.
+        if (
+            not isinstance(value, str)
+            or len(value) > _MAX_SERIALIZED_REFERENCE_CHARS
+            or ('"artifact_id"' not in value and '"fixture_id"' not in value)
+        ):
+            return None
+        try:
+            decoded = json.loads(value)
+        except json.JSONDecodeError:
+            return None
+        return decoded if isinstance(decoded, dict) else None
+
+    @staticmethod
     def _fixture_bytes(descriptor: dict[str, Any], *, rule: _Rule) -> tuple[bytes, str]:
         if set(descriptor) != {"fixture_id"} or not isinstance(descriptor["fixture_id"], str):
             raise ArtifactInputError("fixture input reference is invalid")
@@ -221,7 +242,7 @@ class ArtifactInputMaterializer:
         tenant_id: str,
         request_body: bytes,
     ) -> bytes:
-        if b'"artifact_id"' not in request_body and b'"fixture_id"' not in request_body:
+        if b"artifact_id" not in request_body and b"fixture_id" not in request_body:
             return request_body
         try:
             payload = json.loads(request_body)
@@ -236,8 +257,8 @@ class ArtifactInputMaterializer:
         matched = False
         for rule in _rules(contract.input_schema):
             for parent, key in _slots(payload, rule.path):
-                descriptor = parent[key]
-                if not isinstance(descriptor, dict):
+                descriptor = self._descriptor(parent[key])
+                if descriptor is None:
                     continue
                 if "artifact_id" in descriptor:
                     if rule.materialization == "download-url":
