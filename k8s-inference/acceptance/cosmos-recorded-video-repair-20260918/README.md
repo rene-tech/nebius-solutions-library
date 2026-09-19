@@ -338,3 +338,18 @@ renderer/scheduler joins and Helm rendering. Outputs include portable/full maps,
 activation profile and execution projections, onboarding metadata and true live
 rollback files. The release owner reviews/applies them and separately performs
 customer-shaped acceptance. Native Cosmos owner/snapshot policies are untouched.
+
+### Public exact-size replay on release173
+
+The ordinary two-episode LeRobot request completed in184.31 s with the exact
+41a01714… coordinator. Independent downloads of both native child artifacts
+prove640×480,64frames and25FPS **before** dataset writing. The output reopened
+with128frames,2cameras and all6,144nonvideo values unchanged. Native inference
+took35.58 s and33.26 s; the strict snapshot witness records17.45 s CRIU restore
+and5.36 s combined CUDA restore on an existing H100 node.
+
+See [`public-recorded-transfer-exact-size-r2.json`](public-recorded-transfer-exact-size-r2.json).
+This repairs the hidden geometry normalization; it does not certify recorded
+robot contact/action alignment. A frozen8case full-video motion and appearance
+comparison follows separately. Official depth/segmentation/WSM controls also
+remain separate coverage rather than inheriting an edge-transfer pass.
