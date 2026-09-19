@@ -15,7 +15,15 @@ from typing import Any
 from uuid import UUID
 
 from .contracts import MAX_BUNDLE_BYTES, AugmentationRequest
-from .cosmos import MAX_OUTPUT_BYTES, MAX_REFERENCE_BYTES, MODEL_REVISION, SERVING_REVISION, CosmosClient, CosmosError
+from .cosmos import (
+    MAX_OUTPUT_BYTES,
+    MAX_REFERENCE_BYTES,
+    MODEL_REVISION,
+    SERVING_REVISION,
+    CosmosClient,
+    CosmosError,
+    conditioning_scope,
+)
 from .dataset import (
     DatasetError,
     DatasetInspection,
@@ -351,6 +359,7 @@ def run(
             "configuration": json.loads(request.canonical_json()),
             "model": {"repository": "nvidia/Cosmos3-Nano", "revision": MODEL_REVISION},
             "runtime": {"vllm_omni_revision": SERVING_REVISION},
+            "scientific_scope": conditioning_scope(request.augmentation),
             "operations": operations,
             "failures": [item for item in failures if item["variant_index"] == variant_index],
         }

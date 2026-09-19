@@ -39,6 +39,38 @@ class CosmosGeneration:
     serving_revision: str = SERVING_REVISION
 
 
+def conditioning_scope(augmentation: Augmentation) -> dict[str, Any]:
+    """Scientific scope, independent of successful transport/format validation."""
+    result: dict[str, Any] = {
+        "mode": augmentation.mode,
+        "action_values": "preserved",
+        "physical_action_alignment_verified": False,
+        "policy_training_validity_verified": False,
+    }
+    if augmentation.mode == "transfer":
+        result.update(
+            reference_usage="full_sequence_spatial_controls",
+            controls=list(augmentation.conditioning.controls),
+            limitation=(
+                "Controls guide all source frames but do not guarantee robot contacts, "
+                "object identity or action alignment."
+            ),
+        )
+    else:
+        result.update(
+            reference_usage="selected_prefix_or_suffix_latent_frames",
+            latent_frame_indexes=list(augmentation.conditioning.frame_indexes),
+            reference_end=augmentation.conditioning.keep,
+            # Pinned vLLM-Omni utils.condition_pixel_frame_count, temporal compression4.
+            reference_pixel_frame_budget=max(augmentation.conditioning.frame_indexes) * 4 + 1,
+            limitation=(
+                "Unconditioned future motion is generated, not preserved from the recorded actions; "
+                "use transfer for full-sequence controls and validate alignment separately."
+            ),
+        )
+    return result
+
+
 def _validate_mp4(path: Path, *, maximum: int = MAX_OUTPUT_BYTES) -> None:
     try:
         size = path.stat().st_size
@@ -58,49 +90,50 @@ def _sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _normalize_transfer_video(path: Path, *, width: int, height: int, frames: int, fps: int) -> Path:
-    """Restore the source LeRobot geometry after Cosmos transfer bucketing."""
+def _validate_transfer_video_alignment(path: Path, *, width: int, height: int, frames: int, fps: int) -> Path:
+    """Reject a mismatched generated clip without rescaling or retiming labels."""
 
-    temporary = path.with_suffix(".normalized.partial.mp4")
-    temporary.unlink(missing_ok=True)
     try:
         import av
 
         with av.open(str(path), mode="r") as source:
-            decoded = list(source.decode(video=0))
-        if len(decoded) != frames:
-            raise CosmosError(
-                "COSMOS_MEDIA_ALIGNMENT_INVALID",
-                "Cosmos transfer output frame count differs from the source episode",
-                retryable=False,
-            )
-        with av.open(str(temporary), mode="w") as sink:
-            stream = sink.add_stream("libx264", rate=fps)
-            stream.width = width
-            stream.height = height
-            stream.pix_fmt = "yuv420p"
-            stream.options = {"crf": "18", "preset": "medium"}
-            for index, source_frame in enumerate(decoded):
-                frame = source_frame.reformat(width=width, height=height, format="yuv420p")
-                frame.pts = index
-                frame.time_base = Fraction(1, fps)
-                for packet in stream.encode(frame):
-                    sink.mux(packet)
-            for packet in stream.encode():
-                sink.mux(packet)
-        _validate_mp4(temporary)
-        temporary.replace(path)
+            stream = source.streams.video[0]
+            if (stream.width, stream.height) != (width, height) or stream.average_rate != Fraction(fps, 1):
+                raise CosmosError(
+                    "COSMOS_MEDIA_ALIGNMENT_INVALID",
+                    "Cosmos transfer dimensions or FPS differ from the source episode; no resizing or retiming applied",
+                    retryable=False,
+                )
+            count = 0
+            for frame in source.decode(video=0):
+                if (frame.width, frame.height) != (width, height):
+                    raise CosmosError(
+                        "COSMOS_MEDIA_ALIGNMENT_INVALID", "Cosmos transfer frame dimensions changed", retryable=False
+                    )
+                if frame.pts is None or frame.time_base is None or abs(
+                    Fraction(frame.pts) * frame.time_base - Fraction(count, fps)
+                ) > frame.time_base:
+                    raise CosmosError(
+                        "COSMOS_MEDIA_ALIGNMENT_INVALID",
+                        "Cosmos transfer frame timestamps differ from the source episode; no retiming applied",
+                        retryable=False,
+                    )
+                count += 1
+            if count != frames:
+                raise CosmosError(
+                    "COSMOS_MEDIA_ALIGNMENT_INVALID",
+                    "Cosmos transfer output frame count differs from the source episode",
+                    retryable=False,
+                )
         return path
     except CosmosError:
         raise
     except Exception as error:
         raise CosmosError(
-            "COSMOS_MEDIA_NORMALIZATION_FAILED",
-            "Cosmos transfer output could not be normalized to the source dataset geometry",
+            "COSMOS_MEDIA_INVALID",
+            "Cosmos transfer output could not be decoded for source-alignment validation",
             retryable=False,
         ) from error
-    finally:
-        temporary.unlink(missing_ok=True)
 
 
 def _object(value: object, *, label: str) -> Mapping[str, Any]:
@@ -392,10 +425,8 @@ class CosmosClient:
                 }
             )
         elif augmentation.mode == "transfer":
-            # The qualified transfer recipe selects a resolution bucket and
-            # follows the reference aspect ratio; unlike V2V it does not
-            # accept the generic WIDTHxHEIGHT field.
-            payload.pop("size")
+            # The native runtime honors this exact source size before generation.
+            # Never substitute a bucket and resize the result after generation.
             payload["resolution"] = min((256, 480, 704, 720), key=lambda value: abs(value - height))
             payload["controls"] = [
                 {"control_type": control, "control_weight": 1.0} for control in augmentation.conditioning.controls
@@ -449,7 +480,7 @@ class CosmosClient:
                 result = self._result(client, operation_id)
                 video_path = self._download_video(client, result, output)
                 if augmentation.mode == "transfer":
-                    video_path = _normalize_transfer_video(
+                    video_path = _validate_transfer_video_alignment(
                         video_path,
                         width=width,
                         height=height,

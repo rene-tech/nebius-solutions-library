@@ -1,0 +1,9 @@
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9
+
+ARG SOURCE_COMMIT
+LABEL org.opencontainers.image.revision=$SOURCE_COMMIT \
+      ai.nebius.fs2.repair="exact-transfer-geometry-and-conditioning-scope"
+
+# Preserve the already pinned CPU dependency environment and entrypoint.
+# uv installed this project editable, so only reviewed source files change.
+COPY --chown=10001:10001 src /opt/fs2/lerobot-augmentation/src

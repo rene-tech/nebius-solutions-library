@@ -17,7 +17,7 @@ from fs2_lerobot_augmentation.contracts import (  # noqa: E402
     AugmentationRequest,
     Selection,
 )
-from fs2_lerobot_augmentation.cosmos import _normalize_transfer_video  # noqa: E402
+from fs2_lerobot_augmentation.cosmos import _validate_transfer_video_alignment  # noqa: E402
 from fs2_lerobot_augmentation.dataset import (  # noqa: E402
     decode_generated_video,
     encode_episode_reference,
@@ -89,7 +89,7 @@ def test_complete_variant_is_finalized_reloaded_packaged_and_relocalized(
     )
     normalized = tmp_path / "normalized-transfer.mp4"
     shutil.copyfile(reference, normalized)
-    _normalize_transfer_video(normalized, width=256, height=256, frames=16, fps=8)
+    _validate_transfer_video_alignment(normalized, width=256, height=256, frames=16, fps=8)
     decoded = decode_generated_video(
         normalized, episode=inspected.episodes[0], fps=8
     )

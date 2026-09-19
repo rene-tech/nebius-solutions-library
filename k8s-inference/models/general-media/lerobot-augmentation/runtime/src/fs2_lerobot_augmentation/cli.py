@@ -34,7 +34,10 @@ ERROR_DETAILS = {
     "RUNTIME_DEPENDENCY_MISSING": "The worker is missing a required runtime dependency; contact the operator.",
     "COSMOS_MEDIA_UNREADABLE": "A Cosmos video could not be read.",
     "COSMOS_MEDIA_INVALID": "A Cosmos video is invalid or exceeds its supported size bound.",
-    "COSMOS_MEDIA_ALIGNMENT_INVALID": "The generated video frame count differs from the source episode.",
+    "COSMOS_MEDIA_ALIGNMENT_INVALID": (
+        "Generated video dimensions, frame count or FPS differ from the source episode; "
+        "no resizing or retiming was applied."
+    ),
     "COSMOS_MEDIA_NORMALIZATION_FAILED": "The generated video could not be restored to the source dataset geometry.",
     "COSMOS_OPERATION_FAILED": "A delegated Cosmos operation failed; inspect its child operation status.",
     "COSMOS_OPERATION_TIMEOUT": "The delegated Cosmos operation exceeded the worker wait timeout.",

@@ -50,6 +50,28 @@ artifact is published.
 
 ## Generative changes, not calibrated or action-aligned transformations
 
+The September19 recorded ALOHA comparison found a concrete motion failure:
+`video-to-video` with `frame_indexes:[0]` reads only the initial image, not the
+full trajectory. `[0,1]` reads the first five pixel frames (two compressed latent
+frames); remaining motion is generated. The recorded arm approached the coffee
+machine while the generated continuation largely retained its initial pose.
+Preserving the action arrays does not make those labels physically consistent.
+Use full-sequence edge/blur **transfer as a candidate**, not a guarantee of
+alignment: contacts, object identity and action consistency still need review.
+The pinned implementation separates prefix conditioning from full-sequence
+transfer in [reference decoding](https://github.com/vllm-project/vllm-omni/blob/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/vllm_omni/diffusion/models/cosmos3/pipeline_cosmos3.py)
+and [frame budgeting](https://github.com/vllm-project/vllm-omni/blob/eb11446b7f2e30ca582f8aff3afe12e9a2e66f6c/vllm_omni/diffusion/models/cosmos3/utils.py).
+Output provenance now explicitly records the conditioning scope and unverified
+physical alignment; it does not silently infer scientific success from MP4s.
+
+That comparison also uncovered an old coordinator bug: it omitted transfer
+`size`, received448x256 children, and resized them to640x480 before publication.
+The repaired coordinator passes exact source dimensions/FPS/frame count and
+rejects any mismatch without rescaling or retiming. Old format-pass receipts
+remain historical and do not qualify geometric fidelity. Native transfer may
+explicitly request a different FPS; LeRobot never does because timestamps and
+actions stay fixed. New worker identity and public replay are separate gates.
+
 `augmentation.dimensions[].strength` is a **prompt-only annotation**. For example,
 `0.7` becomes text such as `lighting (strength=0.70)` in `{variation}` or
 `{instruction}`. It is not a native denoising parameter, a 70% edit amount, or a
