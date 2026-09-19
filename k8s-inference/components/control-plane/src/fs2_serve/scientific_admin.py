@@ -18,6 +18,7 @@ from .admin_models import (
     AdminSourceState,
     AdminWarning,
 )
+from .reporting_reads import scientific_read_trace
 from .scientific_admin_fit import ScientificNodeFitAdapter
 from .scientific_admin_models import (
     ScientificArtifact,
@@ -476,14 +477,16 @@ class ScientificAdminReadService:
         operation_id: UUID,
         *,
         tenant_id: str | None,
+        request_id: UUID | None = None,
     ) -> AdminEnvelope[ScientificRunDetail]:
         now = self.clock().astimezone(UTC)
         runs = self._require_runs()
         try:
-            run_snapshot = await asyncio.wait_for(
-                runs.get_run(operation_id, tenant_id=tenant_id),
-                timeout=self.adapter_timeout_seconds,
-            )
+            with scientific_read_trace(operation_id, request_id):
+                run_snapshot = await asyncio.wait_for(
+                    runs.get_run(operation_id, tenant_id=tenant_id),
+                    timeout=self.adapter_timeout_seconds,
+                )
         except asyncio.CancelledError:
             raise
         except KeyError:
