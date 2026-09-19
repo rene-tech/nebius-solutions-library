@@ -51,5 +51,5 @@
   ],
   "scientific_parameters_weights_resources": "unchanged; exact five-case plan comparison passed",
   "os_change": "Pinned libpython3.12-dev=3.12.3-1ubuntu0.17 plus matching distro dependencies; Python remains3.12.3",
-  "private_evidence_root": "/home/tux/secure-handoff/proteina-variant-repair-20260918-Mpp6FE"
+  "protected_original_sha256": "d3c39ca1ea591c9d30c7a743202c34461b6e2fe2b9f454d9158a2ae750557f03"
 }

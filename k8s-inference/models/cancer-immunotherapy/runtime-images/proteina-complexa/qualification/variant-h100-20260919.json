@@ -745,8 +745,8 @@
   "pods": [
     {
       "name": "fs2-proteina-variants-20260918-r4",
-      "pod_uid": "99d47a91-b637-4ac6-81ca-ea69000f1155",
-      "node": "computeinstance-e00ww2rd4vzp8qdm22",
+      "pod_alias": "isolated-pod-r4",
+      "node_alias": "isolated-h100-node-1",
       "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
       "resources": {
         "limits": {
@@ -762,7 +762,8 @@
           "nvidia.com/gpu": "1"
         }
       },
-      "gpu": "GPU-3a02010a-1266-1a19-c6b2-846a38fcabd4, NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
+      "gpu_alias": "isolated-h100-gpu-1",
+      "gpu": "NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
       "jit_prerequisite": {
         "python_header_compile": true,
         "python_include": "/usr/include/python3.12",
@@ -774,8 +775,8 @@
     },
     {
       "name": "fs2-proteina-variants-20260918-r5",
-      "pod_uid": "19455199-f864-4ae9-9560-1ce16946c86c",
-      "node": "computeinstance-e00rdppqt3kg2y00gj",
+      "pod_alias": "isolated-pod-r5",
+      "node_alias": "isolated-h100-node-2",
       "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
       "resources": {
         "limits": {
@@ -791,7 +792,8 @@
           "nvidia.com/gpu": "1"
         }
       },
-      "gpu": "GPU-b9790cfd-34f8-8c04-faea-56b5cedc79d7, NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
+      "gpu_alias": "isolated-h100-gpu-2",
+      "gpu": "NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
       "jit_prerequisite": {
         "python_header_compile": true,
         "python_include": "/usr/include/python3.12",
@@ -803,8 +805,8 @@
     },
     {
       "name": "fs2-proteina-variants-20260918-r6",
-      "pod_uid": "9929fcfb-f4f9-4896-97b1-8c99a108e4bb",
-      "node": "computeinstance-e00p3acr87k9k4mckj",
+      "pod_alias": "isolated-pod-r6",
+      "node_alias": "isolated-h100-node-3",
       "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
       "resources": {
         "limits": {
@@ -820,7 +822,8 @@
           "nvidia.com/gpu": "1"
         }
       },
-      "gpu": "GPU-eb9c2898-bf6f-83b6-b76c-2c3b5b02500c, NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
+      "gpu_alias": "isolated-h100-gpu-3",
+      "gpu": "NVIDIA H100 80GB HBM3, 580.159.04, 81559 MiB",
       "jit_prerequisite": {
         "python_header_compile": true,
         "python_include": "/usr/include/python3.12",
@@ -877,12 +880,13 @@
   },
   "node_loss": {
     "pod": "fs2-proteina-variants-20260918-r4",
-    "node": "computeinstance-e00ww2rd4vzp8qdm22",
+    "node_alias": "isolated-h100-node-1",
     "ready_unknown_at": "2026-09-18T23:45:49Z",
     "node_receipt_sha256": "0eba92f655cf1cda244a65ba3c1eb59783949113bf63872ca662530194ecb65c",
     "effect": "Original5caseoutputs copiedbeforeloss. First matched400generate interrupted; no completed result claimed. Only thatcomparison replayed on a new isolatedPod."
   },
   "limits": "No affinity,catalysis,experimental,clinical or broad model-quality qualification. Sparse matched cases; basic CA geometry is not all-atom validity. No production/public/scheduler/snapshot qualification inherited.",
-  "private_evidence_root": "/home/tux/secure-handoff/proteina-variant-repair-20260918-Mpp6FE",
+  "protected_original_sha256": "c3f980aeb736b8158b09989584afa01568cd5adb8c73d2d045280f0028bbb233",
+  "public_export": "Portable projection; raw identities and local evidence locations remain in the protected original. Aliases distinguish the three observed nodes/GPUs without publishing their infrastructure identifiers. Scientific measurements and artifact hashes are unchanged.",
   "independent_evaluator_sha256": "b8b15aaecc0d43074febe321a6cf2014d5aafd2f1c38da38f4fc5a8bbc2d74b3"
 }

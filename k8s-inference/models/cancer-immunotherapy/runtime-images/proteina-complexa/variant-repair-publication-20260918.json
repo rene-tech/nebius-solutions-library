@@ -47,5 +47,5 @@
       "reason": "H100 preflight found inherited unwritable XDG cache; no model sampling; task Pod/CM removed"
     }
   ],
-  "private_evidence_root": "/home/tux/secure-handoff/proteina-variant-repair-20260918-Mpp6FE"
+  "protected_original_sha256": "258c295376d347f900ee5a0be1971cdf76feee76cc64e9e660851446377d1033"
 }
