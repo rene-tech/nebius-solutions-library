@@ -1,4 +1,4 @@
-"""Propagate the request seed through pinned DiffDock's RDKit preprocessing.
+"""Make pinned DiffDock conformers and startup normalization reproducible.
 
 No weights or sampling limits change. Verify original source bytes before
 applying this small, reviewable upstream API extension during image build.
@@ -13,6 +13,7 @@ from pathlib import Path
 ORIGINAL_SHA256 = {
     "datasets/process_mols.py": "6918a399ea25fd84466b90ce74656b4e35c1e6106d0e18588f789686ffa289af",
     "utils/inference_utils.py": "80a075bdb3bfb01ab6bcfe1b93607317d0b9d130393fb25fdc86bcce8e475f67",
+    "utils/torus.py": "cd85701a4d0b84443886c6ac51c33cb5eba48ae5593e2bca7dcba29d61d1503d",
 }
 
 
@@ -35,6 +36,16 @@ def transform(path: str, text: str) -> str:
         text = replace_exact(text, "atom_max_neighbors=None, knn_only_graph=False):", "atom_max_neighbors=None, knn_only_graph=False, random_seed=None):")
         text = replace_exact(text, "        self.knn_only_graph = knn_only_graph\n", "        self.knn_only_graph = knn_only_graph\n        self.random_seed = random_seed\n")
         text = replace_exact(text, "                generate_conformer(mol)\n", "                generate_conformer(mol, random_seed=self.random_seed)\n", count=2)
+    elif path == "utils/torus.py":
+        # This Monte Carlo normalization is evaluated at import time, before
+        # request seeding. An unseeded table changes every torsional score after
+        # a worker restart. A dedicated RNG preserves both the upstream
+        # distribution/sample count and the application's global RNG state.
+        text = replace_exact(text, "def sample(sigma):", "def sample(sigma, rng=None):")
+        text = replace_exact(text, "    out = sigma * np.random.randn(*sigma.shape)",
+            "    out = sigma * (np.random if rng is None else rng).randn(*sigma.shape)")
+        text = replace_exact(text, "    sample(sigma[None].repeat(10000, 0).flatten()),",
+            "    sample(sigma[None].repeat(10000, 0).flatten(), rng=np.random.RandomState(0)),")
     else:
         raise ValueError("Unexpected upstream file")
     compile(text, path, "exec")

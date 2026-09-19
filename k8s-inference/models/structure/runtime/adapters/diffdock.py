@@ -38,7 +38,7 @@ class Adapter:
         "relationship": "same-named-upstream-fallback-parity-unproven",
         "nim_version": "2.3.0",
         "scope": "molecular-docking/research",
-        "compatibility_shims": ["torch_cluster:pytorch-native", "torch_scatter:pytorch-native", "rdkit:request-seeded-conformers", "torch:deterministic-kernels"],
+        "compatibility_shims": ["torch_cluster:pytorch-native", "torch_scatter:pytorch-native", "rdkit:request-seeded-conformers", "torch:deterministic-kernels", "torus:fixed-local-normalization-rng"],
     }
 
     def __init__(self) -> None:

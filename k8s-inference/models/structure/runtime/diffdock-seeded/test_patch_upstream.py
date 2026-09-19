@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import numpy as np
 
 
 spec = importlib.util.spec_from_file_location("diffdock_seed_patch", Path(__file__).with_name("patch_upstream.py"))
@@ -60,3 +61,51 @@ def test_score_and_confidence_dataset_receive_request_seed():
     for call in calls:
         seed = next(keyword.value for keyword in call.keywords if keyword.arg == "random_seed")
         assert isinstance(seed, ast.Name) and seed.id == "seed"
+
+
+TORUS = '''def sample(sigma):
+    out = sigma * np.random.randn(*sigma.shape)
+    out = (out + np.pi) % (2 * np.pi) - np.pi
+    return out
+
+score_norm_ = score(
+    sample(sigma[None].repeat(10000, 0).flatten()),
+    sigma[None].repeat(10000, 0).flatten()
+).reshape(10000, -1)
+score_norm_ = (score_norm_ ** 2).mean(0)
+'''
+
+
+def test_startup_torsion_normalization_is_local_and_repeatable():
+    original_state = np.random.get_state()
+    tables = []
+    try:
+        for seed in (7, 23, 1001):
+            np.random.seed(seed)
+            before = np.random.get_state()
+            namespace = {"np": np, "sigma": np.array([0.01, 0.1, 1.0]),
+                         "score": lambda values, sigma: values / sigma}
+            exec(patcher.transform("utils/torus.py", TORUS), namespace)
+            after = np.random.get_state()
+            assert before[0] == after[0]
+            assert np.array_equal(before[1], after[1])
+            assert before[2:] == after[2:]
+            tables.append(namespace["score_norm_"])
+        assert all(np.array_equal(tables[0], table) for table in tables[1:])
+    finally:
+        np.random.set_state(original_state)
+
+
+def test_normal_torsion_samples_still_follow_request_rng():
+    namespace = {"np": np, "sigma": np.array([0.01, 0.1]), "score": lambda x, sigma: x}
+    exec(patcher.transform("utils/torus.py", TORUS), namespace)
+    original_state = np.random.get_state()
+    try:
+        np.random.seed(19)
+        expected = namespace["sample"](np.ones(10))
+        np.random.seed(19)
+        assert np.array_equal(expected, namespace["sample"](np.ones(10)))
+        np.random.seed(23)
+        assert not np.array_equal(expected, namespace["sample"](np.ones(10)))
+    finally:
+        np.random.set_state(original_state)

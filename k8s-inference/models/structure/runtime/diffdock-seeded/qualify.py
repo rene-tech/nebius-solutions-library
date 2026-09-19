@@ -57,6 +57,10 @@ def main():
     started = time.monotonic()
     adapter.load()
     loaded = time.monotonic() - started
+    from utils import torus
+    normalization = np.ascontiguousarray(torus.score_norm_)
+    normalization_receipt = {"sha256": hashlib.sha256(normalization.tobytes()).hexdigest(),
+                             "shape": list(normalization.shape), "dtype": str(normalization.dtype)}
     runs, results = [], {}
     # Interleave requests so a passing pair is not just reuse of a last result.
     for repetition in range(2):
@@ -87,6 +91,7 @@ def main():
                       "maximum_confidence_difference": confidence,
                       "numerical_repeatability_pass": delta <= 0.01 and confidence <= 0.001})
     receipt = {"schema": "diffdock-seed-qualification/v1", "model_load_seconds": loaded,
+               "torsion_normalization": normalization_receipt,
                "gpu": subprocess.check_output(["nvidia-smi", "--query-gpu=name,uuid,driver_version", "--format=csv,noheader"], text=True).strip(),
                "adapter_identity": adapter.identity, "cases_transport_sha256": hashlib.sha256(raw).hexdigest(),
                "cases_sha256": hashlib.sha256(gzip.decompress(raw) if args.cases.suffix == ".gz" else raw).hexdigest(),
