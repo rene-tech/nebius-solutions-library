@@ -3374,11 +3374,21 @@ async def test_admin_reporting_queries_are_bounded_paginated_and_payload_free(
     )
     row = next(item for item in usage.rows if item.model_id == "qwen3-8b")
     assert row.terminal_operations == 3 and row.error_operations == 3
+    assert row.accepted_to_ready_operations == 0
     assert row.input_tokens == row.output_tokens == row.token_reported_operations == 0
     assert 0 <= row.latency_p50_seconds <= row.latency_p95_seconds <= row.latency_p99_seconds
     assert usage.latency_p50_seconds is not None
     assert usage.latency_p95_seconds is not None
     assert usage.latency_p99_seconds is not None
+
+    # SQL COUNT(non-null) distinguishes a real zero-duration span from absent evidence.
+    async with postgres_store.pool.acquire() as connection:
+        await connection.execute(
+            "UPDATE fs2_operations SET cold_start_seconds=0 WHERE id=$1", operations[0].id,
+        )
+    with_zero = await postgres_store.admin_usage_window(from_at=query.from_at, to_at=query.to_at)
+    observed = next(item for item in with_zero.rows if item.model_id == "qwen3-8b")
+    assert observed.accepted_to_ready_operations == 1 and observed.cold_start_seconds == 0
 
 
 @pytest.mark.postgres

@@ -23,6 +23,19 @@ function renderPage(entry: string) {
 }
 
 describe("Models page live contract", () => {
+  it("labels the cumulative window and shows missing spans instead of a fabricated zero", async () => {
+    const response = liveModels();
+    response.data.items = [response.data.items[0]];
+    const reason = "No samples: no completed operations with a recorded accepted-to-ready span in this window.";
+    response.data.items[0].metrics.cold_start_seconds = {
+      value: null, unit: "seconds", state: "unavailable", source: "postgresql", reason,
+    };
+    vi.spyOn(adminApi, "models").mockResolvedValue(response);
+    renderPage("/admin/models");
+    expect(await screen.findByRole("columnheader", { name: "Accepted-to-ready total (window)" })).toBeInTheDocument();
+    expect(screen.getByText(reason, { selector: ".secondary-line" })).toBeVisible();
+  });
+
   it("sends validated server-side filters and visibly explains degraded unknown state", async () => {
     const response = liveModels();
     const model = response.data.items[0];

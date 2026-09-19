@@ -2678,6 +2678,7 @@ class MemoryStore:
                         "gpu": 0.0,
                         "duration": 0.0,
                         "cold": 0.0,
+                        "accepted_to_ready_operations": 0,
                         "input_tokens": 0,
                         "output_tokens": 0,
                         "token_reported_operations": 0,
@@ -2690,6 +2691,8 @@ class MemoryStore:
                 latency = max(0.0, (operation.completed_at - operation.accepted_at).total_seconds())
                 value["duration"] = float(value["duration"]) + latency
                 value["cold"] = float(value["cold"]) + (operation.cold_start_seconds or 0.0)
+                if operation.cold_start_seconds is not None:
+                    value["accepted_to_ready_operations"] = int(value["accepted_to_ready_operations"]) + 1
                 value["input_tokens"] = int(value["input_tokens"]) + (operation.input_tokens or 0)
                 value["output_tokens"] = int(value["output_tokens"]) + (operation.output_tokens or 0)
                 if operation.input_tokens is not None and operation.output_tokens is not None:
@@ -2707,6 +2710,7 @@ class MemoryStore:
                         estimated_gpu_seconds=float(value["gpu"]),
                         duration_seconds=float(value["duration"]),
                         cold_start_seconds=float(value["cold"]),
+                        accepted_to_ready_operations=int(value["accepted_to_ready_operations"]),
                         input_tokens=int(value["input_tokens"]),
                         output_tokens=int(value["output_tokens"]),
                         token_reported_operations=int(value["token_reported_operations"]),

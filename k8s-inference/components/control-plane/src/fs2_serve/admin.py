@@ -1005,12 +1005,18 @@ class AdminReadService:
                 latency=self._latency(prom if prom_ready else None, usage if database_ready else None),
                 cold_start_seconds=(
                     _available(
-                        usage.cold_start_seconds if usage is not None else 0.0, "seconds", "postgresql",
-                        reason=("Legacy field: sum of accepted-to-ready spans, "
-                                "including queue/dispatch; not pure cold start."),
+                        usage.cold_start_seconds, "seconds", "postgresql",
+                        reason=("Window total of recorded accepted-to-ready spans, including queue/dispatch; "
+                                "not per-start latency or pure cold start. "
+                                f"Recorded spans: {usage.accepted_to_ready_operations}."),
                     )
-                    if database_ready
-                    else _unavailable("seconds", "postgresql", "cold-start accounting is unavailable")
+                    if database_ready and usage is not None and usage.accepted_to_ready_operations
+                    else _unavailable(
+                        "seconds", "postgresql",
+                        "No samples: no completed operations with a recorded accepted-to-ready span in this window."
+                        if database_ready and (usage is None or usage.accepted_to_ready_operations == 0)
+                        else "Accepted-to-ready sample accounting is unavailable.",
+                    )
                 ),
             ),
         )

@@ -4130,6 +4130,7 @@ class PostgresStore:
                        COALESCE(sum(estimated_gpu_seconds),0)::double precision AS estimated_gpu_seconds,
                        COALESCE(sum(latency_seconds),0)::double precision AS duration_seconds,
                        COALESCE(sum(COALESCE(cold_start_seconds,0)),0)::double precision AS cold_start_seconds,
+                       count(cold_start_seconds)::bigint AS accepted_to_ready_operations,
                        COALESCE(sum(input_tokens),0)::bigint AS input_tokens,
                        COALESCE(sum(output_tokens),0)::bigint AS output_tokens,
                        count(*) FILTER (

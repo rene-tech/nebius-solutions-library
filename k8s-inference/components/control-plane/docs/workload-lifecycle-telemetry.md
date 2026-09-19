@@ -1,5 +1,21 @@
 # Workload lifecycle telemetry and GPU accounting
 
+## Accepted-to-ready window totals
+
+The serving Models list/detail retains the legacy `cold_start_seconds` API key,
+but labels it **Accepted-to-ready total (window)**. This is a sum over terminal
+operations in the selected window, including queue/dispatch, not per-start
+latency or pure initialization time. PostgreSQL and memory readers separately
+count non-null recorded spans. No recorded spans is unavailable with an explicit
+"No samples" reason; one recorded span of zero seconds remains an available
+zero. Individual operation durations are unchanged. This view does not substitute
+for scientific-batch per-attempt lifecycle accounting.
+
+Verification: 29 admin API tests, the actual PostgreSQL reporting integration
+test, three Models UI tests, production admin build, and four changed backend
+modules under mypy; scoped Ruff passes. The database fixture uses a task-owned
+local PostgreSQL container, not production data.
+
 The lifecycle ledger is the durable attribution source for online operations
 and scientific-batch attempts. OpenTelemetry preserves causality; Kubernetes,
 Kueue, kubelet and DCGM provide independently observed allocation facts. The
