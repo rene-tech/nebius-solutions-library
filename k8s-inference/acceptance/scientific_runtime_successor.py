@@ -1,4 +1,4 @@
-"""Prepare image-only scientific successors without inheriting old qualification.
+"""Prepare image or explicit recipe successors without inheriting old qualification.
 
 Existing execution rows and snapshot records are immutable evidence. When a
 whole-map reference includes the changed model, retain a content-addressed
@@ -29,7 +29,8 @@ def indexed(document, key):
 
 
 def prepare(profiles, execution, *, model_id, previous_digest, candidate_image,
-            recipe_sha256, semantic_receipt_sha256, measured_at, limitations):
+            recipe_sha256, semantic_receipt_sha256, measured_at, limitations,
+            allow_recipe_only=False):
     """Return active/unqualified candidate plus an explicit unchanged-row proof."""
     candidate_digest = candidate_image.rsplit("@", 1)[-1]
     for value in (previous_digest, candidate_digest):
@@ -38,7 +39,7 @@ def prepare(profiles, execution, *, model_id, previous_digest, candidate_image,
     for value in (recipe_sha256, semantic_receipt_sha256):
         if not re.fullmatch(r"[a-f0-9]{64}", value):
             raise ValueError("Require immutable recipe and semantic evidence")
-    if "@" not in candidate_image or candidate_digest == previous_digest:
+    if "@" not in candidate_image or (candidate_digest == previous_digest and not allow_recipe_only):
         raise ValueError("Require a distinct immutable candidate image")
     before_profiles = indexed(profiles, "profiles")
     before_rows = indexed(execution, "models")
@@ -59,9 +60,14 @@ def prepare(profiles, execution, *, model_id, previous_digest, candidate_image,
     identity = profile["execution_identity"]
     if identity["runtime_image_digest"] != previous_digest:
         raise ValueError("Previous runtime image changed")
+    recipe_only = candidate_digest == previous_digest
+    if recipe_only and recipe_sha256 == identity["runtime_recipe_sha256"]:
+        raise ValueError("Recipe-only successor must change the exact recipe")
     changed_stages = []
     for stage in rows[model_id]["stages"]:
         if stage["image"].endswith("@" + previous_digest):
+            if recipe_only and stage["image"] != candidate_image:
+                raise ValueError("Recipe-only successor cannot change the image repository")
             stage["image"] = candidate_image
             changed_stages.append(stage["stage_id"])
     if not changed_stages:
@@ -91,6 +97,7 @@ def prepare(profiles, execution, *, model_id, previous_digest, candidate_image,
     return profiles, execution, {
         "model_id": model_id, "previous_image_digest": previous_digest,
         "candidate_image": candidate_image, "changed_stage_ids": changed_stages,
+        "recipe_only": recipe_only,
         "sibling_reference_rebase": references, "sibling_projection_sha256": sibling_sha,
         "candidate_normal_execution_sha256": normal_after,
         "execution_map_sha256": digest(execution), "semantic_receipt_sha256": semantic_receipt_sha256,

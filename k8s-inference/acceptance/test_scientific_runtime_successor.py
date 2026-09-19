@@ -65,3 +65,36 @@ def test_unbound_qualification_cannot_be_requalified():
     profiles["profiles"][0]["qualification"]["execution_map_sha256"] = "e" * 64
     with pytest.raises(ValueError, match="unbound"):
         build(profiles, execution)
+
+
+def test_recipe_only_requires_explicit_selection_and_new_recipe():
+    profiles, execution = original()
+    profile = next(p for p in profiles["profiles"] if p["model_id"] == MODEL)
+    row = next(p for p in execution["models"] if p["model_id"] == MODEL)
+    args = dict(model_id=MODEL, previous_digest=profile["execution_identity"]["runtime_image_digest"],
+                candidate_image=row["stages"][0]["image"], recipe_sha256="a" * 64,
+                semantic_receipt_sha256="b" * 64, measured_at="2026-09-19T00:00:00Z",
+                limitations=["Recipe-only successor, public acceptance pending."])
+    with pytest.raises(ValueError, match="distinct"):
+        prepare(profiles, execution, **args)
+    updated, result, receipt = prepare(profiles, execution, **args, allow_recipe_only=True)
+    assert receipt["recipe_only"] is True
+    new_row = next(p for p in result["models"] if p["model_id"] == MODEL)
+    assert new_row["stages"] == row["stages"]
+    assert new_row["execution_identity_sha256"] != row["execution_identity_sha256"]
+    new_profile = next(p for p in updated["profiles"] if p["model_id"] == MODEL)
+    assert new_profile["qualification"]["public_completion_receipt_sha256"] is None
+    args["recipe_sha256"] = profile["execution_identity"]["runtime_recipe_sha256"]
+    with pytest.raises(ValueError, match="must change"):
+        prepare(profiles, execution, **args, allow_recipe_only=True)
+
+
+def test_recipe_only_cannot_repoint_image_repository():
+    profiles, execution = original()
+    profile = next(p for p in profiles["profiles"] if p["model_id"] == MODEL)
+    image_digest = profile["execution_identity"]["runtime_image_digest"]
+    with pytest.raises(ValueError, match="repository"):
+        prepare(profiles, execution, model_id=MODEL, previous_digest=image_digest,
+                candidate_image="different.example/worker@" + image_digest,
+                recipe_sha256="a" * 64, semantic_receipt_sha256="b" * 64,
+                measured_at="2026-09-19T00:00:00Z", limitations=[], allow_recipe_only=True)
