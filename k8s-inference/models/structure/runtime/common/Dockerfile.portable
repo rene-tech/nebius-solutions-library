@@ -6,6 +6,11 @@ FROM ${BASE_IMAGE}
 
 LABEL ai.nebius.fs2.runtime-portability="nim-health-aliases"
 
+USER 0
+COPY k8s-inference/models/structure/runtime/diffdock-seeded/patch_upstream.py /opt/fs2/runtime/patches/seed_conformers.py
+RUN if [ "$FS2_MODEL" = "diffdock" ]; then python3 /opt/fs2/runtime/patches/seed_conformers.py --upstream /opt/fs2/model/upstream; fi
+USER 10001:10001
+
 COPY --chown=10001:10001 \
   k8s-inference/models/structure/runtime/common/server.py \
   /opt/fs2/runtime/common/server.py

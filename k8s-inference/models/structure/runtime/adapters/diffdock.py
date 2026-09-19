@@ -38,7 +38,7 @@ class Adapter:
         "relationship": "same-named-upstream-fallback-parity-unproven",
         "nim_version": "2.3.0",
         "scope": "molecular-docking/research",
-        "compatibility_shims": ["torch_cluster:pytorch-native", "torch_scatter:pytorch-native"],
+        "compatibility_shims": ["torch_cluster:pytorch-native", "torch_scatter:pytorch-native", "rdkit:request-seeded-conformers"],
     }
 
     def __init__(self) -> None:
@@ -216,6 +216,7 @@ class Adapter:
                 atom_radius=self.score_args.atom_radius,
                 atom_max_neighbors=self.score_args.atom_max_neighbors,
                 knn_only_graph=not getattr(self.score_args, "not_knn_only_graph", True),
+                random_seed=seed,
             )
             original = dataset[0]
             if not bool(original.success):
@@ -235,6 +236,7 @@ class Adapter:
                 atom_radius=self.confidence_args.atom_radius,
                 atom_max_neighbors=self.confidence_args.atom_max_neighbors,
                 knn_only_graph=False,
+                random_seed=seed,
             )
             confidence_original = confidence_dataset[0]
             if not bool(confidence_original.success):
