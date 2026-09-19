@@ -375,6 +375,28 @@ def test_gpu_observer_accepts_explicit_pool_tolerations_without_a_wildcard() -> 
     ]
 
 
+def test_pinned_gpu_observer_does_not_roll_for_gateway_only_image_change() -> None:
+    observer_digest = "sha256:" + "a" * 64
+    override = "registry.example/observer@" + observer_digest
+    before, after = (
+        render("--set", "runtimeAttribution.enabled=true", "--set", f"runtimeAttribution.image={override}",
+               "--set", "image.digest=sha256:" + digit * 64)
+        for digit in ("b", "c")
+    )
+    old = next(document for document in before if document["kind"] == "DaemonSet")
+    new = next(document for document in after if document["kind"] == "DaemonSet")
+    assert old == new
+    pod = new["spec"]["template"]
+    assert pod["spec"]["containers"][0]["image"] == override
+    assert pod["metadata"]["annotations"]["fs2.nebius.ai/image-digest"] == observer_digest
+
+
+def test_unpinned_gpu_observer_retains_gateway_image_default() -> None:
+    documents = render("--set", "runtimeAttribution.enabled=true")
+    pod = next(document for document in documents if document["kind"] == "DaemonSet")["spec"]["template"]
+    assert pod["spec"]["containers"][0]["image"].endswith("@" + pod["metadata"]["annotations"]["fs2.nebius.ai/image-digest"])
+
+
 def test_admin_console_renders_digest_bound_workload_route_and_network_boundary() -> None:
     documents = render(*admin_console_values())
     named = [
@@ -1319,6 +1341,19 @@ def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> 
     rendered_sha256 = hashlib.sha256(rendered_bytes).hexdigest()
     assert rendered["metadata"]["annotations"]["fs2-serve.nebius.ai/execution-map-sha256"] == rendered_sha256
     profiles_by_id = {item["model_id"]: item for item in profiles}
+    rendered_map = json.loads(rendered_bytes)
+    assert rendered_map == execution_map
+    map_rows = {item["model_id"]: item for item in rendered_map["models"]}
+    normal_sha256 = hashlib.sha256(json.dumps(
+        {"schema": rendered_map["schema"], "models": rendered_map["models"]},
+        sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest()
+    # An image-only successor must not relabel unchanged siblings' historical
+    # acceptance. Their retained projection must hash the actual rendered rows.
+    baselines = rendered_map.get("qualification_baselines", {})
+    for digest, model_ids in baselines.items():
+        projection = {"schema": rendered_map["schema"], "models": [map_rows[mid] for mid in model_ids]}
+        assert hashlib.sha256(json.dumps(projection, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == digest
     for map_model in execution_map["models"]:
         profile = profiles_by_id[map_model["model_id"]]
         identity = profile["execution_identity"]
@@ -1329,7 +1364,8 @@ def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> 
             assert map_model["execution_identity_sha256"] is None
             continue
 
-        assert profile["qualification"]["execution_map_sha256"] == rendered_sha256
+        qualification_sha256 = profile["qualification"]["execution_map_sha256"]
+        assert qualification_sha256 == normal_sha256 or map_model["model_id"] in baselines.get(qualification_sha256, [])
         identity_payload = {key: value for key, value in identity.items() if key != "execution_identity_sha256"}
         expected_identity = hashlib.sha256(
             json.dumps(identity_payload, separators=(",", ":"), sort_keys=True).encode()
@@ -3271,6 +3307,7 @@ def test_capacity_adapter_has_short_lived_token_and_exact_list_only_rbac() -> No
     )
     assert model_role["rules"] == [
         {"apiGroups": [""], "resources": ["pods", "services", "events"], "verbs": ["list"]},
+        {"apiGroups": ["discovery.k8s.io"], "resources": ["endpointslices"], "verbs": ["list"]},
         {"apiGroups": ["apps"], "resources": ["deployments"], "verbs": ["list"]},
         {
             "apiGroups": ["autoscaling"],

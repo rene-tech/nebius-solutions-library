@@ -665,6 +665,7 @@ variable "deployment" {
         repository             = string
         digest                 = string
         catalog_rollout_digest = string
+        gpu_observer_image     = optional(string, "")
         autoscaling = optional(object({
           enabled                           = optional(bool, true)
           min_replicas                      = optional(number, 2)
@@ -978,6 +979,7 @@ variable "deployment" {
       can(regex("^[a-zA-Z0-9._:/-]+$", var.deployment.applications.control_plane.repository)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.digest)) &&
       can(regex("^sha256:[0-9a-f]{64}$", var.deployment.applications.control_plane.catalog_rollout_digest)) &&
+      can(regex("^$|^[^@\\s]+@sha256:[a-f0-9]{64}$", var.deployment.applications.control_plane.gpu_observer_image)) &&
       floor(var.deployment.applications.control_plane.autoscaling.min_replicas) == var.deployment.applications.control_plane.autoscaling.min_replicas &&
       floor(var.deployment.applications.control_plane.autoscaling.max_replicas) == var.deployment.applications.control_plane.autoscaling.max_replicas &&
       floor(var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage) == var.deployment.applications.control_plane.autoscaling.target_cpu_utilization_percentage &&

@@ -171,6 +171,7 @@ locals {
     # ledger. This is GPU-model agnostic and schedules only on Nebius GPU nodes.
     runtimeAttribution = {
       enabled    = true
+      image      = var.gpu_observer_image
       namespaces = local.runtime_attribution_namespaces
     }
     modelController = {

@@ -735,6 +735,8 @@ def selected_image_artifacts(
         (f"model/{model_id}", workloads["model_image_overrides"][model_id])
         for model_id in contract["selected_model_ids"]
     )
+    if workloads.get("gpu_observer_image"):
+        sources.append(("application/gpu-observer", workloads["gpu_observer_image"]))
     reference_data = workloads.get("reference_data", {})
     if isinstance(reference_data, Mapping) and reference_data.get("enabled") is True:
         for component in ("status", "pipeline"):
@@ -795,6 +797,8 @@ def rewritten_workloads(
         "target_repository"
     ]
     workloads["control_plane_image"] = control_plane
+    if workloads.get("gpu_observer_image"):
+        workloads["gpu_observer_image"] = artifacts["application/gpu-observer"]["target_reference"]
 
     admin_console = dict(workloads["admin_console"])
     admin_image = dict(admin_console["image"])

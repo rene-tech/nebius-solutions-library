@@ -1494,6 +1494,17 @@ variable "control_plane_image" {
   }
 }
 
+variable "gpu_observer_image" {
+  description = "Optional qualified repository@sha256 image for independent GPU allocation observer releases. Empty follows the control-plane image."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^$|^[^@\\s]+@sha256:[a-f0-9]{64}$", var.gpu_observer_image))
+    error_message = "gpu_observer_image must be empty or an immutable repository@sha256 reference."
+  }
+}
+
 variable "control_plane_autoscaling" {
   description = "Customer-configurable HPA envelope for the control-plane API. Keep max_replicas within schedulable system-node capacity."
   type = object({

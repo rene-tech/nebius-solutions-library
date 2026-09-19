@@ -404,6 +404,9 @@ class DeploymentContractTests(unittest.TestCase):
             "max_unavailable": 1,
             "max_surge": 0,
         }
+        applications["control_plane"]["gpu_observer_image"] = (
+            "registry.example.invalid/inference/observer@sha256:" + "a" * 64
+        )
         deployment = {
             "schema_version": 1,
             "name": "fs2-control-plane-hpa",
@@ -426,6 +429,8 @@ class DeploymentContractTests(unittest.TestCase):
             ],
             applications["control_plane"]["rollout"],
         )
+        self.assertEqual(outputs["deployment_contract"]["stages"]["workloads"]["gpu_observer_image"],
+                         applications["control_plane"]["gpu_observer_image"])
 
         control_plane_source = (
             DEPLOY_ROOT / "stages/workloads/control_plane.tf"

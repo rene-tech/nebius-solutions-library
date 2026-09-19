@@ -984,6 +984,11 @@
       ],
       "properties": {
         "enabled": {"type": "boolean"},
+        "image": {
+          "type": "string",
+          "maxLength": 512,
+          "pattern": "^$|^[^@\\s]+@sha256:[a-f0-9]{64}$"
+        },
         "modelNamespace": {"$ref": "#/$defs/dnsName"},
         "namespaces": {
           "type": "array",

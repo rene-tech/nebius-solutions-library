@@ -240,6 +240,10 @@ serviceAccounts:
 # Pods. Terraform enables it alongside the Kubernetes lifecycle reader.
 runtimeAttribution:
   enabled: false
+  # Empty follows the gateway image for compatibility. Pin a qualified
+  # repository@sha256:digest to release the node observer independently of
+  # unrelated gateway/model changes, especially on preemptible GPU nodes.
+  image: ""
   # `modelNamespace` is retained as the fallback for older values files.
   # New callers pass the complete, bounded namespace set through `namespaces`.
   modelNamespace: fs2-models
