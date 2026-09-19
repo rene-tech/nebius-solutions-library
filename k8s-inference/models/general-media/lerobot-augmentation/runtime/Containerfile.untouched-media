@@ -1,0 +1,15 @@
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:41a01714ed6d89b90a5b4a4527e2eb9907433f7932970544d2a712333996de04
+
+ARG SOURCE_COMMIT
+ARG SOURCE_TREE
+ARG RUNTIME_CONTEXT_SHA256
+ARG CONTAINERFILE_SHA256
+LABEL org.opencontainers.image.revision=$SOURCE_COMMIT \
+      ai.nebius.fs2.source-tree=$SOURCE_TREE \
+      ai.nebius.fs2.runtime-context-sha256=$RUNTIME_CONTEXT_SHA256 \
+      ai.nebius.fs2.containerfile-sha256=$CONTAINERFILE_SHA256 \
+      ai.nebius.fs2.repair="byte-exact-untouched-lerobot-media"
+
+# Exact deployed dependency base; only the reviewed dataset preservation module
+# changes. The existing editable install, user and entrypoint remain unchanged.
+COPY --chown=10001:10001 src/fs2_lerobot_augmentation/dataset.py /opt/fs2/lerobot-augmentation/src/fs2_lerobot_augmentation/dataset.py
