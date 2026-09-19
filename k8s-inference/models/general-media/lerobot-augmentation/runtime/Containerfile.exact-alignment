@@ -1,7 +1,13 @@
 FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9
 
 ARG SOURCE_COMMIT
+ARG SOURCE_TREE
+ARG RUNTIME_CONTEXT_SHA256
+ARG CONTAINERFILE_SHA256
 LABEL org.opencontainers.image.revision=$SOURCE_COMMIT \
+      ai.nebius.fs2.source-tree=$SOURCE_TREE \
+      ai.nebius.fs2.runtime-context-sha256=$RUNTIME_CONTEXT_SHA256 \
+      ai.nebius.fs2.containerfile-sha256=$CONTAINERFILE_SHA256 \
       ai.nebius.fs2.repair="exact-transfer-geometry-and-conditioning-scope"
 
 # Preserve the already pinned CPU dependency environment and entrypoint.
