@@ -26,6 +26,20 @@ NON_COSMOS_MODELS = tuple(
     for model in json.loads((CATALOG_ROOT / "catalog.json").read_text())["model_files"]
     if not model.startswith("cosmos")
 )
+# This is an explicit synthetic route selection, not a "newest filename" rule.
+# Historical descriptors remain in the catalog for reproducibility; retaining a
+# second image must neither break this matrix nor silently change its runtime.
+PUBLISHED_RUNTIME_FIXTURES = {
+    "boltz2": "boltz2-portable-h100.json",
+    "diffdock": "diffdock-portable-h100-http-identity-20260919.json",
+    "evo2-40b": "evo2-40b-scientific-h100-20260918.json",
+    "genmol": "genmol-portable-h100-20260918.json",
+    "molmim": "molmim-portable-h100-20260918.json",
+    "msa-search-pdb70": "msa-search-pdb70-portable-cpu.json",
+    "openfold2": "openfold2-portable-h100.json",
+    "openfold3": "openfold3-portable-h100.json",
+    "proteinmpnn": "proteinmpnn-portable-h100-20260918.json",
+}
 
 
 @pytest.mark.parametrize(
@@ -111,11 +125,14 @@ def _routable(registry, model_id):
     selected = registry if model_id == "qwen3-8b" else bound_model_registry(registry, model_id)
     model = selected.get(model_id)
     # Synthetic publication only; no live grant, binding or runtime is changed.
-    declarations = list((CATALOG_ROOT / "deployment-runtimes").glob(f"{model_id}-portable-*.json"))
-    if declarations:
-        (declaration_path,) = declarations
+    if declaration_name := PUBLISHED_RUNTIME_FIXTURES.get(model_id):
+        declaration_path = CATALOG_ROOT / "deployment-runtimes" / declaration_name
         declaration = json.loads(declaration_path.read_text())
         record = declaration["record"]
+        assert declaration["model_id"] == record["model"]["id"] == model_id
+        assert declaration["qualification"]["active_runtime"]["runtime_image_digest"] == (
+            record["runtime"]["image"]["digest"]
+        )
         model = replace(
             model,
             variant_id=declaration["variant_id"],
@@ -135,6 +152,47 @@ def _routable(registry, model_id):
     return Registry(
         selected.catalog,
         {model_id: replace(model, gateway=replace(model.gateway, mcp_invocable=True, mcp_discoverable=True))},
+    )
+
+
+@pytest.mark.parametrize("model_id", PUBLISHED_RUNTIME_FIXTURES)
+def test_route_fixture_uses_explicit_published_identity(registry, model_id):
+    declaration = json.loads(
+        (CATALOG_ROOT / "deployment-runtimes" / PUBLISHED_RUNTIME_FIXTURES[model_id]).read_text()
+    )
+    variant = json.loads((CATALOG_ROOT / "contracts/model-variants.json").read_text())["variants"][
+        declaration["variant_id"]
+    ]
+    record = declaration["record"]
+    assert variant["base_model_id"] == variant["exposed_model_id"] == model_id
+    for field in ("kind", "repository", "revision"):
+        assert record["model"]["source"][field] == variant["source"][field]
+
+    model = _routable(registry, model_id).get(model_id)
+    assert model.variant_id == declaration["variant_id"]
+    assert model.gateway.runtime_image_digest == model.binding.backend_runtime_image_digest == (
+        record["runtime"]["image"]["digest"]
+    )
+    assert model.gateway.gpu_class == model.binding.backend_gpu_class == record["resources"]["gpu"]["class"]
+
+
+@pytest.mark.parametrize("model_id", ["diffdock", "genmol", "molmim", "proteinmpnn"])
+def test_retained_runtime_history_does_not_ambiguously_select_fixture(registry, monkeypatch, model_id):
+    directory = CATALOG_ROOT / "deployment-runtimes"
+    historical = json.loads((directory / f"{model_id}-portable-h100.json").read_text())
+    published = json.loads((directory / PUBLISHED_RUNTIME_FIXTURES[model_id]).read_text())
+    assert historical["record"]["runtime"]["image"]["digest"] != published["record"]["runtime"]["image"]["digest"]
+
+    original_glob = type(directory).glob
+
+    def unordered_candidates_are_not_identity(path, *args, **kwargs):
+        if path == directory:
+            pytest.fail("Synthetic route selection must not depend on a descriptor glob")
+        return original_glob(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(directory), "glob", unordered_candidates_are_not_identity)
+    assert _routable(registry, model_id).get(model_id).gateway.runtime_image_digest == (
+        published["record"]["runtime"]["image"]["digest"]
     )
 
 
