@@ -55,6 +55,8 @@ The native image remains `sha256:5e2680aa1f8332413638ec1bc962c3796a79a314c1c84f5
 the strict snapshot owner was not changed for these tests. Per-request actual
 runtime attribution and restore witnesses are retained, separately from media
 validation. Valid output alone must not be used to invent missing GPU identity.
+The depth and segmentation operations have null public Pod/node attribution;
+WSM has a joined strict-restore witness. This defect is tracked independently.
 
 ## Evidence and limits
 

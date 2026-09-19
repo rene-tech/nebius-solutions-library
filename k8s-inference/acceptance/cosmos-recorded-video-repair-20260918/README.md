@@ -1,5 +1,31 @@
 # Recorded Cosmos video repair — 18 September 2026
 
+## Latest bounded public evidence — 19 September, release173
+
+The exact-size coordinator is now deployed and the recorded two-episode transfer
+request passes: both raw children are 640×480, 64 frames and 25 FPS; pinned
+LeRobot readback preserves all 6144 nonvideo values across 128 frames. Observed
+end-to-end time is 184.31 seconds. See
+`public-recorded-transfer-exact-size-r2.json` for the exact worker/runtime and
+operation identities. This supersedes the earlier pending-public status below,
+without reclassifying the old silently resized outputs as geometry passes.
+
+The cross-release native media matrix contains 22 successful decoded artifacts:
+nine earlier core cases, eight frozen recorded-transfer comparisons, three
+official control clips and two dedicated transfer shape/FPS cases. All five
+dedicated media tools and edge/blur/depth/segmentation/WSM controls have bounded
+public evidence. This is not an unchanged-release clean cohort: the core nine
+predate release173 and retain their original identity/evidence. See
+`public-mode-matrix-summary.json`, `recorded-transfer-quality.md` and
+`official-transfer-controls.md`.
+
+Five operations lack trustworthy public Pod/GPU attribution despite valid
+outputs; seventeen have joined strict-restore witnesses. Null identity and
+`gpu_count:0` are retained as an observability defect, not measured zero usage.
+Actual LibreChat replay, burst behavior and the release-owner clean-cohort gate
+remain open. Broad trajectory similarity and unchanged action arrays do not
+establish physical action-label validity or policy-training suitability.
+
 ## Scientific motion and coordinator-geometry correction
 
 The complete recorded-trajectory comparison found a material gap, not a mere
