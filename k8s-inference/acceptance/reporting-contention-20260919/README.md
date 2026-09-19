@@ -2,7 +2,8 @@
 
 This is a source repair over integrated backend `295b57486609636b9f1283010adca8267f79f050`.
 It preserves that release's visual models, RF input documentation and accounting.
-It is not evidence that the production reporting issue is already resolved.
+The source proof and later bounded release-189 observation are separate below;
+neither establishes platform-wide customer readiness.
 
 ## Preserved failure and diagnosis
 
@@ -77,3 +78,54 @@ concurrent metrics/history GETs and repeat the unchanged ledger, node-fit and
 discovery assertions. Preserve every 503. If a failure recurs, use the matching
 request ID and phase/error-class log to identify the actual bottleneck before
 another change. Do not increase timeout/pool limits to mask it.
+
+## Deployed release 189 — 2026-09-19 15:35 UTC
+
+The release owner deployed source
+`bbcec4d515d7d53cabc10d185d48adb4ddb6435e`, including repair `a18541`,
+with immutable control-plane image
+`sha256:2e72e6d90e76acdd051e6148a0bb562720cedb8e57744e60d88402a75df71a19`.
+The admin image remained
+`sha256:72581f9f4035742e8c0b52a197c9b9a702f17fe8a6a837990dd2f7bf42ce4ae4`.
+Exact image/Ready verification covered three gateways, two controllers and two
+admin Pods. No model runtime, pool size, timeout or resource limit changed.
+
+One separately labelled app-bound group passed: six concurrent HTTP `/metrics`
+reads inside the exact gateway Pod returned 200 in 3.524–3.528 seconds. Two
+external public admin history reads overlapped them and returned 200 in 0.685
+and 0.744 seconds. Reference-data history ran on the metrics-loaded Pod;
+general history ran on another exact-image gateway. Matching server-generated
+request IDs joined both diagnostic records: mandatory adapter time was 299.610
+and 271.130 milliseconds, with direct measured pool waits at most 8.899 ms.
+Identical metrics response hashes are consistent with shared collection, not an
+independent SQL query-count proof. Coalescing internals have the separate tests
+above. Existing Prometheus scrapes also remained active.
+
+The same-release read-only gate separately confirmed unchanged ledger subject,
+signals, correlations, event digest/watermark, phase/scheduler/device accounting
+and all 12 retained sampled-activity values. General CPU, reference-data CPU and
+both GPU-stage placement projections were present, as were RF input provenance
+guidance and typed Cellpose/scVI discovery. Node-fit is an allocatable upper-bound
+check, not a claim of free capacity or guaranteed admission.
+
+Every failed harness attempt remains separate: six incorrect public `/metrics`
+requests returned 404 because the public route is not exposed; six Kubernetes
+Podproxy calls timed out at 30 seconds without response bodies; an initial local
+launcher omitted stdin forwarding and failed before issuing any HTTP requests.
+No route, policy or limits were changed to obtain the app-bound observation.
+These failures do not replace the original release-188 503 evidence, and the
+later successful group does not retroactively pass any failed attempt.
+
+Protected root:
+`/home/tux/secure-handoff/scientific-unattended-20260919/fit-live-r189/`.
+The app-bound receipt `local-metrics-r2/receipt.json` has SHA256
+`0d1cf3a6562d86a9c828fef9e86f51e26d5e16c16e12a35ffa83eec52fd4fdcc`.
+`FINAL_SUMMARY.md` has SHA256
+`a510cce37facb263b79907e63d755a72b6d814e7825359b12b173e45ed2e9936`.
+The original aggregate receipt remains failed for its public metrics probes;
+its independent ledger/fit/discovery checks remain individually passing.
+
+Verdict: the repaired reporting path passed this bounded exact-release operator
+regression, with no inference or configuration writes. Proxy reachability,
+broader sustained-load behavior and whole customer workflows are not qualified
+by this observation.
