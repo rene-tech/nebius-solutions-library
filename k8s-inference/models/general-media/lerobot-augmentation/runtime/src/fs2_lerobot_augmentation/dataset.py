@@ -578,6 +578,116 @@ def decode_generated_video(path: Path, *, episode: Episode, fps: int) -> Any:
     return frames
 
 
+def _preserve_untouched_media(
+    inspection: DatasetInspection,
+    target: Any,
+    replacements: Mapping[tuple[int, str], Path],
+    checkpoint: Callable[[], None] | None,
+) -> None:
+    """Reference byte-identical source shards without overwriting generated clips.
+
+    v3 may put selected and untouched episodes in the same MP4. Keep the whole
+    original shard in a disjoint chunk namespace and retain its original offsets
+    for untouched pairs only. The writer's generated references stay unchanged.
+    Temporary redundant encoding is retained for now; it is not published as the
+    untouched stream. No frames are trimmed, remuxed or re-encoded by this step.
+    """
+    import numpy as np
+    import pyarrow as pa  # type: ignore[import-untyped]
+    import pyarrow.parquet as pq  # type: ignore[import-untyped]
+    from lerobot.datasets.compute_stats import aggregate_stats
+    from lerobot.datasets.io_utils import load_stats, write_info, write_stats
+
+    untouched = {
+        (episode.index, camera)
+        for episode in inspection.episodes
+        for camera in inspection.cameras
+        if (episode.index, camera) not in replacements
+    }
+    if not untouched:
+        return
+    source = inspection.dataset
+    metadata_paths = sorted(target.root.glob("meta/episodes/**/*.parquet"))
+    # The writer has finalized; inspect persisted references, not its cached rows.
+    chunk_offset = 1 + max(
+        int(row[f"videos/{camera}/chunk_index"])
+        for path in metadata_paths
+        for row in pq.read_table(path).to_pylist()
+        for camera in inspection.cameras
+    )
+    source_rows = {
+        int(row["episode_index"]): row
+        for path in sorted(inspection.root.glob("meta/episodes/**/*.parquet"))
+        for row in pq.read_table(path).to_pylist()
+    }
+    generated_files = set(target.root.glob("videos/**/*.mp4"))
+    referenced_files: set[Path] = set()
+    copied: set[Path] = set()
+    affected_cameras = {camera for _, camera in untouched}
+    episode_stats = []
+    for path in metadata_paths:
+        table = pq.read_table(path)
+        rows = table.to_pylist()
+        for row in rows:
+            if checkpoint is not None:
+                checkpoint()
+            index = int(row["episode_index"])
+            original = source_rows[index]
+            for camera in inspection.cameras:
+                prefix = f"videos/{camera}/"
+                if (index, camera) in untouched:
+                    relative = _safe_relative(str(source.meta.get_video_file_path(index, camera)), label="source video")
+                    origin = inspection.root / relative
+                    chunk = chunk_offset + int(original[prefix + "chunk_index"])
+                    file = int(original[prefix + "file_index"])
+                    destination = target.root / target.meta.video_path.format(
+                        video_key=camera, chunk_index=chunk, file_index=file
+                    )
+                    if destination not in copied:
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        with origin.open("rb") as reader, destination.open("xb") as writer:
+                            while data := reader.read(1024 * 1024):
+                                if checkpoint is not None:
+                                    checkpoint()
+                                writer.write(data)
+                        if sha256_file(origin) != sha256_file(destination):
+                            raise DatasetError("untouched video copy differs from its source shard")
+                        copied.add(destination)
+                    row[prefix + "chunk_index"] = chunk
+                    row[prefix + "file_index"] = file
+                    for field in ("from_timestamp", "to_timestamp"):
+                        row[prefix + field] = original[prefix + field]
+                    for key in row:
+                        if key.startswith(f"stats/{camera}/") and key in original:
+                            row[key] = original[key]
+                referenced_files.add(target.root / target.meta.video_path.format(
+                    video_key=camera, chunk_index=row[prefix + "chunk_index"], file_index=row[prefix + "file_index"]
+                ))
+            episode_stats.append({
+                camera: {
+                    key.removeprefix(f"stats/{camera}/"): np.asarray(value)
+                    for key, value in row.items()
+                    if key.startswith(f"stats/{camera}/")
+                }
+                for camera in affected_cameras
+            })
+        # Preserve every field and Arrow dtype, changing only untouched video
+        # references/statistics. Numeric data shards are never modified here.
+        pq.write_table(pa.Table.from_pylist(rows, schema=table.schema), path)
+    for path in generated_files - referenced_files:
+        path.unlink()
+    stats = load_stats(target.root)
+    if stats is not None:
+        stats.update(aggregate_stats(episode_stats))
+        write_stats(stats, target.root)
+    # Like the pinned writer, info describes the first clip of each camera.
+    # A copied first clip must not retain the newly encoded clip's codec info.
+    for camera in inspection.cameras:
+        if (0, camera) in untouched:
+            target.meta.info.features[camera] = dict(source.features[camera])
+    write_info(target.meta.info, target.root)
+
+
 def rewrite_variant(
     inspection: DatasetInspection,
     *,
@@ -662,6 +772,7 @@ def rewrite_variant(
         with __import__("contextlib").suppress(Exception):
             target.finalize()
         raise
+    _preserve_untouched_media(inspection, target, video_replacements, checkpoint)
     provenance_path = output_root / "meta" / "fs2-augmentation-provenance.json"
     provenance_path.write_text(
         json.dumps({"schema": PROVENANCE_SCHEMA, **dict(provenance)}, sort_keys=True, separators=(",", ":")) + "\n",
