@@ -5,7 +5,7 @@
       "model_id": "boltzgen",
       "variant_id": "upstream-v0-3-2",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "7d9c52beb6b87d41c7c950a0e91b6b3b85d7983c990d319928ab5cf458bd9a1d",
+      "execution_identity_sha256": "d07eea4259898300c5751643ab82f09d65d8eace03e227874a71596875aad50b",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -2310,8 +2310,7 @@
     }
   ],
   "qualification_baselines": {
-    "e5bb3f80d4853df6ee9b615baba96230410e191972f3b9d682f707ea94ed39bc": [
-      "boltzgen",
+    "f5f829b4981e16f8133ea860ec9b4b90e0895a12421dd8ab65041e25cb2416ae": [
       "proteina-complexa",
       "bindcraft",
       "mosaic",
@@ -2320,7 +2319,8 @@
       "esmfold2-fast",
       "openfold3-openbind",
       "protenix-v2",
-      "alphafold3"
+      "alphafold3",
+      "cosmos3-lerobot-augmentation"
     ]
   }
 }
