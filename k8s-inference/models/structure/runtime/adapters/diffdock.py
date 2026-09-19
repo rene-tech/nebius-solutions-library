@@ -300,6 +300,10 @@ class Adapter:
                 molecule = copy.deepcopy(ligand_template)
                 if self.score_args.remove_hs:
                     molecule = RemoveAllHs(molecule)
+                # The untouched SMILES template may carry a 2D conformer tag.
+                # The model supplies genuine xyz coordinates; advertise their
+                # dimensionality correctly for downstream SDF readers/viewers.
+                molecule.GetConformer().Set3D(True)
                 sdf_path = root / f"rank{rank}.sdf"
                 write_mol_with_coords(molecule, coordinates, str(sdf_path))
                 sdf = sdf_path.read_text(encoding="utf-8")

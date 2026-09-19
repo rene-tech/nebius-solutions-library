@@ -68,6 +68,8 @@ def main():
             key = case["case_id"]
             begin = time.monotonic()
             result = adapter.infer(case["arguments"])
+            if any("3D" not in pose["sdf"].splitlines()[1] for pose in result["poses"]):
+                raise ValueError("Generated xyz pose is not labelled as a 3D SDF")
             elapsed = time.monotonic() - begin
             name = f"{key}-repeat{repetition + 1}.json"
             digest = saved(args.output / name, result)

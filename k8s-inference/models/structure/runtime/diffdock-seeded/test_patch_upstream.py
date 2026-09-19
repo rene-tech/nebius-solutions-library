@@ -109,3 +109,14 @@ def test_normal_torsion_samples_still_follow_request_rng():
         assert not np.array_equal(expected, namespace["sample"](np.ones(10)))
     finally:
         np.random.set_state(original_state)
+
+
+def test_pose_dimensionality_set_before_serialization():
+    source = Path(__file__).parents[1] / "adapters/diffdock.py"
+    tree = ast.parse(source.read_text())
+    call = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute) and node.func.attr == "Set3D")
+    writer = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+                  and isinstance(node.func, ast.Name) and node.func.id == "write_mol_with_coords")
+    assert len(call.args) == 1 and isinstance(call.args[0], ast.Constant) and call.args[0].value is True
+    assert call.lineno < writer.lineno
