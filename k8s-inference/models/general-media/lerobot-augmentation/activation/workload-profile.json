@@ -17,11 +17,11 @@
     },
     "execution_identity": {
       "model_revision": "7a312c868bcce8e40b3eb40861300a9d0ba3fde1",
-      "runtime_image_digest": "sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
-      "runtime_recipe_sha256": "72037c4c316592104c3a78c3fac9401aaf8d27d5c777b2381673e145623209ca",
+      "runtime_image_digest": "sha256:41a01714ed6d89b90a5b4a4527e2eb9907433f7932970544d2a712333996de04",
+      "runtime_recipe_sha256": "fcb032065e36386ecabb73659d2cb056a44141353d04549c6dae714510645181",
       "workload_recipe_sha256": "c7b9141a9cf8fc4c4363596ed5c1a14f2466a45a7a0a8f1f4fc313df652ebae4",
       "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "execution_identity_sha256": "8b2cad7f6ee7167036418e66c38c9876e33e6da6063bd4f0ae7f94f16325bdad"
+      "execution_identity_sha256": "d540d6c7cdb04476732cc8d7e50bce0cb4370e2b00199324e9766d6c067ef18e"
     },
     "interface": {
       "protocol": "scientific-batch-v1",
@@ -40,7 +40,7 @@
         "discoverable": true,
         "invocable": true,
         "tool_name": "submit_cosmos3_lerobot_augmentation",
-        "description": "NVIDIA Cosmos3-Nano robotics augmentation for LeRobot v3: transfer/V2V, numeric actions preserved; physical fidelity unproven. Clips16\u2013400 frames; bundles\u22645GiB. Download output_manifest public artifact UUIDs, not logical worker labels."
+        "description": "NVIDIA Cosmos3-Nano robotics augmentation for LeRobot v3: transfer/V2V, numeric actions preserved; physical fidelity unproven. Clips16–400 frames; bundles≤5GiB. Download output_manifest public artifact UUIDs, not logical worker labels."
       }
     },
     "access": {
@@ -112,20 +112,24 @@
       "limitations": [
         "Qualification covers the retained release150 public MCP uploaded-bundle two-variant blur-transfer dataset, exact nonvideo records and full LeRobot0.6.1 reopen. Valid data and distinct variants do not prove semantic intent, physical action alignment or multi-view synchronization. Final customer cohorts, other source paths and maximum bounds are separate gates.",
         "Appearance augmentation preserves numeric actions, state, timestamps and canonical indices, not proven physical/action alignment. Transfer retains coarse layout; video-to-video may alter trajectories. Inspect output before training.",
-        "Selected clips:16\u2013400 frames, integer FPS1\u201330, RGB256..1280 by256..720 dimensions divisible by16; at most256 selected episodes,8 selected cameras and8 variants. Untouched clips are checked for dataset integrity, not generation caps.",
-        "Compressed input/each output\u22645GiB; expanded source\u22648GiB;32GiB workspace with conservative pre-GPU estimate and2GiB reserve. Fixed-rate canonical timestamps/task ordering are required; no maximum-bound throughput qualification.",
+        "Selected clips:16–400 frames, integer FPS1–30, RGB256..1280 by256..720 dimensions divisible by16; at most256 selected episodes,8 selected cameras and8 variants. Untouched clips are checked for dataset integrity, not generation caps.",
+        "Compressed input/each output≤5GiB; expanded source≤8GiB;32GiB workspace with conservative pre-GPU estimate and2GiB reserve. Fixed-rate canonical timestamps/task ordering are required; no maximum-bound throughput qualification.",
         "Forward/inverse dynamics and policy-model rollout are unsupported. Source action trajectories are preserved; episodes longer than400 frames need a separately qualified chunk/stitch contract.",
         "Recorded-data writer successor normalizes scalar storage to declared singleton shape without changing numeric values. Exact published CPU coordinator reopened two episodes/128 frames and preserved all 6144 nonvideo values using retained successful H100 child videos.",
         "The legacy h100_semantic_receipt field here identifies explicitly scoped CPU-coordinator plus retained-H100-child evidence, not fresh whole-public-path qualification. New image is active/unqualified until public completion and scheduler receipts are captured.",
-        "Old release150 acceptance describes its historical image only and is not inherited by this successor. No new snapshot, physical motion fidelity or maximum-bound throughput qualification is claimed."
+        "Old release150 acceptance describes its historical image only and is not inherited by this successor. No new snapshot, physical motion fidelity or maximum-bound throughput qualification is claimed.",
+        "Exact-size successor forwards recorded dimensions and rejects mismatched geometry, frame count or time base rather than silently resizing or retiming native output.",
+        "The legacy h100_semantic_receipt field identifies exact-image CPU-coordinator checks using retained H100 child videos: 2 positive/2 negative alignment checks, 2 episodes, 128 frames, and all 6144 nonvideo values. Timestamp is receipt completion, not fresh GPU measurement.",
+        "New coordinator remains active/unqualified pending exact public execution. Retained action values do not prove physical label validity; V2V generates future motion after a short prefix; full-sequence transfer is not guaranteed to preserve contact, camera calibration, or policy-training suitability.",
+        "No old public completion, scheduler eligibility, whole-workflow snapshot or scientific-quality qualification is inherited by this successor."
       ]
     },
     "qualification": {
-      "h100_semantic_receipt_sha256": "2897d1da60ac53d1703ce43f3fe5e9dbf3225afa5de34017a6778de151e5818f",
+      "h100_semantic_receipt_sha256": "9c7709fcebae90fa911f1e283f409da3e86ef4cb28e0226e4f87712e5e00b46b",
       "public_completion_receipt_sha256": null,
       "scheduler_eligibility_receipt_sha256": null,
-      "execution_map_sha256": "05e0e065dd983460e561d3dd907d4387a5a39a10b66062346dc82ae2cb924ff5",
-      "qualified_at": "2026-09-18T23:10:12.141087551Z"
+      "execution_map_sha256": "38e8b411a37371616d141dfdbe3e881c229495938db01b12b052012854d9f570",
+      "qualified_at": "2026-09-19T00:44:47.539638499Z"
     }
   }
 }

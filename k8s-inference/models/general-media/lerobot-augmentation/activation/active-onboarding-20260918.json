@@ -2,8 +2,8 @@
   "schema": "fs2-serve.nebius.ai/lerobot-active-onboarding/v1",
   "state": "active",
   "customer_ready": false,
-  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:dacf151564d8b3387e81ad2bd8fc227dab8b7493c92c1d63758356057f4083c9",
-  "runtime_recipe_sha256": "72037c4c316592104c3a78c3fac9401aaf8d27d5c777b2381673e145623209ca",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:41a01714ed6d89b90a5b4a4527e2eb9907433f7932970544d2a712333996de04",
+  "runtime_recipe_sha256": "fcb032065e36386ecabb73659d2cb056a44141353d04549c6dae714510645181",
   "source_recipe": {
     "schema": "fs2-serve.nebius.ai/lerobot-runtime-recipe/v1",
     "files": [
@@ -23,6 +23,11 @@
         "size_bytes": 1308
       },
       {
+        "path": "models/general-media/lerobot-augmentation/runtime/Containerfile.exact-alignment",
+        "sha256": "2ee999184ef53c2375a0c5ab416b65e836cba70ed4080fcf612e8cdee1826be2",
+        "size_bytes": 774
+      },
+      {
         "path": "models/general-media/lerobot-augmentation/runtime/pyproject.toml",
         "sha256": "57fd443d19879480ee2e9edcde6dc174fee05af804c8336949f4e359c8cd4d58",
         "size_bytes": 1216
@@ -34,8 +39,8 @@
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/cli.py",
-        "sha256": "94b9cd061548dbf0bf2ab946d1c7936be6df631e297cb26f73a3ca6fe47ad6de",
-        "size_bytes": 5272
+        "sha256": "1b71b89ee7a3d0593a95542dcfe4f8f1d2aad0faca23acfa2d033ff86e6adce2",
+        "size_bytes": 5350
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/contracts.py",
@@ -44,8 +49,8 @@
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/cosmos.py",
-        "sha256": "f7ad930909863eafa58cf97b52ed15d52c1a0fbac30c3ad249695d99102b1d38",
-        "size_bytes": 21111
+        "sha256": "d6f3e528aa2db51af51ff97c802cf97e3b5693f1f2e50c1a387abac29ad3d7ef",
+        "size_bytes": 22774
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/dataset.py",
@@ -59,8 +64,8 @@
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/src/fs2_lerobot_augmentation/worker.py",
-        "sha256": "986647b12f866c588c5299b21c31b0e7cee41cbd572fa33def300c5cf08e4ff1",
-        "size_bytes": 18170
+        "sha256": "3e0412fb8dda7267c40de8fb3434f6632da02698ffaf5720a83186261df2f526",
+        "size_bytes": 18297
       },
       {
         "path": "models/general-media/lerobot-augmentation/runtime/uv.lock",
@@ -69,9 +74,9 @@
       }
     ]
   },
-  "execution_identity_sha256": "8b2cad7f6ee7167036418e66c38c9876e33e6da6063bd4f0ae7f94f16325bdad",
-  "execution_map_sha256": "05e0e065dd983460e561d3dd907d4387a5a39a10b66062346dc82ae2cb924ff5",
-  "semantic_evidence_sha256": "2897d1da60ac53d1703ce43f3fe5e9dbf3225afa5de34017a6778de151e5818f",
-  "scope": "Exact published CPU coordinator; reuses retained successful H100 child MP4s; no new inference or full public acceptance claim",
+  "execution_identity_sha256": "d540d6c7cdb04476732cc8d7e50bce0cb4370e2b00199324e9766d6c067ef18e",
+  "execution_map_sha256": "38e8b411a37371616d141dfdbe3e881c229495938db01b12b052012854d9f570",
+  "semantic_evidence_sha256": "9c7709fcebae90fa911f1e283f409da3e86ef4cb28e0226e4f87712e5e00b46b",
+  "scope": "Exact CPU coordinator image plus retained real H100 child bytes; no new GPU call, no public transfer proof.",
   "public_acceptance_pending": true
 }
