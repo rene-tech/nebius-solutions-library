@@ -499,6 +499,7 @@ def compile_run(
                         *environment,
                         ("FS2_BOLTZGEN_BUDGET", str(batch.budget)),
                         ("FS2_BOLTZGEN_NUM_DESIGNS", str(batch.num_designs)),
+                        ("FS2_BOLTZGEN_PROTOCOL", parameters.protocol),
                         ("FS2_BOLTZGEN_REQUEST_SHA256", request_sha256),
                     ),
                     working_directory=workspace,
@@ -531,6 +532,30 @@ def compile_run(
         invocations=tuple(invocations),
         required_model_artifacts=(WEIGHTS_ARTIFACT_ID, MOLECULES_ARTIFACT_ID),
     )
+
+
+def _ranking_metric_keys(protocol: str, fields: tuple[str, ...] | list[str]) -> tuple[str, str]:
+    # Pinned v0.3.2's protein-redesign protocol explicitly removes target
+    # interface metrics from its ranking. A single-chain scaffold has no
+    # inter-chain interface: validate its whole-structure pTM instead. Other
+    # protocols retain the existing positive target-interface requirement.
+    if protocol not in PROTOCOLS:
+        raise ScientificAdapterError("BoltzGen result protocol is unsupported")
+    confidence_key = (
+        "ptm" if protocol == "protein-redesign"
+        else "design_to_target_iptm" if "design_to_target_iptm" in fields else "design_iptm"
+    )
+    rmsd_key = "designfolding-filter_rmsd" if "designfolding-filter_rmsd" in fields else "filter_rmsd"
+    if confidence_key not in fields or rmsd_key not in fields:
+        raise ScientificAdapterError("BoltzGen ranking CSV lacks confidence or refold RMSD")
+    return confidence_key, rmsd_key
+
+
+def _validate_confidence(row: Mapping[str, str], key: str, protocol: str) -> None:
+    if finite_number(float(row[key]), minimum=0.0, maximum=1.0, label=key) <= 0:
+        if protocol == "protein-redesign":
+            raise ScientificAdapterError("BoltzGen redesign has no meaningful whole-structure confidence")
+        raise ScientificAdapterError("BoltzGen design has no meaningful target interface confidence")
 
 
 def validate_output(
@@ -569,10 +594,7 @@ def validate_output(
         required = {"id", "file_name", "designed_chain_sequence"}
         if not required.issubset(fields) or len(rows) != batch_budgets[shard_id]:
             raise ScientificAdapterError("BoltzGen ranking CSV is missing required rows or columns")
-        confidence_key = "design_to_target_iptm" if "design_to_target_iptm" in fields else "design_iptm"
-        rmsd_key = "designfolding-filter_rmsd" if "designfolding-filter_rmsd" in fields else "filter_rmsd"
-        if confidence_key not in fields or rmsd_key not in fields:
-            raise ScientificAdapterError("BoltzGen ranking CSV lacks confidence or refold RMSD")
+        confidence_key, rmsd_key = _ranking_metric_keys(parameters.protocol, fields)
         for row in rows:
             design_id = row["id"]
             if not 1 <= len(design_id) <= 128 or any(character in design_id for character in ("/", "\\", "\x00")):
@@ -588,8 +610,7 @@ def validate_output(
             sequence = protein_sequence(row["designed_chain_sequence"], label="BoltzGen sequence")
             if max(Counter(sequence).values()) / len(sequence) > 0.30:
                 raise ScientificAdapterError("BoltzGen sequence fails the composition-bias gate")
-            if finite_number(float(row[confidence_key]), minimum=0.0, maximum=1.0, label=confidence_key) <= 0:
-                raise ScientificAdapterError("BoltzGen design has no meaningful target interface confidence")
+            _validate_confidence(row, confidence_key, parameters.protocol)
             finite_number(float(row[rmsd_key]), minimum=0.0, maximum=10.0, label=rmsd_key)
             if "unresolved_residues" in fields and row["unresolved_residues"] not in {"0", "0.0"}:
                 raise ScientificAdapterError("BoltzGen design contains unresolved residues")
@@ -599,7 +620,10 @@ def validate_output(
     structure_names = {item.name for item in structures}
     if structure_names != expected_structure_names:
         raise ScientificAdapterError("BoltzGen ranking filenames do not match emitted structure artifacts")
-    atom_count = sum(structure_atom_count(item, require_two_chains=True) for item in structures)
+    atom_count = sum(
+        structure_atom_count(item, require_two_chains=parameters.protocol != "protein-redesign")
+        for item in structures
+    )
     return {
         "validator_id": "boltzgen-v0-3-2",
         "status": "passed",
@@ -909,6 +933,9 @@ def _collect_final_stage(
     if command[:2] != ("boltzgen", "execute") or command[-2:] != ("--steps", "filtering"):
         raise ScientificAdapterError("BoltzGen result invocation is not the filtering stage")
     budget = _environment_int(invocation, "FS2_BOLTZGEN_BUDGET", minimum=1, maximum=1_000)
+    # Pre-successor frozen invocations have no protocol field. Keep their
+    # strict binder checks; never infer a relaxed protocol from output shape.
+    protocol = dict(invocation.environment).get("FS2_BOLTZGEN_PROTOCOL", "protein-anything")
     request_sha256 = dict(invocation.environment).get("FS2_BOLTZGEN_REQUEST_SHA256", "")
     if len(request_sha256) != 64 or any(character not in "0123456789abcdef" for character in request_sha256):
         raise ScientificAdapterError("BoltzGen invocation request digest is invalid")
@@ -932,10 +959,7 @@ def _collect_final_stage(
     required = {"id", "file_name", "designed_chain_sequence"}
     if not required.issubset(fields) or len(rows) != budget:
         raise ScientificAdapterError("BoltzGen ranking CSV is missing required rows or columns")
-    confidence_key = "design_to_target_iptm" if "design_to_target_iptm" in fields else "design_iptm"
-    rmsd_key = "designfolding-filter_rmsd" if "designfolding-filter_rmsd" in fields else "filter_rmsd"
-    if confidence_key not in fields or rmsd_key not in fields:
-        raise ScientificAdapterError("BoltzGen ranking CSV lacks confidence or refold RMSD")
+    confidence_key, rmsd_key = _ranking_metric_keys(protocol, fields)
     ranked_names: set[str] = set()
     ranked_names_in_order: list[str] = []
     for row in rows:
@@ -947,8 +971,7 @@ def _collect_final_stage(
         sequence = protein_sequence(row["designed_chain_sequence"], label="BoltzGen sequence")
         if max(Counter(sequence).values()) / len(sequence) > 0.30:
             raise ScientificAdapterError("BoltzGen sequence fails the composition-bias gate")
-        if finite_number(float(row[confidence_key]), minimum=0.0, maximum=1.0, label=confidence_key) <= 0:
-            raise ScientificAdapterError("BoltzGen design has no meaningful target interface confidence")
+        _validate_confidence(row, confidence_key, protocol)
         finite_number(float(row[rmsd_key]), minimum=0.0, maximum=10.0, label=rmsd_key)
         if "unresolved_residues" in fields and row["unresolved_residues"] not in {"0", "0.0"}:
             raise ScientificAdapterError("BoltzGen design contains unresolved residues")
@@ -995,7 +1018,7 @@ def _collect_final_stage(
         name = _structure_entry_name(invocation.shard_id, ranked_name)
         atom_count += structure_atom_count(
             LoadedArtifact(name, "protein-complex-structure/v1", pointer, content),
-            require_two_chains=True,
+            require_two_chains=protocol != "protein-redesign",
         )
         artifacts.append(
             CollectedArtifactFile(
