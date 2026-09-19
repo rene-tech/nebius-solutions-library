@@ -1954,6 +1954,19 @@ def _fast_start_status(
     )
 
 
+def _fast_start_status_payload(status: FastStartStatus) -> dict[str, Any]:
+    payload = status.model_dump(mode="json", by_alias=True, exclude_none=True)
+    for mechanism in payload["cacheMechanisms"].values():
+        for pool in mechanism["pools"].values():
+            if pool.get("evidenceSelector") == {}:
+                # SSA can materialize null when {} removes the last previously
+                # owned selector key. The CRD requires an object if present;
+                # omit this optional field instead. Pydantic defaults it to {}.
+                # Nonempty evidence and unavailable measurements are unchanged.
+                pool.pop("evidenceSelector")
+    return payload
+
+
 def build_status(
     *,
     spec: ModelDeploymentSpec,
@@ -2224,7 +2237,7 @@ def build_status(
         status["cache"] = cache
     if fast_start is not None:
         # Unavailable measurements are omitted rather than serialised as zero.
-        status["fastStart"] = fast_start.model_dump(mode="json", by_alias=True, exclude_none=True)
+        status["fastStart"] = _fast_start_status_payload(fast_start)
     if plan.validation.admitted_pool_ref is not None:
         status["admittedPoolRef"] = plan.validation.admitted_pool_ref
     if plan.render is not None:
