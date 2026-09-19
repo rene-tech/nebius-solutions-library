@@ -486,7 +486,7 @@
       "model_id": "proteina-complexa",
       "variant_id": "upstream-dev-20260827",
       "workload_namespace": "fs2-models",
-      "execution_identity_sha256": "a69db63b05628025b97445c7a9ef797fccd2228be1101c65d0271a7dbc36fbaa",
+      "execution_identity_sha256": "c230ea349544ecb0f340c7b97a0c6347c79357f2f599a17eedd78428121ed81e",
       "plan_adapter": {
         "module": "fs2_serve.scientific_batch.adapters",
         "function": "compile_adapter_run"
@@ -586,7 +586,7 @@
       "stages": [
         {
           "stage_id": "generate",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
           "collector_id": "proteina-complexa-v1",
           "validator_id": "proteina-complexa-v1",
           "mounts": [
@@ -670,7 +670,7 @@
         },
         {
           "stage_id": "filter",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
           "collector_id": "proteina-complexa-v1",
           "validator_id": "proteina-complexa-v1",
           "mounts": [
@@ -706,7 +706,7 @@
         },
         {
           "stage_id": "evaluate",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
           "collector_id": "proteina-complexa-v1",
           "validator_id": "proteina-complexa-v1",
           "mounts": [
@@ -763,7 +763,7 @@
         },
         {
           "stage_id": "analyze",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:f4e06b6025a74c924749420f2fce01fb9511aba606a2266c85a9d9e92e3679ca",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
           "collector_id": "proteina-complexa-v1",
           "validator_id": "proteina-complexa-v1",
           "mounts": [
@@ -2310,9 +2310,8 @@
     }
   ],
   "qualification_baselines": {
-    "496102b674fb85b1a3631074848856ca5ae2226628e149a06726f8b0ebf1d72e": [
+    "b6f922e565bdd6d9a90106418f5ce4cad2373b5d6763589c9afb3ae9cf7f60f1": [
       "boltzgen",
-      "proteina-complexa",
       "bindcraft",
       "mosaic",
       "rfdiffusion",
@@ -2320,7 +2319,8 @@
       "esmfold2-fast",
       "openfold3-openbind",
       "protenix-v2",
-      "alphafold3"
+      "alphafold3",
+      "cosmos3-lerobot-augmentation"
     ]
   }
 }
