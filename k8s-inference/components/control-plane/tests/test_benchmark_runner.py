@@ -96,3 +96,15 @@ def test_scientific_queue_wait_retries_only_explicit_rejection(monkeypatch):
     monkeypatch.setattr(runner.time, "sleep", lambda _: None)
     result = runner.QueuedPublicClient("https://test", "private", 60).request("POST", "/submit", headers={"Idempotency-Key": "same"})
     assert result.status == 503 and len(calls) == 2 and calls[0] == calls[1]
+
+
+@pytest.mark.parametrize("code,blocked", [("http_403", True), ("http_401", True), ("operation_failed", False)])
+def test_access_denial_blocks_only_the_same_campaign_case(code, blocked):
+    trial = {"id": "new", "case_id": "private-model"}
+    previous = [{"id": "first", "case_id": "private-model", "result": {"error_code": code}}]
+    def transport(request):
+        assert request.method == "GET" and request.url.path.endswith("/campaigns/campaign")
+        return httpx.Response(200, json={"data": {"trials": previous}})
+    with httpx.Client(base_url="https://test", transport=httpx.MockTransport(transport)) as client:
+        assert runner.prior_access_denial(client, "campaign", trial) == ("first" if blocked else None)
+        assert runner.prior_access_denial(client, "campaign", {**trial, "case_id": "other-model"}) is None

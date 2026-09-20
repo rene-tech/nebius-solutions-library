@@ -130,6 +130,16 @@ def checked(response):
     return response.json()
 
 
+def prior_access_denial(admin, campaign_id, trial):
+    """Do not repeat a denied request in the same immutable input cohort."""
+    campaign = checked(admin.get(f"/admin/api/v1/performance/campaigns/{campaign_id}"))["data"]
+    for previous in campaign["trials"]:
+        if (previous["case_id"] == trial["case_id"] and previous["id"] != trial["id"]
+                and (previous.get("result") or {}).get("error_code") in {"http_401", "http_403"}):
+            return previous["id"]
+    return None
+
+
 def invoke(client, model, protocol, operation, payload, key, directory, timeout):
     started = time.monotonic()
     path = "/v1/chat/completions" if protocol == "openai-chat" else f"/v1/models/{model}:invoke"
@@ -286,13 +296,20 @@ def worker(args, admin, campaign_id, token, *, once=False):
             print(json.dumps({"event": "trial_started", "model": trial["model_id"], "trial": trial["id"]}), flush=True)
             started = time.monotonic()
             try:
-                evidence = execute(trial, args.origin, token, directory, args.timeout)
-                result = {**lease, "status": "succeeded", "semantic_valid": True,
-                          "operation_id": evidence["operation_id"],
-                          "elapsed_seconds": evidence["elapsed_seconds"] if trial["fence"] == 1 else None}
-                metrics, observations = collect(admin, evidence, trial["model_id"])
-                result.update(metrics)
-                evidence["observations"] = observations
+                denied = prior_access_denial(admin, campaign_id, trial)
+                if denied:
+                    evidence = {"error_code": "access_denied_not_retried", "blocked_by_trial": denied,
+                                "model_request_submitted": False, "elapsed_seconds": None}
+                    result = {**lease, "status": "unsupported", "semantic_valid": False,
+                              "error_code": "access_denied_not_retried", "elapsed_seconds": None}
+                else:
+                    evidence = execute(trial, args.origin, token, directory, args.timeout)
+                    result = {**lease, "status": "succeeded", "semantic_valid": True,
+                              "operation_id": evidence["operation_id"],
+                              "elapsed_seconds": evidence["elapsed_seconds"] if trial["fence"] == 1 else None}
+                    metrics, observations = collect(admin, evidence, trial["model_id"])
+                    result.update(metrics)
+                    evidence["observations"] = observations
             except Exception as error:
                 code = str(error) if isinstance(error, (RuntimeError, PUBLIC.AcceptanceError)) else type(error).__name__
                 # Safe summaries only; request payloads, signed URLs and credentials never enter the registry.
