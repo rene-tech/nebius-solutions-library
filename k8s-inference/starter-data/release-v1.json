@@ -1,0 +1,16 @@
+{
+  "version": "v1",
+  "pack_manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/customer-starter-data@sha256:43a295ebc7bf0dcb4476ca98e86ae73d9cab1250479b7ae6164d2d732320f22f",
+  "source_commit": "c75d34e2a921f1cbbdfcf564fb6504d3fe4fc9f6",
+  "backend_source_commit": "58500e3deb4e7d0d09f197f860d1e964633219f7",
+  "backend_image_digest": "sha256:2e1f8f5c4b836bd70a0b495087245668492faf271cb793dfd02348149d0073a3",
+  "models": 35,
+  "categories": 11,
+  "cases": 110,
+  "recipes": 123,
+  "objects_including_manifest": 374,
+  "total_bytes": 42961055,
+  "qualification_scope": "Exact starter inputs, typed recipes, and semantic result formats. Not clinical or scientific efficacy or whole-platform performance qualification.",
+  "deployment_status": "canary-in-progress"
+}

@@ -59,6 +59,12 @@ Terraform bootstrap and normal HTTP/MCP access. Their
 [release and measurements](acceptance/aging-20260908/RELEASE.md) distinguish
 native inference, public cold starts, image transfer and autoscaled-node startup.
 
+Customer workspaces can receive [versioned starter examples](starter-data/README.md)
+automatically, using the existing shared-tenant or private-user bucket policy.
+The pack includes licensed inputs, typed MCP recipes, expected results and
+observed timing guidance. Seeding is background, create-only and tracked
+separately from storage readiness; customer edits and deletions are preserved.
+
 ## Accelerator and qualification boundary
 
 `deployment.accelerator_pools` is an open map. Each entry declares the Nebius

@@ -239,6 +239,23 @@ deployment = {
   #   }
   # }
 
+  # Merge into deployment.storage when enabling customer starter examples.
+  # Pin an approved pack from starter-data/release-v1.json. Mirror the data
+  # image into a registry accessible to this cluster when using another project
+  # or region; preserve its manifest checksum. Empty tenants means every
+  # eligible workspace; existing disabled/excluded storage stays disabled.
+  # storage = {
+  #   customer_buckets = {
+  #     enabled = true
+  #     starter_pack = {
+  #       enabled         = true
+  #       image           = "<accessible-registry>/customer-starter-data@sha256:<approved-image-digest>"
+  #       manifest_sha256 = "<approved-manifest-sha256>"
+  #       tenants         = []
+  #     }
+  #   }
+  # }
+
   # Elastic general-purpose CPU capacity for scientific preprocessing and
   # aggregation that does not touch the reference databases: BindCraft and
   # FreeBindCraft aggregation resolve the portable class "general-cpu" onto

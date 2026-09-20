@@ -2,7 +2,9 @@
 
 This directory builds the versioned `examples/v1/` pack for customer workspace
 buckets. Binary assets are release artifacts, not files in Git. The pack is
-currently being qualified; do not enable customer backfill with a draft pack.
+version 1 is model-example-qualified; workspace rollout is being validated.
+Do not enable customer backfill with a draft pack. Exact release pins are in
+[`release-v1.json`](release-v1.json).
 
 ## Ownership and scope
 
@@ -28,8 +30,8 @@ writes remain subject to provider quota enforcement.
 
 ## Content and provenance
 
-The draft contains ten distinct cases in each of eleven live catalog categories,
-covering 34 model IDs with 121 typed recipes. Data sources are:
+Version 1 contains ten distinct cases in each of eleven live catalog categories,
+covering 35 model IDs with 123 typed recipes. Data sources are:
 
 - RCSB protein structures (CC0), reduced to one protein chain for compact inputs.
 - PneumoniaMNIST teaching X-rays (CC BY 4.0), not clinical validation images.

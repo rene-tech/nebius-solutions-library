@@ -86,7 +86,7 @@ def main(args):
             records = []
             for tenant, principal in [
                 (SHARED, "shared-peer"),
-                (PRIVATE, "private-canary"),
+                (PRIVATE, args.private_principal),
             ]:
                 matches = [
                     u
@@ -273,6 +273,11 @@ if __name__ == "__main__":
     parser.add_argument("--key-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--private-key-file", type=Path)
+    parser.add_argument(
+        "--private-principal",
+        choices=["private-canary", "private-new-canary"],
+        default="private-canary",
+    )
     parser.add_argument("--pack", type=Path)
     parser.add_argument("--download", type=Path)
     parser.add_argument("--kubeconfig")

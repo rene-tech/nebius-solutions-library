@@ -1,0 +1,20 @@
+{
+  "at": "2026-09-20T04:28:10.883871+00:00",
+  "tenant_id": "fs2-starter-private-20260920",
+  "principal_id": "private-new-canary",
+  "bucket": "fs2-fs2-starter-private-private-new-canary-ebe659787646e1e0",
+  "storage_state": "ready",
+  "examples": {
+    "state": "complete",
+    "version": "v1",
+    "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+    "object_count": 374,
+    "total_bytes": 42961055,
+    "attempts": 1,
+    "error_code": null,
+    "updated_at": "2026-09-20T04:26:14.428441Z",
+    "completed_at": "2026-09-20T04:26:14.428441Z"
+  },
+  "verified_objects": 374,
+  "verified_bytes": 42961055
+}

@@ -1,0 +1,96 @@
+{
+  "at": "2026-09-20T04:29:33.963520+00:00",
+  "pack_manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+  "results": [
+    {
+      "artifacts": [
+        {
+          "artifact_id": "c9ad5728-3e06-4734-8ab6-a3bccae72947",
+          "media_type": "application/octet-stream",
+          "sha256": "8a27f2952a8849ac3f2b47b40a61aceabec61a2d24077cf5bca0e5f75f27f46c",
+          "size_bytes": 162466
+        }
+      ],
+      "case_id": "structure/1ubq",
+      "checks": {
+        "structures": [
+          {
+            "atoms": 601,
+            "residues": 76
+          }
+        ]
+      },
+      "completed_at": "2026-09-20T04:27:12.738771+00:00",
+      "input_sha256": "9c349851f2d967a7cbfd98754760ad02270e442172c25685b79a466e13ccb72d",
+      "lifecycle": {
+        "accepted_at": "2026-09-20T04:27:07.715235Z",
+        "activation_started_at": "2026-09-20T04:27:07.807011Z",
+        "attempt": 1,
+        "cold_start_seconds": 1.300789,
+        "completed_at": "2026-09-20T04:27:11.254185Z",
+        "model_revision": "dynamic:sha256:3c173c5b9f9bf8999f839ccd8a45f4dfadc55295625af8897d6b0c341a1c4595",
+        "principal_id": "private-canary",
+        "ready_at": "2026-09-20T04:27:09.016024Z",
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-a92f801d-1f29-6d5f-8aa8-dbef561a611f"
+          ],
+          "node_uid": "cda2bfb1-45af-435e-acfc-7a588f4529ee",
+          "pod_uid": "6bb718d0-912a-4672-928a-7c52962789ce",
+          "preemptible": false
+        },
+        "started_at": "2026-09-20T04:27:09.023758Z",
+        "status": "succeeded",
+        "tenant_id": "fs2-starter-private-20260920"
+      },
+      "model_id": "openfold2",
+      "observation_seconds": 17.901,
+      "operation_id": "f9791c85-c24d-4db9-93d6-326f2d794e12",
+      "recipe_sha256": "31a9b0ad4f7e051c17b263211d61f02fb8665e7cd04573d1be439c5eb5fd3907",
+      "result_sha256": "70030f2316b64b94de9904e15dcbd80451b5e19a321d2129d8dda632ce0cc3e0",
+      "server_elapsed_seconds": 3.539,
+      "state": "passed"
+    },
+    {
+      "artifacts": [],
+      "case_id": "general-ai/explain-fasta",
+      "checks": {
+        "final_characters": 279,
+        "finish_reason": "stop"
+      },
+      "completed_at": "2026-09-20T04:29:10.524653+00:00",
+      "input_sha256": "cd8c6815f7ed4df9add2198bae5ad9dbbd86745b40e29b25b14b67bd28c56103",
+      "lifecycle": {
+        "accepted_at": "2026-09-20T04:27:08.390114Z",
+        "activation_started_at": "2026-09-20T04:27:08.465756Z",
+        "attempt": 1,
+        "cold_start_seconds": 118.621455,
+        "completed_at": "2026-09-20T04:29:09.271860Z",
+        "model_revision": "dynamic:sha256:8ff7b05b65a62bd3f40185e338f651eefa85f6e45385553cf9c39883056c6cad",
+        "principal_id": "seed-canary",
+        "ready_at": "2026-09-20T04:29:07.011569Z",
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-316b82ec-b309-c18d-4e2e-836498e1e036"
+          ],
+          "node_uid": "37d7c857-ec84-4792-ae1c-b90e992ee777",
+          "pod_uid": "8c1a9113-d89b-413c-bf3c-04b057657de1",
+          "preemptible": true
+        },
+        "started_at": "2026-09-20T04:29:07.017291Z",
+        "status": "succeeded",
+        "tenant_id": "fs2-starter-data-acceptance-20260920"
+      },
+      "model_id": "qwen3-8b",
+      "observation_seconds": 137.187,
+      "operation_id": "922ed9b1-897f-48e8-9eab-bea6fec457c2",
+      "recipe_sha256": "cf69bf87846c7ae2b2e892e35f3e20d69b0660e5d6e4a57b84b0fbcc4cf86136",
+      "result_sha256": "045329e64c02d08babd1eeaa35451a4b034d769d1d9a384756362ef94bae9c0a",
+      "server_elapsed_seconds": 120.882,
+      "state": "passed"
+    }
+  ],
+  "scope": "example input/output functionality only; not clinical or scientific accuracy qualification"
+}
