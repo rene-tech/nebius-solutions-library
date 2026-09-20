@@ -28,8 +28,8 @@ def test_public_contract_requires_owned_artifact_and_matches_adapter_bounds():
     assert schema["properties"]["video"]["x-fs2-artifact-materialization"] == "base64"
     for field, value in [
         ("guidance", 7.5), ("guidance", 8), ("guidance", True),
-        ("control_weight", 0), ("control_weight", 1.1),
-        ("num_steps", 51), ("num_steps", 0), ("seed", -1),
+        ("control_weight", -0.1), ("control_weight", 1.1),
+        ("num_steps", 0), ("seed", -1), ("seed", 4294967296),
         ("video", "https://example.org/video.mp4"), ("video", "/customer/video.mp4"),
         ("video", base64.b64encode(MP4).decode()), ("output_delivery", "inline"),
         ("endpoint", "http://127.0.0.1"), ("guardrails", False),

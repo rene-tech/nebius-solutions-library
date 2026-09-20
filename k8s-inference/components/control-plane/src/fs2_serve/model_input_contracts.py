@@ -249,6 +249,10 @@ _DESCRIPTIONS = {
 }
 
 _PURPOSES = {
+    "qwen3-6-27b-fp8": "Caption and verify original videos/images with the pinned NVIDIA PAIDF reference VLM.",
+    "qwen2-5-14b-instruct": (
+        "Generate transformation prompts and verification questions with the pinned NVIDIA PAIDF reference LLM."
+    ),
     "boltz2": "Predict proteins from chains and supplied A3M; returns mmCIF structures and confidence scores.",
     "openfold2": "Predict a protein from its sequence; returns ranked structure and confidence values.",
     "openfold3": "Predict a protein assembly from chains and optional supplied A3M; returns CIF structure results.",
@@ -725,8 +729,9 @@ def _cosmos_transfer25() -> Schema:
     video = _artifact_reference(media_types=("video/mp4",))
     video["properties"]["size_bytes"].update(minimum=16, maximum=128 * 1024**2)
     video.update({
-        "description": "Finalized caller-owned MP4. Exactly 640x480 or 1280x720, 93–400 frames, "
-        "constant integer 1–30 FPS, at most 128 MiB. No implicit resize, crop, trim or retiming. "
+        "description": "Finalized caller-owned MP4 with 93–480 frames and arbitrary source resolution. "
+        "This platform artifact transport is limited to 128 MiB, not a NVIDIA model byte limit. "
+        "No workbench resize, crop, trim or retiming. "
         "Upload the actual file; URLs, local paths and inline base64 are not accepted by this public contract.",
         "x-fs2-artifact-materialization": "base64",
         "x-fs2-artifact-max-bytes": 128 * 1024**2,
@@ -736,13 +741,18 @@ def _cosmos_transfer25() -> Schema:
         {
             "video": video,
             "prompt": _field("string", "Describe the desired scene/weather while preserving source motion.",
-                             minLength=1, maxLength=4096),
-            "negative_prompt": _field("string", "Optional unwanted visual properties.", maxLength=4096),
-            "seed": _integer("Deterministic sampling seed.", 0, 2147483647, 42),
-            "num_steps": _integer("Denoising steps; the qualified full-quality recipe uses 35.", 1, 50, 35),
-            "guidance": _integer("Integer prompt guidance; the qualified weather recipe uses 7.", 0, 7, 7),
-            "control_weight": _field("number", "Edge-control strength; full-sequence edge control uses 1.",
-                                     exclusiveMinimum=0, maximum=1, default=1),
+                             minLength=1),
+            "negative_prompt": _field("string", "Optional unwanted visual properties."),
+            "seed": _integer("Deterministic sampling seed.", 0, 4294967295, 42),
+            "num_steps": _field("integer", "Denoising steps; NVIDIA PAIDF reference uses 35.", minimum=1, default=35),
+            "guidance": _integer("Integer prompt guidance; NVIDIA PAIDF reference uses 7.", 0, 7, 7),
+            "resolution": _field("string", "Internal NIM processing resolution, not a source resize. PAIDF uses 720.",
+                                 enum=["256", "480", "512", "720"], default="720"),
+            "sigma_max": _field("number", "Maximum diffusion noise; NVIDIA PAIDF reference uses 90.", default=90),
+            "edge": _object({"control_weight": _field("number", "Native edge-control strength.", minimum=0,
+                                                      maximum=1, default=1)}, (), "NVIDIA reference edge control."),
+            "control_weight": _field("number", "Legacy alias for edge.control_weight. Do not combine with edge.",
+                                     minimum=0, maximum=1),
             "output_delivery": _constant("artifact", "Return the generated MP4 as a platform-owned artifact."),
         },
         ("video", "prompt"),
@@ -1610,6 +1620,34 @@ def _check_adapter(model: OperationalModel, model_ref: str) -> None:
         )
 
 
+def _paidf_chat(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
+    schema = copy.deepcopy(_resource("paidf-chat.json")[model_ref])
+
+    def media_fields(value: Any) -> None:
+        if isinstance(value, dict):
+            if "x-reference-media-types" in value:
+                media_types = value.pop("x-reference-media-types")
+                maximum = value.pop("x-reference-max-bytes")
+                field = _transportable(copy.deepcopy(value), materialization="data-url",
+                                       media_types=tuple(media_types), max_bytes=maximum)
+                value.clear()
+                value.update(field)
+                return
+            for child in value.values():
+                media_fields(child)
+        elif isinstance(value, list):
+            for child in value:
+                media_fields(child)
+
+    media_fields(schema)
+    source = schema["properties"]["model"]["const"]
+    return schema, (
+        "k8s-inference/models/general-media/paidf-chat/adapter/contracts.py",
+        "https://huggingface.co/" + source + "/tree/" + schema["x-scientific-source-revision"],
+        "https://github.com/NVIDIA/paidf-augmentation/tree/bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+    )
+
+
 def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
     """Resolve clones by source identity, without weakening route admission."""
     model_ref = model.dynamic_policy.publication.source_model_ref if model.dynamic_policy else model.id
@@ -1635,7 +1673,9 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
             model_ref,
             protocol,
         )
-    if protocol == "native" and model_ref in _resource("runtime-pydantic.json"):
+    if protocol == "native" and model_ref in _resource("paidf-chat.json"):
+        schema, refs = _paidf_chat(model_ref)
+    elif protocol == "native" and model_ref in _resource("runtime-pydantic.json"):
         schema, refs = _pydantic_contract(model_ref)
     elif protocol == "native" and model_ref in _NATIVE_BUILDERS:
         builder, source = _NATIVE_BUILDERS[model_ref]
@@ -1673,6 +1713,10 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
 
 
 def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
+    if model_ref in _resource("paidf-chat.json"):
+        return ({"model": _resource("paidf-chat.json")[model_ref]["properties"]["model"]["const"],
+                 "messages": [{"role": "user", "content": "Describe the inputs accepted by this reference model."}],
+                 "max_tokens": 64, "stream": False},)
     fixture = _resource("native-examples.json").get(model_ref)
     if fixture is not None:
         # The canonical validation requests retain their complete PDB bytes in
