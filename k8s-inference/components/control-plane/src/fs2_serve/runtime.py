@@ -649,14 +649,14 @@ class RuntimeClient:
         )])
 
     @staticmethod
-    def _cosmos_binary_valid(body: bytes, content_type: str) -> None:
-        """Check the pinned Cosmos media container, not decoded/perceptual quality.
+    def _visual_binary_valid(body: bytes, content_type: str) -> None:
+        """Check a pinned local visual runtime container, not perceptual quality.
 
         Runs only after the normal bounded response read. No decoder allocation,
         external process or model-supplied identity/usage is trusted here.
         """
         def invalid() -> RuntimeProtocolError:
-            return RuntimeProtocolError("Cosmos media container is invalid")
+            return RuntimeProtocolError("visual media container is invalid")
 
         if content_type == "image/png":
             if not body.startswith(b"\x89PNG\r\n\x1a\n"):
@@ -1026,6 +1026,8 @@ class RuntimeClient:
         magpie = speech and source_model == "magpie-tts-multilingual-357m"
         cosmos = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                   and source_model == "cosmos3-nano")
+        wan2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                and source_model in {"wan2-2-t2v-nim", "wan2-2-i2v-nim"})
         sam2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                 and source_model == "sam2-1-hiera-large")
         if speech:
@@ -1132,8 +1134,9 @@ class RuntimeClient:
                 if magpie:
                     usage = self._magpie_wave_usage(bytes(content), content_type)
                     semantic = "protocol_valid"
-                elif cosmos and content_type in {"image/png", "video/mp4"}:
-                    self._cosmos_binary_valid(bytes(content), content_type)
+                elif ((cosmos and content_type == "image/png")
+                      or ((cosmos or wan2) and content_type == "video/mp4")):
+                    self._visual_binary_valid(bytes(content), content_type)
                     semantic, usage = "protocol_valid", None
                 elif scvi:
                     self._scvi_zip_valid(bytes(content), content_type)

@@ -130,6 +130,21 @@ async def test_cosmos_response_bound_http_error_and_legacy_json_are_unchanged(re
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("model_id", ["wan2-2-t2v-nim", "wan2-2-i2v-nim"])
+async def test_wan_native_dispatch_accepts_valid_mp4_and_preserves_native_json(registry, model_id):
+    model = model_for(registry, model_id)
+    _, valid, _ = await invoke(registry, MP4, content_type="video/mp4", model=model)
+    assert valid.semantic_outcome == "protocol_valid"
+    assert valid.content_type == "video/mp4" and valid.body == MP4
+    with pytest.raises(RuntimeProtocolError):
+        await invoke(registry, MP4[:-1], content_type="video/mp4", model=model)
+    _, legacy, _ = await invoke(
+        registry, b'{"data":"legacy-native-result"}', content_type="application/json", model=model,
+    )
+    assert legacy.semantic_outcome == "protocol_valid"
+
+
+@pytest.mark.asyncio
 async def test_dynamic_published_alias_uses_cosmos_source_not_public_id(registry):
     revision = _cosmos_revision(registry)
     app_id = uuid4()
