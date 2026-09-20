@@ -1,6 +1,14 @@
-# Cosmos Transfer 2.5 onboarding — isolated canary in progress
+# NVIDIA Cosmos Transfer 2.5 — Scientific AI App
 
-Candidate platform App identity: `cosmos-transfer2-5-2b` (DNS-label-safe), for NVIDIA's `cosmos-transfer2.5-2b`. This is a new, independent video-transfer App, not a rename or replacement of `cosmos3-nano`.
+Platform App identity: `cosmos-transfer2-5-2b` (DNS-label-safe), for NVIDIA's `cosmos-transfer2.5-2b`, under **Physical AI and Robotics**. This is a regular shared App, independently managed from `cosmos3-nano`. Normal consumer App grants control access; the earlier test-principal allowlist is removed in the shared-App promotion. The owner tenant in revision history records initial operator provenance, not a private consumer deployment.
+
+On 2026-09-20 the user explicitly confirmed that the organisation's NVIDIA agreement covers production NIM use on this platform. This confirmation is recorded as operator attestation; a working API key alone is not production-license evidence.
+
+The production workflow is orchestrated by the Scientific AI workbench's skill and reasoner, without OSMO. The exact hosted Qwen reference baseline was checked first and its evidence is retained in `../paidf-chat/`. Those temporary hosted Qwen Apps are being retired; the explicit public Token Factory provider profile preserves the NVIDIA stage sequence/settings while declaring its different caption, prompt and verifier models. Cosmos Transfer remains hosted on Scientific AI. Customer readiness still requires the complete public workbench preview/approval/batch release gate.
+
+## Historical canary findings (not the current App contract)
+
+The sections below retain the original onboarding sequence, including early simplified probes. They are historical evidence only. The authoritative original PAIDF contract is `nvidia-paidf-original-transfer/v1`: motion threshold **0.6**, original one-frame attribute verification, unchanged 153-frame 1920×1080 reference source. The earlier 0.682/five-frame probe below does **not** replace or qualify that contract.
 
 Status as of 2026-09-20 04:57 UTC: **private H100 canary deployed and Ready; one real full-video generation passed structure, motion and sampled-weather checks; not published as a platform App**. The existing isolated video workbench and shared backend are unchanged by this task. Container-adapter, public HTTP/MCP, chat preview and approval/batch acceptance remain separate gates.
 

@@ -146,6 +146,10 @@ class StoreModelDeploymentRepository:
             limit=limit,
         )
 
+    async def retired(self, namespace: str) -> list[ModelDeploymentRevision]:
+        reader = getattr(self.store, "model_deployment_retired", None)
+        return await reader(namespace) if reader is not None else []
+
     async def status(
         self,
         *,

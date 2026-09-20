@@ -14,12 +14,12 @@
         "license": {
           "id": "NVIDIA-Open-Model-License AND NVIDIA-Software-License-Agreement",
           "state": "verified",
-          "notes": "Built on NVIDIA Cosmos. The model card specifies the Open Model License; /v1/license also supplies the NVIDIA Software License Agreement. This canary is internal evaluation only; production and third-party service rights are license-dependent, not conferred by key access."
+          "notes": "Built on NVIDIA Cosmos. Model weights use the NVIDIA Open Model License; the NIM container has separate NVIDIA software terms. The platform operator confirmed that production NIM use on this platform is covered on 2026-09-20. This is an operator attestation, not a claim that key access grants production rights."
         },
         "entitlement": {
           "required": true,
           "state": "verified",
-          "credential_contract": "isolated-stockholm-existing-ngc-secret-refs/20260920",
+          "credential_contract": "platform-operator-existing-ngc-secret-refs/20260920",
           "notes": "Exact NIM image and all 194 assets downloaded using existing operator-provisioned Secret references. No legacy credential copies or credential values are part of this declaration."
         }
       }
@@ -121,7 +121,7 @@
       "route_exposed": false,
       "non_clinical": true,
       "limitations": [
-        "Internal isolated evaluation, not customer-ready; public gateway/MCP, skill/reasoner, chat preview and human-approved batch are separate gates.",
+        "Regular shared Scientific AI App in Physical AI and Robotics, subject to ordinary user grants. Native runtime qualification is complete; public gateway/MCP, skill/reasoner, chat preview and human-approved batch remain distinct release gates.",
         "Exactly one H100, the pinned NIM/profile and immutable adapter cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:4297473ad12501a70ef4d1e0b706bd829a660e4e1e946b82f2d5da44fdab2dea. No B300, autoscaling or snapshot qualification.",
         "Native input: MP4, 93-480 frames, arbitrary geometry. The platform's explicit 128 MiB upload/transport bound is not a NVIDIA model limit. Native output is silent.",
         "Original edge-conditioned reference: 35 steps, seed 42, guidance 7, resolution 720, sigma_max 90, edge weight 1; no input cropping, trimming, retiming or model/provider substitution.",

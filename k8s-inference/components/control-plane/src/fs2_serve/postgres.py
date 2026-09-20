@@ -2030,6 +2030,13 @@ class PostgresStore:
                 request.actor_id,
                 request.idempotency_key,
             )
+            await self._model_deployment_lock(connection, request.namespace, request.name)
+            if await connection.fetchval(
+                "SELECT retired_at IS NOT NULL FROM fs2_model_deployments WHERE namespace=$1 AND name=$2",
+                request.namespace,
+                request.name,
+            ):
+                raise ConflictError("model deployment is retired; history cannot be reactivated by replay")
             for key_id, key_hmac in candidates:
                 receipt = await connection.fetchrow(
                     """
@@ -2228,6 +2235,7 @@ class PostgresStore:
                  AND revision.name=deployment.name
                  AND revision.revision=deployment.current_revision
                 WHERE deployment.namespace=$1
+                  AND deployment.retired_at IS NULL
                   AND ($2::text IS NULL OR deployment.tenant_id=$2)
                   AND ($3::text IS NULL OR deployment.name>$3)
                 ORDER BY deployment.name
@@ -2260,6 +2268,7 @@ class PostgresStore:
                  AND revision.name=deployment.name
                  AND revision.revision=deployment.current_revision
                 WHERE deployment.namespace=$1 AND deployment.name=$2
+                  AND deployment.retired_at IS NULL
                   AND ($3::text IS NULL OR deployment.tenant_id=$3)
                 """,
                 namespace,
@@ -2267,6 +2276,19 @@ class PostgresStore:
                 tenant_id,
             )
         return self._model_deployment_revision(row) if row is not None else None
+
+    async def model_deployment_retired(self, namespace: str) -> list[ModelDeploymentRevision]:
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch(
+                """SELECT revision.* FROM fs2_model_deployments deployment
+                JOIN fs2_model_deployment_revisions revision
+                  ON revision.namespace=deployment.namespace AND revision.name=deployment.name
+                 AND revision.revision=deployment.current_revision
+                WHERE deployment.namespace=$1 AND deployment.retired_at IS NOT NULL
+                ORDER BY deployment.name""",
+                namespace,
+            )
+        return [self._model_deployment_revision(row) for row in rows]
 
     async def model_deployment_history(
         self,
@@ -2566,6 +2588,7 @@ class PostgresStore:
                      AND revision.name=deployment.name
                      AND revision.revision=deployment.current_revision
                     WHERE deployment.namespace=$1 AND deployment.name=$2
+                      AND deployment.retired_at IS NULL
                     FOR UPDATE OF deployment
                     """,
                     dynamic_fence.namespace,

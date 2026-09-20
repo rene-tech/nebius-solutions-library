@@ -66,7 +66,31 @@ GET  /admin/api/v1/model-deployments/{name}/status
 POST /admin/api/v1/model-deployments/{name}:drain
 POST /admin/api/v1/model-deployments/{name}:rollback
 POST /admin/api/v1/model-deployments/{name}:reconcile
+POST /admin/api/v1/model-deployments/{name}:retire
 ```
+
+Retirement is an administrator-only, archive-backed operation, not hard deletion
+of audit history. First export the exact App, desired revisions, observations,
+and result/evidence inventory; retain that archive and its SHA-256. Drain the
+model and wait until its controller freshly observes `Cold`, zero desired/ready/
+available replicas, no published routes, no nonterminal Pods, and no active
+operations. Submit `expected_etag` and `archive_sha256` to `:retire`.
+
+The transaction tombstones the desired deployment and hides its App from active
+inventories. The existing desired-state bridge deletes only the exact matching
+CR using UID/resource-version preconditions; Kubernetes collects owned runtime
+resources. Historical revisions, usage, result evidence and the audit event are
+retained. Replaying an old create/update cannot reactivate a retired identity.
+Repeating retirement with the same ETag/archive is idempotent. The response's
+`resource_cleanup: controller_pending` is not proof of completed cleanup: verify
+the CR and owned workloads are gone separately. Dedicated cache PVCs and other
+unowned dependencies require a separately scoped cleanup after checking Pod
+references. The API never deletes them implicitly.
+
+Migration `0036_model_retirement.sql` is additive, but the deployment's exact
+migration-manifest gate means an older image is not a valid schema rollback.
+Recover a failed rollout using an image built for the same 0036 contract; do not
+drop the tombstone columns or erase audit rows to make an older image start.
 
 The resulting resource uses the shipped
 `inference.fs2.nebius.ai/v1alpha1` schema. Its required sections are

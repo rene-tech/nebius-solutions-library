@@ -32,8 +32,18 @@ class PostgresAppsRepository:
 
     async def list_records(self) -> list[AppRecord]:
         async with self.pool.acquire() as connection:
-            rows = await connection.fetch("SELECT * FROM fs2_apps ORDER BY created_at,app_id")
+            rows = await connection.fetch("""SELECT app.* FROM fs2_apps app WHERE NOT EXISTS (
+                SELECT 1 FROM fs2_model_deployments deployment WHERE deployment.namespace=app.namespace
+                AND deployment.name=app.deployment_name AND deployment.retired_at IS NOT NULL)
+                ORDER BY app.created_at,app.app_id""")
         return [AppRecord.model_validate(dict(row)) for row in rows]
+
+    async def retired_public_model_ids(self) -> set[str]:
+        async with self.pool.acquire() as connection:
+            rows = await connection.fetch("""SELECT app.public_model_id FROM fs2_apps app
+                JOIN fs2_model_deployments deployment ON deployment.namespace=app.namespace
+                AND deployment.name=app.deployment_name WHERE deployment.retired_at IS NOT NULL""")
+        return {row["public_model_id"] for row in rows}
 
     async def list_discoverable_records(self) -> list[AppRecord]:
         """Exclude scientific Apps held by any explicit operator pause.
@@ -45,16 +55,24 @@ class PostgresAppsRepository:
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
                 """SELECT app.* FROM fs2_apps app
-                WHERE app.execution_mode<>'scientific' OR NOT EXISTS (
+                WHERE NOT EXISTS (SELECT 1 FROM fs2_model_deployments deployment
+                    WHERE deployment.namespace=app.namespace AND deployment.name=app.deployment_name
+                    AND deployment.retired_at IS NOT NULL)
+                AND (app.execution_mode<>'scientific' OR NOT EXISTS (
                     SELECT 1 FROM fs2_scientific_model_policies policy
                     WHERE policy.model_id=app.public_model_id AND policy.paused
-                ) ORDER BY app.created_at,app.app_id"""
+                )) ORDER BY app.created_at,app.app_id"""
             )
         return [AppRecord.model_validate(dict(row)) for row in rows]
 
     async def get(self, app_id: UUID) -> AppRecord | None:
         async with self.pool.acquire() as connection:
-            row = await connection.fetchrow("SELECT * FROM fs2_apps WHERE app_id=$1", app_id)
+            row = await connection.fetchrow(
+                """SELECT app.* FROM fs2_apps app WHERE app_id=$1 AND NOT EXISTS (
+                SELECT 1 FROM fs2_model_deployments deployment WHERE deployment.namespace=app.namespace
+                AND deployment.name=app.deployment_name AND deployment.retired_at IS NOT NULL)""",
+                app_id,
+            )
         return AppRecord.model_validate(dict(row)) if row else None
 
     async def seed(self, record: AppRecord) -> AppRecord:
@@ -112,16 +130,25 @@ class PostgresAppsRepository:
                 """UPDATE fs2_apps SET deployment_name=$5,updated_at=GREATEST(updated_at,$6),revision=revision+1
                 WHERE app_id=$1 AND model_ref=$2 AND public_model_id=$3 AND namespace=$4
                     AND execution_mode='serving' AND deployment_name IS NULL""",
-                record.app_id, record.model_ref, record.public_model_id, record.namespace, name, record.updated_at,
+                record.app_id,
+                record.model_ref,
+                record.public_model_id,
+                record.namespace,
+                name,
+                record.updated_at,
             )
             row = await connection.fetchrow("SELECT * FROM fs2_apps WHERE app_id=$1", record.app_id)
         if row is None:
             raise AppConflictError("app disappeared before deployment registration")
         current = AppRecord.model_validate(dict(row))
-        if (current.execution_mode != "serving" or current.deployment_name != name or any(
-            getattr(current, field) != getattr(record, field)
-            for field in ("model_ref", "public_model_id", "namespace")
-        )):
+        if (
+            current.execution_mode != "serving"
+            or current.deployment_name != name
+            or any(
+                getattr(current, field) != getattr(record, field)
+                for field in ("model_ref", "public_model_id", "namespace")
+            )
+        ):
             raise AppConflictError("app identity already belongs to a different deployment")
         return current
 
@@ -295,18 +322,27 @@ class MemoryAppsRepository:
         current = self.records.get(record.app_id)
         if current is None:
             raise AppConflictError("app disappeared before deployment registration")
-        if (current.execution_mode != "serving" or any(
-            getattr(current, field) != getattr(record, field)
-            for field in ("model_ref", "public_model_id", "namespace")
-        ) or current.deployment_name not in {None, name}):
+        if (
+            current.execution_mode != "serving"
+            or any(
+                getattr(current, field) != getattr(record, field)
+                for field in ("model_ref", "public_model_id", "namespace")
+            )
+            or current.deployment_name not in {None, name}
+        ):
             raise AppConflictError("app identity already belongs to a different deployment")
         if current.deployment_name is None:
-            if any(item.app_id != record.app_id and (item.namespace, item.deployment_name) == (record.namespace, name)
-                   for item in self.records.values()):
+            if any(
+                item.app_id != record.app_id and (item.namespace, item.deployment_name) == (record.namespace, name)
+                for item in self.records.values()
+            ):
                 raise AppConflictError("deployment already belongs to another app")
-            current = current.model_copy(update={
-                "deployment_name": name, "updated_at": max(current.updated_at, record.updated_at),
-                "revision": current.revision + 1,
-            })
+            current = current.model_copy(
+                update={
+                    "deployment_name": name,
+                    "updated_at": max(current.updated_at, record.updated_at),
+                    "revision": current.revision + 1,
+                }
+            )
             self.records[record.app_id] = current
         return current

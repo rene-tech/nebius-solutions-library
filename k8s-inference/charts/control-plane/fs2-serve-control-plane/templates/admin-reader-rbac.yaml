@@ -73,6 +73,9 @@ rules:
       {{- if .Values.modelController.writesEnabled }}
       - create
       - patch
+      # Archive-backed retirement deletes only desired CRs; Kubernetes GC and
+      # the model controller retain sole ownership of generated workloads.
+      - delete
       {{- end }}
   {{- end }}
 ---

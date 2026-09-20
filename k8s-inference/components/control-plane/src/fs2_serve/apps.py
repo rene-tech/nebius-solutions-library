@@ -118,7 +118,11 @@ class AppsService:
             snapshot = await self.scientific.models.list_models(tenant_id=None)
             scientific_models = {item.model_id: item for item in snapshot.data.items}
         catalog = {model.id: model for model in self.registry.list()}
+        retired_reader = getattr(self.repository, "retired_public_model_ids", None)
+        retired = await retired_reader() if retired_reader is not None else set()
         for model_id in sorted(catalog.keys() | scientific_models.keys() | revisions.keys()):
+            if model_id in retired:
+                continue
             if model_id in existing_routes:
                 if model_id in revisions:
                     await self._attach_default_deployment(existing_routes[model_id], revision=revisions[model_id])
