@@ -32,6 +32,7 @@ def module(name, path):
 MEDIA_FIXTURES = module("fixtures", ROOT / "acceptance/wan2-sam2-20260920/fixtures.py")
 MEDIA = module("benchmark_media_validation", ROOT / "acceptance/wan2-sam2-20260920/qualify.py")
 VISUAL = module("benchmark_visual_validation", ROOT / "acceptance/visual-science-20260919/run_public.py")
+MUSIC = module("benchmark_music_validation", ROOT / "acceptance/ace-step-20260920/qualify.py")
 
 
 def digest(raw):
@@ -72,6 +73,15 @@ def word_error_rate(reference, hypothesis):
 
 
 def validate(model, request, oracle, raw, directory, index):
+    if model == "ace-step-1-5":
+        inspected = MUSIC.inspect_wav(raw)
+        if abs(inspected["duration_seconds"] - request["duration_seconds"]) > .25:
+            raise RuntimeError("music_duration_mismatch")
+        with wave.open(io.BytesIO(raw)) as audio:
+            if not any(audio.readframes(audio.getnframes())):
+                raise RuntimeError("music_silent_wave")
+        return {"sha256": digest(raw), **inspected,
+                "scope": "complete-nonsilent-wave-duration-not-musical-quality"}
     if model == "cellpose-cpsam-v2":
         return VISUAL.validate_cellpose(raw, oracle["input_sha256"], directory, f"cellpose-{index}")
     if model == "scvi-scanvi":
@@ -159,4 +169,6 @@ def execute(trial, client, directory, invoke, timeout):
         semantics.append(validate(case["model_id"], record["payload"], record["oracle"],
                                   result_bytes(client, call[0]), directory, index))
         calls.append(call)
+    if case["model_id"] == "ace-step-1-5" and len({item["sha256"] for item in semantics}) != len(semantics):
+        raise RuntimeError("music_responses_not_distinct")
     return calls, {"status": "PASS", "requests": semantics, "fixture_attribution": fixture.get("attribution")}
