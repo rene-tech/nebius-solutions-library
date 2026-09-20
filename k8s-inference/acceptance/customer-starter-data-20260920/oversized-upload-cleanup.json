@@ -1,0 +1,23 @@
+{
+  "at": "2026-09-20T03:44:23.612090+00:00",
+  "operations": [
+    {
+      "operation_id": "79149617-b7e3-479c-b084-56e0225a867b",
+      "model_id": "parakeet-realtime-eou-120m-v1",
+      "status": "cancelled",
+      "reason": "task-owned WAV exceeds gateway inline upload limit; no content uploaded; replaced with verified lossless FLAC"
+    },
+    {
+      "operation_id": "f8f60cdd-0e1b-4eea-aa3f-a12c1281f6f4",
+      "model_id": "nemotron-speech-en-0-6b",
+      "status": "cancelled",
+      "reason": "task-owned WAV exceeds gateway inline upload limit; no content uploaded; replaced with verified lossless FLAC"
+    },
+    {
+      "operation_id": "1a5c2f6b-57ed-462e-a8b9-7928a8f26110",
+      "model_id": "nemotron-speech-multilingual-0-6b",
+      "status": "cancelled",
+      "reason": "task-owned WAV exceeds gateway inline upload limit; no content uploaded; replaced with verified lossless FLAC"
+    }
+  ]
+}

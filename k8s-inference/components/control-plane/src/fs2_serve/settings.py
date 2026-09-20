@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     user_storage_quota_bytes: int = Field(default=5_000_000_000, gt=0)
     user_storage_excluded_tenants: tuple[str, ...] = ()
     user_storage_poll_seconds: float = Field(default=60, ge=5)
+    user_storage_starter_pack_dir: Path | None = None
+    user_storage_starter_pack_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    user_storage_starter_pack_tenants: tuple[str, ...] = ()
     route_attestors_file: Path | None = Path("/var/run/secrets/fs2-serve/attestors/route-attestors.json")
     admin_token_file: Path = Path("/var/run/secrets/fs2-serve/admin-token")
     bootstrap_access_token_file: Path = Path("/var/run/secrets/fs2-serve/bootstrap-access-token")

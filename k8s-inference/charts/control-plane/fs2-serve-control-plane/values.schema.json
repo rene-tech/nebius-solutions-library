@@ -39,7 +39,25 @@
         "defaultMode": {"enum": ["tenant", "user"]},
         "quotaBytes": {"type": "integer", "minimum": 1},
         "excludedTenants": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
-        "secretName": {"type": "string"}
+        "secretName": {"type": "string"},
+        "starterPack": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "image", "manifestSha256"],
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "image": {"type": "string"},
+            "manifestSha256": {"type": "string"},
+            "tenants": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+          },
+          "allOf": [{
+            "if": {"properties": {"enabled": {"const": true}}},
+            "then": {"properties": {
+              "image": {"pattern": "^[^@\\s]+@sha256:[a-f0-9]{64}$"},
+              "manifestSha256": {"pattern": "^[a-f0-9]{64}$"}
+            }}
+          }]
+        }
       }
     },
     "replicaCount": {
@@ -1618,11 +1636,11 @@
           ],
           "properties": {
             "schema": {"const": "fs2-serve.nebius.ai/postgresql-release-contract/v1"},
-            "contractPayloadSha256": {"const": "29b4cd55483524c944fe8de89d3957a3e127502e6ebed87334c41f7918232fa2"},
-            "migrationSetSha256": {"const": "604c565280e1d75aaf17dea6208972718975f0afe87b2fe1e6fe3b33e5ee1abf"},
-            "migrationCount": {"const": 32},
+            "contractPayloadSha256": {"const": "fdc747abc098857ec56a1e7abaa09f1390a41453498336617d1a264956ac4feb"},
+            "migrationSetSha256": {"const": "fe12b7f70cb42104aa562ee127a9ff6ee14943707ac4289a07a686b3e05cec36"},
+            "migrationCount": {"const": 33},
             "firstMigrationVersion": {"const": "0001_initial.sql"},
-            "lastMigrationVersion": {"const": "0032_scientific_child_delegation.sql"},
+            "lastMigrationVersion": {"const": "0033_customer_starter_packs.sql"},
             "namespaceRoleOwnershipSha256": {"const": "47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca"}
           },
           "additionalProperties": false

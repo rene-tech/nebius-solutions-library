@@ -634,6 +634,16 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             excluded_tenants=settings.user_storage_excluded_tenants,
             poll_seconds=settings.user_storage_poll_seconds,
         )
+        if settings.user_storage_starter_pack_dir is not None:
+            from .starter_pack_service import StarterPackService
+
+            users_service.storage.examples = StarterPackService(
+                users_service.storage,
+                settings.user_storage_starter_pack_dir,
+                expected_sha256=settings.user_storage_starter_pack_sha256,
+                tenant_ids=settings.user_storage_starter_pack_tenants,
+                poll_seconds=settings.user_storage_poll_seconds,
+            )
     observations = AppObservabilityService(
         kubernetes=getattr(admin_read.capacity_adapter, "reader", None),
         prometheus_url=runtime.settings.admin_prometheus_url,
