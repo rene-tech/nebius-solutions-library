@@ -118,9 +118,13 @@ def invoke(client, model, protocol, operation, payload, key, directory, timeout)
     started = time.monotonic()
     path = "/v1/chat/completions" if protocol == "openai-chat" else f"/v1/models/{model}:invoke"
     body = payload if protocol == "openai-chat" else {"operation": operation, "payload": payload}
-    response = client.post(path, json=body, headers={
-        "Idempotency-Key": key, "x-fs2-wait-seconds": "0", "x-fs2-deadline-seconds": str(timeout),
-    })
+    while True:
+        response = client.post(path, json=body, headers={
+            "Idempotency-Key": key, "x-fs2-wait-seconds": "0", "x-fs2-deadline-seconds": str(timeout),
+        })
+        if response.status_code != 429 or time.monotonic() - started >= timeout:
+            break
+        time.sleep(15)
     admitted = checked(response)
     operation_id = response.headers.get("x-fs2-operation-id") or admitted.get("id")
     if not operation_id:
@@ -141,7 +145,18 @@ def invoke(client, model, protocol, operation, payload, key, directory, timeout)
     if response.is_error:
         raise RuntimeError(f"result_http_{response.status_code}")
     path = directory / (operation_id + "-result.json")
-    path.write_bytes(response.content)
+    raw = response.content
+    if raw.startswith(b"{"):
+        value = response.json()
+        if value.get("schema") == "fs2-serve.nebius.ai/operation-artifact-result/v1":
+            artifact = value["artifact"]
+            materialized = client.get(f"/v1/artifacts/{artifact['artifact_id']}/content")
+            materialized.raise_for_status()
+            if len(materialized.content) != artifact["size_bytes"] or sha(materialized.content) != artifact["sha256"]:
+                raise RuntimeError("result_artifact_identity_mismatch")
+            (directory / (operation_id + "-envelope.json")).write_bytes(raw)
+            raw = materialized.content
+    path.write_bytes(raw)
     return path, status, time.monotonic() - started
 
 
@@ -161,7 +176,10 @@ def execute(trial, origin, token, directory, timeout):
                 "elapsed_seconds": time.monotonic() - started, "semantic_valid": True,
                 "scientific_receipt": receipt}
     with httpx.Client(base_url=origin, headers={"Authorization": "Bearer " + token}, timeout=180, trust_env=False) as client:
-        if adapter in {"bio-pair", "media-pair", "openfold2", "openfold3"}:
+        if adapter == "artifact-native-v1":
+            from extra import execute as execute_extra
+            calls, semantic = execute_extra(trial, client, directory, invoke, timeout)
+        elif adapter in {"bio-pair", "media-pair", "openfold2", "openfold3"}:
             helper = {"bio-pair": BIO, "media-pair": BIO.public, "openfold2": FOLD2, "openfold3": FOLD3}[adapter]
             contract, pair = helper.cases_for(model)
             if sha(canonical([record.payload for record in pair])) != case["fixture_sha256"]:
@@ -186,7 +204,7 @@ def execute(trial, origin, token, directory, timeout):
             if sha(fixture.read_bytes()) != case["fixture_sha256"]:
                 raise RuntimeError("fixture_digest_changed")
             contract = COSMOS.load_contract(fixture)
-            calls = [invoke(client, model, "native", "generate-video", record["request"],
+            calls = [invoke(client, model, "native", "generate-media", record["request"],
                             f"benchmark-{trial['id']}-{index}", directory, timeout)
                      for index, record in enumerate(contract["requests"])]
             semantic = COSMOS.validate(contract, [row[0] for row in calls])
@@ -307,6 +325,7 @@ def main():
     parser.add_argument("--kubeconfig")
     parser.add_argument("--context")
     parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--cases", type=Path, help="Optional immutable prepared-fixture case list")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--name", default="full-catalog-baseline-20260920")
     parser.add_argument("--commit", required=True)
@@ -323,7 +342,7 @@ def main():
     if args.action in {"plan", "create"}:
         inventory = json.loads(args.inventory.read_bytes())
         spec = {"name": args.name, "source_commit": args.commit, "catalog_sha256": sha(canonical(inventory)),
-                "max_parallel": 4, "cases": recipes(inventory)}
+                "max_parallel": 4, "cases": json.loads(args.cases.read_bytes()) if args.cases else recipes(inventory)}
         (args.directory / "campaign-plan.json").write_bytes(canonical(spec))
         if args.action == "plan":
             print(json.dumps({"models": len(spec["cases"]), "executable": sum(not c.get("unavailable_reason") for c in spec["cases"]),

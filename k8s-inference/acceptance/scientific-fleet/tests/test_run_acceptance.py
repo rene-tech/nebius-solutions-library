@@ -383,6 +383,9 @@ class FakeApi:
             def do_GET(self) -> None:
                 if not self._authorized():
                     return
+                if any(self.path == f"/v1/operations/{r['operation_id']}" for r in state.reservations.values()):
+                    self._send(200, {"status": "queued"})
+                    return
                 if self.path == f"/v1/operations/{OPERATION_ID}":
                     state.status_requests += 1
                     status = state.status(state.mode != "timeout")
