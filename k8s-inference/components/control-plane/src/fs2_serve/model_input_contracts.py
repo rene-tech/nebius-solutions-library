@@ -2009,12 +2009,31 @@ def scientific_contract_for(
     _describe(schema)
     if model_ref == "cosmos3-lerobot-augmentation":
         descriptions = {
-            "source": "LeRobot dataset source: an immutable uploaded zstd tar bundle, pinned Hugging Face revision, or authorized object-store binding; client-local paths are not accessible.",
-            "selection": "Explicit episode indices and observation.images camera names to augment; unselected camera streams and recorded non-video fields are preserved.",
-            "variants": "Number of augmented variants and exactly that many unique seeds, so each requested variation has a reproducible identity.",
-            "augmentation": "Video-to-video continues selected prefix/suffix frames and may change future motion. Transfer uses full-sequence spatial controls. Neither guarantees recorded-action alignment or policy-training validity; review generated trajectories before use.",
-            "actions": "Recorded action policy. Only preserve is supported: original actions and states remain unchanged; inverse-dynamics replacement actions are not qualified.",
-            "failure_policy": "Whether an exhausted segment failure stops the run (fail-fast) or permits other segments to continue, and the bounded maximum attempts per segment.",
+            "source": (
+                "LeRobot dataset source: an immutable uploaded zstd tar bundle, pinned Hugging Face revision, "
+                "or authorized object-store binding; client-local paths are not accessible."
+            ),
+            "selection": (
+                "Explicit episode indices and observation.images camera names to augment; unselected camera "
+                "streams and recorded non-video fields are preserved."
+            ),
+            "variants": (
+                "Number of augmented variants and exactly that many unique seeds, so each requested variation "
+                "has a reproducible identity."
+            ),
+            "augmentation": (
+                "Video-to-video continues selected prefix/suffix frames and may change future motion. Transfer "
+                "uses full-sequence spatial controls. Neither guarantees recorded-action alignment or "
+                "policy-training validity; review generated trajectories before use."
+            ),
+            "actions": (
+                "Recorded action policy. Only preserve is supported: original actions and states remain unchanged; "
+                "inverse-dynamics replacement actions are not qualified."
+            ),
+            "failure_policy": (
+                "Whether an exhausted segment failure stops the run (fail-fast) or permits other segments to "
+                "continue, and the bounded maximum attempts per segment."
+            ),
         }
         for name, description in descriptions.items():
             schema["properties"]["parameters"]["properties"][name]["description"] = description

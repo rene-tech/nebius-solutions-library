@@ -160,8 +160,8 @@ spec:
               value: acestep-v15-turbo
             - name: ACESTEP_LM_MODEL_PATH
               value: acestep-5Hz-lm-4B
-            - name: ACESTEP_LLM_BACKEND
-              value: pt
+            - name: ACESTEP_LM_BACKEND
+              value: vllm
             - name: ACESTEP_DOWNLOAD_SOURCE
               value: huggingface
             - name: ACESTEP_QUEUE_MAXSIZE
