@@ -172,7 +172,7 @@ def test_original_binding_validation_precedes_native_projection(archive, native_
         (("record", "model", "id"), "molmim", "alias or replace"),
         (("variant_id",), "molmim-exact-weights-portable", "alias or replace"),
         (("runtime_architecture",), "cuda", "architecture differs"),
-        (("runtime_architecture",), "blackwell-sm103", "cpu or cuda"),
+        (("runtime_architecture",), "blackwell-sm103", "cpu, cuda or vendor-nim"),
         (("record", "support", "route_exposed"), True, "claims static routing"),
         (("record", "semantic_validator", "fixture_sha256"), hashlib.sha256(b"wrong").hexdigest(), "digest mismatch"),
         (("semantic_requests", "serialization"), "unspecified", "exact request contract"),

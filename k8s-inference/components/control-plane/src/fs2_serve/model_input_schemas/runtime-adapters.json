@@ -88,5 +88,20 @@
     "variant_id": "scvi-scanvi-cuda-v1",
     "runtime_kind": "custom",
     "source": "k8s-inference/catalog/runtime/deployment-runtimes/scvi-scanvi.json"
+  },
+  "wan2-2-t2v-nim": {
+    "variant_id": "wan2-2-t2v-nim-h100-v1",
+    "runtime_kind": "nim",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/wan2-2-t2v-nim.json"
+  },
+  "wan2-2-i2v-nim": {
+    "variant_id": "wan2-2-i2v-nim-h100-v1",
+    "runtime_kind": "nim",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/wan2-2-i2v-nim.json"
+  },
+  "sam2-1-hiera-large": {
+    "variant_id": "sam2-1-hiera-large-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/sam2-1-hiera-large.json"
   }
 }

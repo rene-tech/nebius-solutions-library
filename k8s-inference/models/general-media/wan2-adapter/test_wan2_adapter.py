@@ -10,7 +10,9 @@ import pytest
 from fastapi import HTTPException
 
 
-SPEC = importlib.util.spec_from_file_location("wan2_adapter", Path(__file__).with_name("app.py"))
+SPEC = importlib.util.spec_from_file_location(
+    "wan2_adapter", Path(__file__).with_name("app.py")
+)
 assert SPEC and SPEC.loader
 module = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = module
@@ -18,7 +20,12 @@ SPEC.loader.exec_module(module)
 
 
 def request(**updates):
-    values = {"prompt": "Protein ribbon rotates slowly", "size": "832x480", "seconds": 4, "seed": 7}
+    values = {
+        "prompt": "Protein ribbon rotates slowly",
+        "size": "832x480",
+        "seconds": 4,
+        "seed": 7,
+    }
     values.update(updates)
     return module.GenerateRequest(**values)
 
@@ -26,6 +33,12 @@ def request(**updates):
 def test_contract_is_bounded_and_variant_specific(monkeypatch):
     monkeypatch.setattr(module, "VARIANT", "t2v")
     assert request().steps == 50
+    assert (
+        "negative_prompt"
+        not in module.GenerateRequest.model_json_schema()["properties"]
+    )
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        request(negative_prompt="not supported by the OpenAI-compatible NIM endpoint")
     with pytest.raises(ValueError, match="not accepted"):
         request(input_reference="data:image/png;base64,YQ==")
     monkeypatch.setattr(module, "VARIANT", "i2v")
@@ -47,12 +60,18 @@ def test_verified_mp4_rejects_dimension_mismatch(monkeypatch):
 async def test_generate_returns_verified_raw_mp4(monkeypatch):
     class Client:
         async def post(self, url, json):
-            response = httpx.Response(200, json={"data": {"b64_json": base64.b64encode(b"video").decode()}})
+            response = httpx.Response(
+                200, json={"data": {"b64_json": base64.b64encode(b"video").decode()}}
+            )
             return response
 
     monkeypatch.setattr(module, "VARIANT", "t2v")
     monkeypatch.setattr(module, "nim_client", Client())
-    monkeypatch.setattr(module, "_verified_mp4", lambda raw, body: (raw, {"width": 832, "height": 480, "duration_seconds": 3.9}))
+    monkeypatch.setattr(
+        module,
+        "_verified_mp4",
+        lambda raw, body: (raw, {"width": 832, "height": 480, "duration_seconds": 3.9}),
+    )
     response = await module.generate(request())
     assert response.media_type == "video/mp4"
     assert response.body == b"video"

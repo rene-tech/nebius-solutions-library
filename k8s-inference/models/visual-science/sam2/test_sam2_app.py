@@ -13,7 +13,9 @@ import pytest
 from PIL import Image
 
 
-SPEC = importlib.util.spec_from_file_location("sam2_runtime", Path(__file__).with_name("app.py"))
+SPEC = importlib.util.spec_from_file_location(
+    "sam2_runtime", Path(__file__).with_name("app.py")
+)
 assert SPEC and SPEC.loader
 module = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = module
@@ -54,6 +56,8 @@ def test_contract_requires_valid_mode_media_and_prompts():
         request(mode="prompted-video")
     automatic = request(mode="automatic-image", points=[])
     assert automatic.max_masks == 32
+    with pytest.raises(ValueError, match="Extra inputs are not permitted"):
+        request(unrecognized=True)
 
 
 def test_image_result_contains_mask_overlay_and_provenance(monkeypatch):
