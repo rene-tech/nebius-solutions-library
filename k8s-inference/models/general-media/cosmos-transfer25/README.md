@@ -4,7 +4,7 @@ Platform App identity: `cosmos-transfer2-5-2b` (DNS-label-safe), for NVIDIA's `c
 
 On 2026-09-20 the user explicitly confirmed that the organisation's NVIDIA agreement covers production NIM use on this platform. This confirmation is recorded as operator attestation; a working API key alone is not production-license evidence.
 
-The production workflow is orchestrated by the Scientific AI workbench's skill and reasoner, without OSMO. The exact hosted Qwen reference baseline was checked first and its evidence is retained in `../paidf-chat/`. Those temporary hosted Qwen Apps are being retired; the explicit public Token Factory provider profile preserves the NVIDIA stage sequence/settings while declaring its different caption, prompt and verifier models. Cosmos Transfer remains hosted on Scientific AI. Customer readiness still requires the complete public workbench preview/approval/batch release gate.
+The production workflow is orchestrated by the Scientific AI workbench's skill and reasoner, without OSMO. The exact hosted Qwen reference baseline was checked first and its evidence is retained in `../paidf-chat/`. The temporary hosted Qwen Apps have been retired, their runtime resources and weight PVCs deleted, their active catalog entries archived, and their reference-only key revoked. Audit tombstones, model-download receipts and reference results remain retained. The explicit public Token Factory provider profile preserves the NVIDIA stage sequence/settings while declaring its different caption, prompt and verifier models. Cosmos Transfer remains hosted on Scientific AI. Customer readiness still requires the complete public workbench preview/approval/batch release gate.
 
 ## Historical canary findings (not the current App contract)
 
