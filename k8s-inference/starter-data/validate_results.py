@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import csv
 import gzip
 import io
 import json
@@ -490,20 +491,32 @@ def scientific(result):
     manifest = json.loads(result.read(value["output_manifest"]))
     entries = manifest["entries"]
     require(bool(entries), "scientific_outputs_missing")
-    structures = []
+    structures, tables = [], []
     for entry in entries:
         artifact = entry["artifact"]
         data = result.read(artifact)
-        if artifact["media_type"] in {"chemical/x-pdb", "chemical/x-cif"}:
+        if artifact["media_type"] in {
+            "chemical/x-pdb",
+            "chemical/x-cif",
+            "chemical/x-mmcif",
+        }:
             structures.append(
                 structure(
                     data.decode(), "cif" if "cif" in artifact["media_type"] else "pdb"
                 )
             )
+        elif artifact["media_type"] == "text/csv":
+            rows = list(csv.DictReader(io.StringIO(data.decode())))
+            require(
+                bool(rows) and len(rows[0]) > 1 and None not in rows[0],
+                "scientific_table_invalid",
+            )
+            tables.append({"rows": len(rows), "columns": len(rows[0])})
     return {
         "semantic_validation": "passed",
         "artifacts": len(entries),
         "parsed_structures": structures,
+        "parsed_tables": tables,
     }
 
 
