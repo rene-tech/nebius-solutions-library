@@ -15,18 +15,28 @@ from extra import MEDIA_FIXTURES
 SPEECH = module("benchmark_speech_upload", ROOT / "acceptance/nemotron-speech-20260916/public_probe.py")
 
 
-def upload(client, model, raw, media_type):
-    identity = {"model_id": model, "sha256": sha(raw), "size_bytes": len(raw), "media_type": media_type, "compression": "none"}
+def upload(client, model, raw, media_type, compression="none"):
+    identity = {"model_id": model, "sha256": sha(raw), "size_bytes": len(raw), "media_type": media_type, "compression": compression}
     deadline = time.monotonic() + 3600
     while True:
         response = client.post("/v1/scientific-artifacts/uploads", json=identity,
-                               headers={"Idempotency-Key": f"benchmark-fixture-{model}-{sha(raw)}"})
+                               headers={"Idempotency-Key": f"benchmark-fixture-{model}-{sha(raw)}" + ("-" + compression if compression != "none" else "")})
         if response.status_code != 429 or time.monotonic() >= deadline:
             break
         print(json.dumps({"model": model, "fixture_wait": "benchmark_key_concurrency", "retry_seconds": 15}), flush=True)
         time.sleep(15)
     response.raise_for_status()
     reserved = response.json()
+    status = client.get("/v1/operations/" + reserved["operation_id"])
+    status.raise_for_status()
+    if status.json()["status"] == "succeeded":
+        response = client.post(f"/v1/scientific-artifacts/uploads/{reserved['upload_id']}:finalize",
+                               json={"operation_id": reserved["operation_id"]})
+        response.raise_for_status()
+        artifact = response.json()
+        if artifact["sha256"] != sha(raw) or artifact["size_bytes"] != len(raw):
+            raise RuntimeError("fixture_finalize_identity_mismatch")
+        return artifact
     if len(raw) <= reserved["max_content_bytes"]:
         response = client.put(reserved["content_path"], content=raw,
                               headers={"Content-Type": media_type, "Content-Length": str(len(raw))})

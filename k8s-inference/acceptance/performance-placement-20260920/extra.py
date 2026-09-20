@@ -12,6 +12,8 @@ import json
 import math
 import re
 import sys
+import subprocess
+import tempfile
 import wave
 from pathlib import Path
 from uuid import UUID
@@ -82,6 +84,19 @@ def validate(model, request, oracle, raw, directory, index):
         if (stream["width"], stream["height"]) != (832, 480) or not 3.5 <= float(probe["format"]["duration"]) <= 4.5:
             raise RuntimeError("video_dimensions_or_duration_mismatch")
         return {"sha256": digest(raw), "probe": probe, "scope": "decodable-video-format-not-scientific-accuracy"}
+    if model == "cosmos-transfer2-5-2b":
+        probe = MEDIA.probe_mp4(raw)
+        stream = probe["streams"][0]
+        actual = [stream["width"], stream["height"], int(stream["nb_frames"]), stream["avg_frame_rate"]]
+        if actual != oracle["geometry_frames_rate"]:
+            raise RuntimeError("transfer_geometry_or_timing_mismatch")
+        with tempfile.NamedTemporaryFile(suffix=".mp4") as video:
+            video.write(raw)
+            video.flush()
+            subprocess.run(["ffmpeg", "-v", "error", "-xerror", "-i", video.name, "-f", "null", "-"],
+                           check=True, capture_output=True, timeout=90)
+        return {"sha256": digest(raw), "probe": probe, "all_frames_decoded": True,
+                "scope": "geometry-timing-artifact-integrity-not-physical-or-weather-quality"}
     if model == "magpie-tts-multilingual-357m":
         with wave.open(io.BytesIO(raw)) as audio:
             frames = audio.readframes(audio.getnframes())

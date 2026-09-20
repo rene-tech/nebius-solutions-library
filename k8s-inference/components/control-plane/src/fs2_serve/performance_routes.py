@@ -13,6 +13,7 @@ from .performance import (
     PerformanceRepository,
     TrialLease,
     TrialResult,
+    advisory_recommendations,
     summarize_profiles,
 )
 
@@ -51,7 +52,13 @@ def performance_router(pool: Any, operator: Any, access: Any, envelope: Any, *, 
     async def detail(campaign_id: UUID, identity: OperatorPrincipal = operator_dep) -> Any:
         await access.authorize_global(identity, OperatorRole.VIEWER, action="benchmark.read")
         campaign = await repository().detail(campaign_id)
-        return envelope({**campaign, "profiles": summarize_profiles(campaign["trials"])})
+        return envelope(
+            {
+                **campaign,
+                "profiles": summarize_profiles(campaign["trials"]),
+                "advisory": advisory_recommendations(campaign),
+            }
+        )
 
     @router.post("/campaigns/{campaign_id}/claim")
     async def claim(

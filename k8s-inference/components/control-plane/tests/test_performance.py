@@ -14,6 +14,7 @@ from fs2_serve.performance import (
     PerformanceRepository,
     TrialLease,
     TrialResult,
+    advisory_recommendations,
     summarize_profiles,
 )
 from fs2_serve.store import ConflictError
@@ -150,3 +151,48 @@ def test_contract_rejects_duplicate_cases_nonfinite_times_and_fake_success():
         result({"worker": "test", "fence": 1}, elapsed_seconds=float("nan"))
     with pytest.raises(ValidationError):
         result({"worker": "test", "fence": 1}, artifact_uri="s3://bucket/result?secret=signed")
+
+
+def measured_campaign(*, cache="warm", overlap=False):
+    case = campaign().cases[0].model_dump()
+    case["cache_condition"] = cache
+    trials = []
+    for pool, seconds in (("h100", (10, 11, 12)), ("l40s", (11, 12, 13) if overlap else (20, 21, 22))):
+        for elapsed in seconds:
+            trials.append(
+                {
+                    "id": uuid4(),
+                    "status": "succeeded",
+                    "case_spec": case,
+                    "result": {
+                        "semantic_valid": True,
+                        "execution_seconds": elapsed,
+                        "hardware": {"pool": pool, "runtime_image": "sha256:" + "a" * 64},
+                    },
+                }
+            )
+    return {"spec_sha256": "b" * 64, "trials": trials}
+
+
+def test_advisory_is_reproducible_and_does_not_write_placement():
+    value = measured_campaign()
+    plan = advisory_recommendations(value)
+    assert plan == advisory_recommendations(value)
+    assert plan["automatic_placement"] is False
+    assert plan["recommendations"][0]["preferred_environment"]["pool"] == "h100"
+    assert plan["recommendations"][0]["status"] == "candidate"
+
+
+@pytest.mark.parametrize("problem", ["cache", "image", "failed", "overlap", "queued"])
+def test_incomparable_or_incomplete_cohorts_never_recommend(problem):
+    value = measured_campaign(cache="uncontrolled" if problem == "cache" else "warm", overlap=problem == "overlap")
+    if problem == "image":
+        value["trials"][0]["result"]["hardware"]["runtime_image"] = "sha256:" + "f" * 64
+    if problem in {"failed", "queued"}:
+        value["trials"].append(
+            {"id": uuid4(), "status": problem, "case_spec": value["trials"][0]["case_spec"], "result": None}
+        )
+        assert all(p["placement_evidence"] == "insufficient" for p in summarize_profiles(value["trials"]))
+    recommendation = advisory_recommendations(value)["recommendations"][0]
+    assert recommendation["status"] == "more-evidence-needed"
+    assert recommendation["preferred_environment"] is None

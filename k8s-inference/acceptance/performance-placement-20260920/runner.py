@@ -129,6 +129,7 @@ def invoke(client, model, protocol, operation, payload, key, directory, timeout)
     operation_id = response.headers.get("x-fs2-operation-id") or admitted.get("id")
     if not operation_id:
         raise RuntimeError("missing_operation_id")
+    (directory / (operation_id + "-admission.json")).write_bytes(canonical(admitted))
     # Durable public idempotency is stable across worker lease recovery.
     while True:
         status = checked(client.get(f"/v1/operations/{operation_id}"))
@@ -176,7 +177,10 @@ def execute(trial, origin, token, directory, timeout):
                 "elapsed_seconds": time.monotonic() - started, "semantic_valid": True,
                 "scientific_receipt": receipt}
     with httpx.Client(base_url=origin, headers={"Authorization": "Bearer " + token}, timeout=180, trust_env=False) as client:
-        if adapter == "artifact-native-v1":
+        if adapter == "artifact-lerobot-v1":
+            from robotics_workflow import execute as execute_lerobot
+            return execute_lerobot(trial, client, token, directory, timeout)
+        elif adapter == "artifact-native-v1":
             from extra import execute as execute_extra
             calls, semantic = execute_extra(trial, client, directory, invoke, timeout)
         elif adapter in {"bio-pair", "media-pair", "openfold2", "openfold3"}:
@@ -278,14 +282,27 @@ def worker(args, admin, campaign_id, token, *, once=False):
                 # Safe summaries only; request payloads, signed URLs and credentials never enter the registry.
                 code = code if code.replace("_", "").isalnum() and len(code) <= 128 else "benchmark_validation_failed"
                 evidence = {"error_code": code, "elapsed_seconds": time.monotonic() - started}
+                statuses = [json.loads(path.read_bytes()) for path in sorted(directory.glob("*-status.json"))]
+                evidence["operations"] = statuses
                 result = {**lease, "status": "failed", "error_code": code,
-                          "elapsed_seconds": evidence["elapsed_seconds"]}
+                          "elapsed_seconds": evidence["elapsed_seconds"] if trial["fence"] == 1 else None,
+                          "operation_id": statuses[0]["id"] if statuses else None}
             data = canonical({"trial_id": trial["id"], "case": trial["case_spec"],
                               "worker_source_commit": args.commit, "result": evidence})
             (directory / "receipt.json").write_bytes(data)
-            artifact = PUBLIC._upload(PUBLIC.PublicApiClient(args.origin, token), model_id=trial["model_id"],
-                                     data=data, media_type="application/json", compression="none",
-                                     idempotency_key=f"benchmark-receipt-{trial['id']}-{sha(data)}")
+            # Receipt upload is also subject to this key's concurrency cap.
+            # Keep the lease and evidence while other model operations finish.
+            deadline = time.monotonic() + args.timeout
+            while True:
+                try:
+                    artifact = PUBLIC._upload(PUBLIC.PublicApiClient(args.origin, token), model_id=trial["model_id"],
+                                             data=data, media_type="application/json", compression="none",
+                                             idempotency_key=f"benchmark-receipt-{trial['id']}-{sha(data)}")
+                    break
+                except PUBLIC.AcceptanceError as error:
+                    if str(error) != "http_upload_begin_429" or time.monotonic() >= deadline or lease_lost.is_set():
+                        raise
+                    time.sleep(15)
             result.update(receipt_sha256=sha(data), artifact_uri="artifact://" + artifact["artifact_id"])
             if lease_lost.is_set():
                 raise RuntimeError("benchmark_lease_lost")
@@ -305,14 +322,22 @@ def pool(args):
     Login is renewed between trials. A process/container restart recovers work
     through the expired lease; it does not own or kill the GPU operation.
     """
+    last_campaign = None
     while True:
         worked = False
         with closing(INVENTORY.admin_client(args.kubeconfig, args.context, args.origin)) as admin:
             campaigns = checked(admin.get("/admin/api/v1/performance/campaigns", params={"limit": 200}))["data"]["items"]
-            for campaign in reversed(campaigns):
+            campaigns.reverse()
+            # Round-robin campaigns; the registry already rounds repetitions.
+            # A new speech/media campaign must not wait behind a long DAG fleet.
+            previous = next((i for i, c in enumerate(campaigns) if c["id"] == last_campaign), None)
+            if previous is not None:
+                campaigns = campaigns[previous + 1:] + campaigns[:previous + 1]
+            for campaign in campaigns:
                 # The pod count bounds concurrency across campaigns as well.
                 if worker(args, admin, campaign["id"], args.token_file.read_text().strip(), once=True):
                     worked = True
+                    last_campaign = campaign["id"]
                     break
         if not worked:
             time.sleep(15)
