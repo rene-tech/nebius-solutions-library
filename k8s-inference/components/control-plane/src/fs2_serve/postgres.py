@@ -2713,7 +2713,8 @@ class PostgresStore:
             JOIN fs2_scientific_batches batch ON batch.operation_id=parent.id
             JOIN fs2_tokens token ON token.id=parent.token_id
             WHERE parent.id=$1 AND parent.tenant_id=$3 AND parent.principal_id=$4 AND parent.token_id=$5
-              AND parent.model_id='cosmos3-lerobot-augmentation' AND parent.protocol='scientific-batch-v1'
+              AND parent.model_id IN ('cosmos3-lerobot-augmentation', 'physical-ai-video-augmentation')
+              AND parent.protocol='scientific-batch-v1'
               AND parent.parent_operation_id IS NULL AND parent.status IN ('queued','activating','running')
               AND (parent.deadline_at IS NULL OR parent.deadline_at>clock_timestamp())
               AND parent.payload_expires_at>clock_timestamp()
@@ -2721,7 +2722,8 @@ class PostgresStore:
               AND 'inference.invoke'=ANY(token.scopes)
               AND ('*'=ANY(token.models) OR 'cosmos3-nano'=ANY(token.models))
               AND batch.status IN ('queued','running') AND NOT batch.cancel_requested
-              AND batch.state#>>'{stages,0,stage_id}'='augment-dataset'
+              AND ((parent.model_id='cosmos3-lerobot-augmentation' AND batch.state#>>'{stages,0,stage_id}'='augment-dataset')
+                OR (parent.model_id='physical-ai-video-augmentation' AND batch.state#>>'{stages,0,stage_id}'='augment-videos'))
               AND batch.state#>>'{stages,0,attempts,-1,attempt_id}'=$2::text
               AND batch.state#>>'{stages,0,attempts,-1,shard_id}'='main'
               AND batch.state#>>'{stages,0,attempts,-1,outcome}'='active'

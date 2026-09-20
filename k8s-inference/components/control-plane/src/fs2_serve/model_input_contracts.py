@@ -286,6 +286,10 @@ _PURPOSES = {
     "cosmos3-nano": (
         "Generate or transform image/video from text and bounded media controls; large MP4 results are artifacts."
     ),
+    "cosmos-transfer2-5-2b": (
+        "Transform a caller-owned MP4 using text and full-video edge control with NVIDIA Cosmos Transfer 2.5; "
+        "returns a silent MP4 artifact preserving source geometry, frame count and FPS. Built on NVIDIA Cosmos."
+    ),
     "evo2-40b": "Continue a DNA sequence with Evo2-40B; returns generated DNA and elapsed milliseconds per token.",
     "altumage": "Predict methylation-based chronological age from the full CpG panel; returns age by sample ID.",
     "phenoage": "Calculate clinical phenotypic age from age and nine blood biomarkers; returns results by sample ID.",
@@ -714,6 +718,38 @@ def _scvi_scanvi() -> Schema:
         ("anndata_base64", "filename", "method", "max_epochs", "n_latent", "seed", "research_only"),
         "Bounded interactive scVI/scANVI lane. Use folder fan-out for multiple small files; larger studies need a "
         "scientific-batch profile rather than this synchronous adapter.",
+    )
+
+
+def _cosmos_transfer25() -> Schema:
+    video = _artifact_reference(media_types=("video/mp4",))
+    video["properties"]["size_bytes"].update(minimum=16, maximum=128 * 1024**2)
+    video.update({
+        "description": "Finalized caller-owned MP4. Exactly 640x480 or 1280x720, 93–400 frames, "
+        "constant integer 1–30 FPS, at most 128 MiB. No implicit resize, crop, trim or retiming. "
+        "Upload the actual file; URLs, local paths and inline base64 are not accepted by this public contract.",
+        "x-fs2-artifact-materialization": "base64",
+        "x-fs2-artifact-max-bytes": 128 * 1024**2,
+        "x-fs2-artifact-media-types": ["video/mp4"],
+    })
+    return _object(
+        {
+            "video": video,
+            "prompt": _field("string", "Describe the desired scene/weather while preserving source motion.",
+                             minLength=1, maxLength=4096),
+            "negative_prompt": _field("string", "Optional unwanted visual properties.", maxLength=4096),
+            "seed": _integer("Deterministic sampling seed.", 0, 2147483647, 42),
+            "num_steps": _integer("Denoising steps; the qualified full-quality recipe uses 35.", 1, 50, 35),
+            "guidance": _integer("Integer prompt guidance; the qualified weather recipe uses 7.", 0, 7, 7),
+            "control_weight": _field("number", "Edge-control strength; full-sequence edge control uses 1.",
+                                     exclusiveMinimum=0, maximum=1, default=1),
+            "output_delivery": _constant("artifact", "Return the generated MP4 as a platform-owned artifact."),
+        },
+        ("video", "prompt"),
+        "Bounded Cosmos Transfer 2.5 edge-conditioned video-to-video. Built on NVIDIA Cosmos. "
+        "NIM guardrails remain enabled. Audio is not carried into the native result. "
+        "This native App does not itself run PAIDF motion/weather verification, human approval or batch fan-out; "
+        "generated media is not physical ground truth or validated annotation.",
     )
 
 
@@ -1513,6 +1549,10 @@ _NATIVE_BUILDERS = {
         "#/opt/evo2/server/evo2_deep/runtime.py",
     ),
     "cosmos3-nano": (_cosmos, "k8s-inference/models/general-media/k8s/cosmos3-nano.yaml#data.adapter.py"),
+    "cosmos-transfer2-5-2b": (
+        _cosmos_transfer25,
+        "k8s-inference/models/general-media/cosmos-transfer25/adapter/app.py",
+    ),
     "openfold2": (_openfold2, "k8s-inference/models/structure/openfold2-upstream/server.py"),
     "openfold3": (_openfold3, "k8s-inference/models/structure/openfold3-preview2/server.py"),
     "diffdock": (_diffdock, "k8s-inference/models/structure/runtime/adapters/diffdock.py"),
@@ -1795,6 +1835,21 @@ def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
             "size": "832x480",
             "seconds": 4,
             "seed": 7,
+        },
+        "cosmos-transfer2-5-2b": {
+            "video": {
+                "artifact_id": "00000000-0000-4000-8000-000000000033",
+                "sha256": "8" * 64,
+                "size_bytes": 2097152,
+                "media_type": "video/mp4",
+                "compression": "none",
+            },
+            "prompt": "Preserve the camera and all recorded motion; change the weather to overcast.",
+            "seed": 42,
+            "num_steps": 35,
+            "guidance": 7,
+            "control_weight": 1.0,
+            "output_delivery": "artifact",
         },
         "sam2-1-hiera-large": {
             "mode": "prompted-image",

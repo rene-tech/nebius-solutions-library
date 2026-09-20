@@ -1,0 +1,185 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "cosmos-transfer2-5-2b",
+      "display_name": "NVIDIA Cosmos Transfer 2.5",
+      "family": "video-generation",
+      "tested_lane": true,
+      "source": {
+        "kind": "ngc-nim",
+        "repository": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b",
+        "revision": "sha256:67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17",
+        "license": {
+          "id": "NVIDIA-Open-Model-License AND NVIDIA-Software-License-Agreement",
+          "state": "verified",
+          "notes": "Built on NVIDIA Cosmos. The model card specifies the Open Model License; /v1/license also supplies the NVIDIA Software License Agreement. This canary is internal evaluation only; production and third-party service rights are license-dependent, not conferred by key access."
+        },
+        "entitlement": {
+          "required": true,
+          "state": "verified",
+          "credential_contract": "isolated-stockholm-existing-ngc-secret-refs/20260920",
+          "notes": "Exact NIM image and all 194 assets downloaded using existing operator-provisioned Secret references. No legacy credential copies or credential values are part of this declaration."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "nim",
+      "version": "1.1.0-profile-e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+      "image": {
+        "reference": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+        "digest": "sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+        "state": "resolved"
+      },
+      "command": [
+        "/opt/nvidia/nvidia_entrypoint.sh",
+        "/bin/bash",
+        "-c",
+        "$SERVER_START_SCRIPT_PATH"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 8500,
+      "memory_bytes": 103616086016,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/transfer"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 2700
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "transfer-video"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "platform-pvc",
+      "shared_path": "/mnt/fs2-serve-cache/models/cosmos-transfer2-5-2b",
+      "local_path": "/var/lib/fs2-serve/cache/models/cosmos-transfer2-5-2b",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "nim-cache",
+        "manifest_digest": "662ab8a789c6b2752e7a174b6d6d1fc013de4e707893971a30b339177c1a1912",
+        "expanded_bytes": 59731769940,
+        "minimum_bytes": 59731769940,
+        "capacity_bound_bytes": 103079215104,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "cosmos-transfer25-edge-weather/v1",
+      "source_path": "k8s-inference/models/general-media/cosmos-transfer25/qualify_adapter.py",
+      "source_sha256": "d75f41235d007f1cae654723c942646e8eafa9f24a51dea817a7a0e73ff40435",
+      "fixture_path": "k8s-inference/models/general-media/cosmos-transfer25/semantic-fixtures.json",
+      "fixture_sha256": "0e2f47519302cfdb9fbfe180ceabe01c954c90548c3aa50b405ec6e4d2ec8131",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Internal isolated evaluation, not customer-ready; public gateway/MCP, chat preview and approved batch flows are separate gates.",
+        "Exactly one H100, this NIM/profile and immutable adapter cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd only. No B300, autoscaling or snapshot qualification.",
+        "Source MP4 must be 640x480 or 1280x720, constant integer 1\u201330 FPS, 93\u2013400 frames and at most 128 MiB; silent output.",
+        "Native edge-conditioned transfer only. No implicit cropping, trimming, retiming, depth/segmentation controls or action model.",
+        "Automated full-frame motion and sampled-weather checks do not establish physical fidelity or annotation correctness; human review is required.",
+        "Adapter bounds concurrency to one and refuses new work after unknown upstream completion; no automatic generation retry.",
+        "Rain seed 43 preserved frame geometry and passed weather verification but failed motion (0.649145 < 0.682); it is retained as failed evidence and not a qualified recipe."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3; driver 580.173.02",
+        "outcome": "live-qualified",
+        "source_commit": "5dcf2568134517d9be56c7368a8450e91a5e50a6",
+        "summary": "Two distinct native outputs passed full-video alignment and sampled-weather verification through the exact CPU adapter container connected to the private Stockholm NIM canary. Receipt digest 1d019e324cc5de1e9e757c2b277f80b58fb3f35e9c8cc1b7ee36681f37056a23. The rain clip failed the unchanged PAIDF motion threshold and is NOT accepted for a blueprint batch. This is not public gateway, workbench, managed cache startup, lifecycle or customer acceptance."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "5dcf2568134517d9be56c7368a8450e91a5e50a6",
+        "tree": "175d90814081bff938588801fb7f2a3441249282",
+        "path": "k8s-inference/models/general-media/cosmos-transfer25/selected-profile-20260920.json",
+        "classification": "reviewed-input"
+      },
+      {
+        "commit": "5dcf2568134517d9be56c7368a8450e91a5e50a6",
+        "tree": "175d90814081bff938588801fb7f2a3441249282",
+        "path": "k8s-inference/models/general-media/cosmos-transfer25/adapter/app.py",
+        "classification": "measured-handoff"
+      }
+    ]
+  },
+  "variant_id": "cosmos-transfer25-nim-v1",
+  "runtime_architecture": "vendor-nim",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-canonical-json-no-newline/v1",
+    "invocation": {
+      "operation": "transfer-video",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/v1/transfer"
+    },
+    "requests": [
+      {
+        "id": "transfer-weather-0",
+        "payload_sha256": "caee6dc6fb8ba9d9f8127aa66db9a54a51740a5c0b461df2f7e4b784c38d0e28"
+      },
+      {
+        "id": "transfer-weather-1",
+        "payload_sha256": "6bfaf3c286e6004210202c9120da5b47e123cc3db2d1d62c2e7003ce80f0e477"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "../deployment-runtimes/artifacts/cosmos-transfer2-5-2b-662ab8a789c6b2752e7a174b6d6d1fc013de4e707893971a30b339177c1a1912.json",
+    "sha256": "662ab8a789c6b2752e7a174b6d6d1fc013de4e707893971a30b339177c1a1912"
+  }
+}

@@ -1,0 +1,152 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos-transfer25-diagnostic-cleanup/v1",
+  "at": "2026-09-20T04:34:49.357973+00:00",
+  "namespace": "fs2-models",
+  "running_canary_deleted": false,
+  "selected_profile_retained_in": "selected-profile-20260920.json",
+  "pods": [
+    {
+      "name": "cosmos-transfer25-canary-20260920",
+      "uid": "e5506e60-b2f5-45d5-8aea-dd9709f6a617",
+      "phase": "Failed",
+      "created_at": "2026-09-20T04:18:32Z",
+      "termination": {
+        "exitCode": 1,
+        "finishedAt": "2026-09-20T04:18:42Z",
+        "reason": "Error",
+        "startedAt": "2026-09-20T04:18:33Z"
+      },
+      "uid_bound_delete_accepted": true
+    },
+    {
+      "name": "cosmos-transfer25-download-diagnostic-20260920",
+      "uid": "1b900e95-d4bf-4e63-8a7e-fd78fc4aa34f",
+      "phase": "Succeeded",
+      "created_at": "2026-09-20T04:22:37Z",
+      "termination": {
+        "exitCode": 0,
+        "finishedAt": "2026-09-20T04:22:37Z",
+        "reason": "Completed",
+        "startedAt": "2026-09-20T04:22:37Z"
+      },
+      "uid_bound_delete_accepted": true
+    },
+    {
+      "name": "cosmos-transfer25-image-inspect-20260920",
+      "uid": "2dfc57a3-5c47-4dca-b207-2cca245e4333",
+      "phase": "Succeeded",
+      "created_at": "2026-09-20T04:07:34Z",
+      "termination": {
+        "exitCode": 0,
+        "finishedAt": "2026-09-20T04:14:55Z",
+        "reason": "Completed",
+        "startedAt": "2026-09-20T04:14:53Z"
+      },
+      "uid_bound_delete_accepted": true
+    },
+    {
+      "name": "cosmos-transfer25-launch-inspection-20260920",
+      "uid": "e3a42ae6-a135-4d7e-88f5-e43994fab63d",
+      "phase": "Failed",
+      "created_at": "2026-09-20T04:23:15Z",
+      "termination": {
+        "exitCode": 1,
+        "finishedAt": "2026-09-20T04:23:18Z",
+        "reason": "Error",
+        "startedAt": "2026-09-20T04:23:15Z"
+      },
+      "diagnostic_receipts": [
+        {
+          "status": "failed",
+          "phase": "image-configuration",
+          "http_status": 307
+        }
+      ],
+      "uid_bound_delete_accepted": true
+    },
+    {
+      "name": "cosmos-transfer25-launch-inspection-20260920-r2",
+      "uid": "1a5e29b9-f7fd-4043-899c-34bf6068f721",
+      "phase": "Failed",
+      "created_at": "2026-09-20T04:23:54Z",
+      "termination": {
+        "exitCode": 1,
+        "finishedAt": "2026-09-20T04:23:57Z",
+        "reason": "Error",
+        "startedAt": "2026-09-20T04:23:54Z"
+      },
+      "diagnostic_receipts": [
+        {
+          "status": "failed",
+          "phase": "untrusted-configuration-cdn",
+          "http_status": null
+        }
+      ],
+      "uid_bound_delete_accepted": true
+    },
+    {
+      "name": "cosmos-transfer25-launch-inspection-20260920-r3",
+      "uid": "32e5d07d-cb2b-4e67-83e8-7c50d4348bd7",
+      "phase": "Failed",
+      "created_at": "2026-09-20T04:24:40Z",
+      "termination": {
+        "exitCode": 1,
+        "finishedAt": "2026-09-20T04:24:43Z",
+        "reason": "Error",
+        "startedAt": "2026-09-20T04:24:40Z"
+      },
+      "diagnostic_receipts": [
+        {
+          "redirect_scheme": "https",
+          "redirect_hostname": "layers.nvcr.io",
+          "redirect_port": null
+        },
+        {
+          "status": "failed",
+          "phase": "untrusted-configuration-cdn",
+          "http_status": null
+        }
+      ],
+      "uid_bound_delete_accepted": true
+    },
+    {
+      "name": "cosmos-transfer25-launch-inspection-20260920-r4",
+      "uid": "fc4bb80e-49e8-480d-ad80-9817522b7bfe",
+      "phase": "Succeeded",
+      "created_at": "2026-09-20T04:25:13Z",
+      "termination": {
+        "exitCode": 0,
+        "finishedAt": "2026-09-20T04:25:17Z",
+        "reason": "Completed",
+        "startedAt": "2026-09-20T04:25:14Z"
+      },
+      "diagnostic_receipts": [
+        {
+          "status": "passed",
+          "repository": "nim/nvidia/cosmos-transfer2.5-2b",
+          "tag": "1.1",
+          "index_digest": "sha256:970b21c10b2efd38c362b1fa2560cb94bed3eaa8065273d36ce885ee6e8d1cae",
+          "linux_amd64_manifest_digest": "sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+          "config_digest": "sha256:1e158a752a9ee0fa010a864544df1c600171b1d4eb8b55fb0081319da66a48dc",
+          "compressed_layer_bytes": 19461097170,
+          "layer_count": 122,
+          "authenticated_manifest_access": true,
+          "model_artifact_access_tested": false,
+          "launch_configuration": {
+            "Entrypoint": [
+              "/opt/nvidia/nvidia_entrypoint.sh"
+            ],
+            "Cmd": [
+              "/bin/bash",
+              "-c",
+              "$SERVER_START_SCRIPT_PATH"
+            ],
+            "User": "nvs:1000",
+            "WorkingDir": "/opt/nim"
+          }
+        }
+      ],
+      "uid_bound_delete_accepted": true
+    }
+  ]
+}

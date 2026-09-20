@@ -1,0 +1,992 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "cosmos-transfer2-5-2b",
+  "kind": "nim-cache",
+  "source": {
+    "uri": "oci://nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+    "revision": "sha256:67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17"
+  },
+  "content": {
+    "digest": "a147a10fce5a4655ffcc77f0cfdb4b87cc16ab5904cc9be9d758689ef209dfaa",
+    "expanded_bytes": 59731769940,
+    "files": [
+      {
+        "path": "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/config.json",
+        "bytes": 1374,
+        "sha256": "77d9ec7321cc572e3579e2c84799c9cadaded63c49ce93b101733349fc330c43"
+      },
+      {
+        "path": "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/generation_config.json",
+        "bytes": 217,
+        "sha256": "6c2953cfed29c8e1c54c9a6f7712f628af92ae63698b016141e55aa72d808e6c"
+      },
+      {
+        "path": "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model-00001-of-00004.safetensors",
+        "bytes": 4968243304,
+        "sha256": "c28404126221997ae8eb70a23b919c96174d42e35ae1d537e0c95093d50b359a"
+      },
+      {
+        "path": "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model-00002-of-00004.safetensors",
+        "bytes": 4991495816,
+        "sha256": "f281081864c10992d3e03874c79d526c84407e049d713747f19eb9c79cd16db3"
+      },
+      {
+        "path": "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model-00003-of-00004.safetensors",
+        "bytes": 4932751040,
+        "sha256": "3bb3a62a8d0e83c6283388ddea99395b221f908f9181b8edd0f7f91d02260ebe"
+      },
+      {
+        "path": "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model-00004-of-00004.safetensors",
+        "bytes": 1691924384,
+        "sha256": "91bacbe1ad798e16daa05023b4e4bec70b53c8cd7d757db86c5bc76c4e0bbf15"
+      },
+      {
+        "path": "cb3e3ffa-7b08-4c34-822d-61c7aa31a14f/model.safetensors.index.json",
+        "bytes": 57618,
+        "sha256": "f442fe7207a37695f59a543282c9a3b67c2491d0d974b4da72cbac3a109aaa45"
+      },
+      {
+        "path": "checkpoints/685afcaa-4de2-42fe-b7b9-69f7a2dee4d8.pth",
+        "bytes": 507609880,
+        "sha256": "38071ab59bd94681c686fa51d75a1968f64e470262043be31f7a094e442fd981"
+      },
+      {
+        "path": "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/chat_template.json",
+        "bytes": 1050,
+        "sha256": "ad60d90252ed0b0705ba14e2d0ad0fec0beac1ea955642b54059b36052d8bc96"
+      },
+      {
+        "path": "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/config.json",
+        "bytes": 1374,
+        "sha256": "77d9ec7321cc572e3579e2c84799c9cadaded63c49ce93b101733349fc330c43"
+      },
+      {
+        "path": "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/generation_config.json",
+        "bytes": 216,
+        "sha256": "0a3aea82869fe29f20dc95ccf3e2bcff380eca1f5ad6447a4a4b37110b08e43e"
+      },
+      {
+        "path": "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/merges.txt",
+        "bytes": 1671839,
+        "sha256": "599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3"
+      },
+      {
+        "path": "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/preprocessor_config.json",
+        "bytes": 350,
+        "sha256": "f2058c716eef96ccaed1cc1e2d0c08306b62586d535b28d9d08e691b2fab7ca0"
+      },
+      {
+        "path": "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/tokenizer.json",
+        "bytes": 7031645,
+        "sha256": "c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539"
+      },
+      {
+        "path": "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/tokenizer_config.json",
+        "bytes": 5702,
+        "sha256": "4abd3520120e266da84c0864fee064d1fb10806f02225911a47253dd38dc5f56"
+      },
+      {
+        "path": "checkpoints/7219c6c7-f878-4137-bbdb-76842ea85e70/vocab.json",
+        "bytes": 2776833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/README.md",
+        "bytes": 20683,
+        "sha256": "54558dcc4b81bba63c586f9b5ed5291f4eb96ca136228739b4a7fb2eceab1dd9"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/custom/blocklist",
+        "bytes": 3643,
+        "sha256": "989e841b9eed4913d7fbc6c1e92094c4c8f681228159799a1d02ae7250d3b5b0"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/exact_match/blocked",
+        "bytes": 16158,
+        "sha256": "447737170945b67bba949d21607b0bf9154caf8dc13855e5f29cc5a58794ce79"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/corpora/wordnet.zip",
+        "bytes": 10775600,
+        "sha256": "cbda5ea6eef7f36a97a43d4a75f85e07fccbb4f23657d27b4ccbc93e2646ab59"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab.zip",
+        "bytes": 4259017,
+        "sha256": "c2b16c23d738effbdc5789d7aa601397c13ba2819bf922fb904687f3f16657ed"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/README",
+        "bytes": 8574,
+        "sha256": "d3251cae66a9359bd68c039e3a46172a05ca9df0b27dcdfa23ae594d68d27ec4"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/czech/abbrev_types.txt",
+        "bytes": 462,
+        "sha256": "8eb1feb5a6a46f9bd8f6a5ae58e218428a65b459b5ebd61668d83fa80acfc329"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/czech/collocations.tab",
+        "bytes": 1390,
+        "sha256": "fd58f549658c8389be32577e232187be9376c79708f66c60388a84916c8f3f3d"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/czech/ortho_context.tab",
+        "bytes": 684150,
+        "sha256": "451cb1a68a03ba88ced1247e6bb48c442e87dce1c9f463104618fac509866cd4"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/czech/sent_starters.txt",
+        "bytes": 352,
+        "sha256": "42f1de18ab29f9842113b87ec020202c0c25316c97d37f968435a7c7ee3018ca"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/danish/abbrev_types.txt",
+        "bytes": 1130,
+        "sha256": "4a358b26b7ba372cab3cedeb43b4e99a76ae9d01150493964141eb42a62e4a6e"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/danish/collocations.tab",
+        "bytes": 1693,
+        "sha256": "b003d3b839afd47afa81d64620a1cf15b75b944212a7f3ee6a7571f041ae02ec"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/danish/ortho_context.tab",
+        "bytes": 743835,
+        "sha256": "59d7ccda7b1eef6cbcddb6d2f1930c255a5d43600e66e32eff28eab8190c0727"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/danish/sent_starters.txt",
+        "bytes": 415,
+        "sha256": "f8dd41bdb1bb633574b22d38205e1c073639a0b80cb9591964bf92d84317527f"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/dutch/abbrev_types.txt",
+        "bytes": 434,
+        "sha256": "dcd4af07101692c986049ba07abcd6b7c1a2464ef4e46a932cf92d6e220388dd"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/dutch/collocations.tab",
+        "bytes": 623,
+        "sha256": "9a013563bce4637595a6db9d2eeb0ab3f68685d704ae20d97ad718aa91afbe4a"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/dutch/ortho_context.tab",
+        "bytes": 428403,
+        "sha256": "e2077b5748564a9666e437c0a96ea9c5bed0fe3ab5c756535584785d3af20fc9"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/dutch/sent_starters.txt",
+        "bytes": 310,
+        "sha256": "734454acc5952d91a1dfaca8cdfdabb715d8cdd35789c749528639d80751f45c"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/english/abbrev_types.txt",
+        "bytes": 619,
+        "sha256": "92a3e070f43d9b4c5534758ca40ad7343b04e7e29bfe0c2eb658a39445a4f779"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/english/collocations.tab",
+        "bytes": 594,
+        "sha256": "8e2da1225e4dd2cc9dba261ee231ccb134859e21b46006e7f472c5ee269af0cf"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/english/ortho_context.tab",
+        "bytes": 236303,
+        "sha256": "4bbcca25ed3d3f06c02402abf8419b9f033b8adc06e7b482eca4e45f81a5dc4c"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/english/sent_starters.txt",
+        "bytes": 241,
+        "sha256": "f3f8535483e1dba487241b764945168123bca3209a9645e59acd1225dc76edac"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/estonian/abbrev_types.txt",
+        "bytes": 224,
+        "sha256": "0307878fb32af1e21d8f3ba0644e39c89602f2f8aa4e4304943f7e9e0fd081b2"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/estonian/collocations.tab",
+        "bytes": 1825,
+        "sha256": "f1400a7ebf3c82a3d5aac886eb5bf06a1a840946cf052bb1532da7c25094797f"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/estonian/ortho_context.tab",
+        "bytes": 936992,
+        "sha256": "768b7e6e2ba93ff096e244af175c343b1a73463c4a1b99beebe6a9aa57ea1d78"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/estonian/sent_starters.txt",
+        "bytes": 679,
+        "sha256": "7ade7bb8ca7c527aac09517a6efbdf4f749e9a9fc0e43d2856c58be847030c83"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/finnish/abbrev_types.txt",
+        "bytes": 484,
+        "sha256": "7829baabcb5d69e26232839a1f5b6bc6d12b0e59b7f0a65f6ab1c163acbeb800"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/finnish/collocations.tab",
+        "bytes": 3046,
+        "sha256": "4d717a1b4d1fb7108ca9c9ed2cc63f8b4813cfaf73819e96fce79495ddc48292"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/finnish/ortho_context.tab",
+        "bytes": 1189717,
+        "sha256": "43e55a8bfa977561337a09105c570036df11346c6f91e57d8631520eefb26167"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/finnish/sent_starters.txt",
+        "bytes": 810,
+        "sha256": "ab81cf3b774ef068ac98adb99fcb3b1a05caf0423bdfa302bdc285e15597567f"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/french/abbrev_types.txt",
+        "bytes": 245,
+        "sha256": "01747ecfed08830d582d8c94634b63a36da316c0a67feec2871cf03f0dd5c657"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/french/collocations.tab",
+        "bytes": 334,
+        "sha256": "8ddf150ef5a0d22694e7c4d807f80b6d55da731ca81ea139633f560b378af990"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/french/ortho_context.tab",
+        "bytes": 334275,
+        "sha256": "7090ef4292647d4fe137159bd768a5304015d0614d59fdcfc30b2389634365ac"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/french/sent_starters.txt",
+        "bytes": 233,
+        "sha256": "b45a1ebdae9cdf46cf2e8be016b4718bf4f825445fc783d445faf0cfb2d569f8"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/german/abbrev_types.txt",
+        "bytes": 246,
+        "sha256": "259e5d78bc9d61a12d55ba47552c4e9c5ca08364d78a4669e864fd6de86818e3"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/german/collocations.tab",
+        "bytes": 527,
+        "sha256": "f77bd513f42e8179f5c932111c312be353d5913387d0bfe90a95c109111bca25"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/german/ortho_context.tab",
+        "bytes": 943500,
+        "sha256": "023887e78cfb919f1a00f9a96a88f42131582748cf833fd469490ee66596307c"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/german/sent_starters.txt",
+        "bytes": 762,
+        "sha256": "fe4b63edbdd33f78ba0a755f035680a864948b145ae82fc99072440a62a77acd"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/greek/abbrev_types.txt",
+        "bytes": 570,
+        "sha256": "0d56253b7ebc83f0f2403479bcf2b8ea51ffdea89ee60e34018eb32e4750d683"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/greek/collocations.tab",
+        "bytes": 118,
+        "sha256": "0fd732534d56177c80874125ca894ae60aee7b052ee2865a405b454cfd737a6f"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/greek/ortho_context.tab",
+        "bytes": 632838,
+        "sha256": "a87e4467791f974f808c0d396f6c82cd3a014d4fb4458a2287e2fcbce7084e9c"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/greek/sent_starters.txt",
+        "bytes": 567,
+        "sha256": "1a450aec85164e3fbfeb814768c9f120abd7139726af5bb5e2a577096739ca8e"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/italian/abbrev_types.txt",
+        "bytes": 534,
+        "sha256": "5d406f6bfb35e55f6bea282bf148bdcc9e4677860eb01a8e67c34b894274ac50"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/italian/collocations.tab",
+        "bytes": 53,
+        "sha256": "8167b58a049bb04de8d692ed33d72963503a061717cd37cacb33bb2d00669caf"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/italian/ortho_context.tab",
+        "bytes": 369822,
+        "sha256": "462ffd48bc1c9b86efe66d04d826cd1e7a5745be871b8121759ed2920a967370"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/italian/sent_starters.txt",
+        "bytes": 208,
+        "sha256": "4dc2cdfda34d4f286e5875d6b62b148771a799a71f0d45b504da23cb61b59d51"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/norwegian/abbrev_types.txt",
+        "bytes": 496,
+        "sha256": "beced74076edabe64f45effb823012d1396db41f35fa1d8be2ac6b69bf7bc40f"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/norwegian/collocations.tab",
+        "bytes": 869,
+        "sha256": "9c815b01e2f7518552b53f09012644df1fa0d8c7642baff9dc5f61e85e0be422"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/norwegian/ortho_context.tab",
+        "bytes": 734070,
+        "sha256": "57ea2aa129de6ae414cd0cbecba8b2399c4fde775a2145776a7e8f1023f3f183"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/norwegian/sent_starters.txt",
+        "bytes": 378,
+        "sha256": "2b49ef0f0c2e1b4e8b06aee1172e4d88ce6ad01486fe4182cff6fc443a73ddeb"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/polish/abbrev_types.txt",
+        "bytes": 973,
+        "sha256": "426ea37ca486d0dcc3653653c613d853d0bb3929037f8ee6bf6c12ddae873aa1"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/polish/collocations.tab",
+        "bytes": 1101,
+        "sha256": "961653f0606d85ecb8a760cad4f69df123f010bc4b35de0253feb2d7869666b4"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/polish/ortho_context.tab",
+        "bytes": 1066577,
+        "sha256": "f770804067012ee5707ffc65d90523180e09bab09230a49251777be821a1a4f6"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/polish/sent_starters.txt",
+        "bytes": 518,
+        "sha256": "8564076ae22be3d549a3f097a18458ac2967d65bd28dad7cc223c53f5ce27d1b"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/portuguese/abbrev_types.txt",
+        "bytes": 301,
+        "sha256": "cd5c3cf9c4c8b766bc9edbc96444b0e2189b837b26c583aa2cce83a18e4285f5"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/portuguese/collocations.tab",
+        "bytes": 64,
+        "sha256": "a150d2ca3b8bd9d87cd25f2e1d2142607cdf9344efe914bd034af6017a16d841"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/portuguese/ortho_context.tab",
+        "bytes": 363124,
+        "sha256": "2d9c143f7b322fc74738a21e0b2b04feed1668245ac93e5a8e5399e6e0d8ed8a"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/portuguese/sent_starters.txt",
+        "bytes": 209,
+        "sha256": "7b7f4a1586b1df8592bf294c8dd0d19aaf90740d78ce3b40a31eff2b9669d15e"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/russian/abbrev_types.txt",
+        "bytes": 15363,
+        "sha256": "75191526be516a9918948fe3ad46f6c2c4dee14314359a899b8c2ebf496cb631"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/russian/collocations.tab",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/russian/ortho_context.tab",
+        "bytes": 10,
+        "sha256": "b296cba91006569d3ef79eb2cff2378bf5be5b75e9e83ea119b883d3c3ee69b6"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/russian/sent_starters.txt",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/slovene/abbrev_types.txt",
+        "bytes": 280,
+        "sha256": "b1d6b16d1d2b3c0c4132c1528b9843d1557f7f544044db27f4e8d2d6985faf2b"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/slovene/collocations.tab",
+        "bytes": 1131,
+        "sha256": "4c10daafdff496e369f3a8809bebf187abc851df630457ae93c7ca4fda350651"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/slovene/ortho_context.tab",
+        "bytes": 445129,
+        "sha256": "3ba826bdd7e5543af7af8e317d4652ba8b47fd812157855a6274ec1387a46b3e"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/slovene/sent_starters.txt",
+        "bytes": 358,
+        "sha256": "85ae14dadef3c4c9f753491d84919abb10e09003adfe248794d4a597fabc5793"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/spanish/abbrev_types.txt",
+        "bytes": 234,
+        "sha256": "246a4b3efbad45b63eb9672b718574b535acef6d656f24dc17a46d13a38efba1"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/spanish/collocations.tab",
+        "bytes": 74,
+        "sha256": "fa5ea7dbf61f2b1c12180d660a3012c9faaf4962eb12549d77af95e2a40be65d"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/spanish/ortho_context.tab",
+        "bytes": 337707,
+        "sha256": "1346ecfc57b26174987ffa9bd4a2558a66f46592a513da3859648790351df370"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/spanish/sent_starters.txt",
+        "bytes": 289,
+        "sha256": "4d4f7380ba16380b6158e9e8ead6973c52f27e3c9c88af63f15a41c490998319"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/swedish/abbrev_types.txt",
+        "bytes": 208,
+        "sha256": "1e1a78bd5e7fd6e7eb4b15b751a23d441cda845d5fc0b631958177b2f504da00"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/swedish/collocations.tab",
+        "bytes": 136,
+        "sha256": "bd2260433c94617ba7cf6102e4c1035099a72e5a2f6b60734639252e41633c04"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/swedish/ortho_context.tab",
+        "bytes": 616904,
+        "sha256": "d48c5705d0570993628e539ca211f05cdb5aad7adfcc6ed7b24310941bfac9f8"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/swedish/sent_starters.txt",
+        "bytes": 295,
+        "sha256": "6f0f7a6773f7488a23bafc6c29e7d4554e792d89c6b7a89fbd6a83bec85ef767"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/turkish/abbrev_types.txt",
+        "bytes": 424,
+        "sha256": "de56078c5eeb3fe07e24eab67c4aaf44e2181cbe80edd976cb1622819599d6fd"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/turkish/collocations.tab",
+        "bytes": 273,
+        "sha256": "061ce2981776a8f875da4f24bebd7e138f8da1d9057b43d07f580148ec106a33"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/turkish/ortho_context.tab",
+        "bytes": 642682,
+        "sha256": "fc214227f99d5ea3ee70d208df16b1984eab375d1946ed379061c6cf5c1718be"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/nltk_data/tokenizers/punkt_tab/turkish/sent_starters.txt",
+        "bytes": 613,
+        "sha256": "93239fb55b5d2ae6d945a84a94e118ba8a816326b17cdc11ba8111bea0c97828"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/blocklist/whitelist/whitelisted",
+        "bytes": 5,
+        "sha256": "6bc66a827fe86925af680be5e00da2b7a7f22947c8c0209b22563890258462f6"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/face_blur_filter/Resnet50_Final.pth",
+        "bytes": 109497761,
+        "sha256": "6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/adapter_config.json",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/added_tokens.json",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/chat_template.jinja",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/chat_template.json",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/.no_exist/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/processor_config.json",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/051261b5a784a2e7e5f93de1f86d170d69a9efd9",
+        "bytes": 368,
+        "sha256": "f59da2f87c3cd079bd4f8f3037e81b277c60c498e279a8020331f67a5a3157e8"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/1e5036bed065526c3c212dfbe288752391797c4bb1a284aa18c9a0b23fcaf8ec",
+        "bytes": 798330,
+        "sha256": "1e5036bed065526c3c212dfbe288752391797c4bb1a284aa18c9a0b23fcaf8ec"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/6555f2261d409dea394d6b6973129a53b8725803",
+        "bytes": 409,
+        "sha256": "2b6a1ff67a27e0df9ac0c7d93250fc0d87431c7b366b3d5669217104f9088a26"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/6d6fd0bd6cc263099dc98e4fa383f90c9baa3521",
+        "bytes": 2399357,
+        "sha256": "c6e405cb7c670d56636a9402c81023a55bc6c3c53d89cf02b92f5c5005bfe920"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/70741c5c1f6d21423ebf51ee77ef2fce868c33f2",
+        "bytes": 711,
+        "sha256": "d6423dae508cc3a129d22ea443841c111832a1a73125b8f25ea8736951698bcb"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/a513b447f6b05f640f9980d25f4d8a5cff6cd25d",
+        "bytes": 576,
+        "sha256": "adc04928d8fd19a61822584fe0cf2e813e5ebac17f3e49fb1ea096860ae6457b"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/blobs/ea2abad2b7f8a9c1aa5e49a244d5d57ffa71c56f720c94bc5d240ef4d6e1d94a",
+        "bytes": 3511950624,
+        "sha256": "ea2abad2b7f8a9c1aa5e49a244d5d57ffa71c56f720c94bc5d240ef4d6e1d94a"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/refs/main",
+        "bytes": 40,
+        "sha256": "97fd99709ec6a1fd2913f626a273e05b4df1ed3a5edeba1d965f2073208b6017"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/config.json",
+        "bytes": 576,
+        "sha256": "adc04928d8fd19a61822584fe0cf2e813e5ebac17f3e49fb1ea096860ae6457b"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/model.safetensors",
+        "bytes": 3511950624,
+        "sha256": "ea2abad2b7f8a9c1aa5e49a244d5d57ffa71c56f720c94bc5d240ef4d6e1d94a"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/preprocessor_config.json",
+        "bytes": 368,
+        "sha256": "f59da2f87c3cd079bd4f8f3037e81b277c60c498e279a8020331f67a5a3157e8"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/special_tokens_map.json",
+        "bytes": 409,
+        "sha256": "2b6a1ff67a27e0df9ac0c7d93250fc0d87431c7b366b3d5669217104f9088a26"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/spiece.model",
+        "bytes": 798330,
+        "sha256": "1e5036bed065526c3c212dfbe288752391797c4bb1a284aa18c9a0b23fcaf8ec"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/tokenizer.json",
+        "bytes": 2399357,
+        "sha256": "c6e405cb7c670d56636a9402c81023a55bc6c3c53d89cf02b92f5c5005bfe920"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/models--google--siglip-so400m-patch14-384/snapshots/9fdffc58afc957d1a03a25b10dba0329ab15c2a3/tokenizer_config.json",
+        "bytes": 711,
+        "sha256": "d6423dae508cc3a129d22ea443841c111832a1a73125b8f25ea8736951698bcb"
+      },
+      {
+        "path": "checkpoints/blocklist_filter/nvidia/Cosmos-Guardrail1/video_content_safety_filter/safety_filter.pt",
+        "bytes": 5814682,
+        "sha256": "a408f177d33943b475e3c0644553e38d8499b199eaf1bbf95c9f773f9997a575"
+      },
+      {
+        "path": "checkpoints/detect_faces/model.onnx",
+        "bytes": 54551789,
+        "sha256": "037ee1ed836ab2a386897f13ec800fff7c0c0b2d6d3a6d5b8e7d6899813e97a2"
+      },
+      {
+        "path": "checkpoints/diffusion/torch/auto/multiview/b5ab002d-a120-4fbf-a7f9-04af8615710b_ema_bf16.pt",
+        "bytes": 4776276290,
+        "sha256": "8e72a33ec41523ccd03d26cba49ad7a68aa9b203b851e43468fe9471c6ef2090"
+      },
+      {
+        "path": "checkpoints/diffusion/torch/general/blur/20d9fd0b-af4c-4cca-ad0b-f9b45f0805f1_ema_bf16.pt",
+        "bytes": 4716357097,
+        "sha256": "3f343b08f06dfebdc5c5f660b7e66a5d3bbde2c9b48f1135fa02ca965a604f38"
+      },
+      {
+        "path": "checkpoints/diffusion/torch/general/depth/0f214f66-ae98-43cf-ab25-d65d09a7e68f_ema_bf16.pt",
+        "bytes": 4716367533,
+        "sha256": "cc6d80f49aabbab86c72722ac2a43d98221b2abbb0f219492a182c258a72e689"
+      },
+      {
+        "path": "checkpoints/diffusion/torch/general/edge/ecd0ba00-d598-4f94-aa09-e8627899c431_ema_bf16.pt",
+        "bytes": 4716367533,
+        "sha256": "698677ba650cc13a88dd3ff154bb600072a8a60d98a7b5691b45ddec894e0f1b"
+      },
+      {
+        "path": "checkpoints/diffusion/torch/general/seg/fcab44fe-6fe7-492e-b9c6-67ef8c1a52ab_ema_bf16.pt",
+        "bytes": 4716367533,
+        "sha256": "76afedd0597a39da7205012b898bb2ce86ab0f8cdfc01fb8eaff5031f3555bfc"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/checksums.blake3",
+        "bytes": 6365,
+        "sha256": "68df953a8e850774605c36025776bb1bb69e6a97735a263104bcc3a56f53a974"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch0_block0.trt",
+        "bytes": 172435060,
+        "sha256": "dc128c893d87d30942b3f9d5730da31c5bf3261af7edc902f9eab9a6f26a07e7"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch0_block1.trt",
+        "bytes": 163837324,
+        "sha256": "65af8fe2f0fed42d2964d809e1d6136f51f5b7123f7c4f3a830c66e23a9d9bae"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch0_block2.trt",
+        "bytes": 163920660,
+        "sha256": "bb7a2e6f0c10d0d7c8999d23bca9b1c77ead24c76ba4f772eda4be8bea4095be"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch0_block3.trt",
+        "bytes": 163885636,
+        "sha256": "d838d1dca73432d17635b91b943938f6e44ad0a80ac6a4d32dc5ac7b664a726f"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch1_block0.trt",
+        "bytes": 172420732,
+        "sha256": "240fe9e132bebeb92a6972bf2a17ec9fda83de43df47489de864f5b509aaa95e"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch1_block1.trt",
+        "bytes": 163988564,
+        "sha256": "dcb89e972c632ac3a9f2dc9bd23486a35c2858562b31f766b550f7cb2fc72bf3"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch1_block2.trt",
+        "bytes": 163881052,
+        "sha256": "be59f740114691252c4587fd7a7cc329baea4e2a622da0982a0f3b16cb2b1917"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch1_block3.trt",
+        "bytes": 163991364,
+        "sha256": "68ff5fb9f3473508f62c83c851ce8c71f4710879d4d7c86a4fa02a86d1c86720"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch2_block0.trt",
+        "bytes": 172357340,
+        "sha256": "a2d24517d7f7b8cecdfd024fd92e535faf1ef53b1d361f03dff768a794a2721e"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch2_block1.trt",
+        "bytes": 163858604,
+        "sha256": "8069d809f7ef3dc7593edecb503946cc61823341b9f1947af3f8c5a7c2870e2e"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch2_block2.trt",
+        "bytes": 164149172,
+        "sha256": "10e1c6c42b1e9380174d904497a0334a2dde3295f75a5f54fbe391e528e815e5"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch2_block3.trt",
+        "bytes": 163836716,
+        "sha256": "c3a28cb1d6846c44431177cf4776bd05e6e58fd25504d8ba7e277a868882a74e"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch3_block0.trt",
+        "bytes": 172436500,
+        "sha256": "076131112fc28b6eb6ecc54a9441a1deb85b6b3e85373643d6bb53081c988f74"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch3_block1.trt",
+        "bytes": 163982972,
+        "sha256": "be53ceadf61b90abcf2bfa880c3c1027bbf49d37d7537ca11dab00b757b0e4da"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch3_block2.trt",
+        "bytes": 163880308,
+        "sha256": "5b6ae6066e912d013347df9fed0e80336373563916ff3e84db139aee738075bc"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_controlnet_branch3_block3.trt",
+        "bytes": 163840196,
+        "sha256": "a5936112f9366eb034470d441c9dde7377d26d8352b86cdaba133ac92c3872d7"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block0.trt",
+        "bytes": 155353260,
+        "sha256": "665ef870e835e50a337f225f4537d80e943dcba11c86d55fb1da62c55eb863e5"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block1.trt",
+        "bytes": 155333028,
+        "sha256": "5688756c28abda72647f37d0742e3f0e92537b9b46af7ab00e98be1e5792444d"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block10.trt",
+        "bytes": 155324060,
+        "sha256": "ca37f5bba750ab8455e63f52404474edcfc2c7a79ffb378f2c1b6cc4421c1eff"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block11.trt",
+        "bytes": 155338908,
+        "sha256": "0e4953c1fbcf1da3297a8b63c0d0e2d2e9ee4c18f88fc1ffe1fa2bc4cd93bf75"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block12.trt",
+        "bytes": 155338324,
+        "sha256": "f04e2be01a1752a0452481ec5b42aa795a4cc3687989b3b89c1c49d669e70315"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block13.trt",
+        "bytes": 156284748,
+        "sha256": "b5e9510cd54eafd8a08f785719d7cb7156e212e6771e04db75dc392334c4ef3d"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block14.trt",
+        "bytes": 155396300,
+        "sha256": "dcd9837c398d736ce35bbc5690b4792966b1cf0852acbabe26966bdbde5b859e"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block15.trt",
+        "bytes": 155638964,
+        "sha256": "68dcfbe5f96793335282abc2fc513768e9289b930b9770b6f56e745b8de4afc1"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block16.trt",
+        "bytes": 155338300,
+        "sha256": "063f03982f685d36c57b416fa341e9d4d7d5fbfcc7c29bbeae2e37fe85a9b7f7"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block17.trt",
+        "bytes": 155328532,
+        "sha256": "a6de06a2e4290d852bc1dc66031602e575df5bd0cecb76d46e8834f89762d42d"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block18.trt",
+        "bytes": 155500628,
+        "sha256": "efae6f9c3b40b05e786b45c8e2f09446e63faf0c53e053ab31d53bf57758b901"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block19.trt",
+        "bytes": 155493396,
+        "sha256": "1ed1a080b92039c061b5eb0d7a1926f47e96c0efb16e77679d9eb0d50d283593"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block2.trt",
+        "bytes": 155338364,
+        "sha256": "0bdf6fa0eedec4931434f633e4a9fd5246f5297da5c7aa9eac924fb6893d1979"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block20.trt",
+        "bytes": 156231084,
+        "sha256": "5993f704773a207a7c4691f289090dedb1523bbb55ecc4ddb3fcbe1f3db36fa8"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block21.trt",
+        "bytes": 155390148,
+        "sha256": "ffc95ee5a54ec344784ed8b1dac24ddc17718b7b386dc141724d2c82879f22ad"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block22.trt",
+        "bytes": 155379116,
+        "sha256": "85910e17c2a06c543cfe3376bb67982e861ef790bdcf731f696c49767845dc99"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block23.trt",
+        "bytes": 155530228,
+        "sha256": "bfa9510b363e9a8f9923944112004e7e166a1413981b0ae9f060a9beec749a40"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block24.trt",
+        "bytes": 155421380,
+        "sha256": "be5899309c03f5daaf8250185a25327d3245189e53edd7524a3b3b421e667a4a"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block25.trt",
+        "bytes": 155332772,
+        "sha256": "e204e4c236e4c1e370832fd99887e193258607f91dd574ce5dfa5acb5aefcdee"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block26.trt",
+        "bytes": 155501900,
+        "sha256": "f6bb3b6162aeb97c5d1ab06e0a0feaa901bdc62da47699153f180aa3f94a8070"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block27.trt",
+        "bytes": 156285372,
+        "sha256": "2ed77e80f8c57289fa596f0e19e97730fa5cfe79a81f0194f944a5ad85092d42"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block3.trt",
+        "bytes": 155333532,
+        "sha256": "34df69a2a8c5371c2e5fe823309f5f70579ce23683c73eaf29e7418da345912a"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block4.trt",
+        "bytes": 155378196,
+        "sha256": "cf715ac91d8dac775ef436d8b7f3b8cf942265ffa47a0f0428f6a07063d33987"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block5.trt",
+        "bytes": 155530988,
+        "sha256": "5d181f874a10df2193eaa1c73bcb3aaef8a8588fcab0581772e233e0eabda631"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block6.trt",
+        "bytes": 155328468,
+        "sha256": "1e49d1f3de3ceeba806e92d9490e62229a7d9623a5e0ffca27f9e0a8c0b10001"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block7.trt",
+        "bytes": 155492276,
+        "sha256": "6c986a4874d87e1b6ba3d8cad507512e2544babadf69ba4edd90c989ca53b13a"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block8.trt",
+        "bytes": 155333660,
+        "sha256": "37d08f1fd4b169deb96c395e3d2c22886d1ebd68abef49754785e0798fdd5d20"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/cosmos_transfer2.5_net_block9.trt",
+        "bytes": 155328460,
+        "sha256": "960056e222bd0f81a12e1ccdc5fc36a94298355f93f0845be3cfbb0c855bfff2"
+      },
+      {
+        "path": "checkpoints/diffusion/trt/trt_edge_vis_depth_seg_2B_BF16/sm90/profiles_config.json",
+        "bytes": 40,
+        "sha256": "458760a32b6a8634a8bf0752148cf87d3cba309cb051ec95f53f5297753e8e22"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/added_tokens.json",
+        "bytes": 707,
+        "sha256": "c0284b582e14987fbd3d5a2cb2bd139084371ed9acbae488829a1c900833c680"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/chat_template.jinja",
+        "bytes": 4058,
+        "sha256": "b4230b556815baa1982c0b1eacb181ce965483ee20b1f6e4d9f375294900e02b"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/config.json",
+        "bytes": 2184,
+        "sha256": "65a97c1f952987831481851421076a9a226d7f32dd3b700eb1dbb515a6ef66ae"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/generation_config.json",
+        "bytes": 139,
+        "sha256": "049538ecbf63115b9b1f06f1f3b7ac049852f0d12d3853e1330d1f0813aa64b1"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/hf_quant_config.json",
+        "bytes": 239,
+        "sha256": "24c2930fce9a94fc66fe2aeb034e9c7fb6097d20117866d437b5323cd9157c3d"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/merges.txt",
+        "bytes": 1671853,
+        "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/model.safetensors",
+        "bytes": 751773680,
+        "sha256": "87a1d54c3ee7aad29cc742eeba153ca19f4da9fdfd7ce65802d6865c8d046d08"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/modelopt_model.pth",
+        "bytes": 1192458620,
+        "sha256": "13dae662b757e454ede856e9b7dbeffb6d6ccf201c8d7a0398709874bfa2a2e3"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/special_tokens_map.json",
+        "bytes": 388,
+        "sha256": "a4c29a7f63146cb43eef20b92caab0e2a5000d13d4dc9cd29888bbfad8059466"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/tokenizer.json",
+        "bytes": 11422654,
+        "sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/tokenizer_config.json",
+        "bytes": 5407,
+        "sha256": "67e5a0a11cd35f9c00ee52e0af4cdc0baa75fea0cb5fce7d1beb251b4621d15c"
+      },
+      {
+        "path": "checkpoints/qwen_guard_filter/vocab.json",
+        "bytes": 2776833,
+        "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      },
+      {
+        "path": "checkpoints/siglip_filter/model.onnx",
+        "bytes": 858356947,
+        "sha256": "ece77f244f7ce9cb384e530ade7fbea98c1e884ae70fbb3c9e8bad68f65287a3"
+      },
+      {
+        "path": "checkpoints/siglip_filter_processor/preprocessor_config.json",
+        "bytes": 368,
+        "sha256": "f59da2f87c3cd079bd4f8f3037e81b277c60c498e279a8020331f67a5a3157e8"
+      },
+      {
+        "path": "depth_anything_v2/config.json",
+        "bytes": 950,
+        "sha256": "c56698d3643dde1f83ea2212759e6b31a22b8f827246a36dd007ee8a22b3ff75"
+      },
+      {
+        "path": "depth_anything_v2/model.safetensors",
+        "bytes": 99173660,
+        "sha256": "3152477ce0d8d6978d76b995120de97cb5b928701fd0f817769f59e249a16b70"
+      },
+      {
+        "path": "depth_anything_v2/preprocessor_config.json",
+        "bytes": 775,
+        "sha256": "d41175c0d889477ca8fc67191e540faef14baf6275157b3fdecf78469e6bbf84"
+      },
+      {
+        "path": "grounding_dino/config.json",
+        "bytes": 1737,
+        "sha256": "eda416dae6f49419ff831b1c190ec430a060b19aae688dbaf2425a075b650608"
+      },
+      {
+        "path": "grounding_dino/model.safetensors",
+        "bytes": 933400872,
+        "sha256": "5548f844c928c4b6f411fa8cbcc2bfa8dbbba437cb1d513975519f93c2a9ed21"
+      },
+      {
+        "path": "grounding_dino/preprocessor_config.json",
+        "bytes": 457,
+        "sha256": "8454179ba95e2ad22947835aad7b45862a601fc0055ab88bf1ee70892d3aea60"
+      },
+      {
+        "path": "grounding_dino/special_tokens_map.json",
+        "bytes": 125,
+        "sha256": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3"
+      },
+      {
+        "path": "grounding_dino/tokenizer.json",
+        "bytes": 711396,
+        "sha256": "d241a60d5e8f04cc1b2b3e9ef7a4921b27bf526d9f6050ab90f9267a1f9e5c66"
+      },
+      {
+        "path": "grounding_dino/tokenizer_config.json",
+        "bytes": 1237,
+        "sha256": "d40ab645b68211910b9170d22433d43186a6ec8ee6fd10ba170524b25bf4fb56"
+      },
+      {
+        "path": "grounding_dino/vocab.txt",
+        "bytes": 231508,
+        "sha256": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3"
+      },
+      {
+        "path": "sam2/sam2_hiera_large.pt",
+        "bytes": 897952466,
+        "sha256": "7442e4e9b732a508f80e141e7c2913437a3610ee0c77381a66658c3a445df87b"
+      }
+    ]
+  },
+  "license": {
+    "id": "NVIDIA-Open-Model-License AND NVIDIA-Software-License-Agreement",
+    "state": "verified"
+  },
+  "entitlement_state": "verified",
+  "owner": "platform-pvc",
+  "retention": "retained-platform"
+}

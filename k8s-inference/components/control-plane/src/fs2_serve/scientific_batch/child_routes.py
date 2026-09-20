@@ -29,6 +29,10 @@ from .workload_routes import WorkloadBatchRepository, authorize_workload_capabil
 PREFIX = "/internal/scientific-workloads/cosmos"
 MODEL_ID = "cosmos3-nano"
 PARENT_MODEL_ID = "cosmos3-lerobot-augmentation"
+PARENT_CONTRACTS = frozenset({
+    (PARENT_MODEL_ID, "augment-dataset", "main", "cosmos3-lerobot-v3-0-6-1"),
+    ("physical-ai-video-augmentation", "augment-videos", "main", "paidf-video-v1"),
+})
 
 
 class ChildInvocation(StrictModel):
@@ -50,17 +54,13 @@ def scientific_child_router(
 
     async def authorized(authorization: str | None) -> tuple[ScientificWorkloadCapability, Principal, OperationView]:
         capability, _, _ = await authorize_workload_capability(authority, batches, authorization)
-        if (capability.model_id, capability.stage_id, capability.shard_id) != (
-            PARENT_MODEL_ID,
-            "augment-dataset",
-            "main",
-        ) or capability.collector_id != "cosmos3-lerobot-v3-0-6-1":
+        if (capability.model_id, capability.stage_id, capability.shard_id, capability.collector_id) not in PARENT_CONTRACTS:
             raise HTTPException(403, "workload cannot delegate Cosmos operations")
         parent = await store.get_operation(capability.operation_id, tenant_id=capability.tenant_id)
         token = await store.get_token(parent.token_id)
         now = datetime.now(UTC)
         if (
-            parent.model_id != PARENT_MODEL_ID
+            parent.model_id != capability.model_id
             or parent.protocol != "scientific-batch-v1"
             or parent.parent_operation_id is not None
             or parent.status.terminal

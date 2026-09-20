@@ -25,7 +25,7 @@ INVENTORIES = (
 DOMAINS = {
     "structure", "protein-design", "protein-language", "genomics", "small-molecule",
     "single-cell", "imaging", "sequence-search", "age-prediction",
-    "generative-media", "speech", "general-ai",
+    "generative-media", "physical-ai-robotics", "speech", "general-ai",
 }
 
 

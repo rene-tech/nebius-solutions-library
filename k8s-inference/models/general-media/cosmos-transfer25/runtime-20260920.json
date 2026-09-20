@@ -1,0 +1,454 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "cosmos-transfer2-5-2b",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "cosmos-transfer2-5-2b",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "cosmos-transfer2-5-2b",
+          "fs2-serve.nebius.ai/task": "video-canary-20260920"
+        }
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "cosmos-transfer2-5-2b-cache",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "cosmos-transfer2-5-2b",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "cosmos-transfer2-5-2b",
+          "fs2-serve.nebius.ai/task": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "storageClassName": "compute-csi-default-sc",
+        "resources": {
+          "requests": {
+            "storage": "96Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "cosmos-transfer2-5-2b",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "cosmos-transfer2-5-2b",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "cosmos-transfer2-5-2b",
+          "fs2-serve.nebius.ai/task": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "cosmos-transfer2-5-2b"
+          }
+        },
+        "policyTypes": [
+          "Ingress",
+          "Egress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "fs2-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8000
+              }
+            ]
+          }
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "ipBlock": {
+                  "cidr": "0.0.0.0/0",
+                  "except": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "127.0.0.0/8",
+                    "100.64.0.0/10"
+                  ]
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 443
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "cosmos-transfer2-5-2b",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "cosmos-transfer2-5-2b",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "cosmos-transfer2-5-2b",
+          "fs2-serve.nebius.ai/task": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "replicas": 0,
+        "revisionHistoryLimit": 2,
+        "strategy": {
+          "type": "Recreate"
+        },
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "cosmos-transfer2-5-2b"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "cosmos-transfer2-5-2b",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "cosmos-transfer2-5-2b",
+              "fs2-serve.nebius.ai/task": "video-canary-20260920"
+            },
+            "annotations": {
+              "fs2-serve.nebius.ai/qualification-state": "isolated-canary-not-customer-ready",
+              "fs2-serve.nebius.ai/nim-manifest-sha256": "67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17"
+            }
+          },
+          "spec": {
+            "terminationGracePeriodSeconds": 60,
+            "automountServiceAccountToken": false,
+            "enableServiceLinks": false,
+            "nodeSelector": {
+              "kubernetes.io/hostname": "computeinstance-e00jqs4xxntre6eycf",
+              "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+            },
+            "tolerations": [
+              {
+                "key": "dedicated",
+                "operator": "Equal",
+                "value": "fs2-inference",
+                "effect": "NoSchedule"
+              }
+            ],
+            "imagePullSecrets": [
+              {
+                "name": "wan2-ngc-pull"
+              }
+            ],
+            "securityContext": {
+              "runAsNonRoot": true,
+              "fsGroup": 1000,
+              "fsGroupChangePolicy": "OnRootMismatch",
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "containers": [
+              {
+                "name": "nim",
+                "image": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+                "imagePullPolicy": "IfNotPresent",
+                "command": [
+                  "python3",
+                  "-c",
+                  "import os\ncredential = os.environ.get(\"NGC_API_KEY\", \"\").strip()\nif not credential or not credential.isascii() or any(ord(c) <= 32 or ord(c) == 127 for c in credential):\n    raise SystemExit(\"NGC credential format is invalid; value suppressed\")\nos.environ[\"NGC_API_KEY\"] = credential\nentrypoint = \"/opt/nvidia/nvidia_entrypoint.sh\"\nos.execv(entrypoint, [entrypoint, \"/bin/bash\", \"-c\", \"$SERVER_START_SCRIPT_PATH\"])\n"
+                ],
+                "env": [
+                  {
+                    "name": "NGC_API_KEY",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "wan2-ngc-api",
+                        "key": "NGC_API_KEY"
+                      }
+                    }
+                  },
+                  {
+                    "name": "NIM_MODEL_PROFILE",
+                    "value": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672"
+                  },
+                  {
+                    "name": "NIM_CACHE_PATH",
+                    "value": "/opt/nim/.cache"
+                  },
+                  {
+                    "name": "NIM_HTTP_API_PORT",
+                    "value": "8001"
+                  },
+                  {
+                    "name": "NIM_HTTP_MAX_WORKERS",
+                    "value": "1"
+                  },
+                  {
+                    "name": "NIM_ALLOW_URL_INPUT",
+                    "value": "0"
+                  },
+                  {
+                    "name": "NIM_ENABLE_WARMUP",
+                    "value": "1"
+                  },
+                  {
+                    "name": "NIM_LOG_LEVEL",
+                    "value": "INFO"
+                  }
+                ],
+                "ports": [
+                  {
+                    "name": "nim-http",
+                    "containerPort": 8001
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "8",
+                    "memory": "96Gi",
+                    "ephemeral-storage": "8Gi",
+                    "nvidia.com/gpu": "1"
+                  },
+                  "limits": {
+                    "cpu": "20",
+                    "memory": "160Gi",
+                    "ephemeral-storage": "12Gi",
+                    "nvidia.com/gpu": "1"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "runAsUser": 1000,
+                  "runAsGroup": 1000
+                },
+                "startupProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/ready",
+                    "port": "nim-http"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 270
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/ready",
+                    "port": "nim-http"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/live",
+                    "port": "nim-http"
+                  },
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "volumeMounts": [
+                  {
+                    "name": "cache",
+                    "mountPath": "/opt/nim/.cache"
+                  },
+                  {
+                    "name": "temporary",
+                    "mountPath": "/tmp"
+                  },
+                  {
+                    "name": "shared-memory",
+                    "mountPath": "/dev/shm"
+                  }
+                ]
+              },
+              {
+                "name": "adapter",
+                "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+                "imagePullPolicy": "IfNotPresent",
+                "env": [
+                  {
+                    "name": "COSMOS_TRANSFER_NIM_URL",
+                    "value": "http://127.0.0.1:8001"
+                  }
+                ],
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 8000
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "500m",
+                    "memory": "512Mi",
+                    "ephemeral-storage": "512Mi"
+                  },
+                  "limits": {
+                    "cpu": "2",
+                    "memory": "2Gi",
+                    "ephemeral-storage": "1Gi"
+                  }
+                },
+                "securityContext": {
+                  "runAsUser": 10001,
+                  "runAsGroup": 10001,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "startupProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/ready",
+                    "port": "http"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 270
+                },
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/ready",
+                    "port": "http"
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/v1/health/live",
+                    "port": "http"
+                  },
+                  "periodSeconds": 30,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                "volumeMounts": [
+                  {
+                    "name": "adapter-tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "cache",
+                "persistentVolumeClaim": {
+                  "claimName": "cosmos-transfer2-5-2b-cache"
+                }
+              },
+              {
+                "name": "temporary",
+                "emptyDir": {
+                  "sizeLimit": "8Gi"
+                }
+              },
+              {
+                "name": "shared-memory",
+                "emptyDir": {
+                  "medium": "Memory",
+                  "sizeLimit": "32Gi"
+                }
+              },
+              {
+                "name": "adapter-tmp",
+                "emptyDir": {
+                  "sizeLimit": "512Mi"
+                }
+              }
+            ],
+            "serviceAccountName": "cosmos-transfer2-5-2b"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "cosmos-transfer2-5-2b",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "cosmos-transfer2-5-2b",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "cosmos-transfer2-5-2b",
+          "fs2-serve.nebius.ai/task": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "type": "ClusterIP",
+        "selector": {
+          "app.kubernetes.io/name": "cosmos-transfer2-5-2b"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 8000,
+            "targetPort": "http"
+          }
+        ]
+      }
+    }
+  ]
+}

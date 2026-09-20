@@ -89,7 +89,7 @@ def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive
         "phenoage", "altumage", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
             "parakeet-realtime-eou-120m-v1", "magpie-tts-multilingual-357m", "diar-streaming-sortformer-4spk-v2-1",
             "cellpose-cpsam-v2", "scvi-scanvi", "sam2-1-hiera-large",
-            "wan2-2-t2v-nim", "wan2-2-i2v-nim",
+            "wan2-2-t2v-nim", "wan2-2-i2v-nim", "cosmos-transfer2-5-2b",
         }
     assert augmented.digest == archive.digest
     assert augmented.tested_model_ids == archive.tested_model_ids
@@ -143,7 +143,7 @@ def test_native_graph_is_exact_source_cpu_formula_or_cuda_weights_without_routes
 
 def test_wan_nim_profiles_keep_exact_source_and_platform_pvc_acquisition(archive):
     augmented = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
-    for model_id in ("wan2-2-t2v-nim", "wan2-2-i2v-nim"):
+    for model_id in ("wan2-2-t2v-nim", "wan2-2-i2v-nim", "cosmos-transfer2-5-2b"):
         value = augmented.model(model_id).to_dict()
         (variant,) = augmented.variants_for(model_id)
         plan = augmented.acquisition_plan(model_id)

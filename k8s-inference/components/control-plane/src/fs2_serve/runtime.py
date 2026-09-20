@@ -1028,6 +1028,8 @@ class RuntimeClient:
                   and source_model == "cosmos3-nano")
         wan2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                 and source_model in {"wan2-2-t2v-nim", "wan2-2-i2v-nim"})
+        cosmos_transfer = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                           and source_model == "cosmos-transfer2-5-2b")
         sam2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                 and source_model == "sam2-1-hiera-large")
         if speech:
@@ -1134,6 +1136,11 @@ class RuntimeClient:
                 if magpie:
                     usage = self._magpie_wave_usage(bytes(content), content_type)
                     semantic = "protocol_valid"
+                elif cosmos_transfer:
+                    if content_type != "video/mp4":
+                        raise RuntimeProtocolError("Cosmos Transfer must return a verified MP4")
+                    self._visual_binary_valid(bytes(content), content_type)
+                    semantic, usage = "protocol_valid", None
                 elif ((cosmos and content_type == "image/png")
                       or ((cosmos or wan2) and content_type == "video/mp4")):
                     self._visual_binary_valid(bytes(content), content_type)
