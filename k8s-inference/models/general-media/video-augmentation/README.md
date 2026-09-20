@@ -1,6 +1,6 @@
 # NVIDIA Physical AI video augmentation — integration candidate
 
-Status: implemented locally; **not activated, not GPU end-to-end qualified, and not ready for customer use**. The candidate profile is deliberately unrouted. Local tests and live caption-provider checks are not Cosmos generation evidence.
+Status (2026-09-20): isolated workbench deployed and real GPU prerequisites exercised; **quality qualification failed, the video App is not activated, and it is not ready for customer use**. Browser upload is verified. Three short generated videos were rejected by motion or weather checks; a longer 720p request stalled and was cancelled. The candidate profile remains deliberately unrouted. See [the canary report](acceptance/canary-20260920.md).
 
 ## Workflow
 
@@ -20,7 +20,7 @@ The generation backend is **Cosmos3-Nano transfer**, not Cosmos Transfer 2.5. No
 
 ## Input and batch limits
 
-| Property | Implemented bound |
+| Property | Implemented parser bound, not GPU/quality-qualified coverage |
 | --- | --- |
 | Container | MP4, one video stream |
 | Geometry | 640×480 or 1280×720 |
@@ -71,11 +71,13 @@ The image pins the Python base, PAIDF commit and upstream `uv.lock`; it contains
 
 `acceptance/caption-provider.json` and `acceptance/caption-verification-provider.json` retain actual live Token Factory caption/prompt and weather-verification probes. The unchanged sunny NVIDIA sample was rejected as overcast and accepted as clear. These are provider capability probes, predate the final adapter source identity, and **do not show a transformed video**.
 
-See `acceptance/local-validation.json` for exact local builds and test scope. No image has been pushed, no GPU preview or approved GPU batch has run, and no public release qualification is attached.
+See `acceptance/local-validation.json` for the historical local builds and test scope. Worker/workbench images were subsequently published for the isolated canary; their immutable identities, real GPU failures and upload evidence are in `acceptance/canary-20260920.json`. Generation used the exact local worker against public hosted Cosmos, not the hosted parent or chat preview path. No approved GPU batch, clean customer cohort, or public release qualification is attached.
 
 ## Safe activation and remaining acceptance
 
-The shared Stockholm backend advanced after this branch was created. Mainline changes through `27d4d688b7d40f447d7aa028369c4fcedec3f937` have now been merged into this candidate and the expanded regression suite rerun. **Do not replace a newer shared release with an older baseline.** Recheck the actual deployment and integrate any subsequent backend/workbench changes first, without removing other owners' work.
+The shared Stockholm backend advanced after this branch was created. Backend changes through `78f40fe81` and workbench changes through `1250a00` were merged before the canary builds and regression checks. The shared backend remains at Helm release190; its Helm values and Cosmos spec were unchanged in the final audit. **Do not replace a newer shared release with an older baseline.** Recheck the actual deployment and integrate any subsequent backend/workbench changes first, without removing other owners' work.
+
+`activation/prepare.py` prepares an additive, unpublished overlay from a captured live release. It preserves existing execution rows, snapshot bundles and qualification baselines, and refuses missing/failed exact-worker GPU, structure, motion or weather evidence. Its output is only an onboarding canary, never a customer qualification. The current failed receipt cannot activate it. No provider Secret or new App grant was added to the shared backend.
 
 1. Publish immutable worker and integrated control-plane/workbench images. Record registry digests, not local Docker image IDs as registry receipts.
 2. Complete onboarding: additive workload profile and execution-map row for `augment-videos/main`, `paidf-video-v1`; exact image/execution identity; provider environment/Secret; appropriate CPU service account and artifact workspace. Keep existing qualification identities unchanged. Add public-site/catalog metadata before any customer publication.
