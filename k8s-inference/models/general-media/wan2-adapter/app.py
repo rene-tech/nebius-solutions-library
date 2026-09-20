@@ -18,7 +18,7 @@ MODEL_REVISION = (
     "nim-1.0.0@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b"
 )
 VARIANT = os.environ.get("WAN_VARIANT", "t2v")
-UPSTREAM = os.environ.get("WAN_UPSTREAM_URL", "http://127.0.0.1:8001").rstrip("/")
+UPSTREAM = os.environ.get("WAN_UPSTREAM_URL", "http://127.0.0.1:9000").rstrip("/")
 MAX_VIDEO_BYTES = 512 * 1024 * 1024
 MAX_IMAGE_DATA_URL_CHARS = 32 * 1024 * 1024
 
@@ -122,7 +122,10 @@ def _mp4_metadata(raw: bytes) -> dict[str, object]:
         if raw[hdlr[1] + 8 : hdlr[1] + 12] != b"vide":
             continue
         tkhd_version = raw[tkhd[1]]
-        dimension_offset = 80 if tkhd_version == 0 else 92
+        # Offsets are relative to the full-box payload, which already starts
+        # with the four-byte version/flags field. Width therefore begins at
+        # byte 76 for version 0 and byte 88 for version 1.
+        dimension_offset = 76 if tkhd_version == 0 else 88
         if tkhd_version not in {0, 1} or tkhd[2] - tkhd[1] < dimension_offset + 8:
             raise ValueError("invalid MP4 track header")
         width_fixed, height_fixed = struct.unpack_from(">II", raw, tkhd[1] + dimension_offset)
