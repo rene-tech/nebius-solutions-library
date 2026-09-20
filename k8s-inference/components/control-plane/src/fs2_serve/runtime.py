@@ -649,6 +649,26 @@ class RuntimeClient:
         )])
 
     @staticmethod
+    def _ace_step_wave_usage(body: bytes, content_type: str) -> ReportedUsage:
+        """Validate a bounded ACE-Step WAV and meter its decoded duration."""
+        if (content_type != "audio/wav" or len(body) < 44 or body[:4] != b"RIFF"
+                or body[8:12] != b"WAVE" or int.from_bytes(body[4:8], "little") + 8 != len(body)):
+            raise RuntimeProtocolError("ACE-Step response is not a complete WAV")
+        try:
+            with wave.open(io.BytesIO(body), "rb") as audio:
+                frames, rate = audio.getnframes(), audio.getframerate()
+                if (audio.getcomptype() != "NONE" or not 1 <= audio.getnchannels() <= 2
+                        or audio.getsampwidth() not in {2, 3, 4} or not 8000 <= rate <= 192000
+                        or frames <= 0 or frames / rate > 61
+                        or len(audio.readframes(frames + 1)) != frames * audio.getnchannels() * audio.getsampwidth()):
+                    raise RuntimeProtocolError("ACE-Step WAV format or frame count is invalid")
+        except (wave.Error, EOFError):
+            raise RuntimeProtocolError("ACE-Step WAV decoding failed") from None
+        return ReportedUsage(modalities=[ModalityUsage(
+            modality="audio", direction="output", unit="seconds", amount=frames / rate,
+        )])
+
+    @staticmethod
     def _visual_binary_valid(body: bytes, content_type: str) -> None:
         """Check a pinned local visual runtime container, not perceptual quality.
 
@@ -1024,6 +1044,8 @@ class RuntimeClient:
                       "magpie-tts-multilingual-357m",
                   })
         magpie = speech and source_model == "magpie-tts-multilingual-357m"
+        ace_step = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                    and source_model == "ace-step-1-5")
         cosmos = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                   and source_model == "cosmos3-nano")
         wan2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
@@ -1135,6 +1157,9 @@ class RuntimeClient:
                     capture.finished()
                 if magpie:
                     usage = self._magpie_wave_usage(bytes(content), content_type)
+                    semantic = "protocol_valid"
+                elif ace_step:
+                    usage = self._ace_step_wave_usage(bytes(content), content_type)
                     semantic = "protocol_valid"
                 elif cosmos_transfer:
                     if content_type != "video/mp4":

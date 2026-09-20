@@ -104,6 +104,7 @@ NATIVE_MODELS = (
     "sam2-1-hiera-large",
     "wan2-2-t2v-nim",
     "wan2-2-i2v-nim",
+    "ace-step-1-5",
 )
 
 
@@ -356,6 +357,7 @@ def test_all_catalog_source_endpoints_are_covered(registry):
         "sam2-1-hiera-large",
         "wan2-2-t2v-nim",
         "wan2-2-i2v-nim",
+        "ace-step-1-5",
     } | {
         "qwen3-8b",
         "nv-reason-cxr-3b",

@@ -279,6 +279,9 @@ _PURPOSES = {
     "wan2-2-i2v-nim": (
         "Animate a caller-owned PNG or JPEG into a bounded MP4 with the pinned NVIDIA Wan2.2 NIM i2v deployment."
     ),
+    "ace-step-1-5": (
+        "Generate a bounded WAV music track from a text description and optional lyrics with pinned ACE-Step 1.5."
+    ),
     "sam2-1-hiera-large": (
         "Segment a bounded image automatically or from point/box prompts, or track prompted objects through MP4 video; "
         "returns masks, metadata and a colorful overlay in a ZIP artifact."
@@ -796,6 +799,57 @@ def _wan2_i2v() -> Schema:
         ("prompt", "input_reference"),
         "Wan2.2 NIM image-to-video. Built-in NIM content filtering remains enabled. "
         "The result is a verified MP4 artifact.",
+    )
+
+
+def _ace_step() -> Schema:
+    return _object(
+        {
+            "prompt": _field(
+                "string",
+                "Describe the genre, mood, instrumentation, pacing and production style.",
+                minLength=1,
+                maxLength=4096,
+            ),
+            "lyrics": _field(
+                "string",
+                "Optional lyrics. Omit or use [Instrumental] for music without vocals.",
+                maxLength=12000,
+                default="[Instrumental]",
+            ),
+            "duration_seconds": _field(
+                "number", "Requested audio duration in seconds.", minimum=10, maximum=60, default=20
+            ),
+            "thinking": _field(
+                "boolean", "Use the pinned 4B music language model for planning and audio codes.", default=True
+            ),
+            "seed": _field(
+                "integer", "Deterministic generation seed.", minimum=0, maximum=4294967295, default=0
+            ),
+            "bpm": {
+                "type": ["integer", "null"],
+                "description": "Optional tempo in beats per minute; null lets the model choose.",
+                "minimum": 30,
+                "maximum": 300,
+                "default": None,
+            },
+            "key_scale": _field(
+                "string", "Optional musical key and scale, for example C major.", maxLength=32, default=""
+            ),
+            "time_signature": _field(
+                "string",
+                "Optional time signature.",
+                enum=["", "2", "3", "4", "6", "2/4", "3/4", "4/4", "6/8"],
+                default="",
+            ),
+            "vocal_language": _field(
+                "string", "Language code used when lyrics contain vocals.", pattern=r"^[A-Za-z-]{2,16}$", default="en"
+            ),
+        },
+        ("prompt",),
+        "ACE-Step 1.5 text-to-music generation with one result per request. The qualified path returns a complete "
+        "WAV, uses the turbo diffusion model and can use the pinned 4B planning model. Generated audio must be "
+        "reviewed before publication.",
     )
 
 
@@ -1575,6 +1629,10 @@ _NATIVE_BUILDERS = {
         _wan2_i2v,
         "k8s-inference/models/general-media/wan2-adapter/app.py",
     ),
+    "ace-step-1-5": (
+        _ace_step,
+        "k8s-inference/models/general-media/ace-step/adapter/app.py",
+    ),
     "sam2-1-hiera-large": (
         _sam2,
         "k8s-inference/models/visual-science/sam2/app.py",
@@ -1834,6 +1892,13 @@ def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
             },
             "size": "832x480",
             "seconds": 4,
+            "seed": 7,
+        },
+        "ace-step-1-5": {
+            "prompt": "Instrumental cinematic electronic music for a scientific product demo, precise and optimistic",
+            "lyrics": "[Instrumental]",
+            "duration_seconds": 20,
+            "thinking": True,
             "seed": 7,
         },
         "cosmos-transfer2-5-2b": {
