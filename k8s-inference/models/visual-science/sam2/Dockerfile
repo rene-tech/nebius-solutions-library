@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime@sha256:c8268a92a69bd500f8be0e665b2630ee006dadaf7bfbc24249141b15ff622755
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime@sha256:77f17f843507062875ce8be2a6f76aa6aa3df7f9ef1e31d9d7432f4b0f563dee
 
 ARG SAM2_CHECKPOINT_SHA256
 ARG SOURCE_REVISION
@@ -11,6 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     SAM2_CHECKPOINT=/opt/sam2/checkpoints/sam2.1_hiera_large.pt \
     SAM2_CHECKPOINT_SHA256=${SAM2_CHECKPOINT_SHA256}
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ffmpeg git ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 10001 fs2 && useradd --uid 10001 --gid 10001 --no-create-home fs2

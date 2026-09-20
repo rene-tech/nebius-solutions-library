@@ -1,4 +1,4 @@
-FROM python:3.12.11-slim-bookworm@sha256:519591d6871b7bc437060736b9f7456b8731f1499a57e22e6c285135ae657bf7
+FROM python:3.12.14-slim-trixie@sha256:2f17fc044b579bab302c2e8054d3a686e2cb9a83de48e70534b94cd8ebbe06a9
 
 ARG SOURCE_REVISION
 LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
@@ -6,6 +6,7 @@ LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solut
       org.opencontainers.image.title="Nebius Scientific AI Wan2.2 adapter"
 
 RUN apt-get update \
+    && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 10001 fs2 && useradd --uid 10001 --gid 10001 --no-create-home fs2
