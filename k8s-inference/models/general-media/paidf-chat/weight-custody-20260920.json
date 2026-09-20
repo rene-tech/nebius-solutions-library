@@ -1,0 +1,607 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "qwen3-6-27b-fp8",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "qwen3-6-27b-fp8-cache",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "storageClassName": "compute-csi-default-sc",
+        "resources": {
+          "requests": {
+            "storage": "80Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "qwen3-6-27b-fp8-weights-20260920",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "immutable": true,
+      "data": {
+        "weights.json": "{\n  \"model\": \"Qwen/Qwen3.6-27B-FP8\",\n  \"revision\": \"e89b16ebf1988b3d6befa7de50abc2d76f26eb09\",\n  \"files\": [\n    {\n      \"path\": \"chat_template.jinja\",\n      \"bytes\": 7764,\n      \"sha256\": \"e84f32a23fdda27689f868aa4a1a5621f41133e51a48d7f3efcbea2839574259\"\n    },\n    {\n      \"path\": \"config.json\",\n      \"bytes\": 51346,\n      \"sha256\": \"885e6830f8d6883fefd63e3608c267452da2e6ce353a3494f42a7aa3d70c8434\"\n    },\n    {\n      \"path\": \"generation_config.json\",\n      \"bytes\": 202,\n      \"sha256\": \"e70c136c1b78ddc1fb0905bac8e733a4dc448d4f852a5dd75143fffc70be550e\"\n    },\n    {\n      \"path\": \"layers-0.safetensors\",\n      \"bytes\": 383865448,\n      \"sha256\": \"5a6c052e37a754549e8f81c6fb32b050419f0fc2f71598817e08d0446b3f309d\"\n    },\n    {\n      \"path\": \"layers-1.safetensors\",\n      \"bytes\": 383865448,\n      \"sha256\": \"9a2efd1048386e560c8241c7b972e213b516f0cbeafc4de6f486bd7faddb8c39\"\n    },\n    {\n      \"path\": \"layers-10.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"ebc4fd84671c2ac2d8d7b8da3707ed5d30738771a22eecc883d707521ed513a0\"\n    },\n    {\n      \"path\": \"layers-11.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"9daf0f0b763489c0869061669293f93213d6060b1b0c88061b53bb97f9082cd6\"\n    },\n    {\n      \"path\": \"layers-12.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"922729fcaedaece39e7b0fba137e3b900fbc3fe6bd8a85b16a215658be86938f\"\n    },\n    {\n      \"path\": \"layers-13.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"61c0a820b09d58e45e516c56532007155b0fd214c11fa8906640c9217da95c84\"\n    },\n    {\n      \"path\": \"layers-14.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"c2faab3a2ecddde0e762b3870c75f6fd83886edbabbd99ac40d641122d29e652\"\n    },\n    {\n      \"path\": \"layers-15.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"e75fbe4de60c0420912b91f379c29c95a49644feee6fe8a0bd3dd638ae07ea2b\"\n    },\n    {\n      \"path\": \"layers-16.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"84776e1d0a62c40730a4bc0f0e2c68242ba9a6150975d8992747fb6ecc0ebfcc\"\n    },\n    {\n      \"path\": \"layers-17.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"c7e32717b97f9553d62734f01bed4cc970dcf6bd3d5ba67c7704290656523d7e\"\n    },\n    {\n      \"path\": \"layers-18.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"1c6aed5f416dee34bb7ccfc322e0aa33f192b40afeab4b69fce784b2b349e253\"\n    },\n    {\n      \"path\": \"layers-19.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"63e1b8af41de9851ed279f9d4f42566febf81d13ae47e469ea1009a26c6b64e0\"\n    },\n    {\n      \"path\": \"layers-2.safetensors\",\n      \"bytes\": 383865448,\n      \"sha256\": \"c2709097f77e8ec7204f908f54d7b84343139163e600815789124cbf15a709c6\"\n    },\n    {\n      \"path\": \"layers-20.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"c5945b2e40f3d97cb01d0cedcb60ea36f61ab585179ab0c02fdeec3d360f724d\"\n    },\n    {\n      \"path\": \"layers-21.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"c8a7696ad5cd1be016cfc553351ee4b588f3d972084dd47028db8dba9b113870\"\n    },\n    {\n      \"path\": \"layers-22.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"08481a6a46057d0bcdcd2598d4f67d5f821725fc483800cd360c2d7047907e08\"\n    },\n    {\n      \"path\": \"layers-23.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"13b2ba6536c77330fa1c40e91c4c707d5086803299e0f57dd03142bb28faaaa4\"\n    },\n    {\n      \"path\": \"layers-24.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"0f7855ee6b018e707d015f445f7e8b9542003104dbd0436e83e8c0dec73bdd17\"\n    },\n    {\n      \"path\": \"layers-25.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"fe49c034e095263e51b391895ccb5098741e06d75a6788769beb72fd50708846\"\n    },\n    {\n      \"path\": \"layers-26.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"14f086ff505e9df89c2fb938c947b0d023f6f19d3cecdc7f03a70caf36ea6ed4\"\n    },\n    {\n      \"path\": \"layers-27.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"4fa89a43e7196b18e6c67478aeedc1b3ab4853fa3bc4305d4ac73341b70e7e24\"\n    },\n    {\n      \"path\": \"layers-28.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"f10aecd4f9800052bbf1ad2cca939eb44dc205d42ff546096ce9212bd6eae411\"\n    },\n    {\n      \"path\": \"layers-29.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"633058fe6f1ec434c79e5c50d04c83b1955d52ca1889b1adca0e2db1cad9fa16\"\n    },\n    {\n      \"path\": \"layers-3.safetensors\",\n      \"bytes\": 372313744,\n      \"sha256\": \"a874cf17d3480894aa13eb34568e1025f10c4d6b96f483cd93be583849312a0f\"\n    },\n    {\n      \"path\": \"layers-30.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"f9af47cefbdb300129c25eee1127c50629d9a2eba7f862a58a430a2cb378cf55\"\n    },\n    {\n      \"path\": \"layers-31.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"2a2e87f569b5da06a87b83df628cb27f491f3dbed55ca82054820cb382cffd2e\"\n    },\n    {\n      \"path\": \"layers-32.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"ca63c9dc522a1f0efd39e2cd7f5fb0efdb4274eabce5c15cc9aab11463cb3bb8\"\n    },\n    {\n      \"path\": \"layers-33.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"bb8eb220efa6a599a4ee29914d59ca26fe13fe64ec6f9a5ccff300432abc572b\"\n    },\n    {\n      \"path\": \"layers-34.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"6e08147ff5c8e0d5d7207d62ede78d6194f1453165cfab940743ff327bb0e6e5\"\n    },\n    {\n      \"path\": \"layers-35.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"f4391ffd8245e648eeaad69954721f106ea0423a56f9abee921d3d2880d98c03\"\n    },\n    {\n      \"path\": \"layers-36.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"5b077d63785d5c2b20ab5c0b8895b08941af08bb5685a1b6a5a3292c3eac638f\"\n    },\n    {\n      \"path\": \"layers-37.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"d38c28d8c86cc147e5edc1935dec46687a6b3a8bc0d712e829003dd9cd4fab7d\"\n    },\n    {\n      \"path\": \"layers-38.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"1628a41fa5d3dbcf2ffde423530a9e94e7228e247e922e2269bd348071a76365\"\n    },\n    {\n      \"path\": \"layers-39.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"889c827bbff3fa6b78558dcdfd24670894b8a450395ec418e7a4f3202789e0b1\"\n    },\n    {\n      \"path\": \"layers-4.safetensors\",\n      \"bytes\": 383865448,\n      \"sha256\": \"9eb31d85023776894347a56101ee067f369d0d3c024f1331f5c7cba1f45b6df4\"\n    },\n    {\n      \"path\": \"layers-40.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"5f90d2b2d16e5c51a078f21eed843d80c22af71401669577d274ea7f2c1ce95f\"\n    },\n    {\n      \"path\": \"layers-41.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"80877a16835f7311a112ad0bbaf1d19997142ea3e1df95ffe446fd52ad1f80d8\"\n    },\n    {\n      \"path\": \"layers-42.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"c1bf34d1a3e4d36b342c5c680bb12c4ce74f02530dff33b735fad27470ef2594\"\n    },\n    {\n      \"path\": \"layers-43.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"10eceff499a24e0072a40b960671f00fc5012d7451f22cb6883f358e085ce276\"\n    },\n    {\n      \"path\": \"layers-44.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"673543b94e59003265ae648bba11389c6735ee3264ec164108b6db99f1219587\"\n    },\n    {\n      \"path\": \"layers-45.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"77b8c7a9cc451a378ee8d6927ce1c4b9664adb83c4786440eec099591dc98f32\"\n    },\n    {\n      \"path\": \"layers-46.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"9ee06b8029b7812644bd5fb01b8bfea7b640353769d094ae59d8c82d986a8b7b\"\n    },\n    {\n      \"path\": \"layers-47.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"6a8e0ddb389485965cd30bd0a90d1be5e1acb65cb6311ce337199f268c3120f6\"\n    },\n    {\n      \"path\": \"layers-48.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"70bd74dcdf4ea8b09e1ae3463977a05aba73f2c02397491bb641a0a3ca6832a3\"\n    },\n    {\n      \"path\": \"layers-49.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"a3481f971433ecc9041f44a555e443ff124e037601b36eab0bb3057946e041e4\"\n    },\n    {\n      \"path\": \"layers-5.safetensors\",\n      \"bytes\": 383865448,\n      \"sha256\": \"a8c9ea40638fd66bd8ab21940df215e7921b4af04646d758d74425be011a9b6f\"\n    },\n    {\n      \"path\": \"layers-50.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"1aa60d9cb7f867a2033be0b1ff053049f09a6623826dd0d37daed3281479b875\"\n    },\n    {\n      \"path\": \"layers-51.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"511f64772c1a5a15292eb1c48166b9d206088aed283185e10877fc43308097bd\"\n    },\n    {\n      \"path\": \"layers-52.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"92c35a4e850b4c0b87a1eab42c47996504e062a8a11699ada20fcea0b88f36c7\"\n    },\n    {\n      \"path\": \"layers-53.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"ab48cad204502ddbf17f5ee2d5e52457baac965300cc15e8a25f35c843b4d526\"\n    },\n    {\n      \"path\": \"layers-54.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"2804cee95e18e9e516b9490c36ea7f41553a3fcb4455cf44a361d6086ed214a3\"\n    },\n    {\n      \"path\": \"layers-55.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"543841981255fce51f0d84fe2db4de580594f6c6d6a590ae47ffbdbd01211571\"\n    },\n    {\n      \"path\": \"layers-56.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"9847da2610e67b1f0ff39d8d103c7814f95bb8ede4204d5ae3055a8589bb0313\"\n    },\n    {\n      \"path\": \"layers-57.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"32fe173c033e46648bc71bc8e5036565234c0c13ac66acb2ad84c9cbb426b90e\"\n    },\n    {\n      \"path\": \"layers-58.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"c9858a0c4bd8cb980829a45d3f9ca52a0bd506c6a0775eb179d3e5ebfaae7867\"\n    },\n    {\n      \"path\": \"layers-59.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"3c30fd14e883c15af50e2f647c2d0b8f3a2fca96904e4b37cc8bb1956a133606\"\n    },\n    {\n      \"path\": \"layers-6.safetensors\",\n      \"bytes\": 383865448,\n      \"sha256\": \"ad8b704be0cde8a774c4a49af59336d2b48b574446c1eddff8ba35d20d05ae69\"\n    },\n    {\n      \"path\": \"layers-60.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"1f24aa7a99e72f658089462b258613b11d06d6e11733ff5d5f864c663a190f92\"\n    },\n    {\n      \"path\": \"layers-61.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"0b083f4afca3538f87545d4fc50817292fc80061a731a5f0235f5c406be87b45\"\n    },\n    {\n      \"path\": \"layers-62.safetensors\",\n      \"bytes\": 383865472,\n      \"sha256\": \"b1e4c80f95241cc7d269d7cf6a35291c8b455f2d4f1381e4eafbfccb35add125\"\n    },\n    {\n      \"path\": \"layers-63.safetensors\",\n      \"bytes\": 372313760,\n      \"sha256\": \"7e27ec71df803eb38ba93aead54daaf1110d3f7124416443a30a3c81abc1c805\"\n    },\n    {\n      \"path\": \"layers-7.safetensors\",\n      \"bytes\": 372313744,\n      \"sha256\": \"2acb7e8d035d730a1c81c36c3b20ca15020b89d2bcd4462259f2ecb2a8dcb828\"\n    },\n    {\n      \"path\": \"layers-8.safetensors\",\n      \"bytes\": 383865448,\n      \"sha256\": \"81ebe095241562b2e2ace8875e2771f0cdb68e76286a18506ea19a749b8de9b4\"\n    },\n    {\n      \"path\": \"layers-9.safetensors\",\n      \"bytes\": 383865448,\n      \"sha256\": \"fdd926f3e8c335eb21a2b41cf635cb241f337a5d47310ef41ae3d43bf53410c3\"\n    },\n    {\n      \"path\": \"merges.txt\",\n      \"bytes\": 3353259,\n      \"sha256\": \"a9d356d7bdf1ef4949e3e748e95b8e10ad9d4e2e838eddc38a0a7b6b94d1db8d\"\n    },\n    {\n      \"path\": \"model.safetensors.index.json\",\n      \"bytes\": 137335,\n      \"sha256\": \"6d19a4e607604c1ac631f810a56e6084c892b4cb0251c530c6a24fc877f9fb4b\"\n    },\n    {\n      \"path\": \"mtp.safetensors\",\n      \"bytes\": 477202224,\n      \"sha256\": \"9557770331f1f648eb96039f2a1e7cdc5742fe15c0f5777c43063b2c12a60f4c\"\n    },\n    {\n      \"path\": \"outside.safetensors\",\n      \"bytes\": 6007102112,\n      \"sha256\": \"27a91100d904f6acc1c86d08675691199e1fe2da5da613106fb01ae4809b3ac1\"\n    },\n    {\n      \"path\": \"preprocessor_config.json\",\n      \"bytes\": 390,\n      \"sha256\": \"27225450ac9c6529872ee1924fcb0962ff5634834f817040f444118116f4e516\"\n    },\n    {\n      \"path\": \"tokenizer.json\",\n      \"bytes\": 12807982,\n      \"sha256\": \"5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42\"\n    },\n    {\n      \"path\": \"tokenizer_config.json\",\n      \"bytes\": 16718,\n      \"sha256\": \"5186f0defcd7f232382c7f0aebcd2252d073bb921ab240e407b7ae8745d2b29b\"\n    },\n    {\n      \"path\": \"video_preprocessor_config.json\",\n      \"bytes\": 385,\n      \"sha256\": \"7768af27c1fafa9cc9011c1dc20067e03f8915e03b63504550e11d5066986d13\"\n    },\n    {\n      \"path\": \"vocab.json\",\n      \"bytes\": 6722759,\n      \"sha256\": \"ce99b4cb2983d118806ce0a8b777a35b093e2000a503ebde25853284c9dfa003\"\n    }\n  ],\n  \"expanded_bytes\": 30889965068,\n  \"hardware\": \"NVIDIA H100 80GB HBM3, GPU-e8bb7cab-3f1d-bbb6-f709-8aa94ed2b74e, 580.173.02, 81559 MiB\"\n}\n",
+        "prepare_weights.py": "\"\"\"Acquire or verify precisely the measured source files on a model-owned PVC.\"\"\"\n\nimport argparse\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\n\nfrom huggingface_hub import snapshot_download\n\n\ndef main():\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\"--verify-only\", action=\"store_true\")\n    args = parser.parse_args()\n    contract = json.loads(Path(\"/contract/weights.json\").read_text())\n    root = Path(snapshot_download(\n        repo_id=contract[\"model\"], revision=contract[\"revision\"],\n        allow_patterns=[item[\"path\"] for item in contract[\"files\"]],\n        cache_dir=os.environ[\"HF_HOME\"] + \"/hub\", local_files_only=args.verify_only,\n        max_workers=4,\n    ))\n    for item in contract[\"files\"]:\n        path = root / item[\"path\"]\n        if not path.is_file() or path.stat().st_size != item[\"bytes\"]:\n            raise ValueError(\"Missing or differently sized model file: \" + item[\"path\"])\n        with path.open(\"rb\") as source:\n            checksum = hashlib.file_digest(source, \"sha256\").hexdigest()\n        if checksum != item[\"sha256\"]:\n            raise ValueError(\"Model file checksum mismatch: \" + item[\"path\"])\n    print(json.dumps({\"model\": contract[\"model\"], \"revision\": contract[\"revision\"],\n                      \"verified_files\": len(contract[\"files\"]),\n                      \"verified_bytes\": sum(item[\"bytes\"] for item in contract[\"files\"]),\n                      \"mode\": \"verify-only\" if args.verify_only else \"acquire-and-verify\"}), flush=True)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "qwen3-6-27b-fp8",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "qwen3-6-27b-fp8"
+          }
+        },
+        "policyTypes": [
+          "Ingress",
+          "Egress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "fs2-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8000
+              }
+            ]
+          }
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "ipBlock": {
+                  "cidr": "0.0.0.0/0",
+                  "except": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "127.0.0.0/8",
+                    "100.64.0.0/10"
+                  ]
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 443
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "qwen3-6-27b-fp8-acquire-20260920",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "backoffLimit": 0,
+        "activeDeadlineSeconds": 3600,
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "qwen3-6-27b-fp8",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "qwen3-6-27b-fp8",
+              "workload.fs2.nebius/owner": "video-canary-20260920"
+            }
+          },
+          "spec": {
+            "restartPolicy": "Never",
+            "serviceAccountName": "qwen3-6-27b-fp8",
+            "automountServiceAccountToken": false,
+            "enableServiceLinks": false,
+            "nodeSelector": {
+              "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+              "kubernetes.io/hostname": "computeinstance-e00jqs4xxntre6eycf"
+            },
+            "tolerations": [
+              {
+                "effect": "NoSchedule",
+                "key": "dedicated",
+                "operator": "Equal",
+                "value": "fs2-inference"
+              },
+              {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/not-ready",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+              },
+              {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/unreachable",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+              },
+              {
+                "effect": "NoSchedule",
+                "key": "nvidia.com/gpu",
+                "operator": "Exists"
+              }
+            ],
+            "securityContext": {
+              "fsGroup": 1000,
+              "runAsGroup": 1000,
+              "runAsNonRoot": true,
+              "runAsUser": 65534,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "containers": [
+              {
+                "name": "acquire",
+                "image": "docker.io/vllm/vllm-openai@sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90",
+                "command": [
+                  "python3",
+                  "/contract/prepare_weights.py"
+                ],
+                "env": [
+                  {
+                    "name": "HF_HOME",
+                    "value": "/cache/huggingface"
+                  },
+                  {
+                    "name": "HF_HUB_DISABLE_TELEMETRY",
+                    "value": "1"
+                  },
+                  {
+                    "name": "DO_NOT_TRACK",
+                    "value": "1"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "2",
+                    "memory": "4Gi",
+                    "ephemeral-storage": "1Gi"
+                  },
+                  "limits": {
+                    "cpu": "4",
+                    "memory": "8Gi",
+                    "ephemeral-storage": "2Gi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "cache",
+                    "mountPath": "/cache"
+                  },
+                  {
+                    "name": "contract",
+                    "mountPath": "/contract",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "temporary",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "cache",
+                "persistentVolumeClaim": {
+                  "claimName": "qwen3-6-27b-fp8-cache"
+                }
+              },
+              {
+                "name": "contract",
+                "configMap": {
+                  "name": "qwen3-6-27b-fp8-weights-20260920"
+                }
+              },
+              {
+                "name": "temporary",
+                "emptyDir": {
+                  "sizeLimit": "1Gi"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "qwen2-5-14b-instruct",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "PersistentVolumeClaim",
+      "metadata": {
+        "name": "qwen2-5-14b-instruct-cache",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "accessModes": [
+          "ReadWriteOnce"
+        ],
+        "storageClassName": "compute-csi-default-sc",
+        "resources": {
+          "requests": {
+            "storage": "80Gi"
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ConfigMap",
+      "metadata": {
+        "name": "qwen2-5-14b-instruct-weights-20260920",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "immutable": true,
+      "data": {
+        "weights.json": "{\n  \"model\": \"Qwen/Qwen2.5-14B-Instruct\",\n  \"revision\": \"cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8\",\n  \"files\": [\n    {\n      \"path\": \"config.json\",\n      \"bytes\": 663,\n      \"sha256\": \"0f2085dbbe2ee251bd6a6a0797d84a6ce34436044d629aa3cba793b43d311a9e\"\n    },\n    {\n      \"path\": \"generation_config.json\",\n      \"bytes\": 242,\n      \"sha256\": \"ea35dfb6fc5051b01114f9b995820d55dab01ed33ee490f6378b442af82c09f9\"\n    },\n    {\n      \"path\": \"merges.txt\",\n      \"bytes\": 1671839,\n      \"sha256\": \"599bab54075088774b1733fde865d5bd747cbcc7a547c5bc12610e874e26f5e3\"\n    },\n    {\n      \"path\": \"model-00001-of-00008.safetensors\",\n      \"bytes\": 3885154816,\n      \"sha256\": \"b477be7572f0ab3ae3cbba38d508cc33e70600b2045669c4ad848051c3432094\"\n    },\n    {\n      \"path\": \"model-00002-of-00008.safetensors\",\n      \"bytes\": 3995327992,\n      \"sha256\": \"eb356aacae443e30f52712b1e98fadf206976365e2f5ee886321b0bb38c7cea8\"\n    },\n    {\n      \"path\": \"model-00003-of-00008.safetensors\",\n      \"bytes\": 3995328080,\n      \"sha256\": \"cee9dbdf738ce61adb21c70ad5c5585747caaab6457c9ffc3bfa20d73127c2c6\"\n    },\n    {\n      \"path\": \"model-00004-of-00008.safetensors\",\n      \"bytes\": 3995338432,\n      \"sha256\": \"b1201a6edcac8ef96a37040524fe37a5a84e446513ed40491e764a37302385fa\"\n    },\n    {\n      \"path\": \"model-00005-of-00008.safetensors\",\n      \"bytes\": 3979624824,\n      \"sha256\": \"fbbda3cdee31895d0c57d617449af5579d219df34f3d63f7a23acbfe7fb0a647\"\n    },\n    {\n      \"path\": \"model-00006-of-00008.safetensors\",\n      \"bytes\": 3995328080,\n      \"sha256\": \"f7ac652aa101717c97cfeccf5109985cca5b04529b57d3f4d2ec7a802266296b\"\n    },\n    {\n      \"path\": \"model-00007-of-00008.safetensors\",\n      \"bytes\": 3995328080,\n      \"sha256\": \"e9115e615b575acb6e8b3a06524b32cbf7f680f07517125e4334f62c3f4acb0d\"\n    },\n    {\n      \"path\": \"model-00008-of-00008.safetensors\",\n      \"bytes\": 1698703696,\n      \"sha256\": \"a77f603d8368749c19d3ac9cf2a300e476edcc794ea41af8e473ee12935eadb8\"\n    },\n    {\n      \"path\": \"model.safetensors.index.json\",\n      \"bytes\": 47472,\n      \"sha256\": \"46627f7a9e851d9cede6a7a4c49999082148ced9c22d2b9cfaaa5ba8b65dc68f\"\n    },\n    {\n      \"path\": \"tokenizer.json\",\n      \"bytes\": 7031645,\n      \"sha256\": \"c0382117ea329cdf097041132f6d735924b697924d6f6fc3945713e96ce87539\"\n    },\n    {\n      \"path\": \"tokenizer_config.json\",\n      \"bytes\": 7305,\n      \"sha256\": \"5b5d4f65d0acd3b2d56a35b56d374a36cbc1c8fa5cf3b3febbbfabf22f359583\"\n    },\n    {\n      \"path\": \"vocab.json\",\n      \"bytes\": 2776833,\n      \"sha256\": \"ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910\"\n    }\n  ],\n  \"expanded_bytes\": 29551669999,\n  \"hardware\": \"NVIDIA L40S, GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187, 580.173.02, 46068 MiB\"\n}\n",
+        "prepare_weights.py": "\"\"\"Acquire or verify precisely the measured source files on a model-owned PVC.\"\"\"\n\nimport argparse\nimport hashlib\nimport json\nimport os\nfrom pathlib import Path\n\nfrom huggingface_hub import snapshot_download\n\n\ndef main():\n    parser = argparse.ArgumentParser(description=__doc__)\n    parser.add_argument(\"--verify-only\", action=\"store_true\")\n    args = parser.parse_args()\n    contract = json.loads(Path(\"/contract/weights.json\").read_text())\n    root = Path(snapshot_download(\n        repo_id=contract[\"model\"], revision=contract[\"revision\"],\n        allow_patterns=[item[\"path\"] for item in contract[\"files\"]],\n        cache_dir=os.environ[\"HF_HOME\"] + \"/hub\", local_files_only=args.verify_only,\n        max_workers=4,\n    ))\n    for item in contract[\"files\"]:\n        path = root / item[\"path\"]\n        if not path.is_file() or path.stat().st_size != item[\"bytes\"]:\n            raise ValueError(\"Missing or differently sized model file: \" + item[\"path\"])\n        with path.open(\"rb\") as source:\n            checksum = hashlib.file_digest(source, \"sha256\").hexdigest()\n        if checksum != item[\"sha256\"]:\n            raise ValueError(\"Model file checksum mismatch: \" + item[\"path\"])\n    print(json.dumps({\"model\": contract[\"model\"], \"revision\": contract[\"revision\"],\n                      \"verified_files\": len(contract[\"files\"]),\n                      \"verified_bytes\": sum(item[\"bytes\"] for item in contract[\"files\"]),\n                      \"mode\": \"verify-only\" if args.verify_only else \"acquire-and-verify\"}), flush=True)\n\n\nif __name__ == \"__main__\":\n    main()\n"
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "qwen2-5-14b-instruct",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "qwen2-5-14b-instruct"
+          }
+        },
+        "policyTypes": [
+          "Ingress",
+          "Egress"
+        ],
+        "ingress": [
+          {
+            "from": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "fs2-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 8000
+              }
+            ]
+          }
+        ],
+        "egress": [
+          {
+            "to": [
+              {
+                "namespaceSelector": {
+                  "matchLabels": {
+                    "kubernetes.io/metadata.name": "kube-system"
+                  }
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "UDP",
+                "port": 53
+              },
+              {
+                "protocol": "TCP",
+                "port": 53
+              }
+            ]
+          },
+          {
+            "to": [
+              {
+                "ipBlock": {
+                  "cidr": "0.0.0.0/0",
+                  "except": [
+                    "10.0.0.0/8",
+                    "172.16.0.0/12",
+                    "192.168.0.0/16",
+                    "169.254.0.0/16",
+                    "127.0.0.0/8",
+                    "100.64.0.0/10"
+                  ]
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 443
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "qwen2-5-14b-instruct-acquire-20260920",
+        "namespace": "fs2-models",
+        "labels": {
+          "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+          "app.kubernetes.io/part-of": "fs2-serve",
+          "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+          "workload.fs2.nebius/owner": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "backoffLimit": 0,
+        "activeDeadlineSeconds": 3600,
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "qwen2-5-14b-instruct",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "qwen2-5-14b-instruct",
+              "workload.fs2.nebius/owner": "video-canary-20260920"
+            }
+          },
+          "spec": {
+            "restartPolicy": "Never",
+            "serviceAccountName": "qwen2-5-14b-instruct",
+            "automountServiceAccountToken": false,
+            "enableServiceLinks": false,
+            "nodeSelector": {
+              "kubernetes.io/hostname": "computeinstance-e00dczh75qcnbj0bx8"
+            },
+            "tolerations": [
+              {
+                "effect": "NoSchedule",
+                "key": "dedicated",
+                "operator": "Equal",
+                "value": "fs2-inference"
+              },
+              {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/not-ready",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+              },
+              {
+                "effect": "NoExecute",
+                "key": "node.kubernetes.io/unreachable",
+                "operator": "Exists",
+                "tolerationSeconds": 300
+              },
+              {
+                "effect": "NoSchedule",
+                "key": "nvidia.com/gpu",
+                "operator": "Exists"
+              }
+            ],
+            "securityContext": {
+              "fsGroup": 1000,
+              "runAsGroup": 1000,
+              "runAsNonRoot": true,
+              "runAsUser": 65534,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "containers": [
+              {
+                "name": "acquire",
+                "image": "docker.io/vllm/vllm-openai@sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90",
+                "command": [
+                  "python3",
+                  "/contract/prepare_weights.py"
+                ],
+                "env": [
+                  {
+                    "name": "HF_HOME",
+                    "value": "/cache/huggingface"
+                  },
+                  {
+                    "name": "HF_HUB_DISABLE_TELEMETRY",
+                    "value": "1"
+                  },
+                  {
+                    "name": "DO_NOT_TRACK",
+                    "value": "1"
+                  }
+                ],
+                "resources": {
+                  "requests": {
+                    "cpu": "2",
+                    "memory": "4Gi",
+                    "ephemeral-storage": "1Gi"
+                  },
+                  "limits": {
+                    "cpu": "4",
+                    "memory": "8Gi",
+                    "ephemeral-storage": "2Gi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "cache",
+                    "mountPath": "/cache"
+                  },
+                  {
+                    "name": "contract",
+                    "mountPath": "/contract",
+                    "readOnly": true
+                  },
+                  {
+                    "name": "temporary",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "cache",
+                "persistentVolumeClaim": {
+                  "claimName": "qwen2-5-14b-instruct-cache"
+                }
+              },
+              {
+                "name": "contract",
+                "configMap": {
+                  "name": "qwen2-5-14b-instruct-weights-20260920"
+                }
+              },
+              {
+                "name": "temporary",
+                "emptyDir": {
+                  "sizeLimit": "1Gi"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

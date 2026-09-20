@@ -218,7 +218,7 @@ def _record(
         in (
             {"nim-operator-nimcache", "platform-pvc"}
             if is_nim
-            else {"fs2-serve-localizer", "runtime-image"}
+            else {"fs2-serve-localizer", "runtime-image", "platform-pvc"}
         )
         and gpu["count"] >= 1
         and gpu["topology"] in {"single-gpu", "single-node-multi-gpu"}
