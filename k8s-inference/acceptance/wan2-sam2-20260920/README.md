@@ -27,6 +27,17 @@ completed in 0.652, 0.685 and 1.923 seconds; all returned valid ZIP artifacts,
 and prompted-image replay matched byte for byte. The normalized receipt is
 `evidence/sam2-serverless-http.json` with SHA-256
 `33328e2f0021111f79afbcabb18e11f76ad9622410051aa6219e223764e7015f`.
-This closes container HTTP startup and direct endpoint semantics, while
-Kubernetes startup, the public gateway/MCP path, LibreChat, cold start and
-elasticity remain separate gates.
+This closes container HTTP startup and direct endpoint semantics. The public
+gateway/MCP path, LibreChat, controller-managed cold start and elasticity remain
+separate gates.
+
+The same immutable image then passed its Kubernetes lane in `fs2-models`. It
+pulled in 89.74 seconds, ran as UID/GID 10001 on one H100, became Ready with
+zero restarts, and served the two deterministic fixtures plus automatic image
+segmentation through its ClusterIP Service. Prompted image took 0.724 seconds,
+automatic image took 0.949 seconds, and the 24-frame video result took 4.260
+seconds. The Deployment was returned to zero replicas after qualification. The
+normalized receipt is `evidence/sam2-kubernetes.json` with SHA-256
+`3a7f21eac3339d6585f0bd96c4f36d4ab751ce3492da0ea989d7325386c7bce7`.
+Public gateway/MCP, LibreChat, controller-managed cold start and elasticity
+remain separate gates.
