@@ -2,7 +2,18 @@
 
 Requested App identity: `cosmos-transfer2.5-2b`. This is a new, independent video-transfer App, not a rename or replacement of `cosmos3-nano`.
 
-Status as of 2026-09-20 04:37 UTC: **private H100 canary deployed; model download and workspace preparation passed; NIM GPU initialization in progress; not qualified or published**. There is no public App route or completed generation yet. The existing isolated video workbench and shared backend are unchanged by this task.
+Status as of 2026-09-20 04:57 UTC: **private H100 canary deployed and Ready; one real full-video generation passed structure, motion and sampled-weather checks; not published as a platform App**. The existing isolated video workbench and shared backend are unchanged by this task. Container-adapter, public HTTP/MCP, chat preview and approval/batch acceptance remain separate gates.
+
+The first successful generation completed at 04:51:24Z in 501.59 seconds,
+preserving the source's 1280×720 geometry, all 153 frames, 30 FPS and 5.1-second
+duration. Full-frame PAIDF motion score was 0.952509 against the unchanged 0.682
+threshold; five-frame weather verification accepted `overcast`. See
+[the retained direct-generation and quality evidence](direct-generation-20260920.json).
+Automated checks are not proof of physical fidelity or annotation validity.
+The generated video is retained for human review. A prior request returned
+HTTP422 before generation because upstream cookbook YAML used integer
+`resolution`; the real NIM schema requires a string. That failure is retained
+separately rather than counted as a successful request.
 
 The target cluster now has operator-provisioned `wan2-ngc-api` and
 `wan2-ngc-pull` Secrets (created03:54 UTC). The isolated registry probe references
@@ -42,19 +53,21 @@ executes the exact upstream Entrypoint/Cmd. It does not change or copy the share
 Secret. See [the retained failure](startup-failure-20260920.json).
 
 The corrected run downloaded the model and safety assets, materialized all 194
-profile files, and advanced to NIM inference-server initialization at 04:34:30Z.
+profile files, advanced to NIM inference-server initialization at 04:34:30Z,
+and became Ready at 04:39:17Z with zero restarts.
 Guardrails remain enabled. Successful model downloads prove that the earlier
-client-construction error was not an entitlement denial. GPU generation,
-source/output alignment, motion/weather quality, and hosted App/client flows
-remain separate tests.
+client-construction error was not an entitlement denial. GPU generation and
+source/output alignment plus automated motion/weather checks now passed once;
+hosted App/client flows remain separate tests.
 
 Completed diagnostic Pods were removed with UID-bound deletion after retaining
 their relevant receipts and selected profile. The running canary was not
 deleted. See [cleanup and image-launch evidence](diagnostic-cleanup-20260920.json).
 
-Local checks: 14 tests plus 5 subtests passed for registry auth/digest handling,
-credential normalization, the bounded private manifest and the direct-NIM test
-runner. These are offline tests, not GPU qualification. The merged current
+Local checks: 34 tests plus 5 subtests passed for registry auth/digest handling,
+credential normalization, the bounded private manifest, the direct-NIM test
+runner, and the bounded CPU adapter. These are offline tests, not GPU
+qualification. The merged current
 backend also passed 75 tests (20 PostgreSQL-dependent skips), followed by 21
 passing delegation tests against an isolated local PostgreSQL instance.
 

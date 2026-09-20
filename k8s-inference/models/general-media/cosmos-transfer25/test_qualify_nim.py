@@ -1,5 +1,6 @@
 import base64
 import contextlib
+import hashlib
 import importlib.util
 import io
 import json
@@ -15,7 +16,17 @@ spec.loader.exec_module(probe)
 INFO = {"width": 1280, "height": 720, "frames": 153, "fps": 30, "sha256": "a" * 64}
 
 
-def invoke(tmp_path, *, ready=200, result=200, generated=None, cap=None):
+def invoke(
+    tmp_path,
+    *,
+    ready=200,
+    result=200,
+    generated=None,
+    cap=None,
+    observed_profile="synthetic-profile",
+    manifest="synthetic-manifest",
+    schema_changed=False,
+):
     source = tmp_path / "source.mp4"
     source.write_bytes(b"synthetic-video-content")
     prompt = tmp_path / "prompt.txt"
@@ -27,14 +38,31 @@ def invoke(tmp_path, *, ready=200, result=200, generated=None, cap=None):
         requests.append(request)
         if request.url.path == "/v1/health/ready":
             return httpx.Response(ready, json={})
-        if request.url.path in {"/v1/metadata", "/v1/manifest"}:
-            return httpx.Response(200, json={"model": "cosmos-transfer2.5"})
+        if request.url.path == "/v1/metadata":
+            return httpx.Response(
+                200,
+                json={"selectedModelProfileId": observed_profile, "version": "1.1.0"},
+            )
+        if request.url.path == "/v1/manifest":
+            return httpx.Response(200, json={"manifest_file": manifest})
+        if request.url.path == "/openapi.json":
+            document = json.loads(Path(__file__).with_name("nim-openapi-20260920.json").read_text())
+            if schema_changed:
+                document["info"]["version"] = "different-runtime"
+            return httpx.Response(200, json=document)
         assert request.url.path == "/v1/infer"
         body = json.loads(request.content)
         assert base64.b64decode(body["video"]) == source.read_bytes()
         assert body["edge"] == {"control_weight": 1.0}
-        assert body["resolution"] == 720
-        return httpx.Response(result, json={"b64_video": base64.b64encode(b"synthetic-output-content").decode()})
+        assert body["resolution"] == "720"
+        assert type(body["guidance"]) is int
+        return httpx.Response(
+            result,
+            json={
+                "b64_video": base64.b64encode(b"synthetic-output-content").decode(),
+                "seed": 42,
+            },
+        )
 
     argv = [
         "qualify_nim",
@@ -56,6 +84,7 @@ def invoke(tmp_path, *, ready=200, result=200, generated=None, cap=None):
         mock.patch.object(probe.httpx, "Client", return_value=client),
         mock.patch.object(probe, "inspect_video", side_effect=[INFO, generated or INFO]),
         mock.patch.object(probe, "MAX_RESULT_BYTES", cap or probe.MAX_RESULT_BYTES),
+        mock.patch.object(probe, "MANIFEST_SHA256", hashlib.sha256(b"synthetic-manifest").hexdigest()),
         contextlib.redirect_stdout(output),
     ):
         status = probe.main()
@@ -106,3 +135,25 @@ def test_oversized_response_is_rejected(tmp_path):
     assert status == 1
     assert receipt["failure_stage"] == "inference"
     assert not (destination / "output.mp4").exists()
+
+
+def test_other_profile_is_rejected_before_generation(tmp_path):
+    status, receipt, requests, _ = invoke(tmp_path, observed_profile="another-profile")
+    assert status == 1
+    assert receipt["failure_stage"] == "metadata"
+    assert not receipt["inference_request_attempted"]
+    assert all(r.method == "GET" for r in requests)
+
+
+def test_changed_model_manifest_is_rejected_before_generation(tmp_path):
+    status, receipt, requests, _ = invoke(tmp_path, manifest="different-manifest")
+    assert status == 1
+    assert receipt["failure_stage"] == "manifest"
+    assert all(r.method == "GET" for r in requests)
+
+
+def test_changed_api_schema_is_rejected_before_generation(tmp_path):
+    status, receipt, requests, _ = invoke(tmp_path, schema_changed=True)
+    assert status == 1
+    assert receipt["failure_stage"] == "request-schema"
+    assert all(r.method == "GET" for r in requests)

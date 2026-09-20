@@ -15,11 +15,13 @@ from urllib.parse import urlsplit
 
 import httpx
 from fs2_video.media import inspect_video, validate_alignment
+from jsonschema import Draft202012Validator
 
 IMAGE = (
     "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f"
 )
 MAX_RESULT_BYTES = 180 * 1024**2
+MANIFEST_SHA256 = "67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17"
 
 
 def main():
@@ -59,10 +61,10 @@ def main():
         "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
         "request_parameters": {
             "seed": arguments.seed,
-            "guidance": 7.0,
+            "guidance": 7,
             "num_steps": 35,
             "sigma_max": 90,
-            "resolution": source_info["height"],
+            "resolution": str(source_info["height"]),
             "edge": {"control_weight": 1.0},
         },
         "alignment_passed": False,
@@ -94,6 +96,21 @@ def main():
                     raise ValueError(f"NIM {name} is unavailable or oversized")
                 (arguments.output_directory / f"{name}.json").write_bytes(observed.content)
                 receipt[name + "_sha256"] = hashlib.sha256(observed.content).hexdigest()
+                if name == "metadata":
+                    metadata = observed.json()
+                    receipt["observed_profile_id"] = metadata.get("selectedModelProfileId")
+                    receipt["observed_nim_version"] = metadata.get("version")
+                    if (
+                        receipt["observed_profile_id"] != arguments.profile_id
+                        or receipt["observed_nim_version"] != "1.1.0"
+                    ):
+                        raise ValueError("NIM runtime identity differs from the pinned canary")
+                else:
+                    receipt["model_manifest_file_sha256"] = hashlib.sha256(
+                        observed.json()["manifest_file"].encode()
+                    ).hexdigest()
+                    if receipt["model_manifest_file_sha256"] != MANIFEST_SHA256:
+                        raise ValueError("NIM model manifest differs from the inspected image")
             body = {
                 **receipt["request_parameters"],
                 "prompt": prompt,
@@ -104,6 +121,22 @@ def main():
                 ),
                 "video": base64.b64encode(arguments.source.read_bytes()).decode("ascii"),
             }
+            stage = "request-schema"
+            observed_schema = client.get("/openapi.json", timeout=15)
+            if observed_schema.status_code != 200 or len(observed_schema.content) > 1024**2:
+                raise ValueError("NIM request schema is unavailable or oversized")
+            live_schema = observed_schema.json()
+            pinned_schema = json.loads(Path(__file__).with_name("nim-openapi-20260920.json").read_text())
+            if live_schema != pinned_schema:
+                raise ValueError("NIM request schema differs from the reviewed image contract")
+            (arguments.output_directory / "openapi.json").write_bytes(observed_schema.content)
+            receipt["openapi_sha256"] = hashlib.sha256(observed_schema.content).hexdigest()
+            Draft202012Validator(
+                {
+                    "$ref": "#/components/schemas/Transfer2Request",
+                    "components": live_schema["components"],
+                }
+            ).validate(body)
             receipt["request_sha256"] = hashlib.sha256(
                 json.dumps(body, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
             ).hexdigest()
@@ -122,6 +155,9 @@ def main():
             envelope = json.loads(payload)
             if not isinstance(envelope.get("b64_video"), str):
                 raise ValueError("NIM did not return b64_video")
+            receipt["returned_seed"] = envelope.get("seed")
+            if receipt["returned_seed"] != arguments.seed:
+                raise ValueError("NIM returned a different seed")
             output = arguments.output_directory / "output.mp4"
             output.write_bytes(base64.b64decode(envelope["b64_video"], validate=True))
             stage = "output-alignment"
