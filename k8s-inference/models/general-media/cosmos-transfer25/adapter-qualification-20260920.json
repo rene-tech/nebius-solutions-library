@@ -1,0 +1,194 @@
+[
+  {
+    "id": "transfer-weather-0",
+    "generation": {
+      "schema": "fs2-serve.nebius.ai/cosmos-transfer25-adapter-probe/v1",
+      "started_at": "2026-09-20T05:11:28.838453+00:00",
+      "adapter_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+      "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+      "source": {
+        "width": 1280,
+        "height": 720,
+        "frames": 153,
+        "fps": 30,
+        "duration_seconds": 5.1,
+        "audio": [],
+        "size_bytes": 2183869,
+        "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+      },
+      "request_parameters": {
+        "seed": 42,
+        "num_steps": 35,
+        "guidance": 7,
+        "control_weight": 1.0,
+        "output_delivery": "artifact"
+      },
+      "prompt_sha256": "f021eac01848d74abbe8f5652948bcde59df21842c8c69f849756dae5e380c3f",
+      "request_sha256": "caee6dc6fb8ba9d9f8127aa66db9a54a51740a5c0b461df2f7e4b784c38d0e28",
+      "alignment_passed": true,
+      "inference_request_attempted": true,
+      "public_platform_path_tested": false,
+      "customer_ready": false,
+      "readiness_status": 200,
+      "http_status": 200,
+      "content_type": "video/mp4",
+      "output": {
+        "width": 1280,
+        "height": 720,
+        "frames": 153,
+        "fps": 30,
+        "duration_seconds": 5.1,
+        "audio": [],
+        "size_bytes": 1060024,
+        "sha256": "69d6f54fc1a423f180de8402de1bb986e1a84c6c0f7ad4313e9e2f9e4f00af12"
+      },
+      "status": "adapter-generation-structure-passed",
+      "elapsed_seconds": 491.12207233347,
+      "finished_at": "2026-09-20T05:19:39.962187+00:00"
+    },
+    "runtime_identity": {
+      "schema": "fs2-serve.nebius.ai/retained-container-observation/v1",
+      "container_id": "58f4cf6aead96b34c16491c0764ea9668ca9a60c324bbb87a266bf385a7d1f7a",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+      "image_config_digest": "sha256:d13b18d430788078702fb6e0f5cfd19fd0ccf0d4487224dbc135d7cb8291e1b5",
+      "source_commit": "5dcf2568134517d9be56c7368a8450e91a5e50a6",
+      "started_at": "2026-09-20T05:00:42.9021342Z",
+      "observed_at": "2026-09-20T05:23:17.178261+00:00",
+      "running": true,
+      "restart_count": 0,
+      "loopback_endpoint": "http://127.0.0.1:18756",
+      "generation_receipt_sha256": "b89a913a4c0394e97d8e8286e3bf36b1b7956f8ce59427b821dbeab7b46e2beb"
+    },
+    "quality": {
+      "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-quality/v1",
+      "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+      "generation_receipt_sha256": "b89a913a4c0394e97d8e8286e3bf36b1b7956f8ce59427b821dbeab7b46e2beb",
+      "source_sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863",
+      "output_sha256": "69d6f54fc1a423f180de8402de1bb986e1a84c6c0f7ad4313e9e2f9e4f00af12",
+      "target_weather": "overcast",
+      "vlm_model": "MiniMaxAI/MiniMax-M3",
+      "llm_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "evaluation_frames": 5,
+      "alignment_passed": true,
+      "public_platform_path_tested": false,
+      "customer_ready": false,
+      "limitation": "Automated motion and sampled-weather checks are not proof of physical fidelity or label validity; human review is required.",
+      "motion": {
+        "score": 0.9525093473463488,
+        "total_frames": 153,
+        "total_hallucinated_pixels": 82078,
+        "total_augmented_dynamic_pixels": 1728298,
+        "params": {
+          "grad_thresh": 10.0,
+          "blur_ksize": 7,
+          "morph_k": 3,
+          "dist_tol_px": 7.0,
+          "max_frames": null
+        },
+        "threshold": 0.682,
+        "passed": true
+      },
+      "weather": {
+        "passed": true
+      },
+      "accepted_by_automated_checks": true,
+      "elapsed_seconds": 6.5366707146167755
+    }
+  },
+  {
+    "id": "transfer-weather-1",
+    "generation": {
+      "schema": "fs2-serve.nebius.ai/cosmos-transfer25-adapter-probe/v1",
+      "started_at": "2026-09-20T05:00:58.013292+00:00",
+      "adapter_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+      "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+      "source": {
+        "width": 1280,
+        "height": 720,
+        "frames": 153,
+        "fps": 30,
+        "duration_seconds": 5.1,
+        "audio": [],
+        "size_bytes": 2183869,
+        "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+      },
+      "request_parameters": {
+        "seed": 43,
+        "num_steps": 35,
+        "guidance": 7,
+        "control_weight": 1.0,
+        "output_delivery": "artifact"
+      },
+      "prompt_sha256": "6cba142530c7e77575516cc665e9b5dc5878dcb7933fa776e0a4bfe4f585efb5",
+      "request_sha256": "6bfaf3c286e6004210202c9120da5b47e123cc3db2d1d62c2e7003ce80f0e477",
+      "alignment_passed": true,
+      "inference_request_attempted": true,
+      "public_platform_path_tested": false,
+      "customer_ready": false,
+      "readiness_status": 200,
+      "http_status": 200,
+      "content_type": "video/mp4",
+      "output": {
+        "width": 1280,
+        "height": 720,
+        "frames": 153,
+        "fps": 30,
+        "duration_seconds": 5.1,
+        "audio": [],
+        "size_bytes": 1296506,
+        "sha256": "389cc24265231b38d76542fa2da08873f6f2ddd311d989db14d87d5afb3b1e16"
+      },
+      "status": "adapter-generation-structure-passed",
+      "elapsed_seconds": 491.46272176876664,
+      "finished_at": "2026-09-20T05:09:09.477680+00:00"
+    },
+    "runtime_identity": {
+      "schema": "fs2-serve.nebius.ai/retained-container-observation/v1",
+      "container_id": "58f4cf6aead96b34c16491c0764ea9668ca9a60c324bbb87a266bf385a7d1f7a",
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+      "image_config_digest": "sha256:d13b18d430788078702fb6e0f5cfd19fd0ccf0d4487224dbc135d7cb8291e1b5",
+      "source_commit": "5dcf2568134517d9be56c7368a8450e91a5e50a6",
+      "started_at": "2026-09-20T05:00:42.9021342Z",
+      "observed_at": "2026-09-20T05:23:17.178261+00:00",
+      "running": true,
+      "restart_count": 0,
+      "loopback_endpoint": "http://127.0.0.1:18756",
+      "generation_receipt_sha256": "027c153f1dd8da7e24e666dcbc0a52a3b9841cdf7e7655ee942572c9634af0a5"
+    },
+    "quality": {
+      "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-quality/v1",
+      "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+      "generation_receipt_sha256": "027c153f1dd8da7e24e666dcbc0a52a3b9841cdf7e7655ee942572c9634af0a5",
+      "source_sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863",
+      "output_sha256": "389cc24265231b38d76542fa2da08873f6f2ddd311d989db14d87d5afb3b1e16",
+      "target_weather": "rain",
+      "vlm_model": "MiniMaxAI/MiniMax-M3",
+      "llm_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+      "evaluation_frames": 5,
+      "alignment_passed": true,
+      "public_platform_path_tested": false,
+      "customer_ready": false,
+      "limitation": "Automated motion and sampled-weather checks are not proof of physical fidelity or label validity; human review is required.",
+      "motion": {
+        "score": 0.6491449281180891,
+        "total_frames": 153,
+        "total_hallucinated_pixels": 838945,
+        "total_augmented_dynamic_pixels": 2391144,
+        "params": {
+          "grad_thresh": 10.0,
+          "blur_ksize": 7,
+          "morph_k": 3,
+          "dist_tol_px": 7.0,
+          "max_frames": null
+        },
+        "threshold": 0.682,
+        "passed": false
+      },
+      "weather": {
+        "passed": true
+      },
+      "accepted_by_automated_checks": false,
+      "elapsed_seconds": 7.865721210837364
+    }
+  }
+]

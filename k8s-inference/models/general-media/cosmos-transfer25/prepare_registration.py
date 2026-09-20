@@ -13,8 +13,10 @@ from pathlib import Path
 
 from fs2_serve.model_deployment import (
     InfrastructureEnvelope,
+    LegacyManifestRenderer,
     LegacyTemplateBundle,
     ModelDeploymentSpec,
+    RenderContext,
     ValidationDisposition,
     canonical_digest,
     canonical_json,
@@ -74,6 +76,8 @@ def prepare(envelope, bundles, routes, baseline_spec):
         "fastStartRuntimeContracts": [],
         "fastStartEvidence": [],
     }
+    if "video-canary-20260920" not in envelope["tenantIds"]:
+        envelope["tenantIds"].append("video-canary-20260920")
     spec = copy.deepcopy(baseline_spec)
     spec.update(
         modelRef=MODEL,
@@ -98,6 +102,19 @@ def prepare(envelope, bundles, routes, baseline_spec):
     decision = validate_model_deployment(ModelDeploymentSpec.model_validate(spec), typed)
     if decision.disposition is not ValidationDisposition.ACCEPTED:
         raise ValueError(decision.model_dump(mode="json", by_alias=True))
+    typed_bundle = LegacyTemplateBundle.model_validate(bundle)
+    LegacyManifestRenderer({(MODEL, template_digest): typed_bundle}).render(
+        ModelDeploymentSpec.model_validate(spec),
+        RenderContext(
+            name=MODEL,
+            namespace="fs2-models",
+            generation=1,
+            pool=typed.pools["h100-ondemand-1x"],
+            eligible_pools=[typed.pools["h100-ondemand-1x"]],
+            prometheus_server_address="http://prometheus.fs2-observability.svc:9090",
+            preview=True,
+        ),
+    )
     configs = []
 
     def config(prefix, data):

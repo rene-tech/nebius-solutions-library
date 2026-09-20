@@ -255,8 +255,9 @@ def prepare(results):
         ],
         "provenance": [
             {
-                "url": "https://build.nvidia.com/nvidia/cosmos-transfer2_5-2b/modelcard",
-                "revision": revision,
+                "commit": SOURCE_COMMIT,
+                "tree": SOURCE_TREE,
+                "path": "k8s-inference/models/general-media/cosmos-transfer25/selected-profile-20260920.json",
                 "classification": "reviewed-input",
             },
             {
