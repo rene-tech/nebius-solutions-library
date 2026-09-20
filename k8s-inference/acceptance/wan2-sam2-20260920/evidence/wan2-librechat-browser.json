@@ -1,0 +1,40 @@
+{
+  "artifact": {
+    "artifact_id": "b8ecdfb1-7a5b-449b-aa32-4e2a695a6160",
+    "media_type": "application/octet-stream",
+    "sha256": "f80f744b58efd2077cfaf2bf3e2b97becf2a4d8d0f4774dfaa8ea6cfba4bc622",
+    "size_bytes": 188064
+  },
+  "attempt": 2,
+  "conversation_id": "3d5ac853-5715-5e09-96fe-2284083925b1",
+  "endpoint": "scientific-ai-workbench-v2",
+  "mcp_server_status": "Connected",
+  "observed_at": "2026-09-20T06:18:12Z",
+  "operation_id": "5ed94ec4-2c87-46c0-8c2a-71607e943c5a",
+  "outcome": "passed",
+  "probe": {
+    "format": {
+      "duration": "3.812500",
+      "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+      "size": "188064"
+    },
+    "programs": [],
+    "streams": [
+      {
+        "avg_frame_rate": "16/1",
+        "codec_name": "vp9",
+        "height": 480,
+        "nb_frames": "61",
+        "width": 832
+      }
+    ]
+  },
+  "release": {
+    "control_plane_image": "sha256:8cda30196cd30e6827dfe283488939dc5289894887100190b17e0dd08331c51f",
+    "helm_revision": 198
+  },
+  "schema": "fs2.nebius.ai/librechat-wan2-browser-qualification/v1",
+  "status": "succeeded",
+  "tool": "generate_video_native",
+  "upstream_content_type": "video/mp4"
+}

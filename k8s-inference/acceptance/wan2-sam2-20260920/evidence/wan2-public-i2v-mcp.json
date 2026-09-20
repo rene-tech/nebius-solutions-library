@@ -1,0 +1,48 @@
+{
+  "artifact": {
+    "artifact_id": "cf274a51-bac7-4353-b8c2-40cd3fe9da09",
+    "media_type": "application/octet-stream",
+    "sha256": "ca2e8d0fb636dd02cc213730f6d840a1085354223550ff27408dbbb15fb937a5",
+    "size_bytes": 899774
+  },
+  "elapsed_seconds": 242.735,
+  "fixture_id": "wan2-scientific-image-0",
+  "model_id": "wan2-2-i2v-nim",
+  "observed_at": "2026-09-20T06:06:43Z",
+  "operation_id": "010bd3ea-3720-4bce-b0da-c34ae787bd69",
+  "outcome": "passed",
+  "probe": {
+    "format": {
+      "duration": "4.062500",
+      "format_name": "mov,mp4,m4a,3gp,3g2,mj2",
+      "size": "899774"
+    },
+    "programs": [],
+    "streams": [
+      {
+        "avg_frame_rate": "16/1",
+        "codec_name": "vp9",
+        "height": 480,
+        "nb_frames": "65",
+        "width": 832
+      }
+    ]
+  },
+  "release": {
+    "control_plane_image_index": "sha256:8cda30196cd30e6827dfe283488939dc5289894887100190b17e0dd08331c51f",
+    "helm_revision": 198
+  },
+  "schema": "fs2.nebius.ai/public-wan2-mcp-qualification/v1",
+  "statuses": [
+    {
+      "at": "2026-09-20T06:02:51Z",
+      "status": "running"
+    },
+    {
+      "at": "2026-09-20T06:06:39Z",
+      "status": "succeeded"
+    }
+  ],
+  "tool": "animate_image_native",
+  "upstream_content_type": "video/mp4"
+}

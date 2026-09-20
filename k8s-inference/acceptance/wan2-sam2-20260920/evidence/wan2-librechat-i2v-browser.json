@@ -1,0 +1,104 @@
+{
+  "browser": {
+    "client": "LibreChat",
+    "conversation_id": "b1da90b8-f526-555e-986c-f782162b6e87",
+    "flow": "artifact-reference image-to-video"
+  },
+  "captured_at": "2026-09-20T06:38:21Z",
+  "checks": {
+    "artifact_sha_matches": true,
+    "artifact_size_matches": true,
+    "expected_dimensions": true,
+    "first_attempt": true,
+    "operation_succeeded": true,
+    "serving_media_type_octet_stream": true,
+    "upstream_content_type_mp4": true,
+    "valid_video": true
+  },
+  "download": {
+    "content_type": null,
+    "path": "/home/tux/secure-handoff/wan2-sam2-release-20260920/librechat-wan2-i2v-result.mp4",
+    "prefix_hex": "0000001c6674797069736f6d",
+    "sha256": "ca2e8d0fb636dd02cc213730f6d840a1085354223550ff27408dbbb15fb937a5",
+    "size_bytes": 899774
+  },
+  "ffprobe": {
+    "programs": [],
+    "streams": [
+      {
+        "codec_name": "vp9",
+        "duration": "4.062500",
+        "height": 480,
+        "nb_frames": "65",
+        "r_frame_rate": "16/1",
+        "width": 832
+      }
+    ]
+  },
+  "input_artifact": {
+    "artifact_id": "0af135d2-a23d-4891-ab6b-4ca47442cdf4",
+    "media_type": "image/png",
+    "sha256": "0bf8917246161d17d39c084dd6301b5e68171d993b59191f68ad96175b0f60f3",
+    "size_bytes": 7455
+  },
+  "operation": {
+    "accepted_at": "2026-09-20T06:28:01.253958Z",
+    "activation_started_at": "2026-09-20T06:28:01.317841Z",
+    "attempt": 1,
+    "completed_at": "2026-09-20T06:31:47.359739Z",
+    "error_code": null,
+    "error_detail": null,
+    "http_status": 200,
+    "id": "4a0e071a-038a-4ce1-98d2-96966c669e97",
+    "idempotency_key": "librechat-wan2-i2v-helm198-artifact-v1",
+    "max_attempts": 3,
+    "model_id": "wan2-2-i2v-nim",
+    "model_revision": "e38919caed06f51e1039e841a6c116b7388244b05ad62576100b38c935fb6924",
+    "operation": "generate-video",
+    "outcome": "succeeded",
+    "protocol": "native",
+    "ready_at": "2026-09-20T06:28:02.254206Z",
+    "response_content_type": "application/json",
+    "result_available": true,
+    "semantic_outcome": "protocol_valid",
+    "started_at": "2026-09-20T06:28:02.271035Z",
+    "status": "succeeded"
+  },
+  "release": {
+    "operation_accepted": {
+      "control_plane_index": "sha256:803227d1b63342be5176976c98820d4bb38edb4d1dc777187d7c89bba8551674",
+      "control_plane_source": "27de3311ea18a7903f35b26f8d1801cdc459e5ec",
+      "helm_revision": 199
+    },
+    "operation_completed_and_readback": {
+      "control_plane_index": "sha256:803227d1b63342be5176976c98820d4bb38edb4d1dc777187d7c89bba8551674",
+      "control_plane_source": "27de3311ea18a7903f35b26f8d1801cdc459e5ec",
+      "helm_revision": 200
+    },
+    "revision_200_change_from_199": "renderer/envelope ConfigMap references only; control-plane image, Wan routes, catalog rollout digest, admin image and model runtimes unchanged",
+    "wan_base_deployment": {
+      "control_plane_index": "sha256:8cda30196cd30e6827dfe283488939dc5289894887100190b17e0dd08331c51f",
+      "control_plane_source": "4f6fbc30d092c8852d1fdb86e4e813ab04df64fd",
+      "helm_revision": 198
+    }
+  },
+  "result": {
+    "artifact": {
+      "artifact_id": "5f0e5e37-18df-4b1b-92ab-04c048a7730e",
+      "compression": "none",
+      "media_type": "application/octet-stream",
+      "sha256": "ca2e8d0fb636dd02cc213730f6d840a1085354223550ff27408dbbb15fb937a5",
+      "size_bytes": 899774
+    },
+    "content_type": "video/mp4",
+    "schema": "fs2-serve.nebius.ai/operation-artifact-result/v1"
+  },
+  "retained_failure": {
+    "cause": "The chat model truncated an inline image data URL. The successful browser flow uses a tenant artifact reference so image bytes stay outside model arguments.",
+    "error_code": "upstream_http_error",
+    "http_status": 422,
+    "operation_id": "aadc4fa6-3967-4406-b18f-dfe88d853324",
+    "status": "failed"
+  },
+  "schema": "fs2-serve.nebius.ai/librechat-browser-acceptance/v1"
+}

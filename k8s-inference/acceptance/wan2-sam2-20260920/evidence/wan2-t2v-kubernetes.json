@@ -1,0 +1,87 @@
+{
+  "models": {
+    "wan2-2-t2v-nim": {
+      "ready": {
+        "model": "wan-ai/wan2.2",
+        "revision": "nim-1.0.0@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b",
+        "status": "ready",
+        "variant": "t2v"
+      },
+      "requests": [
+        {
+          "artifact_path": "/home/tux/secure-handoff/wan2-sam2-release-20260920/generated-videos/wan2-protein-ribbon-0.mp4",
+          "bytes": 188064,
+          "elapsed_seconds": 198.96782926283777,
+          "fixture_id": "wan2-protein-ribbon-0",
+          "headers": {
+            "connection": "close",
+            "content-length": "188064",
+            "content-type": "video/mp4",
+            "date": "Sun, 20 Sep 2026 05:10:15 GMT",
+            "server": "uvicorn",
+            "x-fs2-model-revision": "nim-1.0.0@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b",
+            "x-fs2-output-duration": "3.813",
+            "x-fs2-output-height": "480",
+            "x-fs2-output-width": "832",
+            "x-fs2-wan-variant": "t2v"
+          },
+          "probe": {
+            "format": {
+              "duration": "3.812500",
+              "format_name": "mov,mp4,m4a,3gp,3g2,mj2"
+            },
+            "programs": [],
+            "streams": [
+              {
+                "avg_frame_rate": "16/1",
+                "codec_name": "vp9",
+                "height": 480,
+                "nb_frames": "61",
+                "width": 832
+              }
+            ]
+          },
+          "sha256": "f80f744b58efd2077cfaf2bf3e2b97becf2a4d8d0f4774dfaa8ea6cfba4bc622"
+        },
+        {
+          "artifact_path": "/home/tux/secure-handoff/wan2-sam2-release-20260920/generated-videos/wan2-molecular-docking-1.mp4",
+          "bytes": 349154,
+          "elapsed_seconds": 197.15243818238378,
+          "fixture_id": "wan2-molecular-docking-1",
+          "headers": {
+            "connection": "close",
+            "content-length": "349154",
+            "content-type": "video/mp4",
+            "date": "Sun, 20 Sep 2026 05:13:34 GMT",
+            "server": "uvicorn",
+            "x-fs2-model-revision": "nim-1.0.0@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b",
+            "x-fs2-output-duration": "3.813",
+            "x-fs2-output-height": "480",
+            "x-fs2-output-width": "832",
+            "x-fs2-wan-variant": "t2v"
+          },
+          "probe": {
+            "format": {
+              "duration": "3.812500",
+              "format_name": "mov,mp4,m4a,3gp,3g2,mj2"
+            },
+            "programs": [],
+            "streams": [
+              {
+                "avg_frame_rate": "16/1",
+                "codec_name": "vp9",
+                "height": 480,
+                "nb_frames": "61",
+                "width": 832
+              }
+            ]
+          },
+          "sha256": "4506648b4df9af21611c256369b89ab11aa952cea8f68902722ff2b50317ef2c"
+        }
+      ],
+      "variant": "t2v"
+    }
+  },
+  "observed_at": "2026-09-20T05:10:15Z",
+  "schema": "fs2.nebius.ai/wan2-sam2-direct-qualification/v1"
+}

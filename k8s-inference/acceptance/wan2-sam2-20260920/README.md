@@ -95,7 +95,60 @@ They demonstrate colorful molecular, protein and microscopy motion. Generated
 lettering is not reliable, so marketing titles and captions must be rendered
 by the deterministic editing pipeline rather than requested inside the scene.
 
-This evidence closes direct Kubernetes execution and bounded video semantics.
-Public discovery, HTTP/MCP, LibreChat, controller-managed cold start,
-elasticity and snapshots remain separate release gates until their receipts
-are recorded below.
+## Wan2.2 public MCP and LibreChat acceptance
+
+Both Wan variants are published in the dashboard and public model catalog.
+They were introduced by control-plane Helm revision 198 from combined source
+`4f6fbc30d092c8852d1fdb86e4e813ab04df64fd` and image index
+`sha256:8cda30196cd30e6827dfe283488939dc5289894887100190b17e0dd08331c51f`.
+This source retains the concurrently onboarded Cosmos Transfer catalog while
+adding bounded MP4 validation for Wan. The rollout changed only the shared
+control-plane image digest; the existing route ConfigMap, admin image, limits
+and two ready Wan H200 Deployments were preserved.
+
+The current live control plane is Helm revision 200 from descendant source
+`27de3311ea18a7903f35b26f8d1801cdc459e5ec` and image index
+`sha256:803227d1b63342be5176976c98820d4bb38edb4d1dc777187d7c89bba8551674`.
+Revision 199 introduced that descendant image. Revision 200 retained it and
+changed only renderer/envelope ConfigMap references. Fresh discovery on
+revision 200 confirmed both Wan model IDs and all required Wan and SAM tools.
+The normalized discovery receipt is
+`evidence/wan2-public-discovery-helm200.json` with SHA-256
+`e1f4cdf143ea6730f9ae91573f0c391481064687faac62c998786f6697521c81`.
+
+Authenticated public discovery exposed `generate_video_native` and
+`animate_image_native`. A text-to-video request completed as operation
+`fdc58978-4c63-4eee-a177-19fa91963e2f`; its downloaded artifact matched its
+188,064-byte SHA-256 identity and decoded as a 61-frame 832x480 VP9 MP4. An
+image-to-video request completed as operation
+`010bd3ea-3720-4bce-b0da-c34ae787bd69` in 242.735 seconds; its independently
+downloaded artifact decoded as a 65-frame 832x480 VP9 MP4. The normalized
+receipts are `evidence/wan2-public-t2v-mcp.json` with SHA-256
+`4b84c76bed7cc2f7ad8366dd2a958a6c90dc4e78e97be86ca31de261c879e71b`
+and `evidence/wan2-public-i2v-mcp.json` with SHA-256
+`c6066129e58e7ba91f4594347305ec20d6013b0b0bac13c9b2351231c0c48e00`.
+
+The current customer LibreChat endpoint reported its Scientific Models MCP
+server connected, discovered the Wan contract, and submitted real
+text-to-video and image-to-video requests from browser conversations. The
+text-to-video operation's first attempt lost its worker lease and was retained
+as `stale_worker_reaped`; the durable operation recovered within the existing
+attempt budget and succeeded on attempt 2. The normalized receipt is
+`evidence/wan2-librechat-browser.json` with SHA-256
+`b4e8e4f1dd7b2a127fade28f5701be4b7a4657f7603ed036aef76c2cd618a085`.
+
+The first image-to-video chat attempt passed an inline data URL through the
+chat model. The model truncated it, so the retained operation failed HTTP 422.
+The successful customer-shaped path uploaded the exact PNG as a tenant
+artifact and passed only its artifact reference through the chat tool call.
+Operation `4a0e071a-038a-4ce1-98d2-96966c669e97` then succeeded on attempt 1;
+the chat fetched its terminal artifact, and an independent client verified the
+899,774-byte SHA-256 identity and decoded a 65-frame 832x480 VP9 stream. The
+normalized receipt is `evidence/wan2-librechat-i2v-browser.json` with SHA-256
+`e8ae43743c1254f078b0d27f8ad74e50c4f9bfacff4b1ceac9239f48ce84c9a3`.
+
+This evidence closes direct Kubernetes execution, public discovery, public
+MCP and real LibreChat workflows for both video variants. It does not qualify
+scale-to-zero, snapshots, broad concurrency or multiple clean customer
+cohorts. Generated lettering remains unsuitable for final marketing copy;
+deterministic post-production must add titles and captions.
