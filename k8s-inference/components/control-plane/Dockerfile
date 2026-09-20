@@ -8,7 +8,7 @@ COPY . /
 
 FROM ghcr.io/astral-sh/uv:0.11.7@sha256:240fb85ab0f263ef12f492d8476aa3a2e4e1e333f7d67fbdd923d00a506a516a AS uv
 
-FROM python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1 AS builder
+FROM python:3.13.15-alpine3.23@sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3 AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -52,7 +52,7 @@ RUN uv sync --frozen --no-dev --no-install-project \
     && .venv/bin/python -I -c "from pathlib import Path; from fs2_serve_catalog.loader import load_catalog; from fs2_serve.native_catalog import augment_native_catalog; root=Path('/workspace/runtime-catalog'); catalog=load_catalog(root, repo_root=root/'packaged-repository'); native=augment_native_catalog(catalog, root, repo_root=root/'packaged-repository'); assert {'phenoage','altumage','cellpose-cpsam-v2','scvi-scanvi'} <= native.records.keys(); assert native.digest == catalog.digest" \
     && .venv/bin/fs2-serve --help >/dev/null
 
-FROM python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1
+FROM python:3.13.15-alpine3.23@sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3
 
 ENV PATH="/workspace/k8s-inference/components/control-plane/.venv/bin:$PATH" \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -111,7 +111,7 @@ RUN test -f /opt/fs2/catalog/schema/scientific-artifact-manifest.schema.json \
 LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
     org.opencontainers.image.revision="$FS2_SOURCE_COMMIT" \
     org.opencontainers.image.base.name="docker.io/library/python:3.13.15-alpine3.23" \
-    org.opencontainers.image.base.digest="sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1" \
+    org.opencontainers.image.base.digest="sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3" \
     ai.nebius.fs2-serve.source-tree="$FS2_SOURCE_TREE" \
     ai.nebius.fs2-serve.uv-lock-sha256="$FS2_UV_LOCK_SHA256" \
     ai.nebius.fs2-serve.dockerfile-sha256="$FS2_DOCKERFILE_SHA256" \

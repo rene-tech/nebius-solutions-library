@@ -89,12 +89,12 @@ def test_container_imports_installed_packages_without_pythonpath_or_source_shado
     from_lines = [line for line in dockerfile.splitlines() if line.startswith("FROM ") and "scratch" not in line]
     assert from_lines and all(re.search(r"@sha256:[a-f0-9]{64}(?: AS [a-z]+)?$", line) for line in from_lines)
     fixed_python_base = (
-        "python:3.13.15-alpine3.23@sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1"
+        "python:3.13.15-alpine3.23@sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3"
     )
     assert dockerfile.count(f"FROM {fixed_python_base}") == 2
     assert 'org.opencontainers.image.base.name="docker.io/library/python:3.13.15-alpine3.23"' in dockerfile
     assert (
-        'org.opencontainers.image.base.digest="sha256:7ea3f82de8ea6d4fb7e5d2bbe3fe3c9d931700b7a529f1fe5769e42abe514ca1"'
+        'org.opencontainers.image.base.digest="sha256:a3180613a9708f1cd59aa79a3dd82e8a6d3f3199d1d6e2c467a63687518872d3"'
     ) in dockerfile
     for label in (
         "org.opencontainers.image.revision",
