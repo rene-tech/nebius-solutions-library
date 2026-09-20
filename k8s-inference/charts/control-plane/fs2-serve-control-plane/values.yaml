@@ -1,5 +1,20 @@
 replicaCount: 2
 
+# CPU-only public-API executors; PostgreSQL owns the durable campaign queue.
+# A Secret reference, not a plaintext customer key, belongs in Helm/Terraform.
+benchmarkWorkers:
+  enabled: false
+  image: ""
+  sourceCommit: ""
+  replicas: 4
+  credentialSecret: ""
+  credentialKey: token
+  nodeSelector: {}
+  tolerations: []
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+
 # Observational workshop classifiers. Empty endpoints report unavailable.
 mindguard:
   model4bEndpoint: ""

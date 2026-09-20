@@ -672,6 +672,15 @@ variable "deployment" {
         digest                 = string
         catalog_rollout_digest = string
         gpu_observer_image     = optional(string, "")
+        benchmark_workers = optional(object({
+          enabled           = optional(bool, false)
+          image             = optional(string, "")
+          source_commit     = optional(string, "")
+          replicas          = optional(number, 4)
+          credential_secret = optional(string, "")
+          credential_key    = optional(string, "token")
+          node_selector     = optional(map(string), {})
+        }), {})
         autoscaling = optional(object({
           enabled                           = optional(bool, true)
           min_replicas                      = optional(number, 2)

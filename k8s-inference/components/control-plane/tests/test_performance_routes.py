@@ -5,7 +5,28 @@ import httpx
 from fastapi import FastAPI
 
 from fs2_serve.access_models import OperatorRole
-from fs2_serve.performance_routes import performance_router
+from fs2_serve.performance_routes import hardware_node, performance_router
+
+
+def test_hardware_observation_is_node_identity_bound_and_payload_free():
+    node = {
+        "metadata": {
+            "uid": "node-uid",
+            "name": "node-name",
+            "annotations": {"private": "not-exported"},
+            "labels": {
+                "accelerator.fs2.nebius/pool-id": "h100-full",
+                "accelerator.fs2.nebius/class": "h100",
+                "nebius.com/nvidia_driver_version": "580.173.02",
+                "local-nvme.fs2.nebius/eligible": "false",
+            },
+        },
+        "status": {"capacity": {"nvidia.com/gpu": "8"}, "nodeInfo": {"architecture": "amd64"}},
+    }
+    observed = hardware_node(node)
+    assert observed["uid"] == "node-uid" and observed["gpus_per_node"] == "8"
+    assert observed["local_storage"] == "absent"
+    assert "annotations" not in observed
 
 
 async def test_performance_routes_use_existing_access_check_before_repository():

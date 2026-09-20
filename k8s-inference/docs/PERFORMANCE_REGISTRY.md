@@ -54,6 +54,39 @@ to customer waiting-time evidence.
 
 ## Recovery and deployment
 
+The optional `benchmarkWorkers` Helm workload is a bounded CPU-only Deployment.
+It has no Kubernetes API token and invokes the same public inference API as a
+customer. Enable it through
+`deployment.applications.control_plane.benchmark_workers` in `terraform.tfvars`:
+
+```hcl
+benchmark_workers = {
+  enabled           = true
+  image             = "REGIONAL_REGISTRY/benchmark-worker@sha256:QUALIFIED_DIGEST"
+  source_commit     = "EXACT_40_CHARACTER_SOURCE_COMMIT"
+  replicas          = 4
+  credential_secret = "fs2-benchmark-inference"
+}
+```
+
+The referenced Secret holds a platform API key for a dedicated benchmark tenant,
+with access only to the models being tested and a matching concurrency allowance.
+The Secret value does not belong in Terraform variables or Helm values. The
+existing administrator Secret authenticates the operator-only registry API.
+Key expiry remains enforced; renew the key before a longer campaign. Expired
+credentials must not be bypassed or silently replaced with customer keys.
+
+Build the worker from a committed archive and an immutable control-plane base.
+Kubernetes restarts interrupted workers. Between trials they establish a fresh
+operator session and scan the durable campaign queue. Replica count bounds total
+worker concurrency; campaign concurrency can impose a smaller bound. The initial
+runner uses existing committed model fixtures/semantic validators. It cannot
+turn an unknown adapter into a successful measurement.
+
+Receipts use the existing artifact service retention policy (90 days in the
+initial live campaign). PostgreSQL campaign metadata and timings persist beyond
+that; extend/export artifact retention if the raw evidence is needed longer.
+
 Trials use PostgreSQL row locking and `SKIP LOCKED`, a lease and a monotonically
 increasing fencing number. An expired worker cannot publish a result after a
 replacement has claimed its trial. Publication retries with exactly the same
