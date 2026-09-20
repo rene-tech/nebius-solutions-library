@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -99,6 +100,19 @@ _KUEUE_REQUEUING_LIMIT_REASONS = frozenset(
         "EvictedDueToDeactivatedDueToRequeuingLimitExceeded",
     }
 )
+
+# Keep a controller-owned disruption receipt on the Job after the Pod is gone.
+# FailJob does NOT create extra Kubernetes retries: every replacement is still
+# a separately accounted attempt under the existing frozen stage budget.
+# The first rule preserves application/OOM exits, including ambiguous SIGKILL
+# (137). Only SIGTERM (143), successful containers, or not-yet-started Pods can
+# reach the disruption rule. Do not replace these rules with Ignore.
+_JOB_FAILURE_POLICY = {
+    "rules": [
+        {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [143]}},
+        {"action": "FailJob", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]},
+    ]
+}
 
 
 class ScientificManifestRenderer(Protocol):
@@ -230,7 +244,8 @@ def _kueue_eviction(reason: str) -> tuple[WorkloadState, FailureKind, str]:
 
 
 def _reported_failure(
-    reasons: list[str], pod_statuses: list[Mapping[str, Any]], *, model_id: str
+    reasons: list[str], pod_statuses: list[Mapping[str, Any]], *, model_id: str,
+    job: Mapping[str, Any] | None = None,
 ) -> tuple[WorkloadState, FailureKind, str]:
     fallback = _failure(reasons)
     # The Job controller can count a taint-evicted Pending Pod as failed before
@@ -260,6 +275,8 @@ def _reported_failure(
             return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "EvictionByEvictionAPI"
         if "PreemptionByScheduler" in disruptions:
             return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, "PreemptionByScheduler"
+        if job is not None and _retained_job_disruption(job):
+            return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "JobDisruptionTarget"
     if (
         model_id != LEROBOT_MODEL_ID
         or fallback[1] is not FailureKind.APPLICATION
@@ -277,6 +294,42 @@ def _reported_failure(
     # Ambiguous multi-Pod reports retain the existing generic failure. Reporting
     # enriches public diagnostics, not the established failure/retry taxonomy.
     return (fallback[0], fallback[1], next(iter(codes))) if len(codes) == 1 else fallback
+
+
+def _retained_job_disruption(job: Mapping[str, Any]) -> bool:
+    """Recognize only our exact Job policy's terminal disruption receipt.
+
+    Kubernetes retains the matched FailJob rule on the Job, unlike the removed
+    Pod's conditions. UID and attempt ownership are checked by observe() first.
+    Generic BackoffLimitExceeded, exit-code rules, other policies, and nonterminal
+    FailureTarget conditions are deliberately insufficient.
+    """
+    spec = job.get("spec")
+    metadata = job.get("metadata")
+    status = job.get("status")
+    if (
+        not isinstance(spec, Mapping)
+        or spec.get("backoffLimit") != 0
+        or spec.get("podFailurePolicy") != _JOB_FAILURE_POLICY
+        or not isinstance(metadata, Mapping)
+        or not isinstance(status, Mapping)
+    ):
+        return False
+    condition = _condition(status, "Failed")
+    namespace, name = metadata.get("namespace"), metadata.get("name")
+    if (
+        condition is None or condition.get("reason") != "PodFailurePolicy"
+        or not isinstance(namespace, str) or not namespace
+        or not isinstance(name, str) or not name
+    ):
+        return False
+    # Kubernetes v1.31+ controller message; fail conservatively if its format
+    # changes rather than guessing that an application failure was disruption.
+    pattern = (
+        rf"Pod {re.escape(namespace)}/{re.escape(name)}-[a-z0-9]+ "
+        r"has condition DisruptionTarget matching FailJob rule at index 1"
+    )
+    return re.fullmatch(pattern, str(condition.get("message", ""))) is not None
 
 
 def _utcnow() -> datetime:
@@ -988,6 +1041,7 @@ class HttpScientificBatchCluster:
                 _bind_pool_affinity(pod, pools)
         if resource.kind is WorkloadKind.JOB:
             spec["backoffLimit"] = 0
+            spec["podFailurePolicy"] = copy.deepcopy(_JOB_FAILURE_POLICY)
         if resource.scheduling.max_execution_seconds is not None:
             _set_active_deadline(manifest, resource.kind, resource.scheduling.max_execution_seconds)
         envelope = self._frozen_envelope(manifest, resource)
@@ -1286,7 +1340,15 @@ class HttpScientificBatchCluster:
 
         succeeded = int(status.get("succeeded", 0) or 0) > 0 or _condition(status, "Completed") is not None
         failed_condition = _condition(status, "Failed")
-        failed = int(status.get("failed", 0) or 0) > 0 or failed_condition is not None
+        policy_pending = (
+            ref.kind is WorkloadKind.JOB
+            and value.get("spec", {}).get("podFailurePolicy") == _JOB_FAILURE_POLICY
+            and failed_condition is None
+            and _condition(status, "FailureTarget") is not None
+        )
+        # FailureTarget precedes terminal Failed while other containers stop.
+        # Do not settle a counted Pod failure before its durable rule receipt.
+        failed = not policy_pending and (int(status.get("failed", 0) or 0) > 0 or failed_condition is not None)
         if (
             not admitted
             and eviction_reason is None
@@ -1314,7 +1376,8 @@ class HttpScientificBatchCluster:
         elif failed:
             reason = str((failed_condition or {}).get("reason", "workload_failed"))
             workload_state, failure_kind, failure_code = _reported_failure(
-                [reason, *failure_reasons], pod_statuses, model_id=str(labels.get(MODEL_LABEL, ""))
+                [reason, *failure_reasons], pod_statuses, model_id=str(labels.get(MODEL_LABEL, "")),
+                job=value if ref.kind is WorkloadKind.JOB else None,
             )
             return WorkloadObservation(
                 ref=ref,
@@ -1328,7 +1391,7 @@ class HttpScientificBatchCluster:
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
-        elif (
+        elif not policy_pending and (
             stalled := _stalled_collection(
                 pod_statuses, now=self.clock(), model_id=str(labels.get(MODEL_LABEL, ""))
             )

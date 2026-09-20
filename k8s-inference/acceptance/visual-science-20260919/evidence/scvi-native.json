@@ -1,0 +1,137 @@
+{
+  "schema": "fs2-visual-science-native-qualification/v1",
+  "started_at": "2026-09-19T14:26:45.760412+00:00",
+  "model": "scvi",
+  "boundary": "direct worker HTTP; excludes public App admission and MCP",
+  "health": {
+    "status": 200,
+    "elapsed_seconds": 0.2972368262708187,
+    "request_bytes": 0,
+    "request_sha256": null,
+    "response_bytes": 45,
+    "response_sha256": "01e48cd889efb3e728a4918ea6ca0ec28ff45d418c18826fcf3ca60c5ccabecd",
+    "content_type": "application/json",
+    "semantic": {
+      "status": "ready",
+      "scvi_tools": "1.5.0.post1"
+    }
+  },
+  "results": [
+    {
+      "status": 200,
+      "elapsed_seconds": 11.693506264127791,
+      "request_bytes": 70792,
+      "request_sha256": "7d06ba95ae5d00c94b9f30ff481e8b53e794e435798d3e7582d787e6861aa557",
+      "response_bytes": 316204,
+      "response_sha256": "eeb80dc892379cb0fdf16ba2d9d8456f5f795323c146856e53225011eb5af93d",
+      "content_type": "application/zip",
+      "semantic": {
+        "method": "scvi",
+        "input_sha256": "f50e42d1914b78108c10ff8d32f70316b79bf95c81f10e2b56ad4d36c026fedb",
+        "cells": 160,
+        "genes": 96,
+        "nonzero_counts": 15360,
+        "latent_dimensions": 4,
+        "batch_key": "batch",
+        "labels_key": null,
+        "unlabeled_category": null,
+        "max_epochs": 2,
+        "seed": 17,
+        "scvi_tools_version": "1.5.0.post1",
+        "torch_version": "2.7.1+cu128",
+        "gpu": "NVIDIA H100 80GB HBM3",
+        "artifacts": [
+          "integrated.h5ad",
+          "latent_embeddings.csv",
+          "umap_embeddings.csv",
+          "preview.png",
+          "model/"
+        ],
+        "research_only": true,
+        "clinical_use": false
+      }
+    },
+    {
+      "status": 200,
+      "elapsed_seconds": 1.2681461069732904,
+      "request_bytes": 72976,
+      "request_sha256": "a6b10f2c3f256607d0d5c0aa18af5a168eede57f5db1406f16e43cb042e98502",
+      "response_bytes": 396688,
+      "response_sha256": "5b33ad31e8a1673e98abdae36f6502f92c16c1e2c4aaacc79da717bcb65977d3",
+      "content_type": "application/zip",
+      "semantic": {
+        "method": "scanvi",
+        "input_sha256": "8727d5730bc2a167d00df7960fa09e7add84ce4d125e15c89394e3fc70750632",
+        "cells": 192,
+        "genes": 96,
+        "nonzero_counts": 18432,
+        "latent_dimensions": 4,
+        "batch_key": "batch",
+        "labels_key": "cell_type",
+        "unlabeled_category": "Unknown",
+        "max_epochs": 2,
+        "seed": 18,
+        "scvi_tools_version": "1.5.0.post1",
+        "torch_version": "2.7.1+cu128",
+        "gpu": "NVIDIA H100 80GB HBM3",
+        "artifacts": [
+          "integrated.h5ad",
+          "latent_embeddings.csv",
+          "umap_embeddings.csv",
+          "preview.png",
+          "model/"
+        ],
+        "research_only": true,
+        "clinical_use": false
+      }
+    }
+  ],
+  "replay": {
+    "status": 200,
+    "elapsed_seconds": 0.7870264463126659,
+    "request_bytes": 70792,
+    "request_sha256": "7d06ba95ae5d00c94b9f30ff481e8b53e794e435798d3e7582d787e6861aa557",
+    "response_bytes": 316208,
+    "response_sha256": "c57da30c44876850c3a9ff27abafd2dc8d2cb22411dc9b416974fd515920907d",
+    "content_type": "application/zip",
+    "semantic": {
+      "method": "scvi",
+      "input_sha256": "f50e42d1914b78108c10ff8d32f70316b79bf95c81f10e2b56ad4d36c026fedb",
+      "cells": 160,
+      "genes": 96,
+      "nonzero_counts": 15360,
+      "latent_dimensions": 4,
+      "batch_key": "batch",
+      "labels_key": null,
+      "unlabeled_category": null,
+      "max_epochs": 2,
+      "seed": 17,
+      "scvi_tools_version": "1.5.0.post1",
+      "torch_version": "2.7.1+cu128",
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "artifacts": [
+        "integrated.h5ad",
+        "latent_embeddings.csv",
+        "umap_embeddings.csv",
+        "preview.png",
+        "model/"
+      ],
+      "research_only": true,
+      "clinical_use": false
+    }
+  },
+  "negative": {
+    "status": 403,
+    "elapsed_seconds": 0.36707729659974575,
+    "request_bytes": 70793,
+    "request_sha256": "6bda7d754b9710d5b466b07c30527c4a41cc8ee8a9e163e3fc80dd064465b664",
+    "response_bytes": 59,
+    "response_sha256": "2dd62e89438486e6ab3fb796d16e161f63a09882350de278de7474ca52b5465d",
+    "content_type": "application/json",
+    "semantic": {
+      "detail": "research_only=true acknowledgement is required"
+    }
+  },
+  "completed_at": "2026-09-19T14:26:45.760437+00:00",
+  "outcome": "passed"
+}

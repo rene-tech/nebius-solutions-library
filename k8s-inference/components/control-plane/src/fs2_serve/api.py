@@ -109,9 +109,15 @@ from .models import (
 from .operation_history import OperationPage, decode_cursor, encode_cursor
 from .operation_metrics import customer_operation_metrics
 from .registry import OperationalModel, Registry, RegistryError
+from .reporting_reads import InFlightMetricsRead
 from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
 from .request_debug_routes import request_debug_router
-from .request_telemetry import InMemoryRequestTelemetryStore, PostgresRequestTelemetryStore, RequestTelemetryMiddleware
+from .request_telemetry import (
+    InMemoryRequestTelemetryStore,
+    PostgresRequestTelemetryStore,
+    RequestTelemetryMiddleware,
+    ensure_request_id,
+)
 from .route_revalidation import RouteRevalidator
 from .scientific_admin import ScientificAdminReadService, ScientificRunQuery
 from .scientific_admin_models import (
@@ -541,6 +547,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         try:
             yield
         finally:
+            await metrics_reads.close()
             if users_service.storage is not None:
                 await users_service.storage.close()
             if runtime.scientific_batch_worker is not None:
@@ -804,8 +811,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         detail: str,
         *,
         title: str = "Admin request failed",
+        request_id: UUID | None = None,
     ) -> JSONResponse:
-        request_id = uuid4()
+        request_id = request_id or uuid4()
         return JSONResponse(
             AdminProblem(
                 type=f"urn:fs2:admin:problem:{code}",
@@ -848,8 +856,10 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         )
 
     @app.exception_handler(AdminProblemError)
-    async def admin_problem(_: Request, exc: AdminProblemError) -> JSONResponse:
-        return admin_problem_response(exc.status_code, exc.code, exc.detail)
+    async def admin_problem(request: Request, exc: AdminProblemError) -> JSONResponse:
+        return admin_problem_response(
+            exc.status_code, exc.code, exc.detail, request_id=request.scope.get("state", {}).get("fs2_request_id")
+        )
 
     @app.exception_handler(PermissionError)
     async def permission_error(request: Request, __: PermissionError) -> JSONResponse:
@@ -1025,20 +1035,33 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             }
         )
 
+    async def collect_metrics() -> bytes:
+        # Retain every existing query/series. Publish only after all reads succeed;
+        # concurrent scrapes share this in-flight collection, not an old cache.
+        accelerator_classes = await _pool_accelerator_classes(runtime)
+        terminal = await runtime.store.terminal_accounting()
+        queue = await runtime.store.queue_counts()
+        queue_age = await runtime.store.oldest_queue_age()
+        semantics = await transport_store.semantic_metric_rows()
+        operations = await customer_operation_metrics(pool) if pool is not None else None
+        lifecycle = await runtime.lifecycle.metric_rows()
+        rollups = await runtime.lifecycle.rollup_metric_rows()
+        runtime.metrics.sync_models(runtime.registry.list(), pool_accelerator_classes=accelerator_classes)
+        runtime.metrics.set_terminal_accounting(terminal)
+        runtime.metrics.set_queue(queue)
+        runtime.metrics.set_queue_age(queue_age)
+        runtime.metrics.set_request_semantics(semantics)
+        if operations is not None:
+            runtime.metrics.set_customer_operations(operations)
+        runtime.metrics.set_lifecycle_accounting(lifecycle)
+        runtime.metrics.set_lifecycle_rollups(rollups)
+        return runtime.metrics.render()
+
+    metrics_reads = InFlightMetricsRead(collect_metrics)
+
     @app.get("/metrics", include_in_schema=False)
     async def metrics() -> Response:
-        runtime.metrics.sync_models(
-            runtime.registry.list(), pool_accelerator_classes=await _pool_accelerator_classes(runtime)
-        )
-        runtime.metrics.set_terminal_accounting(await runtime.store.terminal_accounting())
-        runtime.metrics.set_queue(await runtime.store.queue_counts())
-        runtime.metrics.set_queue_age(await runtime.store.oldest_queue_age())
-        runtime.metrics.set_request_semantics(await transport_store.semantic_metric_rows())
-        if pool is not None:
-            runtime.metrics.set_customer_operations(await customer_operation_metrics(pool))
-        runtime.metrics.set_lifecycle_accounting(await runtime.lifecycle.metric_rows())
-        runtime.metrics.set_lifecycle_rollups(await runtime.lifecycle.rollup_metric_rows())
-        return Response(runtime.metrics.render(), media_type="text/plain; version=0.0.4; charset=utf-8")
+        return Response(await metrics_reads.read(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
     @app.get("/v1/me")
     async def caller_policy(identity: Annotated[Principal, Depends(principal)]) -> Response:
@@ -2056,6 +2079,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             )
             async def admin_scientific_run_detail(
                 run_id: UUID,
+                request: Request,
+                response: Response,
                 identity: Annotated[OperatorPrincipal, Depends(operator)],
                 params: Annotated[AdminContextParameters, Depends(_admin_context_parameters)],
             ) -> AdminEnvelope[ScientificRunDetail]:
@@ -2065,10 +2090,13 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                     action="scientific_run.read",
                     tenant_id=identity.tenant_id,
                 )
+                request_id = ensure_request_id(request.scope)
+                response.headers["x-request-id"] = str(request_id)
                 return await scientific_admin.run_detail(
                     selected_context(params),
                     run_id,
                     tenant_id=authorized_tenant,
+                    request_id=request_id,
                 )
 
             @app.get(

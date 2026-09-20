@@ -205,7 +205,7 @@ def _record(
             "alternatives": [],
         }
         if cpu_runtime
-        else artifact_kind == "weights"
+        else artifact_kind in {"weights", "formula"}
         and record["cache"]["owner"] in {"fs2-serve-localizer", "runtime-image"}
         and gpu["count"] >= 1
         and gpu["topology"] in {"single-gpu", "single-node-multi-gpu"}
@@ -264,7 +264,14 @@ def deployment_runtime_model_schema(catalog_dir: Path) -> dict[str, Any]:
     schema["properties"]["cache"]["properties"]["owner"]["enum"].append("runtime-image")
     schema["$defs"]["artifact"]["properties"]["kind"]["enum"].extend(["reference-database", "formula"])
     schema["properties"]["model"]["properties"]["family"]["enum"].extend(
-        ["biological-age", "speech-recognition", "speech-synthesis", "speaker-diarization"]
+        [
+            "biological-age",
+            "microscopy",
+            "single-cell",
+            "speech-recognition",
+            "speech-synthesis",
+            "speaker-diarization",
+        ]
     )
     return schema
 

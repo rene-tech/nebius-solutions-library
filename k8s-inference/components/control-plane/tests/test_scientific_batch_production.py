@@ -2248,6 +2248,10 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
             assert body["metadata"]["annotations"][ACCELERATOR_RESOURCE_ANNOTATION] == "nvidia.com/gpu"
             assert body["metadata"]["annotations"][ACCELERATOR_COUNT_ANNOTATION] == "1"
             assert body["spec"]["suspend"] is True and body["spec"]["backoffLimit"] == 0
+            assert body["spec"]["podFailurePolicy"] == {"rules": [
+                {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [143]}},
+                {"action": "FailJob", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]},
+            ]}
             assert body["spec"]["activeDeadlineSeconds"] == 3600
             assert body["spec"]["template"]["metadata"]["labels"][ATTEMPT_LABEL] == str(attempt_id)
             pool_expression = body["spec"]["template"]["spec"]["affinity"]["nodeAffinity"][

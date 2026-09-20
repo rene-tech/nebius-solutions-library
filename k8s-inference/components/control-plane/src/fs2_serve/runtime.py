@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import json
 import logging
 import re
 import time
 import wave
+import zipfile
 import zlib
 from collections.abc import AsyncIterator, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -883,16 +885,83 @@ class RuntimeClient:
             return None
         return bytes(content) if observed <= _MAX_SCIENTIFIC_ERROR_BYTES else None
 
+    @staticmethod
+    def _scvi_multipart(request_body: bytes) -> tuple[dict[str, str], dict[str, tuple[str, bytes, str]]]:
+        """Translate the public JSON/artifact contract to the pinned multipart runtime."""
+
+        try:
+            payload = json.loads(request_body)
+            if not isinstance(payload, dict):
+                raise ValueError
+            encoded = payload.pop("anndata_base64")
+            filename = payload.pop("filename")
+            if not isinstance(encoded, str) or not isinstance(filename, str):
+                raise ValueError
+            content = base64.b64decode(encoded, validate=True)
+        except (KeyError, ValueError, UnicodeError):
+            raise RuntimeProtocolError("scVI request translation failed") from None
+        if not content or len(content) > 64 * 1024 * 1024:
+            raise RuntimeProtocolError("scVI AnnData input is outside the interactive bound")
+        form: dict[str, str] = {}
+        for key, value in payload.items():
+            if value is None:
+                continue
+            if isinstance(value, bool):
+                form[key] = "true" if value else "false"
+            elif isinstance(value, str | int):
+                form[key] = str(value)
+            else:
+                raise RuntimeProtocolError("scVI request translation failed")
+        return form, {"file": (filename, content, "application/x-hdf5")}
+
+    @staticmethod
+    def _scvi_zip_valid(body: bytes, content_type: str) -> None:
+        if content_type != "application/zip" or len(body) < 22 or not body.startswith(b"PK"):
+            raise RuntimeProtocolError("scVI response is not a complete ZIP artifact")
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                names = archive.namelist()
+                if (
+                    len(names) != len(set(names))
+                    or any(name.startswith("/") or ".." in name.split("/") for name in names)
+                    or not {"manifest.json", "integrated.h5ad", "latent_embeddings.csv"} <= set(names)
+                    or not any(name.startswith("model/") and not name.endswith("/") for name in names)
+                    or archive.testzip() is not None
+                ):
+                    raise RuntimeProtocolError("scVI ZIP contents are invalid")
+                manifest = json.loads(archive.read("manifest.json"))
+        except (zipfile.BadZipFile, KeyError, ValueError, UnicodeError, RecursionError):
+            raise RuntimeProtocolError("scVI ZIP contents are invalid") from None
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("method") not in {"scvi", "scanvi"}
+            or type(manifest.get("cells")) is not int
+            or manifest["cells"] < 1
+            or type(manifest.get("genes")) is not int
+            or manifest["genes"] < 1
+            or type(manifest.get("latent_dimensions")) is not int
+            or manifest["latent_dimensions"] < 2
+            or manifest.get("research_only") is not True
+            or manifest.get("clinical_use") is not False
+        ):
+            raise RuntimeProtocolError("scVI result manifest is invalid")
+
     async def invoke(self, model: OperationalModel, operation: ClaimedOperation, request_body: bytes) -> RuntimeResult:
         try:
             endpoint = model.binding.endpoints[operation.protocol]
         except KeyError:
             raise RuntimeProtocolError("runtime protocol is invalid") from None
-        headers = self._correlation_headers(operation)
-        headers["content-type"] = operation.request_content_type
         source_model = (
             model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
         )
+        headers = self._correlation_headers(operation)
+        scvi = (
+            model.binding.backend_class == "local-kubernetes"
+            and operation.protocol == "native"
+            and source_model == "scvi-scanvi"
+        )
+        if not scvi:
+            headers["content-type"] = operation.request_content_type
         speech = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                   and source_model in {
                       "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
@@ -909,12 +978,18 @@ class RuntimeClient:
         started = time.monotonic()
         try:
             if model.binding.backend_class == "local-kubernetes":
+                request_arguments: dict[str, Any]
+                if scvi:
+                    form, files = self._scvi_multipart(request_body)
+                    request_arguments = {"data": form, "files": files}
+                else:
+                    request_arguments = {"content": request_body}
                 stream = self.client.stream(
                     "POST",
                     f"{model.binding.service_origin}{endpoint}",
                     headers=headers,
-                    content=request_body,
                     timeout=self._timeout(operation, self.runtime_timeout_seconds),
+                    **request_arguments,
                 )
                 if self.debug_store is not None:
                     stream = self._debug_stream(stream, operation, endpoint, request_body, headers, 1)
@@ -1002,6 +1077,9 @@ class RuntimeClient:
                     semantic = "protocol_valid"
                 elif cosmos and content_type in {"image/png", "video/mp4"}:
                     self._cosmos_binary_valid(bytes(content), content_type)
+                    semantic, usage = "protocol_valid", None
+                elif scvi:
+                    self._scvi_zip_valid(bytes(content), content_type)
                     semantic, usage = "protocol_valid", None
                 else:
                     semantic = self._semantic_outcome(operation.protocol, bytes(content))

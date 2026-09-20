@@ -20,6 +20,7 @@ import asyncpg
 from .apps_scientific import AppScientificModels, ScientificAppsInventory
 from .lifecycle import LifecycleSignal, _signal_from_row
 from .registry import Registry
+from .reporting_reads import read_phase, reporting_connection
 from .scientific_activity import activity_capture_reason, activity_summaries
 from .scientific_admin import (
     ScientificAdminQueryError,
@@ -551,7 +552,7 @@ class PostgresScientificRunAdminAdapter:
     async def _accounting(self, states: list[ScientificBatchState]) -> dict[UUID, ScientificGpuAccounting]:
         if not self.lifecycle_accounting or not states:
             return {}
-        async with self.pool.acquire() as connection:
+        async with reporting_connection(self.pool, "accounting") as connection:
             rows = await connection.fetch(
                 _SCIENTIFIC_GPU_ACCOUNTING_QUERY,
                 [state.operation_id for state in states],
@@ -569,7 +570,7 @@ class PostgresScientificRunAdminAdapter:
         if not self.lifecycle_accounting:
             return ()
         expected = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
-        async with self.pool.acquire() as connection:
+        async with reporting_connection(self.pool, "lifecycle_signals") as connection:
             rows = await connection.fetch(
                 """SELECT subject.attempt_id,signal.*
                    FROM fs2_telemetry_subjects subject
@@ -596,7 +597,7 @@ class PostgresScientificRunAdminAdapter:
     async def _lifecycle_correlations(self, state: ScientificBatchState) -> tuple[Mapping[str, Any], ...]:
         if not self.lifecycle_accounting:
             return ()
-        async with self.pool.acquire() as connection:
+        async with reporting_connection(self.pool, "lifecycle_correlations") as connection:
             rows = await connection.fetch(
                 """SELECT subject.attempt_id,correlation.pod_uid,correlation.node_uid,correlation.gpu_uuid
                    FROM fs2_telemetry_subjects subject
@@ -609,7 +610,8 @@ class PostgresScientificRunAdminAdapter:
         return tuple(rows) if len(rows) <= 10000 else ()
 
     async def _model_map(self, *, tenant_id: str | None) -> dict[str, ScientificModelReadiness]:
-        snapshot = await self.models.list_models(tenant_id=tenant_id)
+        with read_phase("model_inventory_and_catalog"):
+            snapshot = await self.models.list_models(tenant_id=tenant_id)
         return {item.model_id: item for item in snapshot.data.items}
 
     @staticmethod
@@ -734,7 +736,7 @@ class PostgresScientificRunAdminAdapter:
         if tenant_id is not None:
             args.append(tenant_id)
             tenant_clause = " AND operation.tenant_id=$2"
-        async with self.pool.acquire() as connection:
+        async with reporting_connection(self.pool, "run_record") as connection:
             observed_at = await connection.fetchval("SELECT clock_timestamp()")
             record = await connection.fetchrow(
                 self._base_select() + " WHERE operation.id=$1" + tenant_clause,
@@ -742,41 +744,48 @@ class PostgresScientificRunAdminAdapter:
             )
         if record is None:
             raise KeyError(operation_id)
-        state = state_from_value(record["state"])
+        with read_phase("decode_state"):
+            state = state_from_value(record["state"])
         models = await self._model_map(tenant_id=tenant_id)
         try:
             model = models[state.model_id]
         except KeyError as error:
             raise ScientificAdminSourceUnavailableError("scientific run model identity is absent") from error
-        events = tuple(await self.batches.list_events(operation_id, tenant_id=state.tenant_id, limit=1000))
+        with read_phase("events_repository"):
+            events = tuple(await self.batches.list_events(operation_id, tenant_id=state.tenant_id, limit=1000))
         max_attempts = max(stage.max_attempts for stage in state.plan.stages)
-        signals = await self._lifecycle_signals(state)
-        correlations = await self._lifecycle_correlations(state)
+        with read_phase("lifecycle_signals"):
+            signals = await self._lifecycle_signals(state)
+        with read_phase("lifecycle_correlations"):
+            correlations = await self._lifecycle_correlations(state)
         expected_subjects = {attempt.attempt_id for stage in state.stages for attempt in stage.attempts}
-        detail = ScientificRunDetail(
-            run=_summary(cast(Mapping[str, Any], record), state, model),
-            lifecycle_phases=project_phase_times(
-                signals, incomplete_attempts={row.subject_id for row in signals} != expected_subjects,
-            ),
-            stages=_stages(state, events, signals, correlations),
-            artifacts=[],
-            retry=ScientificRetry(max_attempts_per_stage=max_attempts, retryable_exit_codes=[]),
-            semantic_validation=ScientificSemanticValidation(
-                validator_id="unavailable",
-                status="not-run",
-                receipt_digest=None,
-            ),
-            observability=[
-                ScientificObservabilityLink(
-                    kind=cast(Any, kind),
-                    label=label,
-                    available=True,
-                    href=f"/admin/observability?operation_id={operation_id}&signal={kind}",
-                    reason=None,
-                )
-                for kind, label in (("trace", "Request trace"), ("logs", "Workload logs"), ("metrics", "GPU metrics"))
-            ],
-        )
+        with read_phase("detail_projection"):
+            detail = ScientificRunDetail(
+                run=_summary(cast(Mapping[str, Any], record), state, model),
+                lifecycle_phases=project_phase_times(
+                    signals, incomplete_attempts={row.subject_id for row in signals} != expected_subjects,
+                ),
+                stages=_stages(state, events, signals, correlations),
+                artifacts=[],
+                retry=ScientificRetry(max_attempts_per_stage=max_attempts, retryable_exit_codes=[]),
+                semantic_validation=ScientificSemanticValidation(
+                    validator_id="unavailable",
+                    status="not-run",
+                    receipt_digest=None,
+                ),
+                observability=[
+                    ScientificObservabilityLink(
+                        kind=cast(Any, kind),
+                        label=label,
+                        available=True,
+                        href=f"/admin/observability?operation_id={operation_id}&signal={kind}",
+                        reason=None,
+                    )
+                    for kind, label in (
+                        ("trace", "Request trace"), ("logs", "Workload logs"), ("metrics", "GPU metrics")
+                    )
+                ],
+            )
         accounting = await self._accounting([state])
         if operation_id in accounting:
             detail = detail.model_copy(

@@ -1,0 +1,27 @@
+{
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "model_id": "cellpose-cpsam-v2",
+  "kind": "weights",
+  "source": {
+    "uri": "https://huggingface.co/mouseland/cellpose-sam/tree/7c61431b5fbb078f3296754bd15d9f51b320f837",
+    "revision": "7c61431b5fbb078f3296754bd15d9f51b320f837"
+  },
+  "content": {
+    "digest": "c2ca28d0c7d776271803ce49eb6ecf3c92dad5fda465e00f808b196923a97f8d",
+    "expanded_bytes": 1233586851,
+    "files": [
+      {
+        "path": "cpsam_v2",
+        "bytes": 1233586851,
+        "sha256": "0f1cc3f7ecdd8a037a57c6c48d9d8921391be4cbce3fa9f13c3e3a2e1253c667"
+      }
+    ]
+  },
+  "license": {
+    "id": "BSD-3-Clause",
+    "state": "verified"
+  },
+  "entitlement_state": "not-required",
+  "owner": "runtime-image",
+  "retention": "retained-platform"
+}

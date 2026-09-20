@@ -1,5 +1,6 @@
 """Regression for the real Pending Pod eviction observed on18September2026."""
 
+import copy
 import json
 from datetime import timedelta
 from pathlib import Path
@@ -8,7 +9,7 @@ from uuid import uuid4
 import pytest
 import test_scientific_batch_production as production
 
-from fs2_serve.scientific_batch.kubernetes import STAGE_CONTAINER_NAME, _reported_failure
+from fs2_serve.scientific_batch.kubernetes import _JOB_FAILURE_POLICY, STAGE_CONTAINER_NAME, _reported_failure
 from fs2_serve.scientific_batch.models import FailureKind, WorkloadState
 
 
@@ -125,5 +126,103 @@ async def test_real_observer_classifies_failed_job_with_pending_evicted_pod(tmp_
         assert observation.failure_kind is FailureKind.INFRASTRUCTURE
         assert observation.failure_code == "DeletionByTaintManager"
         assert observation.failure_kind.retryable
+    finally:
+        await client.aclose()
+
+
+def retained_job():
+    return {
+        "metadata": {"namespace": "fs2-models", "name": "scientific-job"},
+        "spec": {"backoffLimit": 0, "podFailurePolicy": copy.deepcopy(_JOB_FAILURE_POLICY)},
+        "status": {"failed": 1, "conditions": [{
+            "type": "Failed", "status": "True", "reason": "PodFailurePolicy",
+            "message": (
+                "Pod fs2-models/scientific-job-abc12 has condition DisruptionTarget "
+                "matching FailJob rule at index 1"
+            ),
+        }]},
+    }
+
+
+def test_deleted_pod_disruption_survives_in_exact_job_failure_policy():
+    assert _reported_failure(["PodFailurePolicy"], [], model_id="rfdiffusion", job=retained_job()) == (
+        WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "JobDisruptionTarget",
+    )
+
+
+@pytest.mark.parametrize("mutation", [
+    "other_policy", "backoff", "other_namespace", "other_pod", "exit_rule", "unknown_rule",
+    "failure_target", "false_condition", "generic_reason", "no_policy",
+])
+def test_untrusted_or_ambiguous_job_failure_is_not_retried(mutation):
+    job = retained_job()
+    condition = job["status"]["conditions"][0]
+    if mutation == "other_policy":
+        job["spec"]["podFailurePolicy"]["rules"][1]["action"] = "Ignore"
+    elif mutation == "backoff":
+        job["spec"]["backoffLimit"] = 1
+    elif mutation == "other_namespace":
+        condition["message"] = condition["message"].replace("fs2-models/", "other/")
+    elif mutation == "other_pod":
+        condition["message"] = condition["message"].replace("scientific-job-", "unrelated-job-")
+    elif mutation == "exit_rule":
+        condition["message"] = (
+            "Container scientific-stage for pod fs2-models/scientific-job-abc12 "
+            "failed with exit code 137 matching FailJob rule at index 0"
+        )
+    elif mutation == "unknown_rule":
+        condition["message"] = condition["message"].replace("index 1", "index 2")
+    elif mutation == "failure_target":
+        condition["type"] = "FailureTarget"
+    elif mutation == "false_condition":
+        condition["status"] = "False"
+    elif mutation == "generic_reason":
+        condition["reason"] = "BackoffLimitExceeded"
+    elif mutation == "no_policy":
+        del job["spec"]["podFailurePolicy"]
+    assert _reported_failure(["PodFailurePolicy"], [], model_id="rfdiffusion", job=job)[1] is FailureKind.APPLICATION
+
+
+@pytest.mark.parametrize("reason,exit_code", [("OOMKilled", 137), ("MaximumExecutionTimeExceeded", 143), ("Error", 1)])
+def test_retained_job_policy_does_not_override_observed_application_failure(reason, exit_code):
+    pod = {"containerStatuses": [{"name": STAGE_CONTAINER_NAME, "state": {
+        "terminated": {"exitCode": exit_code, "reason": reason},
+    }}]}
+    assert _reported_failure([reason], [pod], model_id="rfdiffusion", job=retained_job())[1] is FailureKind.APPLICATION
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", [True, False])
+async def test_observer_uses_terminal_job_disruption_when_pod_status_is_gone(tmp_path, monkeypatch, terminal):
+    original = production._live_workload
+
+    def workload(*args, **kwargs):
+        value = original(*args, **kwargs)
+        evidence = retained_job()
+        if not terminal:
+            evidence["status"]["conditions"][0]["type"] = "FailureTarget"
+        name = value["metadata"]["name"]
+        evidence["status"]["conditions"][0]["message"] = evidence["status"]["conditions"][0]["message"].replace(
+            "scientific-job-", name + "-",
+        )
+        value["spec"].update(evidence["spec"])
+        value["status"].update(evidence["status"])
+        return value
+
+    monkeypatch.setattr(production, "_live_workload", workload)
+    attempt = uuid4()
+    ref, decision = production._collection_ref(attempt)
+    cluster, client = production._collection_cluster(
+        tmp_path, ref, attempt, pod={}, now=production.STAGE_FINISHED_AT + timedelta(seconds=1),
+    )
+    try:
+        observation = await cluster.observe(ref, scheduling=decision)
+        if terminal:
+            assert observation.failure_kind is FailureKind.INFRASTRUCTURE
+            assert observation.failure_code == "JobDisruptionTarget"
+        else:
+            assert observation.state is WorkloadState.PENDING
+            assert observation.failure_kind is None
+        assert observation.pod_uids == ()
     finally:
         await client.aclose()
