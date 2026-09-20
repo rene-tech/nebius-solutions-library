@@ -816,7 +816,15 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             data=data,
         )
 
-    app.include_router(performance_router(pool, operator, admin_access, access_envelope))
+    app.include_router(
+        performance_router(
+            pool,
+            operator,
+            admin_access,
+            access_envelope,
+            kubernetes=observations.kubernetes,
+        )
+    )
 
     def admin_problem_response(
         status_code: int,

@@ -23,6 +23,15 @@ locals {
   )))
   control_plane_overrides = {
     replicaCount = 2
+    benchmarkWorkers = {
+      enabled          = var.benchmark_workers.enabled
+      image            = var.benchmark_workers.image
+      sourceCommit     = var.benchmark_workers.source_commit
+      replicas         = var.benchmark_workers.replicas
+      credentialSecret = var.benchmark_workers.credential_secret
+      credentialKey    = var.benchmark_workers.credential_key
+      nodeSelector     = var.benchmark_workers.node_selector
+    }
     autoscaling = {
       enabled                        = var.control_plane_autoscaling.enabled
       minReplicas                    = var.control_plane_autoscaling.min_replicas

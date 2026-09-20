@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import sys
 import threading
@@ -20,9 +21,11 @@ from pathlib import Path
 
 import httpx
 
+from measurements import collect
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
-sys.path[:0] = [str(ROOT / "components/control-plane/src"), str(ROOT / "catalog/runtime")]
+sys.path[:0] = [str(ROOT / "components/control-plane/src"), str(ROOT / "catalog/runtime"), str(ROOT / "models")]
 TERMINAL = {"succeeded", "failed", "cancelled", "expired", "preempted"}
 
 
@@ -37,7 +40,10 @@ def module(name, path):
 PUBLIC = module("performance_scientific", ROOT / "acceptance/scientific-fleet/run_acceptance.py")
 FLEET = module("performance_fleet", ROOT / "acceptance/scientific-fleet/run_fleet_acceptance.py")
 BIO = module("performance_bio", ROOT / "acceptance/h100-fleet/bionemo-structure/public_verify.py")
+FOLD2 = module("performance_fold2", ROOT / "acceptance/h100-fleet/openfold2-upstream/public_verify.py")
+FOLD3 = module("performance_fold3", ROOT / "acceptance/h100-fleet/openfold3-standalone/public_verify.py")
 INVENTORY = module("performance_inventory", HERE / "inventory.py")
+COSMOS = module("performance_cosmos", ROOT / "catalog/runtime/validators/validate_cosmos3_nano.py")
 
 
 def canonical(value):
@@ -70,9 +76,22 @@ def recipes(inventory):
             contract, pair = BIO.public.cases_for(model)
             case.update(adapter="media-pair", fixture_ref=model, workload_class="two-media-semantic-requests",
                         fixture_sha256=sha(canonical([record.payload for record in pair])))
+        elif model in {"openfold2", "openfold3"}:
+            helper = FOLD2 if model == "openfold2" else FOLD3
+            contract, pair = helper.cases_for(model)
+            case.update(adapter=model, fixture_ref=model, workload_class="two-structure-semantic-requests",
+                        fixture_sha256=sha(canonical([record.payload for record in pair])))
         elif model == "qwen3-8b":
             case.update(adapter="qwen", fixture_ref=model, workload_class="exact-content-two-prompts",
                         fixture_sha256=sha(canonical(qwen_requests())))
+        elif model == "cosmos3-nano":
+            fixture = ROOT / "catalog/runtime/validators/assets/cosmos3-nano.json"
+            case.update(adapter="cosmos", fixture_ref=str(fixture.relative_to(ROOT)),
+                        workload_class="two-256p-25-frame-videos", fixture_sha256=sha(fixture.read_bytes()))
+        elif model == "phenoage":
+            from aging.fixtures import clinical_payload
+            case.update(adapter="phenoage", fixture_ref="models/aging/fixtures.py", workload_class="sixteen-synthetic-samples",
+                        fixture_sha256=sha(canonical(clinical_payload(16))))
         else:
             case["unavailable_reason"] = (
                 "GLM is outside this H100/L40S campaign (B300-only qualification)" if model == "glm-5-2-fp8"
@@ -142,8 +161,8 @@ def execute(trial, origin, token, directory, timeout):
                 "elapsed_seconds": time.monotonic() - started, "semantic_valid": True,
                 "scientific_receipt": receipt}
     with httpx.Client(base_url=origin, headers={"Authorization": "Bearer " + token}, timeout=180, trust_env=False) as client:
-        if adapter in {"bio-pair", "media-pair"}:
-            helper = BIO if adapter == "bio-pair" else BIO.public
+        if adapter in {"bio-pair", "media-pair", "openfold2", "openfold3"}:
+            helper = {"bio-pair": BIO, "media-pair": BIO.public, "openfold2": FOLD2, "openfold3": FOLD3}[adapter]
             contract, pair = helper.cases_for(model)
             if sha(canonical([record.payload for record in pair])) != case["fixture_sha256"]:
                 raise RuntimeError("fixture_digest_changed")
@@ -162,6 +181,33 @@ def execute(trial, origin, token, directory, timeout):
                 if content != expected:
                     raise RuntimeError("qwen_exact_content_mismatch")
             semantic = {"status": "PASS", "contract": "exact-final-content"}
+        elif adapter == "cosmos":
+            fixture = ROOT / case["fixture_ref"]
+            if sha(fixture.read_bytes()) != case["fixture_sha256"]:
+                raise RuntimeError("fixture_digest_changed")
+            contract = COSMOS.load_contract(fixture)
+            calls = [invoke(client, model, "native", "generate-video", record["request"],
+                            f"benchmark-{trial['id']}-{index}", directory, timeout)
+                     for index, record in enumerate(contract["requests"])]
+            semantic = COSMOS.validate(contract, [row[0] for row in calls])
+        elif adapter == "phenoage":
+            from aging.fixtures import clinical_payload
+            from aging.contracts import ClinicalRequest
+            from aging.phenoage.runtime import ClinicalPhenoAgeRuntime
+            payload = clinical_payload(16)
+            if sha(canonical(payload)) != case["fixture_sha256"]:
+                raise RuntimeError("fixture_digest_changed")
+            calls = [invoke(client, model, "native", "predict-age", payload, f"benchmark-{trial['id']}-0", directory, timeout)]
+            actual = json.loads(calls[0][0].read_bytes())
+            expected = ClinicalPhenoAgeRuntime().predict(ClinicalRequest.model_validate(payload))
+            if actual.get("model_id") != model or actual.get("sample_count") != 16:
+                raise RuntimeError("phenoage_response_identity_mismatch")
+            for prediction, reference in zip(actual["predictions"], expected, strict=True):
+                if prediction["sample_id"] != reference["sample_id"] or not math.isclose(
+                    prediction["phenotypic_age_years"], reference["phenotypic_age_years"], rel_tol=0, abs_tol=1e-10
+                ):
+                    raise RuntimeError("phenoage_reference_mismatch")
+            semantic = {"status": "PASS", "reference": "levine-2018-supplement-rounded-v1", "samples": 16}
         else:
             raise RuntimeError("benchmark_adapter_unavailable")
     return {"operation_id": calls[0][1]["id"], "semantic_valid": True,
@@ -169,12 +215,14 @@ def execute(trial, origin, token, directory, timeout):
             "operations": [row[1] for row in calls], "request_seconds": [row[2] for row in calls], "semantic": semantic}
 
 
-def worker(args, admin, campaign_id, token):
+def worker(args, admin, campaign_id, token, *, once=False):
     while True:
         reply = checked(admin.post(f"/admin/api/v1/performance/campaigns/{campaign_id}/claim",
                                    json={"worker": args.worker, "lease_seconds": 120}))["data"]
         trial = reply["trial"]
         if trial is None:
+            if once:
+                return False
             campaign = checked(admin.get(f"/admin/api/v1/performance/campaigns/{campaign_id}"))["data"]
             if all(item["status"] in TERMINAL | {"unsupported", "capacity-unavailable"} for item in campaign["trials"]):
                 return
@@ -202,7 +250,11 @@ def worker(args, admin, campaign_id, token):
             try:
                 evidence = execute(trial, args.origin, token, directory, args.timeout)
                 result = {**lease, "status": "succeeded", "semantic_valid": True,
-                          "operation_id": evidence["operation_id"], "elapsed_seconds": evidence["elapsed_seconds"]}
+                          "operation_id": evidence["operation_id"],
+                          "elapsed_seconds": evidence["elapsed_seconds"] if trial["fence"] == 1 else None}
+                metrics, observations = collect(admin, evidence, trial["model_id"])
+                result.update(metrics)
+                evidence["observations"] = observations
             except Exception as error:
                 code = str(error) if isinstance(error, (RuntimeError, PUBLIC.AcceptanceError)) else type(error).__name__
                 # Safe summaries only; request payloads, signed URLs and credentials never enter the registry.
@@ -210,7 +262,8 @@ def worker(args, admin, campaign_id, token):
                 evidence = {"error_code": code, "elapsed_seconds": time.monotonic() - started}
                 result = {**lease, "status": "failed", "error_code": code,
                           "elapsed_seconds": evidence["elapsed_seconds"]}
-            data = canonical({"trial_id": trial["id"], "case": trial["case_spec"], "result": evidence})
+            data = canonical({"trial_id": trial["id"], "case": trial["case_spec"],
+                              "worker_source_commit": args.commit, "result": evidence})
             (directory / "receipt.json").write_bytes(data)
             artifact = PUBLIC._upload(PUBLIC.PublicApiClient(args.origin, token), model_id=trial["model_id"],
                                      data=data, media_type="application/json", compression="none",
@@ -224,11 +277,32 @@ def worker(args, admin, campaign_id, token):
         finally:
             stop.set()
             thread.join(timeout=5)
+        if once:
+            return True
+
+
+def pool(args):
+    """A fixed CPU worker pool, using database claims and public idempotency.
+
+    Login is renewed between trials. A process/container restart recovers work
+    through the expired lease; it does not own or kill the GPU operation.
+    """
+    while True:
+        worked = False
+        with closing(INVENTORY.admin_client(args.kubeconfig, args.context, args.origin)) as admin:
+            campaigns = checked(admin.get("/admin/api/v1/performance/campaigns", params={"limit": 200}))["data"]["items"]
+            for campaign in reversed(campaigns):
+                # The pod count bounds concurrency across campaigns as well.
+                if worker(args, admin, campaign["id"], args.token_file.read_text().strip(), once=True):
+                    worked = True
+                    break
+        if not worked:
+            time.sleep(15)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["plan", "create", "work"])
+    parser.add_argument("action", choices=["plan", "create", "work", "pool"])
     parser.add_argument("--origin", default="https://89.169.99.188")
     parser.add_argument("--kubeconfig")
     parser.add_argument("--context")
@@ -243,6 +317,9 @@ def main():
     args = parser.parse_args()
     os.umask(0o077)
     args.directory.mkdir(parents=True, exist_ok=True)
+    if args.action == "pool":
+        pool(args)
+        return
     if args.action in {"plan", "create"}:
         inventory = json.loads(args.inventory.read_bytes())
         spec = {"name": args.name, "source_commit": args.commit, "catalog_sha256": sha(canonical(inventory)),
