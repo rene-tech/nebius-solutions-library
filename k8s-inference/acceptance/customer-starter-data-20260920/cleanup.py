@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Revoke only this task's idle test keys/users; retain buckets and all evidence."""
+
 import argparse
 import base64
 import json
@@ -25,37 +26,105 @@ def main(args):
     origin = accesses[0]["origin"]
     if not args.check_only:
         for access in accesses:
-            response = httpx.get(origin + "/v1/me", headers={"authorization": "Bearer " + access["secret"]}, timeout=60)
+            response = httpx.get(
+                origin + "/v1/me",
+                headers={"authorization": "Bearer " + access["secret"]},
+                timeout=60,
+            )
             response.raise_for_status()
             current = response.json()
-            assert current["tenant_id"] == access["tenant_id"] and current["principal_id"] == access["principal_id"]
-            assert current["available_slots"] == current["max_concurrency"], "test_operations_still_active"
-    token = base64.b64decode(json.loads(subprocess.check_output(["kubectl", "--kubeconfig", args.kubeconfig, "--context", args.context, "-n", "fs2-system", "get", "secret", "fs2-serve-admin", "-o", "json"]))["data"]["token"]).decode().strip()
-    report = {"at": datetime.now(UTC).isoformat(), "key_ids": [a["key_id"] for a in accesses], "users": [], "buckets_retained": True, "cloud_quotas_unchanged": True}
+            assert (
+                current["tenant_id"] == access["tenant_id"]
+                and current["principal_id"] == access["principal_id"]
+            )
+            assert current["available_slots"] == current["max_concurrency"], (
+                "test_operations_still_active"
+            )
+    token = (
+        base64.b64decode(
+            json.loads(
+                subprocess.check_output(
+                    [
+                        "kubectl",
+                        "--kubeconfig",
+                        args.kubeconfig,
+                        "--context",
+                        args.context,
+                        "-n",
+                        "fs2-system",
+                        "get",
+                        "secret",
+                        "fs2-serve-admin",
+                        "-o",
+                        "json",
+                    ]
+                )
+            )["data"]["token"]
+        )
+        .decode()
+        .strip()
+    )
+    report = {
+        "at": datetime.now(UTC).isoformat(),
+        "key_ids": [a["key_id"] for a in accesses],
+        "users": [],
+        "buckets_retained": True,
+        "cloud_quotas_unchanged": True,
+    }
     with httpx.Client(base_url=origin, headers={"origin": origin}, timeout=60) as admin:
-        admin.post("/admin/api/v1/session", headers={"authorization": "Bearer " + token}).raise_for_status()
+        admin.post(
+            "/admin/api/v1/session", headers={"authorization": "Bearer " + token}
+        ).raise_for_status()
         response = admin.get("/admin/api/v1/users?limit=1000")
         response.raise_for_status()
-        users = [u for u in response.json()["data"]["items"] if (u["tenant_id"], u["principal_id"]) in OWNERS]
+        users = [
+            u
+            for u in response.json()["data"]["items"]
+            if (u["tenant_id"], u["principal_id"]) in OWNERS
+        ]
         assert len(users) == 4
         if not args.check_only:
             for access in accesses:
-                admin.delete("/admin/api/v1/keys/" + access["key_id"]).raise_for_status()
+                admin.delete(
+                    "/admin/api/v1/keys/" + access["key_id"]
+                ).raise_for_status()
             for user in users:
-                admin.patch("/admin/api/v1/users/" + user["id"], json={"enabled": False}).raise_for_status()
+                admin.patch(
+                    "/admin/api/v1/users/" + user["id"], json={"enabled": False}
+                ).raise_for_status()
         for user in users:
             response = admin.get(f"/admin/api/v1/users/{user['id']}/storage")
             response.raise_for_status()
             storage = response.json()["data"]
-            report["users"].append({"id": user["id"], "tenant_id": user["tenant_id"], "principal_id": user["principal_id"], "storage_state": storage["state"]})
+            report["users"].append(
+                {
+                    "id": user["id"],
+                    "tenant_id": user["tenant_id"],
+                    "principal_id": user["principal_id"],
+                    "storage_state": storage["state"],
+                }
+            )
             if args.check_only:
                 assert not user["enabled"] and storage["state"] == "disabled"
     for access in accesses:
-        response = httpx.get(origin + "/v1/me", headers={"authorization": "Bearer " + access["secret"]}, timeout=60)
+        response = httpx.get(
+            origin + "/v1/me",
+            headers={"authorization": "Bearer " + access["secret"]},
+            timeout=60,
+        )
         assert response.status_code in {401, 403}, "test_key_still_authorized"
     report["keys_rejected"] = True
     args.output.write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps({"keys_revoked": 3, "users_disabled": 4, "storage_disabled_confirmed": args.check_only, "buckets_retained": True}))
+    print(
+        json.dumps(
+            {
+                "keys_revoked": 3,
+                "users_disabled": 4,
+                "storage_disabled_confirmed": args.check_only,
+                "buckets_retained": True,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-20T04:38:58.755772+00:00",
+  "at": "2026-09-20T04:42:49.359456+00:00",
   "pack_manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
   "results": [
     {
@@ -50,12 +50,43 @@
       "state": "passed"
     },
     {
+      "artifacts": [],
       "case_id": "general-ai/explain-fasta",
+      "checks": {
+        "final_characters": 279,
+        "finish_reason": "stop"
+      },
+      "completed_at": "2026-09-20T04:40:05.464396+00:00",
       "input_sha256": "cd8c6815f7ed4df9add2198bae5ad9dbbd86745b40e29b25b14b67bd28c56103",
+      "lifecycle": {
+        "accepted_at": "2026-09-20T04:38:05.982863Z",
+        "activation_started_at": "2026-09-20T04:38:06.022670Z",
+        "attempt": 1,
+        "cold_start_seconds": 114.043197,
+        "completed_at": "2026-09-20T04:40:01.578105Z",
+        "model_revision": "dynamic:sha256:8ff7b05b65a62bd3f40185e338f651eefa85f6e45385553cf9c39883056c6cad",
+        "principal_id": "private-canary",
+        "ready_at": "2026-09-20T04:40:00.026060Z",
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-316b82ec-b309-c18d-4e2e-836498e1e036"
+          ],
+          "node_uid": "37d7c857-ec84-4792-ae1c-b90e992ee777",
+          "pod_uid": "fff3a369-3493-4c67-9196-240d1bbe7f03",
+          "preemptible": true
+        },
+        "started_at": "2026-09-20T04:40:00.063015Z",
+        "status": "succeeded",
+        "tenant_id": "fs2-starter-private-20260920"
+      },
       "model_id": "qwen3-8b",
+      "observation_seconds": 125.811,
       "operation_id": "0a7be613-5430-478a-b94e-558ed4d5c840",
       "recipe_sha256": "cf69bf87846c7ae2b2e892e35f3e20d69b0660e5d6e4a57b84b0fbcc4cf86136",
-      "state": "activating"
+      "result_sha256": "709d017055594b7281ded61e2f8c36d07701b951382c8f9909dccf7b7f9dac04",
+      "server_elapsed_seconds": 115.595,
+      "state": "passed"
     }
   ],
   "scope": "example input/output functionality only; not clinical or scientific accuracy qualification"

@@ -1,7 +1,8 @@
 # Customer workspace starter examples — 20 September 2026
 
-Workspace rollout is in progress. This document is not yet a completed release
-handoff; final backfill verification and retained-service checks are pending.
+Workspace rollout and independent backfill verification are complete at Helm
+revision 195. Final supplementary model checks and test-identity cleanup remain
+in progress; the initial 123-recipe qualification is complete.
 
 ## Delivered content and scope
 
@@ -99,12 +100,30 @@ upgrades, not a broad Terraform apply against unrelated existing infrastructure.
 - The exact downloaded runner was installed in a fresh Python 3.13 environment
   from the bundled requirements and used for public OpenFold2, Qwen and SAM 2
   model calls. Two consecutive customer-shaped sample/download cohorts passed.
+  Two additional cohorts on the final revision 195 each passed Qwen and SAM 2
+  result checks using that same downloaded client and customer credentials.
 - The task's shared-bucket README was backed up and deleted intentionally.
   Completion stayed recorded and the deleted object stayed absent across
   reconciliation cycles. No customer object was deleted.
 - LeRobot output was independently reopened in the pinned 0.6.1 reader:
   16 decoded frames, all 208 non-video values identical, all selected frames
   changed. This does not establish physical alignment with recorded actions.
+
+## Backfill outcome
+
+All 15 eligible buckets completed on attempt 1: 12 existing non-task workspaces
+and three controlled acceptance workspaces. Every installed object in all 12
+non-task buckets was independently downloaded and checksum-verified with the
+existing workspace-scoped credential. The three acceptance buckets have separate
+full-download receipts. Shared users resolve to the same seeded bucket; private
+users resolve to different seeded buckets. All 22 previously disabled storage
+users, including Stockholm, remained disabled.
+
+See [the payload-free deployment/backfill receipt](deployment-backfill-receipt.json).
+Actual existing bucket names are retained only in the protected operator receipt
+`/home/tux/secure-handoff/fs2-starter-backfill-final-20260920.json`; the published
+receipt uses hashed bucket identities. No customer data outside the pinned
+example prefix was downloaded or modified.
 
 ## Failures and corrections retained
 
@@ -135,8 +154,9 @@ the cold request completed. No cold-start speed guarantee is made by this pack.
 ## Rollback and recovery
 
 Helm revision 193 installed the backend with seeding disabled. Revision 194
-enabled only the two acceptance tenants. The subsequent backfill rollout clears
-that allowlist while preserving all other live values. All pre-upgrade values
+enabled only the two acceptance tenants. Revision 195 cleared that allowlist,
+enabling all eligible existing and future workspaces while preserving all other
+live values. All pre-upgrade values
 and manifests are retained privately; plans print only hashes and resource names.
 
 To stop future seeding, set `customerStorage.starterPack.enabled=false` (or the

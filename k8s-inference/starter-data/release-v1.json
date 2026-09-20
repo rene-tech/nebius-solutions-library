@@ -12,5 +12,9 @@
   "objects_including_manifest": 374,
   "total_bytes": 42961055,
   "qualification_scope": "Exact starter inputs, typed recipes, and semantic result formats. Not clinical or scientific efficacy or whole-platform performance qualification.",
-  "deployment_status": "canary-in-progress"
+  "deployment_status": "deployed",
+  "helm_revision": 195,
+  "seeded_non_task_buckets": 12,
+  "seeded_acceptance_buckets": 3,
+  "new_workspace_seeding_enabled": true
 }

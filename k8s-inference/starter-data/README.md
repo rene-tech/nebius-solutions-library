@@ -2,7 +2,9 @@
 
 This directory builds the versioned `examples/v1/` pack for customer workspace
 buckets. Binary assets are release artifacts, not files in Git. Pack version 1
-is model-example-qualified; workspace rollout is being validated.
+is model-example-qualified and deployed: all 12 eligible existing non-task
+workspace buckets and three acceptance buckets were seeded and independently
+verified. New eligible workspaces receive the same pack automatically.
 Do not enable customer backfill with a draft pack. Exact release pins are in
 [`release-v1.json`](release-v1.json).
 
