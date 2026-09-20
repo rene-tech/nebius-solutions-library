@@ -1,6 +1,6 @@
 # Cosmos Transfer 2.5 onboarding — isolated canary in progress
 
-Requested App identity: `cosmos-transfer2.5-2b`. This is a new, independent video-transfer App, not a rename or replacement of `cosmos3-nano`.
+Candidate platform App identity: `cosmos-transfer2-5-2b` (DNS-label-safe), for NVIDIA's `cosmos-transfer2.5-2b`. This is a new, independent video-transfer App, not a rename or replacement of `cosmos3-nano`.
 
 Status as of 2026-09-20 04:57 UTC: **private H100 canary deployed and Ready; one real full-video generation passed structure, motion and sampled-weather checks; not published as a platform App**. The existing isolated video workbench and shared backend are unchanged by this task. Container-adapter, public HTTP/MCP, chat preview and approval/batch acceptance remain separate gates.
 

@@ -286,7 +286,7 @@ _PURPOSES = {
     "cosmos3-nano": (
         "Generate or transform image/video from text and bounded media controls; large MP4 results are artifacts."
     ),
-    "cosmos-transfer2.5-2b": (
+    "cosmos-transfer2-5-2b": (
         "Transform a caller-owned MP4 using text and full-video edge control with NVIDIA Cosmos Transfer 2.5; "
         "returns a silent MP4 artifact preserving source geometry, frame count and FPS. Built on NVIDIA Cosmos."
     ),
@@ -725,7 +725,7 @@ def _cosmos_transfer25() -> Schema:
     video = _artifact_reference(media_types=("video/mp4",))
     video["properties"]["size_bytes"].update(minimum=16, maximum=128 * 1024**2)
     video.update({
-        "description": "Finalized caller-owned MP4. Exactly 640x480 or 1280x720, 16–400 frames, "
+        "description": "Finalized caller-owned MP4. Exactly 640x480 or 1280x720, 93–400 frames, "
         "constant integer 1–30 FPS, at most 128 MiB. No implicit resize, crop, trim or retiming. "
         "Upload the actual file; URLs, local paths and inline base64 are not accepted by this public contract.",
         "x-fs2-artifact-materialization": "base64",
@@ -1549,7 +1549,7 @@ _NATIVE_BUILDERS = {
         "#/opt/evo2/server/evo2_deep/runtime.py",
     ),
     "cosmos3-nano": (_cosmos, "k8s-inference/models/general-media/k8s/cosmos3-nano.yaml#data.adapter.py"),
-    "cosmos-transfer2.5-2b": (
+    "cosmos-transfer2-5-2b": (
         _cosmos_transfer25,
         "k8s-inference/models/general-media/cosmos-transfer25/adapter/app.py",
     ),
@@ -1836,7 +1836,7 @@ def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
             "seconds": 4,
             "seed": 7,
         },
-        "cosmos-transfer2.5-2b": {
+        "cosmos-transfer2-5-2b": {
             "video": {
                 "artifact_id": "00000000-0000-4000-8000-000000000033",
                 "sha256": "8" * 64,

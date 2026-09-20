@@ -1,0 +1,139 @@
+{
+  "apiVersion": "batch/v1",
+  "kind": "Job",
+  "metadata": {
+    "name": "cosmos-transfer25-precache-20260920",
+    "namespace": "fs2-models",
+    "labels": {
+      "fs2-serve.nebius.ai/task": "video-canary-20260920"
+    }
+  },
+  "spec": {
+    "backoffLimit": 0,
+    "activeDeadlineSeconds": 1800,
+    "template": {
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "cosmos-transfer2-5-2b",
+          "fs2-serve.nebius.ai/task": "video-canary-20260920"
+        }
+      },
+      "spec": {
+        "restartPolicy": "Never",
+        "automountServiceAccountToken": false,
+        "enableServiceLinks": false,
+        "nodeSelector": {
+          "kubernetes.io/hostname": "computeinstance-e00jqs4xxntre6eycf",
+          "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
+        },
+        "tolerations": [
+          {
+            "key": "dedicated",
+            "operator": "Equal",
+            "value": "fs2-inference",
+            "effect": "NoSchedule"
+          }
+        ],
+        "serviceAccountName": "cosmos-transfer2-5-2b",
+        "imagePullSecrets": [
+          {
+            "name": "wan2-ngc-pull"
+          }
+        ],
+        "securityContext": {
+          "runAsNonRoot": true,
+          "fsGroup": 1000,
+          "fsGroupChangePolicy": "OnRootMismatch",
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "containers": [
+          {
+            "name": "cache",
+            "image": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+            "imagePullPolicy": "IfNotPresent",
+            "command": [
+              "python3",
+              "-c",
+              "import os\ncredential = os.environ.get('NGC_API_KEY', '').strip()\nif not credential or not credential.isascii() or any(ord(c) <= 32 or ord(c) == 127 for c in credential):\n    raise SystemExit('NGC credential format is invalid; value suppressed')\nos.environ['NGC_API_KEY'] = credential\nos.execvp('download-to-cache', ['download-to-cache', '--profiles', os.environ['NIM_MODEL_PROFILE'], '--manifest-file', '/opt/nim/etc/default/model_manifest.yaml', '--model-cache-path', '/opt/nim/.cache', '--use-cache'])\n"
+            ],
+            "env": [
+              {
+                "name": "NGC_API_KEY",
+                "valueFrom": {
+                  "secretKeyRef": {
+                    "name": "wan2-ngc-api",
+                    "key": "NGC_API_KEY"
+                  }
+                }
+              },
+              {
+                "name": "NIM_MODEL_PROFILE",
+                "value": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672"
+              },
+              {
+                "name": "NIM_CACHE_PATH",
+                "value": "/opt/nim/.cache"
+              },
+              {
+                "name": "NVIDIA_VISIBLE_DEVICES",
+                "value": "void"
+              },
+              {
+                "name": "CUDA_VISIBLE_DEVICES",
+                "value": ""
+              }
+            ],
+            "resources": {
+              "requests": {
+                "cpu": "2",
+                "memory": "4Gi",
+                "ephemeral-storage": "1Gi"
+              },
+              "limits": {
+                "cpu": "4",
+                "memory": "12Gi",
+                "ephemeral-storage": "2Gi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              },
+              "runAsUser": 1000,
+              "runAsGroup": 1000
+            },
+            "volumeMounts": [
+              {
+                "name": "cache",
+                "mountPath": "/opt/nim/.cache"
+              },
+              {
+                "name": "tmp",
+                "mountPath": "/tmp"
+              }
+            ]
+          }
+        ],
+        "volumes": [
+          {
+            "name": "cache",
+            "persistentVolumeClaim": {
+              "claimName": "cosmos-transfer2-5-2b-cache"
+            }
+          },
+          {
+            "name": "tmp",
+            "emptyDir": {
+              "sizeLimit": "1Gi"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

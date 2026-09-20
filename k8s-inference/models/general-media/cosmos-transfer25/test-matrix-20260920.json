@@ -1,0 +1,490 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos-transfer25-test-matrix/v1",
+  "customer_ready": false,
+  "runs": [
+    {
+      "run": "transfer25-direct-r1",
+      "generation": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-probe/v1",
+        "started_at": "2026-09-20T04:40:19.633160+00:00",
+        "image": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+        "requested_profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+        "source": {
+          "width": 1280,
+          "height": 720,
+          "frames": 153,
+          "fps": 30,
+          "duration_seconds": 5.1,
+          "audio": [],
+          "size_bytes": 2183869,
+          "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+        },
+        "prompt_sha256": "f021eac01848d74abbe8f5652948bcde59df21842c8c69f849756dae5e380c3f",
+        "request_parameters": {
+          "seed": 42,
+          "guidance": 7,
+          "num_steps": 35,
+          "sigma_max": 90,
+          "resolution": 720,
+          "edge": {
+            "control_weight": 1
+          }
+        },
+        "alignment_passed": false,
+        "weather_verified": false,
+        "motion_verified": false,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "inference_request_attempted": true,
+        "readiness_status": 200,
+        "manifest_http_status": 200,
+        "manifest_sha256": "b4772f9b2ca0215697611b2a4494afcd3cedfbf22f3025c3f8326085b2d2b345",
+        "metadata_http_status": 200,
+        "metadata_sha256": "15305e195c99913acc8563c8e3ed72566acf8bc91d025bb14750b1c9f03f0dc0",
+        "request_sha256": "37a83966dbc91e06ea9211e417652e0fc310265b09fcf47f28493d09136724ee",
+        "http_status": 422,
+        "status": "failed",
+        "error_type": "ValueError",
+        "failure_stage": "inference",
+        "elapsed_seconds": 2.115416709333658,
+        "finished_at": "2026-09-20T04:40:21.748614+00:00"
+      }
+    },
+    {
+      "run": "transfer25-direct-r2",
+      "generation": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-probe/v1",
+        "started_at": "2026-09-20T04:43:02.825605+00:00",
+        "image": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+        "requested_profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+        "source": {
+          "width": 1280,
+          "height": 720,
+          "frames": 153,
+          "fps": 30,
+          "duration_seconds": 5.1,
+          "audio": [],
+          "size_bytes": 2183869,
+          "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+        },
+        "prompt_sha256": "f021eac01848d74abbe8f5652948bcde59df21842c8c69f849756dae5e380c3f",
+        "request_parameters": {
+          "seed": 42,
+          "guidance": 7,
+          "num_steps": 35,
+          "sigma_max": 90,
+          "resolution": "720",
+          "edge": {
+            "control_weight": 1
+          }
+        },
+        "alignment_passed": true,
+        "weather_verified": false,
+        "motion_verified": false,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "inference_request_attempted": true,
+        "readiness_status": 200,
+        "manifest_http_status": 200,
+        "manifest_sha256": "b4772f9b2ca0215697611b2a4494afcd3cedfbf22f3025c3f8326085b2d2b345",
+        "model_manifest_file_sha256": "67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17",
+        "metadata_http_status": 200,
+        "metadata_sha256": "15305e195c99913acc8563c8e3ed72566acf8bc91d025bb14750b1c9f03f0dc0",
+        "observed_profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+        "observed_nim_version": "1.1.0",
+        "openapi_sha256": "1445ba2623beb25320b3e9297aa55029df49adb898c1dfde6315fd1a1f310360",
+        "request_sha256": "686c091eb0a75f0129b03ac0bc8bcad69d4cac86050e036c980b665fc414dfc1",
+        "http_status": 200,
+        "returned_seed": 42,
+        "output": {
+          "width": 1280,
+          "height": 720,
+          "frames": 153,
+          "fps": 30,
+          "duration_seconds": 5.1,
+          "audio": [],
+          "size_bytes": 1060024,
+          "sha256": "69d6f54fc1a423f180de8402de1bb986e1a84c6c0f7ad4313e9e2f9e4f00af12"
+        },
+        "status": "direct-generation-structure-passed",
+        "elapsed_seconds": 501.59218538179994,
+        "finished_at": "2026-09-20T04:51:24.417819+00:00"
+      },
+      "quality": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-quality/v1",
+        "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+        "generation_receipt_sha256": "b14b633b3fb968716c8755879efee5dd779e2ce670837416b1e37bc323799f0d",
+        "source_sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863",
+        "output_sha256": "69d6f54fc1a423f180de8402de1bb986e1a84c6c0f7ad4313e9e2f9e4f00af12",
+        "target_weather": "overcast",
+        "vlm_model": "MiniMaxAI/MiniMax-M3",
+        "llm_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "evaluation_frames": 5,
+        "alignment_passed": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "limitation": "Automated motion and sampled-weather checks are not proof of physical fidelity or label validity; human review is required.",
+        "motion": {
+          "score": 0.9525093473463488,
+          "total_frames": 153,
+          "total_hallucinated_pixels": 82078,
+          "total_augmented_dynamic_pixels": 1728298,
+          "params": {
+            "grad_thresh": 10,
+            "blur_ksize": 7,
+            "morph_k": 3,
+            "dist_tol_px": 7,
+            "max_frames": null
+          },
+          "threshold": 0.682,
+          "passed": true
+        },
+        "weather": {
+          "passed": true
+        },
+        "accepted_by_automated_checks": true,
+        "elapsed_seconds": 7.5428148321807384
+      }
+    },
+    {
+      "run": "transfer25-adapter-rain-r1",
+      "generation": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-adapter-probe/v1",
+        "started_at": "2026-09-20T05:00:58.013292+00:00",
+        "adapter_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+        "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+        "source": {
+          "width": 1280,
+          "height": 720,
+          "frames": 153,
+          "fps": 30,
+          "duration_seconds": 5.1,
+          "audio": [],
+          "size_bytes": 2183869,
+          "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+        },
+        "request_parameters": {
+          "seed": 43,
+          "num_steps": 35,
+          "guidance": 7,
+          "control_weight": 1,
+          "output_delivery": "artifact"
+        },
+        "prompt_sha256": "6cba142530c7e77575516cc665e9b5dc5878dcb7933fa776e0a4bfe4f585efb5",
+        "request_sha256": "6bfaf3c286e6004210202c9120da5b47e123cc3db2d1d62c2e7003ce80f0e477",
+        "alignment_passed": true,
+        "inference_request_attempted": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "readiness_status": 200,
+        "http_status": 200,
+        "content_type": "video/mp4",
+        "output": {
+          "width": 1280,
+          "height": 720,
+          "frames": 153,
+          "fps": 30,
+          "duration_seconds": 5.1,
+          "audio": [],
+          "size_bytes": 1296506,
+          "sha256": "389cc24265231b38d76542fa2da08873f6f2ddd311d989db14d87d5afb3b1e16"
+        },
+        "status": "adapter-generation-structure-passed",
+        "elapsed_seconds": 491.46272176876664,
+        "finished_at": "2026-09-20T05:09:09.477680+00:00"
+      },
+      "quality": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-quality/v1",
+        "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+        "generation_receipt_sha256": "027c153f1dd8da7e24e666dcbc0a52a3b9841cdf7e7655ee942572c9634af0a5",
+        "source_sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863",
+        "output_sha256": "389cc24265231b38d76542fa2da08873f6f2ddd311d989db14d87d5afb3b1e16",
+        "target_weather": "rain",
+        "vlm_model": "MiniMaxAI/MiniMax-M3",
+        "llm_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "evaluation_frames": 5,
+        "alignment_passed": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "limitation": "Automated motion and sampled-weather checks are not proof of physical fidelity or label validity; human review is required.",
+        "motion": {
+          "score": 0.6491449281180891,
+          "total_frames": 153,
+          "total_hallucinated_pixels": 838945,
+          "total_augmented_dynamic_pixels": 2391144,
+          "params": {
+            "grad_thresh": 10,
+            "blur_ksize": 7,
+            "morph_k": 3,
+            "dist_tol_px": 7,
+            "max_frames": null
+          },
+          "threshold": 0.682,
+          "passed": false
+        },
+        "weather": {
+          "passed": true
+        },
+        "accepted_by_automated_checks": false,
+        "elapsed_seconds": 7.865721210837364
+      }
+    },
+    {
+      "run": "transfer25-adapter-overcast-r1",
+      "generation": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-adapter-probe/v1",
+        "started_at": "2026-09-20T05:11:28.838453+00:00",
+        "adapter_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+        "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+        "source": {
+          "width": 1280,
+          "height": 720,
+          "frames": 153,
+          "fps": 30,
+          "duration_seconds": 5.1,
+          "audio": [],
+          "size_bytes": 2183869,
+          "sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863"
+        },
+        "request_parameters": {
+          "seed": 42,
+          "num_steps": 35,
+          "guidance": 7,
+          "control_weight": 1,
+          "output_delivery": "artifact"
+        },
+        "prompt_sha256": "f021eac01848d74abbe8f5652948bcde59df21842c8c69f849756dae5e380c3f",
+        "request_sha256": "caee6dc6fb8ba9d9f8127aa66db9a54a51740a5c0b461df2f7e4b784c38d0e28",
+        "alignment_passed": true,
+        "inference_request_attempted": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "readiness_status": 200,
+        "http_status": 200,
+        "content_type": "video/mp4",
+        "output": {
+          "width": 1280,
+          "height": 720,
+          "frames": 153,
+          "fps": 30,
+          "duration_seconds": 5.1,
+          "audio": [],
+          "size_bytes": 1060024,
+          "sha256": "69d6f54fc1a423f180de8402de1bb986e1a84c6c0f7ad4313e9e2f9e4f00af12"
+        },
+        "status": "adapter-generation-structure-passed",
+        "elapsed_seconds": 491.12207233347,
+        "finished_at": "2026-09-20T05:19:39.962187+00:00"
+      },
+      "quality": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-quality/v1",
+        "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+        "generation_receipt_sha256": "b89a913a4c0394e97d8e8286e3bf36b1b7956f8ce59427b821dbeab7b46e2beb",
+        "source_sha256": "25da0db5381cccbc4f50c2ab25bf10b73cd4d411d8edecbde22fb660e3a24863",
+        "output_sha256": "69d6f54fc1a423f180de8402de1bb986e1a84c6c0f7ad4313e9e2f9e4f00af12",
+        "target_weather": "overcast",
+        "vlm_model": "MiniMaxAI/MiniMax-M3",
+        "llm_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "evaluation_frames": 5,
+        "alignment_passed": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "limitation": "Automated motion and sampled-weather checks are not proof of physical fidelity or label validity; human review is required.",
+        "motion": {
+          "score": 0.9525093473463488,
+          "total_frames": 153,
+          "total_hallucinated_pixels": 82078,
+          "total_augmented_dynamic_pixels": 1728298,
+          "params": {
+            "grad_thresh": 10,
+            "blur_ksize": 7,
+            "morph_k": 3,
+            "dist_tol_px": 7,
+            "max_frames": null
+          },
+          "threshold": 0.682,
+          "passed": true
+        },
+        "weather": {
+          "passed": true
+        },
+        "accepted_by_automated_checks": true,
+        "elapsed_seconds": 6.5366707146167755
+      }
+    },
+    {
+      "run": "transfer25-adapter-overcast-small-r1",
+      "generation": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-adapter-probe/v1",
+        "started_at": "2026-09-20T05:20:09.195155+00:00",
+        "adapter_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+        "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+        "source": {
+          "width": 640,
+          "height": 480,
+          "frames": 32,
+          "fps": 16,
+          "duration_seconds": 2,
+          "audio": [],
+          "size_bytes": 415971,
+          "sha256": "748b75259042a1169be0721eb5e90a74cb163cb11b9be618b16c5951865ce748"
+        },
+        "request_parameters": {
+          "seed": 44,
+          "num_steps": 35,
+          "guidance": 7,
+          "control_weight": 1,
+          "output_delivery": "artifact"
+        },
+        "prompt_sha256": "a8710d14c1d974cd624464d324e326e859b825df9100e38f0b135ebab8c55391",
+        "request_sha256": "2d633fa6e54de85f6550dce4019100b5852e66b3dc7e10f97a2504de285381cd",
+        "alignment_passed": false,
+        "inference_request_attempted": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "readiness_status": 200,
+        "http_status": 422,
+        "content_type": "application/json",
+        "status": "failed",
+        "error_type": "ValueError",
+        "failure_stage": "inference",
+        "elapsed_seconds": 1.3541768342256546,
+        "finished_at": "2026-09-20T05:20:10.549668+00:00"
+      },
+      "rejection_detail": "The NIM rejects fewer than 93 frames before generation. Public contract corrected to 93–400 frames; shared media-inspection utility has a broader bound."
+    },
+    {
+      "run": "transfer25-adapter-overcast-480-r1",
+      "generation": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-adapter-probe/v1",
+        "started_at": "2026-09-20T05:22:06.372473+00:00",
+        "adapter_image": "cr.eu-north1.nebius.cloud/e00-nothing/unused@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+        "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+        "source": {
+          "width": 640,
+          "height": 480,
+          "frames": 93,
+          "fps": 30,
+          "duration_seconds": 3.1,
+          "audio": [],
+          "size_bytes": 563275,
+          "sha256": "3ccebbe9e650d659990629c0dbfee6b04cee24fdd0a54935b898ed7d40f6f1d0"
+        },
+        "request_parameters": {
+          "seed": 44,
+          "num_steps": 35,
+          "guidance": 7,
+          "control_weight": 1,
+          "output_delivery": "artifact"
+        },
+        "prompt_sha256": "a8710d14c1d974cd624464d324e326e859b825df9100e38f0b135ebab8c55391",
+        "request_sha256": "bed42aeb55888c8e73ab46155781f2593687369e73706716e5cf0f027da004f5",
+        "alignment_passed": true,
+        "inference_request_attempted": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "readiness_status": 200,
+        "http_status": 200,
+        "content_type": "video/mp4",
+        "output": {
+          "width": 640,
+          "height": 480,
+          "frames": 93,
+          "fps": 30,
+          "duration_seconds": 3.1,
+          "audio": [],
+          "size_bytes": 258854,
+          "sha256": "038f735d875a12baacf0ffec45e07f560501910f5f2042d164d0d61c49367e39"
+        },
+        "status": "adapter-generation-structure-passed",
+        "elapsed_seconds": 62.512731704860926,
+        "finished_at": "2026-09-20T05:23:08.885642+00:00"
+      },
+      "quality": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-direct-quality/v1",
+        "paidf_revision": "bc5719362492a1e3b40bd7d33b43c46dd89efad5",
+        "generation_receipt_sha256": "b1345195aee2f69de3d8aea3dabd99add28136e25a4c9ac9fb970c65dfd8e5aa",
+        "source_sha256": "3ccebbe9e650d659990629c0dbfee6b04cee24fdd0a54935b898ed7d40f6f1d0",
+        "output_sha256": "038f735d875a12baacf0ffec45e07f560501910f5f2042d164d0d61c49367e39",
+        "target_weather": "overcast",
+        "vlm_model": "MiniMaxAI/MiniMax-M3",
+        "llm_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+        "evaluation_frames": 5,
+        "alignment_passed": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "limitation": "Automated motion and sampled-weather checks are not proof of physical fidelity or label validity; human review is required.",
+        "motion": {
+          "score": 0.7105119053545417,
+          "total_frames": 93,
+          "total_hallucinated_pixels": 133749,
+          "total_augmented_dynamic_pixels": 462019,
+          "params": {
+            "grad_thresh": 10,
+            "blur_ksize": 7,
+            "morph_k": 3,
+            "dist_tol_px": 7,
+            "max_frames": null
+          },
+          "threshold": 0.682,
+          "passed": true
+        },
+        "weather": {
+          "passed": false
+        },
+        "accepted_by_automated_checks": false,
+        "elapsed_seconds": 4.524040089920163
+      },
+      "excluded_from_qualification_reason": "Incorrect caller-supplied CLI image label. Original receipt retained unchanged. A subsequent exact-label repeat produced identical video bytes; neither establishes weather acceptance."
+    },
+    {
+      "run": "transfer25-adapter-overcast-480-r2",
+      "generation": {
+        "schema": "fs2-serve.nebius.ai/cosmos-transfer25-adapter-probe/v1",
+        "started_at": "2026-09-20T05:24:09.068206+00:00",
+        "adapter_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd",
+        "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+        "source": {
+          "width": 640,
+          "height": 480,
+          "frames": 93,
+          "fps": 30,
+          "duration_seconds": 3.1,
+          "audio": [],
+          "size_bytes": 563275,
+          "sha256": "3ccebbe9e650d659990629c0dbfee6b04cee24fdd0a54935b898ed7d40f6f1d0"
+        },
+        "request_parameters": {
+          "seed": 44,
+          "num_steps": 35,
+          "guidance": 7,
+          "control_weight": 1,
+          "output_delivery": "artifact"
+        },
+        "prompt_sha256": "a8710d14c1d974cd624464d324e326e859b825df9100e38f0b135ebab8c55391",
+        "request_sha256": "bed42aeb55888c8e73ab46155781f2593687369e73706716e5cf0f027da004f5",
+        "alignment_passed": true,
+        "inference_request_attempted": true,
+        "public_platform_path_tested": false,
+        "customer_ready": false,
+        "readiness_status": 200,
+        "http_status": 200,
+        "content_type": "video/mp4",
+        "output": {
+          "width": 640,
+          "height": 480,
+          "frames": 93,
+          "fps": 30,
+          "duration_seconds": 3.1,
+          "audio": [],
+          "size_bytes": 258854,
+          "sha256": "038f735d875a12baacf0ffec45e07f560501910f5f2042d164d0d61c49367e39"
+        },
+        "status": "adapter-generation-structure-passed",
+        "elapsed_seconds": 61.3843086194247,
+        "finished_at": "2026-09-20T05:25:10.452962+00:00"
+      },
+      "limitation": "Structural reproduction only. Bytes match the earlier 480p clip that failed weather verification; not counted as accepted."
+    }
+  ]
+}

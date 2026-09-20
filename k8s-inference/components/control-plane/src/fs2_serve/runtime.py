@@ -1027,7 +1027,7 @@ class RuntimeClient:
         cosmos = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                   and source_model == "cosmos3-nano")
         cosmos_transfer = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
-                           and source_model == "cosmos-transfer2.5-2b")
+                           and source_model == "cosmos-transfer2-5-2b")
         sam2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                 and source_model == "sam2-1-hiera-large")
         if speech:

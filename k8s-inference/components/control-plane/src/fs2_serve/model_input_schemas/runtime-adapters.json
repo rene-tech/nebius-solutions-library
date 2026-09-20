@@ -1,4 +1,9 @@
 {
+  "cosmos-transfer2-5-2b": {
+    "variant_id": "cosmos-transfer25-nim-v1",
+    "runtime_kind": "nim",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/cosmos-transfer2-5-2b.json"
+  },
   "nemotron-speech-en-0-6b": {
     "variant_id": "nemotron-speech-en-0-6b-nemo-cuda-v1",
     "runtime_kind": "custom",

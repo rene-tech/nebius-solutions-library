@@ -17,7 +17,7 @@ from test_artifact_inputs import _Artifacts, _reference
 from test_cosmos_native_runtime import MP4, invoke, model_for, png
 from test_scientific_artifacts import FakeObjectStore
 
-MODEL = "cosmos-transfer2.5-2b"
+MODEL = "cosmos-transfer2-5-2b"
 
 
 def test_public_contract_requires_owned_artifact_and_matches_adapter_bounds():
