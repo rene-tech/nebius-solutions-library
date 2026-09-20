@@ -46,6 +46,22 @@ INVENTORY = module("performance_inventory", HERE / "inventory.py")
 COSMOS = module("performance_cosmos", ROOT / "catalog/runtime/validators/validate_cosmos3_nano.py")
 
 
+class QueuedPublicClient(PUBLIC.PublicApiClient):
+    """Wait on explicit pre-admission 429; never retry an ambiguous admission."""
+
+    def __init__(self, origin, token, timeout):
+        super().__init__(origin, token)
+        self.admission_timeout = timeout
+
+    def request(self, *args, **kwargs):
+        deadline = time.monotonic() + self.admission_timeout
+        while True:
+            response = super().request(*args, **kwargs)
+            if response.status != 429 or time.monotonic() >= deadline:
+                return response
+            time.sleep(15)
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
@@ -172,7 +188,7 @@ def execute(trial, origin, token, directory, timeout):
         config = PUBLIC.RunConfig(endpoint=origin, repository_root=ROOT,
                                   activation_fragment=fragment, receipt_path=directory / "scientific.json",
                                   run_id=str(trial["id"]), timeout_seconds=timeout, overwrite=True)
-        receipt = PUBLIC.run_acceptance(config, PUBLIC.PublicApiClient(origin, token))
+        receipt = PUBLIC.run_acceptance(config, QueuedPublicClient(origin, token, timeout))
         return {"operation_id": receipt["operation_identity"]["operation_id"],
                 "elapsed_seconds": time.monotonic() - started, "semantic_valid": True,
                 "scientific_receipt": receipt}
@@ -358,6 +374,7 @@ def main():
     parser.add_argument("--worker", default="benchmark-worker-1")
     parser.add_argument("--campaign-id")
     parser.add_argument("--timeout", type=int, default=7200)
+    parser.add_argument("--max-parallel", type=int, default=4)
     args = parser.parse_args()
     os.umask(0o077)
     args.directory.mkdir(parents=True, exist_ok=True)
@@ -367,7 +384,7 @@ def main():
     if args.action in {"plan", "create"}:
         inventory = json.loads(args.inventory.read_bytes())
         spec = {"name": args.name, "source_commit": args.commit, "catalog_sha256": sha(canonical(inventory)),
-                "max_parallel": 4, "cases": json.loads(args.cases.read_bytes()) if args.cases else recipes(inventory)}
+                "max_parallel": args.max_parallel, "cases": json.loads(args.cases.read_bytes()) if args.cases else recipes(inventory)}
         (args.directory / "campaign-plan.json").write_bytes(canonical(spec))
         if args.action == "plan":
             print(json.dumps({"models": len(spec["cases"]), "executable": sum(not c.get("unavailable_reason") for c in spec["cases"]),

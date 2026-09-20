@@ -82,3 +82,17 @@ def test_finalized_input_is_reused_without_rewriting_bytes():
     )
     assert returned == artifact
     assert not any(method == "PUT" for method, _ in calls)
+
+
+def test_scientific_queue_wait_retries_only_explicit_rejection(monkeypatch):
+    calls = []
+    responses = [runner.PUBLIC.HttpResponse(code, {}, b"{}") for code in (429, 503)]
+
+    def request(self, *args, **kwargs):
+        calls.append((args, kwargs))
+        return responses.pop(0)
+
+    monkeypatch.setattr(runner.PUBLIC.PublicApiClient, "request", request)
+    monkeypatch.setattr(runner.time, "sleep", lambda _: None)
+    result = runner.QueuedPublicClient("https://test", "private", 60).request("POST", "/submit", headers={"Idempotency-Key": "same"})
+    assert result.status == 503 and len(calls) == 2 and calls[0] == calls[1]
