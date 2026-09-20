@@ -1,0 +1,37 @@
+{
+  "at": "2026-09-20T05:00:22.140212+00:00",
+  "key_ids": [
+    "6a73afe3-c829-4486-bc52-dfb745d1fb08",
+    "7a0c02b9-ae07-4d77-8254-4ea84ac90f84",
+    "114f3dbf-6589-4efd-85c1-60e4181df6db"
+  ],
+  "users": [
+    {
+      "id": "b43b834b-9c57-56a4-841c-4c207d079a4c",
+      "tenant_id": "fs2-starter-data-acceptance-20260920",
+      "principal_id": "seed-canary",
+      "storage_state": "disabled"
+    },
+    {
+      "id": "c7d463fb-e3f2-5b95-b042-f405926ecd79",
+      "tenant_id": "fs2-starter-data-acceptance-20260920",
+      "principal_id": "shared-peer",
+      "storage_state": "disabled"
+    },
+    {
+      "id": "4e70b8c0-5c61-5e5a-b455-c482919cffa9",
+      "tenant_id": "fs2-starter-private-20260920",
+      "principal_id": "private-canary",
+      "storage_state": "disabled"
+    },
+    {
+      "id": "d502970f-e80a-56a2-b0f8-4023e7ca1fdd",
+      "tenant_id": "fs2-starter-private-20260920",
+      "principal_id": "private-new-canary",
+      "storage_state": "disabled"
+    }
+  ],
+  "buckets_retained": true,
+  "cloud_quotas_unchanged": true,
+  "keys_rejected": true
+}

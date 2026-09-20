@@ -1,8 +1,9 @@
 # Customer workspace starter examples — 20 September 2026
 
 Workspace rollout and independent backfill verification are complete at Helm
-revision 195. Final supplementary model checks and test-identity cleanup remain
-in progress; the initial 123-recipe qualification is complete.
+revision 195. The initial 123-recipe qualification and a supplementary 121-recipe
+campaign both passed. Temporary test credentials are revoked, test storage is
+disabled, and final retained-service checks passed. No task workers remain running.
 
 ## Delivered content and scope
 
@@ -87,12 +88,21 @@ upgrades, not a broad Terraform apply against unrelated existing infrastructure.
   33 recently deployed SAM 2 boundary tests also passed.
 - A further 37 installer/service/runner tests and seven publication-coverage
   tests passed after client fixes. These counts overlap; do not sum them.
+- Final focused regression passed 51 tests across installer, background service,
+  real PostgreSQL, recipe runner, chart and publication coverage. The temporary
+  task-only PostgreSQL container `fs2-starter-pg-20260920` was then stopped and
+  its disposable test data removed; the production database was not touched.
 - Root and workloads Terraform validate; Helm rendering requires pinned image
   and manifest identities and isolates the data mount from GPU workloads.
 - 123/123 recipes passed offline schemas and referenced-manifest role checks.
 - 123/123 initial recipes have exact recipe/input-hash-bound semantic proofs.
   The qualification publisher refuses incomplete/model-mismatched coverage,
   altered inputs and missing provenance.
+- The additional final-backend campaign passed 121/121 recipes, including a
+  second independent full-reader LeRobot check. BoltzGen and BindCraft were not
+  repeated in this supplementary campaign; their initial complete pipelines
+  (~25 and ~18 minutes) already passed. Their model runtimes were not changed.
+  See [the final-backend results](final-backend-model-results.json).
 - Existing shared and private workspaces each seeded 374 objects on attempt 1.
   A new private user created after activation also received a distinct seeded
   bucket on attempt 1. Downloads were independently checksum-verified using
@@ -125,6 +135,23 @@ Actual existing bucket names are retained only in the protected operator receipt
 receipt uses hashed bucket identities. No customer data outside the pinned
 example prefix was downloaded or modified.
 
+## Cleanup and retained service
+
+After paging the complete operation history and confirming all own operations
+were terminal, the three task API keys were revoked and four task users disabled.
+All three keys returned unauthorized afterward; a later independent check
+confirmed all four users and their storage were disabled. The three acceptance
+buckets, their evidence and all model-result receipts are retained, not deleted.
+See [the confirmed cleanup receipt](test-identity-cleanup-confirmed.json).
+
+At 04:59:50 UTC the public `/readyz` returned ready, with healthy admission
+workers, zero fatal workers and healthy scientific-batch workers. The final
+deployment receipt still records Helm 195 with gateway 3/3, controllers 2/2 and
+admin 2/2, on the exact images listed above. No task-owned GPU/node group was
+created and no model autoscaling configuration was changed. All temporary model
+workers and the local test database have finished; normal platform services and
+automatic seeding remain running.
+
 ## Failures and corrections retained
 
 Initial full WAV inputs exceeded the gateway's inline upload bound. Three own
@@ -150,6 +177,21 @@ in aggregate reports identify superseded drafts, not new model failures.
 Existing Starlette test deprecation warnings were unrelated to this feature.
 Qwen emitted a documented first-inference Triton compilation latency warning;
 the cold request completed. No cold-start speed guarantee is made by this pack.
+
+The supplementary campaign was deliberately resumed from its existing receipts
+when its client worker count changed from two to three. No accepted operation
+was cancelled or resubmitted under a fresh identity. Its protein-design wall
+times also include cluster scheduling: Proteina's evaluation stage was observed
+pending and then running, and RFdiffusion's first repeat completed in 627.501
+seconds. An operation being accepted/running does not mean its GPU stage has
+already started. This is recorded as observed latency, not a model failure or
+a promise that the initial guide's timings are fixed service guarantees.
+
+The first cleanup attempt stopped before any writes: the helper incorrectly
+treated `/v1/me.available_slots` as a live idle signal, although that policy
+endpoint deliberately returns null. The helper was corrected to page through
+the key-scoped operation history and require every operation to be terminal
+before revoking its credentials. No backend policy or limit was changed.
 
 ## Rollback and recovery
 

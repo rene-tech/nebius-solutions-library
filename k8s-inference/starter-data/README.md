@@ -55,7 +55,7 @@ remains governed by the user's existing API-key grants and model licenses.
 `source-lock.json` pins public downloads. Full approved consultation WAVs are
 losslessly encoded to FLAC and decoded back to PCM for byte-identical sample
 verification; no speech is cut to fit an upload limit. The full pack is about
-42 MB after this conversion. Use the source manifest for exact release size.
+43 MB after this conversion. Use the source manifest for exact release size.
 
 ## Build and qualification
 

@@ -37,9 +37,31 @@ def main(args):
                 current["tenant_id"] == access["tenant_id"]
                 and current["principal_id"] == access["principal_id"]
             )
-            assert current["available_slots"] == current["max_concurrency"], (
-                "test_operations_still_active"
-            )
+            # /v1/me intentionally describes policy, not live free slots.
+            # Check the caller-scoped durable history before any revocation.
+            cursor = None
+            for _ in range(50):
+                params = {"limit": 200}
+                if cursor:
+                    params["cursor"] = cursor
+                response = httpx.get(
+                    origin + "/v1/operations",
+                    params=params,
+                    headers={"authorization": "Bearer " + access["secret"]},
+                    timeout=60,
+                )
+                response.raise_for_status()
+                page = response.json()
+                assert all(
+                    operation["status"]
+                    in {"succeeded", "failed", "cancelled", "preempted", "expired"}
+                    for operation in page["data"]
+                ), "test_operations_still_active"
+                cursor = page.get("next_cursor")
+                if not cursor:
+                    break
+            else:
+                raise RuntimeError("test_operation_inventory_limit_exceeded")
     token = (
         base64.b64decode(
             json.loads(
