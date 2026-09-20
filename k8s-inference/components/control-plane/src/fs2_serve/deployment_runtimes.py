@@ -215,7 +215,11 @@ def _record(
         if cpu_runtime
         else artifact_kind in ({"nim-cache"} if is_nim else {"weights", "formula"})
         and record["cache"]["owner"]
-        in ({"nim-operator-nimcache", "nim-runtime-cache"} if is_nim else {"fs2-serve-localizer", "runtime-image"})
+        in (
+            {"nim-operator-nimcache", "platform-pvc"}
+            if is_nim
+            else {"fs2-serve-localizer", "runtime-image"}
+        )
         and gpu["count"] >= 1
         and gpu["topology"] in {"single-gpu", "single-node-multi-gpu"}
         and gpu["b300_state"] != "not-applicable"
@@ -270,7 +274,8 @@ def deployment_runtime_model_schema(catalog_dir: Path) -> dict[str, Any]:
     gpu_schema["count"]["minimum"] = 0
     gpu_schema["topology"]["enum"].append("cpu-only")
     gpu_schema["b300_state"]["enum"].append("not-applicable")
-    schema["properties"]["cache"]["properties"]["owner"]["enum"].extend(["runtime-image", "nim-runtime-cache"])
+    schema["properties"]["cache"]["properties"]["owner"]["enum"].append("runtime-image")
+    schema["properties"]["cache"]["properties"]["owner"]["enum"].append("platform-pvc")
     schema["$defs"]["artifact"]["properties"]["kind"]["enum"].extend(["reference-database", "formula"])
     schema["properties"]["model"]["properties"]["family"]["enum"].extend(
         [

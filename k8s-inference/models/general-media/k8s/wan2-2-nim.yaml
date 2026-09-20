@@ -88,7 +88,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       nodeSelector:
-        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        accelerator.fs2.nebius/class: nvidia-h200-sxm5-141gb
         kubernetes.io/arch: amd64
       tolerations:
         - key: dedicated
@@ -111,24 +111,20 @@ spec:
             - name: NIM_MODEL_PRECISION
               value: bf16
             - name: NIM_HTTP_API_PORT
-              value: "8001"
-            - name: NIM_HTTP_METRICS_PORT
-              value: "8002"
+              value: "9000"
             - name: NIM_CACHE_PATH
               value: /opt/nim/.cache
           ports:
             - name: nim-http
-              containerPort: 8001
-            - name: nim-metrics
-              containerPort: 8002
+              containerPort: 9000
           resources:
             requests:
-              cpu: "16"
+              cpu: "12"
               memory: 96Gi
               ephemeral-storage: 16Gi
               nvidia.com/gpu: "1"
             limits:
-              cpu: "32"
+              cpu: "15"
               memory: 128Gi
               ephemeral-storage: 32Gi
               nvidia.com/gpu: "1"
@@ -146,7 +142,7 @@ spec:
             - name: shm
               mountPath: /dev/shm
         - name: adapter
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:af80ffbcce79ef468b88183388c68ef33c4ecbd6b123ee7f158c8ada2df68870
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:c2cd8a47598c24285f9c4362f013d80cf7807d72babe39a958e29cf828ae66a0
           imagePullPolicy: IfNotPresent
           env:
             - name: HOME
@@ -154,7 +150,7 @@ spec:
             - name: WAN_VARIANT
               value: t2v
             - name: WAN_UPSTREAM_URL
-              value: http://127.0.0.1:8001
+              value: http://127.0.0.1:9000
           ports:
             - name: http
               containerPort: 8000
@@ -262,7 +258,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       nodeSelector:
-        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        accelerator.fs2.nebius/class: nvidia-h200-sxm5-141gb
         kubernetes.io/arch: amd64
       tolerations:
         - key: dedicated
@@ -285,24 +281,20 @@ spec:
             - name: NIM_MODEL_PRECISION
               value: bf16
             - name: NIM_HTTP_API_PORT
-              value: "8001"
-            - name: NIM_HTTP_METRICS_PORT
-              value: "8002"
+              value: "9000"
             - name: NIM_CACHE_PATH
               value: /opt/nim/.cache
           ports:
             - name: nim-http
-              containerPort: 8001
-            - name: nim-metrics
-              containerPort: 8002
+              containerPort: 9000
           resources:
             requests:
-              cpu: "16"
+              cpu: "12"
               memory: 96Gi
               ephemeral-storage: 16Gi
               nvidia.com/gpu: "1"
             limits:
-              cpu: "32"
+              cpu: "15"
               memory: 128Gi
               ephemeral-storage: 32Gi
               nvidia.com/gpu: "1"
@@ -320,7 +312,7 @@ spec:
             - name: shm
               mountPath: /dev/shm
         - name: adapter
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:af80ffbcce79ef468b88183388c68ef33c4ecbd6b123ee7f158c8ada2df68870
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:c2cd8a47598c24285f9c4362f013d80cf7807d72babe39a958e29cf828ae66a0
           imagePullPolicy: IfNotPresent
           env:
             - name: HOME
@@ -328,7 +320,7 @@ spec:
             - name: WAN_VARIANT
               value: i2v
             - name: WAN_UPSTREAM_URL
-              value: http://127.0.0.1:8001
+              value: http://127.0.0.1:9000
           ports:
             - name: http
               containerPort: 8000

@@ -1,0 +1,272 @@
+{
+  "content": {
+    "digest": "0153417ae6dd93f3c4500432f5ce06e2be4d5cdb1f841168774763c1417427ef",
+    "expanded_bytes": 72593809635,
+    "files": [
+      {
+        "bytes": 25896960,
+        "path": "cosmos-guardrails/blocklist/blocklist.tar",
+        "sha256": "40422ff59ca9f10a581c5ab71bc9eb575241e3d1fc41375ef581cf237450b037"
+      },
+      {
+        "bytes": 5814682,
+        "path": "cosmos-guardrails/frame_content_safety_filter/safety_filter.pt",
+        "sha256": "a408f177d33943b475e3c0644553e38d8499b199eaf1bbf95c9f773f9997a575"
+      },
+      {
+        "bytes": 576,
+        "path": "cosmos-guardrails/frame_content_safety_filter/siglip-so400m-patch14-384/config.json",
+        "sha256": "adc04928d8fd19a61822584fe0cf2e813e5ebac17f3e49fb1ea096860ae6457b"
+      },
+      {
+        "bytes": 3511950624,
+        "path": "cosmos-guardrails/frame_content_safety_filter/siglip-so400m-patch14-384/model.safetensors",
+        "sha256": "ea2abad2b7f8a9c1aa5e49a244d5d57ffa71c56f720c94bc5d240ef4d6e1d94a"
+      },
+      {
+        "bytes": 368,
+        "path": "cosmos-guardrails/frame_content_safety_filter/siglip-so400m-patch14-384/preprocessor_config.json",
+        "sha256": "f59da2f87c3cd079bd4f8f3037e81b277c60c498e279a8020331f67a5a3157e8"
+      },
+      {
+        "bytes": 409,
+        "path": "cosmos-guardrails/frame_content_safety_filter/siglip-so400m-patch14-384/special_tokens_map.json",
+        "sha256": "2b6a1ff67a27e0df9ac0c7d93250fc0d87431c7b366b3d5669217104f9088a26"
+      },
+      {
+        "bytes": 798330,
+        "path": "cosmos-guardrails/frame_content_safety_filter/siglip-so400m-patch14-384/spiece.model",
+        "sha256": "1e5036bed065526c3c212dfbe288752391797c4bb1a284aa18c9a0b23fcaf8ec"
+      },
+      {
+        "bytes": 2399357,
+        "path": "cosmos-guardrails/frame_content_safety_filter/siglip-so400m-patch14-384/tokenizer.json",
+        "sha256": "c6e405cb7c670d56636a9402c81023a55bc6c3c53d89cf02b92f5c5005bfe920"
+      },
+      {
+        "bytes": 711,
+        "path": "cosmos-guardrails/frame_content_safety_filter/siglip-so400m-patch14-384/tokenizer_config.json",
+        "sha256": "d6423dae508cc3a129d22ea443841c111832a1a73125b8f25ea8736951698bcb"
+      },
+      {
+        "bytes": 600,
+        "path": "i2v-bf16/model_index.json",
+        "sha256": "50ba96f2b36888eab6b33afb4a74254652fb4f43be4767cea633f4bcda67f5d8"
+      },
+      {
+        "bytes": 820,
+        "path": "i2v-bf16/scheduler/scheduler_config.json",
+        "sha256": "40624e058848feddf4bc2da5e8a232668b9a6f4a4939365810bebd9ce0166578"
+      },
+      {
+        "bytes": 855,
+        "path": "i2v-bf16/text_encoder/config.json",
+        "sha256": "a2bcb24699f6c009a2427432bdd483ef8b2b42a712abc9503759cdc77d171f07"
+      },
+      {
+        "bytes": 4935812536,
+        "path": "i2v-bf16/text_encoder/model-00001-of-00003.safetensors",
+        "sha256": "a8e861969c7433e707cc5a74065d795d36cca07ec96eb6763eb4083df7248f58"
+      },
+      {
+        "bytes": 4983103192,
+        "path": "i2v-bf16/text_encoder/model-00002-of-00003.safetensors",
+        "sha256": "d57d948ece4837d850b7a859a4415121d57cacf8b9ee1d4db200c67f592902d7"
+      },
+      {
+        "bytes": 1442935480,
+        "path": "i2v-bf16/text_encoder/model-00003-of-00003.safetensors",
+        "sha256": "0da9ee284e21d1406df708788db1d502d95d75f69faa25cd26151bf8829b7c5f"
+      },
+      {
+        "bytes": 22476,
+        "path": "i2v-bf16/text_encoder/model.safetensors.index.json",
+        "sha256": "31c4c7bcce679eaa0dd4667462394ddb013dc2f748e0bffc893dc9146a320dab"
+      },
+      {
+        "bytes": 7079,
+        "path": "i2v-bf16/tokenizer/special_tokens_map.json",
+        "sha256": "456b58fd240a06c743a7c2cf8008bec501240d68ebd1fc4018ea569505fea270"
+      },
+      {
+        "bytes": 4548313,
+        "path": "i2v-bf16/tokenizer/spiece.model",
+        "sha256": "e3909a67b780650b35cf529ac782ad2b6b26e6d1f849d3fbb6a872905f452458"
+      },
+      {
+        "bytes": 16837459,
+        "path": "i2v-bf16/tokenizer/tokenizer.json",
+        "sha256": "20a46ac256746594ed7e1e3ef733b83fbc5a6f0922aa7480eda961743de080ef"
+      },
+      {
+        "bytes": 61758,
+        "path": "i2v-bf16/tokenizer/tokenizer_config.json",
+        "sha256": "1d8d2a216bf8e70ac15b7ddcea566c4dd0433c024b39a58ca5e4c66bd78defbd"
+      },
+      {
+        "bytes": 495,
+        "path": "i2v-bf16/transformer/config.json",
+        "sha256": "6809423c4a92f886feded9f85f55c667d73a2332d5e011fab4172f3448dd5666"
+      },
+      {
+        "bytes": 2432409872,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00001-of-00012.safetensors",
+        "sha256": "7dc19130764f77d71870c92146da25688b6e7898b8e87f32c7190801fa8ee366"
+      },
+      {
+        "bytes": 2459802136,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00002-of-00012.safetensors",
+        "sha256": "2de35827c176a5df4a401bce63d29d15ac71d42e2331d4aba02f83cdc096813c"
+      },
+      {
+        "bytes": 2459737312,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00003-of-00012.safetensors",
+        "sha256": "17314d40c1863ca6ddcb19ae62bf26e0610781b6d962f956fbec3448252bd2a0"
+      },
+      {
+        "bytes": 2459802200,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00004-of-00012.safetensors",
+        "sha256": "4d373d2d1d95ee3deefa2d13736bc97aaa8f9493fea58bfcb41c575b358d8a3c"
+      },
+      {
+        "bytes": 2459737400,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00005-of-00012.safetensors",
+        "sha256": "47424118428ed247f07b13eb812cfd3c0ddbed00c18b794a663cd8a54b741dc5"
+      },
+      {
+        "bytes": 2459802232,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00006-of-00012.safetensors",
+        "sha256": "a180f701f754ff8faabfb74dcddffa9111571f8f21f9edacbd9519f2d1027e20"
+      },
+      {
+        "bytes": 2459737400,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00007-of-00012.safetensors",
+        "sha256": "f5d663c5159d2ab53495717676b7677cef82352f35d12bb44e26b269e1cfbac2"
+      },
+      {
+        "bytes": 2459802232,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00008-of-00012.safetensors",
+        "sha256": "1eb3315a3cafe4f2bfb1121e2cd5c1e85216e54c0049c2e2ba031ae5044ce1cf"
+      },
+      {
+        "bytes": 2459737400,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00009-of-00012.safetensors",
+        "sha256": "da9ab3b84d53d0eb1b60198ebd8686ff38cf5e7489ef30195cdcc92b817b6020"
+      },
+      {
+        "bytes": 2459802232,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00010-of-00012.safetensors",
+        "sha256": "6a769d55d9532843afc763b97ff1739a153f3eee66203efc9bc2b6aa541c88d0"
+      },
+      {
+        "bytes": 2459737400,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00011-of-00012.safetensors",
+        "sha256": "3e6f688ac69447f6f4f3df1df0443e45a5e696c197aaf8b5e70338e4991d15a8"
+      },
+      {
+        "bytes": 1547806600,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model-00012-of-00012.safetensors",
+        "sha256": "71282afa225d682541a2bc05ed1c16210b0913f4a72db60a3fcbf45cbe32d05f"
+      },
+      {
+        "bytes": 97306,
+        "path": "i2v-bf16/transformer/diffusion_pytorch_model.safetensors.index.json",
+        "sha256": "353d74db6118a066362a486ad6c92066a5efe3fd78b4cfeb504ff65139a67bad"
+      },
+      {
+        "bytes": 495,
+        "path": "i2v-bf16/transformer_2/config.json",
+        "sha256": "6809423c4a92f886feded9f85f55c667d73a2332d5e011fab4172f3448dd5666"
+      },
+      {
+        "bytes": 2432409872,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00001-of-00012.safetensors",
+        "sha256": "01aaedaac907b55fd19ed9ad0a930959a9e12a64adec621ebf3fb4a669ea733c"
+      },
+      {
+        "bytes": 2459802136,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00002-of-00012.safetensors",
+        "sha256": "c1022ecaeb9f44ae169aa17c31faa93a7849e5ae78bef23d3702d55e40dc30f1"
+      },
+      {
+        "bytes": 2459737312,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00003-of-00012.safetensors",
+        "sha256": "2174c70dbcefdff9ffd03893371647cf7d201e8ed38b672a414916df984578db"
+      },
+      {
+        "bytes": 2459802200,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00004-of-00012.safetensors",
+        "sha256": "db68dfdd9f32b18a5589fde6d28020b2335b8413c9c589fd2a4fda26a93ab221"
+      },
+      {
+        "bytes": 2459737400,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00005-of-00012.safetensors",
+        "sha256": "b2138fcd94f34209dc2fe87749b518ca029232afe4ab3777911457d033c0e078"
+      },
+      {
+        "bytes": 2459802232,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00006-of-00012.safetensors",
+        "sha256": "2cfc2c8ab039b59fc29c58bb12f80326aa7383227f824e76121247630bce846e"
+      },
+      {
+        "bytes": 2459737400,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00007-of-00012.safetensors",
+        "sha256": "cfc392a057fe41d543bf76e6fda3bbaa7dce5a95454feb6bdd0863b89830cfe1"
+      },
+      {
+        "bytes": 2459802232,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00008-of-00012.safetensors",
+        "sha256": "5a2d569bf2f7ad0397b03a85a39da96cbdac70166c0c1c574116f962f95967e9"
+      },
+      {
+        "bytes": 2459737400,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00009-of-00012.safetensors",
+        "sha256": "d5250e7a2fd4db71d9f7a88e054d0c50ca17c4a7197ed85cff8ccc70ce370887"
+      },
+      {
+        "bytes": 2459802232,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00010-of-00012.safetensors",
+        "sha256": "db379684363443cdbac36e862c27d213d6ed93bd5f1d83f125bdd0315cd2992e"
+      },
+      {
+        "bytes": 2459737400,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00011-of-00012.safetensors",
+        "sha256": "5ad5f4cd41cf9509adaa587f6c759412ada186bd15f8840ce2b02316734e7b95"
+      },
+      {
+        "bytes": 1547806600,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model-00012-of-00012.safetensors",
+        "sha256": "503374bfeeee4e14c1586749c42a3d0c2a4bd1536f2d951b7f4517f7d6e3f51f"
+      },
+      {
+        "bytes": 97306,
+        "path": "i2v-bf16/transformer_2/diffusion_pytorch_model.safetensors.index.json",
+        "sha256": "353d74db6118a066362a486ad6c92066a5efe3fd78b4cfeb504ff65139a67bad"
+      },
+      {
+        "bytes": 724,
+        "path": "i2v-bf16/vae/config.json",
+        "sha256": "47e8bcf55e93e9c182e1962a8c7a0650faeb34ea0f66826d6f8aaa9f73e08ec9"
+      },
+      {
+        "bytes": 507591892,
+        "path": "i2v-bf16/vae/diffusion_pytorch_model.safetensors",
+        "sha256": "d6e524b3fffede1787a74e81b30976dce5400c4439ba64222168e607ed19e793"
+      }
+    ]
+  },
+  "entitlement_state": "verified",
+  "kind": "nim-cache",
+  "license": {
+    "id": "Apache-2.0+NVIDIA-Open-Model-License",
+    "state": "verified"
+  },
+  "model_id": "wan2-2-i2v-nim",
+  "owner": "platform-pvc",
+  "retention": "retained-platform",
+  "schema": "fs2-serve.nebius.ai/artifact-manifest/v1",
+  "source": {
+    "revision": "e38919caed06f51e1039e841a6c116b7388244b05ad62576100b38c935fb6924",
+    "uri": "ngc://nim/wan-ai/wan2.2-a14b"
+  }
+}

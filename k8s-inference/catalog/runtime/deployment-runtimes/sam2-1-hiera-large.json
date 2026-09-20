@@ -124,7 +124,7 @@
       "kind": "repository-command",
       "contract": "sam2-prompted-image-and-video-with-automatic-image-evidence/v1",
       "source_path": "k8s-inference/acceptance/wan2-sam2-20260920/qualify.py",
-      "source_sha256": "db8ad1b15b0ecbc1b6cc7357ed7cc5b85b7879699cacd2c9021cd1e45a165ae6",
+      "source_sha256": "13e7a8272b93dbc4267c9b05c3ac736c93fda4e794c661516fc224b965aaad81",
       "fixture_path": "k8s-inference/acceptance/wan2-sam2-20260920/fixtures.py",
       "fixture_sha256": "98951aaca90c1bd6c5f8cbd0b02adabd9ad7f77c279acfa21856addb278adcd3",
       "request_count": 2,

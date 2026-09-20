@@ -1,7 +1,9 @@
-"""Render independent Transfer catalog files only from two retained real results.
+"""Render the native Transfer App from two structurally and semantically valid results.
 
 Prints a filename-to-JSON mapping; does not edit or publish the catalog. Native
-runtime qualification is not customer, HTTP/MCP, workbench or batch acceptance.
+runtime qualification is not PAIDF acceptance, customer, HTTP/MCP, workbench or
+batch acceptance. Correct weather and frame geometry qualify the native mode;
+the unchanged PAIDF motion threshold can still reject that clip for a batch.
 """
 
 import argparse
@@ -62,13 +64,14 @@ def prepare(results):
             or generation.get("alignment_passed") is not True
             or generation.get("http_status") != 200
             or generation.get("profile_id") != PROFILE
-            or quality.get("accepted_by_automated_checks") is not True
+            or quality.get("alignment_passed") is not True
+            or quality.get("weather", {}).get("passed") is not True
             or quality.get("generation_receipt_sha256") != hashlib.sha256(generation_raw).hexdigest()
             or quality.get("output_sha256") != generation["output"]["sha256"]
             or quality.get("source_sha256") != generation["source"]["sha256"]
             or quality.get("motion", {}).get("threshold") != 0.682
         ):
-            raise ValueError("a result lacks exact adapter, structural and unchanged quality evidence")
+            raise ValueError("a result lacks exact adapter, structural, weather and unchanged motion-check evidence")
         if hashlib.sha256((result / "output.mp4").read_bytes()).hexdigest() != quality["output_sha256"]:
             raise ValueError("retained output does not match its evidence")
         evidence.append(
@@ -99,7 +102,7 @@ def prepare(results):
         },
         "license": {"id": LICENSE, "state": "verified"},
         "entitlement_state": "verified",
-        "owner": "nim-runtime-cache",
+        "owner": "platform-pvc",
         "retention": "retained-platform",
     }
     manifest_digest = digest(manifest)
@@ -190,7 +193,7 @@ def prepare(results):
             "multi_gpu_criu": "unproven-disabled",
         },
         "cache": {
-            "owner": "nim-runtime-cache",
+            "owner": "platform-pvc",
             "shared_path": "/mnt/fs2-serve-cache/models/" + MODEL,
             "local_path": "/var/lib/fs2-serve/cache/models/" + MODEL,
             "pre_pull_image": True,
@@ -243,10 +246,11 @@ def prepare(results):
                 "hardware": "NVIDIA H100 80GB HBM3; driver 580.173.02",
                 "outcome": "live-qualified",
                 "source_commit": SOURCE_COMMIT,
-                "summary": "Two distinct real outputs passed alignment and unchanged PAIDF quality checks through "
+                "summary": "Two distinct native outputs passed full-video alignment and sampled-weather verification through "
                 "the exact CPU adapter container connected to the private Stockholm NIM canary. Receipt digest "
                 + digest(evidence)
-                + ". This is not public gateway, workbench, managed cache startup, lifecycle or customer acceptance.",
+                + ". The rain clip failed the unchanged PAIDF motion threshold and is NOT accepted for a blueprint batch. "
+                "This is not public gateway, workbench, managed cache startup, lifecycle or customer acceptance.",
             }
         ],
         "provenance": [

@@ -299,10 +299,17 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
             "profile_variants": {architecture: variant_id},
             "secondary_non_alias_alternative": None,
         }
+        acquisition_method = (
+            "provider-block-pvc"
+            if is_nim and value["cache"]["owner"] == "platform-pvc"
+            else "nim-cache"
+            if is_nim
+            else "runtime-image"
+        )
         acquisition = {
             "schema": "fs2-serve.nebius.ai/native-runtime-acquisition/v1",
             "model_id": model_id,
-            "method": "nim-cache" if is_nim else "runtime-image",
+            "method": acquisition_method,
             "source": copy.deepcopy(value["model"]["source"]),
             "runtime_image": copy.deepcopy(value["runtime"]["image"]),
             "artifact_manifest_sha256": artifact.digest,
@@ -321,7 +328,7 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
             MappingProxyType(fallback_value),
         )
         plans[model_id] = AcquisitionPlan(
-            model_id, "nim-cache" if is_nim else "runtime-image", (), MappingProxyType(acquisition)
+            model_id, acquisition_method, (), MappingProxyType(acquisition)
         )
         semantics[model_id] = _semantic(record, declaration["semantic_requests"])
         scales[model_id] = _scale(catalog, record)

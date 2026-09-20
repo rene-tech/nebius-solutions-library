@@ -37,7 +37,7 @@ def box(kind: bytes, content: bytes) -> bytes:
 
 def mp4(width: int = 832, height: int = 480, duration: int = 3900) -> bytes:
     mvhd = bytes(12) + struct.pack(">II", 1000, duration) + bytes(80)
-    tkhd = bytes(80) + struct.pack(">II", width << 16, height << 16)
+    tkhd = bytes(76) + struct.pack(">II", width << 16, height << 16)
     hdlr = bytes(8) + b"vide" + bytes(12)
     trak = box(b"trak", box(b"tkhd", tkhd) + box(b"mdia", box(b"hdlr", hdlr)))
     return box(b"ftyp", b"isom" + bytes(12)) + box(b"moov", box(b"mvhd", mvhd) + trak)

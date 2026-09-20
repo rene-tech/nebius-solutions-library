@@ -89,6 +89,7 @@ def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive
         "phenoage", "altumage", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
             "parakeet-realtime-eou-120m-v1", "magpie-tts-multilingual-357m", "diar-streaming-sortformer-4spk-v2-1",
             "cellpose-cpsam-v2", "scvi-scanvi", "sam2-1-hiera-large",
+            "wan2-2-t2v-nim", "wan2-2-i2v-nim",
         }
     assert augmented.digest == archive.digest
     assert augmented.tested_model_ids == archive.tested_model_ids
@@ -138,6 +139,21 @@ def test_native_graph_is_exact_source_cpu_formula_or_cuda_weights_without_routes
     assert gateway.model("phenoage").gpu_allocation_count == 0
     assert gateway.model("altumage").gpu_allocation_count == 1
     assert augmented.model("altumage").to_dict()["resources"]["gpu"]["b300_state"] == "unverified"
+
+
+def test_wan_nim_profiles_keep_exact_source_and_platform_pvc_acquisition(archive):
+    augmented = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
+    for model_id in ("wan2-2-t2v-nim", "wan2-2-i2v-nim"):
+        value = augmented.model(model_id).to_dict()
+        (variant,) = augmented.variants_for(model_id)
+        plan = augmented.acquisition_plan(model_id)
+        assert variant.to_dict()["variant_kind"] == "nim"
+        assert variant.to_dict()["relationship"]["nim_artifact_parity"] == "verified"
+        assert variant.to_dict()["source"] == value["model"]["source"]
+        assert value["cache"]["owner"] == "platform-pvc"
+        assert value["cache"]["artifact"]["kind"] == "nim-cache"
+        assert plan.method == "provider-block-pvc"
+        assert plan.to_dict()["artifact_manifest_sha256"] == value["cache"]["artifact"]["manifest_digest"]
 
 
 def test_registry_selected_native_records_share_bootstrap_identity_but_do_not_grant_routes(archive, tmp_path):
