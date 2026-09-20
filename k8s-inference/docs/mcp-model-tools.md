@@ -1,10 +1,15 @@
-# Model tools over MCP
+# Scientific AI Apps over MCP
 
 Connect your MCP client to the Terraform `mcp` endpoint using a normal inference
 API key. The key's allowed models determine access to both serving and scientific
 Apps. Users share model workers, not each other's operations or artifacts.
 No separate scientific or academic customer credential is needed. Model licenses
-and scientific usage constraints still apply; a model grant is not a license.
+and scientific usage constraints still apply; an App grant is not a license.
+
+The server identifies itself as `scientific-ai-apps` with the display title
+**Nebius Scientific AI Apps**. Client-local connection names can differ, but the
+maintained LibreChat integration uses this identifier so generated tool names
+end in `_mcp_scientific-ai-apps`.
 
 ## Find the right tool and inputs
 

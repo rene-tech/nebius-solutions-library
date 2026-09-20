@@ -12,7 +12,7 @@ SKILL = ROOT / "skills" / "scientific-gateway"
 
 def test_librechat_mcp_uses_per_user_bearer_auth() -> None:
     config = yaml.safe_load((ROOT / "librechat.example.yaml").read_text(encoding="utf-8"))
-    server = config["mcpServers"]["bionemo-models"]
+    server = config["mcpServers"]["scientific-ai-apps"]
 
     assert server["type"] == "streamable-http"
     assert server["url"] == "${SCIENTIFIC_MODELS_MCP_URL}"
@@ -33,13 +33,14 @@ def test_skill_package_has_current_typed_operation_contract() -> None:
         "model_input_validation",
         "get_operation_result",
         "get_scientific_result",
-        "begin_scientific_artifact_upload",
+        "begin_model_artifact_upload",
         "acknowledge_operation",
     ):
         assert required in text
     assert "intentionally generic" not in text
     assert "No public per-model parameter-schema" not in text
-    assert "just under 12 MiB" in reference
+    assert "| Raw HTTP/MCP request | 16 MiB |" in reference
+    assert "| Decoded inline artifact | 16 MiB |" in reference
 
 
 def test_handover_and_agent_instructions_do_not_embed_private_keys() -> None:
@@ -54,5 +55,5 @@ def test_handover_and_agent_instructions_do_not_embed_private_keys() -> None:
 
     assert not re.search(r"(?:fs2_pat_|nvapi-)[A-Za-z0-9_-]{8,}", combined)
     assert "scientific_models__get_model_schema" in combined  # documented as obsolete only
-    assert "get_model_schema_mcp_bionemo-models" in combined
+    assert "get_model_schema_mcp_scientific-ai-apps" in combined
     assert "clawbio_upload_create" in combined  # documented as an incompatible legacy bridge

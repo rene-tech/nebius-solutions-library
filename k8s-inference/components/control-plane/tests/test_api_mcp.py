@@ -1268,7 +1268,8 @@ async def test_real_streamable_http_client_uses_parent_lifespan_and_full_async_l
             async with streamable_http_client(advertised_url, http_client=client) as streams:
                 async with ClientSession(*streams) as session:
                     initialized = await session.initialize()
-                    assert initialized.server_info.name == "fs2-serve"
+                    assert initialized.server_info.name == "scientific-ai-apps"
+                    assert initialized.server_info.title == "Nebius Scientific AI Apps"
                     assert not server.session_manager._server_instances  # type: ignore[attr-defined]
                     tools = await session.list_tools()
                     names = {tool.name for tool in tools.tools}
@@ -1594,7 +1595,8 @@ async def test_cli_composed_app_serves_stateless_mcp_over_real_uvicorn(
             async with streamable_http_client(f"{base_url}{MCP_HTTP_PATH}", http_client=client) as streams:
                 async with ClientSession(*streams) as session:
                     initialized = await session.initialize()
-                    assert initialized.server_info.name == "fs2-serve"
+                    assert initialized.server_info.name == "scientific-ai-apps"
+                    assert initialized.server_info.title == "Nebius Scientific AI Apps"
                     tools = await session.list_tools()
                     assert "qwen3_8b_openai_chat" in {tool.name for tool in tools.tools}
                     admitted = _mcp_payload(

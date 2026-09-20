@@ -1,4 +1,4 @@
-# Handover: LibreChat with fs2 MCP and deployment skills
+# Handover: LibreChat with Nebius Scientific AI Apps
 
 Prepared 2026-09-09 for the retained H100 platform and typed-MCP source
 `5de025fe58cc42812629c87694a1ff326e0ef00f`. This is the deployment handover;
@@ -69,18 +69,18 @@ licensed/academic Apps. Access does not grant the underlying license.
 2. Keep `interface.skills.use: true`, the Agents `skills` and `tools`
    capabilities, and `skills_enabled: true` on the saved workbench agent.
 3. Put `AGENT_INSTRUCTIONS.md` on that saved agent. Enable the
-   `bionemo-models` server and all catalog, schema, operation, result and artifact
+   `scientific-ai-apps` server and all catalog, schema, operation, result and artifact
    tools—not just model invocation tools.
 4. Restart LibreChat after changing filesystem deployment skills. Confirm the
    startup log reports that the skill directory was loaded.
 5. Each user opens MCP Settings, supplies their personal gateway key, and
-   initializes `bionemo-models`. The client must consume tool-list change
+   initializes `scientific-ai-apps`. The client must consume tool-list change
    notifications and compare `tool_catalog_revision` during catalog polling;
    refetch `tools/list` when it changes. Reconnect after a key change.
 
 LibreChat formats MCP tool IDs from the raw tool name and server name. On the
 inspected pin it produces names such as
-`get_model_schema_mcp_bionemo-models`. Do not seed the old
+`get_model_schema_mcp_scientific-ai-apps`. Do not seed the old
 `scientific_models__get_model_schema` prefix. Prefer selecting the MCP server in
 Agent Builder or persist the actual IDs returned by that LibreChat version.
 Schema/tool lists can vary per user, and independent App clones can be added.
@@ -173,13 +173,13 @@ local path. The helper must:
 
 The helper must call upstream with the same per-user gateway key. If it is a
 second MCP server, declare its own sensitive `customUserVars` value or implement
-an explicit authenticated handoff from LibreChat; do not fall back to a global
-`BIONEMO_MCP_API_KEY`. Keep local workspaces user-scoped. Signed object handles
+an explicit authenticated handoff from LibreChat; do not fall back to the global
+legacy alias `BIONEMO_MCP_API_KEY`. Keep local workspaces user-scoped. Signed object handles
 and bearer tokens must never enter model context or ordinary logs.
 
 The old `artifact-mcp.py` in the inspected workbench is **not compatible**: it
 still calls `clawbio_upload_create` / `clawbio_model_fetch`, assumes 32-character
-hex IDs and an `/upload/v1/` service. The fs2 gateway uses UUID upload/artifact
+hex IDs and an `/upload/v1/` service. The Scientific AI MCP server uses UUID upload/artifact
 identities and the `begin_model_artifact_upload` → trusted HTTP transfer →
 `finalize_model_artifact_upload` → inspect/download tools. Do not ship the old
 bridge as though it were operational; replace it or initially disable
@@ -265,6 +265,6 @@ not promise a duration. Earlier requests from before capture cannot be rebuilt.
 - [LibreChat deployment skills](https://www.librechat.ai/docs/features/skills)
 - [Pinned LibreChat MCP schema](https://github.com/danny-avila/LibreChat/blob/3f27726e10bdd35d98f5fbbae7aab35af94c8436/packages/data-provider/src/mcp.ts)
 - [Pinned LibreChat deployment-skill loader](https://github.com/danny-avila/LibreChat/blob/3f27726e10bdd35d98f5fbbae7aab35af94c8436/packages/api/src/skills/deployment.ts#L427)
-- [fs2 model-tool client guide](../../docs/mcp-model-tools.md)
+- [Scientific AI Apps MCP client guide](../../docs/mcp-model-tools.md)
 - [Scientific batch quick start](../../docs/SCIENTIFIC_BATCH_API.md)
 - [Typed-MCP release acceptance](../../acceptance/mcp-model-contracts-20260909/RELEASE.md)

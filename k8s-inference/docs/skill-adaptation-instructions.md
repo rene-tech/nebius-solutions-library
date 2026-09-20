@@ -322,9 +322,11 @@ an image alone are not proof the agent can see them. Refresh previously saved
 tool/schema selections; keep discovery, status, result and artifact tools
 available alongside the named model tools.
 
-The existing workbench aliases are `BIONEMO_MCP_URL`/`BIONEMO_MCP_API_KEY`,
-while some skills use `SCIENTIFIC_MODELS_*` or `FS2_*`. Map these deliberately;
-they are not automatically interchangeable. With per-user custom variables the
+Retired workbench images may still expose the legacy aliases
+`BIONEMO_MCP_URL`/`BIONEMO_MCP_API_KEY`. The maintained connection is named
+`scientific-ai-apps` and uses `SCIENTIFIC_MODELS_*`; internal helpers may retain
+`FS2_*` implementation variables. Map legacy aliases deliberately rather than
+presenting BioNeMo as the platform name. With per-user custom variables the
 gateway key is not a global shell environment variable. Its artifact/file bridge
 must use the same caller identity, not silently fall back to a shared env key.
 
@@ -397,4 +399,3 @@ claims that no schema API exists, that named tools have only generic objects,
 or that Cosmos/Evo2/imaging field names must be guessed by live GPU probes.
 If an essential feature is absent from the published contract, report that
 specific gap instead of substituting a different scientific workflow.
-

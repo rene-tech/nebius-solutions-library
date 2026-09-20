@@ -38,6 +38,8 @@ following, and downloading a scientific run over HTTPS or MCP.
 [Typed MCP model tools](docs/mcp-model-tools.md) describes every core tool,
 per-model input discovery, flat arguments, asynchronous results, and the
 compatibility boundary for NVIDIA BioNeMo skills and REST clients.
+[Scientific AI naming](docs/SCIENTIFIC_AI_NAMING.md) defines the product, App,
+MCP and implementation identifiers used across the solution.
 [LibreChat client integration](integrations/librechat/README.md) provides the
 per-user MCP configuration, installable gateway skill, saved-agent instructions,
 file-bridge contract, and deployment acceptance handover.

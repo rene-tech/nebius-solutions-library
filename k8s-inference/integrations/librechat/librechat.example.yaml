@@ -23,7 +23,9 @@ endpoints:
       - context
 
 mcpServers:
-  bionemo-models:
+  scientific-ai-apps:
+    title: 'Scientific AI Apps'
+    description: 'Authorized model and workflow Apps with durable runs and artifacts.'
     type: streamable-http
     url: '${SCIENTIFIC_MODELS_MCP_URL}'
     # Discovery is caller-specific and cannot run before this user supplies a key.
@@ -38,6 +40,6 @@ mcpServers:
       Authorization: 'Bearer {{SCIENTIFIC_MODELS_API_KEY}}'
     customUserVars:
       SCIENTIFIC_MODELS_API_KEY:
-        title: 'Scientific platform API key'
-        description: 'Your ordinary model-access key, without the Bearer prefix.'
+        title: 'Scientific AI API key'
+        description: 'Your ordinary App-access key, without the Bearer prefix.'
         sensitive: true

@@ -1,12 +1,12 @@
 ---
 name: scientific-gateway
-description: Use the hosted fs2 scientific and inference Apps through their typed MCP tools. Apply when discovering models, choosing an App, preparing model inputs, submitting or resuming work, polling an operation or scientific batch, uploading inputs, downloading results, or explaining a gateway error.
+description: Use Nebius Scientific AI Apps through their typed MCP tools. Apply when discovering models, choosing an App, preparing model inputs, submitting or resuming work, polling an operation or scientific batch, uploading inputs, downloading results, or explaining an MCP error.
 license: Apache-2.0
 ---
 
-# Scientific model gateway
+# Scientific AI Apps
 
-Use the `bionemo-models` MCP server. Authentication is supplied by LibreChat;
+Use the `scientific-ai-apps` MCP server. Authentication is supplied by LibreChat;
 never ask for, print, copy, or place an API key in tool arguments. The caller's
 key determines the visible Apps and owns the resulting operations and artifacts.
 

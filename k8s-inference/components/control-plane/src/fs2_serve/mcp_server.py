@@ -626,9 +626,12 @@ async def _admit(
 def build_mcp_server(runtime: AppRuntime) -> MCPServer:
     authorization = MCPAuthorizationMiddleware(runtime)
     server = FS2MCPServer(
-        "fs2-serve",
-        title="fs2-serve model gateway",
-        description="Authorized model and operation tools backed by durable fs2-serve admission.",
+        "scientific-ai-apps",
+        title="Nebius Scientific AI Apps",
+        description=(
+            "Authorized Scientific AI App discovery, inference, durable operations, "
+            "scientific workflows, and artifact tools."
+        ),
         instructions=(
             "Prefer the named model tools. Their inputSchema describes the selected runtime's actual inputs; "
             "get_model_schema provides examples and sources. NVIDIA BioNeMo skills can guide a workflow, but "
