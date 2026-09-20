@@ -1,0 +1,56 @@
+{
+  "schema": "fs2-serve.nebius.ai/model-access-preflight/v1",
+  "model_id": "cosmos-transfer2.5-2b",
+  "observed_until": "2026-09-20T03:02:56Z",
+  "source_commit": "00093d3632098bbd9bbb84e6d95de1fb67cc3a96",
+  "state": "blocked-model-access",
+  "customer_ready": false,
+  "runtime_probed": false,
+  "gpu_qualified": false,
+  "deployed": false,
+  "requested_nim_image": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b:1.1",
+  "resolved_nim_image_digest": null,
+  "nim_profile_id": null,
+  "ngc_registry": {
+    "local_root_status": 403,
+    "local_transfer_manifest_status": 403,
+    "local_public_cuda_manifest_status": 403,
+    "local_auth_challenge_present": false,
+    "stockholm_cluster_transfer_manifest_status": 401,
+    "stockholm_cluster_auth_challenge_present": true,
+    "transfer_pull_entitlement_verified": false
+  },
+  "credential_prerequisites": {
+    "local_ngc_environment_key_present": false,
+    "local_docker_ngc_auth_present": false,
+    "fs2-models/fs2-ngc-pull": "absent",
+    "fs2-models/fs2-ngc-runtime": "absent",
+    "legacy_credential_reuse": false
+  },
+  "official_source_fallback": {
+    "repository": "https://github.com/nvidia-cosmos/cosmos-transfer2.5",
+    "revision": "2ff49d0717af02057ae79bc75c00fbff9da1b4e7",
+    "maintenance": "limited; upstream recommends Cosmos3",
+    "model_repository": "nvidia/Cosmos-Transfer2.5-2B",
+    "model_revision": "ce8440327c632d8313c3bde69db13b627ba5cae1",
+    "gated": "auto",
+    "configured_token_readme_status": 200,
+    "configured_token_weight_status": 403,
+    "error_code": "GatedRepo",
+    "reason": "Configured account is not on the authorized model-access list",
+    "weight_probe_path": "general/edge/61f5694b-0ad5-4ecd-8ad7-c8545627d125_ema_bf16.pt",
+    "weights_downloaded": false,
+    "terms_accepted_by_agent": false
+  },
+  "target": {
+    "project_id": "project-e00rene",
+    "region": "eu-north1",
+    "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+    "observed_control_plane_image_digest": "sha256:e4319840c1d9378c2942f2e389785917e045af4b5733f93da3b535c3f33e3dad",
+    "new_gpu_resources": 0,
+    "paid_model_generations": 0,
+    "shared_backend_mutated": false,
+    "new_secrets_created": false,
+    "app_grants_changed": false
+  }
+}
