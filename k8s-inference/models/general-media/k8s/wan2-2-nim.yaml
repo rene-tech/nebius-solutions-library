@@ -146,7 +146,7 @@ spec:
             - name: shm
               mountPath: /dev/shm
         - name: adapter
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:1b3e50d06979c48600820a1049c2c78bf5efbcf947e22a3aa2cb4e71088d1d2f
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:af80ffbcce79ef468b88183388c68ef33c4ecbd6b123ee7f158c8ada2df68870
           imagePullPolicy: IfNotPresent
           env:
             - name: HOME
@@ -320,7 +320,7 @@ spec:
             - name: shm
               mountPath: /dev/shm
         - name: adapter
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:1b3e50d06979c48600820a1049c2c78bf5efbcf947e22a3aa2cb4e71088d1d2f
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:af80ffbcce79ef468b88183388c68ef33c4ecbd6b123ee7f158c8ada2df68870
           imagePullPolicy: IfNotPresent
           env:
             - name: HOME
