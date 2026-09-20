@@ -1,0 +1,40 @@
+{
+  "schema": "fs2-serve.nebius.ai/ace-step-qualification/v1",
+  "captured_at": "2026-09-20T08:55:16.543905+00:00",
+  "model_id": "ace-step-1-5",
+  "source_revision": "19671f406d603126926c1b7e2adc169acbcade22",
+  "lm_revision": "0a3ec94b557aea7d508da38b31cfe7341f6ff737",
+  "requests": [
+    {
+      "payload_sha256": "ca2c1893efe48a12b76bec0808b20de2961fbde4919f5f239864077484c2ad3a",
+      "response_sha256": "7f2d81905a7d2dd3906342b6da54281e24346ff05ff77e992357faa1ebf6ca86",
+      "response_bytes": 2304078,
+      "elapsed_seconds": 9.283550072461367,
+      "wav": {
+        "channels": 2,
+        "sample_width_bytes": 2,
+        "sample_rate_hz": 48000,
+        "frames": 576000,
+        "duration_seconds": 12.0
+      }
+    },
+    {
+      "payload_sha256": "3b81a745f7624c3da6572aa83543d3f35f4789ee680be8bab3f2846f69fa1f94",
+      "response_sha256": "60ee0aab5dbd72095459444a6087b6f110ec4e317ee1cf54c2e5e5d98fe20d04",
+      "response_bytes": 2304078,
+      "elapsed_seconds": 6.1024009101092815,
+      "wav": {
+        "channels": 2,
+        "sample_width_bytes": 2,
+        "sample_rate_hz": 48000,
+        "frames": 576000,
+        "duration_seconds": 12.0
+      }
+    }
+  ],
+  "invalid_request": {
+    "status": 422,
+    "response_sha256": "831114a971e4a4030dbac819784fd3a10110ab01d8c5ba8f7ebde5ec6651755d"
+  },
+  "distinct_responses": true
+}
