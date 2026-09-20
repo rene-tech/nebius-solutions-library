@@ -55,7 +55,7 @@ spec:
       terminationGracePeriodSeconds: 30
       containers:
         - name: runtime
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/sam2@sha256:cc983135984bdf89b89758e6ecdfd46e92a925dd10172976d5bccf5e0948323e
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/sam2@sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c
           imagePullPolicy: IfNotPresent
           env:
             - name: HOME
