@@ -1,8 +1,19 @@
-# Cosmos Transfer 2.5 onboarding — access blocked
+# Cosmos Transfer 2.5 onboarding — isolated canary in progress
 
 Requested App identity: `cosmos-transfer2.5-2b`. This is a new, independent video-transfer App, not a rename or replacement of `cosmos3-nano`.
 
-Status as of 2026-09-20: **preflight completed; runtime/model access blocked; not deployed or qualified**. No catalog entry, runtime image digest, GPU qualification, App grant or active route has been fabricated. The existing isolated video workbench and shared backend are unchanged.
+Status as of 2026-09-20 04:08 UTC: **authenticated image access passed; image inspection and isolated runtime canary in progress; not qualified or published**. No catalog entry, GPU qualification, App grant or active route has been fabricated. The existing isolated video workbench and shared backend are unchanged by this task.
+
+The target cluster now has operator-provisioned `wan2-ngc-api` and
+`wan2-ngc-pull` Secrets (created03:54 UTC). The isolated registry probe references
+the API Secret directly; no credential value is copied into the source or
+printed. It passed at04:06:02 UTC, resolving the1.1 image index to
+`sha256:970b21c10b2efd38c362b1fa2560cb94bed3eaa8065273d36ce885ee6e8d1cae`
+and the linux/amd64 manifest to
+`sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f`.
+This proves image-manifest access, not model-download entitlement or inference.
+See [the registry receipt](registry-access-20260920.json). The credential-free
+image inspection runs on existing H100-node capacity without requesting a GPU.
 
 ## Intended implementation
 
@@ -22,7 +33,37 @@ See [the machine-readable preflight](access-preflight-20260920.json).
 - The existing Hugging Face token can read the model README, but a HEAD request for the pinned edge weights returned HTTP403 `GatedRepo`: the account is not on the authorized list. No weights were downloaded and no gate/terms were accepted on the user's behalf.
 - The shared backend still uses control-plane digest `sha256:e4319840c1d9378c2942f2e389785917e045af4b5733f93da3b535c3f33e3dad`. No cloud resource, budget, Secret, App grant, runtime or backend release was changed during this preflight.
 
-## Required operator action
+### Registry-path diagnosis, rechecked 2026-09-20 03:58 UTC
+
+The local403 is **not evidence of an invalid API key or missing Cosmos Transfer
+entitlement**. Anonymous HEAD requests to both `/v2/` and the exact Transfer1.1
+manifest returned403 from `awselb/2.0` locally, but401 with
+`WWW-Authenticate` from `istio-envoy` in an existing Ready Stockholm gateway Pod.
+No credential was sent in this recheck and no new workload was created.
+
+This matches the August6 diagnostic in Task Deck record
+`archvteams-2370_3deuv9`: confirmed-correct keys and anonymous requests both
+failed before registry authentication on the development host. The older
+`fs2-nims-baseline-sweep` record documents a successful August20 target-cluster
+kubelet pull with `imagePullPolicy: Always`, followed by real NIM baseline
+pulls. These are historical observations, not proof that Transfer2.5 is
+currently entitled or that the old credentials are reusable.
+
+Continue the NGC preflight **from the authorized Stockholm environment** once
+approved credentials are delivered, then resolve and mirror the exact image
+digest if permitted. Do not retry the development-host registry path as a key
+validity test. The evidence distinguishes a pre-authentication path failure;
+it does not establish NVIDIA's precise source-IP/geographic/WAF rule. Image
+pull access and NIM model-artifact download access must still be checked
+separately. The Hugging Face fallback's gated-account denial is also a separate
+finding.
+
+## Credential delivery for activation
+
+The earlier absence of NGC Secrets below is retained as the initial preflight
+finding, not the current cluster state. Current canary checks use the existing
+operator-provisioned Secret references noted above. Broad platform activation
+still requires the platform credential contract and model-download evidence.
 
 Preferred NIM path: supply a **fresh, appropriately entitled NGC API key through the approved secret-delivery process**, not in chat, Git, command-line arguments or Helm values. The existing platform contract requires:
 

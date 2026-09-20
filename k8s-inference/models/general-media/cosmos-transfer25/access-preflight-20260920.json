@@ -20,6 +20,38 @@
     "stockholm_cluster_auth_challenge_present": true,
     "transfer_pull_entitlement_verified": false
   },
+  "connectivity_recheck": {
+    "observed_at": "2026-09-20T03:58:59.746832Z",
+    "authentication_sent": false,
+    "new_workloads_created": false,
+    "local": {
+      "root_status": 403,
+      "transfer_manifest_status": 403,
+      "auth_challenge_present": false,
+      "server": "awselb/2.0"
+    },
+    "stockholm_existing_gateway_pod": {
+      "root_status": 401,
+      "transfer_manifest_status": 401,
+      "auth_challenge_present": true,
+      "server": "istio-envoy"
+    },
+    "key_validity_inferred_from_local_403": false,
+    "exact_network_denial_rule": "unknown",
+    "next_check": "authenticated Stockholm registry and model-artifact access after approved secret delivery",
+    "historical_records": [
+      {
+        "task_id": "archvteams-2370_3deuv9",
+        "observed_date": "2026-08-06",
+        "finding": "development-host registry 403 before credential evaluation"
+      },
+      {
+        "task_id": "fs2-nims-baseline-sweep",
+        "observed_date": "2026-08-20",
+        "finding": "target-cluster kubelet NIM pull succeeded with imagePullPolicy Always"
+      }
+    ]
+  },
   "credential_prerequisites": {
     "local_ngc_environment_key_present": false,
     "local_docker_ngc_auth_present": false,
