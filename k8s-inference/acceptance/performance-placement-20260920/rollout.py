@@ -31,6 +31,9 @@ def main():
         parser.add_argument("--" + name, required=True)
     parser.add_argument("--expected-revision", type=int, required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--worker-image")
+    parser.add_argument("--worker-commit")
+    parser.add_argument("--worker-credential-secret")
     args = parser.parse_args()
     directory = Path(args.directory)
     helm = ["helm", "--kubeconfig", args.kubeconfig, "--kube-context", args.context, "-n", "fs2-system"]
@@ -72,6 +75,14 @@ def main():
     candidate["migration"]["releaseContract"] = yaml.safe_load((CHART / "values.yaml").read_text())["migration"]["releaseContract"]
     candidate["adminConsole"]["image"]["digest"] = args.admin_digest
     candidate["adminConsole"]["provenance"].update(sourceCommit=args.commit, sourceTree=args.tree, sbomSha256=args.admin_sbom)
+    if args.worker_image:
+        assert args.worker_commit and args.worker_credential_secret
+        candidate["benchmarkWorkers"] = {
+            **yaml.safe_load((CHART / "values.yaml").read_text())["benchmarkWorkers"],
+            "enabled": True, "image": args.worker_image, "sourceCommit": args.worker_commit,
+            "credentialSecret": args.worker_credential_secret,
+            "nodeSelector": {"capacity.fs2.nebius/pool": "system"},
+        }
     values = json.dumps(candidate, indent=2).encode()
     private(directory / "candidate-values.private.json", values)
     manifest = output(helm + ["template", RELEASE, str(CHART), "-f", str(directory / "candidate-values.private.json")])
@@ -84,6 +95,8 @@ def main():
     new = {identity(item): item for item in after if item and "helm.sh/hook" not in item["metadata"].get("annotations", {})}
     # Helm omits the completed migration Job from the retained release manifest.
     allowed_added = {("Job", None, RELEASE + "-migrate")}
+    if args.worker_image:
+        allowed_added.add(("Deployment", None, RELEASE + "-benchmarks"))
     assert old.keys() <= new.keys() and new.keys() - old.keys() <= allowed_added, "unexpected_resource_inventory_change"
     diff = [key for key in old if old[key] != new[key]]
     assert all(key[0] in {"Deployment", "ConfigMap", "CronJob", "StatefulSet"} for key in diff), "unexpected_resource_kind_change"

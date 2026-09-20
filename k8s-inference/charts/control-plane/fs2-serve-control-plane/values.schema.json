@@ -28,6 +28,30 @@
     "scientificArtifacts"
   ],
   "properties": {
+    "benchmarkWorkers": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "image", "sourceCommit", "replicas", "credentialSecret", "credentialKey", "resources", "nodeSelector", "tolerations"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "image": {"type": "string"},
+        "sourceCommit": {"type": "string"},
+        "replicas": {"type": "integer", "minimum": 1, "maximum": 16},
+        "credentialSecret": {"type": "string"},
+        "credentialKey": {"type": "string", "minLength": 1},
+        "nodeSelector": {"type": "object", "additionalProperties": {"type": "string"}},
+        "tolerations": {"type": "array", "items": {"type": "object"}},
+        "resources": {"type": "object"}
+      },
+      "allOf": [{
+        "if": {"properties": {"enabled": {"const": true}}},
+        "then": {"properties": {
+          "image": {"pattern": "^[^@\\s]+@sha256:[a-f0-9]{64}$"},
+          "sourceCommit": {"pattern": "^[a-f0-9]{40}$"},
+          "credentialSecret": {"minLength": 1}
+        }}
+      }]
+    },
     "customerStorage": {
       "type": "object",
       "additionalProperties": false,

@@ -1494,6 +1494,33 @@ variable "control_plane_image" {
   }
 }
 
+variable "benchmark_workers" {
+  description = "Optional CPU benchmark executors. Campaigns remain dynamic admin API state; credentials are existing Secret references."
+  type = object({
+    enabled           = optional(bool, false)
+    image             = optional(string, "")
+    source_commit     = optional(string, "")
+    replicas          = optional(number, 4)
+    credential_secret = optional(string, "")
+    credential_key    = optional(string, "token")
+    node_selector     = optional(map(string), {})
+  })
+  default = {}
+
+  validation {
+    condition = (
+      floor(var.benchmark_workers.replicas) == var.benchmark_workers.replicas &&
+      var.benchmark_workers.replicas >= 1 && var.benchmark_workers.replicas <= 16 &&
+      (!var.benchmark_workers.enabled || (
+        can(regex("^[^@\\s]+@sha256:[a-f0-9]{64}$", var.benchmark_workers.image)) &&
+        can(regex("^[a-f0-9]{40}$", var.benchmark_workers.source_commit)) &&
+        length(var.benchmark_workers.credential_secret) > 0
+      ))
+    )
+    error_message = "Enabled benchmark workers require an immutable image, exact source commit, credential Secret reference, and 1–16 whole-number replicas."
+  }
+}
+
 variable "gpu_observer_image" {
   description = "Optional qualified repository@sha256 image for independent GPU allocation observer releases. Empty follows the control-plane image."
   type        = string

@@ -21,6 +21,8 @@ from pathlib import Path
 
 import httpx
 
+from measurements import collect
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 sys.path[:0] = [str(ROOT / "components/control-plane/src"), str(ROOT / "catalog/runtime"), str(ROOT / "models")]
@@ -213,12 +215,14 @@ def execute(trial, origin, token, directory, timeout):
             "operations": [row[1] for row in calls], "request_seconds": [row[2] for row in calls], "semantic": semantic}
 
 
-def worker(args, admin, campaign_id, token):
+def worker(args, admin, campaign_id, token, *, once=False):
     while True:
         reply = checked(admin.post(f"/admin/api/v1/performance/campaigns/{campaign_id}/claim",
                                    json={"worker": args.worker, "lease_seconds": 120}))["data"]
         trial = reply["trial"]
         if trial is None:
+            if once:
+                return False
             campaign = checked(admin.get(f"/admin/api/v1/performance/campaigns/{campaign_id}"))["data"]
             if all(item["status"] in TERMINAL | {"unsupported", "capacity-unavailable"} for item in campaign["trials"]):
                 return
@@ -248,6 +252,9 @@ def worker(args, admin, campaign_id, token):
                 result = {**lease, "status": "succeeded", "semantic_valid": True,
                           "operation_id": evidence["operation_id"],
                           "elapsed_seconds": evidence["elapsed_seconds"] if trial["fence"] == 1 else None}
+                metrics, observations = collect(admin, evidence, trial["model_id"])
+                result.update(metrics)
+                evidence["observations"] = observations
             except Exception as error:
                 code = str(error) if isinstance(error, (RuntimeError, PUBLIC.AcceptanceError)) else type(error).__name__
                 # Safe summaries only; request payloads, signed URLs and credentials never enter the registry.
@@ -255,7 +262,8 @@ def worker(args, admin, campaign_id, token):
                 evidence = {"error_code": code, "elapsed_seconds": time.monotonic() - started}
                 result = {**lease, "status": "failed", "error_code": code,
                           "elapsed_seconds": evidence["elapsed_seconds"]}
-            data = canonical({"trial_id": trial["id"], "case": trial["case_spec"], "result": evidence})
+            data = canonical({"trial_id": trial["id"], "case": trial["case_spec"],
+                              "worker_source_commit": args.commit, "result": evidence})
             (directory / "receipt.json").write_bytes(data)
             artifact = PUBLIC._upload(PUBLIC.PublicApiClient(args.origin, token), model_id=trial["model_id"],
                                      data=data, media_type="application/json", compression="none",
@@ -269,11 +277,32 @@ def worker(args, admin, campaign_id, token):
         finally:
             stop.set()
             thread.join(timeout=5)
+        if once:
+            return True
+
+
+def pool(args):
+    """A fixed CPU worker pool, using database claims and public idempotency.
+
+    Login is renewed between trials. A process/container restart recovers work
+    through the expired lease; it does not own or kill the GPU operation.
+    """
+    while True:
+        worked = False
+        with closing(INVENTORY.admin_client(args.kubeconfig, args.context, args.origin)) as admin:
+            campaigns = checked(admin.get("/admin/api/v1/performance/campaigns", params={"limit": 200}))["data"]["items"]
+            for campaign in reversed(campaigns):
+                # The pod count bounds concurrency across campaigns as well.
+                if worker(args, admin, campaign["id"], args.token_file.read_text().strip(), once=True):
+                    worked = True
+                    break
+        if not worked:
+            time.sleep(15)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["plan", "create", "work"])
+    parser.add_argument("action", choices=["plan", "create", "work", "pool"])
     parser.add_argument("--origin", default="https://89.169.99.188")
     parser.add_argument("--kubeconfig")
     parser.add_argument("--context")
@@ -288,6 +317,9 @@ def main():
     args = parser.parse_args()
     os.umask(0o077)
     args.directory.mkdir(parents=True, exist_ok=True)
+    if args.action == "pool":
+        pool(args)
+        return
     if args.action in {"plan", "create"}:
         inventory = json.loads(args.inventory.read_bytes())
         spec = {"name": args.name, "source_commit": args.commit, "catalog_sha256": sha(canonical(inventory)),

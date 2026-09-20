@@ -76,7 +76,7 @@ class HardwareObservation(Contract):
     gpus_per_node: int = Field(ge=0, le=1024)
     cpu_arch: str = Field(min_length=1, max_length=32)
     driver_version: str = Field(min_length=1, max_length=64)
-    runtime_image: str = Field(pattern=r"^.+@sha256:[a-f0-9]{64}$", max_length=512)
+    runtime_image: str = Field(pattern=r"^(?:[^@\s]+@)?sha256:[a-f0-9]{64}$", max_length=512)
     runtime_fingerprint: Digest
     topology: Literal["single-device", "single-node", "multi-node"]
     local_storage: Literal["present", "absent", "unknown"]
@@ -206,7 +206,8 @@ class PerformanceRepository:
             row = await conn.fetchrow(
                 """SELECT * FROM fs2_benchmark_trials WHERE campaign_id=$1 AND
                    (status='queued' OR (status='running' AND lease_until<=clock_timestamp()))
-                   ORDER BY created_at,case_id,repetition FOR UPDATE SKIP LOCKED LIMIT 1""",
+                   ORDER BY (status='running') DESC,repetition,created_at,case_id
+                   FOR UPDATE SKIP LOCKED LIMIT 1""",
                 campaign_id,
             )
             if row is None:

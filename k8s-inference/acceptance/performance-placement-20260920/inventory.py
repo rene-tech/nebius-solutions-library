@@ -13,14 +13,23 @@ import httpx
 
 
 def admin_client(kubeconfig, context, origin):
-    secret = json.loads(subprocess.check_output([
-        "kubectl", "--kubeconfig", kubeconfig, "--context", context,
-        "-n", "fs2-system", "get", "secret", "fs2-serve-admin", "-o", "json",
-    ], stderr=subprocess.PIPE))
-    token = base64.b64decode(secret["data"]["token"]).decode().strip()
+    # Cluster workers receive a read-only Secret mount, never a kubeconfig.
+    token_file = os.environ.get("FS2_BENCHMARK_ADMIN_TOKEN_FILE")
+    if token_file:
+        token = Path(token_file).read_text().strip()
+    else:
+        secret = json.loads(subprocess.check_output([
+            "kubectl", "--kubeconfig", kubeconfig, "--context", context,
+            "-n", "fs2-system", "get", "secret", "fs2-serve-admin", "-o", "json",
+        ], stderr=subprocess.PIPE))
+        token = base64.b64decode(secret["data"]["token"]).decode().strip()
     client = httpx.Client(base_url=origin, headers={"Origin": origin}, timeout=90, trust_env=False)
-    response = client.post("/admin/api/v1/session", headers={"Authorization": "Bearer " + token})
-    response.raise_for_status()
+    try:
+        response = client.post("/admin/api/v1/session", headers={"Authorization": "Bearer " + token})
+        response.raise_for_status()
+    except Exception:
+        client.close()
+        raise
     return client
 
 

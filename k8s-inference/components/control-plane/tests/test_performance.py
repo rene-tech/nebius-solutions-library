@@ -116,6 +116,19 @@ async def test_unsupported_models_remain_in_denominator(database):
     assert all(row["status"] == "unsupported" for row in details["trials"])
 
 
+@pytest.mark.postgres
+async def test_first_repetition_covers_other_models_before_repeating(database):
+    spec = campaign()
+    other = spec.cases[0].model_copy(update={"case_id": "other", "model_id": "mosaic"})
+    spec.cases.append(other)
+    repo = PerformanceRepository(database.pool)
+    created = await repo.create(spec, "test")
+    first = await repo.claim(created["id"], ClaimRequest(worker="first"))
+    second = await repo.claim(created["id"], ClaimRequest(worker="second"))
+    assert first["repetition"] == second["repetition"] == 1
+    assert first["model_id"] != second["model_id"]
+
+
 def test_metrics_unknown_not_zero_and_no_unobserved_hardware_recommendation():
     spec = campaign()
     trial = {"worker": "worker", "fence": 1, "status": "succeeded", "case_spec": spec.cases[0].model_dump()}
