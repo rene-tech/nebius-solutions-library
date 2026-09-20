@@ -3,6 +3,7 @@ import { AppShell } from "../components/AppShell";
 import { ModelDetailPage } from "../pages/ModelDetailPage";
 import { ModelsPage } from "../pages/ModelsPage";
 import { ModelInventoryPage } from "../pages/ModelInventoryPage";
+import { BenchmarksPage } from "../pages/capacity/BenchmarksPage";
 import { OperationDetailPage } from "../pages/OperationDetailPage";
 import { OperationsPage } from "../pages/OperationsPage";
 import { OverviewPage } from "../pages/OverviewPage";
@@ -63,6 +64,7 @@ export function App() {
           <Route path="academic-assets" element={<AcademicAssetsPage />} />
           <Route path="access" element={<AccessPage />} />
           <Route path="capacity" element={<CapacityPage />} />
+          <Route path="capacity/benchmarks" element={<BenchmarksPage />} />
           <Route
             path="advanced/capacity"
             element={<CapacityDiagnosticsPage />}

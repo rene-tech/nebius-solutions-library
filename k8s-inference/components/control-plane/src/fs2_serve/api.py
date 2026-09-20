@@ -108,6 +108,7 @@ from .models import (
 )
 from .operation_history import OperationPage, decode_cursor, encode_cursor
 from .operation_metrics import customer_operation_metrics
+from .performance_routes import performance_router
 from .registry import OperationalModel, Registry, RegistryError
 from .reporting_reads import InFlightMetricsRead
 from .request_debug import DebugCaptureMiddleware, DebugStore, InMemoryDebugStore, PostgresDebugStore
@@ -814,6 +815,8 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             ),
             data=data,
         )
+
+    app.include_router(performance_router(pool, operator, admin_access, access_envelope))
 
     def admin_problem_response(
         status_code: int,

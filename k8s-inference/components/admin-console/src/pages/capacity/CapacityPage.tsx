@@ -121,6 +121,7 @@ export function CapacityPage() {
             <div>
               <span className="eyebrow">Current fleet</span>
               <h2>Capacity</h2>
+              <Link to="/admin/capacity/benchmarks">Benchmark results</Link>
               <p>
                 Ready capacity, reservations and room to expand. Observed{" "}
                 {formatTimestamp(data.observed_at)}.
