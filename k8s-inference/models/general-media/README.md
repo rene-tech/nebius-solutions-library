@@ -2,7 +2,22 @@
 
 This task-owned directory contains the retained runtime adapters and Kubernetes
 manifests for `cosmos3-nano`, `evo2-40b`, `glm-5-2-fp8`,
-`nv-reason-cxr-3b`, `nv-segment-ct`, and `sdxl`.
+`nv-reason-cxr-3b`, `nv-segment-ct`, `sdxl`, and the two Wan2.2 NIM
+variants.
+
+Wan2.2 is split into `wan2-2-t2v-nim` and `wan2-2-i2v-nim` because the NVIDIA
+NIM loads one model variant at startup. Both use BF16 on one H100 80 GB as the
+minimum supported lane, keep NVIDIA's safety checker enabled, serialize
+generation per replica, and accept only 832x480 or 480x832 output bounded to 12
+seconds. The image-to-video variant accepts one PNG/JPEG data URL. A small
+nonroot adapter forwards the exact NIM OpenAI video request, decodes its base64
+envelope, validates the returned MP4 structure, dimensions, and duration, then
+returns raw `video/mp4` for the platform artifact publisher. The exact NIM
+image is `nvcr.io/nim/wan-ai/wan2.2:1.0.0` at index digest
+`sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b`.
+Deployment requires an NGC entitlement secret and a separate persistent NIM
+cache for each variant. Wan output is marketing B-roll and is not scientific
+evidence.
 
 The common media image is based on the exact CUDA 13 B300-qualified vLLM image
 digest already mirrored by FS2. SDXL loads the public exact Diffusers revision;

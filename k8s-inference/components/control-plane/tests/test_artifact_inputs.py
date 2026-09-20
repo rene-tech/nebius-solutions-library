@@ -136,6 +136,49 @@ async def test_materializes_caller_owned_pdb_reference_at_runtime_boundary(regis
 
 
 @pytest.mark.asyncio
+async def test_materializes_json_stringified_reference_from_tool_adapter(registry):
+    content = b"HEADER    SYNTHETIC\nATOM      1  CA  ALA A   1       0.0     0.0     0.0\nEND\n"
+    reference = _reference(content)
+    artifacts = _Artifacts(content, reference)
+    materializer = ArtifactInputMaterializer(artifacts)  # type: ignore[arg-type]
+    request = {
+        "protein": json.dumps(reference.model_dump(mode="json")),
+        "ligand": "CC(=O)Oc1ccccc1C(=O)O",
+    }
+
+    body = await materializer.materialize(
+        _portable_model(registry, "diffdock"),
+        "native",
+        tenant_id="tenant-a",
+        request_body=json.dumps(request).encode(),
+    )
+
+    assert json.loads(body)["protein"] == content.decode()
+    assert artifacts.calls == [(UUID(reference.artifact_id), "tenant-a")]
+
+
+@pytest.mark.asyncio
+async def test_stringified_reference_retains_exact_metadata_validation(registry):
+    content = b"HEADER\nATOM\n"
+    actual = _reference(content)
+    supplied = actual.model_copy(update={"sha256": "0" * 64})
+    materializer = ArtifactInputMaterializer(_Artifacts(content, actual))  # type: ignore[arg-type]
+
+    with pytest.raises(ArtifactInputError, match="does not match"):
+        await materializer.materialize(
+            _portable_model(registry, "diffdock"),
+            "native",
+            tenant_id="tenant-a",
+            request_body=json.dumps(
+                {
+                    "protein": json.dumps(supplied.model_dump(mode="json")),
+                    "ligand": "CC",
+                }
+            ).encode(),
+        )
+
+
+@pytest.mark.asyncio
 async def test_materializes_pinned_fixture_without_artifact_or_llm_bytes(registry):
     reference = _reference(b"unused")
     artifacts = _Artifacts(b"unused", reference)

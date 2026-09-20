@@ -1,0 +1,46 @@
+{
+  "artifact": {
+    "artifact_id": "bf0c64ea-e885-460f-9307-a1f9b6671cca",
+    "media_type": "application/octet-stream",
+    "sha256": "3ee8cc8a0fa93dbdd75aa52f8498f8fe63d4cc7faafbce6a24fd7fb3df6bcb66",
+    "size_bytes": 1084
+  },
+  "conversation_id": "3d6b8546-aa00-50ea-8fb4-fd6475f1987b",
+  "endpoint": "scientific-ai-workbench-v2",
+  "mcp_server_status": "Connected",
+  "observed_at": "2026-09-20T03:47:42Z",
+  "operation_id": "1e752a84-a08b-4afa-b3b2-ee8067a7cad7",
+  "outcome": "passed",
+  "release": {
+    "control_plane_image": "sha256:ac0563cfc216f688ba6841ab7fb3f52e045da2c0c053398d8def358bde73b18f",
+    "helm_revision": 192
+  },
+  "schema": "fs2.nebius.ai/librechat-sam2-browser-qualification/v1",
+  "status": "succeeded",
+  "tool": "segment_track_media_native",
+  "validation": {
+    "files": [
+      "manifest.json",
+      "mask.png",
+      "overlay.png"
+    ],
+    "manifest": {
+      "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+      "height": 64,
+      "input_sha256": "f1eafdf2f23e3bb4eb6077cd51ead771330c185c61fedd3ce2422670d84f50fa",
+      "mode": "prompted-image",
+      "model": "facebook/sam2.1-hiera-large",
+      "objects": [
+        {
+          "area_px": 709,
+          "object_id": 1,
+          "score": 0.9855393171310425
+        }
+      ],
+      "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+      "schema": "fs2.nebius.ai/sam2-result/v1",
+      "width": 64
+    },
+    "overlay_probe": null
+  }
+}

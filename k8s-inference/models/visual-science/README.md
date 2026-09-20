@@ -1,6 +1,12 @@
 # Visual-science Apps
 
-This directory contains two bounded, artifact-backed Scientific AI Apps intended for interactive demos and small research inputs.
+This directory contains bounded, artifact-backed Scientific AI Apps intended for interactive demos and small research inputs.
+
+## SAM 2.1 Hiera Large
+
+`sam2-1-hiera-large` segments prompted objects in PNG/JPEG images, generates automatic image masks, and tracks prompted objects through MP4 video. It accepts at most 64 MiB, 2,073,600 image pixels, 320 video frames, and eight prompted objects. The response is a ZIP with a manifest, 16-bit masks, and deterministic color overlays; video results also contain an overlay MP4.
+
+The checkpoint is pinned to Hugging Face revision `665f8e2ad61cf5f53d65644ff27c8ee525124610` and SHA-256 `2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318`. SAM 2 predicts visual object masks and tracks objects. It does not generate images, identify biological cell types, or turn a mask into scientific ground truth. Code and checkpoint use Apache-2.0.
 
 ## Cellpose CPSAM v2
 
@@ -22,6 +28,6 @@ The result is a research integration artifact. The UMAP is a visual summary, and
 
 ## Operation
 
-The manifests in `k8s/` retain zero replicas because the platform controller owns scaling. For isolated qualification, scale one replica explicitly, use a direct port-forward, and run `acceptance/visual-science-20260919/qualify.py`. The validator issues two distinct success requests, one replay, and one failure request per model. It writes only synthetic fixtures.
+The manifests in `k8s/` retain zero replicas because the platform controller owns scaling. For isolated qualification, scale one replica explicitly, use a direct port-forward, and run the matching acceptance validator. The validators use synthetic fixtures and retain request and artifact digests.
 
 The images run as UID/GID 10001 with a read-only root filesystem. Mutable caches, temporary training files, Matplotlib state, and Numba state are confined to bounded `emptyDir` volumes. H100 is the only qualified GPU target.

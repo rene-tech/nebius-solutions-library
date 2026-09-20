@@ -1,0 +1,401 @@
+# The NGC pull/API credentials are supplied through separately managed Secrets.
+# The platform controller owns replicas; each variant has an isolated retained cache.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wan2-2-t2v-nim
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: wan2-2-t2v-nim
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: wan2-2-i2v-nim
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: wan2-2-i2v-nim
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wan2-2-t2v-nim-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: wan2-2-t2v-nim
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: wan2-2-t2v-nim
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: compute-csi-default-sc
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wan2-2-i2v-nim-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: wan2-2-i2v-nim
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: wan2-2-i2v-nim
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: compute-csi-default-sc
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wan2-2-t2v-nim
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: wan2-2-t2v-nim
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: wan2-2-t2v-nim
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wan2-2-t2v-nim
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/name: wan2-2-t2v-nim
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: wan2-2-t2v-nim
+    spec:
+      serviceAccountName: wan2-2-t2v-nim
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: wan2-ngc-pull
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: nim
+          image: nvcr.io/nim/wan-ai/wan2.2@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NGC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wan2-ngc-api
+                  key: NGC_API_KEY
+            - name: NIM_MODEL_VARIANT
+              value: t2v
+            - name: NIM_MODEL_PRECISION
+              value: bf16
+            - name: NIM_HTTP_API_PORT
+              value: "8001"
+            - name: NIM_HTTP_METRICS_PORT
+              value: "8002"
+            - name: NIM_CACHE_PATH
+              value: /opt/nim/.cache
+          ports:
+            - name: nim-http
+              containerPort: 8001
+            - name: nim-metrics
+              containerPort: 8002
+          resources:
+            requests:
+              cpu: "16"
+              memory: 96Gi
+              ephemeral-storage: 16Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "32"
+              memory: 128Gi
+              ephemeral-storage: 32Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: cache
+              mountPath: /opt/nim/.cache
+            - name: tmp
+              mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
+        - name: adapter
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:af80ffbcce79ef468b88183388c68ef33c4ecbd6b123ee7f158c8ada2df68870
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+            - name: WAN_VARIANT
+              value: t2v
+            - name: WAN_UPSTREAM_URL
+              value: http://127.0.0.1:8001
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+              ephemeral-storage: 4Gi
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: wan2-2-t2v-nim-cache
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wan2-2-t2v-nim
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: wan2-2-t2v-nim
+    fs2-serve.nebius.ai/model-id: wan2-2-t2v-nim
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: wan2-2-t2v-nim
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wan2-2-i2v-nim
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: wan2-2-i2v-nim
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: wan2-2-i2v-nim
+spec:
+  replicas: 0
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: wan2-2-i2v-nim
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/name: wan2-2-i2v-nim
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: wan2-2-i2v-nim
+    spec:
+      serviceAccountName: wan2-2-i2v-nim
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: wan2-ngc-pull
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: nim
+          image: nvcr.io/nim/wan-ai/wan2.2@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: NGC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wan2-ngc-api
+                  key: NGC_API_KEY
+            - name: NIM_MODEL_VARIANT
+              value: i2v
+            - name: NIM_MODEL_PRECISION
+              value: bf16
+            - name: NIM_HTTP_API_PORT
+              value: "8001"
+            - name: NIM_HTTP_METRICS_PORT
+              value: "8002"
+            - name: NIM_CACHE_PATH
+              value: /opt/nim/.cache
+          ports:
+            - name: nim-http
+              containerPort: 8001
+            - name: nim-metrics
+              containerPort: 8002
+          resources:
+            requests:
+              cpu: "16"
+              memory: 96Gi
+              ephemeral-storage: 16Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "32"
+              memory: 128Gi
+              ephemeral-storage: 32Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: cache
+              mountPath: /opt/nim/.cache
+            - name: tmp
+              mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
+        - name: adapter
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:af80ffbcce79ef468b88183388c68ef33c4ecbd6b123ee7f158c8ada2df68870
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+            - name: WAN_VARIANT
+              value: i2v
+            - name: WAN_UPSTREAM_URL
+              value: http://127.0.0.1:8001
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+              ephemeral-storage: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+              ephemeral-storage: 4Gi
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: cache
+          persistentVolumeClaim:
+            claimName: wan2-2-i2v-nim-cache
+        - name: tmp
+          emptyDir:
+            sizeLimit: 32Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wan2-2-i2v-nim
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: wan2-2-i2v-nim
+    fs2-serve.nebius.ai/model-id: wan2-2-i2v-nim
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: wan2-2-i2v-nim
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

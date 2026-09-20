@@ -182,7 +182,15 @@ def _record(
     source = record["model"]["source"]
     if any(source[key] != subject["source"][key] for key in ("kind", "repository", "revision")):
         raise DeploymentRuntimeError("deployment runtime source differs from exact canonical variant")
-    if record["runtime"]["kind"] in {"nim", "unresolved"} or source["kind"] == "ngc-nim":
+    is_nim = variant_id is not None and subject.get("variant_kind") == "nim"
+    if is_nim:
+        if (
+            record["runtime"]["kind"] != "nim"
+            or source["kind"] != "ngc-nim"
+            or subject["relationship"]["nim_artifact_parity"] != "verified"
+        ):
+            raise DeploymentRuntimeError("NIM deployment runtime lacks exact NVIDIA NIM identity")
+    elif record["runtime"]["kind"] in {"nim", "unresolved"} or source["kind"] == "ngc-nim":
         raise DeploymentRuntimeError("independent deployment runtime cannot claim NVIDIA NIM origin")
     image_state, _, image_digest = _validate_image(record["runtime"]["image"])
     license_state = _validate_status_binding(source["license"], "deployment runtime license")
@@ -205,8 +213,9 @@ def _record(
             "alternatives": [],
         }
         if cpu_runtime
-        else artifact_kind in {"weights", "formula"}
-        and record["cache"]["owner"] in {"fs2-serve-localizer", "runtime-image"}
+        else artifact_kind in ({"nim-cache"} if is_nim else {"weights", "formula"})
+        and record["cache"]["owner"]
+        in ({"nim-operator-nimcache"} if is_nim else {"fs2-serve-localizer", "runtime-image"})
         and gpu["count"] >= 1
         and gpu["topology"] in {"single-gpu", "single-node-multi-gpu"}
         and gpu["b300_state"] != "not-applicable"
@@ -271,6 +280,7 @@ def deployment_runtime_model_schema(catalog_dir: Path) -> dict[str, Any]:
             "speech-recognition",
             "speech-synthesis",
             "speaker-diarization",
+            "visual-segmentation",
         ]
     )
     return schema
