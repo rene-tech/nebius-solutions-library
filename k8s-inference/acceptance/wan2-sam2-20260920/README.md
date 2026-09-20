@@ -19,3 +19,14 @@ routing, HTTP/MCP, LibreChat, cold start and elasticity still need separate live
 acceptance. The runtime omits SAM's optional CUDA connected-components
 extension, so the optional hole-filling and small disconnected-area cleanup
 postprocessing is unavailable; core image and video inference passed.
+
+A second disposable H100 job started the final image's real Uvicorn service and
+called the readiness and segmentation endpoints over loopback HTTP. Readiness
+took 8.017 seconds. Prompted image, automatic image and 12-frame prompted video
+completed in 0.652, 0.685 and 1.923 seconds; all returned valid ZIP artifacts,
+and prompted-image replay matched byte for byte. The normalized receipt is
+`evidence/sam2-serverless-http.json` with SHA-256
+`33328e2f0021111f79afbcabb18e11f76ad9622410051aa6219e223764e7015f`.
+This closes container HTTP startup and direct endpoint semantics, while
+Kubernetes startup, the public gateway/MCP path, LibreChat, cold start and
+elasticity remain separate gates.

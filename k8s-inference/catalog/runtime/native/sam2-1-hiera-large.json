@@ -137,7 +137,7 @@
         "Research and creative-media segmentation only. Masks and tracked objects are model output, not scientific ground truth or clinical interpretation.",
         "Inputs are bounded to 64 MiB and 2,073,600 pixels; video is bounded to 320 frames and prompted tracking is bounded to eight objects.",
         "The optional upstream CUDA connected-components postprocessing extension is not built, so hole filling and small disconnected-area cleanup are skipped; core image and video inference passed the retained H100 qualification.",
-        "Only one H100, the pinned image and the exact checkpoint digest are qualified. B300, Kubernetes startup, public routing, HTTP/MCP, LibreChat, cold start, elasticity and snapshots remain separate gates."
+        "Only one H100, the pinned image and the exact checkpoint digest are qualified. B300, Kubernetes startup, public gateway/MCP, LibreChat, cold start, elasticity and snapshots remain separate gates."
       ]
     },
     "evidence": [
@@ -146,7 +146,7 @@
         "hardware": "NVIDIA H100 80GB HBM3 on Nebius Serverless AI gpu-h100-sxm",
         "outcome": "live-qualified",
         "source_commit": "18a283fe89c6a5f2fac85bb44d6a5a8dcfef5b43",
-        "summary": "The exact image and checkpoint loaded on H100 in 5.1 seconds. Prompted image segmentation returned area 3034 at score 0.984981; automatic image segmentation returned five objects; prompted video tracked one object through 12 of 12 frames. acceptance/wan2-sam2-20260920/evidence/sam2-serverless.json SHA256 c9ffaeb75e7b34700b5d9ddc9a2761e1ece57007b8ce902a2dc9e5f0d6083f5c. Kubernetes startup and customer-facing paths are not covered by this direct runtime evidence."
+        "summary": "The exact image and checkpoint passed direct model and real container-HTTP qualification on H100. The HTTP service became ready in 8.017 seconds; prompted image, automatic image and 12-frame prompted video calls returned valid deterministic ZIP artifacts in 0.652, 0.685 and 1.923 seconds, and exact-byte prompted-image replay passed. acceptance/wan2-sam2-20260920/evidence/sam2-serverless-http.json SHA256 33328e2f0021111f79afbcabb18e11f76ad9622410051aa6219e223764e7015f. Kubernetes startup and customer-facing gateway paths are not covered by this isolated HTTP evidence."
       }
     ],
     "provenance": [
