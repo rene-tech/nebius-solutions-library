@@ -534,9 +534,9 @@ class PostgresStore:
                 f"fs2_reporting_lifecycle_workloads TO {quoted_runtime}"
             )
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
-            await connection.execute(
-                f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}"
-            )
+            await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}")
+            await connection.execute(f"GRANT SELECT,INSERT ON fs2_retired_tenants TO {quoted_runtime}")
+            await connection.execute(f"GRANT DELETE ON fs2_inference_users,fs2_storage_policies TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT SELECT,INSERT,UPDATE ON fs2_storage_policies,fs2_storage_buckets,fs2_user_storage,"
                 f"fs2_customer_starter_packs "
@@ -1001,6 +1001,11 @@ class PostgresStore:
         fingerprint: str | None = None,
     ) -> TokenView:
         async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended($1,34))", request.tenant_id)
+            if await connection.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM fs2_retired_tenants WHERE tenant_id=$1)", request.tenant_id
+            ):
+                raise ConflictError("tenant has been retired")
             await self._token_lock(connection, token_id)
             try:
                 row = await connection.fetchrow(
@@ -1051,7 +1056,11 @@ class PostgresStore:
 
     async def token_for_verification(self, token_id: UUID) -> tuple[TokenView, str] | None:
         async with self.pool.acquire() as connection:
-            row = await connection.fetchrow("SELECT * FROM fs2_tokens WHERE id=$1", token_id)
+            row = await connection.fetchrow(
+                """SELECT * FROM fs2_tokens t WHERE id=$1
+                AND NOT EXISTS(SELECT 1 FROM fs2_retired_tenants r WHERE r.tenant_id=t.tenant_id)""",
+                token_id,
+            )
             return (self._token(row), cast(str, row["digest"])) if row is not None else None
 
     async def get_token(self, token_id: UUID) -> TokenView:
@@ -1081,7 +1090,8 @@ class PostgresStore:
         async with self.pool.acquire() as connection:
             rows = await connection.fetch(
                 """
-                SELECT * FROM fs2_tokens WHERE ($1::text IS NULL OR tenant_id=$1)
+                SELECT * FROM fs2_tokens t WHERE ($1::text IS NULL OR tenant_id=$1)
+                AND NOT EXISTS(SELECT 1 FROM fs2_retired_tenants r WHERE r.tenant_id=t.tenant_id)
                 ORDER BY created_at DESC,id DESC LIMIT $2
                 """,
                 tenant_id,

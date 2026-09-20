@@ -8,9 +8,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from .access_models import AdminApiKeyCreate, AdminApiKeyDisclosure, AdminApiKeyList, OperatorPrincipal
+from .access_models import AdminApiKeyCreate, AdminApiKeyDisclosure, AdminApiKeyList, OperatorPrincipal, OperatorRole
 from .admin import AdminProblemError
 from .admin_models import AdminContext, AdminEnvelope
+from .tenant_retirement import TenantRetirementRequest, retire_event_tenant
 from .user_models import InferenceUser, UserCreate, UserDetail, UserList, UserPatch
 from .users import UserService
 
@@ -32,6 +33,18 @@ def user_router(
         if not isinstance(value, OperatorPrincipal):
             raise AdminProblemError(401, "operator_session_required", "operator session is required")
         return value
+
+    @router.delete("/admin/api/v1/tenants/{tenant_id}", responses=problem_responses)
+    async def retire_tenant(
+        request: Request, tenant_id: str, payload: TenantRetirementRequest, params: Any = context_dep
+    ) -> Any:
+        operator = identity(request)
+        await service.access.authorize(operator, OperatorRole.ADMIN, action="tenant.retire", tenant_id=tenant_id)
+        pool = getattr(service.repository, "pool", None)
+        if pool is None:
+            raise AdminProblemError(503, "durable_store_required", "tenant retirement requires PostgreSQL")
+        result = await retire_event_tenant(pool, tenant_id, payload, operator.subject)
+        return envelope(selected_context(params), result)
 
     @router.get("/admin/api/v1/users", response_model=AdminEnvelope[UserList], responses=problem_responses)
     async def users(

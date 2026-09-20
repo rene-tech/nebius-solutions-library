@@ -398,11 +398,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: fdc747abc098857ec56a1e7abaa09f1390a41453498336617d1a264956ac4feb
-    migrationSetSha256: fe12b7f70cb42104aa562ee127a9ff6ee14943707ac4289a07a686b3e05cec36
-    migrationCount: 33
+    contractPayloadSha256: a4e7681f89120139984bfd2f1b81c319035bba5a3d4c543784e228ca999b7a7f
+    migrationSetSha256: 5bff24b46b0c78bc235f49ba0ba5ffb50e6c13fef86ed6e3d9b307b877f2d7f7
+    migrationCount: 34
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0033_customer_starter_packs.sql
+    lastMigrationVersion: 0034_retired_event_tenants.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:

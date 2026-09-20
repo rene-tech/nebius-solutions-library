@@ -110,11 +110,14 @@ class PostgresUserRepository:
             SELECT d.tenant_id,d.principal_id,d.first_seen FROM discovered d
             WHERE NOT EXISTS (SELECT 1 FROM fs2_inference_users u
                 WHERE u.tenant_id=d.tenant_id AND u.principal_id=d.principal_id)
+            AND NOT EXISTS (SELECT 1 FROM fs2_retired_tenants r WHERE r.tenant_id=d.tenant_id)
             """,
             tenant_id,
         )
         configured = await self.pool.fetch(
-            "SELECT * FROM fs2_inference_users WHERE ($1::text IS NULL OR tenant_id=$1)", tenant_id
+            """SELECT * FROM fs2_inference_users u WHERE ($1::text IS NULL OR tenant_id=$1)
+            AND NOT EXISTS (SELECT 1 FROM fs2_retired_tenants r WHERE r.tenant_id=u.tenant_id)""",
+            tenant_id,
         )
         users = [self._user(row) for row in configured]
         users.extend(
@@ -132,6 +135,15 @@ class PostgresUserRepository:
         return sorted(users, key=lambda user: (user.tenant_id, user.display_name, str(user.id)))
 
     async def save(self, user: InferenceUser, *, create: bool = False) -> InferenceUser:
+        async with self.pool.acquire() as connection, connection.transaction():
+            await connection.execute("SELECT pg_advisory_xact_lock(hashtextextended($1,34))", user.tenant_id)
+            if await connection.fetchval(
+                "SELECT EXISTS(SELECT 1 FROM fs2_retired_tenants WHERE tenant_id=$1)", user.tenant_id
+            ):
+                raise ConflictError("tenant has been retired")
+            return await self._save(connection, user, create=create)
+
+    async def _save(self, connection: Any, user: InferenceUser, *, create: bool) -> InferenceUser:
         import asyncpg
 
         conflict = (
@@ -143,7 +155,7 @@ class PostgresUserRepository:
             app_ids=EXCLUDED.app_ids,updated_at=EXCLUDED.updated_at"""
         )
         try:
-            row = await self.pool.fetchrow(
+            row = await connection.fetchrow(
                 f"""  -- only the fixed server-owned conflict clause below is interpolated
                 INSERT INTO fs2_inference_users
                     (id,tenant_id,principal_id,display_name,kind,team,enabled,academic_eligible,app_ids,created_at,updated_at)
