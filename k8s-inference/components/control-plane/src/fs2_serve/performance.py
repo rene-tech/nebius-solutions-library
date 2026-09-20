@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 from .store import ConflictError, NotFoundError
 
@@ -103,6 +103,43 @@ class TrialResult(TrialLease):
         if self.status != "succeeded" and self.error_code is None:
             raise ValueError("unsuccessful trials require an explicit reason")
         return self
+
+
+class PerformanceHardwareNode(Contract):
+    uid: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=253)
+    pool: str | None = Field(default=None, max_length=128)
+    gpu_product: str | None = Field(default=None, max_length=128)
+    gpus_per_node: str | None = Field(default=None, max_length=32)
+    cpu_arch: str | None = Field(default=None, max_length=32)
+    driver_version: str | None = Field(default=None, max_length=64)
+    local_storage: Literal["present", "absent", "unknown"]
+
+
+class PerformanceHardware(Contract):
+    observed_at: datetime
+    nodes: list[PerformanceHardwareNode]
+
+
+class PerformanceCampaignData(RootModel[dict[str, Any]]):
+    """Durable campaign row with its versioned JSON specifications."""
+
+
+class PerformanceCampaignList(Contract):
+    items: list[dict[str, Any]]
+    mode: Literal["advisory"]
+
+
+class PerformanceTrialClaim(Contract):
+    trial: dict[str, Any] | None
+
+
+class PerformanceTrialHeartbeat(Contract):
+    renewed: bool
+
+
+class PerformanceTrialCommit(Contract):
+    committed: bool
 
 
 def canonical(value: Any) -> str:
@@ -287,9 +324,13 @@ def summarize_profiles(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
     hardware observations and comparable valid cohorts; unknown is not zero.
     """
     groups: dict[str, dict[str, Any]] = {}
+    unresolved: dict[str, int] = {}
     for trial in trials:
         case, result = trial["case_spec"], trial.get("result") or {}
         identity = {key: case.get(key) for key in ("model_id", "workload_class", "fixture_sha256", "cache_condition")}
+        cohort = canonical(identity)
+        if not result.get("hardware") and trial["status"] != "succeeded":
+            unresolved[cohort] = unresolved.get(cohort, 0) + 1
         identity["hardware"] = result.get("hardware")
         key = canonical(identity)
         group = groups.setdefault(key, {**identity, "samples": [], "outcomes": {}})
@@ -299,6 +340,10 @@ def summarize_profiles(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
     profiles = []
     for group in groups.values():
         samples = group.pop("samples")
+        cohort = canonical(
+            {key: group[key] for key in ("model_id", "workload_class", "fixture_sha256", "cache_condition")}
+        )
+        unattributed = unresolved.get(cohort, 0)
         metrics: dict[str, dict[str, Any]] = {}
         for metric in (
             "elapsed_seconds",
@@ -319,11 +364,13 @@ def summarize_profiles(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
             and len(samples) >= 3
             and sum(group["outcomes"].values()) == len(samples)
             and metrics["execution_seconds"]["count"] >= 3
+            and unattributed == 0
         )
         profiles.append(
             {
                 **group,
                 "valid_samples": len(samples),
+                "unattributed_outcomes": unattributed,
                 "metrics": metrics,
                 "placement_evidence": "baseline" if qualified else "insufficient",
                 "mode": "advisory",
@@ -331,3 +378,72 @@ def summarize_profiles(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
             }
         )
     return profiles
+
+
+def advisory_recommendations(campaign: dict[str, Any]) -> dict[str, Any]:
+    """Reproducible, non-mutating comparisons, not a second GPU scheduler.
+
+    Only compare the same image, inputs and controlled cache condition. GPU,
+    pool, driver and topology differences remain explicit in each candidate.
+    Unknown placement/failure evidence blocks a recommendation, never vanishes
+    from its denominator. No cost or current-free-capacity claim is inferred.
+    """
+    profiles = summarize_profiles(campaign["trials"])
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for profile in profiles:
+        identity = {key: profile[key] for key in ("model_id", "workload_class", "fixture_sha256", "cache_condition")}
+        groups.setdefault(canonical(identity), []).append(profile)
+    recommendations = []
+    for key, candidates in sorted(groups.items()):
+        identity = json.loads(key)
+        reasons = []
+        if identity["cache_condition"] == "uncontrolled":
+            reasons.append("cache_condition_uncontrolled")
+        if any(candidate["placement_evidence"] != "baseline" for candidate in candidates):
+            reasons.append("incomplete_or_unsuccessful_cohort")
+        qualified = [candidate for candidate in candidates if candidate["placement_evidence"] == "baseline"]
+        environments = {canonical(candidate["hardware"]) for candidate in qualified}
+        if len(environments) < 2:
+            reasons.append("fewer_than_two_measured_environments")
+        images = {candidate["hardware"]["runtime_image"].split("@")[-1] for candidate in qualified}
+        if len(images) > 1:
+            reasons.append("runtime_images_differ")
+        ranked = sorted(
+            qualified, key=lambda c: (c["metrics"]["execution_seconds"]["median"], canonical(c["hardware"]))
+        )
+        overlapping = bool(
+            len(ranked) > 1
+            and ranked[0]["metrics"]["execution_seconds"]["max"] >= ranked[1]["metrics"]["execution_seconds"]["min"]
+        )
+        if overlapping:
+            reasons.append("observed_ranges_overlap")
+        recommendations.append(
+            {
+                **identity,
+                "status": "more-evidence-needed" if reasons else "candidate",
+                "reasons": reasons,
+                "preferred_environment": ranked[0]["hardware"] if ranked and not reasons else None,
+                "candidates": ranked,
+            }
+        )
+    basis = {
+        "campaign_spec_sha256": campaign["spec_sha256"],
+        "trials": [
+            {"id": str(t["id"]), "status": t["status"], "result": t.get("result")}
+            for t in sorted(campaign["trials"], key=lambda t: str(t["id"]))
+        ],
+    }
+    return {
+        "policy": "measured-runtime-median-v1",
+        "mode": "advisory",
+        "automatic_placement": False,
+        "basis_sha256": hashlib.sha256(canonical(basis).encode()).hexdigest(),
+        "objective": "execution_seconds",
+        "recommendations": recommendations,
+        "limitations": [
+            "baseline-not-tail-latency",
+            "not-cost-optimization",
+            "not-live-capacity-or-admission",
+            "deployment-compatibility-and-snapshot-identity-still-required",
+        ],
+    }

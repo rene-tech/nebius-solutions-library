@@ -54,7 +54,13 @@ def scientific_child_router(
 
     async def authorized(authorization: str | None) -> tuple[ScientificWorkloadCapability, Principal, OperationView]:
         capability, _, _ = await authorize_workload_capability(authority, batches, authorization)
-        if (capability.model_id, capability.stage_id, capability.shard_id, capability.collector_id) not in PARENT_CONTRACTS:
+        contract_key = (
+            capability.model_id,
+            capability.stage_id,
+            capability.shard_id,
+            capability.collector_id,
+        )
+        if contract_key not in PARENT_CONTRACTS:
             raise HTTPException(403, "workload cannot delegate Cosmos operations")
         parent = await store.get_operation(capability.operation_id, tenant_id=capability.tenant_id)
         token = await store.get_token(parent.token_id)

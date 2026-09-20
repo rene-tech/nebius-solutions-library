@@ -64,9 +64,9 @@ from fs2_serve.model_deployment import (
     WarmWindowSpec,
     effective_hot_floor,
     plan_reconciliation,
-    spec_digest,
-    scaled_object_name,
     scaled_object_hpa_name,
+    scaled_object_name,
+    spec_digest,
     validate_model_deployment,
 )
 from fs2_serve.model_deployment_preview import (

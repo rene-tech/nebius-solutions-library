@@ -816,16 +816,6 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             data=data,
         )
 
-    app.include_router(
-        performance_router(
-            pool,
-            operator,
-            admin_access,
-            access_envelope,
-            kubernetes=observations.kubernetes,
-        )
-    )
-
     def admin_problem_response(
         status_code: int,
         code: str,
@@ -1611,6 +1601,17 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         }
         for status_code in (400, 401, 403, 404, 409, 422, 429, 503)
     }
+
+    app.include_router(
+        performance_router(
+            pool,
+            operator,
+            admin_access,
+            access_envelope,
+            kubernetes=observations.kubernetes,
+            problem_responses=admin_problem_responses,
+        )
+    )
 
     @app.post(
         "/admin/api/v1/session",

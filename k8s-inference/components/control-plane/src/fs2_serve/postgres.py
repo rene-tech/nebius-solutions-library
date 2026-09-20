@@ -2736,8 +2736,12 @@ class PostgresStore:
               AND 'inference.invoke'=ANY(token.scopes)
               AND ('*'=ANY(token.models) OR 'cosmos3-nano'=ANY(token.models))
               AND batch.status IN ('queued','running') AND NOT batch.cancel_requested
-              AND ((parent.model_id='cosmos3-lerobot-augmentation' AND batch.state#>>'{stages,0,stage_id}'='augment-dataset')
-                OR (parent.model_id='physical-ai-video-augmentation' AND batch.state#>>'{stages,0,stage_id}'='augment-videos'))
+              AND (
+                (parent.model_id='cosmos3-lerobot-augmentation'
+                  AND batch.state#>>'{stages,0,stage_id}'='augment-dataset')
+                OR (parent.model_id='physical-ai-video-augmentation'
+                  AND batch.state#>>'{stages,0,stage_id}'='augment-videos')
+              )
               AND batch.state#>>'{stages,0,attempts,-1,attempt_id}'=$2::text
               AND batch.state#>>'{stages,0,attempts,-1,shard_id}'='main'
               AND batch.state#>>'{stages,0,attempts,-1,outcome}'='active'

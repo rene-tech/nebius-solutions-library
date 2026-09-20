@@ -46,6 +46,22 @@ INVENTORY = module("performance_inventory", HERE / "inventory.py")
 COSMOS = module("performance_cosmos", ROOT / "catalog/runtime/validators/validate_cosmos3_nano.py")
 
 
+class QueuedPublicClient(PUBLIC.PublicApiClient):
+    """Wait on explicit pre-admission 429; never retry an ambiguous admission."""
+
+    def __init__(self, origin, token, timeout):
+        super().__init__(origin, token)
+        self.admission_timeout = timeout
+
+    def request(self, *args, **kwargs):
+        deadline = time.monotonic() + self.admission_timeout
+        while True:
+            response = super().request(*args, **kwargs)
+            if response.status != 429 or time.monotonic() >= deadline:
+                return response
+            time.sleep(15)
+
+
 def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
@@ -118,13 +134,18 @@ def invoke(client, model, protocol, operation, payload, key, directory, timeout)
     started = time.monotonic()
     path = "/v1/chat/completions" if protocol == "openai-chat" else f"/v1/models/{model}:invoke"
     body = payload if protocol == "openai-chat" else {"operation": operation, "payload": payload}
-    response = client.post(path, json=body, headers={
-        "Idempotency-Key": key, "x-fs2-wait-seconds": "0", "x-fs2-deadline-seconds": str(timeout),
-    })
+    while True:
+        response = client.post(path, json=body, headers={
+            "Idempotency-Key": key, "x-fs2-wait-seconds": "0", "x-fs2-deadline-seconds": str(timeout),
+        })
+        if response.status_code != 429 or time.monotonic() - started >= timeout:
+            break
+        time.sleep(15)
     admitted = checked(response)
     operation_id = response.headers.get("x-fs2-operation-id") or admitted.get("id")
     if not operation_id:
         raise RuntimeError("missing_operation_id")
+    (directory / (operation_id + "-admission.json")).write_bytes(canonical(admitted))
     # Durable public idempotency is stable across worker lease recovery.
     while True:
         status = checked(client.get(f"/v1/operations/{operation_id}"))
@@ -141,7 +162,18 @@ def invoke(client, model, protocol, operation, payload, key, directory, timeout)
     if response.is_error:
         raise RuntimeError(f"result_http_{response.status_code}")
     path = directory / (operation_id + "-result.json")
-    path.write_bytes(response.content)
+    raw = response.content
+    if raw.startswith(b"{"):
+        value = response.json()
+        if value.get("schema") == "fs2-serve.nebius.ai/operation-artifact-result/v1":
+            artifact = value["artifact"]
+            materialized = client.get(f"/v1/artifacts/{artifact['artifact_id']}/content")
+            materialized.raise_for_status()
+            if len(materialized.content) != artifact["size_bytes"] or sha(materialized.content) != artifact["sha256"]:
+                raise RuntimeError("result_artifact_identity_mismatch")
+            (directory / (operation_id + "-envelope.json")).write_bytes(raw)
+            raw = materialized.content
+    path.write_bytes(raw)
     return path, status, time.monotonic() - started
 
 
@@ -156,12 +188,18 @@ def execute(trial, origin, token, directory, timeout):
         config = PUBLIC.RunConfig(endpoint=origin, repository_root=ROOT,
                                   activation_fragment=fragment, receipt_path=directory / "scientific.json",
                                   run_id=str(trial["id"]), timeout_seconds=timeout, overwrite=True)
-        receipt = PUBLIC.run_acceptance(config, PUBLIC.PublicApiClient(origin, token))
+        receipt = PUBLIC.run_acceptance(config, QueuedPublicClient(origin, token, timeout))
         return {"operation_id": receipt["operation_identity"]["operation_id"],
                 "elapsed_seconds": time.monotonic() - started, "semantic_valid": True,
                 "scientific_receipt": receipt}
     with httpx.Client(base_url=origin, headers={"Authorization": "Bearer " + token}, timeout=180, trust_env=False) as client:
-        if adapter in {"bio-pair", "media-pair", "openfold2", "openfold3"}:
+        if adapter == "artifact-lerobot-v1":
+            from robotics_workflow import execute as execute_lerobot
+            return execute_lerobot(trial, client, token, directory, timeout)
+        elif adapter == "artifact-native-v1":
+            from extra import execute as execute_extra
+            calls, semantic = execute_extra(trial, client, directory, invoke, timeout)
+        elif adapter in {"bio-pair", "media-pair", "openfold2", "openfold3"}:
             helper = {"bio-pair": BIO, "media-pair": BIO.public, "openfold2": FOLD2, "openfold3": FOLD3}[adapter]
             contract, pair = helper.cases_for(model)
             if sha(canonical([record.payload for record in pair])) != case["fixture_sha256"]:
@@ -186,7 +224,7 @@ def execute(trial, origin, token, directory, timeout):
             if sha(fixture.read_bytes()) != case["fixture_sha256"]:
                 raise RuntimeError("fixture_digest_changed")
             contract = COSMOS.load_contract(fixture)
-            calls = [invoke(client, model, "native", "generate-video", record["request"],
+            calls = [invoke(client, model, "native", "generate-media", record["request"],
                             f"benchmark-{trial['id']}-{index}", directory, timeout)
                      for index, record in enumerate(contract["requests"])]
             semantic = COSMOS.validate(contract, [row[0] for row in calls])
@@ -260,14 +298,27 @@ def worker(args, admin, campaign_id, token, *, once=False):
                 # Safe summaries only; request payloads, signed URLs and credentials never enter the registry.
                 code = code if code.replace("_", "").isalnum() and len(code) <= 128 else "benchmark_validation_failed"
                 evidence = {"error_code": code, "elapsed_seconds": time.monotonic() - started}
+                statuses = [json.loads(path.read_bytes()) for path in sorted(directory.glob("*-status.json"))]
+                evidence["operations"] = statuses
                 result = {**lease, "status": "failed", "error_code": code,
-                          "elapsed_seconds": evidence["elapsed_seconds"]}
+                          "elapsed_seconds": evidence["elapsed_seconds"] if trial["fence"] == 1 else None,
+                          "operation_id": statuses[0]["id"] if statuses else None}
             data = canonical({"trial_id": trial["id"], "case": trial["case_spec"],
                               "worker_source_commit": args.commit, "result": evidence})
             (directory / "receipt.json").write_bytes(data)
-            artifact = PUBLIC._upload(PUBLIC.PublicApiClient(args.origin, token), model_id=trial["model_id"],
-                                     data=data, media_type="application/json", compression="none",
-                                     idempotency_key=f"benchmark-receipt-{trial['id']}-{sha(data)}")
+            # Receipt upload is also subject to this key's concurrency cap.
+            # Keep the lease and evidence while other model operations finish.
+            deadline = time.monotonic() + args.timeout
+            while True:
+                try:
+                    artifact = PUBLIC._upload(PUBLIC.PublicApiClient(args.origin, token), model_id=trial["model_id"],
+                                             data=data, media_type="application/json", compression="none",
+                                             idempotency_key=f"benchmark-receipt-{trial['id']}-{sha(data)}")
+                    break
+                except PUBLIC.AcceptanceError as error:
+                    if str(error) != "http_upload_begin_429" or time.monotonic() >= deadline or lease_lost.is_set():
+                        raise
+                    time.sleep(15)
             result.update(receipt_sha256=sha(data), artifact_uri="artifact://" + artifact["artifact_id"])
             if lease_lost.is_set():
                 raise RuntimeError("benchmark_lease_lost")
@@ -287,14 +338,22 @@ def pool(args):
     Login is renewed between trials. A process/container restart recovers work
     through the expired lease; it does not own or kill the GPU operation.
     """
+    last_campaign = None
     while True:
         worked = False
         with closing(INVENTORY.admin_client(args.kubeconfig, args.context, args.origin)) as admin:
             campaigns = checked(admin.get("/admin/api/v1/performance/campaigns", params={"limit": 200}))["data"]["items"]
-            for campaign in reversed(campaigns):
+            campaigns.reverse()
+            # Round-robin campaigns; the registry already rounds repetitions.
+            # A new speech/media campaign must not wait behind a long DAG fleet.
+            previous = next((i for i, c in enumerate(campaigns) if c["id"] == last_campaign), None)
+            if previous is not None:
+                campaigns = campaigns[previous + 1:] + campaigns[:previous + 1]
+            for campaign in campaigns:
                 # The pod count bounds concurrency across campaigns as well.
                 if worker(args, admin, campaign["id"], args.token_file.read_text().strip(), once=True):
                     worked = True
+                    last_campaign = campaign["id"]
                     break
         if not worked:
             time.sleep(15)
@@ -307,6 +366,7 @@ def main():
     parser.add_argument("--kubeconfig")
     parser.add_argument("--context")
     parser.add_argument("--inventory", type=Path)
+    parser.add_argument("--cases", type=Path, help="Optional immutable prepared-fixture case list")
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--name", default="full-catalog-baseline-20260920")
     parser.add_argument("--commit", required=True)
@@ -314,6 +374,7 @@ def main():
     parser.add_argument("--worker", default="benchmark-worker-1")
     parser.add_argument("--campaign-id")
     parser.add_argument("--timeout", type=int, default=7200)
+    parser.add_argument("--max-parallel", type=int, default=4)
     args = parser.parse_args()
     os.umask(0o077)
     args.directory.mkdir(parents=True, exist_ok=True)
@@ -323,7 +384,7 @@ def main():
     if args.action in {"plan", "create"}:
         inventory = json.loads(args.inventory.read_bytes())
         spec = {"name": args.name, "source_commit": args.commit, "catalog_sha256": sha(canonical(inventory)),
-                "max_parallel": 4, "cases": recipes(inventory)}
+                "max_parallel": args.max_parallel, "cases": json.loads(args.cases.read_bytes()) if args.cases else recipes(inventory)}
         (args.directory / "campaign-plan.json").write_bytes(canonical(spec))
         if args.action == "plan":
             print(json.dumps({"models": len(spec["cases"]), "executable": sum(not c.get("unavailable_reason") for c in spec["cases"]),

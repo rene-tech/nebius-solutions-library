@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from .store import ConflictError, NotFoundError
 
@@ -18,6 +18,15 @@ class TenantRetirementRequest(BaseModel):
     archive_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_users: int = Field(ge=0)
     expected_keys: int = Field(ge=0)
+
+
+class TenantRetirementResult(BaseModel):
+    tenant_id: str = Field(min_length=1, max_length=120)
+    retired_at: AwareDatetime
+    retired_by: str = Field(min_length=1, max_length=256)
+    archive_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    user_count: int = Field(ge=0)
+    key_count: int = Field(ge=0)
 
 
 async def retire_event_tenant(pool: Any, tenant: str, request: TenantRetirementRequest, actor: str) -> dict[str, Any]:

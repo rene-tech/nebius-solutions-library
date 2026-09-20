@@ -286,6 +286,7 @@ def deployment_runtime_model_schema(catalog_dir: Path) -> dict[str, Any]:
             "speech-synthesis",
             "speaker-diarization",
             "visual-segmentation",
+            "music-generation",
         ]
     )
     return schema

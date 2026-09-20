@@ -86,12 +86,23 @@ def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive
     augmented = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
     assert len(archive.records) == 16
     assert set(augmented.records) == set(archive.records) | {
-        "phenoage", "altumage", "nemotron-speech-en-0-6b", "nemotron-speech-multilingual-0-6b",
-            "parakeet-realtime-eou-120m-v1", "magpie-tts-multilingual-357m", "diar-streaming-sortformer-4spk-v2-1",
-            "cellpose-cpsam-v2", "scvi-scanvi", "sam2-1-hiera-large",
-            "wan2-2-t2v-nim", "wan2-2-i2v-nim", "cosmos-transfer2-5-2b",
-            "qwen3-6-27b-fp8", "qwen2-5-14b-instruct",
-        }
+        "phenoage",
+        "altumage",
+        "nemotron-speech-en-0-6b",
+        "nemotron-speech-multilingual-0-6b",
+        "parakeet-realtime-eou-120m-v1",
+        "magpie-tts-multilingual-357m",
+        "diar-streaming-sortformer-4spk-v2-1",
+        "cellpose-cpsam-v2",
+        "scvi-scanvi",
+        "sam2-1-hiera-large",
+        "wan2-2-t2v-nim",
+        "wan2-2-i2v-nim",
+        "cosmos-transfer2-5-2b",
+        "ace-step-1-5",
+        "qwen3-6-27b-fp8",
+        "qwen2-5-14b-instruct",
+    }
     assert augmented.digest == archive.digest
     assert augmented.tested_model_ids == archive.tested_model_ids
     assert augmented.blocked_candidate_ids == archive.blocked_candidate_ids
@@ -155,6 +166,17 @@ def test_wan_nim_profiles_keep_exact_source_and_platform_pvc_acquisition(archive
         assert value["cache"]["artifact"]["kind"] == "nim-cache"
         assert plan.method == "provider-block-pvc"
         assert plan.to_dict()["artifact_manifest_sha256"] == value["cache"]["artifact"]["manifest_digest"]
+
+
+def test_ace_step_uses_localizer_owned_provider_block_pvc(archive):
+    augmented = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
+    value = augmented.model("ace-step-1-5").to_dict()
+    plan = augmented.acquisition_plan("ace-step-1-5")
+    assert value["runtime"]["kind"] == "custom"
+    assert value["cache"]["owner"] == "fs2-serve-localizer"
+    assert value["cache"]["artifact"]["kind"] == "weights"
+    assert plan.method == "provider-block-pvc"
+    assert plan.to_dict()["artifact_manifest_sha256"] == value["cache"]["artifact"]["manifest_digest"]
 
 
 def test_registry_selected_native_records_share_bootstrap_identity_but_do_not_grant_routes(archive, tmp_path):
