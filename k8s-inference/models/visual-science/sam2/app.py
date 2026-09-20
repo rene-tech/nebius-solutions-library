@@ -315,6 +315,13 @@ def _png(image: np.ndarray) -> bytes:
     return target.getvalue()
 
 
+def _zip_write(archive: zipfile.ZipFile, name: str, content: bytes) -> None:
+    entry = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+    entry.compress_type = zipfile.ZIP_DEFLATED
+    entry.external_attr = 0o100644 << 16
+    archive.writestr(entry, content, compresslevel=6)
+
+
 def _overlay(image: np.ndarray, labels: np.ndarray) -> np.ndarray:
     source = image.astype(np.float32)
     encoded = labels.astype(np.uint32)
@@ -440,11 +447,13 @@ def _image_result(raw: bytes, request: SegmentRequest) -> bytes:
     with zipfile.ZipFile(
         output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
     ) as archive:
-        archive.writestr(
-            "manifest.json", json.dumps(manifest, sort_keys=True, separators=(",", ":"))
+        _zip_write(
+            archive,
+            "manifest.json",
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode(),
         )
-        archive.writestr("mask.png", _png(labels))
-        archive.writestr("overlay.png", _png(_overlay(image, labels)))
+        _zip_write(archive, "mask.png", _png(labels))
+        _zip_write(archive, "overlay.png", _png(_overlay(image, labels)))
     return output.getvalue()
 
 
@@ -510,13 +519,14 @@ def _video_result(raw: bytes, request: SegmentRequest) -> bytes:
         with zipfile.ZipFile(
             output, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6
         ) as archive:
-            archive.writestr(
+            _zip_write(
+                archive,
                 "manifest.json",
-                json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+                json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode(),
             )
-            archive.write(overlay_video, "overlay.mp4")
+            _zip_write(archive, "overlay.mp4", overlay_video.read_bytes())
             for path in sorted(masks.glob("*.png")):
-                archive.write(path, f"masks/{path.name}")
+                _zip_write(archive, f"masks/{path.name}", path.read_bytes())
         return output.getvalue()
 
 

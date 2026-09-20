@@ -73,6 +73,13 @@ def test_image_result_contains_mask_overlay_and_provenance(monkeypatch):
         assert Image.open(io.BytesIO(archive.read("mask.png"))).size == (48, 32)
 
 
+def test_image_result_is_byte_deterministic(monkeypatch):
+    monkeypatch.setattr(module, "backend", FakeBackend())
+    monkeypatch.setattr(module, "checkpoint_sha256", "a" * 64)
+    raw = image_bytes()
+    assert module._image_result(raw, request()) == module._image_result(raw, request())
+
+
 def test_overlay_is_deterministic_and_visible():
     image = np.full((8, 8, 3), 100, dtype=np.uint8)
     labels = np.zeros((8, 8), dtype=np.uint16)
