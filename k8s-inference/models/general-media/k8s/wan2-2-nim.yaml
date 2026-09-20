@@ -111,16 +111,12 @@ spec:
             - name: NIM_MODEL_PRECISION
               value: bf16
             - name: NIM_HTTP_API_PORT
-              value: "8001"
-            - name: NIM_HTTP_METRICS_PORT
-              value: "8002"
+              value: "9000"
             - name: NIM_CACHE_PATH
               value: /opt/nim/.cache
           ports:
             - name: nim-http
-              containerPort: 8001
-            - name: nim-metrics
-              containerPort: 8002
+              containerPort: 9000
           resources:
             requests:
               cpu: "12"
@@ -154,7 +150,7 @@ spec:
             - name: WAN_VARIANT
               value: t2v
             - name: WAN_UPSTREAM_URL
-              value: http://127.0.0.1:8001
+              value: http://127.0.0.1:9000
           ports:
             - name: http
               containerPort: 8000
@@ -285,16 +281,12 @@ spec:
             - name: NIM_MODEL_PRECISION
               value: bf16
             - name: NIM_HTTP_API_PORT
-              value: "8001"
-            - name: NIM_HTTP_METRICS_PORT
-              value: "8002"
+              value: "9000"
             - name: NIM_CACHE_PATH
               value: /opt/nim/.cache
           ports:
             - name: nim-http
-              containerPort: 8001
-            - name: nim-metrics
-              containerPort: 8002
+              containerPort: 9000
           resources:
             requests:
               cpu: "12"
@@ -328,7 +320,7 @@ spec:
             - name: WAN_VARIANT
               value: i2v
             - name: WAN_UPSTREAM_URL
-              value: http://127.0.0.1:8001
+              value: http://127.0.0.1:9000
           ports:
             - name: http
               containerPort: 8000
