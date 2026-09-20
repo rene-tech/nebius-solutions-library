@@ -536,6 +536,21 @@ def _upload(
     )
     operation_id = _uuid(begun.get("operation_id"), "upload_operation_id_invalid")
     upload_id = _uuid(begun.get("upload_id"), "upload_id_invalid")
+    # A restarted caller reuses the exact upload admission. A finalized upload
+    # is immutable: retrieve and verify its result rather than PUT its bytes
+    # again. This preserves the original artifact IDs in the submit digest.
+    status = _json_response(client.request("GET", f"/v1/operations/{operation_id}"), 200, "upload_status")
+    if status.get("status") == "succeeded":
+        reused = _artifact_ref(
+            _json_response(client.request(
+                "POST", f"/v1/scientific-artifacts/uploads/{upload_id}:finalize",
+                json_body={"operation_id": operation_id},
+            ), 200, "upload_result"),
+            "upload_result_invalid",
+        )
+        if any(reused[key] != measured[key] for key in ("sha256", "size_bytes", "media_type", "compression")):
+            raise AcceptanceError("upload_replay_identity_mismatch")
+        return reused
     max_bytes = begun.get("max_content_bytes")
     if (
         not isinstance(max_bytes, int)
