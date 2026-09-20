@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import hashlib
 import io
 import json
 import logging
@@ -69,7 +70,7 @@ class RuntimeTransportError(RuntimeOperationError):
 
 
 class RuntimeBusyError(RuntimeOperationError):
-    """Selected speech worker rejected a request BEFORE taking any audio/work."""
+    """A qualified single-flight worker rejected work BEFORE admission."""
 
     code = "runtime_busy"
     status_code = 429
@@ -93,6 +94,10 @@ _DEBUG_CAPTURE_EXTENSION = "fs2_upstream_debug_capture"
 _MAX_SCIENTIFIC_ERROR_BYTES = 16 * 1024
 _SAM2_MODEL_REVISION = "665f8e2ad61cf5f53d65644ff27c8ee525124610"
 _SAM2_CHECKPOINT_SHA256 = "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318"
+_PAIDF_CHAT_MODELS = {
+    "qwen3-6-27b-fp8": ("Qwen/Qwen3.6-27B-FP8", "e89b16ebf1988b3d6befa7de50abc2d76f26eb09"),
+    "qwen2-5-14b-instruct": ("Qwen/Qwen2.5-14B-Instruct", "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8"),
+}
 _SCIENTIFIC_ERROR_DETAILS = {
     "evo2_memory_exhausted": (
         "Evo2 exhausted GPU memory while processing this accepted request. "
@@ -758,6 +763,54 @@ class RuntimeClient:
             raise invalid()
 
     @staticmethod
+    def _paidf_chat_valid(source_model: str, body: bytes, content_type: str, request_body: bytes) -> None:
+        expected_model, revision = _PAIDF_CHAT_MODELS[source_model]
+        value, request = json.loads(body), json.loads(request_body)
+        if not isinstance(value, dict) or not isinstance(request, dict):
+            raise RuntimeProtocolError("Reference chat envelope is invalid")
+        raw, streaming = value.get("response_body"), request.get("stream", False)
+        original_request = json.dumps(request, allow_nan=False, ensure_ascii=False, separators=(",", ":")).encode()
+        if (content_type != "application/json" or value.get("schema") != "scientific-reference-chat/v1"
+                or value.get("model") != expected_model or request.get("model") != expected_model
+                or value.get("model_revision") != revision or value.get("stream") is not streaming
+                or not isinstance(raw, str)
+                or value.get("response_sha256") != hashlib.sha256(raw.encode()).hexdigest()
+                or value.get("request_sha256") != hashlib.sha256(original_request).hexdigest()):
+            raise RuntimeProtocolError("Reference chat identity or integrity is invalid")
+        if not streaming:
+            result = json.loads(raw)
+            if (value.get("content_type") != "application/json" or not isinstance(result, dict)
+                    or result.get("model") != expected_model or not isinstance(result.get("choices"), list)
+                    or not result["choices"] or any(not isinstance(choice, dict)
+                        or choice.get("finish_reason") is None or not isinstance(choice.get("message"), dict)
+                        for choice in result["choices"])
+                    or value.get("usage") != result.get("usage")):
+                raise RuntimeProtocolError("Reference chat JSON is incomplete")
+            return
+        if value.get("content_type") != "text/event-stream":
+            raise RuntimeProtocolError("Reference chat stream type is invalid")
+        done, finished, usage = False, False, None
+        for event in raw.replace("\r\n", "\n").split("\n\n"):
+            data = "\n".join(line[5:].lstrip() for line in event.splitlines() if line.startswith("data:"))
+            if not data:
+                continue
+            if done:
+                raise RuntimeProtocolError("Reference chat has data after termination")
+            if data == "[DONE]":
+                done = True
+                continue
+            token = json.loads(data)
+            if (not isinstance(token, dict) or token.get("model") != expected_model
+                    or not isinstance(token.get("choices"), list)
+                    or any(not isinstance(choice, dict) for choice in token["choices"])):
+                raise RuntimeProtocolError("Reference chat token stream is invalid")
+            finished |= any(choice.get("finish_reason") is not None for choice in token["choices"])
+            if token.get("usage") is not None:
+                usage = token["usage"]
+        if not done or not finished or value.get("usage") != usage:
+            raise RuntimeProtocolError("Reference chat stream is incomplete")
+
+    @staticmethod
     def _reported_usage(protocol: str, body: bytes, *, speech: bool = False) -> ReportedUsage | None:
         """Extract optional OpenAI token totals without making usage part of protocol validity."""
 
@@ -1054,7 +1107,9 @@ class RuntimeClient:
                            and source_model == "cosmos-transfer2-5-2b")
         sam2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                 and source_model == "sam2-1-hiera-large")
-        if speech:
+        paidf_chat = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                      and source_model in _PAIDF_CHAT_MODELS)
+        if speech or paidf_chat:
             # A retry after explicit pre-admission busy must be able to select
             # another Service endpoint instead of sticking to a busy socket.
             headers["connection"] = "close"
@@ -1109,7 +1164,7 @@ class RuntimeClient:
                         rejected_body = await self._scientific_error_body(response)
                         if rejected_body is not None:
                             scientific_error = self._scientific_error(source_model, response.status_code, rejected_body)
-                    if speech and response.status_code == 429:
+                    if (speech or paidf_chat) and response.status_code == 429:
                         rejected = bytearray()
                         capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
                         if isinstance(capture, _UpstreamCapture):
@@ -1119,7 +1174,7 @@ class RuntimeClient:
                                 capture.observe(chunk)
                             rejected.extend(chunk)
                             if len(rejected) > 4096:
-                                raise RuntimeProtocolError("speech busy response exceeds limit")
+                                raise RuntimeProtocolError("worker busy response exceeds limit")
                         if isinstance(capture, _UpstreamCapture):
                             capture.finished()
                         try:
@@ -1127,7 +1182,7 @@ class RuntimeClient:
                         except (ValueError, UnicodeError):
                             busy = False
                         if busy:
-                            raise RuntimeBusyError("speech worker capacity is occupied")
+                            raise RuntimeBusyError("worker capacity is occupied")
                     # Public failures carry only CP-owned wording and validated
                     # aggregate counts for the recognized scientific contracts.
                     # The optional encrypted debug capture owns original bodies.
@@ -1176,6 +1231,10 @@ class RuntimeClient:
                 elif sam2:
                     self._sam2_zip_valid(bytes(content), content_type)
                     semantic, usage = "protocol_valid", None
+                elif paidf_chat:
+                    self._paidf_chat_valid(source_model, bytes(content), content_type, request_body)
+                    semantic = "protocol_valid"
+                    usage = self._reported_usage("openai-chat", bytes(content))
                 else:
                     semantic = self._semantic_outcome(operation.protocol, bytes(content))
                     usage = self._reported_usage(operation.protocol, bytes(content), speech=speech)

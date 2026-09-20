@@ -1,4 +1,14 @@
 {
+  "qwen3-6-27b-fp8": {
+    "variant_id": "paidf-qwen36-vllm019-fp8-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/qwen3-6-27b-fp8.json"
+  },
+  "qwen2-5-14b-instruct": {
+    "variant_id": "paidf-qwen25-vllm019-bf16-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/qwen2-5-14b-instruct.json"
+  },
   "cosmos-transfer2-5-2b": {
     "variant_id": "cosmos-transfer25-nim-v1",
     "runtime_kind": "nim",

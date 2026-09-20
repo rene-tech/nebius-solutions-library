@@ -11,6 +11,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+sys.path.insert(0, str(Path(__file__).parent))
 spec = importlib.util.spec_from_file_location("transfer25_adapter", Path(__file__).with_name("app.py"))
 adapter = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = adapter
@@ -33,7 +34,7 @@ def clip(tmp_path_factory):
             "-i",
             "testsrc2=size=640x480:rate=16",
             "-frames:v",
-            "32",
+            "93",
             "-c:v",
             "libx264",
             "-pix_fmt",
@@ -62,7 +63,8 @@ def client(monkeypatch, clip, *, status=200, malformed=None, timeout=False, wron
             )
         assert request.url.path == "/v1/infer"
         body = json.loads(request.content)
-        assert body["resolution"] == "480"
+        assert body["resolution"] == "720"
+        assert body["sigma_max"] == 90
         assert body["guidance"] == 7
         assert body["edge"] == {"control_weight": 1.0}
         assert "output_delivery" not in body
@@ -98,6 +100,40 @@ def test_full_decode_alignment_and_raw_mp4_transport(monkeypatch, clip):
     assert len([r for r in requests if r.method == "POST"]) == 1
 
 
+def test_reference_native_parameters_are_not_flattened_or_discarded(monkeypatch, clip):
+    test, requests = client(monkeypatch, clip)
+    with test:
+        response = test.post("/v1/transfer", json={**payload(clip), "resolution": "720", "sigma_max": 90,
+                                                  "edge": {"control_weight": 1.0}, "num_steps": 35})
+    assert response.status_code == 200
+    body = json.loads(next(request for request in requests if request.method == "POST").content)
+    assert body["edge"] == {"control_weight": 1.0}
+    assert body["resolution"] == "720" and body["sigma_max"] == 90 and body["num_steps"] == 35
+
+
+def test_nim_seed_and_step_bounds_do_not_inherit_old_adapter_caps(clip):
+    value = adapter.TransferRequest.model_validate({**payload(clip), "seed": 4294967295, "num_steps": 51,
+                                                    "edge": {"control_weight": 0.0}})
+    assert value.seed == 4294967295 and value.num_steps == 51 and value.edge.control_weight == 0
+
+
+@pytest.mark.parametrize("frames,valid", [(92, False), (93, True), (480, True), (481, False)])
+def test_native_frame_range_arbitrary_geometry_and_fractional_fps(tmp_path, frames, valid):
+    import hashlib
+    output = tmp_path / "fractional.mp4"
+    subprocess.run([shutil.which("ffmpeg"), "-nostdin", "-v", "error", "-f", "lavfi", "-i",
+                    "color=size=320x240:rate=30000/1001", "-frames:v", str(frames), "-c:v", "libx264",
+                    "-preset", "ultrafast", "-pix_fmt", "yuv420p", str(output)], check=True)
+    digest = hashlib.sha256(output.read_bytes()).hexdigest()
+    if valid:
+        value = adapter.inspect_video(output)
+        assert (value["width"], value["height"], value["frames"], value["fps"]) == (320, 240, frames, "30000/1001")
+    else:
+        with pytest.raises(ValueError, match="93–480"):
+            adapter.inspect_video(output)
+    assert hashlib.sha256(output.read_bytes()).hexdigest() == digest
+
+
 @pytest.mark.parametrize(
     "extra",
     [
@@ -106,6 +142,8 @@ def test_full_decode_alignment_and_raw_mp4_transport(monkeypatch, clip):
         {"control_weight": 1.5},
         {"seed": True},
         {"num_steps": 0},
+        {"edge": {"control_weight": 1.0}, "control_weight": 0.5},
+        {"resolution": 720},
         {"endpoint": "https://example.invalid"},
     ],
 )

@@ -1,0 +1,383 @@
+{
+  "qwen3-6-27b-fp8": {
+    "type": "object",
+    "properties": {
+      "model": {
+        "const": "Qwen/Qwen3.6-27B-FP8",
+        "description": "Exact pinned source model; no provider fallback."
+      },
+      "messages": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "system",
+                "user",
+                "assistant"
+              ]
+            },
+            "content": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "const": "text"
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "const": "image_url"
+                          },
+                          "image_url": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string",
+                                "pattern": "^data:(?:image/png|image/jpeg|image/webp);base64,",
+                                "maxLength": 22369688,
+                                "x-reference-media-types": [
+                                  "image/png",
+                                  "image/jpeg",
+                                  "image/webp"
+                                ],
+                                "x-reference-max-bytes": 16777216
+                              },
+                              "detail": {
+                                "enum": [
+                                  "auto",
+                                  "low",
+                                  "high"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "url"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "image_url"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "const": "video_url"
+                          },
+                          "video_url": {
+                            "type": "object",
+                            "properties": {
+                              "url": {
+                                "type": "string",
+                                "pattern": "^data:(?:video/mp4);base64,",
+                                "maxLength": 178957036,
+                                "x-reference-media-types": [
+                                  "video/mp4"
+                                ],
+                                "x-reference-max-bytes": 134217728
+                              }
+                            },
+                            "required": [
+                              "url"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "video_url"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "role",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "temperature": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 2
+      },
+      "top_p": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "frequency_penalty": {
+        "type": "number",
+        "minimum": -2,
+        "maximum": 2
+      },
+      "presence_penalty": {
+        "type": "number",
+        "minimum": -2,
+        "maximum": 2
+      },
+      "max_tokens": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "stream": {
+        "type": "boolean",
+        "description": "Forwarded unchanged. The durable result preserves the original JSON or SSE bytes."
+      },
+      "response_format": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": [
+                  "text",
+                  "json_object"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "json_schema"
+              },
+              "json_schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "schema": {
+                    "type": "object"
+                  },
+                  "strict": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "schema"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "json_schema"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "chat_template_kwargs": {
+        "type": "object",
+        "description": "NVIDIA reference chat-template settings, forwarded verbatim."
+      }
+    },
+    "required": [
+      "model",
+      "messages"
+    ],
+    "additionalProperties": false,
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "x-scientific-source-revision": "e89b16ebf1988b3d6befa7de50abc2d76f26eb09",
+    "description": "Unmodified NVIDIA PAIDF caption/prompt/verification OpenAI request over durable native transport; not a pipeline."
+  },
+  "qwen2-5-14b-instruct": {
+    "type": "object",
+    "properties": {
+      "model": {
+        "const": "Qwen/Qwen2.5-14B-Instruct",
+        "description": "Exact pinned source model; no provider fallback."
+      },
+      "messages": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "properties": {
+            "role": {
+              "enum": [
+                "system",
+                "user",
+                "assistant"
+              ]
+            },
+            "content": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "type": {
+                            "const": "text"
+                          },
+                          "text": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "text"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "role",
+            "content"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "temperature": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 2
+      },
+      "top_p": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      },
+      "frequency_penalty": {
+        "type": "number",
+        "minimum": -2,
+        "maximum": 2
+      },
+      "presence_penalty": {
+        "type": "number",
+        "minimum": -2,
+        "maximum": 2
+      },
+      "max_tokens": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "stream": {
+        "type": "boolean",
+        "description": "Forwarded unchanged. The durable result preserves the original JSON or SSE bytes."
+      },
+      "response_format": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "enum": [
+                  "text",
+                  "json_object"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "const": "json_schema"
+              },
+              "json_schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "schema": {
+                    "type": "object"
+                  },
+                  "strict": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "schema"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "type",
+              "json_schema"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "chat_template_kwargs": {
+        "type": "object",
+        "description": "NVIDIA reference chat-template settings, forwarded verbatim."
+      }
+    },
+    "required": [
+      "model",
+      "messages"
+    ],
+    "additionalProperties": false,
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "x-scientific-source-revision": "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8",
+    "description": "Unmodified NVIDIA PAIDF caption/prompt/verification OpenAI request over durable native transport; not a pipeline."
+  }
+}

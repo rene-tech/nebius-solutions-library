@@ -129,12 +129,19 @@ def test_gpu_runtime_cannot_claim_embedded_reference_database_contract(inputs):
         project(inputs, entries)
 
 
-@pytest.mark.parametrize("owner", ["nim-operator-nimcache", "platform-pvc"])
+@pytest.mark.parametrize("owner", ["nim-operator-nimcache"])
 def test_independent_gpu_runtime_cannot_claim_nim_owned_cache(inputs, owner):
     entries = copy.deepcopy(inputs[3])
     entries["molmim"]["record"]["cache"]["owner"] = owner
     with pytest.raises(DeploymentRuntimeError, match="resource-matched artifact"):
         project(inputs, entries)
+
+
+def test_independent_gpu_runtime_accepts_explicit_platform_pvc_custody(inputs):
+    entries = copy.deepcopy(inputs[3])
+    entries["molmim"]["record"]["cache"]["owner"] = "platform-pvc"
+    projected = project(inputs, entries)
+    assert not projected.model("molmim").routable
 
 
 def test_retained_service_suffix_is_not_hardware_or_model_alias(inputs):

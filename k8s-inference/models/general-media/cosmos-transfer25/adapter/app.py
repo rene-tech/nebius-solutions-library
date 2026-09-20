@@ -21,8 +21,8 @@ import httpx
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from fs2_video.media import inspect_video, validate_alignment
-from pydantic import BaseModel, ConfigDict, Field
+from transfer_media import inspect_video
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PROFILE_ID = "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672"
 MODEL_ID = "cosmos-transfer2.5-2b"
@@ -36,17 +36,31 @@ NEGATIVE_PROMPT = (
 )
 
 
+class EdgeControl(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    control_weight: Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)] = 1.0
+
+
 class TransferRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     video: Annotated[str, Field(min_length=1, max_length=MAX_BASE64_CHARS)]
-    prompt: Annotated[str, Field(min_length=1, max_length=4096)]
-    negative_prompt: Annotated[str, Field(max_length=4096)] = NEGATIVE_PROMPT
-    seed: Annotated[int, Field(ge=0, le=2147483647)] = 42
-    num_steps: Annotated[int, Field(ge=1, le=50)] = 35
+    prompt: Annotated[str, Field(min_length=1)]
+    negative_prompt: str = NEGATIVE_PROMPT
+    seed: Annotated[int, Field(ge=0, le=4294967295)] = 42
+    num_steps: Annotated[int, Field(ge=1)] = 35
     guidance: Annotated[int, Field(ge=0, le=7)] = 7
-    control_weight: Annotated[float, Field(gt=0, le=1)] = 1.0
+    resolution: Literal["256", "480", "512", "720"] = "720"
+    sigma_max: Annotated[float, Field(allow_inf_nan=False)] = 90.0
+    edge: EdgeControl | None = None
+    control_weight: Annotated[float, Field(ge=0, le=1, allow_inf_nan=False)] | None = None
     output_delivery: Literal["artifact"] = "artifact"
+
+    @model_validator(mode="after")
+    def unambiguous_edge(self):
+        if self.edge is not None and self.control_weight is not None:
+            raise ValueError("Choose native edge or the legacy control_weight alias, not both")
+        return self
 
 
 class OneBoundedRequest:
@@ -173,7 +187,7 @@ async def transfer(request: TransferRequest):
         try:
             source = await asyncio.to_thread(inspect_video, source_path)
         except (ValueError, OSError):
-            raise HTTPException(422, "video_violates_size_frame_rate_or_geometry_contract") from None
+            raise HTTPException(422, "video_requires_decodable_mp4_with_93_to_480_frames_no_conversion_performed") from None
         body = {
             "video": request.video,
             "prompt": request.prompt,
@@ -181,9 +195,10 @@ async def transfer(request: TransferRequest):
             "seed": request.seed,
             "guidance": request.guidance,
             "num_steps": request.num_steps,
-            "resolution": str(source["height"]),
-            "sigma_max": 90,
-            "edge": {"control_weight": request.control_weight},
+            "resolution": request.resolution,
+            "sigma_max": request.sigma_max,
+            "edge": request.edge.model_dump() if request.edge is not None else {
+                "control_weight": request.control_weight if request.control_weight is not None else 1.0},
         }
         payload = bytearray()
         try:
@@ -217,7 +232,10 @@ async def transfer(request: TransferRequest):
             output_path = Path(directory) / "output.mp4"
             output_path.write_bytes(raw)
             generated = await asyncio.to_thread(inspect_video, output_path)
-            validate_alignment(source, generated)
         except (ValueError, OSError, binascii.Error, KeyError, TypeError):
-            raise HTTPException(502, "generated_video_failed_source_alignment") from None
-        return Response(content=raw, media_type="video/mp4", headers={"cache-control": "no-store"})
+            raise HTTPException(502, "generated_video_is_not_valid_mp4") from None
+        aligned = all(source[key] == generated[key] for key in ("width", "height", "frames", "fps"))
+        # Retain the actual output. The workbench's quality gate must be able to
+        # show a mismatched output as rejected, and support explicit human review.
+        return Response(content=raw, media_type="video/mp4", headers={
+            "cache-control": "no-store", "x-scientific-source-alignment": "pass" if aligned else "mismatch"})

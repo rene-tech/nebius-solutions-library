@@ -107,11 +107,11 @@
     },
     "semantic_validator": {
       "kind": "repository-command",
-      "contract": "cosmos-transfer25-edge-weather/v1",
-      "source_path": "k8s-inference/models/general-media/cosmos-transfer25/qualify_adapter.py",
-      "source_sha256": "d75f41235d007f1cae654723c942646e8eafa9f24a51dea817a7a0e73ff40435",
-      "fixture_path": "k8s-inference/models/general-media/cosmos-transfer25/semantic-fixtures.json",
-      "fixture_sha256": "0e2f47519302cfdb9fbfe180ceabe01c954c90548c3aa50b405ec6e4d2ec8131",
+      "contract": "nvidia-paidf-original-transfer/v1",
+      "source_path": "k8s-inference/models/general-media/paidf-chat/qualify_transfer.py",
+      "source_sha256": "6310fcb83f6c0e3afe961c45feaa4b0e91b5eadc73b81f9fd475a0eaba544c86",
+      "fixture_path": "k8s-inference/models/general-media/paidf-chat/reference-transfer-qualification-20260920.json",
+      "fixture_sha256": "6899c619800dcefe96f7a225cbd320451a7f2bec594b9e080d5ab6646a3edf20",
       "request_count": 2,
       "distinct_requests": true,
       "distinct_responses": true
@@ -121,13 +121,13 @@
       "route_exposed": false,
       "non_clinical": true,
       "limitations": [
-        "Internal isolated evaluation, not customer-ready; public gateway/MCP, chat preview and approved batch flows are separate gates.",
-        "Exactly one H100, this NIM/profile and immutable adapter cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:1a14cccb640d08ae5775f6ebcb9e2fe766f08b717e43526e30057a8c68edfadd only. No B300, autoscaling or snapshot qualification.",
-        "Source MP4 must be 640x480 or 1280x720, constant integer 1\u201330 FPS, 93\u2013400 frames and at most 128 MiB; silent output.",
-        "Native edge-conditioned transfer only. No implicit cropping, trimming, retiming, depth/segmentation controls or action model.",
-        "Automated full-frame motion and sampled-weather checks do not establish physical fidelity or annotation correctness; human review is required.",
-        "Adapter bounds concurrency to one and refuses new work after unknown upstream completion; no automatic generation retry.",
-        "Rain seed 43 preserved frame geometry and passed weather verification but failed motion (0.649145 < 0.682); it is retained as failed evidence and not a qualified recipe."
+        "Internal isolated evaluation, not customer-ready; public gateway/MCP, skill/reasoner, chat preview and human-approved batch are separate gates.",
+        "Exactly one H100, the pinned NIM/profile and immutable adapter cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/cosmos-transfer25-adapter@sha256:4297473ad12501a70ef4d1e0b706bd829a660e4e1e946b82f2d5da44fdab2dea. No B300, autoscaling or snapshot qualification.",
+        "Native input: MP4, 93-480 frames, arbitrary geometry. The platform's explicit 128 MiB upload/transport bound is not a NVIDIA model limit. Native output is silent.",
+        "Original edge-conditioned reference: 35 steps, seed 42, guidance 7, resolution 720, sigma_max 90, edge weight 1; no input cropping, trimming, retiming or model/provider substitution.",
+        "Original motion threshold 0.6; original one-frame attribute check. Motion failure skips attributes. Media geometry/timing differences are reported, not an invented acceptance gate.",
+        "One in-flight transfer; unknown upstream completion blocks further work and no automatic generation retry occurs.",
+        "Cloudy request: motion 0.938988 passed, cloudy verifier failed: REJECTED. Original snow/night example: motion 0.758833 and both attributes passed. Passing automated checks does not establish physical fidelity or annotation correctness; human review remains required."
       ]
     },
     "evidence": [
@@ -135,8 +135,8 @@
         "classification": "measured-platform",
         "hardware": "NVIDIA H100 80GB HBM3; driver 580.173.02",
         "outcome": "live-qualified",
-        "source_commit": "5dcf2568134517d9be56c7368a8450e91a5e50a6",
-        "summary": "Two distinct native outputs passed full-video alignment and sampled-weather verification through the exact CPU adapter container connected to the private Stockholm NIM canary. Receipt digest 1d019e324cc5de1e9e757c2b277f80b58fb3f35e9c8cc1b7ee36681f37056a23. The rain clip failed the unchanged PAIDF motion threshold and is NOT accepted for a blueprint batch. This is not public gateway, workbench, managed cache startup, lifecycle or customer acceptance."
+        "source_commit": "a75a99b42db5d5dab8602bf492a70a395a5059dd",
+        "summary": "Two distinct native requests returned complete decoded MP4s through the pinned adapter/NIM using the unchanged 153-frame 1920x1080 NVIDIA input. Receipt SHA256 9e7bb863b28be14ca3698591a4376173dbb581206d20a7eadc683e41ca593586. Cloudy is rejected by the unchanged reference evaluator; the original snow/night case passed without override. This qualifies native model transport, not public App, managed cold start, workbench or batch acceptance."
       }
     ],
     "provenance": [
@@ -147,8 +147,14 @@
         "classification": "reviewed-input"
       },
       {
-        "commit": "5dcf2568134517d9be56c7368a8450e91a5e50a6",
-        "tree": "175d90814081bff938588801fb7f2a3441249282",
+        "commit": "a75a99b42db5d5dab8602bf492a70a395a5059dd",
+        "tree": "51809d320b9c70b4bc01276cbf6c43cd5ffdc463",
+        "path": "k8s-inference/models/general-media/paidf-chat/qualify_transfer.py",
+        "classification": "measured-handoff"
+      },
+      {
+        "commit": "a75a99b42db5d5dab8602bf492a70a395a5059dd",
+        "tree": "51809d320b9c70b4bc01276cbf6c43cd5ffdc463",
         "path": "k8s-inference/models/general-media/cosmos-transfer25/adapter/app.py",
         "classification": "measured-handoff"
       }
@@ -168,12 +174,12 @@
     },
     "requests": [
       {
-        "id": "transfer-weather-0",
-        "payload_sha256": "caee6dc6fb8ba9d9f8127aa66db9a54a51740a5c0b461df2f7e4b784c38d0e28"
+        "id": "paidf-transfer-reference-0",
+        "payload_sha256": "b5f165c7f830275484cce553ff86033eef93305be5855cadd5502a9d3bfa63c5"
       },
       {
-        "id": "transfer-weather-1",
-        "payload_sha256": "6bfaf3c286e6004210202c9120da5b47e123cc3db2d1d62c2e7003ce80f0e477"
+        "id": "paidf-transfer-reference-1",
+        "payload_sha256": "15b58872ded64c6009a6a4b1714aa7ab0168324a0a67f7168ce29c6a47f31075"
       }
     ],
     "assets": []
