@@ -90,6 +90,7 @@ def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive
             "parakeet-realtime-eou-120m-v1", "magpie-tts-multilingual-357m", "diar-streaming-sortformer-4spk-v2-1",
             "cellpose-cpsam-v2", "scvi-scanvi", "sam2-1-hiera-large",
             "wan2-2-t2v-nim", "wan2-2-i2v-nim", "cosmos-transfer2-5-2b",
+            "qwen3-6-27b-fp8", "qwen2-5-14b-instruct",
         }
     assert augmented.digest == archive.digest
     assert augmented.tested_model_ids == archive.tested_model_ids

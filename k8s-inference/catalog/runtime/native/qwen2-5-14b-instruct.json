@@ -1,0 +1,191 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "qwen2-5-14b-instruct",
+      "display_name": "Qwen2.5 14B Instruct",
+      "family": "llm",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "Qwen/Qwen2.5-14B-Instruct",
+        "revision": "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8",
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified",
+          "notes": "The exact Qwen model card declares Apache-2.0; source weights and tokenizer files are pinned and hash-verified."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public ungated checkpoint; no Hugging Face credential is required."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "vllm-0.19.0-paidf-native-v1",
+      "image": {
+        "reference": "docker.io/vllm/vllm-openai@sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90",
+        "digest": "sha256:7a0f0fdd2771464b6976625c2b2d5dd46f566aa00fbc53eceab86ef50883da90",
+        "state": "resolved"
+      },
+      "command": [
+        "vllm",
+        "serve",
+        "Qwen/Qwen2.5-14B-Instruct",
+        "--revision",
+        "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8001",
+        "--max-num-seqs",
+        "1",
+        "--gpu-memory-utilization",
+        "0.85"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 8500,
+      "memory_bytes": 47781511168,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-L40S-48GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/reference-chat"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 2700
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "reference-chat"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "allowed"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "platform-pvc",
+      "shared_path": "/mnt/fs2-serve-cache/models/qwen2-5-14b-instruct",
+      "local_path": "/var/lib/fs2-serve/cache/models/qwen2-5-14b-instruct",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "6736b62234523910abecf9229dd75dda5ca50bcb2ab5f72a53f37ed69a3126dd",
+        "expanded_bytes": 29551669999,
+        "minimum_bytes": 29551669999,
+        "capacity_bound_bytes": 85899345920,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "nvidia-paidf-exact-reference-chat/v1",
+      "source_path": "k8s-inference/models/general-media/paidf-chat/qualify_reference.py",
+      "source_sha256": "0ecbb415c59dc5806e65bf8343bcb050ccbb1dbb90716d0bf76d64dee01fe887",
+      "fixture_path": "k8s-inference/models/general-media/paidf-chat/reference-chat-qualification-20260920.json",
+      "fixture_sha256": "f16a1b036db7bc702554e8cbfb76f9f6a8d0fcdacd52152dc7e501a2a7c6f2a9",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Direct private runtime qualification only; managed App, public HTTP/MCP and workbench E2E are separate gates.",
+        "Exact source revision and native precision only; no model/provider fallback, quantization conversion, snapshots or scale-to-zero qualification.",
+        "The adapter preserves the original OpenAI JSON/SSE bytes over durable native operations: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/paidf-chat-adapter@sha256:b88368b1473fc0960cd45856d3f8dc781066f42a154263a6369d0a85765ee471",
+        "One in-flight request; explicit transport bounds: 128 MiB video, 16 MiB image, 192 MiB JSON request, 16 MiB response. No silent media sampling or resizing.",
+        "NVIDIA reference caption output can be repetitive; the measured caption is retained unchanged. Model output is not ground truth."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA L40S, GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187, 580.173.02, 46068 MiB",
+        "outcome": "live-qualified",
+        "source_commit": "a75a99b42db5d5dab8602bf492a70a395a5059dd",
+        "summary": "Two distinct original NVIDIA requests completed through the immutable native adapter on the private NVIDIA-L40S-48GB probe. Full-source SHA256 2b0d1e14f59f69278c79a49804f154718ca33e981dae35a43d0e729d49a38e79; 153 frames at 1920x1080, unchanged. Original caption/prompt/attribute implementation pinned at bc5719362492a1e3b40bd7d33b43c46dd89efad5. Retained evidence SHA256 9134d596d4e0a950175002d9721df1c9dd670732a2f199b20427d3787c469990. No public-route, managed cold-start or complete workbench qualification is claimed."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "a75a99b42db5d5dab8602bf492a70a395a5059dd",
+        "tree": "51809d320b9c70b4bc01276cbf6c43cd5ffdc463",
+        "path": "k8s-inference/models/general-media/paidf-chat/qualify_reference.py",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://huggingface.co/Qwen/Qwen2.5-14B-Instruct/tree/cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8",
+        "revision": "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "variant_id": "paidf-qwen25-vllm019-bf16-v1",
+  "runtime_architecture": "cuda",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-json-compact-no-newline/v1",
+    "invocation": {
+      "operation": "reference-chat",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/v1/reference-chat"
+    },
+    "requests": [
+      {
+        "id": "qwen2-5-14b-instruct-reference-0",
+        "payload_sha256": "9cfaeb1d6afe691a22ee1e17eea4298e72e7438a051f2faf2b0a7894b8640b02"
+      },
+      {
+        "id": "qwen2-5-14b-instruct-reference-1",
+        "payload_sha256": "42cb0f5245f8b633c60110f6a10f5629af0a276f917d0c8261951833f54cafe2"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "../deployment-runtimes/artifacts/qwen2-5-14b-instruct-6736b62234523910abecf9229dd75dda5ca50bcb2ab5f72a53f37ed69a3126dd.json",
+    "sha256": "6736b62234523910abecf9229dd75dda5ca50bcb2ab5f72a53f37ed69a3126dd"
+  }
+}
