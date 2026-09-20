@@ -17,7 +17,7 @@ from test_postgres_integration import (
 from fs2_serve.apps import default_app_id
 from fs2_serve.apps_models import AppRecord
 from fs2_serve.apps_repository import PostgresAppsRepository
-from fs2_serve.auth import TokenService
+from fs2_serve.auth import PepperRing, TokenService
 from fs2_serve.model_deployment import DesiredState
 from fs2_serve.model_deployment_admin import StoreModelDeploymentRepository
 from fs2_serve.model_deployment_mutation import DesiredWriteError, HttpKubernetesDesiredWriter
@@ -50,9 +50,11 @@ class ObservedCold:
 
 @pytest.mark.postgres
 @pytest.mark.asyncio
-async def test_retirement_refuses_active_operations_even_with_cold_observation(postgres_store, pepper):
+async def test_retirement_refuses_active_operations_even_with_cold_observation(postgres_store):
     _, revision = await drained(postgres_store)
-    tokens = TokenService(postgres_store, pepper)
+    tokens = TokenService(
+        postgres_store, PepperRing(active_key_id="retirement-test", keys={"retirement-test": b"p" * 32})
+    )
     issued = await tokens.issue(
         TokenCreate(
             principal_id="retirement-test",
