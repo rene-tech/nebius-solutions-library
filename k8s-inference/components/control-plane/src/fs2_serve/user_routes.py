@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from .access_models import AdminApiKeyCreate, AdminApiKeyDisclosure, AdminApiKeyList, OperatorPrincipal, OperatorRole
 from .admin import AdminProblemError
 from .admin_models import AdminContext, AdminEnvelope
-from .tenant_retirement import TenantRetirementRequest, retire_event_tenant
+from .tenant_retirement import TenantRetirementRequest, TenantRetirementResult, retire_event_tenant
 from .user_models import InferenceUser, UserCreate, UserDetail, UserList, UserPatch
 from .users import UserService
 
@@ -34,7 +34,11 @@ def user_router(
             raise AdminProblemError(401, "operator_session_required", "operator session is required")
         return value
 
-    @router.delete("/admin/api/v1/tenants/{tenant_id}", responses=problem_responses)
+    @router.delete(
+        "/admin/api/v1/tenants/{tenant_id}",
+        response_model=AdminEnvelope[TenantRetirementResult],
+        responses=problem_responses,
+    )
     async def retire_tenant(
         request: Request, tenant_id: str, payload: TenantRetirementRequest, params: Any = context_dep
     ) -> Any:

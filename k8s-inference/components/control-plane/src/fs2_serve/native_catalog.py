@@ -301,7 +301,7 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
         }
         acquisition_method = (
             "provider-block-pvc"
-            if is_nim and value["cache"]["owner"] == "platform-pvc"
+            if value["cache"]["owner"] in {"platform-pvc", "fs2-serve-localizer"}
             else "nim-cache"
             if is_nim
             else "runtime-image"

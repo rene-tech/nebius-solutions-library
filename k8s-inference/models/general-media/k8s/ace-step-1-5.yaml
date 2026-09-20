@@ -1,0 +1,290 @@
+# ACE-Step is an open-weights music runtime. The init container materializes
+# exact public Hugging Face revisions into a retained model-owned PVC.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ace-step-1-5
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: ace-step-1-5
+    app.kubernetes.io/part-of: fs2-serve
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ace-step-1-5-cache
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: ace-step-1-5
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: ace-step-1-5
+  annotations:
+    fs2-serve.nebius.ai/model-revision: 19671f406d603126926c1b7e2adc169acbcade22
+    fs2-serve.nebius.ai/lm-revision: 0a3ec94b557aea7d508da38b31cfe7341f6ff737
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: compute-csi-default-sc
+  resources:
+    requests:
+      storage: 64Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ace-step-1-5
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: ace-step-1-5
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: ace-step-1-5
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ace-step-1-5
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/component: model-runtime
+        app.kubernetes.io/name: ace-step-1-5
+        app.kubernetes.io/part-of: fs2-serve
+        fs2-serve.nebius.ai/model-id: ace-step-1-5
+    spec:
+      serviceAccountName: ace-step-1-5
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-l40s-48gb
+        kubernetes.io/arch: amd64
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      terminationGracePeriodSeconds: 60
+      initContainers:
+        - name: materialize-models
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-models/general-media/ace-step-1-5-runtime@sha256:95652cd780c78a1b1a7f6f0335530430f0ae53d96c7c12d59f9f39fa23d38567
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-ec"]
+          args:
+            - |
+              /app/.venv/bin/python - <<'PY'
+              from huggingface_hub import snapshot_download
+              snapshot_download(
+                  repo_id="ACE-Step/Ace-Step1.5",
+                  revision="19671f406d603126926c1b7e2adc169acbcade22",
+                  local_dir="/app/checkpoints",
+                  local_dir_use_symlinks=False,
+              )
+              snapshot_download(
+                  repo_id="ACE-Step/acestep-5Hz-lm-4B",
+                  revision="0a3ec94b557aea7d508da38b31cfe7341f6ff737",
+                  local_dir="/app/checkpoints/acestep-5Hz-lm-4B",
+                  local_dir_use_symlinks=False,
+              )
+              PY
+          env:
+            - name: HOME
+              value: /tmp
+            - name: USER
+              value: acestep
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: UV_NO_SYNC
+              value: "1"
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+              ephemeral-storage: 2Gi
+            limits:
+              cpu: "8"
+              memory: 8Gi
+              ephemeral-storage: 4Gi
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: checkpoints
+              mountPath: /app/checkpoints
+            - name: runtime-cache
+              mountPath: /app/.cache
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: acestep
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-models/general-media/ace-step-1-5-runtime@sha256:95652cd780c78a1b1a7f6f0335530430f0ae53d96c7c12d59f9f39fa23d38567
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+            - name: USER
+              value: acestep
+            - name: XDG_CACHE_HOME
+              value: /tmp/.cache
+            - name: ACESTEP_PROJECT_ROOT
+              value: /tmp/acestep-project
+            - name: ACESTEP_CHECKPOINTS_DIR
+              value: /app/checkpoints
+            - name: ACESTEP_TMPDIR
+              value: /tmp/acestep
+            - name: TRITON_CACHE_DIR
+              value: /tmp/triton
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /tmp/torchinductor
+            - name: ACESTEP_MODE
+              value: api
+            - name: ACESTEP_API_HOST
+              value: 127.0.0.1
+            - name: ACESTEP_API_PORT
+              value: "8001"
+            - name: ACESTEP_NO_INIT
+              value: "false"
+            - name: ACESTEP_INIT_LLM
+              value: "true"
+            - name: ACESTEP_CONFIG_PATH
+              value: acestep-v15-turbo
+            - name: ACESTEP_LM_MODEL_PATH
+              value: acestep-5Hz-lm-4B
+            - name: ACESTEP_LM_BACKEND
+              value: vllm
+            - name: ACESTEP_DOWNLOAD_SOURCE
+              value: huggingface
+            - name: ACESTEP_QUEUE_MAXSIZE
+              value: "1"
+            - name: ACESTEP_QUEUE_WORKERS
+              value: "1"
+            - name: TOKENIZERS_PARALLELISM
+              value: "false"
+            - name: HF_HUB_DISABLE_TELEMETRY
+              value: "1"
+            - name: UV_NO_SYNC
+              value: "1"
+          ports:
+            - name: upstream
+              containerPort: 8001
+          resources:
+            requests:
+              cpu: "8"
+              memory: 36Gi
+              ephemeral-storage: 4Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "15"
+              memory: 50Gi
+              ephemeral-storage: 8Gi
+              nvidia.com/gpu: "1"
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: checkpoints
+              mountPath: /app/checkpoints
+            - name: runtime-cache
+              mountPath: /app/.cache
+            - name: tmp
+              mountPath: /tmp
+            - name: shm
+              mountPath: /dev/shm
+        - name: adapter
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/ace-step-adapter@sha256:6ea30ef78c6d0480c3995c77701274e9a67a0e69665a8f3804d25f75128812e8
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: HOME
+              value: /tmp
+            - name: ACESTEP_UPSTREAM_URL
+              value: http://127.0.0.1:8001
+            - name: ACESTEP_GENERATION_TIMEOUT_SECONDS
+              value: "900"
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+              ephemeral-storage: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+              ephemeral-storage: 1Gi
+          startupProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 360
+          readinessProbe:
+            httpGet:
+              path: /v1/health/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /v1/health/live
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: checkpoints
+          persistentVolumeClaim:
+            claimName: ace-step-1-5-cache
+        - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: runtime-cache
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ace-step-1-5
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: ace-step-1-5
+    app.kubernetes.io/part-of: fs2-serve
+    fs2-serve.nebius.ai/model-id: ace-step-1-5
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ace-step-1-5
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

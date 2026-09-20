@@ -367,7 +367,8 @@ def test_gpu_allocation_observer_is_opt_in_and_has_exact_node_local_contract() -
 def test_gpu_observer_accepts_explicit_pool_tolerations_without_a_wildcard() -> None:
     documents = render(
         "--set", "runtimeAttribution.enabled=true",
-        "--set-json", 'runtimeAttribution.tolerations=[{"key":"nvidia.com/gpu","operator":"Exists","effect":"NoSchedule"}]',
+        "--set-json",
+        'runtimeAttribution.tolerations=[{"key":"nvidia.com/gpu","operator":"Exists","effect":"NoSchedule"}]',
     )
     daemonset = next(document for document in documents if document["kind"] == "DaemonSet")
     assert daemonset["spec"]["template"]["spec"]["tolerations"] == [
@@ -394,7 +395,8 @@ def test_pinned_gpu_observer_does_not_roll_for_gateway_only_image_change() -> No
 def test_unpinned_gpu_observer_retains_gateway_image_default() -> None:
     documents = render("--set", "runtimeAttribution.enabled=true")
     pod = next(document for document in documents if document["kind"] == "DaemonSet")["spec"]["template"]
-    assert pod["spec"]["containers"][0]["image"].endswith("@" + pod["metadata"]["annotations"]["fs2.nebius.ai/image-digest"])
+    expected_digest = pod["metadata"]["annotations"]["fs2.nebius.ai/image-digest"]
+    assert pod["spec"]["containers"][0]["image"].endswith("@" + expected_digest)
 
 
 def test_admin_console_renders_digest_bound_workload_route_and_network_boundary() -> None:
@@ -1354,7 +1356,10 @@ def test_committed_scientific_profile_binds_exact_helm_execution_map_bytes() -> 
     baselines = rendered_map.get("qualification_baselines", {})
     for digest, model_ids in baselines.items():
         projection = {"schema": rendered_map["schema"], "models": [map_rows[mid] for mid in model_ids]}
-        assert hashlib.sha256(json.dumps(projection, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == digest
+        projection_sha256 = hashlib.sha256(
+            json.dumps(projection, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        assert projection_sha256 == digest
     for map_model in execution_map["models"]:
         profile = profiles_by_id[map_model["model_id"]]
         identity = profile["execution_identity"]

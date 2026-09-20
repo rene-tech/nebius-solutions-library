@@ -20,9 +20,9 @@ from .adapters import (
     proteina_complexa,
     protenix_v2,
     rfdiffusion,
+    video_augmentation,
 )
 from .adapters.cosmos_lerobot import public_input_contract as lerobot_input_contract
-from .adapters import video_augmentation
 from .models import ScientificInputArtifact
 from .profile_catalog import ScientificRequestError
 
