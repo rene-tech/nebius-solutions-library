@@ -204,7 +204,7 @@ spec:
             - name: shm
               mountPath: /dev/shm
         - name: adapter
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/ace-step-adapter@sha256:1c58d7c8c88bb2a30a5cef169e163fb6901d6a09601da459d5b19d92dcbca72f
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/ace-step-adapter@sha256:6ea30ef78c6d0480c3995c77701274e9a67a0e69665a8f3804d25f75128812e8
           imagePullPolicy: IfNotPresent
           env:
             - name: HOME
