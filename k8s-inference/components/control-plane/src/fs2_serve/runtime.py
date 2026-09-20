@@ -91,6 +91,8 @@ _MAX_USAGE_FIELDS = 16
 _MAX_REPORTED_TOKEN_COUNT = 2**63 - 1
 _DEBUG_CAPTURE_EXTENSION = "fs2_upstream_debug_capture"
 _MAX_SCIENTIFIC_ERROR_BYTES = 16 * 1024
+_SAM2_MODEL_REVISION = "665f8e2ad61cf5f53d65644ff27c8ee525124610"
+_SAM2_CHECKPOINT_SHA256 = "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318"
 _SCIENTIFIC_ERROR_DETAILS = {
     "evo2_memory_exhausted": (
         "Evo2 exhausted GPU memory while processing this accepted request. "
@@ -946,6 +948,59 @@ class RuntimeClient:
         ):
             raise RuntimeProtocolError("scVI result manifest is invalid")
 
+    @staticmethod
+    def _sam2_zip_valid(body: bytes, content_type: str) -> None:
+        """Validate the bounded SAM 2 artifact before accepting it as a result."""
+
+        if content_type != "application/zip" or len(body) < 22 or not body.startswith(b"PK"):
+            raise RuntimeProtocolError("SAM 2 response is not a complete ZIP artifact")
+        try:
+            with zipfile.ZipFile(io.BytesIO(body)) as archive:
+                names = archive.namelist()
+                if (
+                    len(names) != len(set(names))
+                    or len(names) > 322
+                    or any(name.startswith("/") or ".." in name.split("/") for name in names)
+                    or "manifest.json" not in names
+                    or archive.testzip() is not None
+                ):
+                    raise RuntimeProtocolError("SAM 2 ZIP contents are invalid")
+                manifest = json.loads(archive.read("manifest.json"))
+        except (zipfile.BadZipFile, KeyError, ValueError, UnicodeError, RecursionError):
+            raise RuntimeProtocolError("SAM 2 ZIP contents are invalid") from None
+        if not isinstance(manifest, dict):
+            raise RuntimeProtocolError("SAM 2 result manifest is invalid")
+        mode = manifest.get("mode")
+        width, height = manifest.get("width"), manifest.get("height")
+        objects = manifest.get("objects")
+        if (
+            manifest.get("schema") != "fs2.nebius.ai/sam2-result/v1"
+            or manifest.get("model") != "facebook/sam2.1-hiera-large"
+            or manifest.get("revision") != _SAM2_MODEL_REVISION
+            or manifest.get("checkpoint_sha256") != _SAM2_CHECKPOINT_SHA256
+            or mode not in {"prompted-image", "automatic-image", "prompted-video"}
+            or type(width) is not int
+            or type(height) is not int
+            or width < 1
+            or height < 1
+            or width * height > 2_073_600
+            or not isinstance(objects, list)
+            or not 1 <= len(objects) <= 128
+        ):
+            raise RuntimeProtocolError("SAM 2 result manifest is invalid")
+        if mode == "prompted-video":
+            frame_count = manifest.get("frame_count")
+            masks = [name for name in names if name.startswith("masks/") and name.endswith(".png")]
+            if (
+                type(frame_count) is not int
+                or not 1 <= frame_count <= 320
+                or len(masks) != frame_count
+                or "overlay.mp4" not in names
+            ):
+                raise RuntimeProtocolError("SAM 2 video result is incomplete")
+        elif not {"mask.png", "overlay.png"} <= set(names):
+            raise RuntimeProtocolError("SAM 2 image result is incomplete")
+
     async def invoke(self, model: OperationalModel, operation: ClaimedOperation, request_body: bytes) -> RuntimeResult:
         try:
             endpoint = model.binding.endpoints[operation.protocol]
@@ -971,6 +1026,8 @@ class RuntimeClient:
         magpie = speech and source_model == "magpie-tts-multilingual-357m"
         cosmos = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                   and source_model == "cosmos3-nano")
+        sam2 = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                and source_model == "sam2-1-hiera-large")
         if speech:
             # A retry after explicit pre-admission busy must be able to select
             # another Service endpoint instead of sticking to a busy socket.
@@ -1080,6 +1137,9 @@ class RuntimeClient:
                     semantic, usage = "protocol_valid", None
                 elif scvi:
                     self._scvi_zip_valid(bytes(content), content_type)
+                    semantic, usage = "protocol_valid", None
+                elif sam2:
+                    self._sam2_zip_valid(bytes(content), content_type)
                     semantic, usage = "protocol_valid", None
                 else:
                     semantic = self._semantic_outcome(operation.protocol, bytes(content))
