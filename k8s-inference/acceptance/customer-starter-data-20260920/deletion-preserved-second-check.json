@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-20T04:32:10.168915+00:00",
+  "tenant_id": "fs2-starter-data-acceptance-20260920",
+  "principal_id": "seed-canary",
+  "bucket": "fs2-fs2-starter-data-acceptance-20260920-0164f70008da5227",
+  "storage_state": "ready",
+  "examples": {
+    "state": "complete",
+    "version": "v1",
+    "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+    "object_count": 374,
+    "total_bytes": 42961055,
+    "attempts": 1,
+    "error_code": null,
+    "updated_at": "2026-09-20T04:24:46.933523Z",
+    "completed_at": "2026-09-20T04:24:46.933523Z"
+  },
+  "deleted_example_not_restored": true
+}

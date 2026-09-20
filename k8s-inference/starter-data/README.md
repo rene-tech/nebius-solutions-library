@@ -1,8 +1,8 @@
 # Customer workspace starter data
 
 This directory builds the versioned `examples/v1/` pack for customer workspace
-buckets. Binary assets are release artifacts, not files in Git. The pack is
-version 1 is model-example-qualified; workspace rollout is being validated.
+buckets. Binary assets are release artifacts, not files in Git. Pack version 1
+is model-example-qualified; workspace rollout is being validated.
 Do not enable customer backfill with a draft pack. Exact release pins are in
 [`release-v1.json`](release-v1.json).
 

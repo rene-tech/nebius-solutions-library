@@ -1,5 +1,5 @@
 {
-  "at": "2026-09-20T04:29:34.188967+00:00",
+  "at": "2026-09-20T04:30:40.939462+00:00",
   "pack_manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
   "results": [
     {
@@ -47,6 +47,45 @@
       "recipe_sha256": "880e88e256b9837183ca7fe0524ff3b2d0f9ffe4487213e23a027ec56157f48d",
       "result_sha256": "a6d5959191185ca702d766bb3b26c66f43f5e1e817a77f37a5e434a2a1634093",
       "server_elapsed_seconds": 1.704,
+      "state": "passed"
+    },
+    {
+      "artifacts": [],
+      "case_id": "general-ai/explain-fasta",
+      "checks": {
+        "final_characters": 261,
+        "finish_reason": "stop"
+      },
+      "completed_at": "2026-09-20T04:29:46.571419+00:00",
+      "input_sha256": "cd8c6815f7ed4df9add2198bae5ad9dbbd86745b40e29b25b14b67bd28c56103",
+      "lifecycle": {
+        "accepted_at": "2026-09-20T04:29:42.563778Z",
+        "activation_started_at": "2026-09-20T04:29:42.624500Z",
+        "attempt": 1,
+        "cold_start_seconds": 0.35596,
+        "completed_at": "2026-09-20T04:29:44.927365Z",
+        "model_revision": "dynamic:sha256:8ff7b05b65a62bd3f40185e338f651eefa85f6e45385553cf9c39883056c6cad",
+        "principal_id": "seed-canary",
+        "ready_at": "2026-09-20T04:29:42.919738Z",
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-316b82ec-b309-c18d-4e2e-836498e1e036"
+          ],
+          "node_uid": "37d7c857-ec84-4792-ae1c-b90e992ee777",
+          "pod_uid": "8c1a9113-d89b-413c-bf3c-04b057657de1",
+          "preemptible": true
+        },
+        "started_at": "2026-09-20T04:29:42.927250Z",
+        "status": "succeeded",
+        "tenant_id": "fs2-starter-data-acceptance-20260920"
+      },
+      "model_id": "qwen3-8b",
+      "observation_seconds": 10.997,
+      "operation_id": "ce231231-fcee-4d15-b756-568ef5938c81",
+      "recipe_sha256": "cf69bf87846c7ae2b2e892e35f3e20d69b0660e5d6e4a57b84b0fbcc4cf86136",
+      "result_sha256": "2b03e666f5746a883c77d8a269d4fa4d410f4e65ba6078a60d15eb7bda534b89",
+      "server_elapsed_seconds": 2.364,
       "state": "passed"
     }
   ],
