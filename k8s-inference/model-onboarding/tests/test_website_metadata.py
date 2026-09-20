@@ -47,6 +47,12 @@ class WebsiteMetadataTests(unittest.TestCase):
         self.payload["models"][0]["domain"] = "other"
         self.assertIn("invalid category", "\n".join(MODULE.metadata_issues(self.ids, self.payload)))
 
+    def test_physical_ai_category_and_existing_general_purpose_are_accepted(self):
+        for domain in ("physical-ai-robotics", "general-ai", "generative-media"):
+            with self.subTest(domain=domain):
+                self.payload["models"][0]["domain"] = domain
+                self.assertEqual(MODULE.metadata_issues(self.ids, self.payload), [])
+
     def test_explicit_uncredited_community_model_is_valid(self):
         row = self.payload["models"][0]
         row.update(homepage="https://example.org/model", attribution=None)
