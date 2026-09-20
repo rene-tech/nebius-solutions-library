@@ -1,0 +1,54 @@
+{
+  "at": "2026-09-20T04:38:58.971731+00:00",
+  "pack_manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+  "results": [
+    {
+      "artifacts": [
+        {
+          "artifact_id": "5f082475-fcd6-4f72-b48d-f7deed721901",
+          "media_type": "application/octet-stream",
+          "sha256": "d70759abb9be131d46a2d7c67bffad2654e9546051deaf6121cd42f5d903c01b",
+          "size_bytes": 2353
+        }
+      ],
+      "case_id": "imaging/sparse-cells",
+      "checks": {
+        "input_identity_verified": true,
+        "labelled_pixels": 353,
+        "objects": 1
+      },
+      "completed_at": "2026-09-20T04:38:30.875279+00:00",
+      "input_sha256": "7c99d9231d88d6fb43e2dbd613a4656a9c23887f3f78cd42fcb0fb1cd3bea1d5",
+      "lifecycle": {
+        "accepted_at": "2026-09-20T04:38:25.991254Z",
+        "activation_started_at": "2026-09-20T04:38:26.053510Z",
+        "attempt": 1,
+        "cold_start_seconds": 0.553624,
+        "completed_at": "2026-09-20T04:38:29.368623Z",
+        "model_revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+        "principal_id": "private-new-canary",
+        "ready_at": "2026-09-20T04:38:26.544878Z",
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-9885f9c6-110a-10b5-2c26-c256e895d575"
+          ],
+          "node_uid": "e6709632-02a4-4c2c-88e5-d41677935ee8",
+          "pod_uid": "77070d8c-6c19-4769-aad5-34806751f2a3",
+          "preemptible": false
+        },
+        "started_at": "2026-09-20T04:38:26.754425Z",
+        "status": "succeeded",
+        "tenant_id": "fs2-starter-private-20260920"
+      },
+      "model_id": "sam2-1-hiera-large",
+      "observation_seconds": 15.602,
+      "operation_id": "5177e664-be40-4573-b8d9-63a2d87a5b2e",
+      "recipe_sha256": "880e88e256b9837183ca7fe0524ff3b2d0f9ffe4487213e23a027ec56157f48d",
+      "result_sha256": "0146f2ec7346369511fe5691d74d32481840d876d0b46c8df4e7a2db766879c1",
+      "server_elapsed_seconds": 3.377,
+      "state": "passed"
+    }
+  ],
+  "scope": "example input/output functionality only; not clinical or scientific accuracy qualification"
+}

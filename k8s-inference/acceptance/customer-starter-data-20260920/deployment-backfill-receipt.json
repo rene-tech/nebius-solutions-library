@@ -1,0 +1,265 @@
+{
+  "at": "2026-09-20T04:38:42.772291+00:00",
+  "cluster_id": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "project_id": "project-e00rene",
+  "public_endpoint": "https://89.169.99.188",
+  "helm_revision": 195,
+  "workloads": [
+    {
+      "name": "fs2-serve-control-plane",
+      "ready": 3,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:2e1f8f5c4b836bd70a0b495087245668492faf271cb793dfd02348149d0073a3",
+      "pod_template_sha256": "d98aa62f8a98c32b4e9522eeb897a03964b2ec1a70a1d0cb930819fdd4e5ff72"
+    },
+    {
+      "name": "fs2-serve-control-plane-model-controller",
+      "ready": 2,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:2e1f8f5c4b836bd70a0b495087245668492faf271cb793dfd02348149d0073a3",
+      "pod_template_sha256": "bf5c480d83147fa4296206f8092d76e6252fc8059380ed2ae58bd1d1cdeb4628"
+    },
+    {
+      "name": "fs2-serve-control-plane-admin-console",
+      "ready": 2,
+      "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:72581f9f4035742e8c0b52a197c9b9a702f17fe8a6a837990dd2f7bf42ce4ae4",
+      "pod_template_sha256": "8c66a07d7cce4d85ac4ea34bf95c9997ff288cc501dbb2647e0a2a868da6395e"
+    }
+  ],
+  "live_values_sha256": "a36693b81f6baed16adbeada83f538edf56b6b08b711aa8dc76018c60347364d",
+  "starter_pack": {
+    "enabled": true,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/customer-starter-data@sha256:43a295ebc7bf0dcb4476ca98e86ae73d9cab1250479b7ae6164d2d732320f22f",
+    "manifestSha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+    "tenants": []
+  },
+  "active_users_at_backfill": 57,
+  "disabled_storage_users_unchanged": 22,
+  "completed_buckets": [
+    {
+      "bucket_identity_sha256": "b8f655e05aac3ea32651832097b91e50239efe7c3cec7412ef75a01d7a98b3b3",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:32:17.568519Z",
+        "completed_at": "2026-09-20T04:32:17.568519Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "484a1fc25f9a241d384d5b06b32e3a140aede8d1cf84c328a94045eaa3ea77f1",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:24:46.933523Z",
+        "completed_at": "2026-09-20T04:24:46.933523Z"
+      },
+      "independent_download": "separate-canary-receipt"
+    },
+    {
+      "bucket_identity_sha256": "acfc641d15d551961881c1fd0c44e2e71b157a2f98951ddc2bf6d9701a68b726",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:24:59.081500Z",
+        "completed_at": "2026-09-20T04:24:59.081500Z"
+      },
+      "independent_download": "separate-canary-receipt"
+    },
+    {
+      "bucket_identity_sha256": "c6155699109e0a782ce6ced3243de0f1acd35f160e1d6364b4cb6a783f19c6eb",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:26:14.428441Z",
+        "completed_at": "2026-09-20T04:26:14.428441Z"
+      },
+      "independent_download": "separate-canary-receipt"
+    },
+    {
+      "bucket_identity_sha256": "4a5c2fad42b1f884b329bbc4d47dc85cb5404e05e20750b9f538bb35100c6e3a",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:32:29.610789Z",
+        "completed_at": "2026-09-20T04:32:29.610789Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "c2bfdbf1f4bfa8150649e263ea125fb63d4ad711d604729c20b6ca0eb4e4b97b",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:32:39.664042Z",
+        "completed_at": "2026-09-20T04:32:39.664042Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "ca296f42251de33b32f84e2b82901b5ce0b98d85137c02f4539354f53b1c984d",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:32:50.939716Z",
+        "completed_at": "2026-09-20T04:32:50.939716Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "fe215ba5d786ac7bdc670c2fddd3d09f23eeef741e94fdfa45bef7854c72cb1e",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:33:02.417549Z",
+        "completed_at": "2026-09-20T04:33:02.417549Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "e285a419523573487edc5a0d75e288318604a162a0c049432399542c403214c5",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:33:13.106390Z",
+        "completed_at": "2026-09-20T04:33:13.106390Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "98e9b059a3884d1f1a8a55094092f8b243f37101fd12fcb926a91d038e5ce4f4",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:33:22.515835Z",
+        "completed_at": "2026-09-20T04:33:22.515835Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "250837378d92201defa783f1a6745c04966a868822c2c3a5e82c650362bfbcb6",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:33:33.357913Z",
+        "completed_at": "2026-09-20T04:33:33.357913Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "7f2573ef6fe07011677101e6b5831639110ff8f5921797c7b690c254f266702f",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:33:43.565130Z",
+        "completed_at": "2026-09-20T04:33:43.565130Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "1292077e3c595f1b785cf35892100bac11bad128ea44c8d69a5db7323e21205e",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:33:53.411612Z",
+        "completed_at": "2026-09-20T04:33:53.411612Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "8892e35c55305e6a63e3c34ee6467d946d45ac2743ccd58a41c320437ae16b2b",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:34:03.113269Z",
+        "completed_at": "2026-09-20T04:34:03.113269Z"
+      },
+      "independent_download": "passed"
+    },
+    {
+      "bucket_identity_sha256": "3c166292bcdae8210e5f132e54face2f88319b58afab8296e772d3ee44246c1e",
+      "examples": {
+        "state": "complete",
+        "version": "v1",
+        "manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+        "object_count": 374,
+        "total_bytes": 42961055,
+        "attempts": 1,
+        "error_code": null,
+        "updated_at": "2026-09-20T04:34:12.915843Z",
+        "completed_at": "2026-09-20T04:34:12.915843Z"
+      },
+      "independent_download": "passed"
+    }
+  ],
+  "independently_verified_non_task_buckets": 12,
+  "source_inventory_sha256": "b8df754ff4b32421fa53b8c913330d4db5823b452c7b43aa446ffca5bf2025b8"
+}

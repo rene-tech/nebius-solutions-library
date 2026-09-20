@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-20T04:38:58.755772+00:00",
+  "pack_manifest_sha256": "5ff0f043aca9cfb3c70a13423effb770e2eef9b6e1abbc9609cf5e877ec31ebc",
+  "results": [
+    {
+      "artifacts": [
+        {
+          "artifact_id": "7590c351-571b-4108-a1ad-979147f7c423",
+          "media_type": "application/octet-stream",
+          "sha256": "d70759abb9be131d46a2d7c67bffad2654e9546051deaf6121cd42f5d903c01b",
+          "size_bytes": 2353
+        }
+      ],
+      "case_id": "imaging/sparse-cells",
+      "checks": {
+        "input_identity_verified": true,
+        "labelled_pixels": 353,
+        "objects": 1
+      },
+      "completed_at": "2026-09-20T04:38:14.618216+00:00",
+      "input_sha256": "7c99d9231d88d6fb43e2dbd613a4656a9c23887f3f78cd42fcb0fb1cd3bea1d5",
+      "lifecycle": {
+        "accepted_at": "2026-09-20T04:38:10.313264Z",
+        "activation_started_at": "2026-09-20T04:38:10.383055Z",
+        "attempt": 1,
+        "cold_start_seconds": 0.968041,
+        "completed_at": "2026-09-20T04:38:13.177398Z",
+        "model_revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+        "principal_id": "private-new-canary",
+        "ready_at": "2026-09-20T04:38:11.281305Z",
+        "runtime": {
+          "gpu_count": 1,
+          "gpu_uuids": [
+            "GPU-9885f9c6-110a-10b5-2c26-c256e895d575"
+          ],
+          "node_uid": "e6709632-02a4-4c2c-88e5-d41677935ee8",
+          "pod_uid": "77070d8c-6c19-4769-aad5-34806751f2a3",
+          "preemptible": false
+        },
+        "started_at": "2026-09-20T04:38:11.313267Z",
+        "status": "succeeded",
+        "tenant_id": "fs2-starter-private-20260920"
+      },
+      "model_id": "sam2-1-hiera-large",
+      "observation_seconds": 12.997,
+      "operation_id": "ccf1d34d-7ec7-424f-b765-ef89f034bc3b",
+      "recipe_sha256": "880e88e256b9837183ca7fe0524ff3b2d0f9ffe4487213e23a027ec56157f48d",
+      "result_sha256": "9e3675434baac636cf95a57442b5f4c99484f101c808429d6d51d5785756d008",
+      "server_elapsed_seconds": 2.864,
+      "state": "passed"
+    },
+    {
+      "case_id": "general-ai/explain-fasta",
+      "input_sha256": "cd8c6815f7ed4df9add2198bae5ad9dbbd86745b40e29b25b14b67bd28c56103",
+      "model_id": "qwen3-8b",
+      "operation_id": "0a7be613-5430-478a-b94e-558ed4d5c840",
+      "recipe_sha256": "cf69bf87846c7ae2b2e892e35f3e20d69b0660e5d6e4a57b84b0fbcc4cf86136",
+      "state": "activating"
+    }
+  ],
+  "scope": "example input/output functionality only; not clinical or scientific accuracy qualification"
+}

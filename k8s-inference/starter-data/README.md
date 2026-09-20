@@ -63,6 +63,13 @@ contracts, approved medical demo assets and synthetic AltumAge fixture. It
 refuses an existing output directory and always writes `release_status: draft`.
 The LeRobot fixture is generated with the repository's locked LeRobot v3 reader.
 
+For additional models or corrected assets, build a new immutable version with
+`--version v2` (and so on), capture current contracts, add meaningful cases and
+rerun the affected public model recipes. `qualify_pack.py` requires a matching
+semantic proof for every advertised case/model/input. Never replace a published
+v1 image/manifest or clear completion rows to force an overwrite. The runner is
+a POSIX Python 3.13 client; Windows users can use WSL or the hosted workbench.
+
 `run_example.py` is copied into the pack as `run-example.py`. It resolves files
 locally, validates the exact published typed schema, uploads immutable artifacts,
 submits with durable idempotency, polls the original operation and verifies every

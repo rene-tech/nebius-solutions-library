@@ -248,7 +248,7 @@ class Builder:
                 for category, label in LABELS.items()
             )
             + "\n\n"
-            "Download the entire examples/v1 prefix before running recipes. Object Storage access keys "
+            f"Download the entire examples/{self.args.version} prefix before running recipes. Object Storage access keys "
             "download files; the platform API key authorizes inference. They are different credentials. "
             "Existing files are never overwritten by the installer. After successful installation, "
             "deleting an example does not cause the platform to recreate it.\n",
@@ -256,7 +256,7 @@ class Builder:
         )
         manifest = {
             "schema": SCHEMA,
-            "version": "v1",
+            "version": self.args.version,
             "release_status": "draft",
             "categories": [{"id": k, "display_name": v} for k, v in LABELS.items()],
             "live_model_ids": sorted(self.models),
@@ -1734,7 +1734,14 @@ def main():
     parser.add_argument("--contracts", type=Path, required=True)
     parser.add_argument("--demo-assets", type=Path, required=True)
     parser.add_argument("--altumage-fixture", type=Path, required=True)
+    parser.add_argument(
+        "--version", default="v1", help="Immutable prefix version, such as v1 or v2"
+    )
     args = parser.parse_args()
+    import re
+
+    if not re.fullmatch(r"v[1-9][0-9]*", args.version):
+        parser.error("--version must be v followed by a positive integer")
     pack = Builder(args)
     structures = proteins(pack)
     molecules_and_genomics(pack)
