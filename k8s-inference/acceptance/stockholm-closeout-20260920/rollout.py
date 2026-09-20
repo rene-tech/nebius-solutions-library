@@ -69,7 +69,8 @@ def main(args):
                 str(values),
                 "--wait=watcher",
                 "--wait-for-jobs",
-                "--rollback-on-failure",
+                # Migration 0034 advances the exact schema manifest. Recovery
+                # must use a compatible forward fix, not the old schema-33 image.
                 "--timeout",
                 "20m",
             ],

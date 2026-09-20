@@ -97,6 +97,11 @@ identities, hashes, status and timings without credentials or private inputs.
 
 ## Incident-derived requirement
 
+Event-specific preparation, archive and identity-retirement steps are in
+[the event closeout runbook](docs/event-closeout.md). Export outcomes before
+retention expires; do not confuse transport GETs with model requests, loaded
+alert rules with delivered notifications, or event closure with full qualification.
+
 This rule was formalized after the September 2026 Stockholm deployment. Narrow
 typed-tool and sequential snapshot checks passed, but the event exercised a
 different generic MCP envelope and concurrent runtime behavior. Those component
