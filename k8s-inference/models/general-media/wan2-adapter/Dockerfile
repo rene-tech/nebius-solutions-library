@@ -5,10 +5,6 @@ LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solut
       org.opencontainers.image.revision="${SOURCE_REVISION}" \
       org.opencontainers.image.title="Nebius Scientific AI Wan2.2 adapter"
 
-RUN apt-get update \
-    && apt-get upgrade -y \
-    && apt-get install -y --no-install-recommends ffmpeg \
-    && rm -rf /var/lib/apt/lists/*
 RUN groupadd --gid 10001 fs2 && useradd --uid 10001 --gid 10001 --no-create-home fs2
 WORKDIR /app
 COPY requirements.txt .

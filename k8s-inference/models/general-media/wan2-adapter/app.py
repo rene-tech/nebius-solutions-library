@@ -5,10 +5,8 @@ import base64
 import binascii
 import json
 import os
-import subprocess
-import tempfile
+import struct
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Annotated, Literal
 
 import httpx
@@ -62,6 +60,84 @@ class GenerateRequest(BaseModel):
         return self
 
 
+def _boxes(data: bytes, start: int = 0, end: int | None = None):
+    limit = len(data) if end is None else end
+    cursor = start
+    while cursor < limit:
+        if limit - cursor < 8:
+            raise ValueError("truncated MP4 box")
+        size = struct.unpack_from(">I", data, cursor)[0]
+        kind = data[cursor + 4 : cursor + 8]
+        header = 8
+        if size == 1:
+            if limit - cursor < 16:
+                raise ValueError("truncated extended MP4 box")
+            size = struct.unpack_from(">Q", data, cursor + 8)[0]
+            header = 16
+        elif size == 0:
+            size = limit - cursor
+        if size < header or cursor + size > limit:
+            raise ValueError("invalid MP4 box size")
+        yield kind, cursor + header, cursor + size
+        cursor += size
+
+
+def _child(data: bytes, start: int, end: int, kind: bytes):
+    return next((box for box in _boxes(data, start, end) if box[0] == kind), None)
+
+
+def _mp4_metadata(raw: bytes) -> dict[str, object]:
+    top = list(_boxes(raw))
+    if not top or top[0][0] != b"ftyp":
+        raise ValueError("missing MP4 file type box")
+    moov = next((box for box in top if box[0] == b"moov"), None)
+    if moov is None:
+        raise ValueError("missing MP4 movie box")
+    mvhd = _child(raw, moov[1], moov[2], b"mvhd")
+    if mvhd is None or mvhd[2] - mvhd[1] < 20:
+        raise ValueError("missing MP4 movie header")
+    version = raw[mvhd[1]]
+    if version == 0:
+        timescale = struct.unpack_from(">I", raw, mvhd[1] + 12)[0]
+        duration_units = struct.unpack_from(">I", raw, mvhd[1] + 16)[0]
+    elif version == 1 and mvhd[2] - mvhd[1] >= 32:
+        timescale = struct.unpack_from(">I", raw, mvhd[1] + 20)[0]
+        duration_units = struct.unpack_from(">Q", raw, mvhd[1] + 24)[0]
+    else:
+        raise ValueError("unsupported MP4 movie header")
+    if timescale == 0:
+        raise ValueError("invalid MP4 timescale")
+
+    video_tracks: list[dict[str, object]] = []
+    for kind, track_start, track_end in _boxes(raw, moov[1], moov[2]):
+        if kind != b"trak":
+            continue
+        tkhd = _child(raw, track_start, track_end, b"tkhd")
+        mdia = _child(raw, track_start, track_end, b"mdia")
+        if tkhd is None or mdia is None:
+            continue
+        hdlr = _child(raw, mdia[1], mdia[2], b"hdlr")
+        if hdlr is None or hdlr[2] - hdlr[1] < 12:
+            continue
+        if raw[hdlr[1] + 8 : hdlr[1] + 12] != b"vide":
+            continue
+        tkhd_version = raw[tkhd[1]]
+        dimension_offset = 80 if tkhd_version == 0 else 92
+        if tkhd_version not in {0, 1} or tkhd[2] - tkhd[1] < dimension_offset + 8:
+            raise ValueError("invalid MP4 track header")
+        width_fixed, height_fixed = struct.unpack_from(">II", raw, tkhd[1] + dimension_offset)
+        width, height = width_fixed >> 16, height_fixed >> 16
+        if width <= 0 or height <= 0:
+            raise ValueError("invalid MP4 dimensions")
+        video_tracks.append({"width": width, "height": height})
+    if len(video_tracks) != 1:
+        raise ValueError("MP4 must contain exactly one video track")
+    return {
+        **video_tracks[0],
+        "duration_seconds": duration_units / timescale,
+    }
+
+
 def _verified_mp4(
     raw: bytes, request: GenerateRequest
 ) -> tuple[bytes, dict[str, object]]:
@@ -69,52 +145,21 @@ def _verified_mp4(
         raise HTTPException(
             status_code=502, detail="NIM returned an empty or oversized video"
         )
-    with tempfile.TemporaryDirectory(prefix="fs2-wan2-output-") as directory:
-        path = Path(directory) / "output.mp4"
-        path.write_bytes(raw)
-        command = [
-            "ffprobe",
-            "-v",
-            "error",
-            "-show_entries",
-            "format=format_name,duration:stream=codec_type,codec_name,width,height,avg_frame_rate,nb_frames",
-            "-of",
-            "json",
-            str(path),
-        ]
-        try:
-            completed = subprocess.run(
-                command, check=True, capture_output=True, text=True, timeout=30
-            )
-            probe = json.loads(completed.stdout)
-        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as error:
-            raise HTTPException(
-                status_code=502, detail="NIM output is not a decodable MP4"
-            ) from error
-    streams = [
-        stream
-        for stream in probe.get("streams", [])
-        if stream.get("codec_type") == "video"
-    ]
-    if len(streams) != 1 or "mp4" not in str(
-        probe.get("format", {}).get("format_name", "")
-    ):
+    try:
+        metadata = _mp4_metadata(raw)
+    except (ValueError, struct.error) as error:
         raise HTTPException(
-            status_code=502,
-            detail="NIM output does not contain exactly one MP4 video stream",
-        )
-    video = streams[0]
+            status_code=502, detail="NIM output is not a valid MP4 video"
+        ) from error
     expected_width, expected_height = (int(value) for value in request.size.split("x"))
-    if (video.get("width"), video.get("height")) != (expected_width, expected_height):
+    if (metadata["width"], metadata["height"]) != (
+        expected_width,
+        expected_height,
+    ):
         raise HTTPException(
             status_code=502, detail="NIM output dimensions differ from the request"
         )
-    try:
-        duration = float(probe["format"]["duration"])
-    except (KeyError, TypeError, ValueError) as error:
-        raise HTTPException(
-            status_code=502, detail="NIM output has invalid duration metadata"
-        ) from error
+    duration = float(metadata["duration_seconds"])
     if not 0 < duration <= request.seconds + 0.25:
         raise HTTPException(
             status_code=502, detail="NIM output duration is outside the request bound"
@@ -123,8 +168,6 @@ def _verified_mp4(
         "duration_seconds": duration,
         "width": expected_width,
         "height": expected_height,
-        "codec": video.get("codec_name"),
-        "frames": video.get("nb_frames"),
     }
 
 
