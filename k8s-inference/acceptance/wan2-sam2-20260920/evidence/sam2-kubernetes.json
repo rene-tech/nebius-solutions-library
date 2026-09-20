@@ -1,0 +1,263 @@
+{
+  "cleanup": {
+    "deployment_replicas": 0,
+    "deployment_retained": true,
+    "pod_deleted": true,
+    "service_retained": true
+  },
+  "cluster": {
+    "context": "fs2-wan-sam-20260920",
+    "deployment": {
+      "available_replicas": 1,
+      "generation": 2,
+      "name": "sam2-1-hiera-large",
+      "ready_replicas": 1,
+      "uid": "7631c8e7-9fed-4509-91ba-fd2db04cced7"
+    },
+    "image_pull": {
+      "bytes": 5212683359,
+      "seconds": 89.74
+    },
+    "namespace": "fs2-models",
+    "pod": {
+      "gpu_count": "1",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/sam2@sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c",
+      "name": "sam2-1-hiera-large-7b66cddb5d-kwpgh",
+      "node": "computeinstance-e00y0jttwekyghrznp",
+      "phase": "Running",
+      "ready": true,
+      "restart_count": 0,
+      "run_as_gid": 10001,
+      "run_as_uid": 10001,
+      "uid": "44fe65d1-9c96-4ccc-9a66-751e7c257a66"
+    },
+    "service": {
+      "cluster_ip": "10.5.133.176",
+      "name": "sam2-1-hiera-large",
+      "port": 8000,
+      "uid": "69a69f3e-0cd6-4553-9680-0ac6e7c7162a"
+    }
+  },
+  "observed_at": "2026-09-20T03:14:53Z",
+  "raw_custody": {
+    "direct_evidence_sha256": "40a7ac5820f0dd8421c9031c8a796fbd2ccc0aff1a016fd31e86b9778397c637",
+    "events_sha256": "205621fefa5ea3276203b4400e2b301f836d983928471f44b7396b66e6f72c8a",
+    "objects_sha256": "6937ca90862dd5bf4059cf81d59a489258cb93ee922539144e2a3e11d27ad3bd",
+    "runtime_log_sha256": "4762961af664fb52af1821b44a92277e922077b4502b44229f073c9a6145b889"
+  },
+  "result": {
+    "ready": {
+      "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+      "model": "facebook/sam2.1-hiera-large",
+      "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+      "status": "ready"
+    },
+    "requests": [
+      {
+        "bytes": 6243,
+        "elapsed_seconds": 0.7237105835229158,
+        "files": [
+          "manifest.json",
+          "mask.png",
+          "overlay.png"
+        ],
+        "fixture_id": "sam2-prompted-image-0",
+        "headers": {
+          "connection": "close",
+          "content-length": "6243",
+          "content-type": "application/zip",
+          "date": "Sun, 20 Sep 2026 03:14:54 GMT",
+          "server": "uvicorn",
+          "x-fs2-model-revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+          "x-fs2-sam2-mode": "prompted-image"
+        },
+        "manifest": {
+          "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+          "height": 240,
+          "input_sha256": "0bf8917246161d17d39c084dd6301b5e68171d993b59191f68ad96175b0f60f3",
+          "mode": "prompted-image",
+          "model": "facebook/sam2.1-hiera-large",
+          "objects": [
+            {
+              "area_px": 4320,
+              "object_id": 1,
+              "score": 0.9773170948028564
+            }
+          ],
+          "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+          "schema": "fs2.nebius.ai/sam2-result/v1",
+          "width": 320
+        },
+        "overlay_probe": null,
+        "sha256": "6395447e4e900d264051cb60bbd3ef1c81f2795fd208f4c8007bac9dda1ea71b"
+      },
+      {
+        "bytes": 28166,
+        "elapsed_seconds": 4.259697109460831,
+        "files": [
+          "manifest.json",
+          "masks/000001.png",
+          "masks/000002.png",
+          "masks/000003.png",
+          "masks/000004.png",
+          "masks/000005.png",
+          "masks/000006.png",
+          "masks/000007.png",
+          "masks/000008.png",
+          "masks/000009.png",
+          "masks/000010.png",
+          "masks/000011.png",
+          "masks/000012.png",
+          "masks/000013.png",
+          "masks/000014.png",
+          "masks/000015.png",
+          "masks/000016.png",
+          "masks/000017.png",
+          "masks/000018.png",
+          "masks/000019.png",
+          "masks/000020.png",
+          "masks/000021.png",
+          "masks/000022.png",
+          "masks/000023.png",
+          "masks/000024.png",
+          "overlay.mp4"
+        ],
+        "fixture_id": "sam2-prompted-video-1",
+        "headers": {
+          "connection": "close",
+          "content-length": "28166",
+          "content-type": "application/zip",
+          "date": "Sun, 20 Sep 2026 03:14:55 GMT",
+          "server": "uvicorn",
+          "x-fs2-model-revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+          "x-fs2-sam2-mode": "prompted-video"
+        },
+        "manifest": {
+          "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+          "frame_count": 24,
+          "frame_rate": "12/1",
+          "height": 240,
+          "input_sha256": "675225ac6af59f79c5a6450a074255066fffde49e0e847bfca4a6d240ac22891",
+          "mode": "prompted-video",
+          "model": "facebook/sam2.1-hiera-large",
+          "objects": [
+            {
+              "object_id": 1
+            }
+          ],
+          "prompt_frame": 0,
+          "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+          "schema": "fs2.nebius.ai/sam2-result/v1",
+          "width": 320
+        },
+        "overlay_probe": {
+          "format": {
+            "duration": "2.000000",
+            "format_name": "mov,mp4,m4a,3gp,3g2,mj2"
+          },
+          "programs": [],
+          "streams": [
+            {
+              "avg_frame_rate": "12/1",
+              "codec_name": "h264",
+              "height": 240,
+              "nb_frames": "24",
+              "width": 320
+            }
+          ]
+        },
+        "sha256": "dcded0caa804a1850a7946624f9548888fca4ff56feaaf3cd6289c84f44d27f6"
+      },
+      {
+        "bytes": 7739,
+        "elapsed_seconds": 0.9488020930439234,
+        "files": [
+          "manifest.json",
+          "mask.png",
+          "overlay.png"
+        ],
+        "fixture_id": "sam2-automatic-image",
+        "headers": {
+          "connection": "close",
+          "content-length": "7739",
+          "content-type": "application/zip",
+          "date": "Sun, 20 Sep 2026 03:14:59 GMT",
+          "server": "uvicorn",
+          "x-fs2-model-revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+          "x-fs2-sam2-mode": "automatic-image"
+        },
+        "manifest": {
+          "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+          "height": 240,
+          "input_sha256": "97ae6cc4f7e68e33d5f6ef013e175eb21f373e8c37bffabb5b47ec5b0b850aa3",
+          "mode": "automatic-image",
+          "model": "facebook/sam2.1-hiera-large",
+          "objects": [
+            {
+              "area_px": 7512,
+              "object_id": 1,
+              "score": 0.9875537157058716,
+              "stability_score": 0.9850707054138184
+            },
+            {
+              "area_px": 4311,
+              "object_id": 2,
+              "score": 0.9905071258544922,
+              "stability_score": 0.9896289706230164
+            },
+            {
+              "area_px": 683,
+              "object_id": 3,
+              "score": 0.8873443007469177,
+              "stability_score": 0.9525862336158752
+            },
+            {
+              "area_px": 506,
+              "object_id": 4,
+              "score": 0.960343062877655,
+              "stability_score": 0.9599236845970154
+            },
+            {
+              "area_px": 1,
+              "object_id": 5,
+              "score": 0.9063794612884521,
+              "stability_score": 0.977011501789093
+            }
+          ],
+          "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+          "schema": "fs2.nebius.ai/sam2-result/v1",
+          "width": 320
+        },
+        "overlay_probe": null,
+        "sha256": "820bb4a95530a96a04d420c003bd91caf48d998a9666e28074506e1cc5a1cd0d"
+      }
+    ]
+  },
+  "runtime": {
+    "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+    "image_index": "sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c",
+    "model_revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+    "source_commit": "18a283fe89c6a5f2fac85bb44d6a5a8dcfef5b43"
+  },
+  "schema": "fs2.nebius.ai/sam2-kubernetes-qualification/v1",
+  "scope": {
+    "not_qualified": [
+      "public-route",
+      "gateway-http-mcp",
+      "librechat",
+      "cold-start-controller",
+      "elasticity"
+    ],
+    "qualified": [
+      "kubernetes-image-pull",
+      "kubernetes-startup",
+      "readiness",
+      "nonroot-runtime",
+      "zero-restarts",
+      "service-port-forward",
+      "prompted-image",
+      "automatic-image",
+      "prompted-video"
+    ]
+  }
+}

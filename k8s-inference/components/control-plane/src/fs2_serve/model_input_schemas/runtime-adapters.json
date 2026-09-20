@@ -88,5 +88,10 @@
     "variant_id": "scvi-scanvi-cuda-v1",
     "runtime_kind": "custom",
     "source": "k8s-inference/catalog/runtime/deployment-runtimes/scvi-scanvi.json"
+  },
+  "sam2-1-hiera-large": {
+    "variant_id": "sam2-1-hiera-large-cuda-v1",
+    "runtime_kind": "custom",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/sam2-1-hiera-large.json"
   }
 }

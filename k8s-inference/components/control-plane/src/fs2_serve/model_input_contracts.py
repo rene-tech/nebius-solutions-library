@@ -273,6 +273,16 @@ _PURPOSES = {
         "Fit scVI or scANVI to a bounded raw-count AnnData file; returns an integrated AnnData object, "
         "latent embeddings, run manifest and saved model as a ZIP artifact."
     ),
+    "wan2-2-t2v-nim": (
+        "Generate a bounded landscape or portrait MP4 from text with the pinned NVIDIA Wan2.2 NIM t2v deployment."
+    ),
+    "wan2-2-i2v-nim": (
+        "Animate a caller-owned PNG or JPEG into a bounded MP4 with the pinned NVIDIA Wan2.2 NIM i2v deployment."
+    ),
+    "sam2-1-hiera-large": (
+        "Segment a bounded image automatically or from point/box prompts, or track prompted objects through MP4 video; "
+        "returns masks, metadata and a colorful overlay in a ZIP artifact."
+    ),
     "cosmos3-nano": (
         "Generate or transform image/video from text and bounded media controls; large MP4 results are artifacts."
     ),
@@ -705,6 +715,134 @@ def _scvi_scanvi() -> Schema:
         "Bounded interactive scVI/scANVI lane. Use folder fan-out for multiple small files; larger studies need a "
         "scientific-batch profile rather than this synchronous adapter.",
     )
+
+
+def _wan2_common() -> Schema:
+    return {
+        "prompt": _field("string", "Concrete visual scene and motion description.", minLength=1, maxLength=4096),
+        "size": _field("string", "Output orientation and dimensions.", enum=["832x480", "480x832"], default="832x480"),
+        "seconds": _integer(
+            "Requested video duration in seconds; the final 16-fps clip may be slightly shorter.", 1, 12, 4
+        ),
+        "seed": _field(
+            "integer",
+            "Sampling seed; zero asks the NIM to choose a random seed.",
+            minimum=0,
+            maximum=4294967295,
+            default=0,
+        ),
+        "steps": _integer("Diffusion steps.", 1, 100, 50),
+        "cfg_scale": _field(
+            "number", "Prompt guidance strength, strictly greater than one.", exclusiveMinimum=1, maximum=20, default=5
+        ),
+    }
+
+
+def _wan2_t2v() -> Schema:
+    return _object(
+        _wan2_common(),
+        ("prompt",),
+        "Wan2.2 NIM text-to-video. Built-in NIM content filtering remains enabled. "
+        "The result is a verified MP4 artifact.",
+    )
+
+
+def _wan2_i2v() -> Schema:
+    properties = _wan2_common()
+    properties["input_reference"] = _transportable(
+        _field("string", "PNG or JPEG data URL materialized only at the runtime boundary.", minLength=1),
+        materialization="data-url",
+        media_types=("image/png", "image/jpeg"),
+        max_bytes=16 * 1024 * 1024,
+    )
+    return _object(
+        properties,
+        ("prompt", "input_reference"),
+        "Wan2.2 NIM image-to-video. Built-in NIM content filtering remains enabled. "
+        "The result is a verified MP4 artifact.",
+    )
+
+
+def _sam2() -> Schema:
+    point = _object(
+        {
+            "x": _field("number", "Horizontal pixel coordinate.", minimum=0, maximum=16384),
+            "y": _field("number", "Vertical pixel coordinate.", minimum=0, maximum=16384),
+            "label": _field("integer", "One selects foreground and zero selects background.", enum=[0, 1], default=1),
+            "object_id": _field(
+                "integer", "Positive object label shared by points for one object.", minimum=1, maximum=65535, default=1
+            ),
+        },
+        ("x", "y"),
+        "One positive or negative point prompt in source-pixel coordinates.",
+    )
+    media = _transportable(
+        _field(
+            "string",
+            "Base64 media bytes materialized only at the runtime boundary.",
+            minLength=4,
+            contentEncoding="base64",
+        ),
+        materialization="base64",
+        media_types=("image/png", "image/jpeg", "video/mp4"),
+        max_bytes=64 * 1024 * 1024,
+    )
+    schema = _object(
+        {
+            "mode": _field(
+                "string", "Segmentation workflow.", enum=["prompted-image", "automatic-image", "prompted-video"]
+            ),
+            "media_base64": media,
+            "media_type": _field("string", "Exact uploaded media type.", enum=["image/png", "image/jpeg", "video/mp4"]),
+            "points": _array(point, "Point prompts; group multiple objects with object_id.", maxItems=64),
+            "box": _array(
+                _field("number", "Box coordinate in source pixels.", minimum=0, maximum=16384),
+                "Optional [x0,y0,x1,y1] box prompt.",
+                minItems=4,
+                maxItems=4,
+            ),
+            "object_id": _field(
+                "integer", "Object label assigned to the optional box.", minimum=1, maximum=65535, default=1
+            ),
+            "prompt_frame": _field(
+                "integer", "Zero-based video frame receiving the prompts.", minimum=0, maximum=319, default=0
+            ),
+            "max_masks": _integer("Maximum masks returned by automatic-image.", 1, 128, 32),
+        },
+        ("mode", "media_base64", "media_type"),
+        "SAM 2.1 Hiera Large segmentation. Images are at most 2,073,600 pixels; videos are at most 320 frames. "
+        "The output ZIP contains manifest.json, masks and an overlay image or MP4.",
+    )
+    schema["allOf"] = [
+        {
+            "if": {"properties": {"mode": {"const": "automatic-image"}}, "required": ["mode"]},
+            "then": {
+                "properties": {"media_type": {"enum": ["image/png", "image/jpeg"]}, "points": {"maxItems": 0}},
+                "not": {"required": ["box"]},
+            },
+        },
+        {
+            "if": {"properties": {"mode": {"const": "prompted-image"}}, "required": ["mode"]},
+            "then": {
+                "properties": {"media_type": {"enum": ["image/png", "image/jpeg"]}},
+                "anyOf": [
+                    {"properties": {"points": {"minItems": 1}}, "required": ["points"]},
+                    {"required": ["box"]},
+                ],
+            },
+        },
+        {
+            "if": {"properties": {"mode": {"const": "prompted-video"}}, "required": ["mode"]},
+            "then": {
+                "properties": {"media_type": {"const": "video/mp4"}},
+                "anyOf": [
+                    {"properties": {"points": {"minItems": 1}}, "required": ["points"]},
+                    {"required": ["box"]},
+                ],
+            },
+        },
+    ]
+    return schema
 
 
 def _cosmos() -> Schema:
@@ -1389,6 +1527,18 @@ _NATIVE_BUILDERS = {
         _scvi_scanvi,
         "k8s-inference/models/visual-science/scvi-scanvi/app.py",
     ),
+    "wan2-2-t2v-nim": (
+        _wan2_t2v,
+        "k8s-inference/models/general-media/wan2-adapter/app.py",
+    ),
+    "wan2-2-i2v-nim": (
+        _wan2_i2v,
+        "k8s-inference/models/general-media/wan2-adapter/app.py",
+    ),
+    "sam2-1-hiera-large": (
+        _sam2,
+        "k8s-inference/models/visual-science/sam2/app.py",
+    ),
 }
 
 
@@ -1429,16 +1579,22 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
     if protocol == "native" and model_ref in _resource("voice.json"):
         schema = copy.deepcopy(_resource("voice.json")[model_ref])
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
-        return ModelInputContract(schema, (), (
-            "k8s-inference/components/voice-runtime/src/fs2_voice/contracts.py",
-        ), model_ref, protocol)
+        return ModelInputContract(
+            schema, (), ("k8s-inference/components/voice-runtime/src/fs2_voice/contracts.py",), model_ref, protocol
+        )
     if protocol == "native" and model_ref in _resource("speech.json"):
         schema = copy.deepcopy(_resource("speech.json")[model_ref])
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
-        return ModelInputContract(schema, (), (
-            "k8s-inference/components/speech-runtime/src/fs2_speech/contracts.py",
-            "k8s-inference/components/speech-runtime/src/fs2_speech/audio.py",
-        ), model_ref, protocol)
+        return ModelInputContract(
+            schema,
+            (),
+            (
+                "k8s-inference/components/speech-runtime/src/fs2_speech/contracts.py",
+                "k8s-inference/components/speech-runtime/src/fs2_speech/audio.py",
+            ),
+            model_ref,
+            protocol,
+        )
     if protocol == "native" and model_ref in _resource("runtime-pydantic.json"):
         schema, refs = _pydantic_contract(model_ref)
     elif protocol == "native" and model_ref in _NATIVE_BUILDERS:
@@ -1616,6 +1772,41 @@ def _examples(model_ref: str) -> tuple[dict[str, Any], ...]:
             "n_latent": 10,
             "seed": 0,
             "research_only": True,
+        },
+        "wan2-2-t2v-nim": {
+            "prompt": (
+                "A colorful protein ribbon rotates slowly in a clean scientific visualization, smooth camera orbit"
+            ),
+            "size": "832x480",
+            "seconds": 4,
+            "seed": 7,
+            "steps": 50,
+            "cfg_scale": 5,
+        },
+        "wan2-2-i2v-nim": {
+            "prompt": "Animate the scientific visualization with a slow cinematic orbit and subtle depth",
+            "input_reference": {
+                "artifact_id": "00000000-0000-4000-8000-000000000031",
+                "sha256": "6" * 64,
+                "size_bytes": 524288,
+                "media_type": "image/png",
+                "compression": "none",
+            },
+            "size": "832x480",
+            "seconds": 4,
+            "seed": 7,
+        },
+        "sam2-1-hiera-large": {
+            "mode": "prompted-image",
+            "media_base64": {
+                "artifact_id": "00000000-0000-4000-8000-000000000032",
+                "sha256": "7" * 64,
+                "size_bytes": 524288,
+                "media_type": "image/png",
+                "compression": "none",
+            },
+            "media_type": "image/png",
+            "points": [{"x": 512, "y": 384, "label": 1, "object_id": 1}],
         },
     }
     # Asset-bearing examples use immutable artifact or packaged fixture

@@ -245,22 +245,29 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
         candidate_id = f"native-{variant_id}"
         if path.stem != model_id or model_id in records or variant_id in variants or candidate_id in fallbacks:
             raise CatalogError("native declaration cannot alias or replace an existing model/variant")
-        if architecture not in {"cpu", "cuda"}:
-            raise CatalogError("native runtime architecture must be cpu or cuda")
+        if architecture not in {"cpu", "cuda", "vendor-nim"}:
+            raise CatalogError("native runtime architecture must be cpu, cuda or vendor-nim")
+        source = raw["model"].get("source")
+        runtime = raw.get("runtime")
+        is_nim = architecture == "vendor-nim"
+        if not isinstance(source, dict) or not isinstance(runtime, dict):
+            raise CatalogError("native declaration lacks source/runtime identity")
+        if is_nim != (source.get("kind") == "ngc-nim" and runtime.get("kind") == "nim"):
+            raise CatalogError("native vendor-nim architecture must bind an exact NGC NIM runtime")
         # The exact-source variant exists only for graph validation here; the
         # shared selected-runtime validator checks the entire record next.
         variant_value = {
             "variant_id": variant_id,
             "base_model_id": model_id,
             "exposed_model_id": model_id,
-            "variant_kind": "independent-runtime",
+            "variant_kind": "nim" if is_nim else "independent-runtime",
             "runtime_architecture": architecture,
             "source": copy.deepcopy(raw["model"].get("source")),
             "relationship": {
                 "kind": "exact-model",
                 "reference_model_id": model_id,
                 "subject_model_id": model_id,
-                "nim_artifact_parity": "not-applicable",
+                "nim_artifact_parity": "verified" if is_nim else "not-applicable",
                 "distinct_base_record_required": False,
             },
             "promotion": {"state": "candidate-unqualified", "route_exposed": False},
@@ -295,7 +302,7 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
         acquisition = {
             "schema": "fs2-serve.nebius.ai/native-runtime-acquisition/v1",
             "model_id": model_id,
-            "method": "runtime-image",
+            "method": "nim-cache" if is_nim else "runtime-image",
             "source": copy.deepcopy(value["model"]["source"]),
             "runtime_image": copy.deepcopy(value["runtime"]["image"]),
             "artifact_manifest_sha256": artifact.digest,
@@ -313,7 +320,9 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
             _digest(fallback_value),
             MappingProxyType(fallback_value),
         )
-        plans[model_id] = AcquisitionPlan(model_id, "runtime-image", (), MappingProxyType(acquisition))
+        plans[model_id] = AcquisitionPlan(
+            model_id, "nim-cache" if is_nim else "runtime-image", (), MappingProxyType(acquisition)
+        )
         semantics[model_id] = _semantic(record, declaration["semantic_requests"])
         scales[model_id] = _scale(catalog, record)
     return replace(
