@@ -75,6 +75,12 @@ LeRobot reader for reopening datasets. Speech uses the complete public
 PriMock57 consultation with a ground-truth transcript. Format/identity checks,
 WER observations and clinical/scientific validity remain separate claims.
 
+The full LeRobot reader is qualified with a read-only filesystem, non-root UID,
+no network and a 4 GiB worker memory limit. Its Torch compiler cache is explicitly
+under `/tmp`, and CPU numerical libraries use one thread. The two robotics
+cases run in a separate campaign with `max_parallel: 1`; full-frame dataset
+validation is memory-intensive and is not replaced with a metadata-only check.
+
 The September 20 first campaign is exploratory: failures in the original test
 runner (wrong Cosmos operation, externalized results, upload replay, missing
 RDKit) are retained and followed by corrected campaigns. Do not count those as

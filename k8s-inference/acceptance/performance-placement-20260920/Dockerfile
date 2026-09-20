@@ -20,7 +20,9 @@ RUN UV_PYTHON_DOWNLOADS=never uv sync --frozen --no-dev \
     && chmod -R a+rX /workspace/k8s-inference/models/general-media/lerobot-augmentation/runtime/.venv
 ARG FS2_SOURCE_COMMIT
 LABEL org.opencontainers.image.revision=${FS2_SOURCE_COMMIT}
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HF_HOME=/tmp/huggingface TORCH_HOME=/tmp/torch XDG_CACHE_HOME=/tmp/cache
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HF_HOME=/tmp/huggingface TORCH_HOME=/tmp/torch \
+    XDG_CACHE_HOME=/tmp/cache TORCHINDUCTOR_CACHE_DIR=/tmp/torchinductor \
+    OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 USER 65532:65532
 WORKDIR /workspace/k8s-inference
 RUN python acceptance/performance-placement-20260920/runner.py --help > /dev/null
