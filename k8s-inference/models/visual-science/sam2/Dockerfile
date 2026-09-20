@@ -18,6 +18,16 @@ RUN groupadd --gid 10001 fs2 && useradd --uid 10001 --gid 10001 --no-create-home
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --requirement requirements.txt
+RUN python -m pip install --no-cache-dir --upgrade \
+      Brotli==1.2.0 \
+      jaraco.context==6.1.2 \
+      setuptools==84.0.0 \
+      soupsieve==2.9.2 \
+      urllib3==2.8.0 \
+      wheel==0.48.0 \
+    && apt-get purge -y --auto-remove git libc6-dev linux-libc-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 COPY sam2.1_hiera_large.pt /opt/sam2/checkpoints/sam2.1_hiera_large.pt
 RUN test -n "$SAM2_CHECKPOINT_SHA256" \
     && echo "$SAM2_CHECKPOINT_SHA256  /opt/sam2/checkpoints/sam2.1_hiera_large.pt" | sha256sum -c -
