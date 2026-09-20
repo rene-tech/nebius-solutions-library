@@ -101,6 +101,9 @@ NATIVE_MODELS = (
     "altumage",
     "cellpose-cpsam-v2",
     "scvi-scanvi",
+    "sam2-1-hiera-large",
+    "wan2-2-t2v-nim",
+    "wan2-2-i2v-nim",
 )
 
 
@@ -345,7 +348,15 @@ def test_all_catalog_source_endpoints_are_covered(registry):
         for protocol in record["interface"]["protocols"]:
             result = contract_for(selected(registry, model_id, protocol), protocol)
             assert len(result.input_schema["description"]) > 80
-    assert ids == set(NATIVE_MODELS) - {"altumage", "phenoage", "cellpose-cpsam-v2", "scvi-scanvi"} | {
+    assert ids == set(NATIVE_MODELS) - {
+        "altumage",
+        "phenoage",
+        "cellpose-cpsam-v2",
+        "scvi-scanvi",
+        "sam2-1-hiera-large",
+        "wan2-2-t2v-nim",
+        "wan2-2-i2v-nim",
+    } | {
         "qwen3-8b",
         "nv-reason-cxr-3b",
         "glm-5-2-fp8",

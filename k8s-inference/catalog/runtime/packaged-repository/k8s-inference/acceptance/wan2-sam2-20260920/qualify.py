@@ -144,7 +144,10 @@ def run_sam(url: str) -> dict[str, object]:
 
 
 def run_wan(
-    url: str, fixtures: list[tuple[str, dict[str, object]]], variant: str
+    url: str,
+    fixtures: list[tuple[str, dict[str, object]]],
+    variant: str,
+    artifact_dir: Path | None = None,
 ) -> dict[str, object]:
     ready_raw, _, _ = request(url.rstrip("/") + "/v1/health/ready")
     records: list[dict[str, object]] = []
@@ -156,12 +159,19 @@ def run_wan(
         stream = probe["streams"][0]
         if (stream["width"], stream["height"]) != (832, 480):
             raise RuntimeError("Wan output dimensions differ from the semantic fixture")
+        artifact_path = None
+        if artifact_dir is not None:
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            target = artifact_dir / f"{fixture_id}.mp4"
+            target.write_bytes(raw)
+            artifact_path = str(target)
         records.append(
             {
                 "fixture_id": fixture_id,
                 "elapsed_seconds": elapsed,
                 "bytes": len(raw),
                 "sha256": digest(raw),
+                "artifact_path": artifact_path,
                 "headers": headers,
                 "probe": probe,
             }
@@ -174,6 +184,11 @@ def main() -> None:
     parser.add_argument("--sam-url")
     parser.add_argument("--wan-t2v-url")
     parser.add_argument("--wan-i2v-url")
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        help="Optional protected directory in which to retain generated Wan MP4 files.",
+    )
     parser.add_argument("--evidence", type=Path, required=True)
     args = parser.parse_args()
     if not any((args.sam_url, args.wan_t2v_url, args.wan_i2v_url)):
@@ -190,11 +205,11 @@ def main() -> None:
         evidence["models"]["sam2-1-hiera-large"] = run_sam(args.sam_url)
     if args.wan_t2v_url:
         evidence["models"]["wan2-2-t2v-nim"] = run_wan(
-            args.wan_t2v_url, wan_t2v_requests(), "t2v"
+            args.wan_t2v_url, wan_t2v_requests(), "t2v", args.artifact_dir
         )
     if args.wan_i2v_url:
         evidence["models"]["wan2-2-i2v-nim"] = run_wan(
-            args.wan_i2v_url, wan_i2v_requests(), "i2v"
+            args.wan_i2v_url, wan_i2v_requests(), "i2v", args.artifact_dir
         )
     args.evidence.parent.mkdir(parents=True, exist_ok=True)
     args.evidence.write_text(json.dumps(evidence, sort_keys=True, indent=2) + "\n")

@@ -1,0 +1,201 @@
+{
+  "schema": "fs2-serve.nebius.ai/deployment-runtime/v1",
+  "model_id": "wan2-2-i2v-nim",
+  "variant_id": "wan2-2-i2v-nim-h200-bf16-v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "wan2-2-i2v-nim",
+      "display_name": "Wan2.2 Image-to-Video NVIDIA NIM",
+      "family": "video-generation",
+      "tested_lane": true,
+      "source": {
+        "kind": "ngc-nim",
+        "repository": "nvcr.io/nim/wan-ai/wan2.2",
+        "revision": "e38919caed06f51e1039e841a6c116b7388244b05ad62576100b38c935fb6924",
+        "license": {
+          "id": "Apache-2.0+NVIDIA-Open-Model-License",
+          "state": "verified",
+          "notes": "The pinned NVIDIA NIM package combines the upstream Apache-2.0 code terms with the NVIDIA Open Model License for distributed model artifacts."
+        },
+        "entitlement": {
+          "required": true,
+          "state": "verified",
+          "credential_contract": "nvidia-ngc-api-key/v1",
+          "notes": "The pinned NIM image and profile were pulled and initialized with the platform-managed NVIDIA API entitlement."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "nim",
+      "version": "1.0.0-bf16+adapter-c2cd8a47598c",
+      "image": {
+        "reference": "nvcr.io/nim/wan-ai/wan2.2@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b",
+        "digest": "sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b",
+        "state": "resolved"
+      },
+      "command": [
+        "/bin/bash",
+        "/opt/nim/start_server.sh"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 12500,
+      "memory_bytes": 103616086016,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H200-SXM5-141GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 1800
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "generate-video"
+        ],
+        "license_enforced": true,
+        "non_clinical": false,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "No clean H200 GPU snapshot capture and restore cohort has been qualified for this NIM."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "platform-pvc",
+      "shared_path": "/mnt/fs2-serve-cache/models/wan2-2-i2v-nim",
+      "local_path": "/var/lib/fs2-serve/cache/models/wan2-2-i2v-nim",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "nim-cache",
+        "manifest_digest": "e53a652bbc91526b24950537dbf778ae1a3ff115625e93248bb165b4c827c4a7",
+        "expanded_bytes": 72593809635,
+        "minimum_bytes": 72593809635,
+        "capacity_bound_bytes": 214748364800,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "wan2-openai-compatible-bounded-mp4/v1",
+      "source_path": "k8s-inference/acceptance/wan2-sam2-20260920/qualify.py",
+      "source_sha256": "13e7a8272b93dbc4267c9b05c3ac736c93fda4e794c661516fc224b965aaad81",
+      "fixture_path": "k8s-inference/acceptance/wan2-sam2-20260920/fixtures.py",
+      "fixture_sha256": "98951aaca90c1bd6c5f8cbd0b02adabd9ad7f77c279acfa21856addb278adcd3",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": false,
+      "limitations": [
+        "Image-to-video only. Qualified input is caller-owned PNG or JPEG data; output is bounded to 832x480, 65 frames, 16 fps and about 4.1 seconds. Generated motion and detail must be reviewed before publication.",
+        "The qualified BF16 profile needs about 121 GB of GPU memory and is supported on the tested single H200 141 GB lane; the H100 80 GB lane cannot load it.",
+        "The platform adapter is required on port 8000 while the pinned NIM listens on port 9000. Public gateway, MCP, LibreChat, controller cold-start, elasticity and snapshots remain separate gates."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H200 141GB HBM3e on Nebius Managed Kubernetes",
+        "outcome": "live-qualified",
+        "source_commit": "15d4b900cb61f1866709d4e2f7c35b542a913409",
+        "summary": "The exact NVIDIA Wan2.2 NIM i2v BF16 profile and adapter passed two distinct 50-step Kubernetes requests on one H200. Both produced valid 832x480 VP9 MP4 files with 65 frames at 16 fps in 227.744 and 224.834 seconds. acceptance/wan2-sam2-20260920/evidence/wan2-i2v-kubernetes.json SHA256 6daa1656492144d8aa8ea31d3d9fcdd2efe5e3885ea84aff0f8aadd35554597d. The Pod was Ready with zero restarts after a warm cache restart."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "0db1c9adb667bcf6f46a752375c7f779dd684fe1",
+        "tree": "f8a8fa58a265b70d0f4139b607264f78747938dd",
+        "path": "k8s-inference/models/general-media/wan2-adapter/app.py",
+        "classification": "measured-handoff"
+      }
+    ]
+  },
+  "qualification": {
+    "model_id": "wan2-2-i2v-nim",
+    "variant_id": "wan2-2-i2v-nim-h200-bf16-v1",
+    "active_runtime": {
+      "model_revision": "e38919caed06f51e1039e841a6c116b7388244b05ad62576100b38c935fb6924",
+      "runtime_image_digest": "sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b",
+      "service": {
+        "name": "wan2-2-i2v-nim",
+        "namespace": "fs2-models",
+        "port": 8000
+      }
+    },
+    "runtime_origin": {
+      "kind": "nvidia-nim",
+      "variant_id": "wan2-2-i2v-nim-h200-bf16-v1",
+      "source_kind": "ngc-nim",
+      "repository": "nvcr.io/nim/wan-ai/wan2.2",
+      "relationship": "exact-model",
+      "nim_artifact_parity": "verified"
+    },
+    "states": {
+      "registered": true,
+      "route_active": false,
+      "runtime_ready": true,
+      "semantic_qualified": true,
+      "http_mcp_qualified": false,
+      "cold_start_qualified": false,
+      "elasticity_qualified": false
+    },
+    "policy": {
+      "license_id": "Apache-2.0+NVIDIA-Open-Model-License",
+      "non_clinical": false,
+      "commercial_use": "license-dependent"
+    },
+    "evidence": {
+      "audited_catalog_sha256": "6a23b6705ded47d7d2cfad25a5f8d055700d8c56cfb86ccd2695986ec0491552",
+      "audited_live_routes_sha256": null,
+      "cold_start_acceptance_sha256": null,
+      "elasticity_acceptance_sha256": null,
+      "http_mcp_acceptance_sha256": null,
+      "mcp_discovery_sha256": null,
+      "model_discovery_sha256": null,
+      "retained_deployments_sha256": "6daa1656492144d8aa8ea31d3d9fcdd2efe5e3885ea84aff0f8aadd35554597d"
+    }
+  }
+}

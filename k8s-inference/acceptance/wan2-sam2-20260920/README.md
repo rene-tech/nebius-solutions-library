@@ -69,8 +69,33 @@ scale-to-zero or concurrent-user behavior.
 The exact NVIDIA NIM is pinned as `nvcr.io/nim/wan-ai/wan2.2:1.0.0` with index
 digest `sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b`.
 Text-to-video and image-to-video manifests use separate 200 GiB caches, a
-16 GiB shared-memory volume and one H100 each. The adapter image is pinned as
-`sha256:af80ffbcce79ef468b88183388c68ef33c4ecbd6b123ee7f158c8ada2df68870`.
-Wan remains deliberately unpublished until a fresh NGC API key is installed in
-the protected handoff path and both variants pass real H100 video generation.
-An NGC key exposed in chat must not be used as a Kubernetes or runtime secret.
+16 GiB shared-memory volume and one H200 141 GB GPU each. The BF16 profiles
+need about 121 GB of device memory and therefore do not fit the H100 80 GB
+lane. The adapter image is pinned as
+`sha256:c2cd8a47598c24285f9c4362f013d80cf7807d72babe39a958e29cf828ae66a0`.
+
+The original NVIDIA API key was valid. The failed authentication attempts came
+from a trailing newline in the Kubernetes Secret, which produced an invalid
+authorization header. Recreating the Secret from the same protected key with
+the newline removed fixed the issue; no replacement key was requested or
+needed. The NIM listens on port 9000 so that its internal Triton process can
+retain port 8001, while the platform adapter serves the bounded API on port
+8000.
+
+Both exact NIM variants passed two distinct 50-step requests through their
+Kubernetes Services on 2026-09-20. Text-to-video returned 832x480, 61-frame,
+16 fps VP9 MP4s in 198.968 and 197.152 seconds. Image-to-video returned
+832x480, 65-frame, 16 fps VP9 MP4s in 227.744 and 224.834 seconds. The
+normalized receipts are `evidence/wan2-t2v-kubernetes.json` with SHA-256
+`55d62d2901624fb2c77c30453747260688daebdd592d4a7c34775575edf0270d`
+and `evidence/wan2-i2v-kubernetes.json` with SHA-256
+`6daa1656492144d8aa8ea31d3d9fcdd2efe5e3885ea84aff0f8aadd35554597d`.
+The four retained MP4s were also decoded with FFprobe and visually reviewed.
+They demonstrate colorful molecular, protein and microscopy motion. Generated
+lettering is not reliable, so marketing titles and captions must be rendered
+by the deterministic editing pipeline rather than requested inside the scene.
+
+This evidence closes direct Kubernetes execution and bounded video semantics.
+Public discovery, HTTP/MCP, LibreChat, controller-managed cold start,
+elasticity and snapshots remain separate release gates until their receipts
+are recorded below.

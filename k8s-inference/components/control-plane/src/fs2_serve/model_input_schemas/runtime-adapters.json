@@ -93,5 +93,15 @@
     "variant_id": "sam2-1-hiera-large-cuda-v1",
     "runtime_kind": "custom",
     "source": "k8s-inference/catalog/runtime/deployment-runtimes/sam2-1-hiera-large.json"
+  },
+  "wan2-2-t2v-nim": {
+    "variant_id": "wan2-2-t2v-nim-h200-bf16-v1",
+    "runtime_kind": "nim",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/wan2-2-t2v-nim.json"
+  },
+  "wan2-2-i2v-nim": {
+    "variant_id": "wan2-2-i2v-nim-h200-bf16-v1",
+    "runtime_kind": "nim",
+    "source": "k8s-inference/catalog/runtime/deployment-runtimes/wan2-2-i2v-nim.json"
   }
 }
