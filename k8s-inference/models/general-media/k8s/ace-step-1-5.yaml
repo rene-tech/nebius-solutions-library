@@ -197,6 +197,8 @@ spec:
           volumeMounts:
             - name: checkpoints
               mountPath: /app/checkpoints
+            - name: runtime-cache
+              mountPath: /app/.cache
             - name: tmp
               mountPath: /tmp
             - name: shm
