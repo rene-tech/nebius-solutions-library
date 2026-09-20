@@ -536,6 +536,10 @@ class PostgresStore:
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_model_deployments TO {quoted_runtime}")
             await connection.execute(f"GRANT SELECT,INSERT,UPDATE ON fs2_apps,fs2_inference_users TO {quoted_runtime}")
             await connection.execute(f"GRANT SELECT,INSERT ON fs2_retired_tenants TO {quoted_runtime}")
+            await connection.execute(
+                f"GRANT SELECT,INSERT,UPDATE ON fs2_benchmark_campaigns,fs2_benchmark_trials,"
+                f"fs2_benchmark_attempts TO {quoted_runtime}"
+            )
             await connection.execute(f"GRANT DELETE ON fs2_inference_users,fs2_storage_policies TO {quoted_runtime}")
             await connection.execute(
                 f"GRANT SELECT,INSERT,UPDATE ON fs2_storage_policies,fs2_storage_buckets,fs2_user_storage,"

@@ -1,0 +1,187 @@
+{
+  "schema": "fs2.nebius.ai/event-closeout/v1",
+  "event": "stockholm",
+  "at": "2026-09-20T06:21:25.457761+00:00",
+  "release": {
+    "helm_revision": 199,
+    "backend_source": "27de3311ea18a7903f35b26f8d1801cdc459e5ec",
+    "chart_source": "b4a64d1d3",
+    "backend_image": "sha256:803227d1b63342be5176976c98820d4bb38edb4d1dc777187d7c89bba8551674",
+    "previous_image": "sha256:8cda30196cd30e6827dfe283488939dc5289894887100190b17e0dd08331c51f",
+    "schema_migrations": 34
+  },
+  "retirement": {
+    "tenant": "stockholm",
+    "retirement": {
+      "tenant_id": "stockholm",
+      "retired_at": "2026-09-20T06:20:13.262067Z",
+      "retired_by": "bootstrap-admin",
+      "archive_sha256": "ad61b851f9e838bab31865f08a5779a451625d0d0841149971f65437a77df185",
+      "user_count": 20,
+      "key_count": 22
+    },
+    "users_visible": 0,
+    "keys_visible": 0,
+    "other_tenant_identity_policy_unchanged": true,
+    "readyz_http": 200,
+    "admin_http": 200
+  },
+  "archive": {
+    "manifest_sha256": "ad61b851f9e838bab31865f08a5779a451625d0d0841149971f65437a77df185",
+    "records_verified": 410275,
+    "files_hashed": 78,
+    "request_debug_records": 403037,
+    "transport_get_mcp_records": 399146,
+    "retained_operation_ids": 140,
+    "retained_terminal_facts": 149,
+    "original_operation_id_status_model_comparison": "equal",
+    "complete_original_event_reconstructed": false
+  },
+  "canary": {
+    "tenant": "stockholm-closeout-check-20260920",
+    "retirement": {
+      "tenant_id": "stockholm-closeout-check-20260920",
+      "retired_at": "2026-09-20T06:19:43.976411Z",
+      "retired_by": "bootstrap-admin",
+      "archive_sha256": "76a2709f059bc612ad3ea107ef1bd06d95ec3a3546e550663b5f2a770c0a20b2",
+      "user_count": 1,
+      "key_count": 1
+    },
+    "users_visible": 0,
+    "keys_visible": 0,
+    "other_tenant_identity_policy_unchanged": true,
+    "readyz_http": 200,
+    "admin_http": 200,
+    "public_auth_after_retirement": 401,
+    "operation_id": "dafc5b94-e061-41e5-81a0-ffb50c469231",
+    "first_attempt_semantic_pass": false,
+    "first_attempt_reason": "32-token reasoning budget produced no final content",
+    "corrected_recipe": "/no_think with max_completion_tokens=1024",
+    "corrected_operation_cold_start_seconds": 118.386849
+  },
+  "verification": {
+    "maintenance": {
+      "fs2-serve-control-plane-maintenance-29831419": {
+        "started_at": "2026-09-20T06:19:00Z",
+        "completed_at": "2026-09-20T06:19:15Z"
+      },
+      "fs2-serve-control-plane-maintenance-29831420": {
+        "started_at": "2026-09-20T06:20:00Z",
+        "completed_at": "2026-09-20T06:20:15Z"
+      },
+      "fs2-serve-control-plane-maintenance-29831421": {
+        "started_at": "2026-09-20T06:21:00Z",
+        "completed_at": "2026-09-20T06:21:14Z"
+      }
+    },
+    "public": {
+      "/readyz": 200,
+      "/admin/": 200
+    },
+    "services": [
+      {
+        "name": "fs2-serve-control-plane",
+        "ready": 3,
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:803227d1b63342be5176976c98820d4bb38edb4d1dc777187d7c89bba8551674"
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console",
+        "ready": 2,
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:72581f9f4035742e8c0b52a197c9b9a702f17fe8a6a837990dd2f7bf42ce4ae4"
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller",
+        "ready": 2,
+        "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:803227d1b63342be5176976c98820d4bb38edb4d1dc777187d7c89bba8551674"
+      }
+    ],
+    "all_retained_keys_revoked": true,
+    "keys_resolvable_for_auth": 0,
+    "tests": {
+      "postgres_users_readiness_retention_contract": 38,
+      "affected_users_mcp_packaging": 54,
+      "helm_chart": 137,
+      "generic_mcp_controls": 83,
+      "counts_overlap": true
+    }
+  },
+  "remaining": {
+    "alert_receivers": [
+      {
+        "name": "null",
+        "integrations": []
+      }
+    ],
+    "rules": [
+      {
+        "name": "Fs2ServeCatalogMetricsUnavailable",
+        "health": "ok",
+        "state": "inactive"
+      },
+      {
+        "name": "Fs2ServeDeploymentUnavailable",
+        "health": "ok",
+        "state": "inactive"
+      },
+      {
+        "name": "Fs2ServeOldestQueueAgeHigh",
+        "health": "ok",
+        "state": "inactive"
+      },
+      {
+        "name": "Fs2ServeQueueDepthHigh",
+        "health": "ok",
+        "state": "inactive"
+      },
+      {
+        "name": "Fs2ServeSyncWaitSaturation",
+        "health": "ok",
+        "state": "inactive"
+      },
+      {
+        "name": "Fs2ServeAuthenticationFailureSpike",
+        "health": "ok",
+        "state": "inactive"
+      },
+      {
+        "name": "Fs2ServePublicSemanticFailureSpike",
+        "health": "ok",
+        "state": "inactive"
+      },
+      {
+        "name": "Fs2ServeCustomerOperationFailureRate",
+        "health": "ok",
+        "state": "inactive"
+      },
+      {
+        "name": "Fs2ServeLifecycleReconciliationFailed",
+        "health": "ok",
+        "state": "pending"
+      },
+      {
+        "name": "Fs2ServeLifecycleOccupancyUnclassified",
+        "health": "ok",
+        "state": "pending"
+      },
+      {
+        "name": "Fs2ServePublicCertificateNotReady",
+        "health": "ok",
+        "state": "firing"
+      },
+      {
+        "name": "Fs2ServePublicCertificateRenewalOverdue",
+        "health": "ok",
+        "state": "firing"
+      },
+      {
+        "name": "Fs2ServePublicCertificateExpiresSoon",
+        "health": "ok",
+        "state": "firing"
+      }
+    ],
+    "actual_participant_client_full_catalog": "not qualified",
+    "full_shared_serving_gpu_attribution": "incomplete",
+    "mcp_idle_transport_volume": "investigate",
+    "blanket_customer_ready": false
+  }
+}

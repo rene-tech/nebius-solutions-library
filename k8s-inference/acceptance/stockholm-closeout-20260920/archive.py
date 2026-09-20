@@ -62,51 +62,86 @@ asyncio.run(main())
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--kubeconfig', required=True)
-    parser.add_argument('--context', required=True)
-    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument("--kubeconfig", required=True)
+    parser.add_argument("--context", required=True)
+    parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     os.umask(0o077)
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
-    destination = args.output / 'stockholm-database.jsonl.gz'
-    command = ['kubectl','--kubeconfig',args.kubeconfig,'--context',args.context,
-               '-n','fs2-system','exec','-i','deploy/fs2-serve-control-plane','-c','control-plane',
-               '--','python','-']
-    proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    destination = args.output / "stockholm-database.jsonl.gz"
+    command = [
+        "kubectl",
+        "--kubeconfig",
+        args.kubeconfig,
+        "--context",
+        args.context,
+        "-n",
+        "fs2-system",
+        "exec",
+        "-i",
+        "deploy/fs2-serve-control-plane",
+        "-c",
+        "control-plane",
+        "--",
+        "python",
+        "-",
+    ]
+    proc = subprocess.Popen(
+        command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     proc.stdin.write(POD_SCRIPT.encode())
     proc.stdin.close()
     summary = None
-    with gzip.open(destination, 'xb', compresslevel=3) as stream:
+    with gzip.open(destination, "xb", compresslevel=3) as stream:
         for line in proc.stdout:
             stream.write(line)
             if line.startswith(b'{"summary":'):
-                summary = json.loads(line)['summary']
+                summary = json.loads(line)["summary"]
     code = proc.wait()
-    (args.output / 'export-stderr.log').write_bytes(proc.stderr.read())
+    (args.output / "export-stderr.log").write_bytes(proc.stderr.read())
     if code or summary is None:
-        raise RuntimeError('export incomplete; protected partial archive retained, no deletion allowed')
+        raise RuntimeError(
+            "export incomplete; protected partial archive retained, no deletion allowed"
+        )
     hashes = {}
     for name, source in {
-        'stockholm-demand-followup-20260917': Path('/home/tux/secure-handoff/stockholm-demand-followup-20260917'),
+        "stockholm-demand-followup-20260917": Path(
+            "/home/tux/secure-handoff/stockholm-demand-followup-20260917"
+        ),
     }.items():
         shutil.copytree(source, args.output / name)
-    for path in sorted(args.output.rglob('*')):
+    for path in sorted(args.output.rglob("*")):
         if path.is_file():
-            with path.open('rb') as stream:
-                hashes[str(path.relative_to(args.output))] = hashlib.file_digest(stream,'sha256').hexdigest()
-    manifest = {**summary, 'files_sha256': hashes, 'scope': 'stockholm-only; read-only snapshot; prior acceptance receipts'}
-    manifest_path = args.output / 'manifest.json'
-    manifest_path.write_text(json.dumps(manifest,indent=2,sort_keys=True)+'\n')
+            with path.open("rb") as stream:
+                hashes[str(path.relative_to(args.output))] = hashlib.file_digest(
+                    stream, "sha256"
+                ).hexdigest()
+    manifest = {
+        **summary,
+        "files_sha256": hashes,
+        "scope": "stockholm-only; read-only snapshot; prior acceptance receipts",
+    }
+    manifest_path = args.output / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     checksum = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
     # Verify decompression and every JSON record independently before authorizing retirement.
     rows = 0
-    with gzip.open(destination,'rt') as stream:
+    with gzip.open(destination, "rt") as stream:
         for line in stream:
             json.loads(line)
             rows += 1
-    print(json.dumps({'archive':str(args.output),'manifest_sha256':checksum,'json_records_verified':rows,
-                      'counts':summary['counts'],'files':len(hashes)}))
+    print(
+        json.dumps(
+            {
+                "archive": str(args.output),
+                "manifest_sha256": checksum,
+                "json_records_verified": rows,
+                "counts": summary["counts"],
+                "files": len(hashes),
+            }
+        )
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
