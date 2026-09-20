@@ -5,8 +5,23 @@ variable "customer_storage" {
     default_mode     = optional(string, "tenant")
     quota_bytes      = optional(number, 5000000000)
     excluded_tenants = optional(set(string), [])
+    starter_pack = optional(object({
+      enabled         = optional(bool, false)
+      image           = optional(string, "")
+      manifest_sha256 = optional(string, "")
+      tenants         = optional(set(string), [])
+    }), {})
   })
   default = {}
+
+  validation {
+    condition = !var.customer_storage.starter_pack.enabled || (
+      var.customer_storage.enabled &&
+      can(regex("^[^@\\s]+@sha256:[a-f0-9]{64}$", var.customer_storage.starter_pack.image)) &&
+      can(regex("^[a-f0-9]{64}$", var.customer_storage.starter_pack.manifest_sha256))
+    )
+    error_message = "Starter data requires customer storage, an immutable pack image and the exact qualified manifest SHA-256."
+  }
 
   validation {
     condition = (
@@ -47,6 +62,12 @@ locals {
       quotaBytes      = var.customer_storage.quota_bytes
       excludedTenants = sort(tolist(var.customer_storage.excluded_tenants))
       secretName      = var.customer_storage.enabled ? kubernetes_secret_v1.customer_storage_provisioner[0].metadata[0].name : ""
+      starterPack = {
+        enabled        = var.customer_storage.starter_pack.enabled
+        image          = var.customer_storage.starter_pack.image
+        manifestSha256 = var.customer_storage.starter_pack.manifest_sha256
+        tenants        = sort(tolist(var.customer_storage.starter_pack.tenants))
+      }
     }
   }
 }

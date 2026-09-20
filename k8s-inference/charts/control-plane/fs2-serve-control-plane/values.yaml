@@ -13,6 +13,13 @@ customerStorage:
   quotaBytes: 5000000000
   excludedTenants: []
   secretName: ""
+  # Separate immutable data image; no model image, GPU, or project-wide S3 key.
+  starterPack:
+    enabled: false
+    image: ""
+    manifestSha256: ""
+    # Empty means all eligible workspace tenants; restrict during canary rollout.
+    tenants: []
 
 image:
   # Required immutable production repository and digest; empty defaults fail validation.
@@ -391,11 +398,11 @@ migration:
   # for the final PostgreSQL release receipt; chart validation rejects drift.
   releaseContract:
     schema: fs2-serve.nebius.ai/postgresql-release-contract/v1
-    contractPayloadSha256: 29b4cd55483524c944fe8de89d3957a3e127502e6ebed87334c41f7918232fa2
-    migrationSetSha256: 604c565280e1d75aaf17dea6208972718975f0afe87b2fe1e6fe3b33e5ee1abf
-    migrationCount: 32
+    contractPayloadSha256: fdc747abc098857ec56a1e7abaa09f1390a41453498336617d1a264956ac4feb
+    migrationSetSha256: fe12b7f70cb42104aa562ee127a9ff6ee14943707ac4289a07a686b3e05cec36
+    migrationCount: 33
     firstMigrationVersion: 0001_initial.sql
-    lastMigrationVersion: 0032_scientific_child_delegation.sql
+    lastMigrationVersion: 0033_customer_starter_packs.sql
     namespaceRoleOwnershipSha256: 47397ccc7c42612a11c568101f67ccd7a3446899b2ede5af3bf3bd926aa111ca
   resources:
     requests:
