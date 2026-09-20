@@ -205,6 +205,14 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.customerStorage.excludedTenants | toJson | quote }}
 - name: FS2_USER_STORAGE_CREDENTIALS_FILE
   value: /var/run/secrets/fs2-serve/customer-storage/credentials.json
+{{- if .Values.customerStorage.starterPack.enabled }}
+- name: FS2_USER_STORAGE_STARTER_PACK_DIR
+  value: /opt/fs2/starter-pack
+- name: FS2_USER_STORAGE_STARTER_PACK_SHA256
+  value: {{ required "customerStorage.starterPack.manifestSha256 is required" .Values.customerStorage.starterPack.manifestSha256 | quote }}
+- name: FS2_USER_STORAGE_STARTER_PACK_TENANTS
+  value: {{ .Values.customerStorage.starterPack.tenants | toJson | quote }}
+{{- end }}
 {{- end }}
 - name: FS2_CATALOG_DIR
   value: {{ ternary .Values.catalog.imagePath "/etc/fs2-serve/catalog" (eq .Values.catalog.delivery "image") | quote }}

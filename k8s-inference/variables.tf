@@ -526,6 +526,12 @@ variable "deployment" {
         default_mode     = optional(string, "tenant")
         quota_bytes      = optional(number, 5000000000)
         excluded_tenants = optional(set(string), [])
+        starter_pack = optional(object({
+          enabled         = optional(bool, false)
+          image           = optional(string, "")
+          manifest_sha256 = optional(string, "")
+          tenants         = optional(set(string), [])
+        }), {})
       }), {})
 
       scientific_artifacts = optional(object({

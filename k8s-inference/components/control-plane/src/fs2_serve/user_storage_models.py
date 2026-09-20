@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -24,6 +24,7 @@ class UserStorage(StrictModel):
     endpoint: str | None = None
     region: str | None = None
     access_key_id: str | None = None
+    examples: dict[str, Any] = Field(default_factory=lambda: {"state": "not_configured"})
     # No secret on list/detail responses. It is available on an explicit,
     # authenticated no-store disclosure endpoint, backed by encrypted storage.
 

@@ -35,6 +35,7 @@ class UserStorageService:
         self.poll_seconds = poll_seconds
         self.task: asyncio.Task[None] | None = None
         self.provisioning_retry_at = 0.0
+        self.examples: Any = None
 
     async def policy(self, tenant: str) -> StoragePolicy:
         if tenant in self.excluded_tenants:
@@ -49,7 +50,14 @@ class UserStorageService:
         return await self.policy(tenant)
 
     async def view(self, tenant: str, principal: str) -> UserStorage:
-        return UserStorage.model_validate(await self.repository.view(tenant, principal, await self.policy(tenant)))
+        view = UserStorage.model_validate(await self.repository.view(tenant, principal, await self.policy(tenant)))
+        if self.examples is not None and view.state == "ready":
+            credential = await self.repository.credential(tenant, principal)
+            if credential:
+                bucket = await self.repository.bucket(tenant, credential["owner_key"])
+                if bucket:
+                    view.examples = await self.examples.view(bucket["bucket_id"])
+        return view
 
     async def ensure(self, user: InferenceUser) -> None:
         async with self.repository.tenant_lock(user.tenant_id):
@@ -124,6 +132,8 @@ class UserStorageService:
 
     def start(self) -> None:
         self.task = asyncio.create_task(self._run(), name="customer-storage")
+        if self.examples is not None:
+            self.examples.start()
 
     async def _run(self) -> None:
         while True:
@@ -134,6 +144,8 @@ class UserStorageService:
             await asyncio.sleep(self.poll_seconds)
 
     async def close(self) -> None:
+        if self.examples is not None:
+            await self.examples.close()
         if self.task:
             self.task.cancel()
             with suppress(asyncio.CancelledError):
