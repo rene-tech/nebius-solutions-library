@@ -88,7 +88,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       nodeSelector:
-        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        accelerator.fs2.nebius/class: nvidia-h200-sxm5-141gb
         kubernetes.io/arch: amd64
       tolerations:
         - key: dedicated
@@ -123,12 +123,12 @@ spec:
               containerPort: 8002
           resources:
             requests:
-              cpu: "16"
+              cpu: "12"
               memory: 96Gi
               ephemeral-storage: 16Gi
               nvidia.com/gpu: "1"
             limits:
-              cpu: "32"
+              cpu: "15"
               memory: 128Gi
               ephemeral-storage: 32Gi
               nvidia.com/gpu: "1"
@@ -262,7 +262,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       nodeSelector:
-        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        accelerator.fs2.nebius/class: nvidia-h200-sxm5-141gb
         kubernetes.io/arch: amd64
       tolerations:
         - key: dedicated
@@ -297,12 +297,12 @@ spec:
               containerPort: 8002
           resources:
             requests:
-              cpu: "16"
+              cpu: "12"
               memory: 96Gi
               ephemeral-storage: 16Gi
               nvidia.com/gpu: "1"
             limits:
-              cpu: "32"
+              cpu: "15"
               memory: 128Gi
               ephemeral-storage: 32Gi
               nvidia.com/gpu: "1"
