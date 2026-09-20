@@ -77,6 +77,7 @@ class Builder:
             Path(__file__).with_name("source-lock.json").read_bytes()
         )
         self.contracts = {}
+        self.input_contracts = {}
         self.catalog = json.loads(
             (args.contracts / "website-catalog.json").read_bytes()
         )
@@ -87,7 +88,9 @@ class Builder:
         for model in self.models:
             path = args.contracts / (model + ".json")
             if path.exists():
-                self.contracts[model] = json.loads(path.read_bytes())["contracts"]
+                schema = json.loads(path.read_bytes())
+                self.contracts[model] = schema["contracts"]
+                self.input_contracts[model] = schema.get("input_artifact_contract")
 
     def add(
         self, path, content, media="application/json", *, provenance=None, models=()
@@ -656,8 +659,10 @@ def imaging(pack):
         image = Image.new("L", (256, 256), 12)
         draw = ImageDraw.Draw(image)
         rng = random.Random(20260920 + index)
+        centers = []
         for _ in range(16 if index == 0 else 48):
             x, y, r = rng.randint(15, 240), rng.randint(15, 240), rng.randint(5, 11)
+            centers.append((x, y))
             draw.ellipse((x - r, y - r, x + r, y + r), fill=rng.randint(160, 245))
         output = io.BytesIO()
         image.save(output, format="PNG")
@@ -676,7 +681,23 @@ def imaging(pack):
                         "diameter": None,
                         "research_only": True,
                     },
-                )
+                ),
+                pack.recipe(
+                    "sam2-1-hiera-large",
+                    {
+                        "mode": "prompted-image",
+                        "media_base64": file_ref(path, media_type="image/png"),
+                        "media_type": "image/png",
+                        "points": [
+                            {
+                                "x": centers[0][0],
+                                "y": centers[0][1],
+                                "label": 1,
+                                "object_id": 1,
+                            }
+                        ],
+                    },
+                ),
             ],
             {
                 "kind": "segmentation-image",
@@ -1223,7 +1244,8 @@ def scientific_structures(pack, structures):
             payload = {
                 "sequences": [{"id": "A", "type": "protein", "sequence": sequence}]
             }
-            name, semantic = "esmfold2-input", "esmfold2-input-json/v1"
+            entry = pack.input_contracts[model]["entry"]
+            name, semantic = entry["name"], entry["semantic_type"]
             request["parameters"]["sequence"] = sequence
         elif model == "protenix-v2":
             payload = [
@@ -1683,9 +1705,11 @@ def robotics(pack):
             request,
             [
                 {
-                    "name": "lerobot-source",
-                    "semantic_type": "lerobot-source-reference/v1",
-                    "artifact": {"$json_artifact": source_ref},
+                    "name": "lerobot-dataset",
+                    "semantic_type": "lerobot-v3-bundle/v1",
+                    "artifact": file_ref(
+                        path, media_type="application/x-tar", compression="zstd"
+                    ),
                 },
             ],
         )
@@ -1697,7 +1721,7 @@ def robotics(pack):
             [recipe],
             {
                 "kind": "lerobot",
-                "description": "A downloadable LeRobot v3 bundle that reopens in the pinned reader; actions, timestamps and episode indices unchanged, selected video frames changed.",
+                "description": "A downloadable LeRobot v3 bundle that reopens in the pinned reader; numeric actions, timestamps and episode indices unchanged, selected video frames changed. Generated motion need not remain aligned with recorded actions: review trajectories before policy training.",
             },
             assets=[path, manifest, source_ref],
         )

@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-20T04:17:32.863678+00:00",
+  "tenant_id": "fs2-starter-private-20260920",
+  "principal_id": "private-canary",
+  "bucket": null,
+  "storage_state": "pending",
+  "examples": {
+    "state": "not_configured"
+  }
+}

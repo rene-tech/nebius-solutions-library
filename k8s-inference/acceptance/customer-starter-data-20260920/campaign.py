@@ -47,7 +47,9 @@ async def main(args):
     groups = {}
     for case in manifest["cases"]:
         for recipe in json.loads((args.pack / case["recipes"]).read_bytes())["recipes"]:
-            if not args.models or recipe["model_id"] in args.models:
+            if (not args.models or recipe["model_id"] in args.models) and recipe[
+                "model_id"
+            ] not in args.exclude_models:
                 groups.setdefault(recipe["model_id"], []).append(case["id"])
     args.output.mkdir(parents=True, exist_ok=True, mode=0o700)
     semaphore, results = asyncio.Semaphore(args.workers), []
@@ -113,6 +115,7 @@ if __name__ == "__main__":
     parser.add_argument("--key-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--models", nargs="*")
+    parser.add_argument("--exclude-models", nargs="*", default=[])
     parser.add_argument("--workers", type=int, choices=(1, 2, 3), default=3)
     parser.add_argument("--observe-seconds", type=int, default=1800)
     asyncio.run(main(parser.parse_args()))

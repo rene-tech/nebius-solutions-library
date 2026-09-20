@@ -56,6 +56,61 @@ async def test_capacity_wait_stops_at_deadline():
     assert http.request.call_count == 1
 
 
+async def test_side_effect_free_read_recovers_503(monkeypatch):
+    responses = [SimpleNamespace(status_code=503), SimpleNamespace(status_code=200)]
+    http = SimpleNamespace(get=AsyncMock(side_effect=responses))
+    monkeypatch.setattr(runner.asyncio, "sleep", AsyncMock())
+    assert await runner.read_with_retry(http, "https://example.invalid/result", deadline=float("inf")) is responses[1]
+    assert http.get.call_count == 2
+
+
+async def test_read_retries_are_bounded(monkeypatch):
+    response = SimpleNamespace(status_code=503)
+    http = SimpleNamespace(get=AsyncMock(return_value=response))
+    monkeypatch.setattr(runner.asyncio, "sleep", AsyncMock())
+    assert await runner.read_with_retry(http, "https://example.invalid/result", deadline=float("inf")) is response
+    assert http.get.call_count == 6
+
+
+@pytest.mark.parametrize("name", ["correct-role", "filename.json"])
+async def test_manifest_role_checked_before_upload(tmp_path, name):
+    manifest = runner.encoded(
+        {
+            "entries": [
+                {
+                    "name": name,
+                    "semantic_type": "input/v1",
+                    "artifact": {"media_type": "application/json", "compression": "none", "size_bytes": 10},
+                }
+            ]
+        }
+    )
+    (tmp_path / "manifest.json").write_bytes(manifest)
+    inputs = runner.Inputs(
+        tmp_path,
+        {"objects": [{"path": "manifest.json", "size_bytes": len(manifest), "sha256": runner.sha(manifest)}]},
+        AsyncMock(),
+    )
+    recipe = {"protocol": "scientific-batch-v1", "arguments": {"input_manifest": {"$manifest": "manifest.json"}}}
+    contract = {
+        "input_artifact_contract": {
+            "entry": {
+                "name": "correct-role",
+                "semantic_type": "input/v1",
+                "media_type": "application/json",
+                "compression": "none",
+                "maximum_bytes": 20,
+            }
+        }
+    }
+    if name == "correct-role":
+        await runner.validate_manifest_roles(recipe, contract, inputs)
+    else:
+        with pytest.raises(ValueError, match="scientific_manifest_role_mismatch"):
+            await runner.validate_manifest_roles(recipe, contract, inputs)
+    inputs.upload.assert_not_called()
+
+
 async def test_file_binding_rejects_changed_asset(tmp_path):
     (tmp_path / "input.txt").write_bytes(b"expected")
     manifest = {"objects": [{"path": "input.txt", "size_bytes": 8, "sha256": runner.sha(b"expected")}]}

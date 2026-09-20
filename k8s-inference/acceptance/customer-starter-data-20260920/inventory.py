@@ -113,7 +113,7 @@ async def main(args):
             fd = os.open(args.key_file, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             with os.fdopen(fd, "w") as output:
                 json.dump(access, output)
-    if args.repair_test_scopes:
+    if args.repair_test_scopes or args.refresh_test_models:
         assert access["tenant_id"] == TENANT and access["principal_id"] == PRINCIPAL
         secret = json.loads(
             subprocess.check_output(
@@ -140,8 +140,15 @@ async def main(args):
             admin.post(
                 "/admin/api/v1/session", headers={"authorization": "Bearer " + token}
             ).raise_for_status()
+            patch = {"scopes": SCOPES} if args.repair_test_scopes else {}
+            if args.refresh_test_models:
+                catalog = httpx.get(
+                    "https://forge.nebius.cloud/api/models", timeout=60
+                ).json()
+                assert catalog["ok"]
+                patch["models"] = sorted(model["id"] for model in catalog["models"])
             admin.patch(
-                "/admin/api/v1/keys/" + access["key_id"], json={"scopes": SCOPES}
+                "/admin/api/v1/keys/" + access["key_id"], json=patch
             ).raise_for_status()
     with httpx.Client(
         base_url=args.origin,
@@ -230,4 +237,5 @@ if __name__ == "__main__":
     parser.add_argument("--key-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repair-test-scopes", action="store_true")
+    parser.add_argument("--refresh-test-models", action="store_true")
     asyncio.run(main(parser.parse_args()))

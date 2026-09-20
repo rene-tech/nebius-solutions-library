@@ -14,6 +14,7 @@ import base64
 import gzip
 import io
 import json
+import subprocess
 import tempfile
 import wave
 import zipfile
@@ -122,6 +123,96 @@ def image_bytes(data, size):
 
 def native(result, recipe, arguments, root, case):
     value, model = result.value, recipe["model_id"]
+    if model == "sam2-1-hiera-large":
+        with zipfile.ZipFile(io.BytesIO(result.binary)) as archive:
+            require(
+                set(archive.namelist()) == {"manifest.json", "mask.png", "overlay.png"},
+                "sam_archive_members",
+            )
+            manifest = json.loads(archive.read("manifest.json"))
+            source = (root / case["assets"][0]).read_bytes()
+            require(
+                manifest["input_sha256"] == runner.sha(source)
+                and manifest["mode"] == arguments["mode"],
+                "sam_input_identity",
+            )
+            labels = np.asarray(Image.open(io.BytesIO(archive.read("mask.png"))))
+            require(
+                labels.shape == (256, 256)
+                and labels.dtype.kind in "ui"
+                and labels.max() > 0,
+                "sam_labels_invalid",
+            )
+            require(
+                manifest["objects"]
+                and sum(o["area_px"] for o in manifest["objects"]) > 0,
+                "sam_objects_empty",
+            )
+            image_bytes(archive.read("overlay.png"), (256, 256))
+            return {
+                "objects": len(manifest["objects"]),
+                "labelled_pixels": int(np.count_nonzero(labels)),
+                "input_identity_verified": True,
+            }
+    if model == "cosmos3-nano":
+        require(result.binary is not None, "video_missing")
+        with tempfile.TemporaryDirectory(prefix="fs2-starter-video-") as temporary:
+            path = Path(temporary) / "output.mp4"
+            path.write_bytes(result.binary)
+            probe = json.loads(
+                subprocess.check_output(
+                    [
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-count_frames",
+                        "-select_streams",
+                        "v:0",
+                        "-show_streams",
+                        "-of",
+                        "json",
+                        str(path),
+                    ]
+                )
+            )["streams"][0]
+            width, height = map(int, arguments["size"].split("x"))
+            require(
+                (probe["width"], probe["height"]) == (width, height), "video_dimensions"
+            )
+            require(
+                int(probe["nb_read_frames"]) == arguments["num_frames"],
+                "video_frame_count",
+            )
+            pixels = subprocess.check_output(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-i",
+                    str(path),
+                    "-vf",
+                    "scale=32:32",
+                    "-f",
+                    "rawvideo",
+                    "-pix_fmt",
+                    "gray",
+                    "pipe:1",
+                ]
+            )
+            frames = np.frombuffer(pixels, dtype=np.uint8).reshape(-1, 32, 32)
+            require(
+                np.ptp(frames) > 10 and np.any(frames[1:] != frames[:-1]),
+                "video_static_or_empty",
+            )
+            return {
+                "width": width,
+                "height": height,
+                "decoded_frames": len(frames),
+                "changed_frames": int(
+                    np.any(frames[1:] != frames[:-1], axis=(1, 2)).sum()
+                ),
+                "physical_alignment_verified": False,
+            }
     if model in {"qwen3-8b", "nv-reason-cxr-3b"}:
         choice = value["choices"][0]
         text = choice["message"].get("content", "")
@@ -349,9 +440,30 @@ def native(result, recipe, arguments, root, case):
         seconds = value["audio_seconds"]
         require(finite(seconds) and seconds > 400, "speech_full_recording_missing")
         if model.startswith("diar-"):
-            segments = value.get("segments", [])
-            require(bool(segments), "speaker_segments_missing")
-            return {"audio_seconds": seconds, "speaker_segments": len(segments)}
+            events = value.get("events", [])
+            require(bool(events), "speaker_activity_missing")
+            last_time, frames = 0.0, 0
+            for event in events:
+                probabilities = np.asarray(event["probabilities"])
+                require(
+                    event["type"] == "speaker.activity"
+                    and probabilities.ndim == 2
+                    and probabilities.shape[1] == len(event["speakers"])
+                    and finite(probabilities)
+                    and np.all((probabilities >= 0) & (probabilities <= 1)),
+                    "speaker_activity_invalid",
+                )
+                require(
+                    last_time <= event["start_seconds"] <= seconds,
+                    "speaker_timestamps_invalid",
+                )
+                last_time = event["start_seconds"]
+                frames += len(probabilities)
+            return {
+                "audio_seconds": seconds,
+                "speaker_activity_events": len(events),
+                "frames": frames,
+            }
         require(
             isinstance(value.get("text"), str) and len(value["text"]) > 500,
             "speech_transcript_missing",
@@ -434,6 +546,23 @@ async def validate_cohort(root, folder):
                         if recipe["protocol"] == "scientific-batch-v1"
                         else native(result, recipe, arguments, root, case)
                     )
+                    if recipe["model_id"] == "cosmos3-lerobot-augmentation":
+                        proof = json.loads(
+                            (location / "lerobot-reader-proof.json").read_bytes()
+                        )
+                        source_sha = runner.sha((root / case["assets"][0]).read_bytes())
+                        require(
+                            proof["status"] == "passed"
+                            and proof["operation_id"] == receipt["operation_id"]
+                            and proof["source_sha256"] == source_sha
+                            and proof["nonvideo_values_exact"] is True
+                            and any(
+                                a["sha256"] == proof["output_sha256"]
+                                for a in receipt["artifacts"]
+                            ),
+                            "lerobot_independent_reader_proof_mismatch",
+                        )
+                        record["checks"]["independent_reader"] = proof
                     record.update(
                         state="passed",
                         completed_at=receipt["completed_at"],
@@ -454,6 +583,38 @@ async def validate_cohort(root, folder):
                             for a in receipt["artifacts"]
                         ],
                     )
+                    operation = json.loads((location / "operation.json").read_bytes())
+                    if isinstance(operation.get("operation"), dict):
+                        operation = operation["operation"]
+                    record["lifecycle"] = {
+                        k: operation.get(k)
+                        for k in (
+                            "accepted_at",
+                            "activation_started_at",
+                            "ready_at",
+                            "started_at",
+                            "completed_at",
+                            "cold_start_seconds",
+                            "model_revision",
+                            "runtime",
+                            "attempt",
+                            "status",
+                            "tenant_id",
+                            "principal_id",
+                        )
+                    }
+                    accepted, completed = (
+                        operation.get("accepted_at"),
+                        operation.get("completed_at"),
+                    )
+                    if accepted and completed:
+                        record["server_elapsed_seconds"] = round(
+                            (
+                                datetime.fromisoformat(completed)
+                                - datetime.fromisoformat(accepted)
+                            ).total_seconds(),
+                            3,
+                        )
             except Exception as exc:
                 record.update(
                     state="failed-validation",

@@ -120,6 +120,25 @@ async def request_with_capacity_wait(http, method, url, *, deadline, **kwargs):
         await asyncio.sleep(5)
 
 
+async def read_with_retry(http, url, *, deadline):
+    """Retry only side-effect-free reads across bounded gateway interruptions."""
+    import httpx2
+
+    for attempt in range(6):
+        try:
+            response = await http.get(url)
+            if response.status_code not in {429, 502, 503, 504}:
+                return response
+        except (httpx2.TransportError, httpx2.TimeoutException):
+            if attempt == 5 or time.monotonic() >= deadline:
+                raise
+        else:
+            if attempt == 5 or time.monotonic() >= deadline:
+                return response
+        await asyncio.sleep(min(2**attempt, 10))
+    raise RuntimeError("read_retry_exhausted")
+
+
 class Inputs:
     def __init__(self, root, manifest, upload):
         self.root, self.upload = root.resolve(), upload
@@ -197,23 +216,55 @@ def validate_arguments(recipe, contract, arguments):
     Draft202012Validator(contract["input_schema"]).validate(arguments)
 
 
+async def validate_manifest_roles(recipe, discovery, inputs):
+    """The outer tool schema cannot express a referenced manifest's roles."""
+    contract = discovery.get("input_artifact_contract")
+    if not contract or recipe["protocol"] != "scientific-batch-v1":
+        return
+    request = recipe["arguments"]
+    reference = request["input_manifest"]
+    manifest = await inputs.materialize(json.loads(inputs.read(reference["$manifest"])))
+    expected = contract.get("entry")
+    if "operations" in contract:
+        expected = contract["operations"].get(request["operation"])
+    if "source_kinds" in contract:
+        expected = contract["source_kinds"].get(request["parameters"]["source"]["kind"])
+    if expected is None:
+        raise ValueError("scientific_manifest_role_undiscovered")
+    entries = manifest["entries"]
+    if len(entries) != 1:
+        raise ValueError("scientific_manifest_entry_count")
+    entry, artifact = entries[0], entries[0]["artifact"]
+    if (
+        entry["name"] != expected["name"]
+        or entry["semantic_type"] != expected["semantic_type"]
+        or artifact["media_type"] != expected["media_type"]
+        or artifact["compression"]
+        not in expected.get("allowed_compressions", [expected["compression"]])
+        or not 1 <= artifact["size_bytes"] <= expected["maximum_bytes"]
+    ):
+        raise ValueError("scientific_manifest_role_mismatch")
+
+
 async def validate_all(root, contracts):
     manifest = json.loads((root / "manifest.json").read_bytes())
     inputs = Inputs(root, manifest, offline_upload)
     results = []
     for case in manifest["cases"]:
         for recipe in json.loads(inputs.read(case["recipes"]))["recipes"]:
+            discovery = json.loads(
+                (contracts / (recipe["model_id"] + ".json")).read_bytes()
+            )
             matching = [
                 c
-                for c in json.loads(
-                    (contracts / (recipe["model_id"] + ".json")).read_bytes()
-                )["contracts"]
+                for c in discovery["contracts"]
                 if c["tool_name"] == recipe["tool_name"]
             ]
             assert len(matching) == 1
             try:
                 arguments = await inputs.materialize(recipe["arguments"])
                 validate_arguments(recipe, matching[0], arguments)
+                await validate_manifest_roles(recipe, discovery, inputs)
                 results.append(
                     {
                         "case_id": case["id"],
@@ -379,6 +430,7 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
         async def download_artifacts(value):
             pending = [value]
             retained = {a["artifact_id"] for a in record["artifacts"]}
+            expanded, local_references = set(), []
             total = sum(a["size_bytes"] for a in record["artifacts"])
             while pending:
                 item = pending.pop()
@@ -391,16 +443,50 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
                         "size_bytes",
                         "media_type",
                     } <= item.keys():
-                        artifact_id = str(UUID(item["artifact_id"]))
+                        try:
+                            artifact_id = str(UUID(item["artifact_id"]))
+                        except ValueError:
+                            # Model-native provenance can name a logical output
+                            # before the publisher assigned its public UUID.
+                            # It must still resolve to a checksum-verified public
+                            # output; never silently ignore an unavailable file.
+                            local_references.append(item)
+                            continue
                         if artifact_id in retained:
+                            if (
+                                artifact_id not in expanded
+                                and item["media_type"]
+                                in {
+                                    "application/json",
+                                    "application/vnd.fs2.scientific-manifest+json",
+                                }
+                                and item.get("compression", "none") == "none"
+                            ):
+                                stored = next(
+                                    a
+                                    for a in record["artifacts"]
+                                    if a["artifact_id"] == artifact_id
+                                )
+                                data = (output / stored["local_path"]).read_bytes()
+                                if (
+                                    sha(data) != item["sha256"]
+                                    or len(data) != item["size_bytes"]
+                                ):
+                                    raise ValueError(
+                                        "retained_result_artifact_missing_or_changed"
+                                    )
+                                pending.append(json.loads(data))
+                                expanded.add(artifact_id)
                             continue
                         if (
                             total + item["size_bytes"] > 128 * 1024 * 1024
                             or len(retained) >= 256
                         ):
                             raise ValueError("result_download_budget_exceeded")
-                        response = await http.get(
-                            origin + "/v1/artifacts/" + artifact_id + "/content"
+                        response = await read_with_retry(
+                            http,
+                            origin + "/v1/artifacts/" + artifact_id + "/content",
+                            deadline=started + observe_seconds,
                         )
                         response.raise_for_status()
                         data = response.content
@@ -424,8 +510,18 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
                             and item.get("compression", "none") == "none"
                         ):
                             pending.append(json.loads(data))
+                            expanded.add(artifact_id)
                     else:
                         pending.extend(item.values())
+            for reference in local_references:
+                if not any(
+                    all(
+                        reference[field] == stored[field]
+                        for field in ("sha256", "size_bytes", "media_type")
+                    )
+                    for stored in record["artifacts"]
+                ):
+                    raise ValueError("logical_output_reference_unresolved")
 
         async with Client(
             streamable_http_client(endpoint, http_client=http), mode="2026-07-28"
@@ -438,6 +534,7 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
                     )
                 )
                 contract = contract_value["contracts"][0]
+                await validate_manifest_roles(recipe, contract_value, inputs)
                 arguments = await inputs.materialize(recipe["arguments"])
                 validate_arguments(
                     recipe, contract, arguments
@@ -486,8 +583,10 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
                     save(receipt_path, record)
                     raise
             while True:
-                response = await http.get(
-                    origin + "/v1/operations/" + record["operation_id"]
+                response = await read_with_retry(
+                    http,
+                    origin + "/v1/operations/" + record["operation_id"],
+                    deadline=started + observe_seconds,
                 )
                 response.raise_for_status()
                 status = response.json()
@@ -501,8 +600,10 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
                 record["state"] = "result_pending" if state == "succeeded" else state
                 save(receipt_path, record)
                 if state == "succeeded" and operation.get("result_available"):
-                    response = await http.get(
-                        origin + "/v1/operations/" + record["operation_id"] + "/result"
+                    response = await read_with_retry(
+                        http,
+                        origin + "/v1/operations/" + record["operation_id"] + "/result",
+                        deadline=started + observe_seconds,
                     )
                     response.raise_for_status()
                     result = response.json()

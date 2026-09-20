@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-20T04:17:06.709643+00:00",
+  "fixtures": [
+    {
+      "id": "c7d463fb-e3f2-5b95-b042-f405926ecd79",
+      "tenant_id": "fs2-starter-data-acceptance-20260920",
+      "principal_id": "shared-peer"
+    },
+    {
+      "id": "4e70b8c0-5c61-5e5a-b455-c482919cffa9",
+      "tenant_id": "fs2-starter-private-20260920",
+      "principal_id": "private-canary"
+    }
+  ]
+}
