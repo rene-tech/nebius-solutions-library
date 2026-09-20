@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
 
 from .store import ConflictError, NotFoundError
 
@@ -103,6 +103,43 @@ class TrialResult(TrialLease):
         if self.status != "succeeded" and self.error_code is None:
             raise ValueError("unsuccessful trials require an explicit reason")
         return self
+
+
+class PerformanceHardwareNode(Contract):
+    uid: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=253)
+    pool: str | None = Field(default=None, max_length=128)
+    gpu_product: str | None = Field(default=None, max_length=128)
+    gpus_per_node: str | None = Field(default=None, max_length=32)
+    cpu_arch: str | None = Field(default=None, max_length=32)
+    driver_version: str | None = Field(default=None, max_length=64)
+    local_storage: Literal["present", "absent", "unknown"]
+
+
+class PerformanceHardware(Contract):
+    observed_at: datetime
+    nodes: list[PerformanceHardwareNode]
+
+
+class PerformanceCampaignData(RootModel[dict[str, Any]]):
+    """Durable campaign row with its versioned JSON specifications."""
+
+
+class PerformanceCampaignList(Contract):
+    items: list[dict[str, Any]]
+    mode: Literal["advisory"]
+
+
+class PerformanceTrialClaim(Contract):
+    trial: dict[str, Any] | None
+
+
+class PerformanceTrialHeartbeat(Contract):
+    renewed: bool
+
+
+class PerformanceTrialCommit(Contract):
+    committed: bool
 
 
 def canonical(value: Any) -> str:

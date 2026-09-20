@@ -7,26 +7,42 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from .access_models import OperatorPrincipal, OperatorRole
+from .admin_models import AdminEnvelope
 from .performance import (
     CampaignCreate,
     ClaimRequest,
+    PerformanceCampaignData,
+    PerformanceCampaignList,
+    PerformanceHardware,
     PerformanceRepository,
+    PerformanceTrialClaim,
+    PerformanceTrialCommit,
+    PerformanceTrialHeartbeat,
     TrialLease,
     TrialResult,
     summarize_profiles,
 )
 
 
-def performance_router(pool: Any, operator: Any, access: Any, envelope: Any, *, kubernetes: Any = None) -> APIRouter:
+def performance_router(
+    pool: Any,
+    operator: Any,
+    access: Any,
+    envelope: Any,
+    *,
+    kubernetes: Any = None,
+    problem_responses: dict[int | str, dict[str, Any]] | None = None,
+) -> APIRouter:
     router = APIRouter(prefix="/admin/api/v1/performance", tags=["performance"])
     operator_dep = Depends(operator)
+    responses = problem_responses or {}
 
     def repository() -> PerformanceRepository:
         if pool is None:
             raise HTTPException(503, "durable performance registry requires PostgreSQL")
         return PerformanceRepository(pool)
 
-    @router.get("/hardware")
+    @router.get("/hardware", response_model=AdminEnvelope[PerformanceHardware], responses=responses)
     async def hardware(identity: OperatorPrincipal = operator_dep) -> Any:
         await access.authorize_global(identity, OperatorRole.VIEWER, action="benchmark.hardware")
         if kubernetes is None:
@@ -34,7 +50,7 @@ def performance_router(pool: Any, operator: Any, access: Any, envelope: Any, *, 
         nodes = await kubernetes.list("/api/v1/nodes")
         return envelope({"observed_at": datetime.now(UTC), "nodes": [hardware_node(node) for node in nodes]})
 
-    @router.get("/campaigns")
+    @router.get("/campaigns", response_model=AdminEnvelope[PerformanceCampaignList], responses=responses)
     async def campaigns(
         limit: int = Query(default=50, ge=1, le=200),
         identity: OperatorPrincipal = operator_dep,
@@ -42,18 +58,31 @@ def performance_router(pool: Any, operator: Any, access: Any, envelope: Any, *, 
         await access.authorize_global(identity, OperatorRole.VIEWER, action="benchmark.list")
         return envelope({"items": await repository().list(limit), "mode": "advisory"})
 
-    @router.post("/campaigns", status_code=201)
+    @router.post(
+        "/campaigns",
+        status_code=201,
+        response_model=AdminEnvelope[PerformanceCampaignData],
+        responses=responses,
+    )
     async def create(payload: CampaignCreate, identity: OperatorPrincipal = operator_dep) -> Any:
         await access.authorize_global(identity, OperatorRole.ADMIN, action="benchmark.create")
         return envelope(await repository().create(payload, identity.subject))
 
-    @router.get("/campaigns/{campaign_id}")
+    @router.get(
+        "/campaigns/{campaign_id}",
+        response_model=AdminEnvelope[PerformanceCampaignData],
+        responses=responses,
+    )
     async def detail(campaign_id: UUID, identity: OperatorPrincipal = operator_dep) -> Any:
         await access.authorize_global(identity, OperatorRole.VIEWER, action="benchmark.read")
         campaign = await repository().detail(campaign_id)
         return envelope({**campaign, "profiles": summarize_profiles(campaign["trials"])})
 
-    @router.post("/campaigns/{campaign_id}/claim")
+    @router.post(
+        "/campaigns/{campaign_id}/claim",
+        response_model=AdminEnvelope[PerformanceTrialClaim],
+        responses=responses,
+    )
     async def claim(
         campaign_id: UUID,
         payload: ClaimRequest,
@@ -62,7 +91,11 @@ def performance_router(pool: Any, operator: Any, access: Any, envelope: Any, *, 
         await access.authorize_global(identity, OperatorRole.ADMIN, action="benchmark.claim")
         return envelope({"trial": await repository().claim(campaign_id, payload)})
 
-    @router.post("/trials/{trial_id}/heartbeat")
+    @router.post(
+        "/trials/{trial_id}/heartbeat",
+        response_model=AdminEnvelope[PerformanceTrialHeartbeat],
+        responses=responses,
+    )
     async def heartbeat(
         trial_id: UUID,
         payload: TrialLease,
@@ -72,7 +105,11 @@ def performance_router(pool: Any, operator: Any, access: Any, envelope: Any, *, 
         await repository().heartbeat(trial_id, payload)
         return envelope({"renewed": True})
 
-    @router.post("/trials/{trial_id}/result")
+    @router.post(
+        "/trials/{trial_id}/result",
+        response_model=AdminEnvelope[PerformanceTrialCommit],
+        responses=responses,
+    )
     async def finish(
         trial_id: UUID,
         payload: TrialResult,
