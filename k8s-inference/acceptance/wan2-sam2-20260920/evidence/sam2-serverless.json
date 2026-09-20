@@ -1,0 +1,61 @@
+{
+  "job": {
+    "created_at": "2026-09-20T02:33:56.525032Z",
+    "finished_at": "2026-09-20T02:38:42.618463565Z",
+    "id": "aijob-e00pb3xkvffn8wywtd",
+    "platform": "gpu-h100-sxm",
+    "preemptible": true,
+    "preset": "1gpu-16vcpu-200gb",
+    "project_id": "project-e00rene",
+    "started_at": "2026-09-20T02:38:31.453569286Z",
+    "terminal_instance_state": "COMPLETED"
+  },
+  "raw_custody": {
+    "job_log_sha256": "606037e9934ab2d21e9754d84c9b09852cc905a05f765d67acd3a47283c69249",
+    "job_receipt_sha256": "6411fcf4e050e0ea1ccec45f6c90685a7dce731a2729b5551e01e8f29c2ade4e"
+  },
+  "result": {
+    "automatic_objects": 5,
+    "checkpoint_sha256": "2647878d5dfa5098f2f8649825738a9345572bae2d4350a2468587ece47dd318",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "load_seconds": 5.1,
+    "model": "facebook/sam2.1-hiera-large",
+    "prompted_image_area": 3034,
+    "prompted_image_score": 0.9849810600280762,
+    "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+    "schema": "fs2.nebius.ai/sam2-gpu-qualification/v1",
+    "status": "passed",
+    "torch": "2.6.0+cu124",
+    "total_seconds": 7.459,
+    "video_frames": 12,
+    "video_objects": [
+      {
+        "object_id": 1
+      }
+    ]
+  },
+  "runtime": {
+    "image_index": "sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c",
+    "linux_amd64_manifest": "sha256:e0e0ae01aced1ca8efd033e4a43ba820889ba14e56538209b053681913d0647a",
+    "qualification_image_index": "sha256:0a5c9c03a736a3080639f7bcdc8da696766ee81009c7da0ed78d0912c7df54b8",
+    "qualification_script_sha256": "d49ee4e7030c2c69369191470b14e1f56488a9e3978fd1c1522b9cbf8ed112f9",
+    "source_commit": "18a283fe89c6a5f2fac85bb44d6a5a8dcfef5b43"
+  },
+  "schema": "fs2.nebius.ai/sam2-serverless-qualification-receipt/v1",
+  "scope": {
+    "not_qualified": [
+      "kubernetes-startup",
+      "public-route",
+      "http-mcp",
+      "librechat",
+      "cold-start",
+      "elasticity"
+    ],
+    "qualified": [
+      "checkpoint-load",
+      "prompted-image",
+      "automatic-image",
+      "prompted-video"
+    ]
+  }
+}

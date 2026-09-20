@@ -1,0 +1,194 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "sam2-1-hiera-large",
+      "display_name": "SAM 2.1 Hiera Large",
+      "family": "visual-segmentation",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "facebook/sam2.1-hiera-large",
+        "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+        "license": {
+          "id": "Apache-2.0",
+          "state": "verified",
+          "notes": "The exact Hugging Face revision declares Apache-2.0 in its model card; the pinned upstream SAM 2 code is also Apache-2.0."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Public ungated Hugging Face checkpoint embedded in the immutable runtime image."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "sam2.1-2b90b9f5-torch2.6.0-cu124-fs2-v1",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/sam2@sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c",
+        "digest": "sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c",
+        "state": "resolved"
+      },
+      "command": [
+        "uvicorn",
+        "app:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--workers",
+        "1"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 4000,
+      "memory_bytes": 25769803776,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-H100-SXM5-80GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/segment-track"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/v1/health/ready",
+        "expected_status": 200,
+        "timeout_seconds": 900
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "segment-track-media"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "allowed"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [
+        {
+          "mechanism": "snapshot",
+          "state": "blocked",
+          "gate": null,
+          "artifact_kind": "snapshot",
+          "artifact_manifest_digest": null,
+          "reason": "No clean H100 GPU snapshot capture and restore cohort has been qualified for this image."
+        }
+      ],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/sam2-1-hiera-large",
+      "local_path": "/var/lib/fs2-serve/cache/models/sam2-1-hiera-large",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "0b2a1df89a7907c7d08463695e955e637afd4e4b4ded961bbb4407d504343512",
+        "expanded_bytes": 898083611,
+        "minimum_bytes": 898083611,
+        "capacity_bound_bytes": 898083611,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "sam2-prompted-image-and-video-with-automatic-image-evidence/v1",
+      "source_path": "k8s-inference/acceptance/wan2-sam2-20260920/qualify.py",
+      "source_sha256": "db8ad1b15b0ecbc1b6cc7357ed7cc5b85b7879699cacd2c9021cd1e45a165ae6",
+      "fixture_path": "k8s-inference/acceptance/wan2-sam2-20260920/fixtures.py",
+      "fixture_sha256": "98951aaca90c1bd6c5f8cbd0b02adabd9ad7f77c279acfa21856addb278adcd3",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Research and creative-media segmentation only. Masks and tracked objects are model output, not scientific ground truth or clinical interpretation.",
+        "Inputs are bounded to 64 MiB and 2,073,600 pixels; video is bounded to 320 frames and prompted tracking is bounded to eight objects.",
+        "The optional upstream CUDA connected-components postprocessing extension is not built, so hole filling and small disconnected-area cleanup are skipped; core image and video inference passed the retained H100 qualification.",
+        "Only one H100, the pinned image and the exact checkpoint digest are qualified. B300, Kubernetes startup, public routing, HTTP/MCP, LibreChat, cold start, elasticity and snapshots remain separate gates."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H100 80GB HBM3 on Nebius Serverless AI gpu-h100-sxm",
+        "outcome": "live-qualified",
+        "source_commit": "18a283fe89c6a5f2fac85bb44d6a5a8dcfef5b43",
+        "summary": "The exact image and checkpoint loaded on H100 in 5.1 seconds. Prompted image segmentation returned area 3034 at score 0.984981; automatic image segmentation returned five objects; prompted video tracked one object through 12 of 12 frames. acceptance/wan2-sam2-20260920/evidence/sam2-serverless.json SHA256 c9ffaeb75e7b34700b5d9ddc9a2761e1ece57007b8ce902a2dc9e5f0d6083f5c. Kubernetes startup and customer-facing paths are not covered by this direct runtime evidence."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "18a283fe89c6a5f2fac85bb44d6a5a8dcfef5b43",
+        "tree": "d94b0f3c81538a23397ab0961e3adf9eac3f0207",
+        "path": "k8s-inference/models/visual-science/sam2/app.py",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://huggingface.co/facebook/sam2.1-hiera-large/tree/665f8e2ad61cf5f53d65644ff27c8ee525124610",
+        "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "variant_id": "sam2-1-hiera-large-cuda-v1",
+  "runtime_architecture": "cuda",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-json-compact-no-newline/v1",
+    "invocation": {
+      "operation": "segment-track-media",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/v1/segment-track"
+    },
+    "requests": [
+      {
+        "id": "sam2-prompted-image-0",
+        "payload_sha256": "e28730a45bace638500ba955779d9bc77351fe56bc925a0bc62f6e6bd46cdf4f"
+      },
+      {
+        "id": "sam2-prompted-video-1",
+        "payload_sha256": "39286b469fb73abafe1300c367efa496ad8752773fd1afdff8afa146df7d107c"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "../deployment-runtimes/artifacts/sam2-1-hiera-large-0b2a1df89a7907c7d08463695e955e637afd4e4b4ded961bbb4407d504343512.json",
+    "sha256": "0b2a1df89a7907c7d08463695e955e637afd4e4b4ded961bbb4407d504343512"
+  }
+}
