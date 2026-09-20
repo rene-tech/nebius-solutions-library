@@ -134,6 +134,14 @@ spec:
               value: acestep
             - name: XDG_CACHE_HOME
               value: /tmp/.cache
+            - name: ACESTEP_PROJECT_ROOT
+              value: /tmp/acestep-project
+            - name: ACESTEP_CHECKPOINTS_DIR
+              value: /app/checkpoints
+            - name: ACESTEP_TMPDIR
+              value: /tmp/acestep
+            - name: TRITON_CACHE_DIR
+              value: /tmp/triton
             - name: TORCHINDUCTOR_CACHE_DIR
               value: /tmp/torchinductor
             - name: ACESTEP_MODE
