@@ -7,11 +7,15 @@ Status: installed and collecting, **not a completed model/GPU qualification**.
 - Repository: `rene-tech/nebius-solutions-library`, branch
   `agent/fs2-performance-placement-r20260920`.
 - Project `project-e00rene`; cluster `mk8scluster-e00j5z9te7x5dd9g6a`;
-  namespace `fs2-system`; Helm release `fs2-serve-control-plane`, revision205.
-- Control plane source `5bba10c360a7de54424c43b3ad649715ddcc8bbd`, image
+  namespace `fs2-system`; Helm release `fs2-serve-control-plane`, revision207.
+- Initial advisory control plane source `5bba10c360a7de54424c43b3ad649715ddcc8bbd`, image
   `sha256:34b45d61e3817d8cf31ca102bc18a2ac8445daf8f7dfc4b1193386aa5fc55738`.
-- Four CPU workers: source `5995162e2d96a9baad0e20f07c9c20711d5b0214`, image
-  `sha256:138f3e7cc077ecb53afde0a317d96e72be241b91bdc0da69c31e888b05329df4`.
+- Sibling206 subsequently integrated that source into `728b48d92` while adding
+  reference-model contracts. Current backend image
+  `sha256:123f169cb337f24b35a71fad8adf88acbc2c1568b0415e3f465412c5899a552a`
+  was preserved unchanged by the worker-only207 upgrade.
+- Four CPU workers: source `463fbe7ff9a71d23ed236169cff27ec8865815d3`, image
+  `sha256:d534cdadf42915a4d0f1d3676fd224662b11141253621ea5e83c2f664b84331d`.
 - Admin image remains
   `sha256:b8f5a588a57ff51bbe5cf8ab2ce5176cafcde22b76ac61c819fd86aea8db31a5`.
 - Registry prefix: `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform`.
@@ -32,12 +36,20 @@ The worker's 4 GiB memory limit is for CPU-side full dataset validation.
 | Extension | `89f7966c-af12-443d-a2e6-666a028f573b` | 11 additional models ×3 |
 | Robotics | `83d4fd91-388e-4469-9634-7429f731a551` | Cosmos Transfer and LeRobot augmentation ×3, parallelism1 |
 | Corrected | `fc4c12bd-53a9-45d3-87e8-5ac12508bff9` | Cosmos Nano, DiffDock, GenMol and BoltzGen ×3, parallelism1 |
+| Music | `00cd3196-fc64-4d05-bcc9-08080e0fa355` | Newly published ACE-Step, two12-second instrumental clips ×3, parallelism1 |
 
 Together these cover 38 distinct models from the captured catalog. GLM is
 excluded on this H100/L40S/H200 cluster; the remaining entry is a dated test
 clone, not a distinct model. ACE-Step was added by a sibling release after
-the inventory capture: its source/contracts are preserved by the integrated
-release, but it is not silently counted as benchmarked by these campaigns.
+the inventory capture and has its own extension campaign. Two newer reference
+LLM canaries are outside the frozen initial cohort; they are not silently
+counted as benchmarked.
+
+Transfer2.5 is restricted to the private `video-canary-20260920` principal.
+The benchmark identity received403; its publication/permissions were not changed.
+The207 worker skips later requests in a cohort after a recorded401/403 and
+records `access_denied_not_retried`, without a fabricated latency or GPU result.
+The access decision was sent once to Rene in Slack. Other campaigns continue.
 
 Initial failed trials are immutable. The corrected campaign fixes runner bugs
 (Cosmos operation name, externalized results, finalized-upload replay and
@@ -65,6 +77,13 @@ outcome `passed`; it does not retroactively change its failed runner trial.
 - An API-backed snapshot after rollout contains47 validated trials across28
   models,33 hardware observations and28 runtime/startup observations. These
   counts are a dated progress snapshot, **not the final campaign result**.
+- The207 worker-only rollout is deployed with4/4 workers. Eleven runner/music/
+  export tests and37 final integrated performance/reference-contract tests
+  passed. The exact published image passed its import/CLI test. The scoped
+  local PostgreSQL test container was removed after testing.
+- A later post207 snapshot contains68 validated trials across34 models and53
+  hardware observations. Five campaigns are retained, including music. They
+  have not all finished; the Task Deck card remains running.
 
 ## Evidence and continuation
 
@@ -76,13 +95,14 @@ or call the uncontrolled-cache baseline a cold-start/snapshot benchmark.
 
 Protected local captures are under `/home/tux/secure-handoff/`:
 `fs2-performance-release-20260920`, `fs2-performance-final-rollout-20260920`,
-`fs2-performance-report-20260920-r205`, and the four campaign directories.
+`fs2-performance-report-20260920-r205`, `fs2-performance-report-20260920-r207`,
+`fs2-performance-access-aware-rollout-20260920`, and the five campaign directories.
 The database and artifact service, not the workstation, own the results.
 
 Next: supervise all captured-model trials to terminal results; investigate
 model/request failures separately from capacity waits; retain full speech
-quality observations; add the newly published ACE-Step benchmark recipe;
-then schedule isolated compatible-GPU and controlled warm/cold/snapshot
+quality observations; finish the ACE-Step extension; then schedule isolated
+compatible-GPU and controlled warm/cold/snapshot
 cohorts. Cross-GPU recommendations must stay unavailable until their comparison
 requirements are met. No customer model eviction is authorized by a benchmark.
 
@@ -99,3 +119,12 @@ cold-start collection, full-catalog completion and final recommendations remain
 open. The scoped benchmark worker authority follow-up is tracked independently
 by the existing security integration program; this rollout does not claim
 completion of that program.
+
+Additional observed collector gaps: a Proteina trial returned
+`execution_identity_mismatch`, and another polling attempt received503 while
+its underlying scientific operation continued. Those are retained failures,
+not evidence that no GPU work occurred. Reconcile the expected execution
+contract and reanalyze the exact existing operation before any corrective
+resubmission. Read-only status polling can safely gain bounded transient-error
+retries; do not extend that to ambiguous POST admission retries. Simultaneous
+sibling backend rollouts are recorded context for these exploratory cohorts.
