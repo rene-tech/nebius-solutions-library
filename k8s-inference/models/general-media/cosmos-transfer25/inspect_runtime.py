@@ -6,7 +6,6 @@ from pathlib import Path
 
 import yaml
 
-
 paths = [
     Path("/opt/nim/etc/model_manifest.yaml"),
     Path("/opt/nim/etc/default/model_manifest.yaml"),

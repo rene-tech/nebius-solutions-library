@@ -1,0 +1,33 @@
+{
+  "schema": "fs2-serve.nebius.ai/cosmos-transfer25-startup-diagnostic/v1",
+  "cluster": "mk8scluster-e00j5z9te7x5dd9g6a",
+  "namespace": "fs2-models",
+  "pod": "cosmos-transfer25-canary-20260920",
+  "pod_uid": "e5506e60-b2f5-45d5-8aea-dd9709f6a617",
+  "image": "nvcr.io/nim/nvidia/cosmos-transfer2.5-2b@sha256:1891a2421b57cd5f2249f0b44a2720bbca24804e8e579af297a90c876d62659f",
+  "profile_id": "e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672",
+  "manifest_sha256": "67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17",
+  "started_at": "2026-09-20T04:18:33Z",
+  "finished_at": "2026-09-20T04:18:42Z",
+  "exit_code": 1,
+  "failure_stage": "NIM SDK model-artifact HTTP request construction",
+  "sanitized_error": "ManifestDownloadError: Error downloading manifest: builder error",
+  "inference_requests": 0,
+  "model_download_access_proved": false,
+  "credential_shape_diagnostic": {
+    "pod": "cosmos-transfer25-download-diagnostic-20260920",
+    "pod_uid": "1b900e95-d4bf-4e63-8a7e-fd78fc4aa34f",
+    "gpu_requested": 0,
+    "credential_present": true,
+    "credential_trim_required": true,
+    "credential_contains_lf": true,
+    "credential_contains_cr": false,
+    "credential_has_internal_whitespace": false,
+    "credential_ascii_only": true,
+    "proxy_variables_present": false
+  },
+  "interpretation": "A trailing newline is incompatible with HTTP authorization headers. The successful registry probe trimmed the value; the initial native startup did not. Validate a canary-only in-memory normalization before calling this resolved.",
+  "shared_secret_modified": false,
+  "shared_platform_changed": false,
+  "customer_ready": false
+}

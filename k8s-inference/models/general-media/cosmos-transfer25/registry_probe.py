@@ -8,7 +8,6 @@ from urllib.parse import urlsplit
 
 import httpx
 
-
 REPOSITORY = "nim/nvidia/cosmos-transfer2.5-2b"
 TAG = "1.1"
 ORIGIN = "https://nvcr.io"
@@ -46,7 +45,7 @@ def digest_bytes(response, expected=None):
     return digest
 
 
-def probe(client, key):
+def probe(client, key, include_launch_configuration=False):
     path = f"{ORIGIN}/v2/{REPOSITORY}/manifests/{TAG}"
     response = client.get(path, headers={"Accept": ACCEPT})
     auth = {}
@@ -87,8 +86,7 @@ def probe(client, key):
         candidates = [
             row
             for row in document["manifests"]
-            if row.get("platform", {}).get("os") == "linux"
-            and row.get("platform", {}).get("architecture") == "amd64"
+            if row.get("platform", {}).get("os") == "linux" and row.get("platform", {}).get("architecture") == "amd64"
         ]
         if len(candidates) != 1:
             raise ProbeError("ambiguous-linux-amd64-manifest")
@@ -106,7 +104,7 @@ def probe(client, key):
         document = response.json()
     else:
         child_digest = index_digest
-    return {
+    receipt = {
         "repository": REPOSITORY,
         "tag": TAG,
         "index_digest": index_digest,
@@ -117,6 +115,40 @@ def probe(client, key):
         "authenticated_manifest_access": bool(auth),
         "model_artifact_access_tested": False,
     }
+    if include_launch_configuration:
+        config_digest = document["config"]["digest"]
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", config_digest):
+            raise ProbeError("invalid-config-digest")
+        response = client.get(
+            f"{ORIGIN}/v2/{REPOSITORY}/blobs/{config_digest}",
+            headers=auth,
+        )
+        if response.status_code in (302, 307):
+            location = response.headers.get("location", "")
+            target = urlsplit(location)
+            # Registry blobs use a signed CDN URL. Never forward registry auth.
+            if (
+                target.scheme != "https"
+                or not target.hostname
+                or not (
+                    target.hostname == "layers.nvcr.io"
+                    or target.hostname.endswith((".cloudfront.net", ".amazonaws.com", ".ngc.nvidia.com"))
+                )
+                or target.port not in (None, 443)
+                or target.username
+                or target.password
+                or target.fragment
+            ):
+                raise ProbeError("untrusted-configuration-cdn")
+            response = client.get(location, headers={})
+        require_response(response, "image-configuration")
+        digest_bytes(response, config_digest)
+        config = response.json()["config"]
+        # Never emit Env or arbitrary configuration fields.
+        receipt["launch_configuration"] = {
+            name: config.get(name) for name in ("Entrypoint", "Cmd", "User", "WorkingDir")
+        }
+    return receipt
 
 
 def main():
@@ -125,7 +157,7 @@ def main():
         if not key:
             raise ProbeError("missing-runtime-secret")
         with httpx.Client(timeout=25, follow_redirects=False, trust_env=False) as client:
-            receipt = probe(client, key)
+            receipt = probe(client, key, os.environ.get("PROBE_LAUNCH_CONFIGURATION") == "1")
         print(json.dumps({"status": "passed", **receipt}), flush=True)
         return 0
     except ProbeError as error:

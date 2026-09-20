@@ -2,7 +2,7 @@
 
 Requested App identity: `cosmos-transfer2.5-2b`. This is a new, independent video-transfer App, not a rename or replacement of `cosmos3-nano`.
 
-Status as of 2026-09-20 04:08 UTC: **authenticated image access passed; image inspection and isolated runtime canary in progress; not qualified or published**. No catalog entry, GPU qualification, App grant or active route has been fabricated. The existing isolated video workbench and shared backend are unchanged by this task.
+Status as of 2026-09-20 04:37 UTC: **private H100 canary deployed; model download and workspace preparation passed; NIM GPU initialization in progress; not qualified or published**. There is no public App route or completed generation yet. The existing isolated video workbench and shared backend are unchanged by this task.
 
 The target cluster now has operator-provisioned `wan2-ngc-api` and
 `wan2-ngc-pull` Secrets (created03:54 UTC). The isolated registry probe references
@@ -15,6 +15,49 @@ This proves image-manifest access, not model-download entitlement or inference.
 See [the registry receipt](registry-access-20260920.json). The credential-free
 image inspection runs on existing H100-node capacity without requesting a GPU.
 
+## Deployed canary and resolved startup failure
+
+The reviewed [canary manifest](canary-20260920.yaml) runs
+`fs2-models/cosmos-transfer25-canary-20260920-r2` on the existing
+`computeinstance-e00jqs4xxntre6eycf` H100 node. Pod UID:
+`0cafd90b-835b-4c08-a575-ce4d31abdd17`; container started
+2026-09-20T04:26:33Z. It requests one H100, creates no new node or PVC, has a
+two-hour deadline, and has no public Service or gateway route.
+
+The pinned [selected profile](selected-profile-20260920.json) is H100 BF16
+diffusion with the vendor-packaged FP8 text encoder, throughput profile
+`e74ebba119c8a196dca12cac66aa1b5323291048a855fe02ceb6b664f334c672`.
+NIM image version is 1.1.0; the actual bundled model manifest reports release
+1.0.0 and SHA-256
+`67e0b910a86b7cdd1d91d9dae2058a12e88bc3f4b154073f176df2377bdbca17`.
+The manifest's 194 exact file/checksum references are retained, not inferred
+from the image tag. Driver observed: 580.173.02; GPU: NVIDIA H100 80GB HBM3.
+
+The first runtime attempt failed with `ManifestDownloadError: builder error`.
+An isolated, zero-GPU environment-shape check proved that the injected Secret
+contains a trailing LF, not internal whitespace. The registry probe had trimmed
+it, while the unmodified NIM launcher had not. The canary launcher now trims
+only its process environment, rejects invalid internal/control characters, and
+executes the exact upstream Entrypoint/Cmd. It does not change or copy the shared
+Secret. See [the retained failure](startup-failure-20260920.json).
+
+The corrected run downloaded the model and safety assets, materialized all 194
+profile files, and advanced to NIM inference-server initialization at 04:34:30Z.
+Guardrails remain enabled. Successful model downloads prove that the earlier
+client-construction error was not an entitlement denial. GPU generation,
+source/output alignment, motion/weather quality, and hosted App/client flows
+remain separate tests.
+
+Completed diagnostic Pods were removed with UID-bound deletion after retaining
+their relevant receipts and selected profile. The running canary was not
+deleted. See [cleanup and image-launch evidence](diagnostic-cleanup-20260920.json).
+
+Local checks: 14 tests plus 5 subtests passed for registry auth/digest handling,
+credential normalization, the bounded private manifest and the direct-NIM test
+runner. These are offline tests, not GPU qualification. The merged current
+backend also passed 75 tests (20 PostgreSQL-dependent skips), followed by 21
+passing delegation tests against an isolated local PostgreSQL instance.
+
 ## Intended implementation
 
 Prefer NVIDIA's maintained NIM `nvcr.io/nim/nvidia/cosmos-transfer2.5-2b:1.1`, resolving the actual linux/amd64 digest and exact model/profile manifest after authorized access. NVIDIA's [NIM support matrix](https://docs.nvidia.com/nim/cosmos/3.0.0/support-matrix.html) lists a one-H100 80-GB configuration. That is upstream support, **not a local qualification**. Select an explicit BF16 profile if available and establish a full-quality baseline before exploring other precisions or offload.
@@ -23,7 +66,7 @@ NVIDIA PAIDF's [pinned Transfer 2.5 walkthrough](https://github.com/NVIDIA/paidf
 
 The official source-runtime fallback is `nvidia-cosmos/cosmos-transfer2.5`, commit `2ff49d0717af02057ae79bc75c00fbff9da1b4e7`, with model repository `nvidia/Cosmos-Transfer2.5-2B`, revision `ce8440327c632d8313c3bde69db13b627ba5cae1`. The source repository now reports limited maintenance and recommends Cosmos3; it must not be represented as the same runtime or support policy as the NIM. Source code is Apache-2.0; model weights have NVIDIA Open Model License terms and require authorized access. Auxiliary model/guardrail access must also be checked before using this fallback.
 
-## Access checks actually performed
+## Initial access checks (historical preflight, 03:02 UTC)
 
 See [the machine-readable preflight](access-preflight-20260920.json).
 
@@ -82,4 +125,6 @@ Alternative: request access at [the official Hugging Face model page](https://hu
 4. After semantic success, integrate the current backend declaration and typed MCP/artifact contract, publish reviewed website metadata, grant only the isolated canary user, and connect the existing video workflow through attempt-scoped child delegation.
 5. Exercise the actual chat upload/preview, human approval and frozen bucket-prefix batch, then the required two unchanged customer-shaped cohorts. Preserve rejected outputs and failures. A direct NIM generation is not evidence that those integrated paths work.
 
-User authorization covers onboarding and the separate sandbox canary. The pause is an external access prerequisite, not a request to reauthorize that same work.
+User authorization covers onboarding and the separate sandbox canary. The
+original access pause is resolved for the selected NIM image/profile; do not
+ask for that same deployment authorization again.
