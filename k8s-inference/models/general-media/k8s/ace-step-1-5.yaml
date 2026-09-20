@@ -97,6 +97,8 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: USER
+              value: acestep
             - name: HF_HUB_DISABLE_TELEMETRY
               value: "1"
             - name: UV_NO_SYNC
@@ -128,6 +130,12 @@ spec:
           env:
             - name: HOME
               value: /tmp
+            - name: USER
+              value: acestep
+            - name: XDG_CACHE_HOME
+              value: /tmp/.cache
+            - name: TORCHINDUCTOR_CACHE_DIR
+              value: /tmp/torchinductor
             - name: ACESTEP_MODE
               value: api
             - name: ACESTEP_API_HOST
