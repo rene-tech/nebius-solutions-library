@@ -121,6 +121,8 @@ spec:
           volumeMounts:
             - name: checkpoints
               mountPath: /app/checkpoints
+            - name: runtime-cache
+              mountPath: /app/.cache
             - name: tmp
               mountPath: /tmp
       containers:
@@ -257,6 +259,9 @@ spec:
           persistentVolumeClaim:
             claimName: ace-step-1-5-cache
         - name: tmp
+          emptyDir:
+            sizeLimit: 8Gi
+        - name: runtime-cache
           emptyDir:
             sizeLimit: 8Gi
         - name: shm
