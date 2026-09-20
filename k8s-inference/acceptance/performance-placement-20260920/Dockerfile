@@ -11,8 +11,9 @@ COPY --chown=65532:65532 k8s-inference/acceptance /workspace/k8s-inference/accep
 COPY --chown=65532:65532 k8s-inference/models /workspace/k8s-inference/models
 COPY --chown=65532:65532 k8s-inference/catalog/runtime /workspace/k8s-inference/catalog/runtime
 COPY --chown=65532:65532 k8s-inference/model-artifacts /workspace/k8s-inference/model-artifacts
+COPY --chown=65532:65532 k8s-inference/components/control-plane/src /workspace/k8s-inference/components/control-plane/src
 RUN chmod -R a+rX /workspace/k8s-inference/acceptance /workspace/k8s-inference/models \
-    /workspace/k8s-inference/catalog /workspace/k8s-inference/model-artifacts
+    /workspace/k8s-inference/catalog /workspace/k8s-inference/model-artifacts /workspace/k8s-inference/components/control-plane/src
 RUN python -c "from rdkit import Chem; from rdkit.Chem import QED; assert QED.qed(Chem.MolFromSmiles('CCO')) > 0"
 RUN UV_PYTHON_DOWNLOADS=never uv sync --frozen --no-dev \
     --directory /workspace/k8s-inference/models/general-media/lerobot-augmentation/runtime \
@@ -22,4 +23,5 @@ LABEL org.opencontainers.image.revision=${FS2_SOURCE_COMMIT}
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 HF_HOME=/tmp/huggingface TORCH_HOME=/tmp/torch XDG_CACHE_HOME=/tmp/cache
 USER 65532:65532
 WORKDIR /workspace/k8s-inference
+RUN python acceptance/performance-placement-20260920/runner.py --help > /dev/null
 ENTRYPOINT ["python", "acceptance/performance-placement-20260920/runner.py"]
