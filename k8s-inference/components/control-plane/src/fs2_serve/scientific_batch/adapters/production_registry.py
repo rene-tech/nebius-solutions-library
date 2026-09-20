@@ -19,7 +19,6 @@ from . import (
     bindcraft,
     boltzgen,
     cosmos_lerobot,
-    video_augmentation,
     esmfold2,
     esmfold2_fast,
     mosaic,
@@ -27,6 +26,7 @@ from . import (
     proteina_complexa,
     protenix_v2,
     rfdiffusion,
+    video_augmentation,
 )
 
 _INSTALLED = False

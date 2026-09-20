@@ -7,15 +7,16 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
+from jsonschema import Draft202012Validator, ValidationError
+from test_artifact_inputs import _Artifacts, _reference
+from test_cosmos_native_runtime import MP4, invoke, model_for, png
+from test_scientific_artifacts import FakeObjectStore
+
 from fs2_serve.artifact_inputs import ArtifactInputError, ArtifactInputMaterializer
 from fs2_serve.artifact_outputs import ServingOutputArtifactizer
 from fs2_serve.model_input_contracts import _cosmos_transfer25, _examples
 from fs2_serve.runtime import RuntimeProtocolError
 from fs2_serve.scientific_artifacts import MemoryArtifactRepository, ScientificArtifactService
-from jsonschema import Draft202012Validator, ValidationError
-from test_artifact_inputs import _Artifacts, _reference
-from test_cosmos_native_runtime import MP4, invoke, model_for, png
-from test_scientific_artifacts import FakeObjectStore
 
 MODEL = "cosmos-transfer2-5-2b"
 
