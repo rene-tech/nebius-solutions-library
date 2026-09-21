@@ -99,6 +99,7 @@ def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive
         "wan2-2-t2v-nim",
         "wan2-2-i2v-nim",
         "cosmos-transfer2-5-2b",
+        "qwen3-6-27b-fp8",
         "ace-step-1-5",
     }
     assert augmented.digest == archive.digest
