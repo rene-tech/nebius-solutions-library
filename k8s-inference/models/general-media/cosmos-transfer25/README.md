@@ -19,10 +19,27 @@ also covers independently named Apps backed by this Transfer runtime. Other
 models retain their existing retry policies. Previously admitted operations keep
 their historical policy rather than having their evidence rewritten.
 
-The correction is locally tested before deployment; current end-to-end release
-evidence must identify the exact control-plane image implementing it. Recovery
-of the interrupted R5 preview retained its original operation and did not invoke
-generation again, but does not qualify the corrected release.
+The correction is deployed in Helm revision 210, source
+`bc23d3d58e8e03110861356fd463e09c7e5c5d4c`, control-plane image
+`sha256:9f3bde833af6d60eb6a3c72575c8a953a2796b60b535a89314bef472d4e34230`.
+The exact build passed 149 regression tests, 12 tests against isolated local
+PostgreSQL databases, Ruff/mypy, and the recorded image scan (zero High/Critical
+findings). The database fixtures were removed after preserving their results;
+no cloud database was used for those tests.
+
+Fresh public workbench operation `4f2cc727-af37-4e3e-9b4d-404480d5aed1`
+succeeded with `attempt=1`, `max_attempts=1`, and retained the same operation after
+preview admission replay and chat reload. Its lifecycle rollup reconciles
+508.925409 application-observed active GPU-seconds to the exact H100 Pod/node/GPU;
+the 3600 GPU-second admission estimate is not measured usage or a billable charge.
+This warm preview is component/workflow evidence, not the entire release gate.
+The first R6 batch encountered an incomplete public caption and remains excluded
+from clean acceptance. A separate snow/night preview also failed at captioning;
+nine public alternative models rejected the reference full-video input. No
+binding change, caption repair or generation retry was used to hide these failures.
+Recovery of the interrupted R5 preview also retained its
+original operation without invoking generation again, but does not qualify the
+corrected release.
 
 ## Historical canary findings (not the current App contract)
 
