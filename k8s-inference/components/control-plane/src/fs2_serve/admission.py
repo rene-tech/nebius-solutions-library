@@ -37,6 +37,7 @@ from .lifecycle import (
     reproducibility_metadata,
     trace_identity,
 )
+from .model_delivery_contracts import admission_model
 from .models import (
     ActivationIntentStatus,
     AdmissionRequest,
@@ -225,6 +226,9 @@ class AdmissionService:
             raise PermissionError("operation is outside model policy")
         if admission.protocol not in model.gateway.protocols:
             raise ValueError("model does not implement requested protocol")
+        # Bind the operation's delivery limit before both budget reservation and
+        # durable route serialization. It is never a caller/model-payload field.
+        model = admission_model(model, protocol=admission.protocol, operation=admission.operation)
         if streaming:
             # Live audio uses the same published native App and policy, but a
             # connection-owning executor, never a background HTTP worker.

@@ -6,6 +6,24 @@ On 2026-09-20 the user explicitly confirmed that the organisation's NVIDIA agree
 
 The production workflow is orchestrated by the Scientific AI workbench's skill and reasoner, without OSMO. The exact hosted Qwen reference baseline was checked first and its evidence is retained in `../paidf-chat/`. The temporary hosted Qwen Apps have been retired, their runtime resources and weight PVCs deleted, their active catalog entries archived, and their reference-only key revoked. Audit tombstones, model-download receipts and reference results remain retained. The explicit public Token Factory provider profile preserves the NVIDIA stage sequence/settings while declaring its different caption, prompt and verifier models. Cosmos Transfer remains hosted on Scientific AI. Customer readiness still requires the complete public workbench preview/approval/batch release gate.
 
+## Delivery contract
+
+New native `transfer-video` admissions have exactly one platform execution
+attempt, including HTTP failures, invalid output, lost responses and expired
+worker leases. This enforces the pinned NVIDIA recipe's zero generation retries
+at the gateway as well as in the workbench. The effective one-attempt limit and
+corresponding budget reservation are persisted with the operation and dynamic
+dispatch snapshot. Idempotent replay returns that operation; it cannot turn a
+failed or uncertain attempt into another generation. A canonical-source match
+also covers independently named Apps backed by this Transfer runtime. Other
+models retain their existing retry policies. Previously admitted operations keep
+their historical policy rather than having their evidence rewritten.
+
+The correction is locally tested before deployment; current end-to-end release
+evidence must identify the exact control-plane image implementing it. Recovery
+of the interrupted R5 preview retained its original operation and did not invoke
+generation again, but does not qualify the corrected release.
+
 ## Historical canary findings (not the current App contract)
 
 The sections below retain the original onboarding sequence, including early simplified probes. They are historical evidence only. The authoritative original PAIDF contract is `nvidia-paidf-original-transfer/v1`: motion threshold **0.6**, original one-frame attribute verification, unchanged 153-frame 1920×1080 reference source. The earlier 0.682/five-frame probe below does **not** replace or qualify that contract.
