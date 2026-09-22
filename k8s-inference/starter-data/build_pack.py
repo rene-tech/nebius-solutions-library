@@ -19,6 +19,7 @@ import subprocess
 import tarfile
 import urllib.request
 import wave
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -45,6 +46,70 @@ AUTHORED = {
     "transformation": "original synthetic educational fixture; not patient or experimental data",
 }
 PDB_POLICY = "https://www.rcsb.org/pages/usage-policy"
+BBBC039_PAGE = "https://bbbc.broadinstitute.org/BBBC039"
+BBBC039_DATA = "https://data.broadinstitute.org/bbbc/BBBC039"
+BBBC039_CASES = (
+    (
+        "u2os-nuclei-01",
+        "IXMtest_F12_s8_w1DBD80811-5297-4415-ACD1-EC9286BE76A4",
+        "test",
+        6,
+    ),
+    (
+        "u2os-nuclei-02",
+        "IXMtest_N24_s7_w1AC0733FE-E0FD-45B2-930B-FEEAB052DB36",
+        "training",
+        55,
+    ),
+    (
+        "u2os-nuclei-03",
+        "IXMtest_I01_s4_w1218CC565-C87E-4390-936A-4D3E51BC10DB",
+        "validation",
+        65,
+    ),
+    (
+        "u2os-nuclei-04",
+        "IXMtest_P24_s9_w13AC6C03C-E8D7-4A23-B649-514BB4052F52",
+        "training",
+        80,
+    ),
+    (
+        "u2os-nuclei-05",
+        "IXMtest_K01_s5_w1A3DE001A-72D6-4321-8B25-4300AB0207AC",
+        "test",
+        92,
+    ),
+    (
+        "u2os-nuclei-06",
+        "IXMtest_C19_s4_w1AD3DC23E-B9B5-46E9-9716-26096C672A13",
+        "training",
+        105,
+    ),
+    (
+        "u2os-nuclei-07",
+        "IXMtest_F12_s5_w17F3E9DFC-6705-40A9-B5FE-C60261D73052",
+        "validation",
+        115,
+    ),
+    (
+        "u2os-nuclei-08",
+        "IXMtest_A09_s1_w1CE70AD49-290D-4312-82E6-CDC717F32637",
+        "test",
+        123,
+    ),
+    (
+        "u2os-nuclei-09",
+        "IXMtest_C09_s7_w1768A3B0D-47FE-4D77-B1C6-46018E29486F",
+        "training",
+        135,
+    ),
+    (
+        "u2os-nuclei-10",
+        "IXMtest_K12_s7_w12A7857A5-3C92-4A08-8E81-2CA8A99F67AE",
+        "validation",
+        161,
+    ),
+)
 
 
 def json_bytes(value):
@@ -523,6 +588,41 @@ def molecules_and_genomics(pack):
         )
 
 
+def normalize_microscopy_image(pixels):
+    """Produce a deterministic 8-bit model input without changing geometry."""
+
+    if pixels.ndim != 2 or not np.issubdtype(pixels.dtype, np.integer):
+        raise ValueError("BBBC039 images must be two-dimensional integer arrays")
+    low = int(np.percentile(pixels, 1.0, method="nearest"))
+    high = int(np.percentile(pixels, 99.5, method="nearest"))
+    if high <= low:
+        raise ValueError("BBBC039 image has no usable intensity range")
+    values = np.clip(pixels.astype(np.int64), low, high)
+    normalized = ((values - low) * 255 + (high - low) // 2) // (high - low)
+    return normalized.astype(np.uint8), low, high
+
+
+def decode_bbbc039_instances(raw_mask):
+    """Decode the official binary nuclei channel into contiguous instances."""
+
+    from scipy import ndimage
+
+    if raw_mask.ndim == 3:
+        raw_mask = raw_mask[:, :, 0]
+    if raw_mask.ndim != 2:
+        raise ValueError("BBBC039 masks must be two-dimensional or RGB images")
+    labels, count = ndimage.label(
+        raw_mask > 0, structure=np.ones((3, 3), dtype=np.uint8)
+    )
+    if count <= 0 or count > np.iinfo(np.uint16).max:
+        raise ValueError(f"BBBC039 mask has invalid instance count: {count}")
+    labels = labels.astype(np.uint16)
+    areas = np.bincount(labels.ravel())[1:].astype(int).tolist()
+    if len(areas) != count or any(area <= 0 for area in areas):
+        raise ValueError("BBBC039 instance areas are inconsistent")
+    return labels, int(count), areas
+
+
 def imaging(pack):
     import nibabel as nib
 
@@ -706,6 +806,159 @@ def imaging(pack):
             assets=[path],
         )
 
+    archive_bytes = {
+        "images": pack.fetch(BBBC039_DATA + "/images.zip", "BBBC039-images.zip"),
+        "masks": pack.fetch(BBBC039_DATA + "/masks.zip", "BBBC039-masks.zip"),
+        "metadata": pack.fetch(
+            BBBC039_DATA + "/metadata.zip", "BBBC039-metadata.zip"
+        ),
+    }
+    license_provenance = {
+        "source": BBBC039_PAGE,
+        "license": "CC0-1.0",
+        "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+        "attribution": "Caicedo et al., BBBC039v1; Broad Bioimage Benchmark Collection",
+        "transformation": "Plain-language dataset and citation notice authored for this starter pack",
+    }
+    pack.add(
+        "licenses/BBBC039-CC0.txt",
+        "BBBC039v1 is released under CC0 1.0.\n"
+        "Source: https://bbbc.broadinstitute.org/BBBC039\n"
+        "Recommended citation: We used image set BBBC039v1 Caicedo et al. 2018, "
+        "available from the Broad Bioimage Benchmark Collection "
+        "[Ljosa et al., Nature Methods, 2012].\n",
+        "text/plain",
+        provenance=license_provenance,
+    )
+    with (
+        zipfile.ZipFile(io.BytesIO(archive_bytes["images"])) as images,
+        zipfile.ZipFile(io.BytesIO(archive_bytes["masks"])) as masks,
+        zipfile.ZipFile(io.BytesIO(archive_bytes["metadata"])) as metadata,
+    ):
+        partitions = {}
+        for partition in ("training", "validation", "test"):
+            names = metadata.read(f"metadata/{partition}.txt").decode().splitlines()
+            partitions.update(
+                {Path(name.strip()).stem: partition for name in names if name.strip()}
+            )
+        for index, (slug, source_stem, partition, reference_count) in enumerate(
+            BBBC039_CASES, 1
+        ):
+            if partitions.get(source_stem) != partition:
+                raise ValueError(
+                    f"BBBC039 partition changed for {source_stem}: "
+                    f"{partitions.get(source_stem)!r}"
+                )
+            source_image = images.read(f"images/{source_stem}.tif")
+            source_mask = masks.read(f"masks/{source_stem}.png")
+            pixels = np.asarray(Image.open(io.BytesIO(source_image)))
+            raw_mask = np.asarray(Image.open(io.BytesIO(source_mask)))
+            normalized, low, high = normalize_microscopy_image(pixels)
+            labels, count, areas = decode_bbbc039_instances(raw_mask)
+            if pixels.shape != (520, 696) or labels.shape != pixels.shape:
+                raise ValueError(f"Unexpected BBBC039 geometry for {source_stem}")
+            if count != reference_count:
+                raise ValueError(
+                    f"BBBC039 reference count changed for {source_stem}: "
+                    f"{count} != {reference_count}"
+                )
+
+            image_output = io.BytesIO()
+            Image.fromarray(normalized).save(
+                image_output, format="PNG", compress_level=9
+            )
+            mask_output = io.BytesIO()
+            Image.fromarray(labels).save(mask_output, format="PNG", compress_level=9)
+            base = f"imaging/{slug}"
+            common_provenance = {
+                "source": BBBC039_PAGE,
+                "license": "CC0-1.0",
+                "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
+                "attribution": "Caicedo et al., BBBC039v1; Broad Bioimage Benchmark Collection; Ljosa et al., Nature Methods 9, 637 (2012)",
+                "source_file": source_stem,
+                "official_partition": partition,
+            }
+            image_path = pack.add(
+                base + "/image.png",
+                image_output.getvalue(),
+                "image/png",
+                provenance={
+                    **common_provenance,
+                    "transformation": f"Official 16-bit TIFF normalized to metadata-free 8-bit PNG with deterministic 1.0/99.5 percentile bounds {low}/{high}; geometry unchanged",
+                    "source_sha256": hashlib.sha256(source_image).hexdigest(),
+                },
+            )
+            mask_path = pack.add(
+                base + "/reference-mask.png",
+                mask_output.getvalue(),
+                "image/png",
+                provenance={
+                    **common_provenance,
+                    "transformation": "Official mask first channel decoded into an unsigned 16-bit contiguous instance-label PNG using 8-connectivity",
+                    "source_sha256": hashlib.sha256(source_mask).hexdigest(),
+                },
+            )
+            reference_path = pack.add(
+                base + "/reference.json",
+                {
+                    "dataset": "BBBC039v1",
+                    "source_file": source_stem,
+                    "official_partition": partition,
+                    "image_width": int(pixels.shape[1]),
+                    "image_height": int(pixels.shape[0]),
+                    "reference_nuclei_count": count,
+                    "instance_pixel_areas": areas,
+                    "mask_path": mask_path,
+                    "count_method": "8-connected components in the official mask's first channel",
+                    "clinical_ground_truth_claim": False,
+                    "limitation": "Research annotation of a cultured U2OS osteosarcoma cell line; not patient tissue or clinical validation.",
+                },
+                provenance={
+                    **common_provenance,
+                    "transformation": "Reference count and per-instance areas derived deterministically from the official annotation mask",
+                    "source_sha256": hashlib.sha256(source_mask).hexdigest(),
+                },
+            )
+            recipes = [
+                pack.recipe(
+                    "cellpose-cpsam-v2",
+                    {
+                        "image_base64": file_ref(
+                            image_path, media_type="image/png"
+                        ),
+                        "media_type": "image/png",
+                        "diameter": None,
+                        "research_only": True,
+                    },
+                ),
+                pack.recipe(
+                    "sam2-1-hiera-large",
+                    {
+                        "mode": "automatic-image",
+                        "media_base64": file_ref(
+                            image_path, media_type="image/png"
+                        ),
+                        "media_type": "image/png",
+                        "max_masks": 128,
+                    },
+                ),
+            ]
+            pack.case(
+                "imaging",
+                slug,
+                f"U2OS fluorescence microscopy field {index:02d}",
+                f"A CC0 Hoechst fluorescence microscopy field of cultured human U2OS osteosarcoma-cell nuclei with {count} official annotated instances. The model input is contrast-normalized without resizing or synthetic content.",
+                recipes,
+                {
+                    "kind": "segmentation-image",
+                    "reference_count": count,
+                    "reference_mask": mask_path,
+                    "description": "A decodable 520x696 integer instance mask, finite per-object areas and object count. Compare Cellpose counts/masks with reference.json; SAM2 automatic mode is capped at 128 proposals and is not an exact count for denser fields.",
+                },
+                assets=[image_path, mask_path, reference_path],
+                reference_note="The supplied mask/count are public research annotations for model comparison, not clinical ground truth. Use Cellpose for the complete counting task; SAM2 demonstrates automatic separation and may truncate dense fields at its configured 128-mask cap.",
+            )
+
 
 def single_cell(pack):
     import anndata as ad
@@ -792,10 +1045,12 @@ def single_cell(pack):
 
 def aging(pack):
     original = pack.args.altumage_fixture.read_bytes()
-    assert (
-        hashlib.sha256(original).hexdigest()
-        == "5be74e8ed2cbbcd6d3968ac779f6c05fb6ec6dd30c14f5ddfa875e0271c1a8b5"
-    )
+    fixture_name = pack.args.altumage_fixture.name
+    if (
+        fixture_name not in pack.source_lock
+        or hashlib.sha256(original).hexdigest() != pack.source_lock[fixture_name]
+    ):
+        raise ValueError("AltumAge fixture differs from the reviewed checksum")
     fixture = json.loads(original)
     provenance = {
         "source": "https://github.com/rsinghlab/AltumAge/tree/696c477dac9b7641bf283c48af1cc9bb0a0803a3",

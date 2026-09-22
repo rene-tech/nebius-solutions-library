@@ -1,10 +1,11 @@
 # Customer workspace starter data
 
-This directory builds the versioned `examples/v1/` pack for customer workspace
-buckets. Binary assets are release artifacts, not files in Git. Pack version 1
-is model-example-qualified and deployed: all 12 eligible existing non-task
-workspace buckets and three acceptance buckets were seeded and independently
-verified. New eligible workspaces receive the same pack automatically.
+This directory builds immutable, versioned `examples/vN/` packs for customer
+workspace buckets. Binary assets are release artifacts, not files in Git. Pack
+version 1 is model-example-qualified and deployed: all 12 eligible existing
+non-task workspace buckets and three acceptance buckets were seeded and
+independently verified. New eligible workspaces receive the selected qualified
+pack automatically.
 Do not enable customer backfill with a draft pack. Exact release pins are in
 [`release-v1.json`](release-v1.json).
 
@@ -46,6 +47,17 @@ covering 35 model IDs with 123 typed recipes. Data sources are:
 - Original synthetic count matrices, volumes, microscopy spots, laboratory
   profiles, prompts, video clips and LeRobot telemetry (Apache-2.0).
 
+The version 2 microscopy extension adds ten real BBBC039v1 Hoechst-fluorescence
+fields of cultured human U2OS osteosarcoma-cell nuclei. It deliberately spans
+the official training, validation and test partitions and a 6–161 annotated
+nuclei density range. Every case includes a contrast-normalized model input, the
+official annotation decoded as a 16-bit instance-label PNG, the reference count
+and per-instance pixel areas. Cellpose is the complete counting/segmentation
+path; SAM 2 demonstrates automatic separation but its published request is
+capped at 128 proposals, so it is not an exact counter for the densest fields.
+BBBC039v1 is CC0 and is a research microscopy dataset, not patient tissue or
+clinical-validation ground truth.
+
 Each object has source, license, attribution, transformation, SHA-256, media type,
 byte count, recipe version, compatible model IDs and validation status in the
 manifest. Every example is for research/onboarding; no generated result is
@@ -59,10 +71,16 @@ verification; no speech is cut to fit an upload limit. The full pack is about
 
 ## Build and qualification
 
-`build_pack.py` requires pinned NumPy, Pillow, Biopython, NiBabel and AnnData, plus
-FFmpeg. Its arguments name the output directory, source cache, captured live
-contracts, approved medical demo assets and synthetic AltumAge fixture. It
-refuses an existing output directory and always writes `release_status: draft`.
+`build_pack.py` requires pinned NumPy, Pillow, SciPy, Biopython, NiBabel and
+AnnData, plus FFmpeg. Its arguments name the output directory, source cache,
+captured live contracts, approved medical demo assets and synthetic AltumAge
+fixture. It refuses an existing output directory and always writes
+`release_status: draft`.
+
+The reviewed `altumage-center-v2.json` build input is reconstructed from the
+published 20,318 ordered CpG identifiers and preprocessing-center beta vector;
+its checksum is pinned in `source-lock.json`. The fixture contains no person or
+patient data.
 The LeRobot fixture is generated with the repository's locked LeRobot v3 reader.
 
 For additional models or corrected assets, build a new immutable version with

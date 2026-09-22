@@ -122,9 +122,16 @@ def image_bytes(data, size):
         return {"width": image.width, "height": image.height}
 
 
+def case_image_size(root, case):
+    with Image.open(root / case["assets"][0]) as image:
+        image.load()
+        return image.size
+
+
 def native(result, recipe, arguments, root, case):
     value, model = result.value, recipe["model_id"]
     if model == "sam2-1-hiera-large":
+        width, height = case_image_size(root, case)
         with zipfile.ZipFile(io.BytesIO(result.binary)) as archive:
             require(
                 set(archive.namelist()) == {"manifest.json", "mask.png", "overlay.png"},
@@ -139,7 +146,7 @@ def native(result, recipe, arguments, root, case):
             )
             labels = np.asarray(Image.open(io.BytesIO(archive.read("mask.png"))))
             require(
-                labels.shape == (256, 256)
+                labels.shape == (height, width)
                 and labels.dtype.kind in "ui"
                 and labels.max() > 0,
                 "sam_labels_invalid",
@@ -149,7 +156,7 @@ def native(result, recipe, arguments, root, case):
                 and sum(o["area_px"] for o in manifest["objects"]) > 0,
                 "sam_objects_empty",
             )
-            image_bytes(archive.read("overlay.png"), (256, 256))
+            image_bytes(archive.read("overlay.png"), (width, height))
             return {
                 "objects": len(manifest["objects"]),
                 "labelled_pixels": int(np.count_nonzero(labels)),
@@ -357,11 +364,13 @@ def native(result, recipe, arguments, root, case):
             data, (arguments.get("width", 512), arguments.get("height", 512))
         )
     if model == "cellpose-cpsam-v2":
+        width, height = case_image_size(root, case)
         data = base64.b64decode(value["mask_base64"], validate=True)
         with Image.open(io.BytesIO(data)) as mask:
             labels = np.asarray(mask)
             require(
-                mask.size == (256, 256) and np.issubdtype(labels.dtype, np.integer),
+                mask.size == (width, height)
+                and np.issubdtype(labels.dtype, np.integer),
                 "cell_mask_invalid",
             )
             require(
