@@ -1,0 +1,87 @@
+{
+  "schema": "fs2-serve.nebius.ai/starter-data-microscopy-acceptance/v1",
+  "at": "2026-09-22T04:12:00Z",
+  "pack_manifest_sha256": "9387cfd01e71fdfce67e08008ebfccd359082e60485ecf30b4f17a30d4df22b6",
+  "scope": "Real public-endpoint structure checks for the ten BBBC039v1 starter images. Counts are observations, not accuracy or clinical validation claims.",
+  "summary": {
+    "cases": 10,
+    "recipes_passed": 20,
+    "recipes_failed": 0,
+    "cellpose_server_seconds_range": [1.834, 9.168],
+    "sam2_server_seconds_range": [3.29, 10.333],
+    "reference_count_range": [6, 161],
+    "post_fix_cellpose_replay": "e4d4708f-3781-4ae3-ad16-36d908f8d748"
+  },
+  "results": [
+    {
+      "case_id": "imaging/u2os-nuclei-01",
+      "partition": "test",
+      "reference_count": 6,
+      "cellpose": {"objects": 7, "server_seconds": 3.724, "operation_id": "e4d4708f-3781-4ae3-ad16-36d908f8d748"},
+      "sam2": {"objects": 6, "server_seconds": 5.685, "operation_id": "dce0a958-5c0b-4b65-8d27-103940531673"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-02",
+      "partition": "training",
+      "reference_count": 55,
+      "cellpose": {"objects": 56, "server_seconds": 4.976, "operation_id": "3e8818df-0945-4fc4-898c-d8137a7e09a6"},
+      "sam2": {"objects": 52, "server_seconds": 5.849, "operation_id": "f00b91a0-4555-4fd1-8ded-4c55cbedc769"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-03",
+      "partition": "validation",
+      "reference_count": 65,
+      "cellpose": {"objects": 69, "server_seconds": 4.921, "operation_id": "1aae90ab-3148-4caa-a7b8-ba3d3a47fdb2"},
+      "sam2": {"objects": 62, "server_seconds": 5.015, "operation_id": "65d55dc6-e76b-4d90-866e-33b539a24062"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-04",
+      "partition": "training",
+      "reference_count": 80,
+      "cellpose": {"objects": 79, "server_seconds": 3.105, "operation_id": "3d360430-91c7-495b-bb86-d21d92453da3"},
+      "sam2": {"objects": 74, "server_seconds": 4.112, "operation_id": "13580091-8797-4fe9-b456-b9e4b9386445"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-05",
+      "partition": "test",
+      "reference_count": 92,
+      "cellpose": {"objects": 102, "server_seconds": 1.834, "operation_id": "97244700-fb71-45b1-b7a9-e48cdfa819f2"},
+      "sam2": {"objects": 80, "server_seconds": 5.198, "operation_id": "8994abf5-bbe2-4014-8239-750ba9c55778"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-06",
+      "partition": "training",
+      "reference_count": 105,
+      "cellpose": {"objects": 121, "server_seconds": 2.82, "operation_id": "227b6cbd-9e66-4cd5-897d-c80b6f1115ae"},
+      "sam2": {"objects": 101, "server_seconds": 6.201, "operation_id": "495814de-64c8-4931-a1c0-aca3d70de58c"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-07",
+      "partition": "validation",
+      "reference_count": 115,
+      "cellpose": {"objects": 125, "server_seconds": 5.183, "operation_id": "3c712108-8824-4f69-bcde-1b932843c5c1"},
+      "sam2": {"objects": 112, "server_seconds": 10.333, "operation_id": "3d5aad1f-b195-44cc-b9f3-1572a40915bc"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-08",
+      "partition": "test",
+      "reference_count": 123,
+      "cellpose": {"objects": 154, "server_seconds": 9.168, "operation_id": "0e738397-4590-415b-891f-2568405be8bf"},
+      "sam2": {"objects": 128, "server_seconds": 7.433, "operation_id": "56507663-d42c-4de1-bf53-8a1e13d026b3"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-09",
+      "partition": "training",
+      "reference_count": 135,
+      "cellpose": {"objects": 161, "server_seconds": 6.903, "operation_id": "3e4a32b8-f198-41bb-ad7b-f502839153fe"},
+      "sam2": {"objects": 128, "server_seconds": 6.64, "operation_id": "40b761d2-5d1c-4dcd-810c-3d16037290bf"}
+    },
+    {
+      "case_id": "imaging/u2os-nuclei-10",
+      "partition": "validation",
+      "reference_count": 161,
+      "cellpose": {"objects": 220, "server_seconds": 2.956, "operation_id": "7e201222-7750-47b1-8542-a062f9384ef8"},
+      "sam2": {"objects": 128, "server_seconds": 3.29, "operation_id": "3d788b50-7e18-46ca-b934-794ec22f9c0f"}
+    }
+  ]
+}

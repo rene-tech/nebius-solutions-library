@@ -2,12 +2,12 @@
 
 This directory builds immutable, versioned `examples/vN/` packs for customer
 workspace buckets. Binary assets are release artifacts, not files in Git. Pack
-version 1 is model-example-qualified and deployed: all 12 eligible existing
-non-task workspace buckets and three acceptance buckets were seeded and
-independently verified. New eligible workspaces receive the selected qualified
-pack automatically.
+Version 2 is model-example-qualified and deployed to all 12 currently eligible
+distinct workspace/demo buckets; version 1 remains immutable and recoverable.
+New eligible workspaces receive the selected qualified pack automatically.
 Do not enable customer backfill with a draft pack. Exact release pins are in
-[`release-v1.json`](release-v1.json).
+[`release-v1.json`](release-v1.json) and
+[`release-v2.json`](release-v2.json).
 
 ## Ownership and scope
 
@@ -67,7 +67,7 @@ remains governed by the user's existing API-key grants and model licenses.
 `source-lock.json` pins public downloads. Full approved consultation WAVs are
 losslessly encoded to FLAC and decoded back to PCM for byte-identical sample
 verification; no speech is cut to fit an upload limit. The full pack is about
-43 MB after this conversion. Use the source manifest for exact release size.
+45 MB in qualified v2. Use the source manifest for exact release size.
 
 ## Build and qualification
 
@@ -119,4 +119,5 @@ rollback must retain installed examples, previous versions, customer data and
 the completion ledger. No uninstall/delete behavior is provided.
 
 Live qualification, exact image identities and backfill receipts belong in
-`acceptance/customer-starter-data-20260920/`.
+`acceptance/customer-starter-data-20260920/` and
+`acceptance/customer-starter-data-microscopy-20260922/`.
