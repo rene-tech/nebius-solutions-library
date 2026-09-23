@@ -41,6 +41,16 @@ every-step neighbor decisions. The packaged LJ starter already uses those
 conservative decisions. Neither the broad 2% NVE energy-span gate nor finite
 trajectories establish material-specific accuracy or scientific convergence.
 
+The separate H100 accuracy control is now recorded in
+`receipts/native-h100-neighbor-control-v3.json`: only neighbor checking changes
+to `every 1 delay 0 check yes`, with identical physics and production length.
+LJ relative total-energy span drops from the three-repeat baseline median
+0.00787585 to 0.00009703 (about 81-fold smaller); measured throughput is
+0.7551 times baseline median. EAM span changes from 0.00017588 to 0.00016930
+and throughput is 0.9800 times baseline median. Both have zero dangerous
+builds. There is one control run per case, so no repeated-performance
+significance or timestep/neighbor convergence is claimed. Baselines are intact.
+
 ReaxFF is a constant-volume carbon numerical benchmark. Its post-warmup
 temperature is around 1,200 K and computed pressure around 2.65 million atm;
 it is not equilibrated 300 K carbon or a validated material prediction. No
@@ -127,6 +137,16 @@ For downloaded artifacts, reuse `validate_case.py WORKSPACE --job-directory JOB
 Fresh-Pod native recovery, real hosted REST/MCP and tenant-bucket paths,
 independent GPU process snapshots, and release acceptance remain distinct gates.
 Neither a native restart nor a same-process pause is a GPU snapshot.
+
+H100 native fresh-Pod recovery has now passed for LJ NVE and rhodopsin
+NPT/SHAKE/PPPM, with distinct Pod UIDs, complete workspace transfer and measured
+same-step restart continuity. Exact receipts are retained in this directory.
+The first hosted six-case operation `f963df4d-1141-49c6-906e-1b05a2953b7a`
+failed at customer checkpoint export with `BucketMaxSizeExceeded` HTTP400,
+not native EAM. Its logs remain under the private handoff
+`fs2-md-engines-20260923/lammps-hosted-six-case-01/`. No scientific input or
+runtime change is justified by that storage failure; hosted remediation and
+retry are parent-owned. A later successful operation must not replace this record.
 
 Sources: [LAMMPS restart contract](https://docs.lammps.org/read_restart.html),
 [Kokkos acceleration](https://docs.lammps.org/Speed_kokkos.html),
