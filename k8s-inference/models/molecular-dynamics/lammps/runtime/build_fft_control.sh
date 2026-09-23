@@ -1,14 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 case "${FFT_KOKKOS}" in KISS|CUFFT) ;; *) exit 2;; esac
-case "${LAMMPS_ARCH}" in 90) kokkos_arch=HOPPER90;; 86) kokkos_arch=AMPERE86;; *) exit 2;; esac
+case "${LAMMPS_ARCH}:${INSTALL_ARCH}" in 90:90) kokkos_arch=HOPPER90;; 86:86) kokkos_arch=AMPERE86;; 89:86) kokkos_arch=ADA89;; *) exit 2;; esac
 case "${BUILD_JOBS}" in [1-8]) ;; *) exit 2;; esac
 export CC=gcc-13 CXX=g++-13 NVCC_WRAPPER_DEFAULT_COMPILER=g++-13
 export CFLAGS='-march=x86-64-v3 -mtune=generic -O3 -pipe'
 export CXXFLAGS="${CFLAGS}" LDFLAGS=-Wl,--as-needed
 sed -i -E "s/^default_arch=(.*)/default_arch=sm_${LAMMPS_ARCH}/g" /source/lib/kokkos/bin/nvcc_wrapper
 cmake -S /source/cmake -B /build \
-  -DCMAKE_INSTALL_PREFIX="/usr/local/lammps/sm${LAMMPS_ARCH}" \
+  -DCMAKE_INSTALL_PREFIX="/usr/local/lammps/sm${INSTALL_ARCH}" \
   -DCMAKE_EXE_LINKER_FLAGS=-L/usr/local/cuda/lib64 \
   -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release \
   -DKokkos_ARCH_${kokkos_arch}=ON -DKokkos_ARCH_HSW=ON \
@@ -41,5 +41,5 @@ dpkg-query -W > /build-provenance/packages.tsv
 gcc-13 --version > /build-provenance/gcc.txt
 nvcc --version > /build-provenance/nvcc.txt
 cmake --version > /build-provenance/cmake.txt
-sha256sum /usr/local/lammps/sm${LAMMPS_ARCH}/lib/liblammps.so.0 /usr/local/lammps/sm${LAMMPS_ARCH}/bin/lmp > /build-provenance/native-sha256.txt
-LD_LIBRARY_PATH=/usr/local/lammps/sm${LAMMPS_ARCH}/lib:${LD_LIBRARY_PATH:-} /usr/local/lammps/sm${LAMMPS_ARCH}/bin/lmp -h > /build-provenance/lammps-help.txt
+sha256sum /usr/local/lammps/sm${INSTALL_ARCH}/lib/liblammps.so.0 /usr/local/lammps/sm${INSTALL_ARCH}/bin/lmp > /build-provenance/native-sha256.txt
+LD_LIBRARY_PATH=/usr/local/lammps/sm${INSTALL_ARCH}/lib:${LD_LIBRARY_PATH:-} /usr/local/lammps/sm${INSTALL_ARCH}/bin/lmp -h > /build-provenance/lammps-help.txt

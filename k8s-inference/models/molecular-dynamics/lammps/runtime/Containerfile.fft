@@ -21,6 +21,7 @@ RUN apt-get update \
 COPY lammps/runtime/build_fft_control.sh /opt/build_fft_control.sh
 ARG FFT_KOKKOS=KISS
 ARG LAMMPS_ARCH=90
+ARG INSTALL_ARCH=90
 ARG BUILD_JOBS=8
 RUN bash /opt/build_fft_control.sh
 
@@ -28,12 +29,15 @@ FROM ${WORKER_IMAGE}
 ARG SOURCE_REVISION=development
 ARG FFT_KOKKOS=KISS
 ARG LAMMPS_ARCH=90
+ARG INSTALL_ARCH=90
 LABEL org.opencontainers.image.title="LAMMPS matched FFT qualification control" \
       org.opencontainers.image.revision=${SOURCE_REVISION} \
       scientific-ai.nebius.com.qualification-only="true" \
       scientific-ai.nebius.com.lammps-source="c7ae612a9497437412cb787b78769570f48653dd" \
       scientific-ai.nebius.com.fft-kokkos=${FFT_KOKKOS}
-COPY --from=build /usr/local/lammps/sm${LAMMPS_ARCH}/ /usr/local/lammps/sm${LAMMPS_ARCH}/
+# ADA89 control uses INSTALL_ARCH=86: the unchanged v3 worker selects this
+# compatibility slot for L40S, while cubin inventory proves actual native SM89.
+COPY --from=build /usr/local/lammps/sm${INSTALL_ARCH}/ /usr/local/lammps/sm${INSTALL_ARCH}/
 COPY --from=build /build-provenance/ /opt/fs2/fft-build/
 # Identity differs from the original NVIDIA binary, preventing cross-build
 # native checkpoint reuse. The hosted adapter must separately approve new pins.
