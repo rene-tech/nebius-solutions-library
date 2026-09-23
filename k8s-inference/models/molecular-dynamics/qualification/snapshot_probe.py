@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import shlex
 import signal
 import subprocess
 import sys
@@ -81,6 +82,39 @@ def inventory(directory):
         {"path": str(path.relative_to(directory)), "bytes": path.stat().st_size, "sha256": digest(path)}
         for path in sorted(directory.rglob("*")) if path.is_file()
     ]
+
+
+def network_rules():
+    return subprocess.check_output(["iptables", "-t", "filter", "-S"], text=True, timeout=10).splitlines()
+
+
+def own_tcp_lock_rule(line):
+    words = shlex.split(line)
+    try:
+        return (
+            words[:2] == ["-A", "INPUT"]
+            and words[words.index("-j") + 1] == "DROP"
+            and int(words[words.index("--mark") + 1], 0) == 0xC114
+            and words[words.index("-s") + 1] in {"127.0.0.1", "127.0.0.1/32"}
+            and words[words.index("-d") + 1] in {"127.0.0.1", "127.0.0.1/32"}
+        )
+    except (ValueError, IndexError):
+        return False
+
+
+def clean_own_tcp_locks(before):
+    after = network_rules()
+    removed = []
+    for rule in after:
+        if rule in before:
+            continue
+        if not own_tcp_lock_rule(rule):
+            raise RuntimeError("unexpected Pod-local network rule change; refusing broad cleanup")
+        subprocess.run(["iptables", "-t", "filter", "-D", *shlex.split(rule)[1:]], check=True, timeout=10)
+        removed.append(rule)
+    if network_rules() != before:
+        raise RuntimeError("Pod-local filter rules were not restored to their initial state")
+    return {"before": before, "after_helper": after, "removed_owned_locks": removed, "restored": True}
 
 
 def main():
@@ -166,6 +200,7 @@ def main():
             receipt["donor_pod_uid"] = captured["pod_uid"]
             receipt["captured_logged_step"] = captured["captured_logged_step"]
             command = ["restore", "--directory", str(directory / "images")]
+        original_network = network_rules() if plan.get("pod_local_tcp_locking") else None
         helper_started = time.monotonic()
         receipt["pre_helper_seconds"] = helper_started - started
         restore_attempted = args.action == "restore"
@@ -186,6 +221,8 @@ def main():
         receipt["checkpoint_helper_timed_out"] = timed_out
         (directory / (args.action + "-helper.json")).write_text(helper_stdout)
         (directory / (args.action + "-helper.stderr")).write_text(helper_stderr)
+        if original_network is not None:
+            receipt["pod_local_network_cleanup"] = clean_own_tcp_locks(original_network)
         if helper.returncode:
             raise RuntimeError("existing platform checkpoint helper failed; see retained receipt")
         if args.action == "capture":

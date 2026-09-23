@@ -1,15 +1,17 @@
 """Isolated one-GPU MD snapshot probe; no host mounts or public serving path."""
 
 import argparse
+import importlib.util
 import json
+from pathlib import Path
 
 
-def render(name, node, image, tools_image, configmap, pvc, deadline=2400):
+def render(name, node, image, tools_image, configmap, pvc, deadline=2400, network_configmap=None):
     if not all("@sha256:" in value for value in (image, tools_image)):
         raise ValueError("immutable image digests are required")
     if not 60 <= deadline <= 3600:
         raise ValueError("probe deadline must be between one minute and one hour")
-    return {
+    pod = {
         "apiVersion": "v1", "kind": "Pod",
         "metadata": {"name": name, "namespace": "fs2-models", "labels": {
             "app.kubernetes.io/name": "fs2-md-snapshot-probe",
@@ -50,6 +52,13 @@ def render(name, node, image, tools_image, configmap, pvc, deadline=2400):
             }],
         },
     }
+    if network_configmap:
+        source = Path(__file__).resolve().parents[3] / "acceptance/h100-fleet/snapshots/render_readonly_server_restore.py"
+        spec = importlib.util.spec_from_file_location("existing_snapshot_renderer", source)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        module.install_network_tools(pod["spec"], pod["spec"]["containers"][0], network_configmap)
+    return pod
 
 
 def main():
@@ -57,6 +66,7 @@ def main():
     for option in ("name", "node", "image", "tools-image", "configmap", "pvc"):
         parser.add_argument("--" + option, required=True)
     parser.add_argument("--deadline", type=int, default=2400)
+    parser.add_argument("--network-configmap")
     print(json.dumps(render(**vars(parser.parse_args())), indent=2))
 
 

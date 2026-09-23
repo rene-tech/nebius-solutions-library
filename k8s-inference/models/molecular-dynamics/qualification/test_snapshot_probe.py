@@ -62,3 +62,15 @@ def test_manifest_has_one_gpu_and_no_host_access():
         module.render("test", "node", "runtime:latest", "tools@sha256:def", "source", "owned-pvc")
     with pytest.raises(ValueError):
         module.render("test", "node", "runtime@sha256:abc", "tools@sha256:def", "source", "owned-pvc", 3601)
+    network = module.render("test", "node", "runtime@sha256:abc", "tools@sha256:def", "source", "owned-pvc", network_configmap="owned-network")
+    assert "xtables-nft-multi" in network["spec"]["initContainers"][0]["command"][2]
+    assert not network["spec"].get("hostNetwork", False)
+
+
+def test_network_cleanup_recognizes_only_own_loopback_criu_lock():
+    module = probe()
+    own = "-A INPUT -s 127.0.0.1/32 -d 127.0.0.1/32 -p tcp -m mark ! --mark 0xc114 -j DROP"
+    assert module.own_tcp_lock_rule(own)
+    assert not module.own_tcp_lock_rule(own.replace("0xc114", "0x1234"))
+    assert not module.own_tcp_lock_rule(own.replace("127.0.0.1/32", "10.0.0.1/32"))
+    assert not module.own_tcp_lock_rule("-P INPUT ACCEPT")
