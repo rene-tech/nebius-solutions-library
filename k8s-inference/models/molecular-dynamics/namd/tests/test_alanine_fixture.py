@@ -1,10 +1,12 @@
 import hashlib
 import json
+import struct
 import tarfile
 
 import pytest
 
 from make_alanine_fixture import audit_master, common, make, parm7, thermostat
+from validate_alanine import ENERGY_FIELDS, coordinate_identity, energy_rows
 
 
 PROTOCOL = {
@@ -79,6 +81,8 @@ def test_native_configuration_maps_amber_tail_bar_and_all_atom_thermostat():
         assert line + "\n" in config
     assert "LJcorrection off\n" in common(PROTOCOL, singlepoint=True, tail=False)
     assert "rigidBonds none\n" in common(PROTOCOL, singlepoint=True)
+    assert "nonbondedFreq 1\n" in config and "nonbondedFrequency" not in config
+    assert "PMEGridSizeX 64\nPMEGridSizeY 64\nPMEGridSizeZ 64\n" in common(PROTOCOL, singlepoint=True)
     assert "langevinPistonTarget 1.0\n" in thermostat(PROTOCOL, pressure=True)
     assert "langevinHydrogen on\n" in thermostat(PROTOCOL)
 
@@ -99,3 +103,23 @@ def test_fixture_preserves_master_and_exact_stage_steps_without_rng_restarts(tmp
     with tarfile.open(output / "input.tar.gz") as bundle:
         assert bundle.extractfile("alanine/system.prmtop").read() == (source / "system.prmtop").read_bytes()
     assert parm7(source / "system.prmtop")["SCEE_SCALE_FACTOR"] == [1.2, 0.]
+
+
+def test_singlepoint_compares_every_coordinate_and_rejects_geometry_projection(tmp_path):
+    source, native = tmp_path / "system.rst7", tmp_path / "point.coor"
+    coords = [1., -2., 3., 4., 5., -6.]
+    source.write_text("coordinates\n 2\n" + "".join(f"{v:12.7f}" for v in coords) + "\n")
+    native.write_bytes(struct.pack("<i6d", 2, *coords))
+    assert coordinate_identity(source, native)["maximum_coordinate_difference_A"] == 0
+    native.write_bytes(struct.pack("<i6d", 2, *coords[:-1], -6.01))
+    with pytest.raises(ValueError, match="moved"):
+        coordinate_identity(source, native)
+
+
+def test_canonical_observable_reader_uses_native_labels_and_checks_all_values(tmp_path):
+    path = tmp_path / "native.log"
+    path.write_text("ETITLE: " + " ".join(ENERGY_FIELDS) + "\nENERGY: " + " ".join(str(i) for i in range(len(ENERGY_FIELDS))) + "\n")
+    assert energy_rows(path)[0]["GPRESSURE"] == ENERGY_FIELDS.index("GPRESSURE")
+    path.write_text("ENERGY: " + " ".join(["nan"] + ["0"] * (len(ENERGY_FIELDS) - 1)) + "\n")
+    with pytest.raises(ValueError, match="non-finite"):
+        energy_rows(path)

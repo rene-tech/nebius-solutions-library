@@ -26,10 +26,50 @@ runtime correction `8b9e9190e`, build source `488aaaa99`. The dedicated
 wrapper layer; no OS/Python/native binary refresh enters this image. Build
 identity receipt `worker-r5-build-identity.json` SHA256
 `d8a6c01822d41adef1010e8466d1df5f0094184c29f43e89c397119d74c08b05`
-records this comparison. Thirty-eight offline tests pass. Fresh H100/L40S
+records this comparison. Forty-seven offline tests pass. Fresh H100/L40S
 scientific cohorts started after all current r4 cases finished naturally and
 their output inventories were archived. Earlier full-rebuild local image
 `d60f5163...` was neither published nor deployed; it is not the r5 identity.
+
+## Exact r5 initial acceptance evidence
+
+Both H100 and L40S completed one 400 ps run each of ApoA1 NVE, NPT,
+ungridded repaired metadynamics and gridded `keepHills on` metadynamics.
+Every trajectory frame, native result inventory and original input member was
+checked. The grid case verifies all 105 numeric fields of each serialized
+energy/gradient grid across native loading and both 100-point PMFs.
+H100 native ns/day: 289.238/215.430/190.377/190.145; L40S:
+213.467/156.209/132.639/133.163. These are first confirmations, not completed
+three-repetition performance medians. L40S repetitions two and three continue.
+
+An exact-r5 donor then saved generation 4 at timestep 121,000 (100 bias hills)
+to an externally copied, hash-verified archive and demonstrably advanced past
+202,000 before deletion. The retained donor log captures step 200,000; a
+read-only terminal observation captured 202,000. Source Pod UID
+`1abff61f-24aa-4c1c-b306-45296b90140a` was deleted. Fresh Pod UID
+`1c4d17d0-34ac-4fa9-a129-a8abfc75338c` restored 121,000 and completed 221,000,
+preserving the prior hills and finishing with 200 hills and 20 finite DCD frames.
+The native result and all original inputs passed independent inventory audits.
+Archive SHA256: `e1bad0dec021f46141369e83711e072ad4c0897b48fa0cb4e2cf6c0c2f926a06`.
+Recovery result SHA256: `68aa107a0e06c11067ce8c7cfbfc14f1d757096dcd989f7394491c8058b1cfe1`.
+
+- `runtime-receipt-r5-hosted-input.json`: five passed rows (four core plus
+  fresh-Pod recovery), SHA256
+  `0b2c635440cc850c06a7045faa13db6fb40ad32168a6665748b32a46414ef571`.
+- `runtime-receipt-r5-l40s-initial.json`: four passed rows, SHA256
+  `3b28fd30c7c03a3fdeed467a457c856ad5f80fafb1da269059c42f54e480003e`.
+
+Both are `customer_ready:false`; r5 hosted acceptance and full repetitions remain
+separate. This local archive/companion native recovery is not hosted object-store
+transport or GPU/PRNG memory serialization. Earlier r4 snapshot capture succeeded
+but its fresh-Pod CRIU restore failed on a native `/proc/.../task/.../stat` fd.
+
+Canonical ff14SB/TIP3P alanine input mapping is documented in `ALANINE.md`.
+Its first run0 pair failed configuration parsing (`nonbondedFrequency` instead
+of native `nonbondedFreq`), before forces/dynamics. The failed input/result/logs
+remain at `campaign-alanine-singlepoint-r5-failed-01`. A separately hashed
+corrected fixture also aligns the comparison single-point grid to 64³/order 4.
+This changes qualification inputs only, not the exact r5 worker.
 
 ## Retained r4 identity and protocol
 

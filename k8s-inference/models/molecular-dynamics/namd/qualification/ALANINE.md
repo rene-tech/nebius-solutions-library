@@ -16,7 +16,8 @@ compare actual constraints and exclusions, not counts alone.
 
 The separate `singlepoint/` request runs both tail-on and a clearly labelled
 tail-off diagnostic at the original coordinates, with zero velocities,
-constraints disabled (no geometry projection), and PME tolerance 1e-6. Inspect
+constraints disabled (no geometry projection), explicit 64³ order-4 PME grid
+and tolerance 1e-6. Inspect
 decomposed native energies, grid, exclusions and warnings before dynamics.
 Tail-off is never substituted for the requested production protocol.
 

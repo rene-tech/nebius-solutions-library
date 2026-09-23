@@ -113,6 +113,7 @@ def audit_master(master):
 
 def common(protocol, *, singlepoint=False, tail=True):
     tolerance = protocol["single_point_electrostatic_tolerance"] if singlepoint else protocol["electrostatic_target_tolerance"]
+    grid = "PMEGridSizeX 64\nPMEGridSizeY 64\nPMEGridSizeZ 64" if singlepoint else "PMEGridSpacing 1.0"
     return f"""amber on
 oldParmReader off
 parmfile system.prmtop
@@ -125,7 +126,7 @@ GPUresident on
 GPUAtomMigration off
 GPUForceTable on
 timestep {protocol['timestep_fs']}
-nonbondedFrequency 1
+nonbondedFreq 1
 fullElectFrequency 1
 stepsPerCycle 20
 cutoff {protocol['cutoff_A']}
@@ -134,7 +135,7 @@ LJcorrection {'on' if tail else 'off'}
 pairlistdist {protocol['cutoff_A'] + 2.0}
 PME on
 PMETolerance {tolerance}
-PMEGridSpacing 1.0
+{grid}
 PMEInterpOrder 4
 rigidBonds {'none' if singlepoint else 'all'}
 rigidTolerance {protocol['constraint_tolerance']}
@@ -219,7 +220,7 @@ def make(master, output):
                                      "One process per NPT/production stage preserves its RNG stream; restart commits are at full-stage boundaries",
                                      "Native isotropic Langevin piston100fs/50fs, target1.0bar; COMmotion no and group pressure recorded",
                                      "All nonbonded and PME forces every2fs, no multiple-time-step acceleration",
-                                     "PME order4/grid spacing1A; actual native grid and numerical implementation must be recorded",
+                                     "PME order4: explicit64x64x64 single-point comparison grid, requested1A maximum spacing for dynamics; actual native grids recorded",
                                      "LJcorrection on; native analytical tail contribution compared via paired run0 diagnostics"],
                   "scientific_convergence_claimed": False}
     (output / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
