@@ -296,6 +296,45 @@ def _reported_failure(
     return (fallback[0], fallback[1], next(iter(codes))) if len(codes) == 1 else fallback
 
 
+def _gromacs_gang_disruption(
+    reasons: list[str], pod_statuses: list[Mapping[str, Any]],
+) -> tuple[WorkloadState, FailureKind, str] | None:
+    """An evicted MPI rank interrupts the whole gang, including a healthy leader.
+
+    MPI aborts surviving ranks with an ordinary nonzero exit. Classifying that
+    secondary exit alone loses the peer's disruption and prevents checkpoint
+    recovery. Observe the complete attempt before the collector-failure path;
+    an earlier application exit, OOM, or deadline still must not become retryable.
+    """
+    if any(reason.casefold() in {"oomkilled", "deadlineexceeded"} for reason in reasons):
+        return None
+    if _failure(reasons)[2] == "EXECUTION_TIMEOUT":
+        return None
+    disruptions = []
+    for status in pod_statuses:
+        condition = _condition(status, "DisruptionTarget")
+        if condition is None or condition.get("reason") not in {
+            "DeletionByTaintManager", "EvictionByEvictionAPI", "PreemptionByScheduler",
+        }:
+            continue
+        at = _optional_time(condition.get("lastTransitionTime"), "gang disruption")
+        if at is not None:
+            disruptions.append((at, str(condition["reason"])))
+    if not disruptions:
+        return None
+    disrupted_at, reason = min(disruptions)
+    for status in pod_statuses:
+        stage = _container_termination(status, STAGE_CONTAINER_NAME)
+        if stage is None or stage.get("exitCode") == 0:
+            continue
+        finished_at = _finished_at(stage)
+        if finished_at is None or finished_at < disrupted_at:
+            return None
+    if reason == "PreemptionByScheduler":
+        return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, reason
+    return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, reason
+
+
 def _retained_job_disruption(job: Mapping[str, Any]) -> bool:
     """Recognize only our exact Job policy's terminal disruption receipt.
 
@@ -1340,6 +1379,13 @@ class HttpScientificBatchCluster:
 
         succeeded = int(status.get("succeeded", 0) or 0) > 0 or _condition(status, "Completed") is not None
         failed_condition = _condition(status, "Failed")
+        gang_disruption = (
+            _gromacs_gang_disruption(
+                [str((failed_condition or {}).get("reason", "")), *failure_reasons], pod_statuses,
+            )
+            if ref.kind is WorkloadKind.JOB_SET and labels.get(MODEL_LABEL) == "gromacs-mpi"
+            else None
+        )
         policy_pending = (
             ref.kind is WorkloadKind.JOB
             and value.get("spec", {}).get("podFailurePolicy") == _JOB_FAILURE_POLICY
@@ -1373,9 +1419,9 @@ class HttpScientificBatchCluster:
                 failure_kind=failure_kind,
                 failure_code=failure_code[:128],
             )
-        elif failed:
+        elif failed or gang_disruption is not None:
             reason = str((failed_condition or {}).get("reason", "workload_failed"))
-            workload_state, failure_kind, failure_code = _reported_failure(
+            workload_state, failure_kind, failure_code = gang_disruption or _reported_failure(
                 [reason, *failure_reasons], pod_statuses, model_id=str(labels.get(MODEL_LABEL, "")),
                 job=value if ref.kind is WorkloadKind.JOB else None,
             )
