@@ -52,6 +52,15 @@ def expected_trajectories(mdp):
     return expected
 
 
+def cpu_stat():
+    """Pod cgroup counters include the low-frequency GPU sampler too."""
+    path = Path("/sys/fs/cgroup/cpu.stat")
+    return {
+        key: int(value)
+        for key, value in (line.split() for line in path.read_text().splitlines())
+    } if path.exists() else {}
+
+
 def validate(binary, directory, expected_steps, expected_time, trajectories=()):
     result = {}
     # The TPR decides whether a trajectory is required; never add output or drop
@@ -164,6 +173,7 @@ def main():
         argv = [args.binary, "mdrun", "-s", str(args.tpr.resolve()), "-deffnm", "md", "-ntmpi", "1", "-ntomp", str(args.threads), "-pin", args.pin, "-nb", "auto", "-pme", "auto", "-bonded", args.bonded, "-update", "auto"]
         if args.nstlist is not None:
             argv += ["-nstlist", str(args.nstlist)]
+        cpu_before = cpu_stat()
         with (directory / "gpu-samples.csv").open("wb") as samples:
             monitor = subprocess.Popen(
                 ["nvidia-smi", "--query-gpu=timestamp,utilization.gpu,utilization.memory,memory.used,power.draw,clocks.sm,clocks.mem", "--format=csv", "--loop-ms=200"],
@@ -176,6 +186,7 @@ def main():
                 elapsed = time.monotonic() - started
                 monitor.terminate()
                 monitor.wait(timeout=10)
+        cpu_after = cpu_stat()
         log = (directory / "command.log").read_text(errors="replace")
         performance = re.findall(r"Performance:\s+([\d.eE+-]+)", log)
         record = {
@@ -183,6 +194,10 @@ def main():
             "exit_code": code, "process_wall_seconds": elapsed,
             "native_ns_per_day": float(performance[-1]) if performance else None,
             "cuda_cache_files_after": sum(path.is_file() for path in cache.rglob("*")),
+            "pod_cpu_stat_delta": {
+                key: value - cpu_before[key]
+                for key, value in cpu_after.items() if key in cpu_before
+            },
         }
         if code == 0:
             try:
