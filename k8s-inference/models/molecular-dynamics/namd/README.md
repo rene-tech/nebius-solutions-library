@@ -59,6 +59,19 @@ enabled Colvars also requires matching `.colvars.state`. An explicit
 `initialize_colvars: true` introduces a new bias at a new stage from an unbiased
 checkpoint, while later segments restore that bias state.
 
+The shipped Colvars 2024-06-04 (patch 1) ungridded-metadynamics state writer
+omits the `keepHills` state marker that its reader needs to retain old explicit
+hills. The original r3 campaign detected native "success" with a lost bias
+history and is retained as failed scientific qualification. Managed continuation
+now preserves the original bytes and derives a version-scoped restart copy with
+only that missing state marker added. It records both hashes and the bias names.
+After native startup, `cv savetostring` captures the loaded state without changing
+output prefixes; every explicit metadynamics hill's step, weight, center and width
+is compared before dynamics may advance. No scientific configuration, grid
+choice, force field or seed is substituted. Unknown repair formats fail with
+the original inputs preserved. This is a serialization compatibility repair,
+not an upstream engine patch or qualification of all Colvars methods.
+
 Each managed segment writes `prefix.partNNNNNN.*`. All DCD, XST, log and bias
 parts are retained. Final coordinate, velocity, cell and bias state aliases are
 also copied to `prefix.*` for the next explicit stage. Trajectories are not

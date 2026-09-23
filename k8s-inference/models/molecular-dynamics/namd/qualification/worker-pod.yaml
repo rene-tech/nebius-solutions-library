@@ -26,7 +26,7 @@ spec:
       type: RuntimeDefault
   containers:
     - name: runtime
-      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:d4a29fe6e826dc466fec9f50a7ecfc9f76c38ef79a3bd6760549259b80bcf1bb
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:3cf079697a15f09a7b4e1859817d3ae8dfed032de34dd129b8f7b58693c70a60
       command: [bash, -c]
       args:
         - |

@@ -8,10 +8,11 @@ import csv
 import json
 import math
 from pathlib import Path
+import re
 import statistics
 import struct
 
-from fs2_namd.worker import binary_vectors, xsc_step
+from fs2_namd.worker import binary_vectors, colvars_step, xsc_step
 
 
 def dcd(path):
@@ -70,6 +71,8 @@ def energy_drift(paths):
             for line in source:
                 if line.startswith("ENERGY:"):
                     values = list(map(float, line.split()[1:]))
+                    if not all(math.isfinite(value) for value in values):
+                        raise ValueError("non-finite scientific observable")
                     rows.append((values[0], values[10], values[11], values[17]))
     if not rows:
         raise ValueError("no energy observables")
@@ -81,6 +84,46 @@ def energy_drift(paths):
             "minimum_volume_A3": min(r[3] for r in rows), "maximum_volume_A3": max(r[3] for r in rows)}
 
 
+def radius_metadynamics(data):
+    """Validate this fixture's explicit hill list survives a native restart.
+
+    This parser qualifies only the supplied ungridded radius-metadynamics case,
+    not arbitrary Colvars algorithms or free-energy convergence.
+    """
+    states = sorted(path for path in data.rglob("production.part*.colvars.state")
+                    if re.fullmatch(r"production\.part\d{6}\.colvars\.state", path.name))
+    if not states:
+        return None
+    previous, summaries = [], []
+    for path in states:
+        text = path.read_text()
+        hills = []
+        for body in re.findall(r"\bhill\s*\{([^}]*)\}", text, re.DOTALL):
+            values = dict(line.split(maxsplit=1) for line in body.strip().splitlines())
+            values = {key: float(value) for key, value in values.items()}
+            if set(values) != {"step", "weight", "centers", "widths"} or not all(math.isfinite(v) for v in values.values()):
+                raise ValueError("unexpected/non-finite radius-metadynamics hill state")
+            hills.append(values)
+        if not hills or hills[:len(previous)] != previous:
+            raise ValueError("native Colvars restart lost or changed prior metadynamics hills")
+        steps = [h["step"] for h in hills]
+        if any(b <= a for a, b in zip(steps, steps[1:])) or steps[-1] != colvars_step(path):
+            raise ValueError("fixture hill sequence and native bias timestep disagree")
+        previous = hills
+        summaries.append({"path": str(path.relative_to(data)), "step": colvars_step(path),
+                          "hills": len(hills), "first_hill_step": steps[0], "last_hill_step": steps[-1]})
+    trajectories = []
+    for path in sorted(data.rglob("production.part*.colvars.traj")):
+        rows = [list(map(float, line.split())) for line in path.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
+        if not rows or not all(math.isfinite(v) for row in rows for v in row):
+            raise ValueError("empty/non-finite Colvars trajectory")
+        trajectories.append({"path": str(path.relative_to(data)), "records": len(rows),
+                             "first_step": rows[0][0], "last_step": rows[-1][0]})
+    if len(trajectories) != len(states):
+        raise ValueError("missing Colvars trajectory segment")
+    return {"bias_history_prefix_preserved": True, "states": summaries, "trajectories": trajectories}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--campaign", type=Path, required=True)
@@ -89,23 +132,29 @@ def main():
     repetitions = []
     for path in sorted(args.campaign.glob("rep-*/result.json")):
         result = json.loads(path.read_text())
-        row = {"job": result["job_id"], "status": result["status"], "error": result["error"]}
+        row = {"job": result["job_id"], "status": result["status"], "native_status": result["status"], "error": result["error"]}
         if result["status"] == "succeeded":
-            data = path.parent / "data"
-            commands = [c for c in result["commands"] if c["step_id"] == "production"]
-            row["native_ns_per_day"] = statistics.median(c["performance_ns_per_day"] for c in commands)
-            row["native_wall_seconds"] = sum(c["wall_seconds"] for c in commands)
-            row["cpu_user_seconds"] = sum(c["cpu_user_seconds"] for c in commands)
-            row["first_energy_log_observed_seconds"] = [c["first_energy_log_observed_seconds"] for c in commands]
-            row["scientific_observables"] = energy_drift([data / c["log"] for c in commands])
-            row["trajectories"] = {str(p.relative_to(data)): dcd(p) for p in sorted(data.rglob("production.part*.dcd"))}
-            if not row["trajectories"]:
-                raise ValueError("qualification requires readable production trajectories")
-            for p in data.rglob("production.coor"):
-                row["atoms"] = binary_vectors(p)
-                if binary_vectors(p.with_suffix(".vel")) != row["atoms"]:
-                    raise ValueError("final checkpoint vectors disagree")
-                row["final_step"] = xsc_step(p.with_suffix(".xsc"))
+            try:
+                data = path.parent / "data"
+                commands = [c for c in result["commands"] if c["step_id"] == "production"]
+                row["native_ns_per_day"] = statistics.median(c["performance_ns_per_day"] for c in commands)
+                row["native_wall_seconds"] = sum(c["wall_seconds"] for c in commands)
+                row["cpu_user_seconds"] = sum(c["cpu_user_seconds"] for c in commands)
+                row["first_energy_log_observed_seconds"] = [c["first_energy_log_observed_seconds"] for c in commands]
+                row["scientific_observables"] = energy_drift([data / c["log"] for c in commands])
+                row["radius_metadynamics"] = radius_metadynamics(data)
+                row["artifact_bytes"] = sum(item["size_bytes"] for item in result["files"])
+                row["native_process_wall_seconds_all_stages"] = sum(c["wall_seconds"] for c in result["commands"])
+                row["trajectories"] = {str(p.relative_to(data)): dcd(p) for p in sorted(data.rglob("production.part*.dcd"))}
+                if not row["trajectories"]:
+                    raise ValueError("qualification requires readable production trajectories")
+                for p in data.rglob("production.coor"):
+                    row["atoms"] = binary_vectors(p)
+                    if binary_vectors(p.with_suffix(".vel")) != row["atoms"]:
+                        raise ValueError("final checkpoint vectors disagree")
+                    row["final_step"] = xsc_step(p.with_suffix(".xsc"))
+            except (ValueError, OSError, KeyError) as exc:
+                row["status"], row["error"] = "failed", str(exc)
         telemetry = args.campaign / (result["job_id"] + "-gpu.csv")
         if telemetry.exists():
             with telemetry.open() as stream:
@@ -115,13 +164,15 @@ def main():
                 if values:
                     row[title] = {"mean": statistics.fmean(values), "max": max(values), "samples": len(values)}
         repetitions.append(row)
-    speeds = [r["native_ns_per_day"] for r in repetitions if "native_ns_per_day" in r]
+    speeds = [r["native_ns_per_day"] for r in repetitions if r["status"] == "succeeded" and "native_ns_per_day" in r]
     report = {"repetitions": repetitions, "total_repetitions": len(repetitions),
               "successful_repetitions": len(speeds), "single_trajectory": True, "MPS": False,
               "median_ns_per_day": statistics.median(speeds) if speeds else None,
               "min_ns_per_day": min(speeds) if speeds else None, "max_ns_per_day": max(speeds) if speeds else None}
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
+    if not repetitions or len(speeds) != len(repetitions):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

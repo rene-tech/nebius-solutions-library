@@ -25,6 +25,7 @@ import time
 from fs2_gromacs.files import atomic_json, digest_file, extract_inputs, inventory
 from . import ENGINE_ID, RESULT_SCHEMA
 from .contracts import canonical, normalize
+from .colvars_state import prepare as prepare_bias_state
 
 NAMD = "/usr/local/namd/bin/namd3"
 PSFGEN = "/usr/local/namd/bin/psfgen"
@@ -82,6 +83,7 @@ def log_metrics(path):
     fields = "TS BOND ANGLE DIHED IMPRP ELECT VDW BOUNDARY MISC KINETIC TOTAL TEMP POTENTIAL TOTALAVG TEMPAVG PRESSURE GPRESSURE VOLUME PRESSAVG GPRESSAVG".split()
     records, timings, benchmark, first_step = [], [], [], None
     version, dt, atom_count, random_seed, configured_first_step = None, None, None, None, None
+    restored_bias = None
     with path.open(errors="replace") as handle:
         for line in handle:
             if line.startswith("ETITLE:"):
@@ -105,6 +107,8 @@ def log_metrics(path):
                 benchmark.append(float(match.group(1)))
             if "Info: NAMD " in line:
                 version = line.strip()
+            if line.startswith("TCL: FS2_COLVARS_RESTORE_VERIFIED "):
+                restored_bias = json.loads(line.split("FS2_COLVARS_RESTORE_VERIFIED ", 1)[1])
             match = re.search(r"^Info:\s+TIMESTEP\s+([0-9.eE+-]+)", line)
             if match:
                 dt = float(match.group(1))
@@ -121,6 +125,7 @@ def log_metrics(path):
     seconds_step = statistics.median(timings[-10:]) if timings else (benchmark[-1] if benchmark else None)
     return {"engine": version, "atoms": atom_count, "timestep_fs": dt,
             "random_seed": random_seed, "configured_first_step": configured_first_step,
+            "colvars_restore_verified": restored_bias,
             "energy_records": len(records), "first_energy_step": first_step,
             "last_energy": records[-1] if records else None,
             "native_seconds_per_step": seconds_step,
@@ -269,7 +274,7 @@ class Workflow:
             "cpu_user_seconds": cpu_after.ru_utime - cpu_before.ru_utime,
             "cpu_system_seconds": cpu_after.ru_stime - cpu_before.ru_stime}
 
-    def script(self, step, *, prefix=None, current=None, count=None, restart=None):
+    def script(self, step, *, prefix=None, current=None, count=None, restart=None, original_bias=None):
         mode = step["mode"]
         if mode == "prepare":
             return f"source {tcl(step['config'])}\n"
@@ -316,7 +321,15 @@ class Workflow:
                 lines += [f"colvarsInput {tcl(restart['colvars_state'])}"]
             elif not (step["initialize_colvars"] and current == step["first_step"]):
                 lines += ['if {[isset colvars] && [istrue colvars]} {error "enabled Colvars continuation requires matching bias state"}']
-        lines += ["startup", "fs2_feature_guard", f"run {count}", f"output {tcl(prefix)}",
+        lines += ["startup", "fs2_feature_guard"]
+        if original_bias:
+            loaded = prefix + ".loaded"
+            lines += ['if {![istrue colvars]} {error "provided Colvars restart state was not enabled"}',
+                      f"set fs2_bias_handle [open {tcl(loaded + '.colvars.state')} w]",
+                      "puts -nonewline $fs2_bias_handle [cv savetostring]; close $fs2_bias_handle",
+                      'print "FS2_COLVARS_RESTORE_VERIFIED [exec /usr/bin/python3 -m fs2_namd.colvars_state '
+                      f'--original {tcl(original_bias)} --loaded {tcl(loaded + ".colvars.state")} --expected-step {current}]"']
+        lines += [f"run {count}", f"output {tcl(prefix)}",
                   f"if {{[istrue colvars]}} {{cv save {tcl(prefix)}}}",
                   f'print "FS2_SEGMENT_COMPLETE {current + count}"']
         return "\n".join(lines) + "\n"
@@ -346,8 +359,18 @@ class Workflow:
                     raise ValueError("native restart cell timestep does not match continuation")
                 if "colvars_state" in restart and colvars_step(cwd / restart["colvars_state"]) != current:
                     raise ValueError("Colvars bias-state timestep does not match the coordinate/cell checkpoint")
+            original_bias, bias_provenance = None, None
+            execution_restart = dict(restart) if restart else None
+            if restart and "colvars_state" in restart:
+                original_bias = restart["colvars_state"]
+                derived = prefix + ".colvars.input.state"
+                bias_provenance = prepare_bias_state(cwd / original_bias, self.contained(cwd, derived))
+                if bias_provenance["repair"]:
+                    execution_restart["colvars_state"] = derived
+                bias_provenance.update(original=original_bias, loaded_input=execution_restart["colvars_state"])
             script = cwd / f"fs2-{step['id']}-part{number:06d}.namd"
-            script.write_text(self.script(step, prefix=prefix, current=current, count=count, restart=restart))
+            script.write_text(self.script(step, prefix=prefix, current=current, count=count,
+                                          restart=execution_restart, original_bias=original_bias))
             command = [PSFGEN, script.name] if step["mode"] == "prepare" else [self.namd, f"+p{self.request['threads']}", "+devices", "0", script.name]
             log = cwd / f"fs2-{step['id']}-part{number:06d}.log"
             code, wall, usage = self.execute(command, cwd, log)
@@ -355,6 +378,8 @@ class Workflow:
                     "directory": step["directory"], "exit_code": code, "wall_seconds": wall,
                     "log": str(log.relative_to(self.data)), "gpu_mode": step["gpu_mode"]}
             self.state["commands"].append(item)
+            if bias_provenance:
+                item["colvars_restart"] = bias_provenance
             item.update(usage)
             if code:
                 raise Interrupted("native process interrupted; prior committed generation is recoverable") if self.stopped else RuntimeError(f"native step {step['id']} failed ({code}); see its retained log")

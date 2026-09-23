@@ -50,6 +50,7 @@ def main():
     parser.add_argument("--segment-steps", type=int, default=50000)
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--screen", action="store_true", help="Omit minimization/equilibration for wrapper mechanics only, not scientific qualification")
+    parser.add_argument("--prepare", action="store_true", help="Round-trip the supplied PSF/PDB through bundled psfgen before native dynamics; no new chemistry claim")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     inputs = args.output / "inputs"
@@ -57,6 +58,10 @@ def main():
     directory = f"{args.system}_gpu"
     system = inputs / directory
     source = (system / f"{args.system}_gpures_npt.namd").read_text()
+    if args.prepare:
+        (system / "prepare.tcl").write_text(f"readpsf {args.system}.psf\ncoordpdb {args.system}.pdb\nwritepsf prepared.psf\nwritepdb prepared.pdb\n")
+        source = re.sub(r"(?m)^(\s*structure\s+)\S+", r"\g<1>prepared.psf", source)
+        source = re.sub(r"(?m)^(\s*coordinates\s+)\S+", r"\g<1>prepared.pdb", source)
     for ensemble in ("nve", "npt", "colvars"):
         (system / f"fs2-config-{ensemble}.namd").write_text(configuration(source, managed=True, ensemble=ensemble, gpu_mode=args.gpu_mode, seed=314159))
     (system / "fs2-config-minimize.namd").write_text(configuration(source, managed=False, ensemble="npt", gpu_mode=args.gpu_mode, seed=314159))
@@ -82,6 +87,9 @@ metadynamics {
     def restart(prefix):
         return {"coordinates": prefix + ".coor", "velocities": prefix + ".vel", "cell": prefix + ".xsc"}
     stages = []
+    if args.prepare:
+        stages.append({"id": "prepare", "mode": "prepare", "directory": directory,
+                       "config": "prepare.tcl", "expected_outputs": ["prepared.psf", "prepared.pdb"]})
     if not args.screen:
         stages += [{"id": "minimize", "mode": "native", "directory": directory,
                     "config": "fs2-config-minimize.namd", "gpu_mode": args.gpu_mode,
@@ -112,6 +120,7 @@ metadynamics {
                   "source_sha256": digest_file(args.archive), "input_sha256": digest_file(args.output / "input.tar.gz"),
                   "system": args.system, "ensemble": args.ensemble, "gpu_mode": args.gpu_mode,
                   "repetitions": args.repetitions, "production_steps": args.steps, "screen_only": args.screen,
+                  "preparation": "bundled psfgen PSF/PDB round-trip into native MD" if args.prepare else None,
                   "changes": ["Fixed finite steps replace benchmarkTime early stop",
                               "Qualification seed schedule: native minimization 314159; managed segment 314159 + fs2_first_step",
                               "Native RNG state is not serialized; stochastic restarts are non-bitwise continuation",
