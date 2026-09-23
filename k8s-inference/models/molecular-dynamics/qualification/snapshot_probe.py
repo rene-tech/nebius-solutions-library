@@ -88,6 +88,11 @@ def network_rules():
     return subprocess.check_output(["iptables", "-t", "filter", "-S"], text=True, timeout=10).splitlines()
 
 
+def configure_network_tools(plan):
+    if plan.get("pod_local_tcp_locking"):
+        os.environ["PATH"] = "/tools/usr/sbin:" + os.environ.get("PATH", "/usr/bin:/bin")
+
+
 def own_tcp_lock_rule(line):
     words = shlex.split(line)
     try:
@@ -134,6 +139,7 @@ def main():
     if args.directory is None or args.plan is None:
         parser.error("capture/restore requires --directory and --plan")
     plan = json.loads(args.plan.read_text())
+    configure_network_tools(plan)
     directory = args.directory.resolve()
     receipt_path = directory / (args.action + "-probe.json")
     if receipt_path.exists():
@@ -153,6 +159,7 @@ def main():
         "pid_namespace": os.readlink("/proc/self/ns/pid"),
         "plan_sha256": digest(args.plan), "status": "running",
         "independent_replica": False, "customer_path_tested": False,
+        "probe_python": sys.executable,
     }
     child = None
     restore_attempted = False

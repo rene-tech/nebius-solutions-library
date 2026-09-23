@@ -58,6 +58,11 @@ def render(name, node, image, tools_image, configmap, pvc, deadline=2400, networ
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         module.install_network_tools(pod["spec"], pod["spec"]["containers"][0], network_configmap)
+        # The shared server renderer assumes a system Python. MD images may
+        # carry their dependencies in a venv; preserve their image-defined PATH.
+        # The task harness prepends /tools/usr/sbin in its own environment.
+        runtime = pod["spec"]["containers"][0]
+        runtime["env"] = [entry for entry in runtime["env"] if entry["name"] != "PATH"]
     return pod
 
 

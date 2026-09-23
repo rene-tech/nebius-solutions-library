@@ -65,6 +65,7 @@ def test_manifest_has_one_gpu_and_no_host_access():
     network = module.render("test", "node", "runtime@sha256:abc", "tools@sha256:def", "source", "owned-pvc", network_configmap="owned-network")
     assert "xtables-nft-multi" in network["spec"]["initContainers"][0]["command"][2]
     assert not network["spec"].get("hostNetwork", False)
+    assert not any(entry["name"] == "PATH" for entry in network["spec"]["containers"][0]["env"])
 
 
 def test_network_cleanup_recognizes_only_own_loopback_criu_lock():
@@ -74,3 +75,10 @@ def test_network_cleanup_recognizes_only_own_loopback_criu_lock():
     assert not module.own_tcp_lock_rule(own.replace("0xc114", "0x1234"))
     assert not module.own_tcp_lock_rule(own.replace("127.0.0.1/32", "10.0.0.1/32"))
     assert not module.own_tcp_lock_rule("-P INPUT ACCEPT")
+
+
+def test_network_tools_preserve_runtime_venv(monkeypatch):
+    module = probe()
+    monkeypatch.setenv("PATH", "/opt/fs2/venv/bin:/usr/bin")
+    module.configure_network_tools({"pod_local_tcp_locking": True})
+    assert module.os.environ["PATH"] == "/tools/usr/sbin:/opt/fs2/venv/bin:/usr/bin"
