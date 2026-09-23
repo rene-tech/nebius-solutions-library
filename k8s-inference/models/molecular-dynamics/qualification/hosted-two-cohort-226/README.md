@@ -1,5 +1,10 @@
 # AMBER, NAMD and GROMACS: two completed hosted cohorts on Helm 226
 
+The original three-engine receipt below remains unchanged in scope. LAMMPS has
+subsequently completed both full hosted cohorts, making **eight final operations**
+across all four engines. See [the LAMMPS completion receipt](LAMMPS.md) and the
+[final eight-operation client recovery](../final-client-recovery-227/README.md).
+
 All three engines passed two ordinary-key, exact-image customer workflows and
 independent validation of their downloaded artifacts. This is a bounded
 canonical-workload acceptance receipt, not a blanket scientific convergence,

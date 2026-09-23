@@ -116,6 +116,10 @@ the storage owner's lifecycle, not a second permanent copy in the debug store.
 Errors on the artifact route still retain their inline error body. Interrupted
 transfers retain their partial count/checksum with `verified=false`; a complete
 HTTP response alone does not make a size/digest mismatch verified.
+`delivered_bytes` means bytes accepted by the ASGI server's send operation, not
+bytes acknowledged or consumed by the remote client. An interrupted reader can
+consume fewer bytes than the API handed to the proxy before disconnect; both
+boundaries must be reported honestly when testing interrupted transfers.
 
 Nullable identities/statuses are not invented. A request without a durable
 operation shows **No operation**; an unavailable status is **Not observed**, not
