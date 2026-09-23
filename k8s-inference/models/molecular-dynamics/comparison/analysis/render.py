@@ -76,7 +76,7 @@ def render_clip(data, engine, output, *, settings=None, synthetic=False):
     segments = Line3DCollection([], colors=[colors[int(i)] for bond in bonds for i in bond], linewidths=3, alpha=1.)
     axis.add_collection3d(segments, autolim=False)
     fig.text(.5, .95, engine.upper(), ha="center", color="white", fontsize=21, weight="bold")
-    fig.text(.5, .916, "SYNTHETIC geometry fixture · no production simulation" if synthetic else "ACE–ALA–NME · ff14SB / TIP3P · NPT 300 K, 1 bar", ha="center", color="#acbdca", fontsize=10)
+    fig.text(.5, .916, "SYNTHETIC geometry fixture · no production simulation" if synthetic else "ACE–ALA–NME · ff14SB / TIP3P · NPT targets: 300 K, 1 bar", ha="center", color="#acbdca", fontsize=10)
     clock = fig.text(.5, .075, "", ha="center", color="white", fontsize=13)
     fig.text(.5, .046, "Encoder/geometry unit test only" if synthetic else "1 ps/frame · 40 ps/s · one shared camera + master reference", ha="center", color="#acbdca", fontsize=9)
     fig.text(.5, .022, "Water: translucent O points within 13 Å · raw trajectories preserved", ha="center", color="#acbdca", fontsize=8)
