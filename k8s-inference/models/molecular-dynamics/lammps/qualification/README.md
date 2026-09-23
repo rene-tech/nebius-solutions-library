@@ -148,6 +148,25 @@ not native EAM. Its logs remain under the private handoff
 runtime change is justified by that storage failure; hosted remediation and
 retry are parent-owned. A later successful operation must not replace this record.
 
+The exact v3 image now passes the complete36-run cohort: all six cases, three
+repetitions each, on both `h100-ondemand-1x` and `l40s-1x`. The immutable
+`receipts/native-both-pools-repeat-v3.json` binds all input/result/validation
+hashes and retained failures, with `campaign_incomplete:false`. Native fresh-Pod
+LJ NVE and rhodopsin NPT recovery also pass on L40S; separate receipts contain
+distinct donor/replacement UIDs and closed-generation hashes. These are
+complete-workspace/native-restart tests, not persistent GPU snapshots.
+
+The isolated-storage hosted retry
+`6ce558e6-3d85-4626-8d4f-366c9f8834c3` passed all six unchanged jobs. Root
+downloaded and hash-verified338 artifacts. `validate_hosted.py` additionally
+checked original input-tar member parity, exact operation/job/recipe/step
+identity, each result inventory and the same scientific trajectory gates.
+Its receipt is `receipts/hosted-six-case-v3.json`, SHA256
+`7d9471754efa5d52cd082e1a9c9e445b143a067afbf0543eeba59eb5ff4da27a`.
+The earlier quota failure remains preserved. Final release acceptance, the
+new canonical ff14SB/TIP3P four-engine comparison and separate GPU snapshot
+screen are parent-coordinated gates, not inferred from these passes.
+
 Sources: [LAMMPS restart contract](https://docs.lammps.org/read_restart.html),
 [Kokkos acceleration](https://docs.lammps.org/Speed_kokkos.html),
 [exact source](https://github.com/lammps/lammps/tree/c7ae612a9497437412cb787b78769570f48653dd),
