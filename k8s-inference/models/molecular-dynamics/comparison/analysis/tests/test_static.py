@@ -11,7 +11,7 @@ from convergence_gromacs import diagnostic_mdp
 from dispersion_diagnostic import tails
 from geometry import ValidationError
 from static_compare import amber_energy, gromacs_energy, lammps_energy, lammps_forces, namd_energy, normalized
-from temperature_diagnostic import uncertainty
+from temperature_diagnostic import AMBER_FORTRAN_KB, uncertainty
 
 
 class StaticParserTests(unittest.TestCase):
@@ -103,6 +103,11 @@ class StaticParserTests(unittest.TestCase):
 
 
 class BoundedConvergenceTests(unittest.TestCase):
+    def test_temperature_constant_uses_actual_native_module_binding(self):
+        self.assertEqual(AMBER_FORTRAN_KB, 8.31441 / 4184.)
+        self.assertAlmostEqual(AMBER_FORTRAN_KB, .00831441 / 4.184, places=18)
+        self.assertNotEqual(AMBER_FORTRAN_KB, 1.380658e-23 * 6.0221367e23 / 4184.)
+
     def test_correlated_block_uncertainty_is_not_naive_sample_sem(self):
         rng = np.random.default_rng(601)
         values = np.zeros(1000)

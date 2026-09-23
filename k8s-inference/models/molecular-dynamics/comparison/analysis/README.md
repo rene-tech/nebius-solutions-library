@@ -1,6 +1,6 @@
 # Canonical four-engine trajectory analysis
 
-Status on 2026-09-23: 48 explicitly synthetic unit tests pass. Actual complete
+Status on 2026-09-23: 49 explicitly synthetic unit tests pass. Actual complete
 GROMACS, NAMD and AMBER production files have passed common analysis, and their
 three real clips are rendered and encoding/visually checked. LAMMPS production
 is still running, so the fourth clip and synchronized 2×2 remain pending.

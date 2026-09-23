@@ -44,7 +44,7 @@ The inspected source-level Coulomb coefficients in kcal·Å/(mol·e²) are:
 
 | Engine | Coefficient | Primary evidence and limit |
 |---|---:|---|
-| AMBER | 332.05221729 | Exact private PMEMD26 `constants.F90`, standard charge scale 18.2223 squared; not the separate pGM constant |
+| AMBER | 332.05221729 | Exact private PMEMD26 `gbl_constants.F90:21`, imported by `prmtop_dat.F90`; standard charge scale 18.2223 squared (also present in `constants.F90`), not the separate pGM constant |
 | LAMMPS | 332.06371 | [Pinned 22 Jul 2025 implementation, real units](https://raw.githubusercontent.com/lammps/lammps/c7ae612a9497437412cb787b78769570f48653dd/src/update.cpp) |
 | GROMACS | 332.063713299 | [Pinned upstream units implementation](https://raw.githubusercontent.com/gromacs/gromacs/da9e013175bae98b31b34384f6b4864ff29f65a5/api/legacy/include/gromacs/math/units.h), derived from its SI constants; exact NGC 2026.2-dev binary-to-revision binding not proven |
 | NAMD | 332.0636 | [Official implementation documentation](https://www.ks.uiuc.edu/Research/namd/doxygen/common_8h_source.html); vendor 3.0.2 binary identity is known, but exact source-to-binary binding is not proven |
@@ -145,6 +145,7 @@ Source snapshots are in `static-sources-01`:
 - LAMMPS real-units source: `362978558ca39ccb12d78ba6a59b1cbac339af545732c2bfc4af75ba01319f59`.
 - NAMD official common-header documentation: `b0e5be8ee02b75b8f1ee0d58128a1a64ca9471abd71c26a06644d0551d092ac4`.
 - Private AMBER constants: `e5fd9aa3ee4d7d2adf399ebf0feaa26a43686881887612fa36d448e351df1246`.
+- Private AMBER directly imported global constants: `a8073e9f1951ebfb141809dbd85e92544ef063bb0cf8781ad2940506dc183745`.
 - Private AMBER force source: `543c18dd82091ee186a8522e55c48c2d895193cc0d44587e1ea8f013fa0c9054`.
 
 `static_compare.py --help`, `convergence_gromacs.py --help` and

@@ -18,7 +18,9 @@ from compare import file_receipt, source_identity, write_json
 from geometry import ValidationError, finite
 from thermo import NUMBER, descriptive, number
 
-AMBER_FORTRAN_KB = 1.380658e-23 * 6.0221367e23 / 4184.
+# runmd.F90 imports KB from gbl_constants_mod. The similarly named value in
+# constants.F90 is NOT the binding used by this printed-temperature path.
+AMBER_FORTRAN_KB = 8.31441 / 4184.
 
 
 def uncertainty(values, target=300., dt_ps=1.):
