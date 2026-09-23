@@ -204,6 +204,18 @@ its receipt digest, the `input_manifest` pointer, the `output_manifest` pointer
 on success, and a structured `error` on failure. A run is reported `succeeded`
 only when its output passed the pinned semantic validator.
 
+Failed native molecular-dynamics runs can also publish an `output_manifest`
+containing **failed-attempt diagnostics only**. The terminal status and semantic
+validation remain `failed`; these are not valid trajectories, stage commits or
+recoverable checkpoints. Entries use `<engine>-failed-result/v1`,
+`<engine>-failed-log/v1` and `native-failed-diagnostics/v1`, preserving the
+original native result and exact log bytes. The diagnostic receipt identifies
+omitted logs and explicit byte/file limits. Download them with the same
+operation-owner key and verify hashes, but do not mark the scientific workflow
+verified. Uploads have a bounded 60-second grace before the original nonzero
+stage exit; abrupt termination or storage failure can still leave diagnostics
+unavailable. Other models retain their existing failure behavior.
+
 Download the output manifest and then each artifact it names:
 
 ```bash

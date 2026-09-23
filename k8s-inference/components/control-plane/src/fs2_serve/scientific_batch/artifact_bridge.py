@@ -562,16 +562,19 @@ class ArtifactServiceBridge:
         lifecycle. It runs in the controller, requests no Pod/GPU, and cannot
         reopen a closed scientific attempt. Single-shard results stay identical.
         """
-        if not commits:
+        return await self._combine_terminal_manifests(state, tuple(item.manifest_artifact_id for item in commits))
+
+    async def _combine_terminal_manifests(self, state: ScientificBatchState, manifests: tuple[UUID, ...]) -> UUID:
+        if not manifests:
             raise ScientificProfileError("terminal stage has no canonical output manifest")
-        if len(commits) == 1:
-            return commits[0].manifest_artifact_id
+        if len(manifests) == 1:
+            return manifests[0]
         if self.content_reader is None:
             raise ScientificProfileError("terminal manifest reader is unavailable")
         entries = []
-        for index, commit in enumerate(commits):
+        for index, manifest_id in enumerate(manifests):
             manifest = self.profiles.validate_artifact_manifest(json.loads(await self.content_reader.read(
-                commit.manifest_artifact_id, tenant_id=state.tenant_id, maximum_bytes=_MAX_MANIFEST_BYTES,
+                manifest_id, tenant_id=state.tenant_id, maximum_bytes=_MAX_MANIFEST_BYTES,
             )))
             for entry in cast(list[dict[str, Any]], manifest["entries"]):
                 # Index prefixes keep repeated native names distinct and stable;
@@ -627,6 +630,80 @@ class ArtifactServiceBridge:
             raise ScientificProfileError("terminal publication attempt did not succeed")
         return artifact.artifact_id
 
+    async def _failed_diagnostic_manifest(self, state: ScientificBatchState) -> UUID | None:
+        """Expose only completed, owner-bound diagnostic uploads from failed attempts.
+
+        These are ordinary artifacts, not stage commits or checkpoints. A
+        partially uploaded set remains unadvertised; no successful validation
+        or controller retry is manufactured from the presence of native logs.
+        """
+        from .native_workflows import workflow_for_binding
+
+        if state.execution_plan is None or self.content_reader is None:
+            return None
+        manifests = []
+        for stage in state.stages:
+            for attempt in stage.attempts:
+                if attempt.outcome is not AttemptOutcome.FAILED:
+                    continue
+                invocation = state.execution_plan.invocation(attempt.stage_id, attempt.shard_id)
+                workflow = workflow_for_binding(state.model_id, attempt.stage_id, invocation.collector_id)
+                if workflow is None:
+                    continue
+                records = await self._require_service().list_artifacts(
+                    state.operation_id, tenant_id=state.tenant_id,
+                    stage_id=attempt.stage_id, attempt_id=attempt.attempt_id,
+                )
+                documents = [item for item in records
+                             if item.media_type == "application/vnd.fs2.scientific-manifest+json"]
+                validations = [item for item in records
+                               if item.media_type == "application/vnd.fs2.scientific-validation+json"]
+                if len(documents) != 1 or len(validations) != 1:
+                    continue
+                document, validation_record = documents[0], validations[0]
+                validation = json.loads(await self.content_reader.read(
+                    validation_record.artifact_id, tenant_id=state.tenant_id, maximum_bytes=_MAX_MANIFEST_BYTES,
+                ))
+                if not isinstance(validation, dict) or validation.get("artifact_role") != "failed-attempt-diagnostics":
+                    # A gang can fail after its head published a successful
+                    # local result. That is not a failed-diagnostic manifest.
+                    continue
+                expected = {
+                    "status": "failed", "artifact_role": "failed-attempt-diagnostics",
+                    "collector_id": invocation.collector_id, "validator_id": invocation.validator_id,
+                    "stage_id": invocation.stage_id, "shard_id": invocation.shard_id,
+                    "logical_output_id": invocation.produces, "operation_id": str(state.operation_id),
+                    "job_id": invocation.shard_id, "scientific_validation_passed": False,
+                    "checkpoint_generation_created": False,
+                    "diagnostic_manifest_sha256": document.digest.removeprefix("sha256:"),
+                }
+                if any(validation.get(key) != value for key, value in expected.items()):
+                    raise ScientificProfileError("failed diagnostic receipt differs from its frozen attempt")
+                manifest = self.profiles.validate_artifact_manifest(json.loads(await self.content_reader.read(
+                    document.artifact_id, tenant_id=state.tenant_id, maximum_bytes=_MAX_MANIFEST_BYTES,
+                )))
+                if manifest["manifest_id"] != invocation.produces:
+                    raise ScientificProfileError("failed diagnostic manifest differs from its frozen attempt")
+                allowed = {f"{workflow.engine}-failed-result/v1", f"{workflow.engine}-failed-log/v1",
+                           "native-failed-diagnostics/v1"}
+                by_id = {str(item.artifact_id): item for item in records if item.direction is ArtifactDirection.OUTPUT}
+                entries = manifest["entries"]
+                for entry in entries:
+                    record = by_id.get(entry["artifact"]["artifact_id"])
+                    if (entry["semantic_type"] not in allowed or record is None
+                            or not _pointer_matches(record, entry["artifact"])):
+                        raise ScientificProfileError(
+                            "failed diagnostic manifest references another or changed artifact"
+                        )
+                results = [entry for entry in entries
+                           if entry["semantic_type"] == f"{workflow.engine}-failed-result/v1"]
+                receipts = [entry for entry in entries if entry["semantic_type"] == "native-failed-diagnostics/v1"]
+                if (len(results) != 1 or len(receipts) != 1
+                        or results[0]["artifact"]["sha256"] != validation.get("result_sha256")):
+                    raise ScientificProfileError("failed diagnostic result inventory is incomplete")
+                manifests.append(document.artifact_id)
+        return await self._combine_terminal_manifests(state, tuple(manifests)) if manifests else None
+
     async def publish_terminal(self, state: ScientificBatchState) -> None:
         """Idempotently publish the artifact-service-owned terminal result."""
 
@@ -655,6 +732,8 @@ class ArtifactServiceBridge:
             output_manifest_id = await self._terminal_manifest(state, commits)
             validator_id = commits[0].validator_id
             validation_receipt = self._validation_digest(commits)
+        elif state.status is BatchStatus.FAILED:
+            output_manifest_id = await self._failed_diagnostic_manifest(state)
         access = ArtifactAccess(
             profile=ArtifactAccessProfile(state.access_context.profile),
             receipt_digest=state.access_context.receipt_digest,

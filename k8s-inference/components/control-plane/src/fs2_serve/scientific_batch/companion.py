@@ -54,7 +54,7 @@ STAGE_RUNNER_RELATIVE_PATH = ".fs2/stage-runner.py"
 STAGE_COMPLETION_SCHEMA = "fs2-serve.nebius.ai/scientific-stage-completion/v1"
 
 _STAGE_RUNNER_SOURCE = f'''#!/usr/bin/env python3
-"""Run one controller-frozen argv and atomically publish successful completion."""
+"""Run one frozen argv; success and failed diagnostics have separate markers."""
 
 from __future__ import annotations
 
@@ -64,9 +64,14 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 SCHEMA = {STAGE_COMPLETION_SCHEMA!r}
+FAILURE_SCHEMA = "fs2-serve.nebius.ai/scientific-stage-failure/v1"
+NATIVE_COLLECTORS = (
+    "gromacs-workflow-v1", "gromacs-mpi-workflow-v1", "lammps-workflow-v1", "namd-workflow-v1", "amber-workflow-v1"
+)
 
 
 def main() -> int:
@@ -74,7 +79,8 @@ def main() -> int:
         raise SystemExit("stage runner requires an exec-form argv after --")
     command = sys.argv[2:]
     marker = Path.cwd() / ".fs2" / "stage-complete.json"
-    if marker.exists() or marker.is_symlink():
+    failure_marker = marker.with_name("stage-failed.json")
+    if marker.exists() or marker.is_symlink() or failure_marker.exists() or failure_marker.is_symlink():
         raise SystemExit("stage completion marker already exists")
     process = None
     termination_signal = None
@@ -101,7 +107,8 @@ def main() -> int:
     returncode = process.wait()
     if termination_signal is not None:
         return 128 + termination_signal
-    if returncode != 0:
+    failed = returncode != 0
+    if failed and os.environ.get("FS2_COLLECTOR_ID") not in NATIVE_COLLECTORS:
         return returncode if returncode > 0 else 128 - returncode
     values = {{
         "stage_id": os.environ.get("FS2_STAGE_ID", ""),
@@ -113,13 +120,17 @@ def main() -> int:
     if any(not value or len(value) > 256 or "\\x00" in value for value in values.values()):
         raise SystemExit("stage completion identity is absent or invalid")
     argv_payload = json.dumps(command, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    document = {{
+        "schema": FAILURE_SCHEMA if failed else SCHEMA,
+        "status": "failed" if failed else "passed",
+        "argv_sha256": hashlib.sha256(argv_payload).hexdigest(),
+        **values,
+    }}
+    if failed:
+        marker = failure_marker
+        document["exit_code"] = returncode if returncode > 0 else 128 - returncode
     payload = json.dumps(
-        {{
-            "schema": SCHEMA,
-            "status": "passed",
-            "argv_sha256": hashlib.sha256(argv_payload).hexdigest(),
-            **values,
-        }},
+        document,
         sort_keys=True,
         separators=(",", ":"),
         allow_nan=False,
@@ -142,6 +153,23 @@ def main() -> int:
     finally:
         if temporary.exists():
             temporary.unlink()
+    if failed:
+        # Keep the stage alive only long enough for a bounded diagnostics
+        # upload. Kubernetes otherwise tears its collector down immediately.
+        # An ACK never changes the original exit code or executes a retry.
+        ack = marker.with_name("failed-diagnostics-ack.json")
+        expected = hashlib.sha256(payload).hexdigest()
+        deadline = time.monotonic() + 60
+        while termination_signal is None and time.monotonic() < deadline:
+            try:
+                if not ack.is_symlink() and ack.stat().st_size <= 16384:
+                    value = json.loads(ack.read_text())
+                    if value == {{"status": "diagnostics-exported", "failure_marker_sha256": expected}}:
+                        break
+            except (OSError, ValueError):
+                pass
+            time.sleep(0.1)
+        return document["exit_code"]
     return 0
 
 
@@ -1067,9 +1095,16 @@ def collect_and_commit(
         checkpoint_transport.restore()
     deadline = monotonic() + collection_deadline_seconds
     while True:
-        if checkpoint_transport is not None:
-            checkpoint_transport.publish_ready()
         try:
+            if workflow is not None:
+                from .native_failures import collect_failed_diagnostics
+
+                failed = collect_failed_diagnostics(invocation, workspace, workflow)
+                if failed is not None:
+                    collected = failed
+                    break
+            if checkpoint_transport is not None:
+                checkpoint_transport.publish_ready()
             collected = collect_stage_output(invocation, workspace)
             break
         except CollectionPendingError:
@@ -1079,6 +1114,12 @@ def collect_and_commit(
                     "scientific collector reached its bound before the model published its output"
                 ) from None
             sleep(min(poll_seconds, remaining))
+        except Exception:
+            if checkpoint_transport is not None:
+                # A broken collector must wake a native worker waiting for an
+                # acknowledgement. This is failure, never a fabricated ACK.
+                checkpoint_transport._notify_failure("collect")
+            raise
     refs: dict[str, dict[str, Any]] = {}
     upload_prefix = (
         f"{invocation.produces}:{checkpoint_transport.attempt}"
@@ -1098,10 +1139,20 @@ def collect_and_commit(
         total_output_bytes += path.stat().st_size
         if total_output_bytes > invocation.max_output_bytes:
             raise ValueError("collector output exceeds the invocation byte bound")
-        if checkpoint_transport is not None:
+        if (checkpoint_transport is not None
+                and collected.validation.get("artifact_role") != "failed-attempt-diagnostics"):
             previous = checkpoint_transport.final_file_reference(path)
             refs[item.name] = previous or client.upload_file(
                 identity=f"{upload_prefix}:{item.name}",
+                path=path,
+                media_type=item.media_type,
+                compression=item.compression,
+            )
+        elif checkpoint_transport is not None:
+            # Uncommitted diagnostic bytes must never pass through checkpoint
+            # reference reuse or create a new recoverable generation.
+            refs[item.name] = client.upload_file(
+                identity=f"{upload_prefix}:failed-native-file",
                 path=path,
                 media_type=item.media_type,
                 compression=item.compression,
@@ -1142,8 +1193,16 @@ def collect_and_commit(
         }
     )
     semantic_valid = validation.get("status") == "passed" and validation.get("validator_id") == invocation.validator_id
-    if not semantic_valid:
+    failed_diagnostics = (
+        workflow is not None
+        and validation.get("status") == "failed"
+        and validation.get("artifact_role") == "failed-attempt-diagnostics"
+        and validation.get("validator_id") == invocation.validator_id
+    )
+    if not semantic_valid and not failed_diagnostics:
         raise ValueError("collector semantic validation did not pass the bound validator")
+    if failed_diagnostics:
+        validation["diagnostic_manifest_sha256"] = hashlib.sha256(manifest_bytes).hexdigest()
     validation_bytes = json.dumps(validation, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     manifest_ref = client.upload(
         identity=f"{upload_prefix}:manifest",
@@ -1157,6 +1216,17 @@ def collect_and_commit(
         media_type="application/vnd.fs2.scientific-validation+json",
         compression=None,
     )
+    if failed_diagnostics:
+        from .adapters.staged_workspace import atomic_publish
+
+        atomic_publish(
+            workspace / ".fs2/failed-diagnostics-ack.json",
+            json.dumps({"status": "diagnostics-exported", "failure_marker_sha256": validation["failure_marker_sha256"]},
+                       sort_keys=True, separators=(",", ":")).encode(),
+            workspace=workspace,
+            label="failed native diagnostic acknowledgement",
+        )
+        return
     if invocation.handoff_name is not None and invocation.handoff_name not in refs:
         raise ValueError("collector omitted the invocation's exact handoff entry")
     # Finalization above is the durable collection boundary. The controller
