@@ -6,7 +6,7 @@ import tarfile
 import pytest
 
 from make_alanine_fixture import audit_master, common, make, parm7, thermostat
-from validate_alanine import ENERGY_FIELDS, coordinate_identity, energy_rows
+from validate_alanine import ENERGY_FIELDS, coordinate_identity, energy_rows, submitted_request
 
 
 PROTOCOL = {
@@ -123,3 +123,22 @@ def test_canonical_observable_reader_uses_native_labels_and_checks_all_values(tm
     path.write_text("ENERGY: " + " ".join(["nan"] + ["0"] * (len(ENERGY_FIELDS) - 1)) + "\n")
     with pytest.raises(ValueError, match="non-finite"):
         energy_rows(path)
+
+
+@pytest.mark.parametrize("change", ["transport", "steps", "seed-script"])
+def test_hosted_validation_binds_transport_request_without_changing_physics(tmp_path, change):
+    output = tmp_path / "fixture"
+    make(master(tmp_path), output)
+    request = json.loads((output / "request.json").read_text())
+    request["output_destination"] = "platform-artifacts"
+    if change == "steps":
+        request["jobs"][0]["steps"][-1]["steps"] += 500
+    elif change == "seed-script":
+        request["jobs"][0]["steps"][0]["config"] = "other-seed.namd"
+    actual = tmp_path / "submitted.json"
+    actual.write_text(json.dumps(request))
+    if change == "transport":
+        assert submitted_request(output, actual) == request
+    else:
+        with pytest.raises(ValueError, match="more than output transport"):
+            submitted_request(output, actual)

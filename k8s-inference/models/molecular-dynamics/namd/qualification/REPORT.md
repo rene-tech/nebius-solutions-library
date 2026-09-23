@@ -26,7 +26,7 @@ runtime correction `8b9e9190e`, build source `488aaaa99`. The dedicated
 wrapper layer; no OS/Python/native binary refresh enters this image. Build
 identity receipt `worker-r5-build-identity.json` SHA256
 `d8a6c01822d41adef1010e8466d1df5f0094184c29f43e89c397119d74c08b05`
-records this comparison. Forty-seven offline tests pass. Fresh H100/L40S
+records this comparison. Fifty-six offline tests pass. Fresh H100/L40S
 scientific cohorts started after all current r4 cases finished naturally and
 their output inventories were archived. Earlier full-rebuild local image
 `d60f5163...` was neither published nor deployed; it is not the r5 identity.
@@ -40,7 +40,8 @@ checked. The grid case verifies all 105 numeric fields of each serialized
 energy/gradient grid across native loading and both 100-point PMFs.
 H100 native ns/day: 289.238/215.430/190.377/190.145; L40S:
 213.467/156.209/132.639/133.163. These are first confirmations, not completed
-three-repetition performance medians. L40S repetitions two and three continue.
+three-repetition performance medians. Completed repeated cohorts are recorded
+separately below.
 
 An exact-r5 donor then saved generation 4 at timestep 121,000 (100 bias hills)
 to an externally copied, hash-verified archive and demonstrably advanced past
@@ -70,6 +71,34 @@ of native `nonbondedFreq`), before forces/dynamics. The failed input/result/logs
 remain at `campaign-alanine-singlepoint-r5-failed-01`. A separately hashed
 corrected fixture also aligns the comparison single-point grid to 64³/order 4.
 This changes qualification inputs only, not the exact r5 worker.
+
+## Exact r5 repeated confirmations and canonical acceptance
+
+The L40S core completed all 12 sustained runs (three per protocol), with every
+input and result inventory re-audited after archival. A partial NVE transfer was
+retained, then recopied and hash-verified; its incomplete receipt is not used.
+`runtime-receipt-r5-l40s-core-confirmations.json` SHA256
+`7a725b3d7523f32159cbd0fdd2462b6e5e283352620baff1e33e50e2f1810463`
+contains one passed row per actual result, not an invented aggregate result.
+Single-trajectory native medians (ns/day) are NVE 214.278, NPT 156.209,
+ungridded repaired bias 132.639 and gridded `keepHills on` bias 132.861.
+
+H100 NVE and NPT also passed three runs each, median 289.610 and 214.914
+ns/day. Their receipts are `runtime-receipt-r5-h100-nve-confirmations.json`
+SHA256 `1f6b842374058b1bb1c2b5a6d2b88370559abf877ce31ae680a7c10bd4633fd4`
+and `runtime-receipt-r5-h100-npt-confirmations.json` SHA256
+`379a680e942ee1f75f2b9434d5e4101b222167ab7024d9a8fd4f8b41d90067f3`.
+Further H100 bias, preparation, offload and STMV repetitions continue; remaining
+L40S preparation/offload/STMV controls continue on the same bounded worker.
+
+The canonical ff14SB/TIP3P 6,598-atom alanine acceptance completed minimization,
+100 ps NVT, 100 ps NPT and full 1 ns production with 1,000 finite 1 ps frames.
+Native AMBER topology bytes and all input members were preserved, with no
+force-field conversion. Exact-r5 canonical receipt SHA256
+`92b2d44c68a08b7aff42a2a54825d71a2daa51d1e01c0c458f886f60ef294b98`
+and detailed protocol/observables are in `ALANINE.md`. Common cross-engine
+statistics, ordinary hosted execution and persistent GPU restore remain
+separate gates; this is not a whole-platform readiness statement.
 
 ## Retained r4 identity and protocol
 

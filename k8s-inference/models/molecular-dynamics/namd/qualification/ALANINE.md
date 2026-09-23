@@ -101,3 +101,44 @@ All native warnings remain retained and require fixture-specific interpretation:
 The prior fixture typo failed before force evaluation and is retained separately
 at `campaign-alanine-singlepoint-r5-failed-01`. No dynamics or cross-engine
 equivalence is claimed by this single-point record.
+
+## Complete exact-r5 native dynamics
+
+The unchanged `alanine-canonical-r3` input completed all four stages on the
+fresh r5 H100 worker: minimization to step 5,000, 100 ps NVT, 100 ps NPT and
+1 ns NPT production. All 76 native files (108,010,096 bytes) and all 12 original
+input members passed inventory/hash checks. The three trajectories contain
+100/100/1,000 finite frames. Production is exactly step 105,500 through 605,000
+at 500-step intervals: absolute 211–1,210 ps, production-relative 1–1,000 ps.
+
+Raw evidence: `campaign-alanine-dynamics-r5-01/rep-1/data/alanine/` under the
+NAMD evidence root. Full native ETITLE/ENERGY/TIMING logs are preserved.
+`alanine-validation.json` SHA256
+`a794c38ac9440f18ad5e4fc210dfb81ef0e1dca20c14633de151585f394b98c5`
+and result SHA256
+`92772dbb4a21ab3d449653ef75838b701b920a126dd46fc57f1cd6cf28ea278e`
+bind these outputs. Exact-image receipt `runtime-receipt-r5-alanine-canonical.json`
+SHA256 `92b2d44c68a08b7aff42a2a54825d71a2daa51d1e01c0c458f886f60ef294b98`
+is passed with `customer_ready:false`.
+
+Production mean temperature is 300.144 K and mean density 0.98323 g/mL.
+The native group-pressure mean is −1.471 bar; atomic pressure is separately
+20.606 bar. Group pressure is the actual barostat control variable, not an
+interchangeable alias for the atomic virial. These finite-run means do not
+establish pressure convergence or cross-engine ensemble equivalence.
+
+Native logs confirm all-atom BBK Langevin (including hydrogens) at 1/ps,
+group-based 1 bar piston, all hydrogen rigid bonds, SETTLE water and 6,588
+rigid bonds (6,576 water constraints plus 12 solute hydrogen bonds), analytical
+LJ corrections to both energy and pressure, and actual production PME grid 44³.
+The documented three warning categories are unchanged and retained in every
+stage. Native steady-tail production throughput is 416.589 ns/day; whole
+production-process throughput is 414.980 ns/day over 208.203 s. Neither includes
+cloud queue, image pull or artifact delivery, and neither is MPS aggregate.
+
+For hosted artifact validation, run `validate_alanine.py --fixture ... --campaign
+... --request <client-receipt>/request-transport.json --output ...`. The actual
+submitted request hash must match the result recipe; only output destination
+and prefix may differ from the immutable fixture. Physics, scripts, steps and
+seeds remain compared. `alanine_runtime_receipt.py` binds native validation to
+the captured Pod/image; it is not a substitute for a hosted-client receipt.

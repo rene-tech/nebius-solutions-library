@@ -8,6 +8,7 @@ import struct
 
 from audit_outputs import audit
 from fs2_gromacs.files import digest_file
+from fs2_namd.contracts import normalize
 from fs2_namd.worker import binary_vectors, log_metrics, xsc_step
 from inspect_warnings import warning_lines
 from make_alanine_fixture import parm7
@@ -60,8 +61,21 @@ def coordinate_identity(source, native):
     return {"atoms": atoms, "maximum_coordinate_difference_A": deviation, "coordinate_tolerance_A": 1e-6}
 
 
-def validate(fixture, campaign):
-    request = json.loads((fixture / "request.json").read_text())
+def submitted_request(fixture, request_path=None):
+    original = json.loads((fixture / "request.json").read_text())
+    if request_path is None:
+        return original
+    request = json.loads(request_path.read_text())
+    transport_fields = {"output_destination", "output_prefix"}
+    original_physics = {k: v for k, v in normalize(original).items() if k not in transport_fields}
+    submitted_physics = {k: v for k, v in normalize(request).items() if k not in transport_fields}
+    if original_physics != submitted_physics:
+        raise ValueError("submitted canonical request changes more than output transport")
+    return request
+
+
+def validate(fixture, campaign, request_path=None):
+    request = submitted_request(fixture, request_path)
     provenance = json.loads((fixture / "provenance.json").read_text())
     singlepoint = provenance["ensemble"] == "singlepoint"
     results = []
@@ -143,7 +157,7 @@ def validate(fixture, campaign):
         report["atoms"] = len(fields["MASS"])
         report["total_charge_e"] = sum(fields["CHARGE"]) / 18.2223
     report = {"status": "passed", "mode": "single-point" if singlepoint else "dynamics", "results": results,
-              "input_sha256": digest_file(fixture / "input.tar.gz"), "request_sha256": digest_file(fixture / "request.json"),
+              "input_sha256": digest_file(fixture / "input.tar.gz"), "request_sha256": digest_file(request_path or fixture / "request.json"),
               "scientific_convergence_claimed": False, "cross_engine_equivalence_proven": False,
               "gpu_snapshot_qualified": False, "customer_ready": False}
     if singlepoint:
@@ -157,7 +171,8 @@ if __name__ == "__main__":
     parser.add_argument("--fixture", required=True, type=Path)
     parser.add_argument("--campaign", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--request", type=Path, help="Actual hosted parameters; only output transport may differ from the immutable fixture")
     args = parser.parse_args()
-    report = validate(args.fixture, args.campaign)
+    report = validate(args.fixture, args.campaign, args.request)
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps({"status": report["status"], "mode": report["mode"], "sha256": digest_file(args.output), "output": str(args.output)}))
