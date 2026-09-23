@@ -83,13 +83,27 @@ contains one passed row per actual result, not an invented aggregate result.
 Single-trajectory native medians (ns/day) are NVE 214.278, NPT 156.209,
 ungridded repaired bias 132.639 and gridded `keepHills on` bias 132.861.
 
-H100 NVE and NPT also passed three runs each, median 289.610 and 214.914
-ns/day. Their receipts are `runtime-receipt-r5-h100-nve-confirmations.json`
-SHA256 `1f6b842374058b1bb1c2b5a6d2b88370559abf877ce31ae680a7c10bd4633fd4`
-and `runtime-receipt-r5-h100-npt-confirmations.json` SHA256
-`379a680e942ee1f75f2b9434d5e4101b222167ab7024d9a8fd4f8b41d90067f3`.
-Further H100 bias, preparation, offload and STMV repetitions continue; remaining
-L40S preparation/offload/STMV controls continue on the same bounded worker.
+H100 also completed all 12 core runs. Native medians are NVE 289.610, NPT
+214.914, ungridded repaired bias 190.783 and gridded bias 190.477 ns/day.
+`runtime-receipt-r5-h100-core-confirmations.json` SHA256
+`96d97289ccb93366d922539b1a680585c4f7bdabca341e4e73f9fbd3c1cc3f53`
+binds each actual result. L40S preparation-compatible native input passed one
+200 ps run, receipt `runtime-receipt-r5-l40s-prepare-controls.json` SHA256
+`c5e5849c4edcc386ec10cd54659c3a80d482eadb7b96968699cd2a9f18383550`.
+L40S GPU-offload NVE passed three 200 ps runs, median 34.527 ns/day; all 234
+output files and 45 original input members passed independent archival audits.
+`runtime-receipt-r5-l40s-offload-controls.json` SHA256
+`36830c30c6842ae0f87dbaf689e7fb03731b265e43607d097e883f32cc07d3c7`
+records that distinct mode, not an inference from resident performance.
+
+The release owner stopped further optional native confirmations at clean
+case boundaries to prioritize the four-engine canonical workload. Unstarted
+r5 STMV and H100 preparation/offload cohorts remain uncompleted; r4 evidence
+is never relabeled. Both task-owned NAMD GPU Pods were deleted after completed
+artifacts and original inputs were copied and hash-verified. H100 was released
+at 17:35 UTC; the L40S allocation was independently empty at 17:55 UTC.
+The release owner owns r5 hosted acceptance. No customer workload, quota or
+global GPU setting was changed.
 
 The canonical ff14SB/TIP3P 6,598-atom alanine acceptance completed minimization,
 100 ps NVT, 100 ps NPT and full 1 ns production with 1,000 finite 1 ps frames.
