@@ -52,3 +52,16 @@ def test_restart_comparison_never_compares_different_physical_steps():
         validation.restart_continuity([[row], [following]], [{"native_restart_step": 1200}])
     measured = validation.restart_continuity([[row], [row]], [{"native_restart_step": 1000}])
     assert measured[0]["relative_energy_jump"] == 0
+
+
+def test_native_empty_part_is_allowed_only_with_aggregate_frame_coverage(tmp_path):
+    path = tmp_path / "trajectory.1.lammpstrj"
+    path.touch()
+    empty = validation.trajectory(path, 8000, allow_empty=True)
+    assert empty["frames"] == 0
+    with pytest.raises(ValueError, match="no frames"):
+        validation.trajectory(path, 8000)
+    protocol = {"warmup_steps": 2000, "target_step": 22000, "trajectory_every_steps": 10000}
+    validation.coverage([empty, part(10000), empty, part(20000)], protocol)
+    with pytest.raises(ValueError, match="missing"):
+        validation.coverage([empty, part(10000), empty], protocol)

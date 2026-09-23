@@ -10,7 +10,7 @@ from contextlib import nullcontext
 from pathlib import Path
 
 
-def trajectory(path, expected_atoms):
+def trajectory(path, expected_atoms, *, allow_empty=False):
     steps = []
     with path.open() as handle:
         while line := handle.readline():
@@ -38,12 +38,13 @@ def trajectory(path, expected_atoms):
             if steps and step <= steps[-1]:
                 raise ValueError("native trajectory timesteps fail to advance")
             steps.append(step)
-    if not steps:
+    if not steps and not allow_empty:
         raise ValueError("trajectory has no frames")
-    return {"name": path.name, "frames": len(steps), "first_step": steps[0], "last_step": steps[-1], "steps": steps}
+    return {"name": path.name, "frames": len(steps), "first_step": steps[0] if steps else None, "last_step": steps[-1] if steps else None, "steps": steps}
 
 
 def coverage(trajectories, protocol):
+    trajectories = [t for t in trajectories if t["steps"]]
     for prior, current in zip(trajectories, trajectories[1:]):
         if current["first_step"] < prior["last_step"]:
             raise ValueError("trajectory parts overlap out of order")
@@ -87,7 +88,18 @@ def validate(root):
         raise ValueError("final thermodynamics are absent or nonfinite")
     if int(final[0]) != protocol["target_step"] or int(final[1]) != atoms or final[2] <= 0 or final[-1] <= 0:
         raise ValueError("final step, atom count, temperature or volume invalid")
-    trajectories = [trajectory(p, atoms) for p in sorted(data.glob("trajectory.*.lammpstrj"), key=lambda p: int(p.name.split(".")[1]))]
+    production_commands = [c for c in result["commands"] if c["step_id"] == "production"]
+    native_intervals, prior = {}, protocol["warmup_steps"]
+    for command in production_commands:
+        native_intervals[command["segment"]] = (prior, command["native_restart_step"])
+        prior = command["native_restart_step"]
+    trajectories = [trajectory(p, atoms, allow_empty=True) for p in sorted(data.glob("trajectory.*.lammpstrj"), key=lambda p: int(p.name.split(".")[1]))]
+    for part in trajectories:
+        start, end = native_intervals[int(part["name"].split(".")[1])]
+        cadence = protocol["trajectory_every_steps"]
+        expected_steps = set(range(((start + cadence - 1) // cadence) * cadence, end + 1, cadence))
+        if set(part["steps"]) != expected_steps:
+            raise ValueError("trajectory part does not cover its decoded native checkpoint interval")
     trajectory(data / "final.lammpstrj", atoms)
     coverage(trajectories, protocol)
     for part in trajectories:
@@ -138,7 +150,7 @@ def validate(root):
     finite_ensemble_gate = protocol["ensemble"] != "NVE" or relative_energy_span <= 0.02
     if protocol["ensemble"] == "NPT":
         finite_ensemble_gate = 280 <= statistics.mean(temperatures) <= 320 and min(temperatures) >= 200 and max(temperatures) <= 400
-    restart_boundaries = restart_continuity(segment_thermodynamics, [c for c in result["commands"] if c["step_id"] == "production"])
+    restart_boundaries = restart_continuity(segment_thermodynamics, production_commands)
     # A 2% energy-span gate catches gross integration defects; it is not a
     # material-specific accuracy criterion or a thermodynamic convergence claim.
     gpu = []

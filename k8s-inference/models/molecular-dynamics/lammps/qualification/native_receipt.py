@@ -35,11 +35,20 @@ def case_receipt(directory, *, revalidate=False):
         validation_path.write_text(json.dumps(validation, indent=2) + "\n")
     validation = load(validation_path)
     result = load(workspace / "result.json")
+    for entry in result["files"]:
+        path = workspace / "data" / entry["path"]
+        if path.stat().st_size != entry["size_bytes"] or digest(path) != entry["sha256"]:
+            raise ValueError("downloaded artifact differs from the native result inventory")
     execution = load(workspace / "execution.json")
     gpu = next(csv.DictReader((workspace / "environment.txt").read_text().splitlines(), skipinitialspace=True))
     gpu_name, driver = gpu["name"].strip(), gpu["driver_version"].strip()
     command_seconds = sum(c["wall_seconds"] for c in result["commands"])
     scientific = {key: value for key, value in validation.items() if key not in {"directory", "case", "repetition", "native_loops", "trajectories", "final_thermodynamics"}}
+    initial_validation = directory / "validation.json"
+    if initial_validation.exists():
+        scientific["retained_initial_validation"] = {"path": str(initial_validation), "sha256": digest(initial_validation), "status": load(initial_validation)["status"], "final_revalidation_uses_native_interval_coverage": True}
+    if qualification.get("collection_recovery"):
+        scientific["artifact_collection_recovery"] = qualification["collection_recovery"]
     return {"case": qualification["job"], "status": validation["status"], "runtime_image": qualification["image"], "image_id": qualification["image_id"], "pool": "l40s" if "L40S" in gpu_name else "h100", "gpu_name": gpu_name, "driver": driver, "gpu_and_driver": (workspace / "environment.txt").read_text().strip(), "pod_uid": qualification["pod_uid"], "node": qualification["node"], "input_sha256": digest(workspace / "input.tar.gz"), "input_manifest_sha256": digest(workspace / "fixture-manifest.json"), "request_sha256": digest(workspace / "request.json"), "result_sha256": digest(workspace / "result.json"), "validation_sha256": digest(validation_path), "raw_evidence": str(directory), "result_path": str(workspace / "result.json"), "validation_path": str(validation_path), "scientific_validation": scientific, "timing": {"native_commands_seconds": command_seconds, "worker_wall_seconds": execution["elapsed_seconds"], "worker_noncommand_overhead_seconds": execution["elapsed_seconds"] - command_seconds, "input_copy_seconds": qualification["input_copy_seconds"], "output_copy_seconds": qualification["output_copy_seconds"], "cpu_user_seconds": execution["cpu_user_seconds"], "cpu_system_seconds": execution["cpu_system_seconds"], "max_rss_kib": execution["max_rss_kib"], "all_data_inventory_bytes": sum(f["size_bytes"] for f in result["files"]), "output_io_native_seconds": validation.get("native_timing_seconds", {}).get("Output"), "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"}}
 
 
