@@ -41,6 +41,7 @@ CONTEXT_INPUTS = (
     SOLUTION_REL / "acceptance/h100-fleet/snapshots/capabilities.json",
     SOLUTION_REL / "models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py",
     SOLUTION_REL / "models/cancer-immunotherapy/runtime-images/mosaic/cpu/mosaic-batch",
+    SOLUTION_REL / "models/molecular-dynamics/gromacs/runtime/fs2_gromacs",
 )
 LABEL_KEYS = {
     "commit": "org.opencontainers.image.revision",

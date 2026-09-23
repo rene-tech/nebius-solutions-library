@@ -61,6 +61,7 @@ packages = ["src/fs2_serve"]
 [tool.hatch.build.targets.wheel.force-include]
 "../../catalog/runtime/fs2_serve_catalog" = "fs2_serve_catalog"
 "migrations" = "fs2_serve/migrations"
+"../../models/molecular-dynamics/gromacs/runtime/fs2_gromacs" = "fs2_gromacs"
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"

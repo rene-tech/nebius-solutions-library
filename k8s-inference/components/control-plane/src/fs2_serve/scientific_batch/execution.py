@@ -1723,6 +1723,7 @@ class FileScientificManifestRenderer:
             }}})
         workspace_mount = next(mount for mount in volume_mounts if mount["mountPath"] == "/mnt/fs2-scientific")
         companion_env = [
+            {"name": "FS2_ATTEMPT_ID", "value": str(resource.attempt_id)},
             {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
             {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
             {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},

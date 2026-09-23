@@ -1,0 +1,125 @@
+{
+  "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
+  "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
+  "profile": {
+    "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+    "model_id": "gromacs",
+    "display_name": "GROMACS \u00b7 NVIDIA-optimized molecular dynamics",
+    "execution_mode": "scientific-batch",
+    "state": "candidate-unqualified",
+    "route_exposed": false,
+    "source": {
+      "kind": "oci",
+      "repository": "nvidia/gromacs",
+      "revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+      "review_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/containers/gromacs",
+      "classification": "candidate-input"
+    },
+    "execution_identity": {
+      "model_revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+      "runtime_image_digest": null,
+      "runtime_recipe_sha256": "c503a987c98a6c174c23a4163dd56c55157d452257d88de6cac57d5774d884d4",
+      "workload_recipe_sha256": "2fbb53490e7898cd24fbd80f19e4fd5c6d26f808fe2cac7f7babb60fb6566b9e",
+      "artifact_manifest_digest": null,
+      "execution_identity_sha256": null
+    },
+    "interface": {
+      "protocol": "scientific-batch-v1",
+      "submit_endpoint": "/v1/models/gromacs:submit",
+      "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1",
+      "operations": [
+        "run-workflow"
+      ],
+      "service_classes": [
+        "interactive",
+        "customer-batch",
+        "bulk-backfill"
+      ],
+      "mcp": {
+        "discoverable": true,
+        "invocable": false,
+        "tool_name": "submit_gromacs_workflow",
+        "description": "Run native NVIDIA GROMACS preparation, MD, minimization, analysis or free-energy workflows. Accepts an immutable input bundle and ordered commands; returns durable runs and trajectory/checkpoint artifacts."
+      }
+    },
+    "access": {
+      "profile": "standard",
+      "state": "not-required",
+      "receipt_digest": null,
+      "credentials_embedded": false
+    },
+    "resources": {
+      "gpu_count": 1,
+      "gpu_topology": "single-gpu",
+      "host_architectures": [
+        "amd64"
+      ],
+      "compatible_pool_ids": [
+        "h100-ondemand-1x",
+        "h100-1x",
+        "h100-reserved-8x",
+        "l40s-1x"
+      ],
+      "required_node_labels": {
+        "kubernetes.io/arch": "amd64"
+      }
+    },
+    "workload": {
+      "stages": [
+        {
+          "id": "workflow",
+          "needs": [],
+          "resource_class": "gpu",
+          "admission_mode": "independent-jobs",
+          "min_parallelism": 1,
+          "max_parallelism": 128,
+          "checkpoint_mode": "resume",
+          "preemption_mode": "checkpointable",
+          "placement": {
+            "class": "accelerator"
+          },
+          "resources": {
+            "cpu_millis": 8000,
+            "memory_bytes": 17179869184,
+            "ephemeral_storage_bytes": 68719476736,
+            "limits": {
+              "cpu_millis": 8000,
+              "memory_bytes": 17179869184,
+              "ephemeral_storage_bytes": 68719476736
+            }
+          }
+        }
+      ],
+      "retry": {
+        "max_attempts": 3,
+        "retryable_exit_codes": [
+          75,
+          137,
+          143
+        ]
+      },
+      "cancellation": {
+        "mode": "terminate-attempt",
+        "grace_seconds": 120
+      }
+    },
+    "semantic_validation": {
+      "validator_id": "gromacs-workflow-v1",
+      "state": "candidate-unqualified"
+    },
+    "policy": {
+      "commercial_use": "allowed",
+      "non_clinical": false,
+      "limitations": [
+        "Unrouted candidate. Runtime tests do not qualify hosted REST/MCP, preemption or customer storage.",
+        "Exact NVIDIA v2026.2 image identifies itself as GROMACS 2026.2-dev, CUDA 13, thread-MPI. Multi-node requires a separate external-MPI build.",
+        "One GPU and up to eight OpenMP threads per job. Jobs are independent; coupled replica exchange is not implemented in this execution shape.",
+        "All scientific settings and output cadence remain in customer inputs. Execution success is not proof of equilibration, convergence or force-field suitability.",
+        "Colvars and PLUMED are compiled in; external kernel availability and enhanced-sampling correctness remain Priority 2. CP2K and Torch NNPot are not compiled in.",
+        "Native checkpoint continuation is distinct from optional CUDA process snapshots; GPU snapshot acceleration has not been qualified."
+      ]
+    }
+  }
+}

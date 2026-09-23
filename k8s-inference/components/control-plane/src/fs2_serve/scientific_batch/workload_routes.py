@@ -15,13 +15,14 @@ from ..scientific_artifacts import (
     ArtifactAccessProfile,
     ArtifactCompression,
     ArtifactDirection,
+    ArtifactRecord,
     BeginArtifactUpload,
     FinalizeArtifactUpload,
     OpenStageAttempt,
     ScientificArtifactControllerPort,
 )
 from ..scientific_run_result import ArtifactRef
-from .capability import ScientificWorkloadCapability, ScientificWorkloadCapabilityAuthority
+from .capability import CapabilityArtifact, ScientificWorkloadCapability, ScientificWorkloadCapabilityAuthority
 from .models import AttemptOutcome, ScientificAttemptState, ScientificBatchState
 
 
@@ -112,15 +113,52 @@ def scientific_workload_artifact_router(
     ) -> tuple[ScientificWorkloadCapability, ScientificBatchState, ScientificAttemptState]:
         return await authorize_workload_capability(authority, batches, authorization)
 
+    async def checkpoint_records(capability: ScientificWorkloadCapability) -> list[ArtifactRecord]:
+        # Recovery never widens a worker to another customer's, operation's,
+        # stage's, or replica's files. Unrelated Apps retain the old boundary.
+        if (capability.model_id, capability.collector_id, capability.stage_id) != (
+            "gromacs",
+            "gromacs-workflow-v1",
+            "workflow",
+        ):
+            raise HTTPException(status_code=403, detail="this workload has no native checkpoint contract")
+        records = await artifacts.list_artifacts(
+            capability.operation_id, tenant_id=capability.tenant_id, stage_id=capability.stage_id
+        )
+        return [
+            record
+            for record in records
+            if record.shard_id == capability.shard_id and record.direction is ArtifactDirection.OUTPUT
+        ]
+
+    @router.get("/checkpoints/latest")
+    async def latest_checkpoint(authorization: Annotated[str | None, Header()] = None) -> dict[str, ArtifactRef | None]:
+        capability, _, _ = await authorized(authorization)
+        records = [
+            record
+            for record in await checkpoint_records(capability)
+            if record.media_type == "application/vnd.fs2.gromacs-checkpoint+json"
+        ]
+        latest = max(records, key=lambda record: record.created_at) if records else None
+        return {"checkpoint": latest.to_public_ref() if latest else None}
+
     @router.get("/artifacts/{artifact_id}:download", response_model=WorkloadDownloadResponse)
     async def download(
         artifact_id: Annotated[UUID, Path()],
         authorization: Annotated[str | None, Header()] = None,
     ) -> WorkloadDownloadResponse:
         capability, _, _ = await authorized(authorization)
-        binding = next((item for item in capability.artifacts if item.artifact_id == artifact_id), None)
+        binding: CapabilityArtifact | ArtifactRecord | None = next(
+            (item for item in capability.artifacts if item.artifact_id == artifact_id), None
+        )
         if binding is None:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="artifact is outside workload capability")
+            binding = next(
+                (record for record in await checkpoint_records(capability) if record.artifact_id == artifact_id), None
+            )
+            if binding is None:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN, detail="artifact is outside workload capability"
+                )
         result = await artifacts.download(artifact_id, tenant_id=capability.tenant_id)
         if (
             result.artifact.digest != binding.digest

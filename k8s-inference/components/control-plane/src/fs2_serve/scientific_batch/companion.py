@@ -656,7 +656,7 @@ class WorkloadArtifactHttpClient:
                     if not retry or attempt + 1 == _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS:
                         response.raise_for_status()
                         return read(response)
-            except (httpx.ConnectError, httpx.ConnectTimeout):
+            except httpx.TransportError:
                 if attempt + 1 == _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS:
                     raise
                 retry = True
@@ -796,6 +796,108 @@ class WorkloadArtifactHttpClient:
         )
         return cast(dict[str, Any], finalized.json())
 
+    def upload_file(
+        self,
+        *,
+        identity: str,
+        path: Path,
+        media_type: str,
+        compression: str | None,
+    ) -> dict[str, Any]:
+        """Upload a closed large file with bounded RAM and replayable PUTs."""
+        before = path.stat()
+        digest = hashlib.sha256()
+        with path.open("rb") as source:
+            while block := source.read(4 * 1024 * 1024):
+                digest.update(block)
+        upload_id = uuid5(NAMESPACE_URL, f"fs2-scientific-upload:{identity}:{digest.hexdigest()}")
+        begun = self._upload_request(
+            "POST",
+            f"{self.base_url}/internal/scientific-workloads/uploads",
+            headers=self.headers,
+            json_body={
+                "upload_id": str(upload_id),
+                "sha256": digest.hexdigest(),
+                "size_bytes": before.st_size,
+                "media_type": media_type,
+                "compression": compression,
+            },
+        )
+        handle = begun.json()["handle"]
+        if handle.get("method") != "PUT":
+            raise ValueError("artifact service returned a non-upload handle")
+        for attempt in range(_ARTIFACT_UPLOAD_MAX_ATTEMPTS):
+            try:
+                with path.open("rb") as source:
+                    response = self.client.request(
+                        "PUT",
+                        handle["url"],
+                        headers={**handle.get("headers", {}), "Content-Length": str(before.st_size)},
+                        content=iter(lambda: source.read(4 * 1024 * 1024), b""),
+                    )
+                if response.status_code != 429 and response.status_code < 500:
+                    response.raise_for_status()
+                    break
+                if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
+                    response.raise_for_status()
+            except httpx.TransportError:
+                if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
+                    raise
+            time.sleep(_ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS * 2**attempt)
+        after = path.stat()
+        if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+            raise ValueError("output file changed during artifact publication")
+        finalized = self._upload_request(
+            "POST", f"{self.base_url}/internal/scientific-workloads/uploads/{upload_id}:finalize", headers=self.headers
+        )
+        return cast(dict[str, Any], finalized.json())
+
+    def download_file(
+        self,
+        artifact_id: UUID,
+        *,
+        destination: Path,
+        expected_digest: str,
+        expected_size_bytes: int,
+        expected_media_type: str,
+    ) -> None:
+        """Download immutable large inputs/checkpoints without buffering in RAM."""
+
+        def pointer(response: httpx.Response) -> dict[str, Any]:
+            response.read()
+            return cast(dict[str, Any], response.json())
+
+        value = self._download_get(
+            f"{self.base_url}/internal/scientific-workloads/artifacts/{artifact_id}:download",
+            headers=self.headers,
+            read=pointer,
+        )
+        artifact, handle = value["artifact"], value["handle"]
+        if ("sha256:" + artifact["sha256"], artifact["size_bytes"], artifact["media_type"], handle["method"]) != (
+            expected_digest,
+            expected_size_bytes,
+            expected_media_type,
+            "GET",
+        ):
+            raise ValueError("artifact pointer differs from the frozen file identity")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(destination.name + ".partial")
+
+        def stream(response: httpx.Response) -> None:
+            digest, size = hashlib.sha256(), 0
+            with temporary.open("wb") as output:
+                for block in response.iter_raw():
+                    size += len(block)
+                    if size > expected_size_bytes:
+                        raise ValueError("artifact stream exceeds its declared size")
+                    digest.update(block)
+                    output.write(block)
+            if size != expected_size_bytes or "sha256:" + digest.hexdigest() != expected_digest:
+                raise ValueError("artifact stream differs from its immutable digest")
+
+        self._download_get(handle["url"], headers=handle.get("headers", {}), read=stream)
+        temporary.replace(destination)
+
 
 def materialize_artifact(
     *,
@@ -810,6 +912,19 @@ def materialize_artifact(
     expected_size_bytes: int,
     expected_media_type: str,
 ) -> None:
+    # GROMACS bundles/TPRs/trajectories can be larger than companion memory.
+    # Copy-file consumers receive identical verified bytes via the streamed path.
+    if mode is MaterializationMode.COPY_FILE:
+        destination = _contained(destination)
+        client.download_file(
+            artifact_id,
+            destination=destination,
+            expected_digest=expected_digest,
+            expected_size_bytes=expected_size_bytes,
+            expected_media_type=expected_media_type,
+        )
+        destination.chmod(0o400)
+        return
     payload = client.download(
         artifact_id,
         expected_digest=expected_digest,
@@ -817,12 +932,6 @@ def materialize_artifact(
         expected_media_type=expected_media_type,
     )
     destination = _contained(destination)
-    if mode is MaterializationMode.COPY_FILE:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o400)
-        with os.fdopen(descriptor, "wb") as output:
-            output.write(payload)
-        return
     archive_root = destination / "inputs" if mode is MaterializationMode.BOLTZGEN_INPUT else destination
     _extract_tar(
         payload,
@@ -947,8 +1056,16 @@ def collect_and_commit(
         or max_output_bytes != invocation.max_output_bytes
     ):
         raise ValueError("collector arguments differ from the canonical invocation")
+    checkpoint_transport = None
+    if collector_id == "gromacs-workflow-v1":
+        from .gromacs_checkpoints import GromacsCheckpointTransport
+
+        checkpoint_transport = GromacsCheckpointTransport(client, invocation, workspace)
+        checkpoint_transport.restore()
     deadline = monotonic() + collection_deadline_seconds
     while True:
+        if checkpoint_transport is not None:
+            checkpoint_transport.publish_ready()
         try:
             collected = collect_stage_output(invocation, workspace)
             break
@@ -960,6 +1077,11 @@ def collect_and_commit(
                 ) from None
             sleep(min(poll_seconds, remaining))
     refs: dict[str, dict[str, Any]] = {}
+    upload_prefix = (
+        f"{invocation.produces}:{checkpoint_transport.attempt}"
+        if checkpoint_transport is not None
+        else invocation.produces
+    )
     root = workspace.resolve(strict=True)
     if not 1 <= len(collected.artifacts) <= invocation.max_output_artifacts:
         raise ValueError("collector artifact count is outside the invocation bound")
@@ -970,16 +1092,24 @@ def collect_and_commit(
         path = item.path.resolve(strict=True)
         if root not in path.parents or not path.is_file() or path.is_symlink():
             raise ValueError("collector artifact is outside its contained workspace")
-        content = path.read_bytes()
-        total_output_bytes += len(content)
+        total_output_bytes += path.stat().st_size
         if total_output_bytes > invocation.max_output_bytes:
             raise ValueError("collector output exceeds the invocation byte bound")
-        refs[item.name] = client.upload(
-            identity=f"{invocation.produces}:{item.name}",
-            content=content,
-            media_type=item.media_type,
-            compression=item.compression,
-        )
+        if checkpoint_transport is not None:
+            previous = checkpoint_transport.current_file_reference(path)
+            refs[item.name] = previous or client.upload_file(
+                identity=f"{upload_prefix}:{item.name}",
+                path=path,
+                media_type=item.media_type,
+                compression=item.compression,
+            )
+        else:
+            refs[item.name] = client.upload(
+                identity=f"{invocation.produces}:{item.name}",
+                content=path.read_bytes(),
+                media_type=item.media_type,
+                compression=item.compression,
+            )
     if not refs:
         raise ValueError("collector produced no artifacts")
     manifest = {
@@ -1013,13 +1143,13 @@ def collect_and_commit(
         raise ValueError("collector semantic validation did not pass the bound validator")
     validation_bytes = json.dumps(validation, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
     manifest_ref = client.upload(
-        identity=f"{invocation.produces}:manifest",
+        identity=f"{upload_prefix}:manifest",
         content=manifest_bytes,
         media_type="application/vnd.fs2.scientific-manifest+json",
         compression=None,
     )
     validation_ref = client.upload(
-        identity=f"{invocation.produces}:validation",
+        identity=f"{upload_prefix}:validation",
         content=validation_bytes,
         media_type="application/vnd.fs2.scientific-validation+json",
         compression=None,

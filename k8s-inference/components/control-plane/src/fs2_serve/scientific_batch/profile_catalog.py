@@ -130,10 +130,11 @@ def profile_has_complete_qualification_evidence(value: Mapping[str, Any], *, all
     return (
         (value.get("state") == "qualified" or active)
         and (semantic.get("state") == "qualified" or (active and semantic.get("state") == "active"))
-        and source.get("kind") in {"git", "huggingface"}
+        and source.get("kind") in {"git", "huggingface", "oci"}
         and isinstance(source.get("repository"), str)
         and isinstance(source.get("revision"), str)
-        and re.fullmatch(r"[a-f0-9]{40}", source["revision"]) is not None
+        and re.fullmatch(r"[a-f0-9]{64}" if source.get("kind") == "oci" else r"[a-f0-9]{40}", source["revision"])
+        is not None
         and identity.get("model_revision") == source.get("revision")
         and isinstance(identity.get("runtime_image_digest"), str)
         and re.fullmatch(r"sha256:[a-f0-9]{64}", identity["runtime_image_digest"]) is not None

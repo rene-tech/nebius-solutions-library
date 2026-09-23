@@ -143,6 +143,7 @@ from .scientific_artifacts import (
 from .scientific_batch.artifact_bridge import SignedArtifactContentReader
 from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from .scientific_batch.child_routes import scientific_child_router
+from .scientific_batch.gromacs_storage_routes import gromacs_storage_router
 from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.postgres_repository import ScientificBatchNotFoundError
 from .scientific_batch.profile_catalog import ScientificProfileError, ScientificRequestError
@@ -2528,6 +2529,14 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 authority=runtime.scientific_workload_capabilities,
                 artifacts=runtime.artifact_service,
                 batches=runtime.scientific_workload_batches,
+            )
+        )
+        app.include_router(
+            gromacs_storage_router(
+                authority=runtime.scientific_workload_capabilities,
+                batches=runtime.scientific_workload_batches,
+                store=runtime.store,
+                storage=users_service.storage,
             )
         )
         if runtime.scientific_input_uploads is not None:

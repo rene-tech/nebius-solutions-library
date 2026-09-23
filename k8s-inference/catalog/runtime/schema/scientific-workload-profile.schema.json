@@ -63,7 +63,8 @@
         "kind": {
           "enum": [
             "git",
-            "huggingface"
+            "huggingface",
+            "oci"
           ]
         },
         "repository": {
@@ -73,7 +74,7 @@
         },
         "revision": {
           "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
         },
         "review_url": {
           "type": "string",
@@ -102,7 +103,7 @@
       "properties": {
         "model_revision": {
           "type": "string",
-          "pattern": "^[0-9a-f]{40}$"
+          "pattern": "^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
         },
         "runtime_image_digest": {
           "description": "Immutable runtime image identity; null only while the profile remains an unrouted candidate.",

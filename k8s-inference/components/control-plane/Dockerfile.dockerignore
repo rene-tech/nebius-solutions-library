@@ -64,6 +64,15 @@ k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/*
 !k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/cpu/
 k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/cpu/*
 !k8s-inference/models/cancer-immunotherapy/runtime-images/mosaic/cpu/mosaic-batch
+!k8s-inference/models/molecular-dynamics/
+k8s-inference/models/molecular-dynamics/*
+!k8s-inference/models/molecular-dynamics/gromacs/
+k8s-inference/models/molecular-dynamics/gromacs/*
+!k8s-inference/models/molecular-dynamics/gromacs/runtime/
+k8s-inference/models/molecular-dynamics/gromacs/runtime/*
+!k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs/
+!k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs/*.py
+!k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs/py.typed
 
 **/.git
 **/.git/**

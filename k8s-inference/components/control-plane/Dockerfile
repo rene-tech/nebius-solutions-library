@@ -22,6 +22,7 @@ COPY k8s-inference/components/control-plane/src ./src
 COPY k8s-inference/components/control-plane/migrations ./migrations
 COPY k8s-inference/components/control-plane/contracts ./contracts
 COPY k8s-inference/catalog/runtime /workspace/k8s-inference/catalog/runtime
+COPY k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs /workspace/k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs
 
 # The canonical catalog is a nested immutable tree and cannot be represented by
 # a single Kubernetes ConfigMap without flattening paths. Build the exact
