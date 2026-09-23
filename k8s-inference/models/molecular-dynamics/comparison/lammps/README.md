@@ -42,6 +42,8 @@ LAMMPS=/absolute/worktree/k8s-inference/models/molecular-dynamics/comparison/lam
   --output /new/fixture-directory
 "$PY" "$LAMMPS/validate_probe.py" /downloaded/probe/data \
   --output /new/native-probe-receipt.json
+"$PY" "$LAMMPS/validate_production.py" /downloaded/full-workspace \
+  --output /new/native-production-receipt.json
 ```
 
 The generator verifies every source manifest hash before adapting; output must
@@ -93,6 +95,14 @@ A passed algebra test or one native probe cannot replace those gates.
 Native throughput is separate from hosted queue, preparation, upload/download
 and checkpoint I/O. Raw output/restart/force/log files must be retained and
 hash-bound to exact operations before calling this fixture qualified.
+
+The production validator checks actual worker completion and native restart
+steps, native loop step counts, all stage frame schedules and finite coordinates,
+every constrained distance at every saved post-initial frame, and final closed
+progress. Multiple closed native segments are counted only after matching their
+duplicated boundary coordinates/cell; those duplicates are recorded, never
+silently used as extra physical samples. Common-render segment assembly remains
+an additional explicitly provenance-bound step if a production run is segmented.
 
 Primary references: [LAMMPS SHAKE](https://docs.lammps.org/fix_shake.html),
 [native NPH/MTK](https://docs.lammps.org/fix_nh.html),
