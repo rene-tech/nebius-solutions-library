@@ -1,0 +1,6 @@
+# Tested with Python 3.12.3 and system FFmpeg/ffprobe 6.1.1 (libx264).
+numpy==1.26.4
+scipy==1.16.3
+MDAnalysis==2.10.0
+matplotlib==3.10.7
+Pillow==12.3.0

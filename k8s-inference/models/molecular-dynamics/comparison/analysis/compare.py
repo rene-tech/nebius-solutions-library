@@ -17,6 +17,7 @@ import numpy as np
 
 from geometry import ValidationError, align_frame, dihedral, finite, make_whole
 from native import frames, validate_timeline
+from spec_paths import resolve_spec
 from thermo import AMU_A3_TO_G_CM3, descriptive, native_performance, native_thermo, production_rows
 
 ENGINES = ("gromacs", "namd", "amber", "lammps")
@@ -317,7 +318,7 @@ def main():
         return
     if not args.spec or not args.output:
         parser.error("--spec and --output required")
-    spec = json.loads(args.spec.read_text())
+    spec = resolve_spec(json.loads(args.spec.read_text()), args.spec)
     if args.output.exists():
         parser.error("output directory must not exist; preserve earlier/failed evidence")
     args.output.mkdir(parents=True)

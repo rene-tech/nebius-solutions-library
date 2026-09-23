@@ -1,9 +1,11 @@
 # Canonical four-engine trajectory analysis
 
-Status on 2026-09-23: 49 explicitly synthetic unit tests pass. Actual complete
-GROMACS, NAMD and AMBER production files have passed common analysis, and their
-three real clips are rendered and encoding/visually checked. LAMMPS production
-is still running, so the fourth clip and synchronized 2×2 remain pending.
+Status on 2026-09-23: 54 explicitly synthetic unit tests pass. The final Helm 226
+hosted GROMACS and AMBER productions passed common analysis. Final explicit-64³
+NAMD and LAMMPS productions are pending. Three earlier native-engine clips were
+rendered and visually checked, but are retained as an earlier cohort, not mixed
+into the final primary comparison. The final four clips and synchronized 2×2
+remain pending all final primary results.
 Generated unit fixtures are **not scientific simulation or acceptance evidence**.
 
 This CPU-only subtree owns analysis and visualization, not force-field
@@ -51,7 +53,9 @@ avoid creating hidden frame-index files beside raw trajectories.
 ## Input contract
 
 `example-spec.json` documents the schema but contains no usable trajectory paths.
-Use absolute paths. Each run explicitly declares the native production origin in
+Use absolute paths, or declare `"path_base": "spec-directory"` and use paths
+relative to the JSON spec's own directory. No path depends on the caller's
+working directory. Each run explicitly declares the native production origin in
 both steps and ps; derive these from the native input/log, never from the desired
 result. AMBER NetCDF stores native time but not necessarily a step: its step is
 reported as **derived**, not independently observed. NAMD DCD time/steps use the
@@ -132,6 +136,25 @@ an independent-sample uncertainty estimate. Initial canonical-coordinate energy
 must come from the parent's single-point gate, never the first production frame.
 Native stage durations and force-field equivalence remain independent required
 parent gates; a readable trajectory does not establish either.
+
+## Portable delivery
+
+The parent materializes every raw native output under `runs/<engine>/`, and the
+master under `master/`. Once all final primary files are present,
+`package_analysis.py --spec HOST_SPEC --bundle-root DELIVERY --map
+SOURCE_MASTER=master --map SOURCE_GROMACS_WORKSPACE=runs/gromacs ...` verifies
+each mapped analysis dependency byte-for-byte, copies only unmatched provenance
+records plus the small analysis code, and creates `analysis-inputs/spec.json`.
+Native files without an explicit mapping are rejected rather than duplicated.
+The packager preserves NAMD's native `data/alanine/` nesting and ordered LAMMPS
+segment lists. A changed or missing delivered file fails with a retained receipt.
+
+The packaged `regenerate.py` and pinned requirements work without the original
+server paths; see [the bundled instructions](BUNDLE_README.md). The portable test
+actually moves the synthetic delivery and deletes its exact temporary source
+fixture before resolving every dependency. Such unit fixtures are never labeled
+scientific production evidence. Full raw-output coverage remains the parent
+materializer's responsibility, separate from this analysis dependency check.
 
 ## Rendering contract
 

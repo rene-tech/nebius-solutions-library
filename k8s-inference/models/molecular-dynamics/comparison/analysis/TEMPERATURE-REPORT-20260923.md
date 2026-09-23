@@ -1,7 +1,8 @@
 # Native temperature observables and finite-trajectory uncertainty
 
-H100 AMBER is the primary canonical comparison. L40S is a sensitivity control,
-not a new requested production length or an independent-seed convergence study.
+This is the earlier native-cohort estimator diagnostic, not a mixed-release
+primary trajectory comparison. H100 AMBER is its primary diagnostic; L40S is a
+sensitivity control, not a new requested production length or an independent-seed convergence study.
 All values below use the actual complete 1 ns production, 1,000 samples at 1 ps.
 Native reported temperatures are preserved, including the lower AMBER means.
 
