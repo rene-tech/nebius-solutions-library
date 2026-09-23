@@ -27,12 +27,12 @@ def main():
         window = {'from': args.from_at, 'to': datetime.now(timezone.utc).isoformat()}
         response = client.get('/admin/api/v1/apps', params=window)
         response.raise_for_status()
-        apps = [item for item in response.json()['data']['items'] if item['model_id'] == 'gromacs']
+        apps = [item for item in response.json()['data']['items'] if item['public_model_id'] == 'gromacs']
         if len(apps) != 1:
             raise RuntimeError(f'Expected one GROMACS App, found {len(apps)}')
         app = apps[0]
         for path in ('runs', 'usage', 'logs', 'settings'):
-            response = client.get(f'/admin/api/v1/apps/{app["id"]}/{path}',
+            response = client.get(f'/admin/api/v1/apps/{app["app_id"]}/{path}',
                 params={**window, **({'limit': 500} if path == 'logs' else {})})
             response.raise_for_status()
             value = response.json()

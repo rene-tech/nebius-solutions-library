@@ -198,6 +198,17 @@ def main():
         published_map["qualification_baselines"] = overlay["scientificBatch"]["executionMap"]["qualification_baselines"]
         (contracts / "scientific-execution-map.json").write_text(
             json.dumps(published_map, indent=2) + "\n")
+        # The operator's complete inventory also needs the upstream source
+        # observation; adding only a callable profile hides the App from admin.
+        receipt_path = contracts / "scientific-source-candidate-receipts.json"
+        receipt_catalog = json.loads(receipt_path.read_text())
+        receipt = json.loads((HERE / "source-candidate-receipt.json").read_text())
+        previous = [item for item in receipt_catalog["receipts"] if item["model_id"] == "gromacs"]
+        if previous and previous != [receipt]:
+            raise ValueError("GROMACS source receipt changed; review the upstream observation")
+        if not previous:
+            receipt_catalog["receipts"].append(receipt)
+            receipt_path.write_text(json.dumps(receipt_catalog, indent=2) + "\n")
     print(json.dumps({"state": "active-onboarding", "customer_ready": False,
                       "retained_models": len(overlay["scientificBatch"]["executionMap"]["models"]) - 1}))
 

@@ -1,8 +1,10 @@
+import asyncio
 import hashlib
 import json
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
-from uuid import uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import httpx
 import pytest
@@ -180,6 +182,113 @@ def test_native_aliases_share_one_content_address_and_keep_every_filename(tmp_pa
     refs = [recovered.final_file_reference(recovered.data / item["path"]) for item in manifest["files"]]
     assert refs[0] == refs[1] == refs[2]
     assert client.uploads == 2
+
+
+def test_alias_checkpoint_and_stage_commit_use_the_real_artifact_service(tmp_path, monkeypatch):
+    from test_scientific_artifacts import NOW, TENANT, FakeObjectStore, open_attempt
+
+    from fs2_serve.scientific_artifacts import (
+        ArtifactDirection,
+        AttemptStatus,
+        BeginArtifactUpload,
+        CloseStageAttempt,
+        CommitStageResult,
+        FinalizeArtifactUpload,
+        ManifestEntryDraft,
+        MemoryArtifactRepository,
+        ScientificArtifactService,
+    )
+
+    with asyncio.Runner() as runner:
+        repository = MemoryArtifactRepository(clock=lambda: NOW)
+        objects = FakeObjectStore()
+        service = ScientificArtifactService(
+            repository=repository,
+            object_store=objects,
+            clock=lambda: NOW,
+            allowed_media_types={"application/octet-stream", "application/vnd.fs2.gromacs-checkpoint+json"},
+        )
+        operation_id = UUID(OPERATION)
+        runner.run(repository.register_operation(operation_id, tenant_id=TENANT))
+        attempt_id = runner.run(
+            open_attempt(service, operation_id=operation_id, stage_id="workflow", shard_id="replica")
+        )
+        monkeypatch.setenv("FS2_ATTEMPT_ID", str(attempt_id))
+
+        class RealArtifacts(Artifacts):
+            def upload(self, *, identity, content, media_type, compression):
+                digest = hashlib.sha256(content).hexdigest()
+                upload_id = uuid5(NAMESPACE_URL, f"fs2-scientific-upload:{identity}:{digest}")
+                begun = runner.run(
+                    service.begin_upload(
+                        BeginArtifactUpload(
+                            upload_id=upload_id,
+                            attempt_id=attempt_id,
+                            operation_id=operation_id,
+                            tenant_id=TENANT,
+                            direction=ArtifactDirection.OUTPUT,
+                            expected_digest="sha256:" + digest,
+                            expected_size_bytes=len(content),
+                            media_type=media_type,
+                            compression=compression,
+                        )
+                    )
+                )
+                objects.put(begun.upload.storage_key, content, media_type, compression)
+                record = runner.run(
+                    service.finalize_upload(
+                        FinalizeArtifactUpload(upload_id=upload_id, operation_id=operation_id, tenant_id=TENANT)
+                    )
+                )
+                self.objects[str(record.artifact_id)] = content
+                ref = record.to_public_ref().model_dump(mode="json")
+                if media_type == "application/vnd.fs2.gromacs-checkpoint+json":
+                    self.latest = ref
+                return ref
+
+        client = RealArtifacts()
+        (tmp_path / "data").mkdir()
+        names = ("md.gro", "md.part0001.gro", "copy.backup")
+        for name in names:
+            (tmp_path / "data" / name).write_bytes(b"same native coordinates")
+        transport = GromacsCheckpointTransport(client, invocation(), tmp_path)
+        transport.restore()
+        ready(tmp_path, 1)
+        transport.publish_ready()
+        refs = [transport.final_file_reference(tmp_path / "data" / name) for name in names]
+        assert refs[0] == refs[1] == refs[2]
+        runner.run(
+            service.close_attempt(
+                CloseStageAttempt(
+                    attempt_id=attempt_id,
+                    operation_id=operation_id,
+                    tenant_id=TENANT,
+                    status=AttemptStatus.SUCCEEDED,
+                    completed_at=NOW + timedelta(minutes=1),
+                )
+            )
+        )
+        commit = runner.run(
+            service.commit_stage(
+                CommitStageResult(
+                    operation_id=operation_id,
+                    tenant_id=TENANT,
+                    stage_id="workflow",
+                    attempt_ids=(attempt_id,),
+                    entries=tuple(
+                        ManifestEntryDraft(
+                            name=f"file-{i:05d}", semantic_type="gromacs-file/v1", artifact_id=UUID(ref["artifact_id"])
+                        )
+                        for i, ref in enumerate(refs)
+                    ),
+                    validation_digest="sha256:" + "9" * 64,
+                    semantic_valid=True,
+                    committed_at=NOW + timedelta(minutes=2),
+                    validated_at=NOW + timedelta(minutes=2),
+                )
+            )
+        )
+        assert len(commit.manifest.entries) == 3
 
 
 def test_large_file_put_retries_with_the_whole_file_and_no_read_bytes(tmp_path, monkeypatch):

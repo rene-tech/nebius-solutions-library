@@ -93,3 +93,24 @@ def test_bundle_contract_is_discoverable_and_verified_before_admission():
         validate_input_roles("gromacs", request(), ())
     with pytest.raises(ValueError, match="verified"):
         gromacs.compile_run(profile(), request(), operation_id=OP, input_artifacts=())
+
+
+@pytest.mark.asyncio
+async def test_gromacs_oci_source_is_in_the_operator_inventory_without_false_qualification(registry):
+    from fs2_serve.scientific_admin_catalog import ScientificCatalogFileAdapter
+
+    catalog = ROOT / "catalog/runtime"
+    receipts = json.loads((catalog / "contracts/scientific-source-candidate-receipts.json").read_text())
+    Draft202012Validator(
+        json.loads((catalog / "schema/scientific-source-candidate-receipts.schema.json").read_text())
+    ).validate(receipts)
+    snapshot = await ScientificCatalogFileAdapter(
+        registry=registry,
+        receipts_file=catalog / "contracts/scientific-source-candidate-receipts.json",
+    ).list_models()
+    model = next(item for item in snapshot.data.items if item.model_id == "gromacs")
+    assert model.execution_mode == "scientific-batch"
+    assert model.readiness == "candidate"
+    assert "source-identity-agreement" not in model.missing_evidence
+    assert model.qualification.state != "identity-mismatch"
+    assert model.backend.source_revision == profile()["source"]["revision"]

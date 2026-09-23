@@ -753,7 +753,7 @@ class ScientificCatalogFileAdapter:
                 receipt_source_kind is not None
                 and receipt_source_repository is not None
                 and receipt_source_revision is not None
-                and receipt_source_kind in {"git", "huggingface"}
+                and receipt_source_kind in {"git", "huggingface", "oci"}
                 and receipt_source_kind == profile_source_kind
                 and receipt_source_repository == profile_source_repository
                 and (receipt_source_kind == "git" or receipt_source_revision == profile_source_revision)
