@@ -1,0 +1,342 @@
+{
+  "schema": "fs2-serve.nebius.ai/portable-four-engine-analysis-qualification/v1",
+  "status": "passed",
+  "customer_ready": false,
+  "recorded_at": "2026-09-23T19:29:20.409484+00:00",
+  "scope": "Complete CPU-only four-engine analysis and real-trajectory video regeneration from the portable delivered bundle in the exact final client. This does not claim a new MD simulation, hosted API acceptance, browser UX or whole-platform readiness.",
+  "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+  "client_source": "88109af67d11726d1e07e14c5d0ff4e83a4837e0",
+  "helper_execution_source_commit": "064ba8716c7243aa66f7a163d442ebda7bdf8f49",
+  "corrected_post_validator_commit": "a0c9cb4d31c5f0dc136a64b94c55684d505a3833",
+  "packaging_receipt": {
+    "path": "/home/tux/fs2-alanine-comparison-20260923/delivery-02/analysis-inputs/packaging-receipt.json",
+    "sha256": "56be94583e76a945f8ae76352f60b24a13a6cf2ad7c0f6df8bf1cb201ca5c4c0",
+    "size_bytes": 23019
+  },
+  "reference_analysis_receipt": {
+    "path": "/home/tux/fs2-alanine-comparison-20260923/delivery-02/analysis/receipt.json",
+    "sha256": "f74d07478a44821944247fe7a66e7b89b61dfc807f5b37c11d4421d3691282a3",
+    "size_bytes": 45511
+  },
+  "reference_render_receipt": {
+    "path": "/home/tux/fs2-alanine-comparison-20260923/delivery-02/videos/receipt.json",
+    "sha256": "b9c937ae22deb41ffe73e95bcaec395df5e61af2e81293e80343011afb437461",
+    "size_bytes": 5656
+  },
+  "passed_postvalidation_receipt": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/qualification-verified.json",
+    "sha256": "306afb295a490bc60757a579373b6f3ab5a2b3df4139cfcd5d9b8219e6b692df",
+    "size_bytes": 17731
+  },
+  "execution_receipt_with_original_postcheck_failure": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/qualification.json",
+    "sha256": "094bcf9c633390f032c571bfdf59d427ad694dbde0b694a8ea52f457400422dd",
+    "size_bytes": 3176
+  },
+  "executed_helper_snapshot": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/qualification-helper-executed.py",
+    "sha256": "9b9eca1cbce7aca16a6a97694dc03d26697be8dccb897b5eee29bd4b73324558",
+    "size_bytes": 12600
+  },
+  "regeneration_log": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/regenerate.log",
+    "sha256": "f6b14b182cb025a7658de522a260ef15d6e76aa672e29f8ab32bb93f2d6479de",
+    "size_bytes": 468
+  },
+  "execution": {
+    "entrypoint": "/opt/md-analysis/bin/python",
+    "command": [
+      "/delivery/analysis-inputs/regenerate.py",
+      "--analysis-output",
+      "/validation/analysis",
+      "--video-output",
+      "/validation/videos"
+    ],
+    "exit_code": 0,
+    "regeneration_and_original_postcheck_wall_seconds": 118.82071115262806,
+    "cpu_limit": 4,
+    "memory_limit_GiB": 8,
+    "network": "none",
+    "gpus_requested": 0,
+    "api_credentials_supplied": false,
+    "container_image_id": "sha256:2801af59b2b551e97d748f7e01812702d2df2d61c98e8058339b5dd0104e0a56",
+    "uid_gid": "1002:1002",
+    "read_only_rootfs": true,
+    "mounts": [
+      {
+        "Type": "bind",
+        "Source": "/home/tux/fs2-alanine-comparison-20260923/delivery-02",
+        "Destination": "/delivery",
+        "Mode": "",
+        "RW": false,
+        "Propagation": "rprivate"
+      },
+      {
+        "Type": "bind",
+        "Source": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02",
+        "Destination": "/validation",
+        "Mode": "",
+        "RW": true,
+        "Propagation": "rprivate"
+      }
+    ],
+    "devices": [],
+    "device_requests": null,
+    "task_container_removed": true
+  },
+  "mount_scope_clarification": "The only host bind mounts were the read-only delivered bundle and fresh output directory. The bundle itself includes its precomputed reference analysis/videos; they are not a separate host-source mount. Regeneration code reads the portable spec's raw native inputs and writes newly computed outputs. Comparison to the reference occurs after regeneration.",
+  "analysis_environment": {
+    "python": "3.11.2 (main, May 12 2026, 05:17:27) [GCC 12.2.0]",
+    "executable": "/opt/md-analysis/bin/python",
+    "platform": "Linux-6.11.0-1016-nvidia-x86_64-with-glibc2.36",
+    "programs": {
+      "ffmpeg": {
+        "path": "/usr/bin/ffmpeg",
+        "version": "ffmpeg version 5.1.9-0+deb12u1 Copyright (c) 2000-2026 the FFmpeg developers"
+      },
+      "ffprobe": {
+        "path": "/usr/bin/ffprobe",
+        "version": "ffprobe version 5.1.9-0+deb12u1 Copyright (c) 2007-2026 the FFmpeg developers"
+      },
+      "blender": {
+        "path": null
+      },
+      "vmd": {
+        "path": null
+      },
+      "pymol": {
+        "path": null
+      },
+      "povray": {
+        "path": null
+      }
+    },
+    "packages": {
+      "numpy": "1.26.4",
+      "scipy": "1.16.3",
+      "MDAnalysis": "2.10.0",
+      "matplotlib": "3.10.7",
+      "Pillow": "12.3.0",
+      "pyvista": null,
+      "vtk": null,
+      "pyedr": null
+    }
+  },
+  "reference_analysis_environment": {
+    "python": "3.12.3 (main, Mar 23 2026, 19:04:32) [GCC 13.3.0]",
+    "executable": "/home/tux/.venvs/fs2-four-engine-20260923/bin/python",
+    "platform": "Linux-6.11.0-1016-nvidia-x86_64-with-glibc2.39",
+    "programs": {
+      "ffmpeg": {
+        "path": "/usr/bin/ffmpeg",
+        "version": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+      },
+      "ffprobe": {
+        "path": "/usr/bin/ffprobe",
+        "version": "ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers"
+      },
+      "blender": {
+        "path": null
+      },
+      "vmd": {
+        "path": null
+      },
+      "pymol": {
+        "path": null
+      },
+      "povray": {
+        "path": null
+      }
+    },
+    "packages": {
+      "numpy": "1.26.4",
+      "scipy": "1.16.3",
+      "MDAnalysis": "2.10.0",
+      "matplotlib": "3.10.7",
+      "Pillow": "12.3.0",
+      "pyvista": null,
+      "vtk": null,
+      "pyedr": null
+    }
+  },
+  "runs": [
+    {
+      "engine": "gromacs",
+      "frames": 1001,
+      "common_frames": 1000,
+      "temperature_mean_K": 300.01625338,
+      "pressure_mean_bar": 5.722313797999997,
+      "density_mean_g_cm3": 0.9848434633543541,
+      "native_ns_per_day": 747.094
+    },
+    {
+      "engine": "namd",
+      "frames": 1000,
+      "common_frames": 1000,
+      "temperature_mean_K": 300.18529909458,
+      "pressure_mean_bar": -8.620014616330002,
+      "density_mean_g_cm3": 0.9833384667963412,
+      "native_ns_per_day": 412.245
+    },
+    {
+      "engine": "amber",
+      "frames": 1000,
+      "common_frames": 1000,
+      "temperature_mean_K": 298.32824,
+      "pressure_mean_bar": -12.371199999999998,
+      "density_mean_g_cm3": 0.9845484730580311,
+      "native_ns_per_day": 733.84
+    },
+    {
+      "engine": "lammps",
+      "frames": 1001,
+      "common_frames": 1000,
+      "temperature_mean_K": 299.8231454727945,
+      "pressure_mean_bar": -1.4956046594302643,
+      "density_mean_g_cm3": 0.9846204951748536,
+      "native_ns_per_day": 28.470501397163492
+    }
+  ],
+  "scientific_value_comparison": {
+    "numeric_values_compared": 78302,
+    "maximum_absolute_difference": 0,
+    "non_bit_identical_numeric_values": 0
+  },
+  "video_probes": {
+    "gromacs": {
+      "codec_name": "h264",
+      "width": 720,
+      "height": 720,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "40/1",
+      "duration": "25.000000",
+      "nb_read_frames": "1000",
+      "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/videos/gromacs.mp4",
+      "bytes": 2750373,
+      "sha256": "ea28761d7550e981d6cb4802e3ea16bb504e62deb2f479c9f5d1ce0ecadfdea0"
+    },
+    "namd": {
+      "codec_name": "h264",
+      "width": 720,
+      "height": 720,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "40/1",
+      "duration": "25.000000",
+      "nb_read_frames": "1000",
+      "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/videos/namd.mp4",
+      "bytes": 2752642,
+      "sha256": "67ae69146705a9e774b507b500d451997083ce4fa4370db4d1b08317540e90a0"
+    },
+    "amber": {
+      "codec_name": "h264",
+      "width": 720,
+      "height": 720,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "40/1",
+      "duration": "25.000000",
+      "nb_read_frames": "1000",
+      "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/videos/amber.mp4",
+      "bytes": 2769424,
+      "sha256": "2960489ec6fe9d812cb0f893ce7006826deadfd1958bde4781af782f9765370b"
+    },
+    "lammps": {
+      "codec_name": "h264",
+      "width": 720,
+      "height": 720,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "40/1",
+      "duration": "25.000000",
+      "nb_read_frames": "1000",
+      "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/videos/lammps.mp4",
+      "bytes": 2766741,
+      "sha256": "b0421e4568a3ad4f91a4c255df44df2055e2021bf7012736166966fbe9e72ebe"
+    },
+    "four-engine-2x2": {
+      "codec_name": "h264",
+      "width": 1440,
+      "height": 1440,
+      "pix_fmt": "yuv420p",
+      "r_frame_rate": "40/1",
+      "duration": "25.000000",
+      "nb_read_frames": "1000",
+      "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/videos/four-engine-2x2.mp4",
+      "bytes": 10458682,
+      "sha256": "089ea1004c39e49cebfcade033eb555031125f0f5fefab8894ae28c9345b909f"
+    }
+  },
+  "video_settings": {
+    "pixels": 720,
+    "fps": 40,
+    "elevation_degrees": 18,
+    "azimuth_degrees": -55,
+    "half_width_A": 14,
+    "camera_zoom": 1.55,
+    "water_display_radius_A": 13,
+    "projection": "orthographic",
+    "water": "oxygen points, alpha 0.18; fixed 13 A display crop only",
+    "peptide": "all 22 atoms, element-colored sticks",
+    "alignment": "bond-whole peptide, heavy-atom centroid, proper Kabsch to the canonical master; same reference for all engines",
+    "frame_interval_ps": 1,
+    "playback_ps_per_second": 40
+  },
+  "regenerated_analysis_receipt": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/analysis/receipt.json",
+    "sha256": "2104612fc019673ed2d8920c1deb4e91354fc37fc3331a4cc3f4314e935d71ca",
+    "size_bytes": 42100
+  },
+  "regenerated_render_receipt": {
+    "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/videos/receipt.json",
+    "sha256": "3259124122a29844afeb3cb1f003d706dc4b57190cf4180340c17570082473af",
+    "size_bytes": 4928
+  },
+  "delivery_dependencies_unchanged_before_and_after": true,
+  "generated_analysis_and_video_files_unchanged_during_corrected_validation": true,
+  "preserved_harness_failures": [
+    {
+      "attempt": "01",
+      "phase": "output-directory access before analysis",
+      "status": "failed",
+      "cause": "Image default root user with all capabilities dropped could not traverse the host-owned mode-0700 output directory.",
+      "correction": "Use output owner UID/GID 1002:1002, preserving all capability/network restrictions; new output directory, unchanged image/bundle.",
+      "receipt": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-01/qualification.json",
+        "sha256": "4a62d8426ea5f5098f9c90098f77bc195f3f7b0546e8f26f0bcb2b7dd86f6810",
+        "size_bytes": 3132
+      },
+      "log": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-01/regenerate.log",
+        "sha256": "1461aab2bcfbf3b229c6177da80701882a431c05725401546377ec425ccbca9a",
+        "size_bytes": 1282
+      },
+      "exact_helper_snapshot": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-01/qualification-helper.py",
+        "sha256": "f5e616135029a96eb9d91bc79882d467b1bf28542fa438944e18df891ddf67b7",
+        "size_bytes": 12495
+      }
+    },
+    {
+      "attempt": "02 initial post-check",
+      "phase": "after successful analysis and all five video encodes",
+      "status": "failed",
+      "cause": "Audit incorrectly demanded exact decimal native DCD endpoint times 1 and 1000 ps. The unchanged reference itself has 1.0000006290766237 and 1000.000003607501 ps.",
+      "correction": "Adopt the already-frozen native-reader timeline tolerance of 0.001 ps, while still comparing every actual timestamp/scientific value against reference with relative 1e-12 / absolute 1e-10 bounds. No scientific output or video was edited or rerendered to obtain the corrected pass.",
+      "receipt": {
+        "path": "/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/qualification.json",
+        "sha256": "094bcf9c633390f032c571bfdf59d427ad694dbde0b694a8ea52f457400422dd",
+        "size_bytes": 3176
+      }
+    }
+  ],
+  "warnings_and_limits": [
+    "MDAnalysis 2.10.0 emits its documented future-3.0 DCD timestep-copy deprecation warning. The reader copies retained positions explicitly; complete native timing/coordinate checks and all 78,302 compared values pass unchanged.",
+    "The inherited loopback web-health probe is unrelated to this overridden CPU entrypoint, does not reach the platform, and is not used as readiness evidence.",
+    "Source/metadata paths and source inventories differ after packaging. The scientific-value comparison deliberately excludes path/provenance metadata, not numeric science.",
+    "Reference analysis/videos are included inside the delivered read-only bundle, not separately mounted host source trees. The frozen regeneration code computes fresh outputs from the spec-bound native input files.",
+    "Native AMBER staggered-temperature, per-engine pressure definitions, finite sampling and verified LAMMPS SHAKE setup-boundary projection retain the final comparison report caveats; this gate does not alter them."
+  ],
+  "tests": {
+    "portable_helper_unit_tests": 21,
+    "ruff": "passed",
+    "git_diff_check": "passed"
+  }
+}
