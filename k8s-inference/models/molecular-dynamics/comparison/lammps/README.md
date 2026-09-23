@@ -1,6 +1,6 @@
 # Canonical LAMMPS ff14SB/TIP3P fixture
 
-Status: adapter parameters/geometry, 9 synthetic unit tests and the **real native
+Status: adapter parameters/geometry, 10 synthetic unit tests and the **real native
 probe pass**. Full canonical dynamics is running, not yet accepted. No simulation
 is claimed from generated inputs or algebraic tests. Shared platform/release and hosted submissions remain
 parent-owned. Exact intended worker:
@@ -149,7 +149,7 @@ One task H100 Pod `fs2-lammps-r20260923-alanine-probe` on
 `computeinstance-e00bwrmx5x05qn4bc8` executes the full protocol into
 `/home/tux/fs2-alanine-lammps-20260923/native-production-03`; this is native
 qualification, not yet a completed hosted/customer result.
-# Optional zero-tilt orthogonal representation
+## Optional zero-tilt orthogonal representation
 
 `prepare_fixture.py --orthogonal-proof PASSED_SCREEN.json` opts into the exact
 geometry-preserving orthogonal-box recipe. It requires three passed, unprofiled
@@ -159,13 +159,21 @@ read, before PPPM, fixes or dumps. The native command also rejects nonzero tilt.
 No box length, coordinate, interaction, cutoff, mesh, timestep or stage changes.
 The original data and native performance proof are retained in the bundle.
 
-The 2026-09-23 exact-image short screen reported medians 11.7714 versus28.4171
-ns/day (three1000-step measured NPT windows after200 continuous warmup steps),
-with identical coordinates, maximum force difference1.244e-11 kcal/mol/Å and
-energy-term difference1.03e-14 kcal/mol. These are **short-screen results, not
+The 2026-09-23 exact-image short screen reported medians 11.7714 versus 28.4171
+ns/day (three 1000-step measured NPT windows after 200 continuous warmup steps),
+with identical coordinates, maximum force difference 1.244e-11 kcal/mol/Å and
+energy-term difference 1.03e-14 kcal/mol. These are **short-screen results, not
 full-production performance**. Raw results are under
 `/home/tux/fs2-alanine-lammps-performance-20260923/screen-03`; the passed receipt
 SHA256 is `a95054cba02726690a09b8a42a42264a2f732dda8c199c5edb7af804ae30ef8b`.
 The already-orthogonal restart run0 check also passed. Fixture04's complete
-adapter/minimize/SHAKE probe and long public run remain separate required gates;
-the original fixture03 full baseline is retained and continues unchanged.
+adapter/minimize/SHAKE probe passed on the exact image: all nine energy terms
+identical, maximum force difference 1.066e-13 kcal/mol/Å, maximum constrained
+distance error 4.644e-5 Å, 2,000 probe steps and five frames. Evidence:
+`/home/tux/fs2-alanine-lammps-performance-20260923/fixture04-probe-local`,
+scientific receipt SHA256
+`dd0dfeb63807d51f228841b85408ade8d369bf077db82ae780c7b15c591cd1c0`.
+Fixture04 archive SHA256:
+`cb0ab63bd6311acf030288db41544d7ea3988e47b7155da2dd62f18808162b53`.
+The long public run remains a separate required gate; the original fixture03
+full baseline is retained and continues unchanged.

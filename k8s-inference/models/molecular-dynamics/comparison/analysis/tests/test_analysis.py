@@ -207,6 +207,34 @@ class NativeTests(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 list(lammps_frames(self.dump(ids=ids), .002))
 
+    def test_closed_lammps_segments_only_identical_boundary_deduped(self):
+        one = self.directory / "segment1.lammpstrj"
+        two = self.directory / "segment2.lammpstrj"
+        template = self.dump().read_text()
+        one.write_text(template.replace("\n500\n", "\n0\n") + template)
+        two.write_text(template + template.replace("\n500\n", "\n1000\n"))
+        boundaries = []
+        iterator = frames([str(one), str(two)], "lammps", .002, boundary_receipts=boundaries)
+        result = []
+        for frame in iterator:
+            frame.positions = None  # Match the actual memory-light consumer.
+            result.append(frame)
+        self.assertEqual([f.step for f in result], [0, 500, 1000])
+        self.assertEqual([f.index for f in result], [0, 1, 2])
+        self.assertEqual([b["step"] for b in boundaries], [500])
+        validate_timeline(result, 0, 0, 1000, 500, .002)
+        two.write_text(template.replace("2 0.9", "2 1.9") + template.replace("\n500\n", "\n1000\n"))
+        boundaries = []
+        self.assertEqual(len(list(frames([str(one), str(two)], "lammps", .002, boundary_receipts=boundaries))), 3)
+        self.assertEqual(boundaries[0]["periodically_rewrapped_atoms"], 1)
+        self.assertAlmostEqual(boundaries[0]["maximum_raw_position_difference_A"], 10)
+        for invalid in (template.replace("2 0.9", "2 0.8") + template.replace("\n500\n", "\n1000\n"), template + template):
+            two.write_text(invalid)
+            with self.assertRaises(ValidationError):
+                list(frames([str(one), str(two)], "lammps", .002))
+        with self.assertRaises(ValidationError):
+            list(frames([str(one), str(one)], "lammps", .002))
+
     def test_missing_duplicate_wrong_origin_timeline_fails(self):
         values = [Frame(i, None, None, i + 1., (i + 1) * 500, "synthetic") for i in range(3)]
         for bad in (values[:2], [values[0], values[0], values[2]], list(reversed(values))):
@@ -287,6 +315,21 @@ class ThermoTests(unittest.TestCase):
         self.path.write_text("Step Time Temp Press Volume Density PotEng\n500 1000 300 1 20000 0.99\n")
         with self.assertRaises(ValidationError):
             native_thermo(self.path, "lammps_log", .002, 12000.)
+
+    def test_lammps_closed_thermo_boundary_preserves_both_observations(self):
+        other = self.path.with_name("segment2.log")
+        header = "Step Time Temp Press Volume Density PotEng\n"
+        self.path.write_text(header + "0 0 300 1 20000 0.99 -100\n500 1000 301 2 20000 0.99 -101\nLoop time of 1 on 1 procs for 500 steps\n")
+        other.write_text(header + "500 1000 302 3 20000 0.99 -101\n1000 2000 299 4 20000 0.99 -102\nLoop time of 2 on 1 procs for 500 steps\n")
+        boundaries = []
+        rows = native_thermo([str(self.path), str(other)], "lammps_log", .002, 12000., boundary_receipts=boundaries)
+        self.assertEqual([row["step"] for row in rows], [0, 500, 1000])
+        self.assertEqual(rows[1]["temperature_K"], 301)
+        self.assertEqual(boundaries[0]["omitted_next_segment_initialization_observation"]["temperature_K"], 302)
+        self.assertAlmostEqual(native_performance([str(self.path), str(other)], "lammps", 1000, .002)["native_ns_per_day"], 57.6)
+        other.write_text(header + "500 1000 302 3 20000 0.99 -101\n500 1000 302 3 20000 0.99 -101\n")
+        with self.assertRaises(ValidationError):
+            native_thermo([str(self.path), str(other)], "lammps_log", .002, 12000.)
 
     def test_gromacs_labels_and_units(self):
         self.path.write_text('@ s0 legend "Temperature"\n@ s1 legend "Pressure"\n@ s2 legend "Density"\n1 300 1 998\n2 301 -1 997\n')

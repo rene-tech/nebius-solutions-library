@@ -42,11 +42,12 @@ def validate(workspace):
         if (directory / f"{stage}-progress.txt").read_text().strip() != str(final):
             raise ValidationError(f"{stage} closed progress differs")
         native_steps, frames_seen, boundary_duplicates, previous = [], [], [], None
-        worst_error, thermo_samples = 0., []
+        worst_error, native_logs = 0., []
         for command in commands:
             if command["exit_code"] != 0:
                 raise ValidationError(f"{stage} contains failed native segment")
             log = directory / command["log"]
+            native_logs.append(str(log))
             # command log paths are workspace-data relative; generated scripts
             # use directory '.', so the contract has no implicit path guessing.
             loops = re.findall(r"Loop time of \S+ on .*? for (\d+) steps", log.read_text())
@@ -62,9 +63,9 @@ def validate(workspace):
                 # that exact, geometry-verified boundary may be de-duplicated in
                 # the count; originals and duplicate receipt are retained.
                 if previous and frame.step == previous.step and segment_frames == 0:
-                    if not np.allclose(frame.positions, previous.positions, atol=1e-7, rtol=0) or not np.allclose(frame.cell, previous.cell, atol=1e-7, rtol=0):
+                    if not np.allclose(frame.cell, previous.cell, atol=1e-7, rtol=0) or np.abs(minimum_image(frame.positions - previous.positions, frame.cell)).max() > 1e-7:
                         raise ValidationError("restart boundary coordinates or cell differ")
-                    boundary_duplicates.append({"step": frame.step, "segment": command["segment"]})
+                    boundary_duplicates.append({"step": frame.step, "segment": command["segment"], "maximum_raw_position_difference_A": float(np.abs(frame.positions - previous.positions).max()), "maximum_periodic_position_difference_A": float(np.abs(minimum_image(frame.positions - previous.positions, frame.cell)).max())})
                 else:
                     frames_seen.append(frame.step)
                 if frame.step > origin:
@@ -72,16 +73,18 @@ def validate(workspace):
                     worst_error = max(worst_error, float(np.abs(np.linalg.norm(vector, axis=1) - distances).max()))
                 previous = frame
                 segment_frames += 1
-            rows = native_thermo(log, "lammps_log", .002, total_mass)
-            thermo_samples.extend(row for row in rows if row["step"] > origin)
         if sum(native_steps) != final - origin or frames_seen != list(range(origin, final + 1, 500)):
             raise ValidationError(f"{stage} native steps/frame schedule incomplete or duplicated")
         if worst_error > 1e-4:
             raise ValidationError(f"{stage} constraint error {worst_error} A")
-        # Report unique native output samples only; repeated closed boundaries
-        # are recorded above and cannot inflate sample counts.
-        unique_thermo = {int(row["step"]): row for row in thermo_samples}
-        stages.append({"stage": stage, "origin_step": origin, "final_step": final, "steps": sum(native_steps), "duration_ps": (final - origin) * .002, "unique_native_frames_including_initial": len(frames_seen), "segments": len(commands), "verified_duplicate_segment_boundaries": boundary_duplicates, "max_constraint_distance_error_A": worst_error, "temperature_K": descriptive([row["temperature_K"] for row in unique_thermo.values()]), "pressure_bar": descriptive([row["pressure_bar"] for row in unique_thermo.values()]), "density_g_cm3": descriptive([row["density_g_cm3"] for row in unique_thermo.values()])})
+        # Only a documented initial row at a closed segment boundary may be
+        # omitted; a dictionary must not silently hide arbitrary duplicate rows.
+        thermo_boundaries = []
+        native_rows = native_thermo(native_logs, "lammps_log", .002, total_mass, boundary_receipts=thermo_boundaries)
+        if [int(row["step"]) for row in native_rows] != list(range(origin, final + 1, 500)) or [row["step"] for row in thermo_boundaries] != [row["step"] for row in boundary_duplicates]:
+            raise ValidationError(f"{stage} thermo schedule/boundaries differ from trajectory")
+        thermo_samples = [row for row in native_rows if row["step"] > origin]
+        stages.append({"stage": stage, "origin_step": origin, "final_step": final, "steps": sum(native_steps), "duration_ps": (final - origin) * .002, "unique_native_frames_including_initial": len(frames_seen), "segments": len(commands), "verified_duplicate_segment_boundaries": boundary_duplicates, "native_thermo_boundary_observations": thermo_boundaries, "max_constraint_distance_error_A": worst_error, "temperature_K": descriptive([row["temperature_K"] for row in thermo_samples]), "pressure_bar": descriptive([row["pressure_bar"] for row in thermo_samples]), "density_g_cm3": descriptive([row["density_g_cm3"] for row in thermo_samples])})
     return {"status": "native-stage-duration-frame-constraint-validation-passed", "scope": "actual complete canonical LAMMPS output semantics; cross-engine equivalence, convergence and combined customer acceptance remain separate gates", "operation_id": result["operation_id"], "job_id": result["job_id"], "native_build": result["native_build"], "native_engine_id": result["engine_id"], "stages": stages, "files": {str(path.relative_to(workspace)): sha256(path) for path in workspace.rglob("*") if path.is_file()}, "scientific_convergence_claimed": False}
 
 

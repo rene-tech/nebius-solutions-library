@@ -139,7 +139,13 @@ def analyze_run(run, master, output):
         raise ValidationError(f"unknown engine {engine}")
     if not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", run["image"]):
         raise ValidationError("immutable runtime image digest required")
-    files = [run["trajectory"], run["native_topology"], run["production_log"], run["thermo"]["path"], *run.get("provenance_files", [])]
+    def paths(value):
+        if isinstance(value, list):
+            if engine != "lammps" or not value:
+                raise ValidationError("only LAMMPS supports ordered native segment lists")
+            return value
+        return [value]
+    files = [*paths(run["trajectory"]), run["native_topology"], *paths(run["production_log"]), *paths(run["thermo"]["path"]), *run.get("provenance_files", [])]
     inputs = [file_receipt(path) for path in sorted(set(files))]
     protocol = master["protocol"]
     natoms = master["manifest"]["atoms"]
@@ -155,8 +161,9 @@ def analyze_run(run, master, output):
     output.mkdir()
     display_peptide, display_water, metadata, rows = [], [], [], []
     densities, all_sources = [], set()
+    trajectory_boundaries, thermo_boundaries = [], []
     # Store only peptide and oxygen display coordinates; validate every raw atom.
-    for frame in frames(run["trajectory"], engine, dt, run.get("trajectory_format")):
+    for frame in frames(run["trajectory"], engine, dt, run.get("trajectory_format"), boundary_receipts=trajectory_boundaries):
         if frame.index > steps // every:
             raise ValidationError("extra trajectory frames beyond declared production")
         if frame.positions.shape != (natoms, 3):
@@ -186,8 +193,12 @@ def analyze_run(run, master, output):
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    raw_thermo = native_thermo(run["thermo"]["path"], run["thermo"]["kind"], dt, float(master["u"].atoms.masses.sum()))
+    raw_thermo = native_thermo(run["thermo"]["path"], run["thermo"]["kind"], dt, float(master["u"].atoms.masses.sum()), boundary_receipts=thermo_boundaries)
+    if [entry["step"] for entry in trajectory_boundaries] != [entry["step"] for entry in thermo_boundaries]:
+        raise ValidationError("trajectory and thermo closed-segment boundaries differ")
     thermo_rows = production_rows(raw_thermo, run.get("thermo_origin_step", run["production_origin_step"]), run.get("thermo_origin_time_ps", run["production_origin_time_ps"]), steps, dt)
+    if len(thermo_rows) != steps // every or not np.allclose([row["time_ps"] for row in thermo_rows], np.arange(every, steps + 1, every) * dt, atol=.001, rtol=0):
+        raise ValidationError("native thermo does not cover the complete canonical output schedule")
     pressure_status = "native reported pressure"
     if engine == "namd":
         group_based = "PRESSURE CONTROL IS GROUP-BASED" in Path(run["thermo"]["path"]).read_text()
@@ -216,6 +227,8 @@ def analyze_run(run, master, output):
         values = [r[field] for r in thermo_rows if field in r]
         summary[field] = descriptive(values) if values else None
     summary["pressure_status"] = pressure_status
+    summary["closed_segment_trajectory_boundaries"] = trajectory_boundaries
+    summary["closed_segment_thermo_boundaries"] = thermo_boundaries
     summary["pressure_observation_provenance"] = joined_pressure
     if summary["pressure_bar"] and summary["pressure_bar"]["min"] == summary["pressure_bar"]["max"] == 0:
         summary["pressure_status"] += "; all values exactly zero: verify native pressure calculation before interpreting physically"

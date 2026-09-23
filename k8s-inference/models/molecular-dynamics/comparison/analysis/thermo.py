@@ -14,7 +14,25 @@ def number(value):
     return float(value.replace("D", "E").replace("d", "e"))
 
 
-def native_thermo(path, kind, timestep_ps, total_mass_amu):
+def native_thermo(path, kind, timestep_ps, total_mass_amu, *, boundary_receipts=None):
+    if isinstance(path, list):
+        if kind != "lammps_log" or not path or len({str(Path(p).resolve()) for p in path}) != len(path):
+            raise ValidationError("distinct ordered LAMMPS thermo segments required")
+        joined = []
+        for segment, source in enumerate(path):
+            rows = native_thermo(source, kind, timestep_ps, total_mass_amu)
+            for index, row in enumerate(rows):
+                if joined and row["step"] == joined[-1]["step"] and index == 0:
+                    if row["time_ps"] != joined[-1]["time_ps"]:
+                        raise ValidationError("segment boundary thermo time differs")
+                    if boundary_receipts is not None:
+                        boundary_receipts.append({"step": row["step"], "next_segment_index": segment, "next_segment_file": str(Path(source).resolve()), "retained_closed_segment_observation": joined[-1], "omitted_next_segment_initialization_observation": row,
+                                                  "action": "use actual preceding closed-step observation, not a second initialization sample; native differences retained explicitly"})
+                    continue
+                if joined and row["step"] <= joined[-1]["step"]:
+                    raise ValidationError("thermo steps duplicated away from a segment boundary")
+                joined.append(row)
+        return joined
     text = Path(path).read_text()
     pressure_not_computed = kind == "amber_mdout" and "reported pressure is always 0 because it is not calculated" in " ".join(text.lower().split())
     rows = []
@@ -139,7 +157,12 @@ def descriptive(values):
 
 
 def native_performance(log_path, engine, production_steps, timestep_ps):
-    text = Path(log_path).read_text()
+    if isinstance(log_path, list):
+        if engine != "lammps" or not log_path or len({str(Path(p).resolve()) for p in log_path}) != len(log_path):
+            raise ValidationError("distinct ordered production-only LAMMPS performance logs required")
+        text = "\n".join(Path(path).read_text() for path in log_path)
+    else:
+        text = Path(log_path).read_text()
     duration_ns = production_steps * timestep_ps / 1000.
     result = {"native_ns_per_day": None, "native_loop_seconds": None, "scope": "not measured/parsed; no substitution with queue or workflow wall time"}
     if engine == "gromacs":

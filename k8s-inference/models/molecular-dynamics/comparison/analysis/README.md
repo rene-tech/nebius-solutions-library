@@ -1,6 +1,6 @@
 # Canonical four-engine trajectory analysis
 
-Status on 2026-09-23: 46 explicitly synthetic unit tests pass. Actual complete
+Status on 2026-09-23: 48 explicitly synthetic unit tests pass. Actual complete
 GROMACS, NAMD and AMBER production files have passed common analysis, and their
 three real clips are rendered and encoding/visually checked. LAMMPS production
 is still running, so the fourth clip and synchronized 2×2 remain pending.
@@ -59,6 +59,17 @@ actual AKMA `delta`, `istart`, and `nsavc`; no timestep override is allowed.
 LAMMPS dump time is explicitly the native integer step times the recorded 2 fs
 protocol. Dump positions may be Cartesian, unwrapped or scaled; atom IDs must
 be exactly 1..N and are sorted, not trusted in row order.
+
+For closed LAMMPS continuation segments, `trajectory`, `production_log`, and
+`thermo.path` may each be an explicitly ordered list of distinct native files.
+Only a duplicate first frame at a segment boundary may be omitted, after checking
+all periodic atom positions and the cell within 1e-7 Å; legitimate cell-image
+rewrapping is recorded. An arbitrary repeated/missing frame still fails. Native
+thermo boundary observations retain both the preceding closed-step value and
+the next segment's initialization value; only the former contributes to the
+summary. Trajectory/thermo boundary steps and the full 1 ps output schedule must
+agree. Production loop durations are summed only when their native step counts
+sum to 500,000. No raw segment is rewritten or joined into fabricated frames.
 
 Native topology/conversion evidence must establish `canonical_to_native` (either
 `"identity"` or a complete zero-based permutation). The mapping alone is not
