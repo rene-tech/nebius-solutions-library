@@ -6,7 +6,7 @@ import tarfile
 import pytest
 
 from make_alanine_fixture import audit_master, common, make, parm7, thermostat
-from validate_alanine import ENERGY_FIELDS, coordinate_identity, energy_rows, submitted_request
+from validate_alanine import ENERGY_FIELDS, coordinate_identity, energy_rows, pme_settings, submitted_request
 
 
 PROTOCOL = {
@@ -83,6 +83,8 @@ def test_native_configuration_maps_amber_tail_bar_and_all_atom_thermostat():
     assert "rigidBonds none\n" in common(PROTOCOL, singlepoint=True)
     assert "nonbondedFreq 1\n" in config and "nonbondedFrequency" not in config
     assert "PMEGridSizeX 64\nPMEGridSizeY 64\nPMEGridSizeZ 64\n" in common(PROTOCOL, singlepoint=True)
+    assert "PMEGridSizeX 64\nPMEGridSizeY 64\nPMEGridSizeZ 64\n" in config
+    assert "PMEGridSpacing" not in config
     assert "langevinPistonTarget 1.0\n" in thermostat(PROTOCOL, pressure=True)
     assert "langevinHydrogen on\n" in thermostat(PROTOCOL)
 
@@ -98,6 +100,14 @@ def test_fixture_preserves_master_and_exact_stage_steps_without_rng_restarts(tmp
     nvt = (output / "inputs/alanine/nvt.namd").read_text()
     assert "temperature 300.0\n" in nvt and "binVelocities" not in nvt and "seed 20260923\n" in nvt
     assert "seed 20260925\n" in (output / "inputs/alanine/production.namd").read_text()
+    for config in (output / "inputs/alanine").glob("*.namd"):
+        text = config.read_text()
+        assert "PMEGridSizeX 64\nPMEGridSizeY 64\nPMEGridSizeZ 64\nPMEInterpOrder 4\n" in text
+        assert "PMEGridSpacing" not in text
+    provenance = json.loads((output / "provenance.json").read_text())
+    assert provenance["fixture_revision"] == "explicit-pme64-v1"
+    assert provenance["pme_grid"] == [64, 64, 64]
+    assert provenance["pme_interpolation_order"] == 4
     point = json.loads((output / "singlepoint/request.json").read_text())
     assert [j["id"] for j in point["jobs"]] == ["singlepoint-tail", "singlepoint-no-tail"]
     with tarfile.open(output / "input.tar.gz") as bundle:
@@ -123,6 +133,40 @@ def test_canonical_observable_reader_uses_native_labels_and_checks_all_values(tm
     path.write_text("ENERGY: " + " ".join(["nan"] + ["0"] * (len(ENERGY_FIELDS) - 1)) + "\n")
     with pytest.raises(ValueError, match="non-finite"):
         energy_rows(path)
+
+
+@pytest.mark.parametrize("tolerance", [1e-5, 1e-6])
+def test_native_pme_grid_order_and_stage_tolerance_are_verified(tmp_path, tolerance):
+    path = tmp_path / "native.log"
+    path.write_text(f"Info: PME TOLERANCE               {tolerance}\n"
+                    "Info: PME INTERPOLATION ORDER     4\n"
+                    "Info: PME GRID DIMENSIONS         64 64 64\n")
+    assert pme_settings(path, tolerance) == {
+        "grid": [64, 64, 64], "interpolation_order": 4, "tolerance": tolerance,
+        "source": "native Info log records"}
+
+
+@pytest.mark.parametrize("mutation,match", [
+    ("old-grid", "grid"), ("one-axis", "grid"), ("missing-grid", "grid"),
+    ("duplicate-grid", "grid"), ("order", "order"), ("tolerance", "tolerance"),
+    ("nan-tolerance", "tolerance"),
+])
+def test_rehashed_or_mismatched_native_pme_reports_cannot_pass(tmp_path, mutation, match):
+    text = ("Info: PME TOLERANCE 1e-5\nInfo: PME INTERPOLATION ORDER 4\n"
+            "Info: PME GRID DIMENSIONS 64 64 64\n")
+    text = {
+        "old-grid": text.replace("64 64 64", "44 44 44"),
+        "one-axis": text.replace("64 64 64", "64 64 60"),
+        "missing-grid": text.replace("Info: PME GRID DIMENSIONS 64 64 64\n", ""),
+        "duplicate-grid": text + "Info: PME GRID DIMENSIONS 64 64 64\n",
+        "order": text.replace("ORDER 4", "ORDER 6"),
+        "tolerance": text.replace("1e-5", "1e-4"),
+        "nan-tolerance": text.replace("1e-5", "nan"),
+    }[mutation]
+    path = tmp_path / "native.log"
+    path.write_text(text)
+    with pytest.raises(ValueError, match=match):
+        pme_settings(path, 1e-5)
 
 
 @pytest.mark.parametrize("change", ["transport", "steps", "seed-script"])

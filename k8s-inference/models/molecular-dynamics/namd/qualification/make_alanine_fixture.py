@@ -16,6 +16,9 @@ from fs2_gromacs.files import digest_file
 from fs2_namd import PARAMETER_SCHEMA
 from fs2_namd.contracts import canonical, normalize
 
+CANONICAL_PME_GRID = (64, 64, 64)
+CANONICAL_PME_ORDER = 4
+
 
 def parm7(path):
     sections = {}
@@ -113,7 +116,7 @@ def audit_master(master):
 
 def common(protocol, *, singlepoint=False, tail=True):
     tolerance = protocol["single_point_electrostatic_tolerance"] if singlepoint else protocol["electrostatic_target_tolerance"]
-    grid = "PMEGridSizeX 64\nPMEGridSizeY 64\nPMEGridSizeZ 64" if singlepoint else "PMEGridSpacing 1.0"
+    grid = "\n".join(f"PMEGridSize{axis} {size}" for axis, size in zip("XYZ", CANONICAL_PME_GRID))
     return f"""amber on
 oldParmReader off
 parmfile system.prmtop
@@ -136,7 +139,7 @@ pairlistdist {protocol['cutoff_A'] + 2.0}
 PME on
 PMETolerance {tolerance}
 {grid}
-PMEInterpOrder 4
+PMEInterpOrder {CANONICAL_PME_ORDER}
 rigidBonds {'none' if singlepoint else 'all'}
 rigidTolerance {protocol['constraint_tolerance']}
 rigidIterations 100
@@ -210,6 +213,7 @@ def make(master, output):
     shutil.copyfile(output / "input.tar.gz", point / "input.tar.gz")
     (point / "request.json").write_text(json.dumps(request(singlepoint), indent=2) + "\n")
     provenance = {"system": "alanine-ff14sb-tip3p", "ensemble": "npt", "gpu_mode": "resident", "repetitions": 1,
+                  "fixture_revision": "explicit-pme64-v1", "pme_grid": list(CANONICAL_PME_GRID), "pme_interpolation_order": CANONICAL_PME_ORDER,
                   "production_steps": production, "input_sha256": digest_file(output / "input.tar.gz"), "canonical_parameter_audit": audit,
                   "protocol_sha256": digest_file(master / "protocol.json"), "production_first_step": minimum + nvt + npt,
                   "production_relative_time_ps": [0, production * protocol["timestep_fs"] / 1000],
@@ -220,7 +224,7 @@ def make(master, output):
                                      "One process per NPT/production stage preserves its RNG stream; restart commits are at full-stage boundaries",
                                      "Native isotropic Langevin piston100fs/50fs, target1.0bar; COMmotion no and group pressure recorded",
                                      "All nonbonded and PME forces every2fs, no multiple-time-step acceleration",
-                                     "PME order4: explicit64x64x64 single-point comparison grid, requested1A maximum spacing for dynamics; actual native grids recorded",
+                                     "PME order 4 and explicit 64x64x64 grid for minimization, all dynamics and single-point stages; native log settings must match",
                                      "LJcorrection on; native analytical tail contribution compared via paired run0 diagnostics"],
                   "scientific_convergence_claimed": False}
     (output / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")

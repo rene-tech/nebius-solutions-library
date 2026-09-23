@@ -3,6 +3,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+import re
 import statistics
 import struct
 
@@ -11,11 +12,27 @@ from fs2_gromacs.files import digest_file
 from fs2_namd.contracts import normalize
 from fs2_namd.worker import binary_vectors, log_metrics, xsc_step
 from inspect_warnings import warning_lines
-from make_alanine_fixture import parm7
+from make_alanine_fixture import CANONICAL_PME_GRID, CANONICAL_PME_ORDER, parm7
 from validate_campaign import dcd, production_timing
 
 
 ENERGY_FIELDS = "TS BOND ANGLE DIHED IMPRP ELECT VDW BOUNDARY MISC KINETIC TOTAL TEMP POTENTIAL TOTALAVG TEMPAVG PRESSURE GPRESSURE VOLUME PRESSAVG GPRESSAVG".split()
+
+
+def pme_settings(path, expected_tolerance):
+    """Bind acceptance to actual native PME dispatch, not only input spelling."""
+    text = path.read_text()
+    grids = re.findall(r"(?m)^Info:\s+PME GRID DIMENSIONS\s+(\d+)\s+(\d+)\s+(\d+)\s*$", text)
+    orders = re.findall(r"(?m)^Info:\s+PME INTERPOLATION ORDER\s+(\d+)\s*$", text)
+    tolerances = re.findall(r"(?m)^Info:\s+PME TOLERANCE\s+(\S+)\s*$", text)
+    if len(grids) != 1 or tuple(map(int, grids[0])) != CANONICAL_PME_GRID:
+        raise ValueError("native PME grid is not the canonical explicit 64x64x64 grid")
+    if orders != [str(CANONICAL_PME_ORDER)]:
+        raise ValueError("native PME interpolation order is not canonical order 4")
+    if len(tolerances) != 1 or not math.isclose(float(tolerances[0]), expected_tolerance, rel_tol=1e-12):
+        raise ValueError("native PME tolerance differs from the canonical stage")
+    return {"grid": list(CANONICAL_PME_GRID), "interpolation_order": CANONICAL_PME_ORDER,
+            "tolerance": float(tolerances[0]), "source": "native Info log records"}
 
 
 def energy_rows(path):
@@ -98,12 +115,13 @@ def validate(fixture, campaign, request_path=None):
                 raise ValueError("canonical protocol expects one native process per stage")
             command = commands[0]
             log = data / command["log"]
+            pme = pme_settings(log, protocol["single_point_electrostatic_tolerance"] if singlepoint else protocol["electrostatic_target_tolerance"])
             rows = energy_rows(log)
             metrics = log_metrics(log)
             if metrics["atoms"] != len(fields["MASS"]) or metrics["timestep_fs"] != protocol["timestep_fs"]:
                 raise ValueError("native atom count or timestep differs from the canonical protocol")
             report["native_logs"].append({"path": str(log), "sha256": digest_file(log), "warnings": warning_lines(log.read_text())})
-            stage = {"id": step["id"], "native_first_energy_step": rows[0]["TS"], "native_last_energy_step": rows[-1]["TS"],
+            stage = {"id": step["id"], "pme": pme, "native_first_energy_step": rows[0]["TS"], "native_last_energy_step": rows[-1]["TS"],
                      "last_energy_kcal_mol_bar_A3_K": rows[-1], "native_wall_seconds": command["wall_seconds"],
                      "random_seed": metrics["random_seed"], "native_ns_per_day": metrics["performance_ns_per_day"]}
             report["stages"].append(stage)
