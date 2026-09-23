@@ -10,6 +10,10 @@ template under `activation/` remains deliberately unrouted. See
 [advanced/MPI evidence](qualification/P2-20260923.md) for exact tested
 artifacts, release scope and remaining unqualified execution shapes.
 
+The separate [native SM89 qualification](qualification/SM89-20260923.md) records
+the L40S source-build candidate, architecture control and matched-input evidence.
+It does not replace the released runtime or establish a global offload default.
+
 This is a general molecular-dynamics App, not a customer-specific pipeline.
 The official NVIDIA artifact is an optimized **NGC HPC container**, not an HTTP
 NIM microservice. We retain NVIDIA's engine and add the existing Scientific AI
