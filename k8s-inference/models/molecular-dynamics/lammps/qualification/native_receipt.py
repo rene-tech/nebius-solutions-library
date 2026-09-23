@@ -31,8 +31,12 @@ def case_receipt(directory, *, revalidate=False):
             validation = validate(workspace)
         except Exception as exc:
             validation = {"status": "failed", "error": str(exc)}
-        validation_path = directory / "validation-final.json"
-        validation_path.write_text(json.dumps(validation, indent=2) + "\n")
+        serialized = json.dumps(validation, indent=2) + "\n"
+        validation_path = directory / ("validation-final-" + hashlib.sha256(serialized.encode()).hexdigest() + ".json")
+        # Later stricter validators must not invalidate an earlier receipt's
+        # evidence path by replacing its bytes in place.
+        if not validation_path.exists():
+            validation_path.write_text(serialized)
     validation = load(validation_path)
     result = load(workspace / "result.json")
     for entry in result["files"]:
