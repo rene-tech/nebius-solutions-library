@@ -159,6 +159,14 @@ Each pool has its own `canonical-*-fresh-recovery-v3.json` and
 `canonical-*-science-v3.json` receipt. Common four-engine ensemble analysis and
 hosted customer-path acceptance remain separate parent-owned gates.
 
+For this exact LFMiddle implementation, printed temperature uses a corrected
+average of successive-step velocities, whereas the archived velocity trajectory
+stores the current velocity. The original native means298.32824 K (H100) and
+297.62712 K (L40S) are preserved. See the source-hashed
+[temperature-estimator trace](qualification/TEMPERATURE_ESTIMATORS.md) before
+comparing them with independently mass-weighted saved-velocity temperatures;
+the two estimators must not be silently substituted.
+
 Both AMBER GPU Pods were removed after verified copies of the complete native
 outputs and final-v3 upstream archives (636 preserved files per pool). No
 scientific stage or source/image changed during these final checks. The offline
