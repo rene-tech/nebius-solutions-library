@@ -1,12 +1,12 @@
 {
   "schema": "fs2-serve.nebius.ai/exact-image-completed-result-recovery-qualification/v1",
   "status": "passed",
-  "recorded_at": "2026-09-23T18:38:52.914103+00:00",
+  "recorded_at": "2026-09-23 18:58:12 UTC",
   "customer_ready": false,
   "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
   "additive_analysis_image_source": "c9a1481f0d57d0ca6dd41041c56dc3f54e375c6e",
   "helper_source_commit": "510d142a507524275f0eb7bd3c8de3559694e099",
-  "scope": "Fresh owner-key readback of two completed AMBER and two completed PME64 NAMD operations; no new simulations and no claim to have rerun MD through this additive client.",
+  "scope": "Fresh owner-key readback of two completed AMBER, two completed PME64 NAMD and two historical autotuned GROMACS operations. No new simulations in these recoveries. GROMACS fixed-cutoff replacements 06/07 separately ran in full using this exact final client; old 04/05 recovery does not certify the common fixed-cutoff protocol.",
   "original_simulation_receipts": {
     "amber": {
       "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/hosted-two-cohort-226/amber.json",
@@ -25,11 +25,11 @@
     "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-resources-after.json",
     "sha256": "275d695f4de03ded4abfefd47a7fbfed70a6c49c68a658099c896dba653306db"
   },
-  "verified_artifacts_total": 232,
-  "verified_artifact_bytes_total": 603925652,
-  "fresh_content_downloads_including_manifests_total": 236,
-  "transport_attempts_including_manifests_total": 236,
-  "network_get_claim": "236 artifact-content GETs are supported by 236 fresh verified-copy records with one transfer attempt each and the inspected unchanged artifact-content GET path. MCP status/result calls are read-only RPCs; no packet capture is claimed.",
+  "verified_artifacts_total": 344,
+  "verified_artifact_bytes_total": 843178876,
+  "fresh_content_downloads_including_manifests_total": 350,
+  "transport_attempts_including_manifests_total": 350,
+  "network_get_claim": "350 artifact-content GETs are supported by fresh verified-copy records with one transfer attempt each and the inspected unchanged artifact-content GET path. MCP status/result calls are read-only RPCs; no packet capture is claimed.",
   "owner_identity_reused": true,
   "credentials_published": false,
   "no_input_or_admission_arguments": true,
@@ -175,6 +175,78 @@
         "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-namd-pme64-02.summary.json",
         "sha256": "dd45b3371ee921d3bb8f96cbc12b758412c442d14e300391f5ad2fb1e7f76b12"
       }
+    },
+    {
+      "status": "passed",
+      "model_id": "gromacs",
+      "operation_id": "e07faffd-79bd-482d-9e14-24e0ecf0f6f1",
+      "verified_artifacts": 56,
+      "verified_artifact_bytes": 119796263,
+      "fresh_content_downloads_including_manifest": 57,
+      "transport_attempts_including_manifest": 57,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "78c572f14bc53cad10644f521df34d0a8238d541efd4cbc80387e34b05a003a1",
+      "recovery_receipt_sha256": "430b4c4f8cd0f41585e43098fab0219e7e0b64bb38173dd7419243f62ee9b51d",
+      "original_receipt_sha256": "eea2ca6ec3e8978b0411ae6db565b17f70dcfe02e2225855a89ad3bda5bce0b8",
+      "original_operation_completed_at": "2026-09-23T18:02:18.906290Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "7e5c7b36c464de147fb51e761fb3a2df7c8be5614483d23d20ac626e5b44ac71",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T18:38:16.037030+00:00",
+      "finished_at": "2026-09-23T18:39:02.469325+00:00",
+      "readback_elapsed_seconds": 46.43223966471851,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-gromacs-04",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-gromacs-04.client.log",
+      "case": "gromacs-autotuned-historical-04",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-gromacs-04.summary.json",
+        "sha256": "0c86d0dd1c6c1832bb1828f370eb129fe1549dd279f02f73d6536b87e63a795c"
+      },
+      "scientific_protocol_scope": "Historical autotuned variant 04/05, superseded by fixed-cutoff -notunepme 06/07. Artifact recovery is passed; it does not certify the common fixed-cutoff protocol."
+    },
+    {
+      "status": "passed",
+      "model_id": "gromacs",
+      "operation_id": "56d37398-518c-4f97-98ed-949b4d9d79f7",
+      "verified_artifacts": 56,
+      "verified_artifact_bytes": 119456961,
+      "fresh_content_downloads_including_manifest": 57,
+      "transport_attempts_including_manifest": 57,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "8f4f53aca94cbe633c7654ebf19bdde5150fe797d8d35de66204900c12e82257",
+      "recovery_receipt_sha256": "883158600b46895bd140274aa23287e9506163966b8cc1a0c00d4d0c62a248bb",
+      "original_receipt_sha256": "7ac9c503662bbbc565d2a27d1d3437e2f3e9b756f89f10320a5a664022a37003",
+      "original_operation_completed_at": "2026-09-23T18:11:24.071363Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "7e5c7b36c464de147fb51e761fb3a2df7c8be5614483d23d20ac626e5b44ac71",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T18:38:17.574974+00:00",
+      "finished_at": "2026-09-23T18:39:08.821141+00:00",
+      "readback_elapsed_seconds": 51.246120139956474,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-gromacs-05",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-gromacs-05.client.log",
+      "case": "gromacs-autotuned-historical-05",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-gromacs-05.summary.json",
+        "sha256": "08bb24782b052fb4dc66baaa58b11bacfa433759f592da8555de0ffe7892f6fc"
+      },
+      "scientific_protocol_scope": "Historical autotuned variant 04/05, superseded by fixed-cutoff -notunepme 06/07. Artifact recovery is passed; it does not certify the common fixed-cutoff protocol."
     }
   ],
   "tests_offline": {
@@ -189,5 +261,13 @@
     "The additive analysis environment and actual browser user experience are separately qualified by the workbench owner.",
     "The same owner key was retained; this test does not replace separate cross-tenant denial acceptance.",
     "Raw client stdout remains in mode-0600 private logs; keys, caller fingerprints and signed URLs are omitted from this receipt."
-  ]
+  ],
+  "historical_gromacs_variant_context": {
+    "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/hosted-two-cohort-226/gromacs.json",
+    "sha256": "1c00501fbf05a8dbe5989bddacda5daf247fc1c322987d6237f05e67eb5d838b"
+  },
+  "gromacs_resources_after": {
+    "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/gromacs-fixed-pme-resources-after.json",
+    "sha256": "9104f0c7382735983ba50cb55aba5f31de13c068b590c372809864d69974f493"
+  }
 }
