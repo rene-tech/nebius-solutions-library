@@ -89,9 +89,14 @@ All native warnings remain retained and require fixture-specific interpretation:
 - Native GPU force tables are selected for this configuration. `GPUForceTable
   on` was already explicit; no different cutoff, switching or topology was
   substituted. Numerical force/energy equivalence still depends on the
-  cross-engine comparison.
+  cross-engine comparison. The public
+  [native configuration logic](https://www.ks.uiuc.edu/Research/namd/doxygen/SimParameters_8C_source.html)
+  selects force tables for unswitched interactions or non-unit 1–4 scaling,
+  among other conditions, consistent with both required settings here.
 - Native reports 2,192 H–H bonds, matching exactly the canonical AMBER rigid
-  TIP3P water representation. This is not an accidental solute bond warning.
+  TIP3P water representation. This is not an accidental solute bond warning;
+  the [native author's explanation](https://www.ks.uiuc.edu/Research/namd/mailing_list/namd-l.2003-2004/0629.html)
+  also distinguishes water H–H connectivity from unsupported 10–12 potentials.
 
 The prior fixture typo failed before force evaluation and is retained separately
 at `campaign-alanine-singlepoint-r5-failed-01`. No dynamics or cross-engine
