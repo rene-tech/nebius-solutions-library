@@ -123,6 +123,22 @@ telemetry averaged 87.9% GPU utilization, 323 W and 1,013 MiB device memory.
 All-stage telemetry is not mislabeled steady-state production-only telemetry.
 The resulting workspace inventory was 117,119,541 bytes.
 
+The validator now explicitly distinguishes the native timing-tail rate (median
+of each process's last ten `TIMING` wall seconds/step), production-process rate
+(including process startup/shutdown), and local-workflow rate (including
+preparation, equilibration, input extraction and local checkpoint bookkeeping).
+The local-workflow boundary excludes cloud queueing, Pod pull/scheduling,
+Object Storage transfer and the initial local input-bundle copy. Raw process
+timing and total job timing remain available; no MPS aggregate is inferred.
+
+The complete r4 H100 ApoA1 offload cohort passed all three 200 ps productions:
+30 DCD frames read, matching 121,000-step final checkpoints, median 44.09 ns/day
+(43.98–44.26), maximum relative total-energy deviations 0.0194–0.0284%. Each
+whole job took approximately 499–501 seconds. Whole-workflow GPU utilization
+averaged 18.5–18.7% at approximately 168 W, consistent with the much greater
+CPU-side work of offload mode at the selected four-thread shape. This is a
+measured shape-specific comparison, not an architectural peak-throughput claim.
+
 ## Remaining boundaries
 
 The initial ordinary hosted three-job NVE request failed before NAMD started:

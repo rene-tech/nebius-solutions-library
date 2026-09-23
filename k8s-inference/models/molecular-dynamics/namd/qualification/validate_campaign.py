@@ -85,6 +85,16 @@ def energy_drift(paths):
             "minimum_volume_A3": min(r[3] for r in rows), "maximum_volume_A3": max(r[3] for r in rows)}
 
 
+def production_timing(commands):
+    simulated_ns = sum((command["checkpoint_step"] - command["configured_first_step"]) * command["timestep_fs"] / 1_000_000 for command in commands)
+    wall = sum(command["wall_seconds"] for command in commands)
+    if simulated_ns <= 0 or wall <= 0:
+        raise ValueError("production timing lacks a positive simulated duration and measured wall time")
+    return {"production_simulated_ns": simulated_ns,
+            "production_process_ns_per_day": simulated_ns / wall * 86400,
+            "cpu_user_cores_during_native_production": sum(command["cpu_user_seconds"] for command in commands) / wall}
+
+
 def radius_metadynamics(data):
     """Validate this fixture's explicit hill list survives a native restart.
 
@@ -170,6 +180,8 @@ def main():
     parser.add_argument("--campaign", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    campaign_path = args.campaign / "campaign.json"
+    campaign = {row["job"]: row for row in json.loads(campaign_path.read_text())} if campaign_path.exists() else {}
     repetitions = []
     for path in sorted(args.campaign.glob("rep-*/result.json")):
         result = json.loads(path.read_text())
@@ -181,11 +193,17 @@ def main():
                 row["native_ns_per_day"] = statistics.median(c["performance_ns_per_day"] for c in commands)
                 row["native_wall_seconds"] = sum(c["wall_seconds"] for c in commands)
                 row["cpu_user_seconds"] = sum(c["cpu_user_seconds"] for c in commands)
+                row.update(production_timing(commands))
                 row["first_energy_log_observed_seconds"] = [c["first_energy_log_observed_seconds"] for c in commands]
                 row["scientific_observables"] = energy_drift([data / c["log"] for c in commands])
                 row["radius_metadynamics"] = radius_metadynamics(data)
                 row["artifact_bytes"] = sum(item["size_bytes"] for item in result["files"])
                 row["native_process_wall_seconds_all_stages"] = sum(c["wall_seconds"] for c in result["commands"])
+                if result["job_id"] in campaign:
+                    elapsed = campaign[result["job_id"]]["wall_seconds"]
+                    row["local_workflow_wall_seconds"] = elapsed
+                    row["local_workflow_production_ns_per_day"] = row["production_simulated_ns"] / elapsed * 86400
+                    row["local_non_native_overhead_seconds"] = elapsed - row["native_process_wall_seconds_all_stages"]
                 row["trajectories"] = {str(p.relative_to(data)): dcd(p) for p in sorted(data.rglob("production.part*.dcd"))}
                 if not row["trajectories"]:
                     raise ValueError("qualification requires readable production trajectories")
@@ -210,6 +228,12 @@ def main():
               "successful_repetitions": len(speeds), "single_trajectory": True, "MPS": False,
               "median_ns_per_day": statistics.median(speeds) if speeds else None,
               "min_ns_per_day": min(speeds) if speeds else None, "max_ns_per_day": max(speeds) if speeds else None}
+    report["timing_scope"] = {
+        "native_ns_per_day": "Per-process median of the last ten native TIMING wall seconds/step, then median across production segments",
+        "production_process_ns_per_day": "Actual production nanoseconds divided by summed production process wall time, including process startup/shutdown",
+        "local_workflow_production_ns_per_day": "Production nanoseconds divided by local workflow wall time including input extraction, preparation/equilibration and local checkpoint bookkeeping",
+        "excluded_from_local_workflow": "Cloud API queue, Pod scheduling/pull, Object Storage transfer and initial local input-bundle copy",
+        "gpu_telemetry": "One-second samples over the whole local workflow, not production-only sampling"}
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
     if not repetitions or len(speeds) != len(repetitions):

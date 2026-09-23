@@ -5,7 +5,7 @@ import struct
 import pytest
 
 from make_fixture import colvars_configuration, configuration
-from validate_campaign import dcd, radius_metadynamics, verify_grid_round_trip
+from validate_campaign import dcd, production_timing, radius_metadynamics, verify_grid_round_trip
 
 
 def test_fixture_seed_schedule_is_explicit_native_input():
@@ -23,6 +23,17 @@ def test_grid_protocol_is_explicit_and_original_ungridded_bytes_are_unchanged():
     assert "useGrids on" in grid and "keepHills on" in grid
     assert "lowerBoundary 0.0" in grid and "upperBoundary 20.0" in grid
     assert "writeFreeEnergyFile on" in grid
+
+
+def test_production_process_rate_uses_actual_steps_and_wall_time():
+    commands = [{"configured_first_step": n * 100000, "checkpoint_step": (n + 1) * 100000,
+                 "timestep_fs": 2.0, "wall_seconds": 60.0, "cpu_user_seconds": 240.0} for n in (0, 1)]
+    timing = production_timing(commands)
+    assert timing["production_simulated_ns"] == pytest.approx(0.4)
+    assert timing["production_process_ns_per_day"] == pytest.approx(288.0)
+    assert timing["cpu_user_cores_during_native_production"] == pytest.approx(4.0)
+    with pytest.raises(ValueError, match="positive"):
+        production_timing([])
 
 
 def test_native_grid_round_trip_checks_every_value_and_metadata():
