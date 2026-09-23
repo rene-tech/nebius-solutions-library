@@ -4,8 +4,9 @@ Status on 2026-09-23: 62 explicitly synthetic unit tests pass. Final Helm 226
 raw primaries are corrected GROMACS 06 (-notunepme), NAMD explicit PME64 01,
 AMBER 02 and LAMMPS fixture04 01. Full LAMMPS native duration/frame/constraint
 validation passed after independently explaining its SHAKE setup projection;
-the original strict failed receipt remains preserved. Final combined analysis
-and rendering are regenerated from these four exact primary selections.
+the original strict failed receipt remains preserved. Both hosted LAMMPS
+cohorts passed the full stage and boundary validation. Final combined analysis
+and rendering were regenerated from these four exact primary selections.
 Generated unit fixtures are **not scientific simulation or acceptance evidence**.
 
 This CPU-only subtree owns analysis and visualization, not force-field
@@ -32,11 +33,30 @@ For an explicitly partial result, `render.py --engines gromacs namd amber`
 renders only those passed real analyses, labels the receipt incomplete, and
 does **not** fabricate a missing-engine panel or four-way comparison.
 
-Current actual evidence is `/home/tux/fs2-alanine-analysis-20260923`:
-`real-analysis-02` contains the three-engine validation/statistics/phi–psi plots;
-`real-clips-01` contains the actual three MP4s and PNG previews. Each clip has
-1,000 real frames, 720×720 H.264/yuv420p, 40 fps and 25 s. All previews were
+Final actual evidence is
+`/home/tux/fs2-alanine-comparison-20260923/delivery-02`: `analysis/` contains
+the four-engine validation, statistics, phi/psi plots and interpretation;
+`videos/` contains four individual MP4s and the synchronized 2×2 MP4. Each has
+1,000 real frames at 40 fps for 25 s; individual clips are 720×720 and the grid
+is 1440×1440, all H.264/yuv420p. Actual previews and scientific plots were
 visually inspected. Raw native trajectories are preserved unchanged.
+`analysis-inputs/` is the frozen portable regeneration package, with relative
+references to the delivered master and complete raw native runs.
+
+An independent CPU-only regeneration in final client image
+`sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d`
+passed with networking disabled and only the delivery mounted read-only plus a
+new output directory. All 78,302 compared scientific values were bit-identical,
+and all five regenerated videos passed independent frame/size/rate/duration
+checks. The final client actually used Python 3.11.2 and FFmpeg 5.1.9, unlike
+the host versions above. Receipt:
+`/home/tux/fs2-alanine-analysis-20260923/final-client-portable-02/qualification-verified.json`,
+SHA256 `306afb295a490bc60757a579373b6f3ab5a2b3df4139cfcd5d9b8219e6b692df`.
+
+Earlier `real-analysis-02` and `real-clips-01` under
+`/home/tux/fs2-alanine-analysis-20260923` are retained **historical three-engine
+results**, not the final primary comparison. In particular, old NAMD 44³ PME
+and GROMACS PME-autotuned variants are not final common-protocol primaries.
 
 Read [the static energy/force report](STATIC-REPORT-20260923.md) for actual
 four-engine single-point values, Coulomb/mesh diagnostics, C6 versus C6+C12 tail

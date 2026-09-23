@@ -1,0 +1,80 @@
+{
+  "schema": "fs2-canonical-lammps-hosted-cohort-summary/v1",
+  "status": "two-complete-hosted-cohorts-semantically-validated",
+  "worker": "/root/gromacs_sm89",
+  "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+  "native_source_revision": "c7ae612a9497437412cb787b78769570f48653dd",
+  "fixture": "fixture-04",
+  "input_tar_sha256": "cb0ab63bd6311acf030288db41544d7ea3988e47b7155da2dd62f18808162b53",
+  "hardware": "one NVIDIA H100 80 GB per hosted run; one MPI rank, one thread, CUDA + Serial Kokkos",
+  "protocol": {
+    "atoms": 6598,
+    "waters": 2192,
+    "timestep_fs": 2,
+    "nvt_steps": 50000,
+    "npt_equilibration_steps": 50000,
+    "production_steps": 500000,
+    "production_duration_ps": 1000,
+    "production_frame_interval_ps": 1,
+    "production_origin_step": 100000,
+    "production_final_step": 600000,
+    "unique_native_stage_frames_including_initial": [101, 101, 1001],
+    "comparison_samples_excluding_initial": 1000,
+    "production_langevin_seed": 20260925
+  },
+  "cohorts": [
+    {
+      "role": "primary",
+      "operation_id": "46ea947b-fecc-4036-9c87-42df6886f1a6",
+      "workspace": "/home/tux/fs2-alanine-comparison-20260923/lammps-hosted-dynamics-01/alanine-canonical",
+      "validation": "/home/tux/fs2-alanine-lammps-20260923/hosted-primary-validation-02.json",
+      "validation_sha256": "2ec4224a549ea288fccf95c8ea45aa70434f3f809cfe0adaba853b4a7145d56d",
+      "boundary_evidence": "/home/tux/fs2-alanine-lammps-20260923/hosted-primary-boundary-diagnostic-02.json",
+      "boundary_evidence_sha256": "99fbb590d7b550e154fa21c2378c26672a204ac7f6d3248f25022ca4b0af4ba0",
+      "production_segment_steps": [296000, 204000],
+      "production_segment_native_loop_seconds": [1799.48, 1235.24],
+      "production_native_loop_seconds": 3034.72,
+      "production_native_ns_day": 28.470501397163492,
+      "mean_native_temperature_K": 299.8231454727945,
+      "mean_pressure_bar": -1.4956046594302643,
+      "mean_native_density_g_cm3": 0.9846204088601795,
+      "max_production_constraint_distance_error_A": 0.00003760662644580748,
+      "boundary_step": 396000,
+      "boundary_max_periodic_atom_displacement_A": 0.000008943696565059068,
+      "boundary_independent_SHAKE_reconstruction_max_component_residual_A": 1.383359297440687e-13
+    },
+    {
+      "role": "fixed-input-operational-repeat-not-independent-seed-replica",
+      "operation_id": "445903bd-4e95-4483-a178-4c395b9a24b6",
+      "workspace": "/home/tux/fs2-alanine-comparison-20260923/lammps-hosted-dynamics-02/alanine-canonical",
+      "validation": "/home/tux/fs2-alanine-lammps-20260923/hosted-repeat-validation-01.json",
+      "validation_sha256": "9e708227971d593d376e0d8b330cb07a32c6ad54769ede2b8f641c1a41e86123",
+      "boundary_evidence": "/home/tux/fs2-alanine-lammps-20260923/hosted-repeat-boundary-diagnostic-01.json",
+      "boundary_evidence_sha256": "e09a61c19c2689024429a643f2d6735d65b364f3a06b37546dcc097b1902eb1a",
+      "production_segment_steps": [294000, 206000],
+      "production_segment_native_loop_seconds": [1801.79, 1255.28],
+      "production_native_loop_seconds": 3057.07,
+      "production_native_ns_day": 28.262355785114508,
+      "mean_native_temperature_K": 300.07988125270464,
+      "mean_pressure_bar": 0.6819354012792647,
+      "mean_native_density_g_cm3": 0.9846825829194673,
+      "max_production_constraint_distance_error_A": 0.00003751286434661161,
+      "boundary_step": 394000,
+      "boundary_max_periodic_atom_displacement_A": 0.000002506803050197641,
+      "boundary_independent_SHAKE_reconstruction_max_component_residual_A": 1.2391050803080002e-13
+    }
+  ],
+  "boundary_scope": "Exact image/source/file-bound native setup projection, independently reconstructed from masses and all 6588 constraint distances. Cell, velocities and unconstrained atoms unchanged; cluster COM conserved. Both original coordinate and thermodynamic boundary observations retained. The preceding closed-step observation is counted once. Generic duplicate-frame policy remains strict.",
+  "retained_initial_strict_failure": {
+    "path": "/home/tux/fs2-alanine-lammps-20260923/hosted-primary-validation-01.json",
+    "sha256": "9e87dc74813df54c9d51a51359322d19a58d6497baafacbca5412980ae350e37"
+  },
+  "limitations": [
+    "Native loop throughput excludes process setup, queue, artifact transfer and hosted end-to-end time.",
+    "Reported native density differs slightly from independently mass/cell-derived common-analysis density; both are labeled, not silently interchanged.",
+    "The same production Langevin seed is recreated at a closed-file restart; native RNG state is not serialized. No bitwise stochastic continuation or GPU-process snapshot claim.",
+    "One nanosecond per cohort is finite descriptive sampling, not equilibrium, ensemble convergence or four-engine force equivalence.",
+    "This source summary contains host evidence locators. The separately delivered bundle contains its own raw artifacts, portable relative analysis inputs and validation receipts."
+  ],
+  "cleanup": "Earlier slower fixture03 task-owned baseline archived as incomplete at 235 ps and its exact Pod normally deleted. No GPU resource remains owned by this worker."
+}

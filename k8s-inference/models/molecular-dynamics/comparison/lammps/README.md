@@ -1,9 +1,12 @@
 # Canonical LAMMPS ff14SB/TIP3P fixture
 
-Status: adapter parameters/geometry, 10 synthetic unit tests and the **real native
-probe pass**. Full canonical dynamics is running, not yet accepted. No simulation
-is claimed from generated inputs or algebraic tests. Shared platform/release and hosted submissions remain
-parent-owned. Exact intended worker:
+Status on 2026-09-23: adapter parameters/geometry, 10 synthetic unit tests and
+the real native probe passed. Both complete fixture04 hosted cohorts passed
+native stage, frame, constraint and independently reconstructed SHAKE boundary
+validation. See [the two-cohort receipt](hosted-cohorts-20260923.json) and
+[the retained strict failure and narrow resolution](../analysis/LAMMPS-BOUNDARY-REPORT-20260923.md).
+This is bounded 1 ns validation, not an equilibrium or convergence claim.
+Shared platform/release and hosted submissions remain parent-owned. Exact worker:
 
 `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c`
 
@@ -145,10 +148,13 @@ times remain the bounded performance measurement. No physics was tuned.
 
 Full fixture-03 bundle SHA256:
 `e04c642ea12237ea2840732dba86019536b61457c6e15eadf769b308559626c8`.
-One task H100 Pod `fs2-lammps-r20260923-alanine-probe` on
-`computeinstance-e00bwrmx5x05qn4bc8` executes the full protocol into
-`/home/tux/fs2-alanine-lammps-20260923/native-production-03`; this is native
-qualification, not yet a completed hosted/customer result.
+The earlier task H100 Pod `fs2-lammps-r20260923-alanine-probe` on
+`computeinstance-e00bwrmx5x05qn4bc8` ran the slower fixture03 baseline. After
+hosted fixture04 completed both equilibration stages, the partial baseline
+was archived at `/home/tux/fs2-alanine-lammps-20260923/native-production-03`
+and only that owned Pod was normally deleted. It is retained partial evidence,
+not an additional complete scientific cohort. No GPU reservation remains.
+
 ## Optional zero-tilt orthogonal representation
 
 `prepare_fixture.py --orthogonal-proof PASSED_SCREEN.json` opts into the exact
@@ -175,5 +181,10 @@ scientific receipt SHA256
 `dd0dfeb63807d51f228841b85408ade8d369bf077db82ae780c7b15c591cd1c0`.
 Fixture04 archive SHA256:
 `cb0ab63bd6311acf030288db41544d7ea3988e47b7155da2dd62f18808162b53`.
-The long public run remains a separate required gate; the original fixture03
-full baseline is retained and continues unchanged.
+Both full public fixture04 cohorts subsequently completed minimization,
+50,000-step NVT, 50,000-step NPT and 500,000-step production. Each has 1,001
+unique production frames including time zero, with exactly 1,000 post-initial
+samples for comparison. Native production loop totals were 3,034.720 s and
+3,057.070 s, or 28.4705 and 28.2624 ns/day; queue, artifact transfer and
+end-to-end times are separate. These are fixed-input operational repeats,
+not independent-seed replicas or a general hardware-performance claim.
