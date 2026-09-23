@@ -14,7 +14,7 @@ from pathlib import Path
 SOURCE_IMAGE = "nvcr.io/nvidia/lammps@sha256:d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731"
 
 
-def fixture(name, assets, steps, *, warmup=2000, segment_seconds=60, threads=1):
+def fixture(name, assets, steps, *, warmup=2000, segment_seconds=60, threads=1, trajectory_every=10000):
     files = {}
 
     def asset(relative):
@@ -60,7 +60,7 @@ def fixture(name, assets, steps, *, warmup=2000, segment_seconds=60, threads=1):
     target = warmup + steps
     continuation = (
         "include protocol.inc\n"
-        "dump trajectory all custom 1000 trajectory.${fs2_segment}.lammpstrj id type x y z vx vy vz\n"
+        f"dump trajectory all custom {trajectory_every} trajectory.${{fs2_segment}}.lammpstrj id type x y z vx vy vz\n"
         "dump_modify trajectory sort id format float %.15g\n"
         "timer timeout ${fs2_segment_seconds} every 100\n"
         f"run {target} upto\n"
@@ -70,7 +70,7 @@ def fixture(name, assets, steps, *, warmup=2000, segment_seconds=60, threads=1):
     files["in.production"] = ("read_restart prepared.restart\n" + continuation).encode()
     files["in.resume"] = ("read_restart state.restart\n" + continuation).encode()
     files["in.analyze"] = ("read_restart state.restart\ninclude protocol.inc\nrun 0\nwrite_dump all custom final.lammpstrj id type x y z vx vy vz modify sort id format float %.15g\nprint \"$(step:%.0f) $(atoms:%.0f) $(temp:%.15g) $(pe:%.15g) $(ke:%.15g) $(etotal:%.15g) $(press:%.15g) $(vol:%.15g)\" file final-thermo.txt screen no\n").encode()
-    protocol = {"fixture": name, "source_image": SOURCE_IMAGE, "units": unit, "timestep": dt, "warmup_steps": warmup, "production_steps": steps, "target_step": target, "expected_atoms": atoms, "ensemble": "NPT" if name == "rhodo" else "NVE", "seed_policy": "fixed native seed; benchmark repetitions are repeated experiments, not claimed independent scientific replicas", "trajectory_every_steps": 1000, "reduced_time_conversion": None if unit == "lj" else "metal ps; real fs", "scientific_convergence_claimed": False}
+    protocol = {"fixture": name, "source_image": SOURCE_IMAGE, "units": unit, "timestep": dt, "warmup_steps": warmup, "production_steps": steps, "target_step": target, "expected_atoms": atoms, "ensemble": "NPT" if name == "rhodo" else "NVE", "seed_policy": "fixed native seed; benchmark repetitions are repeated experiments, not claimed independent scientific replicas", "trajectory_every_steps": trajectory_every, "reduced_time_conversion": None if unit == "lj" else "metal ps; real fs", "scientific_convergence_claimed": False}
     files["protocol.json"] = (json.dumps(protocol, indent=2) + "\n").encode()
     body = {"schema": "fs2-serve.nebius.ai/lammps-workflow-request/v1", "backend": "kokkos-cuda", "threads": threads, "segment_seconds": segment_seconds, "max_wall_seconds": 7200, "max_output_bytes": 4294967296, "output_destination": "platform-artifacts", "jobs": [{"id": name, "steps": [{"id": "prepare", "input": "in.prepare", "expected_outputs": ["prepared.restart"]}, {"id": "production", "input": "in.production", "expected_outputs": ["state.restart", "progress.txt"], "continuation": {"input": "in.resume", "restart_file": "state.restart", "progress_file": "progress.txt", "target_step": target}}, {"id": "analyze", "input": "in.analyze", "expected_outputs": ["final.lammpstrj", "final-thermo.txt"]}]}]}
     return body, files
@@ -95,8 +95,9 @@ def main():
     parser.add_argument("--steps", type=int, default=100000)
     parser.add_argument("--warmup", type=int, default=2000)
     parser.add_argument("--segment-seconds", type=int, default=60)
+    parser.add_argument("--trajectory-every", type=int, default=10000)
     args = parser.parse_args()
-    body, files = fixture(args.case, args.assets, args.steps, warmup=args.warmup, segment_seconds=args.segment_seconds)
+    body, files = fixture(args.case, args.assets, args.steps, warmup=args.warmup, segment_seconds=args.segment_seconds, trajectory_every=args.trajectory_every)
     write_fixture(args.output, body, files)
 
 

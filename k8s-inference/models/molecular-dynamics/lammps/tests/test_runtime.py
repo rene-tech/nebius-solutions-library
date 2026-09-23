@@ -53,7 +53,7 @@ def test_checkpoint_binds_full_recipe_and_keeps_complete_inputs(tmp_path):
     assert {f["path"] for f in ready["files"]} == {"in.lj", "potential.eam"}
     assert ready["state"]["recipe_sha256"] == w.recipe
     assert ready["state"]["generation"] == 1
-    changed = request(threads=1)
+    changed = request(threads=2)
     other = Workflow(changed, job_id="lj", operation_id="op", workspace=tmp_path, binary="/test/lmp")
     with pytest.raises(ValueError, match="recipe"):
         other.initialize()
@@ -139,6 +139,7 @@ def test_inventory_failure_still_produces_explicit_failure_receipt(tmp_path, mon
 
 
 def test_native_restart_metadata_parser():
+    assert restart_step("Current timestep number = 2100\nCurrent timestep size = 0.005\n") == 2100
     assert restart_step("Timestep = 25000\n") == 25000
     with pytest.raises(ValueError):
         restart_step("version 25000")

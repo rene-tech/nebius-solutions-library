@@ -31,7 +31,7 @@ def utc():
 
 def restart_step(text):
     """Parse native restart2info output (qualified against the pinned image)."""
-    for pattern in (r"(?im)^\s*Timestep\s*[=:]\s*(\d+)\s*$", r"(?im)^\s*timestep\s+(\d+)\s*$"):
+    for pattern in (r"(?im)^\s*Current timestep number\s*=\s*(\d+)\s*$", r"(?im)^\s*Timestep\s*[=:]\s*(\d+)\s*$", r"(?im)^\s*timestep\s+(\d+)\s*$"):
         if match := re.search(pattern, text):
             return int(match.group(1))
     raise ValueError("native restart metadata has no independently readable timestep")
@@ -174,7 +174,8 @@ class Workflow:
             segment += 1
             command = [self.engine(step["backend"])]
             if step["backend"] == "kokkos-cuda":
-                command += ["-k", "on", "g", "1", "t", str(self.request["threads"]), "-sf", "kk"]
+                # The pinned NVIDIA build is CUDA+Serial, not CUDA+OpenMP.
+                command += ["-k", "on", "g", "1", "t", "1", "-sf", "kk"]
             variables = {**step["variables"], "fs2_segment_seconds": str(min(self.request["segment_seconds"], max(1, int(self.deadline - time.monotonic()) - 15))), "fs2_segment": str(segment), "fs2_restart": "1" if segment > 1 else "0"}
             for name, value in variables.items():
                 command += ["-var", name, value]

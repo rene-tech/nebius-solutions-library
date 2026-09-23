@@ -48,7 +48,7 @@ def request_schema() -> dict[str, Any]:
                 },
             }},
             "backend": {"enum": BACKENDS, "default": "kokkos-cuda", "description": "One MPI rank and at most one GPU. KOKKOS acceleration applies only to installed accelerated styles; retain engine logs to inspect dispatch. The separate GPU package is not built into this pinned NVIDIA image."},
-            "threads": {"type": "integer", "minimum": 1, "maximum": 8, "default": 8},
+            "threads": {"type": "integer", "minimum": 1, "maximum": 8, "default": 1, "description": "OpenMP threads for native CPU styles. The pinned KOKKOS CUDA build has a Serial host backend and always uses one KOKKOS host thread."},
             "segment_seconds": {"type": "integer", "minimum": 5, "maximum": 3600, "default": 300, "description": "Offered native timer duration for scripts opting into continuation. Native timestep boundaries can delay exit. Does not rewrite arbitrary scripts."},
             "max_wall_seconds": {"type": "integer", "minimum": 60, "maximum": 259200, "default": 21600},
             "max_output_bytes": {"type": "integer", "minimum": 1048576, "maximum": 51539607552, "default": 4294967296, "description": "Total workspace budget. Individual files above 5 GiB are not qualified; output cadence and total retained size must fit the assigned shape."},
