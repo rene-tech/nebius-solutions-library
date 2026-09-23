@@ -261,6 +261,24 @@
       "access_profile": "standard",
       "access_state": "not-required",
       "notes": "Official NVIDIA NGC HPC distribution, not a NIM HTTP microservice. The source identity is pinned and inspected. Native scientific tests, hosted customer qualification, storage/recovery and GPU snapshots are separate evidence."
+    },
+    {
+      "model_id": "amber",
+      "upstream_name": "AMBER26 · PMEMD and AmberTools",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-23",
+      "source": {
+        "kind": "oci",
+        "repository": "fs2-platform/amber26-engine",
+        "revision": "cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+        "review_url": "https://ambermd.org/GetAmber.php"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Private PMEMD26/AmberTools26 OCI bundle built from the official academic PMEMD source. Operator confirms the AMBER agreement and academic use. Not an NVIDIA NIM; the source archive and licensed binaries remain private. Native and hosted qualification are separate evidence; user access uses the existing App grants."
     }
   ]
 }

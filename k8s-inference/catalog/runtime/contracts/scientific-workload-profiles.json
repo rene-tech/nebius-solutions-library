@@ -2477,11 +2477,11 @@
       },
       "execution_identity": {
         "model_revision": "e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
-        "runtime_image_digest": "sha256:1af3abab5c794c38ef19d557bd5ca0e754fd078343f36b7e41a9eeee2ac7354f",
-        "runtime_recipe_sha256": "ced4bdb5262d61fc097038238f7858c715a54a74587c9fd0eb0b61e83f79195f",
+        "runtime_image_digest": "sha256:30df40215f7df047463cf8e37f1fb80457b73fbb7ae8f681b9cb40d980e5f14e",
+        "runtime_recipe_sha256": "1c3e2aa07d265b97373d6545db75a52818ada8766b25b5d67e4e8bd26a1b889f",
         "workload_recipe_sha256": "2fbb53490e7898cd24fbd80f19e4fd5c6d26f808fe2cac7f7babb60fb6566b9e",
         "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "execution_identity_sha256": "ea4dc25707dfdee6a7a6b5312bdc663c4ba069a7c04a19f03ae865801fc4e770"
+        "execution_identity_sha256": "0c0a9629dc6f5df25bca28f074417ed6e4de682bad67988127f93b42b1e2b1ed"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -2582,11 +2582,11 @@
         ]
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "ec89ce5d88a68e8043e2a0e17308179589937c166aaecc1dfdee4a775f048f99",
+        "h100_semantic_receipt_sha256": "657eba59f1f16c4163319b1223de913570d00c6631ab056024a512ba19ed5bec",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "daf81fb545d8bbbde84c370057f8bd370838eb886f4d9db91e31b274796984dd",
-        "qualified_at": "2026-09-23T14:48:10.752881+00:00"
+        "execution_map_sha256": "1bb9d8dcd4fc44ca8425345f429b25c65f3f750f274e969c8b290570ffb21276",
+        "qualified_at": "2026-09-23T16:44:59.021857+00:00"
       }
     },
     {
@@ -2606,10 +2606,10 @@
       "execution_identity": {
         "model_revision": "d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
         "runtime_image_digest": "sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
-        "runtime_recipe_sha256": "97cbb0457d9ffbaf40b789ee49533a1b2ecdcfb32a2bc727a81c797f8f85c538",
+        "runtime_recipe_sha256": "22983552541feeb68ea50d4dd2daf9abd187a82470834a84d417863453062618",
         "workload_recipe_sha256": "2fbb53490e7898cd24fbd80f19e4fd5c6d26f808fe2cac7f7babb60fb6566b9e",
         "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "execution_identity_sha256": "3b2fb531580f925ea673b278ff2beab92e494d02abf936e8aacc2d531ee77d28"
+        "execution_identity_sha256": "460c15a95aeada495527a25ac4e127aa5f116792ae636a2e12dfb5987e6b370b"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -2645,7 +2645,8 @@
           "amd64"
         ],
         "compatible_pool_ids": [
-          "h100-ondemand-1x"
+          "h100-ondemand-1x",
+          "l40s-1x"
         ],
         "required_node_labels": {
           "kubernetes.io/arch": "amd64"
@@ -2709,11 +2710,140 @@
         ]
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "5125474af97ef55354021eec16e4d6d9cc4dfbc0d5e9f882316b0bf2782b0602",
+        "h100_semantic_receipt_sha256": "23032a5cb27cf8c4c8142fa86b66dcf81d2b7826e222f0d377d04663d5fcd673",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "daf81fb545d8bbbde84c370057f8bd370838eb886f4d9db91e31b274796984dd",
-        "qualified_at": "2026-09-23T15:10:00.363395+00:00"
+        "execution_map_sha256": "1bb9d8dcd4fc44ca8425345f429b25c65f3f750f274e969c8b290570ffb21276",
+        "qualified_at": "2026-09-23T16:15:20.757795+00:00"
+      }
+    },
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "amber",
+      "display_name": "AMBER26 \u00b7 PMEMD and AmberTools",
+      "execution_mode": "scientific-batch",
+      "state": "active",
+      "route_exposed": true,
+      "source": {
+        "kind": "oci",
+        "repository": "fs2-platform/amber26-engine",
+        "revision": "cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+        "review_url": "https://ambermd.org/GetAmber.php",
+        "classification": "qualified-input"
+      },
+      "execution_identity": {
+        "model_revision": "cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+        "runtime_image_digest": "sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+        "runtime_recipe_sha256": "5bb9ca3c6983c620a51be6fdc171c63609174fd9207d28754d533351366f2799",
+        "workload_recipe_sha256": "2fbb53490e7898cd24fbd80f19e4fd5c6d26f808fe2cac7f7babb60fb6566b9e",
+        "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "execution_identity_sha256": "dabd25701671dfc837b566d7871eec39a89e1df4f90fbf2606c0a369719bbd37"
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/amber:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/amber-workflow-request/v1",
+        "operations": [
+          "run-workflow"
+        ],
+        "service_classes": [
+          "interactive",
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": true,
+          "tool_name": "submit_amber_workflow",
+          "description": "Run AMBER26 PMEMD CUDA/CPU simulations and AmberTools preparation/analysis. Supply native MDIN, topology, coordinates and restraints; retrieve trajectories, energies, restart files and logs from Object Storage."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "not-required",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-ondemand-1x",
+          "l40s-1x"
+        ],
+        "required_node_labels": {
+          "kubernetes.io/arch": "amd64"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "workflow",
+            "needs": [],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 128,
+            "checkpoint_mode": "resume",
+            "preemption_mode": "checkpointable",
+            "placement": {
+              "class": "accelerator"
+            },
+            "resources": {
+              "cpu_millis": 8000,
+              "memory_bytes": 17179869184,
+              "ephemeral_storage_bytes": 68719476736,
+              "limits": {
+                "cpu_millis": 8000,
+                "memory_bytes": 17179869184,
+                "ephemeral_storage_bytes": 68719476736
+              }
+            }
+          }
+        ],
+        "retry": {
+          "max_attempts": 3,
+          "retryable_exit_codes": [
+            75,
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 120
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "amber-workflow-v1",
+        "state": "active"
+      },
+      "policy": {
+        "commercial_use": "license-dependent",
+        "non_clinical": false,
+        "limitations": [
+          "Onboarding release: native engine runtime tested; customer REST/MCP, bucket recovery, queue/preemption and LibreChat qualification are not yet complete. Not customer-ready.",
+          "This deployment is for operator-approved academic use under the confirmed AMBER agreement. Other usage requires suitable licence coverage, not just access to an image.",
+          "PMEMD CUDA SPFP and DPFP are distinct precision modes. AmberTools preparation and analysis use the pinned CPU-only conda-forge distribution.",
+          "One GPU and one native process per job. Independent replicas and alchemical windows share the durable queue; coupled MPI/replica exchange is not qualified.",
+          "Recovery commits the complete stopped workspace at successful native stage boundaries. An interrupted active stage retries from its preceding committed state; partial restart files are not silently accepted.",
+          "Native restart does not imply serialization of stochastic state. Set scientifically appropriate seeds and validate continuation for the selected thermostat and sampling method.",
+          "Scientific settings and output cadence remain customer controlled. Execution success is not evidence of equilibration or convergence.",
+          "Native restart is distinct from GPU process snapshotting; GPU snapshot acceleration is not qualified.",
+          "Individual files larger than 5 GiB are unqualified; choose output segments that fit the platform and customer bucket envelope."
+        ]
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "c744875e7e52eb7303adf14f5ac5978e0b9716279ff2b03e95dea4768a56293b",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "1bb9d8dcd4fc44ca8425345f429b25c65f3f750f274e969c8b290570ffb21276",
+        "qualified_at": "2026-09-23T17:09:35.509982+00:00"
       }
     }
   ]

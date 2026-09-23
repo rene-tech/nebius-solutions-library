@@ -2413,7 +2413,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "ea4dc25707dfdee6a7a6b5312bdc663c4ba069a7c04a19f03ae865801fc4e770",
+      "execution_identity_sha256": "0c0a9629dc6f5df25bca28f074417ed6e4de682bad67988127f93b42b1e2b1ed",
       "model_id": "namd",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2425,7 +2425,7 @@
           "active_deadline_seconds": 261000,
           "collector_id": "namd-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:1af3abab5c794c38ef19d557bd5ca0e754fd078343f36b7e41a9eeee2ac7354f",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:30df40215f7df047463cf8e37f1fb80457b73fbb7ae8f681b9cb40d980e5f14e",
           "mounts": [
             {
               "claim_name": null,
@@ -2464,9 +2464,61 @@
       "workload_namespace": "fs2-models"
     },
     {
+      "access_profile": "public",
+      "execution_identity_sha256": "460c15a95aeada495527a25ac4e127aa5f116792ae636a2e12dfb5987e6b370b",
       "model_id": "lammps",
+      "plan_adapter": {
+        "function": "compile_adapter_run",
+        "module": "fs2_serve.scientific_batch.adapters"
+      },
+      "runtime_artifacts": [],
+      "stages": [
+        {
+          "active_deadline_seconds": 261000,
+          "collector_id": "lammps-workflow-v1",
+          "environment": {},
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+          "mounts": [
+            {
+              "claim_name": null,
+              "host_path": null,
+              "kind": "artifact-workspace",
+              "mount_path": "/mnt/fs2-scientific",
+              "name": "artifact-workspace",
+              "read_only": false,
+              "sub_path": null
+            }
+          ],
+          "required_node_labels": {
+            "kubernetes.io/arch": "amd64"
+          },
+          "resources": {
+            "limits": {
+              "cpu": "8000m",
+              "ephemeral_storage": "64Gi",
+              "memory": "16Gi"
+            },
+            "requests": {
+              "cpu": "8000m",
+              "ephemeral_storage": "64Gi",
+              "memory": "16Gi"
+            }
+          },
+          "service_account_name": "default",
+          "stage_id": "workflow",
+          "termination_grace_seconds": 120,
+          "validator_id": "lammps-workflow-v1",
+          "workspace_gid": 10001,
+          "workspace_uid": 10001
+        }
+      ],
       "variant_id": "nvidia-2025-07-22-single-gpu-v1",
-      "execution_identity_sha256": "3b2fb531580f925ea673b278ff2beab92e494d02abf936e8aacc2d531ee77d28",
+      "workload_namespace": "fs2-models"
+    },
+    {
+      "model_id": "amber",
+      "variant_id": "pmemd-26-single-gpu-v1",
+      "execution_identity_sha256": "dabd25701671dfc837b566d7871eec39a89e1df4f90fbf2606c0a369719bbd37",
       "access_profile": "public",
       "workload_namespace": "fs2-models",
       "plan_adapter": {
@@ -2477,9 +2529,9 @@
       "stages": [
         {
           "stage_id": "workflow",
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
-          "collector_id": "lammps-workflow-v1",
-          "validator_id": "lammps-workflow-v1",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+          "collector_id": "amber-workflow-v1",
+          "validator_id": "amber-workflow-v1",
           "environment": {},
           "required_node_labels": {
             "kubernetes.io/arch": "amd64"
@@ -2557,7 +2609,7 @@
       "protenix-v2",
       "alphafold3"
     ],
-    "79fdac8df8f2fa535f54ecbc5f592e6322092cd2b90257968f88ea28eb205ace": [
+    "4bb0fb355345db44a2d054804d6aab86dc961b88284a34e541413c34039e6205": [
       "boltzgen",
       "proteina-complexa",
       "bindcraft",
@@ -2571,7 +2623,24 @@
       "cosmos3-lerobot-augmentation",
       "gromacs",
       "gromacs-mpi",
-      "namd"
+      "lammps"
+    ],
+    "7fe9e29a1dde2be2d9ebf06c6abe3eb4e6a604b07b9e9cc91f6b73057dae8e7a": [
+      "boltzgen",
+      "proteina-complexa",
+      "bindcraft",
+      "mosaic",
+      "rfdiffusion",
+      "esmfold2",
+      "esmfold2-fast",
+      "openfold3-openbind",
+      "protenix-v2",
+      "alphafold3",
+      "cosmos3-lerobot-augmentation",
+      "gromacs",
+      "gromacs-mpi",
+      "namd",
+      "lammps"
     ]
   },
   "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3"
