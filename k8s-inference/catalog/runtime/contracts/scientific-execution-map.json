@@ -2310,7 +2310,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "2b12635fa821eda4df492bf3cc248412ddb4ed99e39acd2e7de2e924830e81ee",
+      "execution_identity_sha256": "fff893e55730bd6805aed88fd9e27f21e841c059c3a5d7160be1159907c67b2b",
       "model_id": "gromacs",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2363,7 +2363,7 @@
     {
       "model_id": "gromacs-mpi",
       "variant_id": "upstream-2026-2-mpi-v1",
-      "execution_identity_sha256": "5791b141bca9d4ba99fa4b1ea068ecfa9c409cc3a9e390ca84cad3e701073776",
+      "execution_identity_sha256": "442e41e4855976e0f3060405c93817eb6df0337980d17f99a9f4a916b34f957b",
       "access_profile": "public",
       "workload_namespace": "fs2-models",
       "plan_adapter": {
@@ -2438,20 +2438,6 @@
       "openfold3-openbind",
       "protenix-v2",
       "alphafold3"
-    ],
-    "4d716c55d92b5e44c851be8c1aa3f11cf01a2a6caf2af9480be444a831bd01a8": [
-      "boltzgen",
-      "proteina-complexa",
-      "bindcraft",
-      "mosaic",
-      "rfdiffusion",
-      "esmfold2",
-      "esmfold2-fast",
-      "openfold3-openbind",
-      "protenix-v2",
-      "alphafold3",
-      "cosmos3-lerobot-augmentation",
-      "gromacs"
     ]
   }
 }

@@ -1,6 +1,7 @@
 import copy
 import importlib.util
 import json
+import sys
 from pathlib import Path
 from uuid import uuid4
 
@@ -125,6 +126,34 @@ def test_source_recipe_binds_storage_and_native_worker():
         in paths
     )
     assert "models/molecular-dynamics/gromacs/runtime/fs2_gromacs/worker.py" in paths
+
+
+def test_paired_successor_requalifies_both_apps_without_stale_intermediate_proof(monkeypatch):
+    pair_spec = importlib.util.spec_from_file_location("gromacs_pair", HERE / "activation/prepare_pair.py")
+    pair = importlib.util.module_from_spec(pair_spec)
+    pair_spec.loader.exec_module(pair)
+    monkeypatch.setitem(sys.modules, "prepare", activation)
+    values, raw, _, _, _, _ = inputs()
+    current = json.loads((ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text())
+    values["scientificBatch"]["executionMap"] = current
+    before_mpi = [row for row in current["models"] if row["model_id"] != "gromacs-mpi"]
+    stale = activation.digest({"schema": current["schema"], "models": before_mpi})
+    current["qualification_baselines"][stale] = [row["model_id"] for row in before_mpi]
+    original = copy.deepcopy(values)
+    candidates = {model: json.loads((HERE / "activation" / file).read_text())["profile"]
+                  for model, file in [("gromacs", "workload-profile.json"),
+                                      ("gromacs-mpi", "mpi-workload-profile.json")]}
+    images = {model: "registry.example/gromacs@sha256:" + "9" * 64 for model in candidates}
+    evidence = {model: {"runtime_image": image, "recorded_at": "2026-09-23T12:00:00Z", "tests": [{"fixture": True}]}
+                for model, image in images.items()}
+    profiles, overlay, _ = pair.replace_pair(values, raw, candidates, images, evidence, "a" * 64)
+    assert values == original
+    final = overlay["scientificBatch"]["executionMap"]
+    assert stale not in final["qualification_baselines"]
+    assert [row for row in final["models"] if row["model_id"] not in candidates] == [
+        row for row in current["models"] if row["model_id"] not in candidates]
+    expected = activation.digest({"schema": final["schema"], "models": final["models"]})
+    assert {profile["qualification"]["execution_map_sha256"] for profile in profiles.values()} == {expected}
 
 
 def test_mpi_addition_renders_the_full_frozen_gang(tmp_path):

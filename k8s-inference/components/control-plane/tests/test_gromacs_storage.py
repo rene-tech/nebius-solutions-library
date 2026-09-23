@@ -10,7 +10,7 @@ import pytest
 from botocore.exceptions import ClientError
 from fastapi import FastAPI
 
-from fs2_serve.scientific_batch.gromacs_storage import GromacsCustomerStorage, _verified_metadata
+from fs2_serve.scientific_batch.gromacs_storage import GromacsCustomerStorage, _provider_failure, _verified_metadata
 from fs2_serve.scientific_batch.gromacs_storage_routes import gromacs_storage_router
 from fs2_serve.user_storage_models import StorageCredentials
 
@@ -38,6 +38,18 @@ class S3:
     def put_object(self, *, Bucket, Key, Body, ContentType):  # noqa: N803
         self.objects[Bucket, Key] = (Body, {})
         self.writes.append(Key)
+
+
+def test_nested_provider_failure_retains_code_but_not_secret_message():
+    inner = ClientError({"Error": {"Code": "SlowDown", "Message": "secret-url-and-key"},
+                         "ResponseMetadata": {"HTTPStatusCode": 503}}, "UploadPart")
+    outer = RuntimeError("wrapped secret-url-and-key")
+    outer.__cause__ = inner
+    assert _provider_failure(outer) == "RuntimeError code=SlowDown HTTP=503"
+
+
+def test_unstructured_provider_error_does_not_leak_its_message():
+    assert _provider_failure(RuntimeError("secret-url-and-key")) == "RuntimeError"
 
 
 @pytest.mark.parametrize("metadata_case", [str.lower, str.title, str.upper])

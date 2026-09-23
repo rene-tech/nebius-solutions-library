@@ -9,6 +9,7 @@ manifest is written last; content-addressed objects never overwrite old data.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any, cast
 
@@ -29,6 +30,25 @@ def _verified_metadata(head: dict[str, Any], digest: str, size: int) -> bool:
     # Reject conflicting aliases rather than silently choosing one of them.
     digests = [value for key, value in head.get("Metadata", {}).items() if key.lower() == "sha256"]
     return head.get("ContentLength") == size and bool(digests) and all(value == digest for value in digests)
+
+
+def _provider_failure(error: BaseException) -> str:
+    """Retain useful S3 diagnostics without printing URLs, headers or credentials."""
+    description = type(error).__name__
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ClientError):
+            code = str(current.response.get("Error", {}).get("Code", "unknown"))
+            status = current.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            if re.fullmatch(r"[A-Za-z0-9_.-]{1,80}", code):
+                description += f" code={code}"
+            if type(status) is int:
+                description += f" HTTP={status}"
+            break
+        current = current.__cause__ or current.__context__
+    return description
 
 
 class GromacsCustomerStorage:
@@ -105,10 +125,12 @@ class GromacsCustomerStorage:
                 ExtraArgs={"Metadata": {"sha256": digest}, "ContentType": "application/octet-stream"},
             )
             head = self.s3.head_object(Bucket=self.bucket, Key=key)
-        except Exception:
+        except Exception as error:
             # Provider errors may contain keys/headers. Give the user a useful
             # failure without leaking credential material into Job logs.
-            raise RuntimeError("customer checkpoint export failed; check bucket availability and quota") from None
+            raise RuntimeError(
+                "customer checkpoint export failed; check bucket availability and quota: " + _provider_failure(error)
+            ) from None
         if not _verified_metadata(head, digest, size):
             raise ValueError("customer checkpoint export size/digest metadata did not verify")
         return key
