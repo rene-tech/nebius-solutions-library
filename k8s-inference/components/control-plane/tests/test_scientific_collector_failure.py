@@ -49,5 +49,5 @@ def test_running_peers_remain_running():
 def test_collector_oom_preserves_the_existing_failure_classification():
     statuses = [failed_collector('OOMKilled', 137)['status']]
     actual = _stalled_collection(statuses, now=STAGE_FINISHED_AT)
-    assert actual == _reported_failure(['OOMKilled'], statuses)
+    assert actual == _reported_failure(['OOMKilled'], statuses, model_id='')
     assert actual[2] != 'artifact_collector_failed'
