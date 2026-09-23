@@ -120,6 +120,12 @@ The wrapper reuses the reviewed GROMACS streaming archive/inventory helpers.
 Run local contract/format tests with `pytest -q namd/tests` from that directory.
 `qualification/make_fixture.py` produces output-enabled public ApoA1/STMV
 multi-stage inputs, recording original archive and derived bundle hashes.
+An explicit `--ensemble colvars --colvars-grid` fixture is a separate gridded
+radius-metadynamics protocol, with 0–20 Å bounds, 0.2 Å bins, `keepHills on` and
+PMF output. It never replaces the original ungridded fixture or its failed r3
+evidence. These controls follow the [native grid/state options](https://colvars.github.io/namd-3.0/colvars-refman-namd.html).
+The qualifier compares every saved grid field/value across the native restart
+and reads finite PMF samples, without claiming free-energy convergence.
 `qualification/run_campaign.py` runs independent repetitions sequentially on one
 GPU and retains all outcomes and 1-second telemetry. These are single-trajectory
 measurements; no MPS daemon is started, and NVIDIA aggregate MPS results are a

@@ -39,35 +39,10 @@ def configuration(source, *, managed, ensemble, gpu_mode, seed):
     return "\n".join(output) + "\n"
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--archive", type=Path, required=True)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--system", choices=("apoa1", "stmv"), required=True)
-    parser.add_argument("--ensemble", choices=("nve", "npt", "colvars"), default="nve")
-    parser.add_argument("--gpu-mode", choices=("resident", "offload"), default="resident")
-    parser.add_argument("--steps", type=int, default=100000)
-    parser.add_argument("--segment-steps", type=int, default=50000)
-    parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--screen", action="store_true", help="Omit minimization/equilibration for wrapper mechanics only, not scientific qualification")
-    parser.add_argument("--prepare", action="store_true", help="Round-trip the supplied PSF/PDB through bundled psfgen before native dynamics; no new chemistry claim")
-    args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=False)
-    inputs = args.output / "inputs"
-    extract_inputs(args.archive, inputs, max_bytes=1024**3)
-    directory = f"{args.system}_gpu"
-    system = inputs / directory
-    source = (system / f"{args.system}_gpures_npt.namd").read_text()
-    if args.prepare:
-        (system / "prepare.tcl").write_text(f"readpsf {args.system}.psf\ncoordpdb {args.system}.pdb\nwritepsf prepared.psf\nwritepdb prepared.pdb\n")
-        source = re.sub(r"(?m)^(\s*structure\s+)\S+", r"\g<1>prepared.psf", source)
-        source = re.sub(r"(?m)^(\s*coordinates\s+)\S+", r"\g<1>prepared.pdb", source)
-    for ensemble in ("nve", "npt", "colvars"):
-        (system / f"fs2-config-{ensemble}.namd").write_text(configuration(source, managed=True, ensemble=ensemble, gpu_mode=args.gpu_mode, seed=314159))
-    (system / "fs2-config-minimize.namd").write_text(configuration(source, managed=False, ensemble="npt", gpu_mode=args.gpu_mode, seed=314159))
-    # The first protein backbone group is only a technical enhanced-sampling
-    # fixture. It is not a converged free-energy model or a scientific recommendation.
-    (system / "radius.colvars").write_text('''colvarsTrajFrequency 1000
+def colvars_configuration(*, grid=False):
+    # The first 100 atoms are a technical fixture, not a scientifically selected
+    # backbone group or a converged free-energy model.
+    source = '''colvarsTrajFrequency 1000
 colvarsRestartFrequency 10000
 colvar {
   name radius
@@ -83,7 +58,43 @@ metadynamics {
   useGrids off
   writeHillsTrajectory on
 }
-''')
+'''
+    if grid:
+        source = source.replace("  width 0.2\n", "  width 0.2\n  lowerBoundary 0.0\n  upperBoundary 20.0\n")
+        source = source.replace("  useGrids off\n", "  useGrids on\n  keepHills on\n  writeFreeEnergyFile on\n")
+    return source
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--archive", type=Path, required=True)
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--system", choices=("apoa1", "stmv"), required=True)
+    parser.add_argument("--ensemble", choices=("nve", "npt", "colvars"), default="nve")
+    parser.add_argument("--gpu-mode", choices=("resident", "offload"), default="resident")
+    parser.add_argument("--steps", type=int, default=100000)
+    parser.add_argument("--segment-steps", type=int, default=50000)
+    parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--screen", action="store_true", help="Omit minimization/equilibration for wrapper mechanics only, not scientific qualification")
+    parser.add_argument("--prepare", action="store_true", help="Round-trip the supplied PSF/PDB through bundled psfgen before native dynamics; no new chemistry claim")
+    parser.add_argument("--colvars-grid", action="store_true", help="Separate radius-metadynamics protocol with 0–20 A grid, keepHills and PMF output; never replaces ungridded evidence")
+    args = parser.parse_args()
+    if args.colvars_grid and args.ensemble != "colvars":
+        parser.error("--colvars-grid requires --ensemble colvars")
+    args.output.mkdir(parents=True, exist_ok=False)
+    inputs = args.output / "inputs"
+    extract_inputs(args.archive, inputs, max_bytes=1024**3)
+    directory = f"{args.system}_gpu"
+    system = inputs / directory
+    source = (system / f"{args.system}_gpures_npt.namd").read_text()
+    if args.prepare:
+        (system / "prepare.tcl").write_text(f"readpsf {args.system}.psf\ncoordpdb {args.system}.pdb\nwritepsf prepared.psf\nwritepdb prepared.pdb\n")
+        source = re.sub(r"(?m)^(\s*structure\s+)\S+", r"\g<1>prepared.psf", source)
+        source = re.sub(r"(?m)^(\s*coordinates\s+)\S+", r"\g<1>prepared.pdb", source)
+    for ensemble in ("nve", "npt", "colvars"):
+        (system / f"fs2-config-{ensemble}.namd").write_text(configuration(source, managed=True, ensemble=ensemble, gpu_mode=args.gpu_mode, seed=314159))
+    (system / "fs2-config-minimize.namd").write_text(configuration(source, managed=False, ensemble="npt", gpu_mode=args.gpu_mode, seed=314159))
+    (system / "radius.colvars").write_text(colvars_configuration(grid=args.colvars_grid))
     def restart(prefix):
         return {"coordinates": prefix + ".coor", "velocities": prefix + ".vel", "cell": prefix + ".xsc"}
     stages = []
@@ -120,6 +131,7 @@ metadynamics {
                   "source_sha256": digest_file(args.archive), "input_sha256": digest_file(args.output / "input.tar.gz"),
                   "system": args.system, "ensemble": args.ensemble, "gpu_mode": args.gpu_mode,
                   "repetitions": args.repetitions, "production_steps": args.steps, "screen_only": args.screen,
+                  "colvars_variant": ("grid-keep-hills" if args.colvars_grid else "ungridded") if args.ensemble == "colvars" else None,
                   "preparation": "bundled psfgen PSF/PDB round-trip into native MD" if args.prepare else None,
                   "changes": ["Fixed finite steps replace benchmarkTime early stop",
                               "Qualification seed schedule: native minimization 314159; managed segment 314159 + fs2_first_step",
@@ -129,6 +141,8 @@ metadynamics {
                               "Managed coherent segment output names and checkpoint continuation",
                               "Optional 1000-step minimization and 40000-fs NPT equilibration",
                               "Enhanced-sampling fixture uses radius metadynamics; no convergence claim"]}
+    if args.colvars_grid:
+        provenance["changes"].append("Separate gridded protocol: 0–20 A radius grid, 0.2 A bins, keepHills on and PMF output; no substitution for ungridded restart qualification")
     (args.output / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     print(json.dumps(provenance))
 

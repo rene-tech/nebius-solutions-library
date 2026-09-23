@@ -13,6 +13,7 @@ import statistics
 import struct
 
 from fs2_namd.worker import binary_vectors, colvars_step, xsc_step
+from fs2_namd.colvars_state import blocks
 
 
 def dcd(path):
@@ -94,9 +95,21 @@ def radius_metadynamics(data):
                     if re.fullmatch(r"production\.part\d{6}\.colvars\.state", path.name))
     if not states:
         return None
-    previous, summaries = [], []
+    previous, summaries, previous_text, grid_round_trips, pmfs = [], [], None, [], []
     for path in states:
         text = path.read_text()
+        if blocks(text, "hills_energy"):
+            if previous_text is not None:
+                loaded_path = path.with_name(path.name.removesuffix(".colvars.state") + ".loaded.colvars.state")
+                grid_round_trips.append(verify_grid_round_trip(previous_text, loaded_path.read_text()))
+            pmf = path.with_name(path.name.removesuffix(".colvars.state") + ".pmf")
+            values = [list(map(float, line.split())) for line in pmf.read_text().splitlines() if line.strip() and not line.lstrip().startswith("#")]
+            if not values or not all(len(row) == 2 and all(math.isfinite(v) for v in row) for row in values):
+                raise ValueError("missing or non-finite radius-metadynamics PMF grid")
+            pmfs.append({"path": str(pmf.relative_to(data)), "points": len(values),
+                         "min_coordinate_A": min(row[0] for row in values), "max_coordinate_A": max(row[0] for row in values),
+                         "min_value_kcal_per_mol": min(row[1] for row in values), "max_value_kcal_per_mol": max(row[1] for row in values),
+                         "free_energy_convergence_claimed": False})
         hills = []
         for body in re.findall(r"\bhill\s*\{([^}]*)\}", text, re.DOTALL):
             values = dict(line.split(maxsplit=1) for line in body.strip().splitlines())
@@ -110,6 +123,7 @@ def radius_metadynamics(data):
         if any(b <= a for a, b in zip(steps, steps[1:])) or steps[-1] != colvars_step(path):
             raise ValueError("fixture hill sequence and native bias timestep disagree")
         previous = hills
+        previous_text = text
         summaries.append({"path": str(path.relative_to(data)), "step": colvars_step(path),
                           "hills": len(hills), "first_hill_step": steps[0], "last_hill_step": steps[-1]})
     trajectories = []
@@ -121,7 +135,34 @@ def radius_metadynamics(data):
                              "first_step": rows[0][0], "last_step": rows[-1][0]})
     if len(trajectories) != len(states):
         raise ValueError("missing Colvars trajectory segment")
-    return {"bias_history_prefix_preserved": True, "states": summaries, "trajectories": trajectories}
+    return {"bias_history_prefix_preserved": True, "states": summaries, "trajectories": trajectories,
+            "grid_round_trips": grid_round_trips, "pmfs": pmfs}
+
+
+def verify_grid_round_trip(original, loaded):
+    """Compare every serialized grid field/value for the explicit grid fixture."""
+    summaries = {}
+    for name in ("hills_energy", "hills_energy_gradients"):
+        before, after = blocks(original, name), blocks(loaded, name)
+        if not before or len(before) != len(after):
+            raise ValueError("native Colvars restart lost a metadynamics grid")
+        count = 0
+        for (_, _, left), (_, _, right) in zip(before, after):
+            a, b = left.split(), right.split()
+            if len(a) != len(b):
+                raise ValueError("native Colvars restart changed grid shape")
+            for x, y in zip(a, b):
+                try:
+                    x, y = float(x), float(y)
+                except ValueError:
+                    if x != y:
+                        raise ValueError("native Colvars restart changed grid metadata")
+                else:
+                    if not math.isfinite(x) or not math.isfinite(y) or not math.isclose(x, y, rel_tol=1e-12, abs_tol=1e-14):
+                        raise ValueError("native Colvars restart changed grid values")
+                    count += 1
+        summaries[name] = {"blocks": len(before), "numeric_values_verified": count}
+    return summaries
 
 
 def main():

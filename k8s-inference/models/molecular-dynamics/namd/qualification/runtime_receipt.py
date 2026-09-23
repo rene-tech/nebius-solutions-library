@@ -47,6 +47,8 @@ def main():
         request = json.loads((fixture / "request.json").read_text())
         chosen = args.chosen_job_id or [job["id"] for job in request["jobs"]]
         case = f"{provenance['system']}-{provenance['ensemble']}-{provenance['gpu_mode']}" + ("-prepare" if provenance.get("preparation") else "")
+        if provenance.get("colvars_variant") == "grid-keep-hills":
+            case += "-grid-keep-hills"
         for job_id in chosen:
             path = campaign / job_id / "result.json"
             row = {"case": case + "/" + job_id, "group_case": case, "job_id": job_id, **identity,

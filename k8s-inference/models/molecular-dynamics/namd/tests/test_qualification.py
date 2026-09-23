@@ -1,10 +1,11 @@
+import hashlib
 import math
 import struct
 
 import pytest
 
-from make_fixture import configuration
-from validate_campaign import dcd, radius_metadynamics
+from make_fixture import colvars_configuration, configuration
+from validate_campaign import dcd, radius_metadynamics, verify_grid_round_trip
 
 
 def test_fixture_seed_schedule_is_explicit_native_input():
@@ -13,6 +14,28 @@ def test_fixture_seed_schedule_is_explicit_native_input():
     native = configuration(source, managed=False, ensemble="npt", gpu_mode="resident", seed=314159)
     assert "seed [expr {314159 + $fs2_first_step}]" in managed
     assert "seed 314159" in native
+
+
+def test_grid_protocol_is_explicit_and_original_ungridded_bytes_are_unchanged():
+    ungridded = colvars_configuration()
+    assert hashlib.sha256(ungridded.encode()).hexdigest() == "b797f28ad70130235e6ec461ccd8f99deee98b3717a0a922a7703de4fd866927"
+    grid = colvars_configuration(grid=True)
+    assert "useGrids on" in grid and "keepHills on" in grid
+    assert "lowerBoundary 0.0" in grid and "upperBoundary 20.0" in grid
+    assert "writeFreeEnergyFile on" in grid
+
+
+def test_native_grid_round_trip_checks_every_value_and_metadata():
+    original = "hills_energy {\n grid { lower 0 width 0.2 bins 2 }\n 1.0 2.0\n}\nhills_energy_gradients {\n 0.3 0.4\n}\n"
+    assert verify_grid_round_trip(original, original)["hills_energy"]["numeric_values_verified"] == 5
+    with pytest.raises(ValueError, match="grid values"):
+        verify_grid_round_trip(original, original.replace("0.4", "0.5"))
+    with pytest.raises(ValueError, match="grid values"):
+        verify_grid_round_trip(original, original.replace("0.4", "nan"))
+    with pytest.raises(ValueError, match="grid metadata"):
+        verify_grid_round_trip(original, original.replace("lower", "upper"))
+    with pytest.raises(ValueError, match="lost"):
+        verify_grid_round_trip(original, original.replace("hills_energy_gradients", "missing"))
 
 
 def test_dcd_reads_all_frames_and_rejects_nan(tmp_path):
