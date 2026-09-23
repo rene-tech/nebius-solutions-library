@@ -1,4 +1,4 @@
-"""Inspect/issue/revoke a GROMACS-only qualification key; never print credentials.
+"""Inspect/issue/revoke a native MD qualification key; never print credentials.
 
 The key belongs to an existing enabled user in the existing internal tenant.
 No customer grants, quotas, bucket policies, or prior keys are changed.
@@ -12,6 +12,9 @@ from pathlib import Path
 import subprocess
 
 import httpx
+
+KEY_NAME = "native-md-qualification-20260923"
+MODELS = ["gromacs", "gromacs-mpi", "lammps", "namd"]
 
 
 def private(path, value):
@@ -39,7 +42,7 @@ def main():
     parser.add_argument("--tenant", default="rene")
     parser.add_argument("--source-key", default="internal-test")
     parser.add_argument("--key-file", type=Path)
-    parser.add_argument("--model", choices=["gromacs", "gromacs-mpi"], action="append")
+    parser.add_argument("--model", choices=MODELS, action="append")
     parser.add_argument("--receipt", required=True, type=Path)
     args = parser.parse_args()
     if args.receipt.exists() or (
@@ -125,7 +128,7 @@ def main():
                 for key in ("tenant_id", "principal_id", "scopes", "max_concurrency")
             }
             payload.update(
-                name="gromacs-qualification-20260923",
+                name=KEY_NAME,
                 models=args.model or ["gromacs"],
                 scopes=sorted(set(source["scopes"]) | {"artifacts.write"}),
                 expires_at=(
@@ -142,7 +145,7 @@ def main():
             value = json.loads(args.key_file.read_text())
             if (
                 not value.get("disposable")
-                or value["key"]["name"] != "gromacs-qualification-20260923"
+                or value["key"]["name"] not in {KEY_NAME, "gromacs-qualification-20260923"}
             ):
                 raise ValueError("Only this task-owned disposable key can be revoked.")
             revoked = result(client.delete("/admin/api/v1/keys/" + value["key"]["id"]))[

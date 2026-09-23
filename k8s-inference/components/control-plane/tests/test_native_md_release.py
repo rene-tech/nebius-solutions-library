@@ -129,3 +129,31 @@ def test_recipe_covers_engine_and_shared_transports():
         assert "components/control-plane/src/fs2_serve/scientific_batch/native_workflows.py" in paths
         assert "components/control-plane/src/fs2_serve/scientific_batch/gromacs_storage_routes.py" in paths
         assert all(len(item["sha256"]) == 64 and item["size_bytes"] > 0 for item in recipe["files"])
+
+
+def test_publish_adds_admin_source_receipts_without_replacing_existing_apps(tmp_path, monkeypatch):
+    args = inputs()
+    profiles, overlay, _ = release.compose(*args)
+    target = tmp_path / "catalog/runtime/contracts"
+    target.mkdir(parents=True)
+    names = [
+        "scientific-execution-map.json",
+        "scientific-workload-profiles.json",
+        "scientific-source-candidate-receipts.json",
+    ]
+    before = {}
+    for name in names:
+        source = SOLUTION_ROOT / "catalog/runtime/contracts" / name
+        before[name] = json.loads(source.read_text())
+        (target / name).write_text(source.read_text())
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    release.publish_catalog(profiles, overlay["scientificBatch"]["executionMap"], args[0]["scientificBatch"]["executionMap"])
+    receipts = json.loads((target / names[2]).read_text())["receipts"]
+    old = before[names[2]]["receipts"]
+    assert receipts[: len(old)] == old
+    for model in profiles:
+        receipt = next(item for item in receipts if item["model_id"] == model)
+        assert receipt["qualification_state"] == "unqualified"
+        assert receipt["source"]["revision"] == profiles[model]["source"]["revision"]
+    catalog = json.loads((target / names[1]).read_text())["profiles"]
+    assert catalog[: len(before[names[1]]["profiles"])] == before[names[1]]["profiles"]

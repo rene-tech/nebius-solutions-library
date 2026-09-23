@@ -133,6 +133,16 @@ def publish_catalog(profiles: dict, final_map: dict, captured_map: dict) -> None
     catalog = json.loads(catalog_path.read_text())
     if set(profiles) & {item["model_id"] for item in catalog["profiles"]}:
         raise ValueError("native engine already exists; use an explicit successor workflow")
+    receipts_path = contracts / "scientific-source-candidate-receipts.json"
+    receipts = json.loads(receipts_path.read_text())
+    if set(profiles) & {item["model_id"] for item in receipts["receipts"]}:
+        raise ValueError("native engine source receipt already exists; review its existing identity")
+    for model in sorted(profiles):
+        receipt = json.loads((HERE / model / "activation/source-candidate-receipt.json").read_text())
+        expected_source = {key: value for key, value in profiles[model]["source"].items() if key != "classification"}
+        if receipt["model_id"] != model or receipt["source"] != expected_source:
+            raise ValueError("native source receipt and activated profile disagree")
+        receipts["receipts"].append(receipt)
     catalog["profiles"].extend(profiles[model] for model in sorted(profiles))
     proofs = set(final_map.get("qualification_baselines", {}))
     final_digest = digest({"schema": final_map["schema"], "models": final_map["models"]})
@@ -149,6 +159,7 @@ def publish_catalog(profiles: dict, final_map: dict, captured_map: dict) -> None
         published_map.pop("snapshot_bundles", None)
     catalog_path.write_text(json.dumps(catalog, indent=2) + "\n")
     map_path.write_text(json.dumps(published_map, indent=2) + "\n")
+    receipts_path.write_text(json.dumps(receipts, indent=2, ensure_ascii=False) + "\n")
 
 
 def main() -> None:

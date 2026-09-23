@@ -149,13 +149,31 @@ def profile(model: str) -> dict:
 def outputs(model: str) -> dict[Path, dict]:
     _, contracts = runtime(model)
     schema = contracts.request_schema()
+    candidate = profile(model)
     return {
         ROOT / f"catalog/runtime/schema/{model}-workflow-request.schema.json": schema,
         ROOT / f"components/control-plane/src/fs2_serve/model_input_schemas/{model}-workflow.json": schema,
         HERE / model / "activation/workload-profile.json": {
             "schema": "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1",
             "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
-            "profile": profile(model),
+            "profile": candidate,
+        },
+        HERE / model / "activation/source-candidate-receipt.json": {
+            "model_id": model,
+            "upstream_name": candidate["display_name"],
+            "backend_identity": "native-upstream",
+            "status": "candidate",
+            "qualification_state": "unqualified",
+            "observation_method": "pinned-runtime-artifact-manifest",
+            "observed_on": "2026-09-23",
+            "source": {key: value for key, value in candidate["source"].items() if key != "classification"},
+            "access_profile": "standard",
+            "access_state": "not-required",
+            "notes": (
+                "Official NVIDIA NGC HPC distribution, not a NIM HTTP microservice. "
+                "The source identity is pinned and inspected. Native scientific tests, hosted "
+                "customer qualification, storage/recovery and GPU snapshots are separate evidence."
+            ),
         },
     }
 
