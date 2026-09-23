@@ -1,0 +1,634 @@
+{
+  "schema": "fs2-serve.nebius.ai/lammps-native-qualification/v1",
+  "model_id": "lammps",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+  "recorded_at": "2026-09-23T15:00:09.846272+00:00",
+  "status": "passed",
+  "customer_ready": false,
+  "customer_path_tested": false,
+  "persistent_gpu_snapshot_tested": false,
+  "tests": [
+    {
+      "case": "lj",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA H100 80GB HBM3, GPU-ade41b30-29a5-be1f-71a2-95104de12b84, 580.173.02, 9.0, 81559 MiB, 00000000:8D:00.0",
+      "pod_uid": "5a506eb0-c050-4742-b72a-864845da41b5",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "input_sha256": "4f94b8e91c775993926300f3b6f92788a3aca6de38ee580e6d6a628c18ab0508",
+      "input_manifest_sha256": "7ffde4c81b4c490398e9b9d36a9e55cda905125321624140081ab03825ada8e7",
+      "request_sha256": "a4788ef394e405d1aa5aa73a17691469ea0ba069f3b71f6acec305fcf2d8d861",
+      "result_sha256": "1a02e8bcb6bfe3659848f99421cc976e75bd3c883e76fa3e57c79bbf5aad5267",
+      "validation_sha256": "2ecde2519be8e8ebaf3c56735bfe1cb2454b9e744d3f57427b91764474204d37",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-lj-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-lj-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-lj-r1/validation-final.json",
+      "scientific_validation": {
+        "fixture": "lj",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 131072,
+        "production_steps": 300000,
+        "units": "lj",
+        "timestep": 0.005,
+        "ensemble": "NVE",
+        "native_loop_seconds": 92.5788,
+        "native_timing_seconds": {
+          "Pair": 4.1411999999999995,
+          "Neigh": 3.7215,
+          "Comm": 70.221,
+          "Output": 5.3747,
+          "Modify": 7.3703,
+          "Other": 1.7500999999999998
+        },
+        "atom_timesteps_per_second": 424736548.7563027,
+        "ns_per_day": null,
+        "reduced_time_per_day": 1399888.5273950407,
+        "temperature_min": 0.68231287953498,
+        "temperature_max": 0.699220510726157,
+        "temperature_mean": 0.6906686877610052,
+        "temperature_stdev": 0.004072121966542926,
+        "relative_total_energy_span": 0.007865374484120089,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": null,
+        "neighbor_checking_enabled": false,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 196000,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 0.0,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 30,
+        "native_segments": 2,
+        "gpu_samples": 100,
+        "gpu_utilization_mean_percent": 72.79,
+        "gpu_memory_peak_mib": 713.0,
+        "gpu_power_mean_watts": 275.104,
+        "warnings": [
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-lj-r1/validation.json",
+          "sha256": "b8af8f1c54ce7fd9d03c4704d47aa6ad36487924249791e3c56bc60496652970",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 96.90362616401399,
+        "worker_wall_seconds": 100.08320861199172,
+        "worker_noncommand_overhead_seconds": 3.1795824479777366,
+        "input_copy_seconds": 1.7804679740220308,
+        "output_copy_seconds": 15.229820555076003,
+        "cpu_user_seconds": 95.450361,
+        "cpu_system_seconds": 3.377033,
+        "max_rss_kib": 320760,
+        "all_data_inventory_bytes": 485079617,
+        "output_io_native_seconds": 5.3747,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "eam",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA H100 80GB HBM3, GPU-ade41b30-29a5-be1f-71a2-95104de12b84, 580.173.02, 9.0, 81559 MiB, 00000000:8D:00.0",
+      "pod_uid": "5a506eb0-c050-4742-b72a-864845da41b5",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "input_sha256": "0884510c78e87513dd912213498b2c2742e19bd7e5585be08f665e8efadf01cc",
+      "input_manifest_sha256": "2621e79da1aa5ca8b76c8b8e57f4c572a1dd93c925cc1c2b44c754ec1f6897cc",
+      "request_sha256": "8aca654cf772ae74d9d8087d878e4a55f7a19795fb02079c833366655c1ecc3b",
+      "result_sha256": "00096d8a61d9728620cbcf3a1edd6a9df04b0442f2137bd359965debe68c1138",
+      "validation_sha256": "33df83ad9b4d6c403f3d09d614e589a9623fb1e0fb83068daa82eab5501321a8",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-eam-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-eam-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-eam-r1/validation-final.json",
+      "scientific_validation": {
+        "fixture": "eam",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 150000,
+        "units": "metal",
+        "timestep": 0.005,
+        "ensemble": "NVE",
+        "native_loop_seconds": 97.394,
+        "native_timing_seconds": {
+          "Pair": 62.343999999999994,
+          "Neigh": 3.3999,
+          "Comm": 24.951,
+          "Output": 0.6645099999999999,
+          "Modify": 3.3063000000000002,
+          "Other": 2.7279999999999998
+        },
+        "atom_timesteps_per_second": 49284350.165307924,
+        "ns_per_day": 665.3387272316569,
+        "reduced_time_per_day": null,
+        "temperature_min": 791.964303171989,
+        "temperature_max": 806.458073814098,
+        "temperature_mean": 799.1475110674261,
+        "temperature_stdev": 2.7071621085587765,
+        "relative_total_energy_span": 0.00017820007712689837,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 12,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 94100,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 94000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 15,
+        "native_segments": 2,
+        "gpu_samples": 104,
+        "gpu_utilization_mean_percent": 47.18269230769231,
+        "gpu_memory_peak_mib": 651.0,
+        "gpu_power_mean_watts": 143.12009615384616,
+        "warnings": [
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-eam-r1/validation.json",
+          "sha256": "21a4976edbf71f0a6904f3c6faa85a569e48e6b1ac73c9ff238d4616c205b20d",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 101.55728230197565,
+        "worker_wall_seconds": 104.111484285997,
+        "worker_noncommand_overhead_seconds": 2.554201984021347,
+        "input_copy_seconds": 1.75021817907691,
+        "output_copy_seconds": 3.5509908571839333,
+        "cpu_user_seconds": 99.899298,
+        "cpu_system_seconds": 2.631912,
+        "max_rss_kib": 238680,
+        "all_data_inventory_bytes": 62741466,
+        "output_io_native_seconds": 0.6645099999999999,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "tersoff",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA H100 80GB HBM3, GPU-ade41b30-29a5-be1f-71a2-95104de12b84, 580.173.02, 9.0, 81559 MiB, 00000000:8D:00.0",
+      "pod_uid": "5a506eb0-c050-4742-b72a-864845da41b5",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "input_sha256": "d2ed2e766b9292df89a75797dfb4064ea8e28027e2a8985a9279d48c8e420e5a",
+      "input_manifest_sha256": "aac3f77cb5947816a4a0fd3bd39694bd3e2f48168c91986b3a5dc175c7bdaf25",
+      "request_sha256": "1be4a07809383dbe37b5c35b9f1a77ac44e508537b58078913a322c5bea422a7",
+      "result_sha256": "b614bfef4536b7e5e750c6a4bca3964f487819213f34a3dab9070207a10fb270",
+      "validation_sha256": "c754ac87d83b191d01860ba10adeba466570dcba149e0f267ff997b67e3a7209",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-tersoff-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-tersoff-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-tersoff-r1/validation-final.json",
+      "scientific_validation": {
+        "fixture": "tersoff",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 300000,
+        "units": "metal",
+        "timestep": 0.001,
+        "ensemble": "NVE",
+        "native_loop_seconds": 56.8559,
+        "native_timing_seconds": {
+          "Pair": 10.109,
+          "Neigh": 1.6565,
+          "Comm": 28.936,
+          "Output": 1.3145,
+          "Modify": 6.3658,
+          "Other": 8.475
+        },
+        "atom_timesteps_per_second": 168847912.00209653,
+        "ns_per_day": 455.8893624056606,
+        "reduced_time_per_day": null,
+        "temperature_min": 482.510158132135,
+        "temperature_max": 492.252130771218,
+        "temperature_mean": 487.35763127983427,
+        "temperature_stdev": 1.6706077748136077,
+        "relative_total_energy_span": 7.159905907487893e-07,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 30,
+        "native_segments": 1,
+        "gpu_samples": 61,
+        "gpu_utilization_mean_percent": 67.91803278688525,
+        "gpu_memory_peak_mib": 647.0,
+        "gpu_power_mean_watts": 173.42426229508197,
+        "warnings": [],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-tersoff-r1/validation.json",
+          "sha256": "810a5e92ee155539ea0446dac259b90e529f378582df67fe2de9664ad81bc96b",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 59.32943221699679,
+        "worker_wall_seconds": 61.03916665201541,
+        "worker_noncommand_overhead_seconds": 1.7097344350186177,
+        "input_copy_seconds": 1.749111445620656,
+        "output_copy_seconds": 5.354182654991746,
+        "cpu_user_seconds": 58.079036,
+        "cpu_system_seconds": 2.044727,
+        "max_rss_kib": 238268,
+        "all_data_inventory_bytes": 116058684,
+        "output_io_native_seconds": 1.3145,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "snap",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA H100 80GB HBM3, GPU-ade41b30-29a5-be1f-71a2-95104de12b84, 580.173.02, 9.0, 81559 MiB, 00000000:8D:00.0",
+      "pod_uid": "5a506eb0-c050-4742-b72a-864845da41b5",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "input_sha256": "79b843e77cb89e229e6f76d19188c95895ddff6b18eab6ae7ef3eff23b6600e7",
+      "input_manifest_sha256": "ae7301c057f75446f95d5c6748ec2668e71eb39b23e871f4208704af42ed939a",
+      "request_sha256": "6adeb206229850a239639d59f8c15e46ab9cb20b2205f85532cd0365761b0cad",
+      "result_sha256": "06f217640b70fd48d70300276d6ca5ee1c89e57424870dcdc62b37b432873fc0",
+      "validation_sha256": "b3b9be67bdfc5d6ddc8f71ec8e038c72fc94506bba01ce6f93d47cf90169a8ab",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-snap-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-snap-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-snap-r1/validation-final.json",
+      "scientific_validation": {
+        "fixture": "snap",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 2000,
+        "production_steps": 150000,
+        "units": "metal",
+        "timestep": 0.001,
+        "ensemble": "NVE",
+        "native_loop_seconds": 65.15515,
+        "native_timing_seconds": {
+          "Pair": 50.7598,
+          "Neigh": 0.0,
+          "Comm": 6.59237,
+          "Output": 0.0543827,
+          "Modify": 3.2087399999999997,
+          "Other": 4.54
+        },
+        "atom_timesteps_per_second": 4604394.280421425,
+        "ns_per_day": 198.90983291420557,
+        "reduced_time_per_day": null,
+        "temperature_min": 133.191451377186,
+        "temperature_max": 161.232028857103,
+        "temperature_mean": 148.59347302405655,
+        "temperature_stdev": 3.734965623690828,
+        "relative_total_energy_span": 4.3095729313528214e-08,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 140000,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 0.0,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 16,
+        "native_segments": 2,
+        "gpu_samples": 70,
+        "gpu_utilization_mean_percent": 72.72857142857143,
+        "gpu_memory_peak_mib": 707.0,
+        "gpu_power_mean_watts": 226.26271428571428,
+        "warnings": [
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-snap-r1/validation.json",
+          "sha256": "b4b8b258f0b02259c0017c923c3137154223c9208b5033953e7cd4c384ad90bc",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 68.46411328297108,
+        "worker_wall_seconds": 70.05381780301104,
+        "worker_noncommand_overhead_seconds": 1.5897045200399589,
+        "input_copy_seconds": 1.7721043694764376,
+        "output_copy_seconds": 2.060423295944929,
+        "cpu_user_seconds": 66.688967,
+        "cpu_system_seconds": 2.535852,
+        "max_rss_kib": 232540,
+        "all_data_inventory_bytes": 4223066,
+        "output_io_native_seconds": 0.0543827,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "reaxff",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA H100 80GB HBM3, GPU-ade41b30-29a5-be1f-71a2-95104de12b84, 580.173.02, 9.0, 81559 MiB, 00000000:8D:00.0",
+      "pod_uid": "5a506eb0-c050-4742-b72a-864845da41b5",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "input_sha256": "92647bba8abbb61a941d31b9301812e1d4c7a091f87e8248c7594d8c1ab04a2a",
+      "input_manifest_sha256": "44e5657462953ec39b7dc32c6b643673a019349e212e1f8c414d9679da0d362c",
+      "request_sha256": "793dd6f770ae69d80bb9cadc4399b08e9a17d9694f71e5016bd7f1984b92685c",
+      "result_sha256": "3de2d58934c2598d3680bcdf345b102bff5b0dca4e1e7803446a5244969551d8",
+      "validation_sha256": "092b76257db0c173fac34080506dd1e66e618cf11c5c4016a5128061e361630c",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-reaxff-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-reaxff-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-reaxff-r1/validation-final.json",
+      "scientific_validation": {
+        "fixture": "reaxff",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 8000,
+        "production_steps": 20000,
+        "units": "real",
+        "timestep": 0.1,
+        "ensemble": "NVE",
+        "native_loop_seconds": 294.5007,
+        "native_timing_seconds": {
+          "Pair": 165.30399999999997,
+          "Neigh": 0.0,
+          "Comm": 9.536200000000001,
+          "Output": 0.02610694,
+          "Modify": 118.99,
+          "Other": 0.6435000000000001
+        },
+        "atom_timesteps_per_second": 543292.4268091723,
+        "ns_per_day": 0.5867558209539061,
+        "reduced_time_per_day": null,
+        "temperature_min": 1183.73672567137,
+        "temperature_max": 1229.2803174988,
+        "temperature_mean": 1208.9387988121832,
+        "temperature_stdev": 9.159226003844287,
+        "relative_total_energy_span": 1.6044571533791541e-06,
+        "energy_span_gate": 0.02,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 6100,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 6000
+          },
+          {
+            "step": 10200,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 10000
+          },
+          {
+            "step": 14300,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 14000
+          },
+          {
+            "step": 18400,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 18000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 2,
+        "native_segments": 5,
+        "gpu_samples": 332,
+        "gpu_utilization_mean_percent": 80.51506024096386,
+        "gpu_memory_peak_mib": 1189.0,
+        "gpu_power_mean_watts": 173.677921686747,
+        "warnings": [
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-reaxff-r1/validation.json",
+          "sha256": "e06ab4ab3bb89f72a107c77e94395b845c5e05b8efe45c03694e4b6e5d4470df",
+          "status": "failed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 328.6492354940274,
+        "worker_wall_seconds": 332.14053133901325,
+        "worker_noncommand_overhead_seconds": 3.4912958449858706,
+        "input_copy_seconds": 1.7504178434610367,
+        "output_copy_seconds": 1.9418652076274157,
+        "cpu_user_seconds": 325.573864,
+        "cpu_system_seconds": 4.560291,
+        "max_rss_kib": 259624,
+        "all_data_inventory_bytes": 4416053,
+        "output_io_native_seconds": 0.02610694,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    },
+    {
+      "case": "rhodo",
+      "status": "passed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "gpu_and_driver": "name, uuid, driver_version, compute_cap, memory.total [MiB], pci.bus_id\nNVIDIA H100 80GB HBM3, GPU-ade41b30-29a5-be1f-71a2-95104de12b84, 580.173.02, 9.0, 81559 MiB, 00000000:8D:00.0",
+      "pod_uid": "5a506eb0-c050-4742-b72a-864845da41b5",
+      "node": "computeinstance-e00bwrmx5x05qn4bc8",
+      "input_sha256": "db6906096c618112da912602c238b1da8e18afe9d7458aeb2e55096e45002537",
+      "input_manifest_sha256": "6b69b6a309e9a4bba919364e8e9842ec6a3a09c6ea4a49505c236e4f47790e13",
+      "request_sha256": "99630c62cf35cde23962f87ad50e68105a3c7ddbe2d664596be6a1499056466e",
+      "result_sha256": "fff5661dc2e46903df382db182d81ef10e08018546be7a622cbaf70e35a7c6a1",
+      "validation_sha256": "0adbe40234cffcac74904b26261277202cae3159b487dbf442435c621395921e",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-rhodo-r1",
+      "result_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-rhodo-r1/workspace/result.json",
+      "validation_path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-rhodo-r1/validation-final.json",
+      "scientific_validation": {
+        "fixture": "rhodo",
+        "status": "passed",
+        "scientific_convergence_claimed": false,
+        "atoms": 32000,
+        "production_steps": 50000,
+        "units": "real",
+        "timestep": 2.0,
+        "ensemble": "NPT",
+        "native_loop_seconds": 216.7744,
+        "native_timing_seconds": {
+          "Pair": 64.80799999999999,
+          "Bond": 7.694799999999999,
+          "Kspace": 91.28899999999999,
+          "Neigh": 17.1601,
+          "Comm": 8.319099999999999,
+          "Output": 0.23233700000000002,
+          "Modify": 25.592599999999997,
+          "Other": 1.678
+        },
+        "atom_timesteps_per_second": 7380945.351480617,
+        "ns_per_day": 39.857104897995335,
+        "reduced_time_per_day": null,
+        "temperature_min": 295.144579558953,
+        "temperature_max": 303.586110434494,
+        "temperature_mean": 300.0254245281402,
+        "temperature_stdev": 1.5161268016393392,
+        "relative_total_energy_span": 0.04284101503337371,
+        "energy_span_gate": null,
+        "dangerous_neighbor_builds": 0,
+        "neighbor_checking_enabled": true,
+        "neighbor_convergence_claimed": false,
+        "restart_boundaries": [
+          {
+            "step": 15500,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 5.120459944725165e-07,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          },
+          {
+            "step": 29000,
+            "numerical_continuity_measured": true,
+            "relative_energy_jump": 9.533453975855627e-08,
+            "relative_temperature_jump": 0.0,
+            "relative_volume_jump": 0.0
+          },
+          {
+            "step": 42400,
+            "numerical_continuity_measured": false,
+            "last_pre_checkpoint_thermo_step": 42000
+          }
+        ],
+        "restart_relative_continuity_gate": 0.0001,
+        "trajectory_frames": 5,
+        "native_segments": 4,
+        "gpu_samples": 245,
+        "gpu_utilization_mean_percent": 72.35102040816327,
+        "gpu_memory_peak_mib": 1125.0,
+        "gpu_power_mean_watts": 160.92730612244898,
+        "warnings": [
+          "WARNING: Using default KISS FFT with Kokkos GPU backends may give suboptimal performance (src/KOKKOS/pppm_kokkos.cpp:110)",
+          "WARNING: Wall time limit reached (src/timer.cpp:201)"
+        ],
+        "retained_initial_validation": {
+          "path": "/home/tux/fs2-lammps-evidence-20260923/h100-confirm-v3/h100-confirm-v3-rhodo-r1/validation.json",
+          "sha256": "33c936872001629e36922568c28adc1f653e16cde73fd7c4725cc6c280c06cf8",
+          "status": "passed",
+          "final_revalidation_uses_native_interval_coverage": true
+        }
+      },
+      "timing": {
+        "native_commands_seconds": 241.89011689196923,
+        "worker_wall_seconds": 245.19365044799633,
+        "worker_noncommand_overhead_seconds": 3.303533556027105,
+        "input_copy_seconds": 2.3101795576512814,
+        "output_copy_seconds": 3.620256908237934,
+        "cpu_user_seconds": 237.822921,
+        "cpu_system_seconds": 5.561794,
+        "max_rss_kib": 492900,
+        "all_data_inventory_bytes": 46512545,
+        "output_io_native_seconds": 0.23233700000000002,
+        "timing_boundary": "local native worker; input/output copies use kubectl, not customer object storage; monitor included in CPU use"
+      },
+      "repetition": 1
+    }
+  ],
+  "preserved_failures": [
+    {
+      "status": "failed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-screen-v3/h100-screen-v3-eam-r1",
+      "qualification_sha256": "4698fd42f5ee2ea288e15db288b40002df68e06209270a0a7800b65c780f6a80",
+      "result_sha256": "85882da005678130819f7c79a26b3470c297887dfb66ac34eb5a5e340403d564"
+    },
+    {
+      "status": "failed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-screen-v3/h100-screen-v3-reaxff-r1",
+      "qualification_sha256": "3be2346b1a700dc13f0bb7e7f4beb6cbc2376bfb58ab93a7bbc7dd3bff9f35dd",
+      "result_sha256": "927e6fb706ff3f3d2f4adfb602e65ff76b7144470073a98d4b0a849f531e3d82"
+    },
+    {
+      "status": "failed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-screen-v3/h100-screen-v3-rhodo-r1",
+      "qualification_sha256": "0127cfc0cb10f42461d472879f30ef90fded2d51d24660a631195fb4f0a03399",
+      "result_sha256": "1c78c39eb75426f5dd3f97b9144addbcc307fa01005afd80aacb5a95a79ea021"
+    },
+    {
+      "status": "failed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-screen-v3/h100-screen-v3-snap-r1",
+      "qualification_sha256": "993ee6472557feef6993f12abf6798555ce02c4987ea6d25349092192c096dee",
+      "result_sha256": "515a0087b7831fd991c1d1c4707cde4420473f08ba49120dc346cafed69cfad7"
+    },
+    {
+      "status": "failed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-screen-v3/h100-screen-v3-tersoff-r1",
+      "qualification_sha256": "e66c1773b2365f2dba0b1eb689ef1afe2068555e845b6f563f78277a41cf08de",
+      "result_sha256": "27b174ab40ea31d32c0b6dd1cec779f5705c50abf8323a5265ca470a947f17d9"
+    },
+    {
+      "status": "failed",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:15af683f671b389ba47a60c6bbc13167dc197fb1f83d394cbee98cd799de8104",
+      "raw_evidence": "/home/tux/fs2-lammps-evidence-20260923/h100-lj-screen-v1",
+      "qualification_sha256": "bdd7d05cea94f6453a004b226e5e6a3373011696ad85ae2e7de03114c7575ebd",
+      "result_sha256": "923c27379e6583d22acd1b6c622b22a37f452b6626a6dd9b325fad4a6c143317"
+    }
+  ],
+  "limitations": [
+    "Native KOKKOS single-GPU acceptance only; not hosted REST/MCP/customer-bucket qualification.",
+    "Finite numerical/trajectory and broad NVE energy-span checks are not scientific convergence or potential suitability validation.",
+    "Closed complete workspace/native binary restart is not a persistent GPU process snapshot.",
+    "Wall-time segment boundaries may differ; chaotic trajectories are not required to remain bitwise identical."
+  ],
+  "declared_cohort": {
+    "pools": [
+      "h100-ondemand-1x"
+    ],
+    "cases": [
+      "lj",
+      "eam",
+      "tersoff",
+      "snap",
+      "reaxff",
+      "rhodo"
+    ],
+    "repetitions_per_case": 1,
+    "all_six_cases_required": true
+  },
+  "campaign_incomplete": true
+}

@@ -99,9 +99,10 @@ def main():
             receipt["repetition"] = run["repetition"]
             tests.append(receipt)
     for failure_root in args.failures:
-        for path in sorted(failure_root.glob("*/qualification.json")):
-            if load(path)["worker_exit"]:
-                failures.append({"status": "failed", "raw_evidence": str(path.parent), "qualification_sha256": digest(path), "result_sha256": digest(path.parent / "workspace/result.json")})
+        for path in sorted(failure_root.rglob("qualification.json")):
+            qualification = load(path)
+            if qualification["worker_exit"]:
+                failures.append({"status": "failed", "runtime_image": qualification["image"], "raw_evidence": str(path.parent), "qualification_sha256": digest(path), "result_sha256": digest(path.parent / "workspace/result.json")})
     images = sorted({t["runtime_image"] for t in tests})
     if len(images) != 1:
         raise ValueError("a native runtime receipt must bind exactly one worker digest")
