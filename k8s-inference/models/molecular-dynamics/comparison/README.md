@@ -13,6 +13,18 @@ The complete server bundle is
 and workbench replacement have separate release receipts; native completion is
 not evidence that a later API/UI release was deployed or passed.
 
+The [complete archived-delivery receipt](../qualification/full-delivery-20260923/README.md),
+[final-client recovery](../qualification/final-client-recovery-227/README.md),
+[large-stream acceptance](../qualification/large-artifact-streaming-227/README.md)
+and [actual admin UI checks](../qualification/admin-ui-reference-227/README.md)
+all passed. The replacement workbench's separate
+[customer-path report](https://github.com/rene-tech/serverless-ai-cookbook/blob/agent/scientific-ai-client-general-20260920/templates/hcls-librechat/MD_REPLACEMENT_RESULT_20260923.md)
+records successful account/preview restoration but a blocked real-agent check:
+the unchanged owner-selected GLM-5.3-Flash returns upstream HTTP404. GLM-5.2
+passes diagnostic streamed tool calls, but changing the conversational default
+awaits the owner's explicit choice. This does not invalidate the four native
+scientific runs, and their success does not make the blocked client ready.
+
 ## Requested scientific protocol
 
 One canonical capped alanine dipeptide (ACE–ALA–NME), prepared with AmberTools
