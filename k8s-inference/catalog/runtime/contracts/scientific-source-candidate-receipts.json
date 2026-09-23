@@ -220,7 +220,7 @@
         "kind": "git",
         "repository": "gromacs/gromacs",
         "revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
-        "review_url": "https://gitlab.com/gromacs/gromacs/-/tree/v2026.2"
+        "review_url": "https://gitlab.com/gromacs/gromacs/-/tree/da9e013175bae98b31b34384f6b4864ff29f65a5"
       },
       "access_profile": "standard",
       "access_state": "not-required",

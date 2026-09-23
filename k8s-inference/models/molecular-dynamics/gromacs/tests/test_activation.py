@@ -95,7 +95,7 @@ def test_addition_preserves_current_models_snapshots_and_quotas(tmp_path):
     existing = ScientificProfileCatalog.load(ROOT / "catalog/runtime")
     profiles = ScientificProfileCatalog(
         profiles={
-            **{p.model_id: p for p in existing.list()},
+            **{p.model_id: p for p in existing.list() if p.model_id != "gromacs-mpi"},
             "gromacs": ScientificWorkloadProfile(profile),
         },
         validators=existing._validators,

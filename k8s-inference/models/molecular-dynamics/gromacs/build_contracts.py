@@ -137,7 +137,7 @@ def profile(*, mpi=False):
             "kind": "git",
             "repository": "gromacs/gromacs",
             "revision": MPI_ENGINE.split("@")[1],
-            "review_url": "https://gitlab.com/gromacs/gromacs/-/tree/v2026.2",
+            "review_url": "https://gitlab.com/gromacs/gromacs/-/tree/" + MPI_ENGINE.split("@")[1],
             "classification": "candidate-input",
         }
         value["execution_identity"]["model_revision"] = MPI_ENGINE.split("@")[1]

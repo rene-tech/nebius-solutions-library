@@ -99,7 +99,7 @@
                 "else": {
                   "properties": {
                     "revision": {"pattern": "^[0-9a-f]{40}$"},
-                    "review_url": {"pattern": "^https://(?:github\\.com|huggingface\\.co)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree/[0-9a-f]{40}$"}
+                    "review_url": {"pattern": "^https://(?:(?:github\\.com|huggingface\\.co)/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/tree|gitlab\\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/-/tree)/[0-9a-f]{40}$"}
                   }
                 }
               }
