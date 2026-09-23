@@ -177,7 +177,7 @@ def test_complete_committed_execution_map_keeps_normal_qualification_with_regist
     path = tmp_path / "execution-map.json"
     path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")))
     renderer = FileScientificManifestRenderer(path=path, profiles=profiles)
-    assert len(document["models"]) == 11
+    assert len(document["models"]) == 12
     for profile in profiles.list():
         assert renderer.qualification_matches(
             profile.model_id, "sha256:" + profile.value["qualification"]["execution_map_sha256"]

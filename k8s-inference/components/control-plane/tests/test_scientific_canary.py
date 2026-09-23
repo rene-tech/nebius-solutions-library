@@ -21,6 +21,7 @@ EXPECTED_FLEET = {
     "cosmos3-lerobot-augmentation",
     "esmfold2",
     "esmfold2-fast",
+    "gromacs",
     "mosaic",
     "openfold3-openbind",
     "proteina-complexa",

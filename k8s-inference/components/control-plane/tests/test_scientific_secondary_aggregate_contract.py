@@ -93,6 +93,7 @@ SECONDARY_ACTIVE = {
 }
 
 COMPLETE_FLEET = {
+    "gromacs",
     "cosmos3-lerobot-augmentation",
     "boltzgen",
     "proteina-complexa",

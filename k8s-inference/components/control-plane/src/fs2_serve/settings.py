@@ -293,10 +293,11 @@ class Settings(BaseSettings):
     artifact_retention_seconds: int = Field(default=7776000, ge=86400, le=315360000)
     artifact_media_types: str = Field(
         default=(
-            "application/octet-stream,application/json,application/gzip,"
+            "application/octet-stream,application/json,application/gzip,application/x-tar,"
             "application/x-nifti,image/jpeg,image/png,image/webp,video/mp4,text/x-a3m,"
             "application/vnd.fs2.scientific-manifest+json,"
             "application/vnd.fs2.scientific-validation+json,"
+            "application/vnd.fs2.gromacs-checkpoint+json,"
             "chemical/x-pdb,chemical/x-cif,text/plain,"
             "audio/wav,audio/x-wav,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/flac,audio/aac,video/webm"
         ),

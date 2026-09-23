@@ -2307,6 +2307,58 @@
           "required_node_labels": {}
         }
       ]
+    },
+    {
+      "model_id": "gromacs",
+      "variant_id": "nvidia-2026-2-single-gpu-v1",
+      "execution_identity_sha256": "cbb98e27173a833c2c798e8b76b5af08dc4c5de6c49db69a6c0e522a3767bcf8",
+      "access_profile": "public",
+      "workload_namespace": "fs2-models",
+      "plan_adapter": {
+        "function": "compile_adapter_run",
+        "module": "fs2_serve.scientific_batch.adapters"
+      },
+      "runtime_artifacts": [],
+      "stages": [
+        {
+          "stage_id": "workflow",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:11e493421da5c959e19fb4695c171ae1869b515d3554aaf9bb8ab2ccc57f1504",
+          "collector_id": "gromacs-workflow-v1",
+          "validator_id": "gromacs-workflow-v1",
+          "environment": {},
+          "required_node_labels": {
+            "kubernetes.io/arch": "amd64"
+          },
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "16Gi",
+              "ephemeral_storage": "64Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "16Gi",
+              "ephemeral_storage": "64Gi"
+            }
+          },
+          "active_deadline_seconds": 261000,
+          "termination_grace_seconds": 120,
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            }
+          ]
+        }
+      ]
     }
   ],
   "qualification_baselines": {
@@ -2321,6 +2373,19 @@
       "openfold3-openbind",
       "protenix-v2",
       "alphafold3"
+    ],
+    "09874ec38b45b64b8341ea0cc4c90f07aa2b8562bd85c20e1e14ab380c0df68c": [
+      "boltzgen",
+      "proteina-complexa",
+      "bindcraft",
+      "mosaic",
+      "rfdiffusion",
+      "esmfold2",
+      "esmfold2-fast",
+      "openfold3-openbind",
+      "protenix-v2",
+      "alphafold3",
+      "cosmos3-lerobot-augmentation"
     ]
   }
 }

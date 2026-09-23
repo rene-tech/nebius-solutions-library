@@ -2107,6 +2107,10 @@ def test_companion_materializes_collects_validates_and_commits_exact_handoff(
             assert expected_media_type == "text/plain"
             return input_bytes
 
+        def download_file(self, artifact_id, *, destination, **expected):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(self.download(artifact_id, **expected))
+
         def upload(self, *, identity, content, media_type, compression):
             digest = hashlib.sha256(content).hexdigest()
             ref: dict[str, object] = {

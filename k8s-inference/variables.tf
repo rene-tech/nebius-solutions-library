@@ -566,6 +566,7 @@ variable "deployment" {
           "application/json",
           "application/octet-stream",
           "application/vnd.fs2.scientific-manifest+json",
+          "application/vnd.fs2.gromacs-checkpoint+json",
           "application/vnd.fs2.scientific-validation+json",
           "application/x-nifti",
           "application/x-tar",
