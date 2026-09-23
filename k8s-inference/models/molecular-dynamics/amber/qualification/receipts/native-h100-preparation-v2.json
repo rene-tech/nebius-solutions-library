@@ -1,0 +1,175 @@
+{
+  "schema": "fs2-serve.nebius.ai/amber-native-qualification/v1",
+  "model_id": "amber",
+  "recorded_at": "2026-09-23T16:44:56.136081+00:00",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:ee61f03b0d9a4161ec33f383ffa57b7d6097068237101d671a5194e2bcb633c5",
+  "engine_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber26-engine@sha256:cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+  "pmemd_source_sha256": "0478ccce892f3525e995e9c85458d552c6060b73dd28acd03c366e61ecf23a14",
+  "status": "passed",
+  "declared_cohort": {
+    "pools": [
+      "h100-ondemand-1x"
+    ],
+    "cases": [
+      "alanine-opc-full"
+    ],
+    "repetitions_per_case": 1
+  },
+  "tests": [
+    {
+      "case": "alanine-opc-full",
+      "repetition": 1,
+      "status": "passed",
+      "pool": "h100-ondemand-1x",
+      "gpu_name": "NVIDIA H100 80GB HBM3",
+      "driver": "580.173.02",
+      "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:ee61f03b0d9a4161ec33f383ffa57b7d6097068237101d671a5194e2bcb633c5",
+      "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:ee61f03b0d9a4161ec33f383ffa57b7d6097068237101d671a5194e2bcb633c5",
+      "pod_uid": "8211798b-c081-4830-af9f-72fd8efcad30",
+      "node": "computeinstance-e00cjp2bfywsenpzzv",
+      "input_sha256": "bed460932fa011043e06e27cc307feb77fe652ba13bc5ebaeb37a78be8e5eaa4",
+      "request_sha256": "6dca790d47172dce1bfebffa1114cb134903f0132d657c820cfa51f02b0f5a94",
+      "result_sha256": "5c2eb876eb12c3d0fe3fbea7fca8440ab9ac34911a9d03474656448cf061436e",
+      "validation_sha256": "62babaed87afe8a2f148867f05c61ccaf150dc2f94e35d049eab2c99e51c6961",
+      "validation_path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-preparation-opc15-v2/alanine-opc-full-r1/workspace/validation.json",
+      "original_qualification": {
+        "status": "passed",
+        "sha256": "82c953b1f8e3efe3f8481ca439c69c132103c3f0cb6887aea5ef22b697567201",
+        "original_validation_sha256": "62babaed87afe8a2f148867f05c61ccaf150dc2f94e35d049eab2c99e51c6961",
+        "unchanged_artifacts_revalidated": false
+      },
+      "protocol": {
+        "fixture": "alanine-opc-full",
+        "backend": "cuda-spfp",
+        "production_steps": 1000000,
+        "production_segments": 2,
+        "trajectory_interval": 5000,
+        "timestep_ps": 0.002,
+        "ensemble": "NPT",
+        "preparation": true,
+        "solvent_buffer_angstrom": 15.0,
+        "sources": [
+          {
+            "source": "/home/tux/worktrees/fs2-gromacs-20260923/k8s-inference/models/molecular-dynamics/amber/tools/fixtures/alanine.leap",
+            "sha256": "0fcb07ffe3e822769ad4c085ec08a9e3e5bfb793aafbe14c8238133509249f11",
+            "generated_leap_sha256": "5151cf11dac331bdaae420f5f26f8629ac5d1538955b6b7d808d879956d72cd0"
+          }
+        ],
+        "scientific_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "notes": "Actual tleap ff19SB/OPC+ParmEd, restrained minimization,100ps heating,five explicit20ps density-equilibration stages to rebuild CUDA grids,explicit stage seeds,PMEMD CUDA SPFP production,CPPTRAJ RMSD/volume. Larger explicit solvent buffer is a new scientific fixture,not a matched speedup control. Bounded qualification is not equilibrium or molecular convergence proof."
+      },
+      "scientific_validation": {
+        "status": "passed",
+        "fixture": "alanine-opc-full",
+        "atoms": 6782,
+        "production_steps": 1000000,
+        "production_ns": 2.0,
+        "native_elapsed_seconds": 187.85,
+        "ns_per_day": 919.8828852808091,
+        "ensemble": "NPT",
+        "relative_total_energy_span": 0.028191027338575966,
+        "temperature_mean_k": 299.72704,
+        "temperature_min_k": 287.19,
+        "temperature_max_k": 313.72,
+        "restart_boundaries": [
+          {
+            "time_ps": 1199.9999999854476,
+            "first_sample_step": 1000,
+            "same_step_thermodynamics_measured": false,
+            "exact_stochastic_stream_claimed": false
+          }
+        ],
+        "trajectories": [
+          {
+            "path": "data/production-001.nc",
+            "frames": 100,
+            "atoms": 6782,
+            "native_ns_day": 928.25,
+            "native_elapsed_seconds": 93.08
+          },
+          {
+            "path": "data/production-002.nc",
+            "frames": 100,
+            "atoms": 6782,
+            "native_ns_day": 911.7,
+            "native_elapsed_seconds": 94.77
+          }
+        ],
+        "rmsd_frames": 200,
+        "rmsd_max_angstrom": 1.3107,
+        "gpu_samples": 212,
+        "gpu_utilization_mean_percent": 79.2877358490566,
+        "gpu_memory_peak_mib": 669.0,
+        "scientific_convergence_claimed": false,
+        "free_energy_convergence_claimed": false,
+        "exact_stochastic_continuation_claimed": false,
+        "gpu_process_snapshot": false
+      },
+      "timing": {
+        "command": [
+          "python3",
+          "-m",
+          "fs2_amber.worker",
+          "--request",
+          "/mnt/fs2-scientific/h100-preparation-opc15-v2-alanine-opc-full-r1/request.json",
+          "--workspace",
+          "/mnt/fs2-scientific/h100-preparation-opc15-v2-alanine-opc-full-r1",
+          "--job-id",
+          "alanine-opc-full",
+          "--operation-id",
+          "a0620000-0923-4026-8000-000000000001",
+          "--checkpoint-mode",
+          "local"
+        ],
+        "worker_wall_seconds": 212.10307399599697,
+        "exit_code": 0,
+        "cpu_user_seconds": 205.17231,
+        "cpu_system_seconds": 6.818655,
+        "max_rss_kib": 541560,
+        "gpu_monitor_included_in_child_cpu_usage": true,
+        "input_copy_seconds": 1.8256945814937353,
+        "output_copy_seconds": 2.5277298875153065,
+        "artifact_inventory_bytes": 23601463,
+        "boundary": "single native worker; input/output copies via kubectl, not hosted customer storage"
+      },
+      "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-preparation-opc15-v2/alanine-opc-full-r1"
+    }
+  ],
+  "performance_summary": [
+    {
+      "pool": "h100-ondemand-1x",
+      "case": "alanine-opc-full",
+      "repetitions": 1,
+      "ns_per_day_median": 919.8828852808091,
+      "ns_per_day_min": 919.8828852808091,
+      "ns_per_day_max": 919.8828852808091,
+      "matched_upstream_performance_claimed": false
+    }
+  ],
+  "upstream_regressions": [],
+  "preserved_failures": [
+    {
+      "path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-alanine-opc-full-v2-failed/result.json",
+      "sha256": "2d5ee7771bdf7d89acb736a6d19d67306b6e25c3257d7782f9f52e497b7260d1",
+      "status": "failed"
+    },
+    {
+      "path": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-alanine-opc-segmented-v2-failed/result.json",
+      "sha256": "1d7e40bbaaefbcb024ce0675bf084b417db28f934672a978a5f934b4dce7081d",
+      "status": "failed"
+    }
+  ],
+  "customer_ready": false,
+  "customer_path_tested": false,
+  "persistent_gpu_snapshot_tested": false,
+  "limitations": [
+    "Only the explicitly completed scientific cohort is accepted; upstream comparison failures remain failures at unchanged native tolerances.",
+    "SPFP sodium TI NVE has an upstream printed-temperature tolerance exception; the sustained alchemical case explicitly uses DPFP.",
+    "Preparation and native fresh-worker recovery are separate receipts, not inferred from production cohorts.",
+    "Single-window TI/MBAR and bounded classical dynamics do not establish free-energy or molecular convergence.",
+    "Closed-stage restart does not imply preservation of an exact stochastic random stream or a persistent CUDA process image.",
+    "Original eleven-state complex MBAR has a distant-lambda printed overflow; the separately named nearby-state control is not full-grid FEP acceptance."
+  ],
+  "excluded_case_evidence": []
+}

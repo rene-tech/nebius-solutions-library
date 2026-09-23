@@ -31,10 +31,15 @@ def create(args):
     if args.node == "computeinstance-e00bwrmx5x05qn4bc8":
         raise ValueError("node reserved for the separate snapshot lane")
     active = [pod for pod in get("get", "pods", "-A")["items"] if pod["status"].get("phase") not in {"Succeeded", "Failed"}]
+    own_count = 0
     for pod in active:
         gpu = sum(int(c.get("resources", {}).get("requests", {}).get("nvidia.com/gpu", 0)) for c in [*pod["spec"].get("containers", []), *pod["spec"].get("initContainers", [])])
-        if gpu and (pod["spec"].get("nodeName") == args.node or pod["metadata"].get("labels", {}).get("scientific-ai.nebius.com/task") == TASK):
-            raise ValueError("target occupied or task already owns an active GPU Pod")
+        if gpu and pod["spec"].get("nodeName") == args.node:
+            raise ValueError("target already has an active GPU Pod")
+        if gpu and pod["metadata"].get("labels", {}).get("scientific-ai.nebius.com/task") == TASK:
+            own_count += 1
+    if own_count >= getattr(args, "max_active_gpu_pods", 1):
+        raise ValueError("task is already at its explicitly approved active GPU Pod ceiling")
     pod = {"apiVersion": "v1", "kind": "Pod", "metadata": {"name": args.pod, "labels": {"scientific-ai.nebius.com/task": TASK}}, "spec": {
         "restartPolicy": "Never", "activeDeadlineSeconds": 10800, "automountServiceAccountToken": False,
         "nodeSelector": {"kubernetes.io/hostname": args.node},
@@ -60,6 +65,7 @@ def main():
     parser.add_argument("--node")
     parser.add_argument("--image")
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--max-active-gpu-pods", type=int, choices=(1, 2), default=1, help="Two requires explicit parent coordination; does not change any cluster quota")
     args = parser.parse_args()
     if args.action == "create":
         create(args)

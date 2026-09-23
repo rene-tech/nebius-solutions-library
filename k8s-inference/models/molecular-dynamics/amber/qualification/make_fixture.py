@@ -52,6 +52,9 @@ def make(args):
         raise ValueError("production segments must divide steps and contain whole1000-step trajectory intervals")
     args.output.mkdir(parents=True, exist_ok=False, mode=0o700)
     files, provenance = {}, []
+    if args.mbar_neighbors and args.case != "complex-ti-mbar":
+        raise ValueError("nearby-state MBAR is an explicit complex TI fixture only")
+    label = args.case + "-nearby" if args.mbar_neighbors else args.case
     if args.case.startswith("dhfr-"):
         source, top, coordinates = args.assets / "cuda/dhfr", "prmtop", "md12.x"
     elif args.case == "myoglobin-gb8":
@@ -70,6 +73,11 @@ def make(args):
         if match is None:
             raise ValueError("upstream native MDIN block not found")
         ti = match.group(1) + "\n"
+        if args.mbar_neighbors:
+            ti, count = re.subn(r"(?m)^\s*mbar_lambda\s*=.*$", "  mbar_lambda = 0.2, 0.3, 0.4,", ti)
+            ti, count_states = re.subn(r"(?m)^\s*mbar_states\s*=.*$", "  mbar_states = 3,", ti)
+            if (count, count_states) != (1, 1):
+                raise ValueError("upstream MBAR state list/count is not explicit")
         provenance.append({"source": str(source / "Run.SC_NVT_MBAR"), "sha256": sha(native.encode()), "selection": "native MDIN heredoc"})
         def mdin(length, continued, seed):
             value = ti
@@ -113,8 +121,12 @@ def make(args):
     files["analyze.in"] = ("\n".join("trajin " + name for name in trajectories) + "\nrms first !@H= out rmsd.dat\nrun\n").encode()
     steps.append({"id": "analyze", "kind": "cpptraj", "input": "analyze.in", "topology": "system.prmtop", "expected_outputs": ["rmsd.dat"]})
     description = {"fixture": args.case, "backend": backend, "production_steps": args.steps, "production_segments": args.segments, "trajectory_interval": 1000, "timestep_ps": 0.001 if args.case in {"dhfr-nve", "complex-ti-mbar"} else 0.002, "ensemble": "NPT" if args.case == "dhfr-npt" else "NVT-TI" if args.case == "complex-ti-mbar" else "NVE", "preparation": args.prepare, "sources": provenance, "changes_from_upstream_short_regression": "longer explicit stage lengths, output cadence, clean-stage restarts; DHFR NPT uses explicit Langevin/Monte Carlo; TI lambda0.30 with11 MBAR states and explicit100-step MBAR output; full native MDIN files are the authoritative protocol", "scientific_convergence_claimed": False, "exact_stochastic_continuation_claimed": False}
+    description["fixture"] = label
+    if args.mbar_neighbors:
+        description["changes_from_upstream_short_regression"] += "; separately named nearby-state control uses only MBAR lambda0.2/0.3/0.4 around sampled0.3; original full0..1-grid failure is retained, not reclassified"
+        description["mbar_lambdas"] = [0.2, 0.3, 0.4]
     files["protocol.json"] = json.dumps(description, indent=2).encode() + b"\n"
-    request = {"schema": "fs2-serve.nebius.ai/amber-workflow-request/v1", "backend": backend, "threads": 1, "max_wall_seconds": 7200, "max_output_bytes": 4 * 1024**3, "jobs": [{"id": args.case, "steps": steps}]}
+    request = {"schema": "fs2-serve.nebius.ai/amber-workflow-request/v1", "backend": backend, "threads": 1, "max_wall_seconds": 7200, "max_output_bytes": 4 * 1024**3, "jobs": [{"id": label, "steps": steps}]}
     (args.output / "request.json").write_text(json.dumps(request, indent=2) + "\n")
     with tarfile.open(args.output / "input.tar.gz", "w:gz") as archive:
         for name, raw in sorted(files.items()):
@@ -135,6 +147,7 @@ def main():
     parser.add_argument("--segments", type=int, default=2)
     parser.add_argument("--backend", choices=("cpu", "cuda-spfp", "cuda-dpfp"))
     parser.add_argument("--prepare", action="store_true")
+    parser.add_argument("--mbar-neighbors", action="store_true", help="New explicitly named3-nearby-state analysis, not a repair/relabeling of the failed11-state test")
     args = parser.parse_args()
     print(json.dumps(make(args)))
 

@@ -1,0 +1,94 @@
+{
+  "schema": "fs2-serve.nebius.ai/amber-native-recovery/v1",
+  "recorded_at": "2026-09-23T16:44:42.011255+00:00",
+  "status": "passed",
+  "model_id": "amber",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:ee61f03b0d9a4161ec33f383ffa57b7d6097068237101d671a5194e2bcb633c5",
+  "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:ee61f03b0d9a4161ec33f383ffa57b7d6097068237101d671a5194e2bcb633c5",
+  "case": "dhfr-nve",
+  "pool": "h100-ondemand-1x",
+  "gpu_name": "NVIDIA H100 80GB HBM3",
+  "driver": "580.173.02",
+  "original_pod_uid": "8211798b-c081-4830-af9f-72fd8efcad30",
+  "replacement_pod_uid": "20249adb-518b-4c71-bd10-4dc6ad59afd1",
+  "node": "computeinstance-e00cjp2bfywsenpzzv",
+  "interrupted_status": "interrupted",
+  "closed_generation": 3,
+  "closed_completed_steps": [
+    "warmup",
+    "production-001"
+  ],
+  "closed_manifest_sha256": "2f1d9aa19b4190a454c56af150f6f7932b4d3893aa5b1f3cbc157d4e5f41f526",
+  "input_sha256": "c5db49586a02640fcb57144aafcd5ee387af065f56ffee6030463f519ca28ccf",
+  "request_sha256": "7ee99ef011c5bd51923f16e756e2b420978c2549fcd4e886a7b837f112528264",
+  "result_sha256": "39208d7b2bdd6efd765a2f91f6071c8a18f41228a943f01cc43c3d4c3d239f70",
+  "validation_sha256": "f86b26a1f3f3f0fefadb6b413c17d7fad28d07c708507ff40992c6bd97ab0388",
+  "scientific_validation": {
+    "status": "passed",
+    "fixture": "dhfr-nve",
+    "atoms": 22930,
+    "production_steps": 600000,
+    "production_ns": 0.6,
+    "native_elapsed_seconds": 107.25999999999999,
+    "ns_per_day": 483.3115793399217,
+    "ensemble": "NVE",
+    "relative_total_energy_span": 0.00010439560272113856,
+    "temperature_mean_k": 298.13376666666665,
+    "temperature_min_k": 293.8,
+    "temperature_max_k": 304.04,
+    "restart_boundaries": [
+      {
+        "time_ps": 712.0499999952234,
+        "first_sample_step": 1000,
+        "same_step_thermodynamics_measured": false,
+        "exact_stochastic_stream_claimed": false
+      },
+      {
+        "time_ps": 912.049999990494,
+        "first_sample_step": 1000,
+        "same_step_thermodynamics_measured": false,
+        "exact_stochastic_stream_claimed": false
+      }
+    ],
+    "trajectories": [
+      {
+        "path": "data/production-001.nc",
+        "frames": 200,
+        "atoms": 22930,
+        "native_ns_day": 483.59,
+        "native_elapsed_seconds": 35.73
+      },
+      {
+        "path": "data/production-002.nc",
+        "frames": 200,
+        "atoms": 22930,
+        "native_ns_day": 486.12,
+        "native_elapsed_seconds": 35.55
+      },
+      {
+        "path": "data/production-003.nc",
+        "frames": 200,
+        "atoms": 22930,
+        "native_ns_day": 480.28,
+        "native_elapsed_seconds": 35.98
+      }
+    ],
+    "rmsd_frames": 600,
+    "rmsd_max_angstrom": 38.8729,
+    "gpu_samples": 0,
+    "gpu_utilization_mean_percent": null,
+    "gpu_memory_peak_mib": null,
+    "scientific_convergence_claimed": false,
+    "free_energy_convergence_claimed": false,
+    "exact_stochastic_continuation_claimed": false,
+    "gpu_process_snapshot": false
+  },
+  "resume_and_copy_seconds": 88.44156203046441,
+  "native_checkpoint_recovery": true,
+  "fresh_pod": true,
+  "customer_transport_tested": false,
+  "customer_ready": false,
+  "gpu_process_snapshot": false,
+  "interruption_kind": "SIGTERM during active PMEMD after an acknowledged closed stage, then original Pod deletion",
+  "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/h100-fresh-recovery-v2"
+}

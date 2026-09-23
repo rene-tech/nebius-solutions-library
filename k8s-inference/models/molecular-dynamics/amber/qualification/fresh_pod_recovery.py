@@ -31,6 +31,7 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--capture-after", default="production-001")
+    parser.add_argument("--max-active-gpu-pods", type=int, choices=(1, 2), default=1)
     args = parser.parse_args()
     old = owned(args.pod)
     if args.pod == args.new_pod:
@@ -62,7 +63,7 @@ def main():
             raise ValueError("closed workspace copy is incomplete; original Pod retained")
     owned(args.pod)
     subprocess.run(KUBE + NS + ["delete", "pod", args.pod, "--wait=true", "--timeout=60s"], check=True)
-    create(SimpleNamespace(pod=args.new_pod, node=old["spec"]["nodeName"], image=old["spec"]["containers"][0]["image"], evidence=args.output / "replacement-context"))
+    create(SimpleNamespace(pod=args.new_pod, node=old["spec"]["nodeName"], image=old["spec"]["containers"][0]["image"], evidence=args.output / "replacement-context", max_active_gpu_pods=args.max_active_gpu_pods))
     subprocess.run(KUBE + NS + ["wait", "--for=condition=Ready", "pod/" + args.new_pod, "--timeout=180s"], check=True)
     new = owned(args.new_pod)
     save(args.output / "replacement-pod.json", new)
