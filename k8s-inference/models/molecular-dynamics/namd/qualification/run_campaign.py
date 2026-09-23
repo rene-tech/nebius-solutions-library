@@ -18,11 +18,17 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--operation", required=True)
+    parser.add_argument("--job-id", action="append", help="Select existing job IDs without changing the normalized request or recipe")
+    parser.add_argument("--append", action="store_true", help="Add new job IDs to an existing campaign; existing workspaces are never overwritten")
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=False)
+    args.output.mkdir(parents=True, exist_ok=args.append)
     request = json.loads((args.fixture / "request.json").read_text())
-    output = []
+    output = json.loads((args.output / "campaign.json").read_text()) if args.append and (args.output / "campaign.json").exists() else []
+    if args.job_id and set(args.job_id) - {job["id"] for job in request["jobs"]}:
+        raise ValueError("requested qualification job ID is not in the fixture")
     for job in request["jobs"]:
+        if args.job_id and job["id"] not in args.job_id:
+            continue
         work = args.output / job["id"]
         work.mkdir()
         shutil.copyfile(args.fixture / "input.tar.gz", work / "input.tar.gz")
