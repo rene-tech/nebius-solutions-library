@@ -1,0 +1,37 @@
+# Controlled optimization experiment, not the promoted native worker. Build KISS
+# and CUFFT with this identical recipe/source, then compare matched native inputs.
+ARG NVIDIA_LAMMPS_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-ngc@sha256:d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731
+ARG WORKER_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c
+FROM ${NVIDIA_LAMMPS_IMAGE} AS build
+USER root
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+       gcc-13 g++-13 git cmake make libhwloc-dev zlib1g-dev \
+       cuda-nvcc-12-8 cuda-cudart-dev-12-8 libcufft-dev-12-8 \
+    && rm -rf /var/lib/apt/lists/*
+ARG LAMMPS_SOURCE=c7ae612a9497437412cb787b78769570f48653dd
+RUN git init /source \
+    && git -C /source remote add origin https://github.com/lammps/lammps.git \
+    && git -C /source fetch --depth 1 origin ${LAMMPS_SOURCE} \
+    && git -C /source checkout --detach FETCH_HEAD \
+    && test "$(git -C /source rev-parse HEAD)" = "${LAMMPS_SOURCE}"
+COPY lammps/runtime/build_fft_control.sh /opt/build_fft_control.sh
+ARG FFT_KOKKOS=KISS
+ARG LAMMPS_ARCH=90
+ARG BUILD_JOBS=8
+RUN bash /opt/build_fft_control.sh
+
+FROM ${WORKER_IMAGE}
+ARG SOURCE_REVISION=development
+ARG FFT_KOKKOS=KISS
+ARG LAMMPS_ARCH=90
+LABEL org.opencontainers.image.title="LAMMPS matched FFT qualification control" \
+      org.opencontainers.image.revision=${SOURCE_REVISION} \
+      scientific-ai.nebius.com.qualification-only="true" \
+      scientific-ai.nebius.com.lammps-source="c7ae612a9497437412cb787b78769570f48653dd" \
+      scientific-ai.nebius.com.fft-kokkos=${FFT_KOKKOS}
+COPY --from=build /usr/local/lammps/sm${LAMMPS_ARCH}/ /usr/local/lammps/sm${LAMMPS_ARCH}/
+COPY --from=build /build-provenance/ /opt/fs2/fft-build/
+# Identity differs from the original NVIDIA binary, preventing cross-build
+# native checkpoint reuse. The hosted adapter must separately approve new pins.
+ENV FS2_LAMMPS_ENGINE_ID="lammps:c7ae612a9497437412cb787b78769570f48653dd:sm${LAMMPS_ARCH}:${FFT_KOKKOS}:${SOURCE_REVISION}"
