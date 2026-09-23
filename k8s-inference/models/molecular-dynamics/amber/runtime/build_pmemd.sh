@@ -3,9 +3,9 @@ set -euo pipefail
 
 test "${BUILD_JOBS}" -ge 1
 test "${BUILD_JOBS}" -le 16
-printf '%s  %s\n' "${PMEMD_SOURCE_SHA256}" /run/secrets/pmemd_source | sha256sum --check -
+printf '%s  %s\n' "${PMEMD_SOURCE_SHA256}" /pmemd-source/pmemd26.tar.bz2 | sha256sum --check -
 mkdir -p /source /build-provenance
-tar -xjf /run/secrets/pmemd_source -C /source
+tar -xjf /pmemd-source/pmemd26.tar.bz2 -C /source
 patch --directory=/source/pmemd26_src --strip=1 --forward < /opt/fs2-build/cuda-sm89-sm90.patch
 cmake -S /source/pmemd26_src -B /build -Wno-dev \
     -DCMAKE_INSTALL_PREFIX=/opt/amber26 -DCMAKE_BUILD_TYPE=Release \
@@ -31,5 +31,4 @@ cuobjdump -lelf /opt/amber26/bin/pmemd.cuda_SPFP > /build-provenance/spfp-cubins
 cuobjdump -lelf /opt/amber26/bin/pmemd.cuda_DPFP > /build-provenance/dpfp-cubins.txt
 grep -q 'sm_89' /build-provenance/spfp-cubins.txt
 grep -q 'sm_90' /build-provenance/spfp-cubins.txt
-# The secret archive and source tree never enter the exported runtime image.
-
+# The privately mounted archive and source tree never enter the runtime image.

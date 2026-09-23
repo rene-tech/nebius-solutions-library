@@ -15,9 +15,12 @@ Only the architecture list is patched; no scientific source or precision is
 silently changed. CPU build success does not establish GPU compatibility.
 
 Build on the authorized private local builder, passing the already-acquired
-archive through `--secret id=pmemd_source,src=/PRIVATE/pmemd26-download` and using
+archive as the sole `pmemd26.tar.bz2` file of a private directory through
+`--build-context pmemd_source=/PRIVATE/archive-context` and using
 `runtime/Containerfile` with this directory as context. The context allowlist
-excludes all licensed inputs. Do not push an image to a public registry or export
+excludes all licensed inputs; the named context is read-only on the local private
+builder. BuildKit secrets were unsuitable because their 500 KiB limit is below
+the 333 MiB archive size; that failed attempt is retained. Do not push an image to a public registry or export
 its test/source assets into this repository. Package versions are captured for
 this bootstrap; rebuilding with changed distribution packages requires a new
 image identity and qualification.

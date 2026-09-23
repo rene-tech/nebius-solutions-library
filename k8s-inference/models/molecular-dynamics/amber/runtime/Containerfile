@@ -1,4 +1,4 @@
-# Licensed PMEMD source is supplied only as a BuildKit secret. This recipe does
+# Licensed PMEMD source is supplied as a private named BuildKit context. This recipe does
 # not acquire a license and the resulting image must remain organization-private.
 ARG CUDA_DEVEL=nvidia/cuda:12.8.1-devel-ubuntu24.04@sha256:520292dbb4f755fd360766059e62956e9379485d9e073bbd2f6e3c20c270ed66
 ARG CUDA_RUNTIME=nvidia/cuda:12.8.1-runtime-ubuntu24.04@sha256:ebef3c171eeef0298e4eb2e4be843105edf3b8b0ac45e0b43acee358e8046867
@@ -11,7 +11,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-
 COPY runtime/build_pmemd.sh runtime/cuda-sm89-sm90.patch /opt/fs2-build/
 ARG PMEMD_SOURCE_SHA256=0478ccce892f3525e995e9c85458d552c6060b73dd28acd03c366e61ecf23a14
 ARG BUILD_JOBS=8
-RUN --mount=type=secret,id=pmemd_source,required=true \
+RUN --mount=type=bind,from=pmemd_source,target=/pmemd-source,readonly \
     --mount=type=cache,target=/build,id=fs2-pmemd26-0478ccce-cuda128-sm89-sm90 \
     bash /opt/fs2-build/build_pmemd.sh
 
@@ -38,4 +38,3 @@ ENV AMBERHOME=/opt/amber26 \
 USER 10001:10001
 WORKDIR /tmp
 CMD ["bash"]
-
