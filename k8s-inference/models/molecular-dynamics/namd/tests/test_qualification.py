@@ -5,8 +5,20 @@ import struct
 import pytest
 
 from audit_binary import summarize
+from capture_hosted import pod_record
 from make_fixture import colvars_configuration, configuration
 from validate_campaign import dcd, production_timing, radius_metadynamics, verify_grid_round_trip
+
+
+def test_hosted_pod_capture_omits_environment_arguments_annotations_and_unrelated_labels():
+    pod = {"metadata": {"name": "test", "uid": "uid", "creationTimestamp": "now", "annotations": {"private": "secret"},
+                        "labels": {"fs2.nebius.ai/model-id": "namd", "private": "secret"}},
+           "spec": {"containers": [{"name": "scientific-stage", "image": "pinned", "env": [{"secret": "secret"}],
+                                    "args": ["secret"]}]}, "status": {}}
+    record = pod_record(pod)
+    assert record["labels"] == {"fs2.nebius.ai/model-id": "namd"}
+    assert record["containers"] == [{"name": "scientific-stage", "image": "pinned", "resources": None}]
+    assert "secret" not in str(record)
 
 
 def test_binary_inventory_does_not_infer_runtime_dispatch_from_sm89_library_code():
