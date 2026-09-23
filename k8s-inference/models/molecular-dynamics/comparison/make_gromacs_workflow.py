@@ -89,7 +89,10 @@ nstpcouple = 10
             args += ["-t", "fs2-" + prior + ".cpt"]
         steps.extend([
             {"id": "prepare-" + stage, "command": "grompp", "args": args},
-            {"id": stage, "command": "mdrun", "args": ["-s", stage + ".tpr", "-deffnm", stage],
+            # Keep the common 64^3 mesh and 1.0 nm Coulomb cutoff fixed for
+            # every step, including warm-up. Automatic PP/PME balancing can
+            # temporarily benchmark different grids and real-space cutoffs.
+            {"id": stage, "command": "mdrun", "args": ["-s", stage + ".tpr", "-deffnm", stage, "-notunepme"],
              "expected_outputs": [stage + ".gro"]},
         ])
         if stage != "minimize":
