@@ -15,9 +15,11 @@ def main():
     if not args.pod.startswith("fs2-namd-r20260923-"):
         raise ValueError("capture only task-owned resources")
     args.output.mkdir(parents=True, exist_ok=True)
+    pod = subprocess.check_output(KUBE + ["get", "pod", args.pod, "-o", "json"], text=True)
+    (args.output / "pod.json").write_text(pod)
+    pod_uid = json.loads(pod)["metadata"]["uid"]
     commands = {
-        "pod.json": ["get", "pod", args.pod, "-o", "json"],
-        "events.json": ["get", "events", "--field-selector", f"involvedObject.name={args.pod}", "-o", "json"],
+        "events.json": ["get", "events", "--field-selector", f"involvedObject.uid={pod_uid}", "-o", "json"],
         "startup.log": ["logs", args.pod],
         "native-identity.txt": ["exec", args.pod, "--", "bash", "-lc",
             "nvidia-smi --query-gpu=name,uuid,driver_version,compute_cap,memory.total --format=csv; "
