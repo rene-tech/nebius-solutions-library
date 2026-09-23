@@ -1096,7 +1096,7 @@ def collect_and_commit(
         if total_output_bytes > invocation.max_output_bytes:
             raise ValueError("collector output exceeds the invocation byte bound")
         if checkpoint_transport is not None:
-            previous = checkpoint_transport.current_file_reference(path)
+            previous = checkpoint_transport.final_file_reference(path)
             refs[item.name] = previous or client.upload_file(
                 identity=f"{upload_prefix}:{item.name}",
                 path=path,

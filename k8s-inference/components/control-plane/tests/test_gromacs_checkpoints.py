@@ -21,11 +21,20 @@ class Artifacts:
         self.objects = {}
         self.latest = None
         self.uploads = 0
+        self.addresses = {}
 
     def _download_get(self, url, **kwargs):
         return {"checkpoint": self.latest}
 
     def upload(self, *, identity, content, media_type, compression):
+        digest = hashlib.sha256(content).hexdigest()
+        # Mirror the real repository's unique content address reservation.
+        # The old fake accepted duplicate identities and hid a hosted 409.
+        if digest in self.addresses:
+            previous_identity, artifact = self.addresses[digest]
+            if previous_identity != identity:
+                raise ValueError("this content address is already reserved")
+            return artifact
         artifact = {
             "artifact_id": str(uuid4()),
             "sha256": hashlib.sha256(content).hexdigest(),
@@ -34,6 +43,7 @@ class Artifacts:
             "compression": compression or "none",
         }
         self.objects[artifact["artifact_id"]] = content
+        self.addresses[digest] = (identity, artifact)
         if media_type == "application/vnd.fs2.gromacs-checkpoint+json":
             self.latest = artifact
         else:
@@ -142,6 +152,34 @@ def test_checkpoint_cannot_claim_another_replica(tmp_path):
     atomic_json(tmp_path / ".fs2/checkpoint-ready.json", raw)
     with pytest.raises(ValueError, match="another workflow"):
         GromacsCheckpointTransport(Artifacts(), invocation(), tmp_path).publish_ready()
+
+
+def test_native_aliases_share_one_content_address_and_keep_every_filename(tmp_path, monkeypatch):
+    client = Artifacts()
+    (tmp_path / "data").mkdir()
+    for name in ("md.gro", "md.part0001.gro", "saved-coordinate.backup"):
+        (tmp_path / "data" / name).write_bytes(b"same complete coordinates")
+    monkeypatch.setenv("FS2_ATTEMPT_ID", "first")
+    transport = GromacsCheckpointTransport(client, invocation(), tmp_path)
+    transport.restore()
+    ready(tmp_path, 1)
+    transport.publish_ready()
+    assert client.uploads == 1
+    manifest = json.loads(client.objects[client.latest["artifact_id"]])
+    assert len(manifest["files"]) == 3
+    refs = [transport.final_file_reference(tmp_path / "data" / item["path"]) for item in manifest["files"]]
+    assert refs[0] == refs[1] == refs[2]
+    assert client.uploads == 1
+
+    # Simulate a new attempt with an independent scoped reservation table,
+    # while preserving the prior attempt's immutable artifact read access.
+    client.addresses.clear()
+    monkeypatch.setenv("FS2_ATTEMPT_ID", "replacement")
+    recovered = GromacsCheckpointTransport(client, invocation(), tmp_path / "replacement")
+    recovered.restore()
+    refs = [recovered.final_file_reference(recovered.data / item["path"]) for item in manifest["files"]]
+    assert refs[0] == refs[1] == refs[2]
+    assert client.uploads == 2
 
 
 def test_large_file_put_retries_with_the_whole_file_and_no_read_bytes(tmp_path, monkeypatch):

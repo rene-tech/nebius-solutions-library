@@ -36,6 +36,7 @@ class GromacsCheckpointTransport:
         self.meta = workspace / ".fs2"
         self.generation = 0
         self.files: dict[str, dict[str, Any]] = {}
+        self.final_files: dict[str, dict[str, Any]] = {}
         self.operation = invocation.argv[invocation.argv.index("--operation-id") + 1]
         self.attempt = os.environ.get("FS2_ATTEMPT_ID", "local-companion")
         self.customer = GromacsCustomerStorage(client, workspace, self.operation, invocation.shard_id)
@@ -139,6 +140,7 @@ class GromacsCheckpointTransport:
         if state["generation"] <= self.generation:
             return
         published = []
+        known = {item["sha256"]: item for item in self.files.values()}
         for item in files:
             source = self.data / item["path"]
             root = self.data.resolve(strict=True)
@@ -146,19 +148,24 @@ class GromacsCheckpointTransport:
                 raise ValueError("checkpoint file escaped its workspace")
             if source.stat().st_size != item["size_bytes"] or digest_file(source) != item["sha256"]:
                 raise ValueError("checkpoint file changed after the engine stopped")
-            prior = self.files.get(item["path"])
+            # Native GROMACS routinely emits byte-identical aliases, e.g.
+            # md.gro and md.part0001.gro, or shared lambda-window topologies.
+            # The platform reserves content addresses, not filenames.
+            prior = known.get(item["sha256"])
             if prior and (prior["sha256"], prior["size_bytes"]) == (item["sha256"], item["size_bytes"]):
                 ref = prior["artifact"]
                 uploaded_attempt = prior.get("uploaded_attempt")
             else:
                 ref = self.client.upload_file(
-                    identity=f"{self.invocation.produces}:{self.attempt}:checkpoint:{item['path']}",
+                    identity=f"{self.invocation.produces}:{self.attempt}:native-file",
                     path=source,
                     media_type=media_type(item["path"]),
                     compression=None,
                 )
                 uploaded_attempt = self.attempt
-            published.append({**item, "artifact": ref, "uploaded_attempt": uploaded_attempt})
+            entry = {**item, "artifact": ref, "uploaded_attempt": uploaded_attempt}
+            published.append(entry)
+            known[item["sha256"]] = entry
         customer_storage = self.customer.publish(state, files)
         manifest = {"state": state, "files": published, "customer_storage": customer_storage}
         raw = json.dumps(manifest, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
@@ -182,16 +189,29 @@ class GromacsCheckpointTransport:
             },
         )
 
-    def current_file_reference(self, path: Path) -> dict[str, Any] | None:
-        """Reuse committed bytes in this attempt, never a failed attempt's result."""
+    def final_file_reference(self, path: Path) -> dict[str, Any] | None:
+        """Publish native final bytes once per digest in the current attempt.
+
+        A recovered checkpoint can reference prior attempts. Final stage results
+        must belong to this attempt, including all byte-identical filename aliases.
+        Non-native files (the result JSON) follow the collector's ordinary path.
+        """
         if self.data.resolve() not in path.resolve().parents:
             return None
         prior = self.files.get(str(path.relative_to(self.data)))
-        if (
-            prior is not None
-            and prior.get("uploaded_attempt") == self.attempt
-            and path.stat().st_size == prior["size_bytes"]
-            and digest_file(path) == prior["sha256"]
-        ):
-            return cast(dict[str, Any], prior["artifact"])
-        return None
+        if prior is None or (path.stat().st_size, digest_file(path)) != (prior["size_bytes"], prior["sha256"]):
+            raise ValueError("final native file differs from its committed checkpoint")
+        digest = prior["sha256"]
+        if digest in self.final_files:
+            return self.final_files[digest]
+        if prior.get("uploaded_attempt") == self.attempt:
+            ref = cast(dict[str, Any], prior["artifact"])
+        else:
+            ref = self.client.upload_file(
+                identity=f"{self.invocation.produces}:{self.attempt}:native-file",
+                path=path,
+                media_type=media_type(str(path)),
+                compression=None,
+            )
+        self.final_files[digest] = ref
+        return ref

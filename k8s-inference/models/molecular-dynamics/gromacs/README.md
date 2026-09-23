@@ -1,7 +1,8 @@
 # GROMACS on Scientific AI
 
 Status: implementation and GPU qualification in progress. **Not customer-released.**
-The candidate profile is deliberately unrouted. See [qualification evidence](qualification/RESULTS-20260923.md)
+An onboarding profile is deployed for hosted qualification; the source template
+under `activation/` remains deliberately unrouted. See [qualification evidence](qualification/RESULTS-20260923.md)
 for what has actually run and which acceptance paths remain open.
 
 This is a general molecular-dynamics App, not a customer-specific pipeline.
@@ -52,6 +53,10 @@ These are operational defaults, **not universal scientific standards**. A useful
 trajectory sampling interval depends on the phenomenon and analysis. The byte
 budget is not a bucket-quota increase. Input archive, temporary files and logs
 also consume scratch. Large single-object transfer qualification remains open.
+In particular, the current platform-artifact path uses single PUT uploads, not
+multipart uploads. Do not promise individual files over 5 GiB just because the
+aggregate workspace budget permits them. The customer-bucket copy does use
+multipart uploads; both paths must be qualified before offering larger traces.
 
 ## Native recovery and output integrity
 

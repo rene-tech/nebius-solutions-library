@@ -14,7 +14,10 @@ from .contracts import relative_path
 
 
 def media_type(path: str) -> str:
-    return "text/plain" if Path(path).suffix in {".mdp", ".top", ".itp", ".log", ".xvg", ".ndx", ".gro"} else "application/octet-stream"
+    # Native filenames are recorded separately in the result/manifest. One
+    # byte-identical object can have several names (including different suffixes),
+    # so its immutable content address must not acquire conflicting MIME types.
+    return "application/octet-stream"
 
 
 def digest_file(path: Path) -> str:
