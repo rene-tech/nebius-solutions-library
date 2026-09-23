@@ -10,18 +10,26 @@ import os
 from pathlib import Path
 import subprocess
 
+MODEL_CONTRACTS = {
+    "gromacs": ("submit_gromacs_workflow", "gromacs"),
+    "gromacs-mpi": ("submit_gromacs_mpi_workflow", "gromacs"),
+    "lammps": ("submit_lammps_workflow", "lammps"),
+    "namd": ("submit_namd_workflow", "namd"),
+}
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
     parser.add_argument(
-        "--model", choices=["gromacs", "gromacs-mpi"], default="gromacs"
+        "--model", choices=sorted(MODEL_CONTRACTS), default="gromacs"
     )
     parser.add_argument("--key-file", type=Path, required=True)
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--idempotency-key", required=True)
     args = parser.parse_args()
+    tool, input_family = MODEL_CONTRACTS[args.model]
     if "@sha256:" not in args.image:
         raise ValueError("Pin the tested workbench image digest.")
     args.output.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -51,9 +59,7 @@ def main():
         "--model",
         args.model,
         "--tool",
-        "submit_gromacs_mpi_workflow"
-        if args.model == "gromacs-mpi"
-        else "submit_gromacs_workflow",
+        tool,
         "--operation",
         "run-workflow",
         "--source",
@@ -61,9 +67,9 @@ def main():
         "--parameters",
         "/qualification/input/request.json",
         "--entry-name",
-        "gromacs-inputs",
+        f"{input_family}-inputs",
         "--semantic-type",
-        "gromacs-input-bundle/v1",
+        f"{input_family}-input-bundle/v1",
         "--media-type",
         "application/x-tar",
         "--compression",
@@ -73,7 +79,7 @@ def main():
         "--idempotency-key",
         args.idempotency_key,
         "--display-name",
-        "GROMACS exact-workbench-image qualification",
+        f"{args.model.upper()} exact-workbench-image qualification",
         "--wait-seconds",
         "1800",
         "--poll-seconds",
