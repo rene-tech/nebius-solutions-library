@@ -3,8 +3,8 @@
 This is isolated qualification, not a public snapshot feature or a release
 approval. GROMACS has one successful persistent fresh-Pod continuation with
 native output validation. End-to-end benefit is **not established**. NAMD has
-a durable capture; fresh-worker restore awaits the original GPU becoming free.
-LAMMPS has not yet run. AMBER is gated on its private native qualification.
+a durable capture but its fresh-Pod CRIU restore failed. LAMMPS has not yet run.
+AMBER is gated on its private native qualification.
 
 ## Scope and immutable identity
 
@@ -39,7 +39,7 @@ GROMACS binary SHA256
 Parent authorized isolated privileged root containers for this screen only.
 No host PID/IPC/network, host mounts, service-account tokens, driver changes,
 global policy changes or unrelated process inspection. The child native engine
-runs as UID/GID10001. GPU UUID binding follows the scheduler allocation.
+runs as UID/GID 10001. GPU UUID binding follows the scheduler allocation.
 Task-owned 32 GiB RWO PVC `fs2-md-snapshot-r20260923`, storage class
 `compute-csi-default-sc`; no shared model cache. Initial hard stop 16:27 UTC.
 
@@ -87,13 +87,13 @@ records pre-helper and probe-start-to-useful-step time.
 
 Native comparator starts from the retained **step 9,500 native checkpoint**, while
 the CUDA capture had logged 10,000: not exactly state matched, not three repetitions and
-not proof of a net speedup. Both finish the same200000step TPR and pass the same
+not proof of a net speedup. Both finish the same 200,000-step TPR and pass the same
 native validators. Trajectory equality was not established; bitwise equality
 was not required or claimed. Snapshot downtime also affects native wall-clock
 timers; engine-reported `ns/day` including this pause is not steady throughput.
 No cold-node or disk-cache eviction experiment was performed.
 
-## NAMD: capture passes; restore awaiting capacity
+## NAMD: capture passes; fresh-Pod CRIU restore fails
 
 Public ApoA1 fixture, 92,224 atoms, NVE 100,000 steps / 200 ps. The exact qualified
 `fs2-production-part000001.namd` begins from equilibrated step 21,000 and requests
@@ -109,6 +109,25 @@ At 15:57 UTC a finite hosted NPT qualification workflow acquired the original H1
 The task restore Pod stayed Pending with insufficient GPU/CPU; it was removed
 without interfering with the running workflow. No cross-GPU UUID remapping was
 enabled. Its Pending object/events are retained separately from engine failures.
+
+After that workflow naturally finished, the original GPU became free. Fresh
+restore Pod UID `a6488218-77e1-4279-ae5d-bd39ec0c3cad` started at 16:03:11 UTC.
+All saved-image hashes passed, then CRIU failed before CUDA restore/unlock:
+
+```text
+Error (criu/files-reg.c:2354): Can't open file proc/180/task/183/stat on restore: No such file or directory
+Error (criu/files.c:1233): Unable to open fd=3 id=0x5e
+Error (criu/cr-restore.c:2390): Restoring FAILED.
+```
+
+Helper failure 0.100 s; complete attempt, including integrity read, 87.549 s.
+No native step beyond 31,000 was produced. Failed restored processes were stopped
+inside the isolated task namespace. The exact pinned NAMD/CRIU combination is
+**not persistent-restore qualified**. This open native thread-stat file is an
+observed CRIU restoration blocker, not a licence, image-pull or CUDA-driver error.
+No CRIU patch, process-memory change or host workaround was attempted. A separate
+same-input image-cached native fallback control is being measured; native restart
+support remains independent of this GPU snapshot failure.
 
 ## Remaining gates and reproducibility
 
