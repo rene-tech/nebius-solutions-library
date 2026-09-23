@@ -1,0 +1,41 @@
+# Licensed PMEMD source is supplied only as a BuildKit secret. This recipe does
+# not acquire a license and the resulting image must remain organization-private.
+ARG CUDA_DEVEL=nvidia/cuda:12.8.1-devel-ubuntu24.04@sha256:520292dbb4f755fd360766059e62956e9379485d9e073bbd2f6e3c20c270ed66
+ARG CUDA_RUNTIME=nvidia/cuda:12.8.1-runtime-ubuntu24.04@sha256:ebef3c171eeef0298e4eb2e4be843105edf3b8b0ac45e0b43acee358e8046867
+FROM ${CUDA_DEVEL} AS build
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+      gcc-13 g++-13 gfortran-13 cmake make patch bzip2 tcsh \
+      python3 perl flex bison bc libbz2-dev zlib1g-dev \
+      libblas-dev liblapack-dev libnetcdf-dev libnetcdff-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY runtime/build_pmemd.sh runtime/cuda-sm89-sm90.patch /opt/fs2-build/
+ARG PMEMD_SOURCE_SHA256=0478ccce892f3525e995e9c85458d552c6060b73dd28acd03c366e61ecf23a14
+ARG BUILD_JOBS=8
+RUN --mount=type=secret,id=pmemd_source,required=true \
+    --mount=type=cache,target=/build,id=fs2-pmemd26-0478ccce-cuda128-sm89-sm90 \
+    bash /opt/fs2-build/build_pmemd.sh
+
+FROM ${CUDA_RUNTIME}
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends \
+      libgfortran5 libblas3 liblapack3 libnetcdf19t64 libnetcdff7 \
+      libgomp1 libquadmath0 tcsh python3 python3-netcdf4 netcdf-bin procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 scientific \
+    && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent scientific
+COPY --from=build /opt/amber26/ /opt/amber26/
+COPY --from=build /build-provenance/ /opt/fs2/amber-build/
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.title="AMBER26 PMEMD CUDA private academic bootstrap" \
+      org.opencontainers.image.revision=${SOURCE_REVISION} \
+      org.opencontainers.image.licenses="LicenseRef-AMBER26-site-license" \
+      scientific-ai.nebius.com.qualification-only="true" \
+      scientific-ai.nebius.com.license-required="AMBER26" \
+      scientific-ai.nebius.com.cuda-architectures="89,90"
+ENV AMBERHOME=/opt/amber26 \
+    PATH=/opt/amber26/bin:${PATH} \
+    LD_LIBRARY_PATH=/opt/amber26/lib:/usr/local/cuda/lib64:/usr/local/nvidia/lib:/usr/local/nvidia/lib64 \
+    OMP_NUM_THREADS=1
+USER 10001:10001
+WORKDIR /tmp
+CMD ["bash"]
+

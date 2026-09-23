@@ -1,0 +1,10 @@
+# Licensed source, binaries and bundled test inputs stay in private storage.
+private/
+pmemd26_src/
+*.tar
+*.tar.*
+*.prmtop
+*.parm7
+*.rst7
+*.nc
+
