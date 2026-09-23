@@ -14,6 +14,26 @@ CONTROL_ROOT = Path(__file__).resolve().parents[1]
 SOLUTION_ROOT = CONTROL_ROOT.parents[1]
 CATALOG_ROOT = SOLUTION_ROOT / "catalog/runtime"
 REPO_ROOT = CATALOG_ROOT / "packaged-repository"
+# One explicit release inventory for cross-surface assertions. Runtime/profile
+# tests still verify each App independently; adding an adapter alone does not
+# change this published fleet.
+SCIENTIFIC_FLEET = frozenset(
+    {
+        "alphafold3",
+        "bindcraft",
+        "boltzgen",
+        "cosmos3-lerobot-augmentation",
+        "esmfold2",
+        "esmfold2-fast",
+        "gromacs",
+        "gromacs-mpi",
+        "mosaic",
+        "openfold3-openbind",
+        "proteina-complexa",
+        "protenix-v2",
+        "rfdiffusion",
+    }
+)
 sys.path.insert(0, str(CONTROL_ROOT / "src"))
 sys.path.insert(0, str(CATALOG_ROOT))
 

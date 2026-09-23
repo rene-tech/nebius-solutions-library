@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from conftest import SCIENTIFIC_FLEET
 
 from fs2_serve.registry import Registry, RegistryError
 from fs2_serve.scientific_admin import ScientificAdminSourceUnavailableError, ScientificModelSnapshot
@@ -190,22 +191,9 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     )
     snapshot = await delivered.list_models()
 
-    assert len(snapshot.data.items) == 12
+    assert len(snapshot.data.items) == len(SCIENTIFIC_FLEET)
     by_candidate = {item.candidate_id: item for item in snapshot.data.items}
-    assert set(by_candidate) == {
-        "cosmos3-lerobot-augmentation",
-        "alphafold3",
-        "bindcraft",
-        "boltzgen",
-        "esmfold2",
-        "esmfold2-fast",
-        "mosaic",
-        "openfold3-openbind",
-        "proteina-complexa",
-        "protenix-v2",
-        "rfdiffusion-upstream",
-        "gromacs",
-    }
+    assert set(by_candidate) == (SCIENTIFIC_FLEET - {"rfdiffusion"}) | {"rfdiffusion-upstream"}
     assert all(item.workload_profile == "published" for item in by_candidate.values())
     boltzgen = by_candidate["boltzgen"]
     assert boltzgen.workload_profile == "published"

@@ -23,7 +23,9 @@ from . import (
     esmfold2_fast,
     gromacs,
     gromacs_mpi,
+    lammps,
     mosaic,
+    namd,
     openfold3,
     proteina_complexa,
     protenix_v2,
@@ -55,6 +57,16 @@ def _primary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[st
     """
 
     return {
+        namd.MODEL_ID: (
+            _COMPILERS[namd.MODEL_ID],
+            namd.VARIANT_ID,
+            {namd.COLLECTOR_ID: namd.collect_companion_output},
+        ),
+        lammps.MODEL_ID: (
+            _COMPILERS[lammps.MODEL_ID],
+            lammps.VARIANT_ID,
+            {lammps.COLLECTOR_ID: lammps.collect_companion_output},
+        ),
         gromacs_mpi.MODEL_ID: (
             _COMPILERS[gromacs_mpi.MODEL_ID],
             gromacs_mpi.VARIANT_ID,

@@ -2531,14 +2531,16 @@ def create_app(runtime: AppRuntime) -> FastAPI:
                 batches=runtime.scientific_workload_batches,
             )
         )
-        app.include_router(
-            gromacs_storage_router(
-                authority=runtime.scientific_workload_capabilities,
-                batches=runtime.scientific_workload_batches,
-                store=runtime.store,
-                storage=users_service.storage,
+        for family in ("gromacs", "native"):
+            app.include_router(
+                gromacs_storage_router(
+                    authority=runtime.scientific_workload_capabilities,
+                    batches=runtime.scientific_workload_batches,
+                    store=runtime.store,
+                    storage=users_service.storage,
+                    family=family,
+                )
             )
-        )
         if runtime.scientific_input_uploads is not None:
             app.include_router(
                 scientific_child_router(

@@ -1,4 +1,4 @@
-"""Coherent, incrementally published native GROMACS checkpoints.
+"""Coherent, incrementally published native molecular-dynamics checkpoints.
 
 Only this opt-in collector uses the journal. Files are immutable artifacts;
 publishing the small manifest last is the durable commit boundary. A subsequent
@@ -20,6 +20,7 @@ from fs2_gromacs.files import atomic_json, digest_file, media_type
 
 from .gromacs_storage import GromacsCustomerStorage
 from .models import StageInvocation
+from .native_workflows import NativeWorkflow, workflow_for_collector
 
 if TYPE_CHECKING:
     from .companion import WorkloadArtifactHttpClient
@@ -30,7 +31,19 @@ MAX_MANIFEST_BYTES = 16 * 1024**2
 
 
 class GromacsCheckpointTransport:
-    def __init__(self, client: WorkloadArtifactHttpClient, invocation: StageInvocation, workspace: Path) -> None:
+    """Shared transport, retaining the original class name for GROMACS callers."""
+
+    def __init__(
+        self,
+        client: WorkloadArtifactHttpClient,
+        invocation: StageInvocation,
+        workspace: Path,
+        *,
+        workflow: NativeWorkflow | None = None,
+    ) -> None:
+        self.workflow = workflow or workflow_for_collector(COLLECTOR)
+        if self.workflow is None:
+            raise ValueError("native checkpoint workflow is not registered")
         self.client, self.invocation, self.workspace = client, invocation, workspace
         self.data = workspace / "data"
         self.meta = workspace / ".fs2"
@@ -39,7 +52,9 @@ class GromacsCheckpointTransport:
         self.final_files: dict[str, dict[str, Any]] = {}
         self.operation = invocation.argv[invocation.argv.index("--operation-id") + 1]
         self.attempt = os.environ.get("FS2_ATTEMPT_ID", "local-companion")
-        self.customer = GromacsCustomerStorage(client, workspace, self.operation, invocation.shard_id)
+        self.customer = GromacsCustomerStorage(
+            client, workspace, self.operation, invocation.shard_id, workflow=self.workflow
+        )
 
     def _state(self, value: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         state = value.get("state", {})
@@ -47,7 +62,7 @@ class GromacsCheckpointTransport:
         if (
             (state.get("schema"), state.get("operation_id"), state.get("job_id"))
             != (
-                "fs2-serve.nebius.ai/gromacs-checkpoint/v1",
+                self.workflow.checkpoint_schema,
                 self.operation,
                 self.invocation.shard_id,
             )
@@ -92,13 +107,13 @@ class GromacsCheckpointTransport:
             read=read,
         ).get("checkpoint")
         if latest is not None:
-            if latest["size_bytes"] > MAX_MANIFEST_BYTES or latest["media_type"] != CHECKPOINT_MEDIA:
+            if latest["size_bytes"] > MAX_MANIFEST_BYTES or latest["media_type"] != self.workflow.checkpoint_media_type:
                 raise ValueError("checkpoint manifest size/type is invalid")
             raw = self.client.download(
                 UUID(latest["artifact_id"]),
                 expected_digest="sha256:" + latest["sha256"],
                 expected_size_bytes=latest["size_bytes"],
-                expected_media_type=CHECKPOINT_MEDIA,
+                expected_media_type=self.workflow.checkpoint_media_type,
             )
             value = json.loads(raw)
             state, files = self._state(value)
@@ -118,7 +133,7 @@ class GromacsCheckpointTransport:
                     expected_media_type=ref["media_type"],
                 )
                 self.files[item["path"]] = item
-            atomic_json(self.meta / "gromacs-state.json", state)
+            atomic_json(self.meta / self.workflow.state_filename, state)
             self.generation = state["generation"]
         atomic_json(self.meta / "restore-complete.json", {"status": "ready", "generation": self.generation})
 
@@ -174,7 +189,7 @@ class GromacsCheckpointTransport:
         ref = self.client.upload(
             identity=f"{self.invocation.produces}:{self.attempt}:checkpoint:{state['generation']}",
             content=raw,
-            media_type=CHECKPOINT_MEDIA,
+            media_type=self.workflow.checkpoint_media_type,
             compression=None,
         )
         self.generation = state["generation"]
@@ -215,3 +230,7 @@ class GromacsCheckpointTransport:
             )
         self.final_files[digest] = ref
         return ref
+
+
+# New engines use the domain-neutral name; existing imports remain compatible.
+NativeCheckpointTransport = GromacsCheckpointTransport

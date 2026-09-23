@@ -16,7 +16,9 @@ from .adapters import (
     esmfold2,
     esmfold2_fast,
     gromacs,
+    lammps,
     mosaic,
+    namd,
     openfold3,
     proteina_complexa,
     protenix_v2,
@@ -45,6 +47,9 @@ def public_input_contract(model_id: str) -> dict[str, Any] | None:
     """Return a fresh, caller-visible descriptor; never infer by model name."""
     if model_id in {gromacs.MODEL_ID, "gromacs-mpi"}:
         return gromacs.public_input_contract()
+    for engine in (lammps, namd):
+        if model_id == engine.MODEL_ID:
+            return engine.public_input_contract()
     if model_id == video_augmentation.MODEL_ID:
         return video_augmentation.public_input_contract()
     if model_id == "cosmos3-lerobot-augmentation":

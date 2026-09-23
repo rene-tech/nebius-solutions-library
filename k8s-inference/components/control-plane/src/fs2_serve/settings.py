@@ -298,6 +298,9 @@ class Settings(BaseSettings):
             "application/vnd.fs2.scientific-manifest+json,"
             "application/vnd.fs2.scientific-validation+json,"
             "application/vnd.fs2.gromacs-checkpoint+json,"
+            "application/vnd.fs2.lammps-checkpoint+json,"
+            "application/vnd.fs2.namd-checkpoint+json,"
+            "application/vnd.fs2.amber-checkpoint+json,"
             "chemical/x-pdb,chemical/x-cif,text/plain,"
             "audio/wav,audio/x-wav,audio/mpeg,audio/mp4,audio/ogg,audio/webm,audio/flac,audio/aac,video/webm"
         ),

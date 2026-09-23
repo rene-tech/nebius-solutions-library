@@ -44,10 +44,7 @@ def source_recipe(root):
         "catalog/runtime/schema/gromacs-mpi-workflow-request.schema.json",
         "models/molecular-dynamics/gromacs/runtime/requirements.lock",
     }
-    paths.update(
-        str(path.relative_to(root))
-        for path in (HERE.parent / "runtime/fs2_gromacs").glob("*.py")
-    )
+    paths.update(str(path.relative_to(root)) for path in (HERE.parent / "runtime/fs2_gromacs").glob("*.py"))
     return {
         "schema": "fs2-serve.nebius.ai/gromacs-runtime-recipe/v1",
         "files": [
@@ -70,19 +67,14 @@ def runtime_receipt(image, directories, *, model_id="gromacs"):
             record["image"] != image
             or record["worker_exit_code"] != 0
             or result["status"] != "succeeded"
-            or result["completed_steps"][-1]
-            not in {"energies", "bar-analysis", "gyration", "check"}
+            or result["completed_steps"][-1] not in {"energies", "bar-analysis", "gyration", "check"}
         ):
-            raise ValueError(
-                "runtime evidence does not prove completion on this exact candidate"
-            )
+            raise ValueError("runtime evidence does not prove completion on this exact candidate")
         tests.append(
             {
                 "case": directory.name,
                 "qualification": record,
-                "result_sha256": hashlib.sha256(
-                    (directory / "workspace/result.json").read_bytes()
-                ).hexdigest(),
+                "result_sha256": hashlib.sha256((directory / "workspace/result.json").read_bytes()).hexdigest(),
                 "completed_steps": result["completed_steps"],
                 "file_count": len(result["files"]),
             }
@@ -95,17 +87,11 @@ def runtime_receipt(image, directories, *, model_id="gromacs"):
                 or len({rank["node"] for rank in ranks}) != 2
                 or any(rank["exit_code"] != 0 for rank in ranks)
             ):
-                raise ValueError(
-                    "MPI evidence requires successful ranks on two distinct nodes"
-                )
+                raise ValueError("MPI evidence requires successful ranks on two distinct nodes")
     else:
         pools = {test["qualification"]["pool"] for test in tests}
-        if "l40s-1x" not in pools or not pools.intersection(
-            {"h100-ondemand-1x", "h100-reserved-8x"}
-        ):
-            raise ValueError(
-                "The enhanced candidate needs both H100 and L40S runtime records"
-            )
+        if "l40s-1x" not in pools or not pools.intersection({"h100-ondemand-1x", "h100-reserved-8x"}):
+            raise ValueError("The enhanced candidate needs both H100 and L40S runtime records")
     return {
         "schema": "fs2-serve.nebius.ai/gromacs-runtime-qualification/v1",
         "runtime_image": image,
@@ -126,41 +112,39 @@ def prepare(
     replace_existing=False,
 ):
     model_id = candidate["model_id"]
-    if model_id not in {"gromacs", "gromacs-mpi"}:
-        raise ValueError(
-            "Only explicit GROMACS engine Apps are handled by this onboarding"
-        )
-    mpi = model_id == "gromacs-mpi"
-    collector_id = "gromacs-mpi-workflow-v1" if mpi else "gromacs-workflow-v1"
-    variant_id = "upstream-2026-2-mpi-v1" if mpi else "nvidia-2026-2-single-gpu-v1"
+    # One additive release composer for native MD engines; existing GROMACS
+    # wire formats and predecessor checks remain unchanged. Runtime evidence
+    # and native semantics are still validated by each engine's entry point.
+    variants = {
+        "gromacs": "nvidia-2026-2-single-gpu-v1",
+        "gromacs-mpi": "upstream-2026-2-mpi-v1",
+        "lammps": "nvidia-2025-07-22-single-gpu-v1",
+        "namd": "nvidia-3-0-2-single-gpu-v1",
+    }
+    if model_id not in variants:
+        raise ValueError("Only explicit native MD Apps are handled by this onboarding")
+    collector_id = f"{model_id}-workflow-v1"
+    variant_id = variants[model_id]
+    checkpoint_engine = "gromacs" if model_id in {"gromacs", "gromacs-mpi"} else model_id
     if not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", runtime_image):
         raise ValueError("runtime image must be immutable")
-    if (
-        evidence.get("runtime_image") != runtime_image
-        or not evidence.get("tests")
-        or not evidence.get("recorded_at")
-    ):
+    if evidence.get("runtime_image") != runtime_image or not evidence.get("tests") or not evidence.get("recorded_at"):
         raise ValueError("runtime evidence must bind this exact image")
     current = values["scientificBatch"]
-    if (
-        hashlib.sha256(scheduling_raw).hexdigest()
-        != current["schedulingContractSha256"]
-    ):
+    if hashlib.sha256(scheduling_raw).hexdigest() != current["schedulingContractSha256"]:
         raise ValueError("scheduler bytes differ from the captured release")
     live = current["executionMap"]
     live = json.loads(live) if isinstance(live, str) else live
     if set(live) - {"schema", "models", "snapshot_bundles", "qualification_baselines"}:
         raise ValueError("unrecognized execution map fields")
-    existing = next(
-        (row for row in live["models"] if row["model_id"] == model_id), None
-    )
+    existing = next((row for row in live["models"] if row["model_id"] == model_id), None)
     if existing is not None and not replace_existing:
-        raise ValueError("GROMACS already exists; prepare an explicit successor")
+        raise ValueError(f"{model_id} already exists; prepare an explicit successor")
     if existing is None and replace_existing:
-        raise ValueError("a successor requires the captured GROMACS release")
+        raise ValueError(f"a successor requires the captured {model_id} release")
     profile = copy.deepcopy(candidate)
     if (profile["state"], profile["route_exposed"]) != ("candidate-unqualified", False):
-        raise ValueError("expected the unrouted GROMACS candidate")
+        raise ValueError(f"expected the unrouted {model_id} candidate")
     profile.update(state="active", route_exposed=True)
     profile["source"]["classification"] = "qualified-input"
     profile["interface"]["mcp"]["invocable"] = True
@@ -233,14 +217,10 @@ def prepare(
         # operator's resources, adapter, namespace and other Apps unchanged.
         row = copy.deepcopy(existing)
         if len(row["stages"]) != 1 or row["stages"][0]["stage_id"] != "workflow":
-            raise ValueError(
-                "unexpected GROMACS stage layout; review the successor explicitly"
-            )
+            raise ValueError("unexpected native MD stage layout; review the successor explicitly")
         row["execution_identity_sha256"] = identity["execution_identity_sha256"]
         row["stages"][0]["image"] = runtime_image
-        desired["models"] = [
-            row if item["model_id"] == model_id else item for item in desired["models"]
-        ]
+        desired["models"] = [row if item["model_id"] == model_id else item for item in desired["models"]]
     else:
         desired.setdefault("qualification_baselines", {})[
             digest({"schema": live["schema"], "models": live["models"]})
@@ -248,18 +228,13 @@ def prepare(
         desired["models"].append(row)
     by_id = {item["model_id"]: item for item in desired["models"]}
     for expected, ids in desired["qualification_baselines"].items():
-        if (
-            digest({"schema": live["schema"], "models": [by_id[key] for key in ids]})
-            != expected
-        ):
+        if digest({"schema": live["schema"], "models": [by_id[key] for key in ids]}) != expected:
             raise ValueError("existing qualification baseline changed")
     profile["qualification"] = {
         "h100_semantic_receipt_sha256": digest(evidence),
         "public_completion_receipt_sha256": None,
         "scheduler_eligibility_receipt_sha256": None,
-        "execution_map_sha256": digest(
-            {"schema": desired["schema"], "models": desired["models"]}
-        ),
+        "execution_map_sha256": digest({"schema": desired["schema"], "models": desired["models"]}),
         "qualified_at": evidence["recorded_at"],
     }
     scheduling = json.loads(scheduling_raw)
@@ -270,7 +245,7 @@ def prepare(
         or current_pools is not None
         and (not replace_existing or current_pools != pools)
     ):
-        raise ValueError("new GROMACS pool mapping does not match this deployment")
+        raise ValueError(f"new {model_id} pool mapping does not match this deployment")
     scheduling["model_eligible_pool_ids"][model_id] = pools
     raw = canonical(scheduling)
     sha = hashlib.sha256(raw).hexdigest()
@@ -292,7 +267,7 @@ def prepare(
         overlay["scientificArtifacts"] = {
             "mediaTypes": sorted(
                 set(values["scientificArtifacts"]["mediaTypes"])
-                | {"application/x-tar", "application/vnd.fs2.gromacs-checkpoint+json"}
+                | {"application/x-tar", f"application/vnd.fs2.{checkpoint_engine}-checkpoint+json"}
             )
         }
     return profile, row, overlay, cm
@@ -301,9 +276,7 @@ def prepare(
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, required=True)
-    parser.add_argument(
-        "--model", choices=("gromacs", "gromacs-mpi"), default="gromacs"
-    )
+    parser.add_argument("--model", choices=("gromacs", "gromacs-mpi"), default="gromacs")
     parser.add_argument("--runtime-image", required=True)
     parser.add_argument("--gpu-result", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -325,12 +298,7 @@ def main():
         (args.baseline / "scheduling.json").read_bytes(),
         json.loads(
             (
-                HERE
-                / (
-                    "mpi-workload-profile.json"
-                    if args.model == "gromacs-mpi"
-                    else "workload-profile.json"
-                )
+                HERE / ("mpi-workload-profile.json" if args.model == "gromacs-mpi" else "workload-profile.json")
             ).read_text()
         )["profile"],
         args.runtime_image,
@@ -354,32 +322,17 @@ def main():
         catalog = json.loads(catalog_path.read_text())
         existing = any(item["model_id"] == args.model for item in catalog["profiles"])
         if existing and not args.replace_existing:
-            raise ValueError(
-                "source already contains GROMACS; review an explicit successor"
-            )
+            raise ValueError("source already contains GROMACS; review an explicit successor")
         if not existing and args.replace_existing:
             raise ValueError("the source catalog must contain the predecessor")
-        source_map = json.loads(
-            (contracts / "scientific-execution-map.json").read_text()
-        )
-        captured_map = json.loads((args.baseline / "values.json").read_text())[
-            "scientificBatch"
-        ]["executionMap"]
-        captured_map = (
-            json.loads(captured_map) if isinstance(captured_map, str) else captured_map
-        )
-        comparable = lambda value: {
-            k: v for k, v in value.items() if k != "snapshot_bundles"
-        }
+        source_map = json.loads((contracts / "scientific-execution-map.json").read_text())
+        captured_map = json.loads((args.baseline / "values.json").read_text())["scientificBatch"]["executionMap"]
+        captured_map = json.loads(captured_map) if isinstance(captured_map, str) else captured_map
+        comparable = lambda value: {k: v for k, v in value.items() if k != "snapshot_bundles"}
         if comparable(source_map) != comparable(captured_map):
-            raise ValueError(
-                "source execution map differs from the captured live release"
-            )
+            raise ValueError("source execution map differs from the captured live release")
         if args.replace_existing:
-            catalog["profiles"] = [
-                profile if item["model_id"] == args.model else item
-                for item in catalog["profiles"]
-            ]
+            catalog["profiles"] = [profile if item["model_id"] == args.model else item for item in catalog["profiles"]]
         else:
             catalog["profiles"].append(profile)
         catalog_path.write_text(json.dumps(catalog, indent=2) + "\n")
@@ -388,17 +341,12 @@ def main():
         published_map = copy.deepcopy(source_map)
         if args.replace_existing:
             published_map["models"] = [
-                row if item["model_id"] == args.model else item
-                for item in published_map["models"]
+                row if item["model_id"] == args.model else item for item in published_map["models"]
             ]
         else:
             published_map["models"].append(row)
-        published_map["qualification_baselines"] = overlay["scientificBatch"][
-            "executionMap"
-        ]["qualification_baselines"]
-        (contracts / "scientific-execution-map.json").write_text(
-            json.dumps(published_map, indent=2) + "\n"
-        )
+        published_map["qualification_baselines"] = overlay["scientificBatch"]["executionMap"]["qualification_baselines"]
+        (contracts / "scientific-execution-map.json").write_text(json.dumps(published_map, indent=2) + "\n")
         # The operator's complete inventory also needs the upstream source
         # observation; adding only a callable profile hides the App from admin.
         receipt_path = contracts / "scientific-source-candidate-receipts.json"
@@ -413,15 +361,9 @@ def main():
                 )
             ).read_text()
         )
-        previous = [
-            item
-            for item in receipt_catalog["receipts"]
-            if item["model_id"] == args.model
-        ]
+        previous = [item for item in receipt_catalog["receipts"] if item["model_id"] == args.model]
         if previous and previous != [receipt]:
-            raise ValueError(
-                "GROMACS source receipt changed; review the upstream observation"
-            )
+            raise ValueError("GROMACS source receipt changed; review the upstream observation")
         if not previous:
             receipt_catalog["receipts"].append(receipt)
             receipt_path.write_text(json.dumps(receipt_catalog, indent=2) + "\n")
@@ -430,10 +372,7 @@ def main():
             {
                 "state": "active-onboarding",
                 "customer_ready": False,
-                "retained_models": len(
-                    overlay["scientificBatch"]["executionMap"]["models"]
-                )
-                - 1,
+                "retained_models": len(overlay["scientificBatch"]["executionMap"]["models"]) - 1,
             }
         )
     )

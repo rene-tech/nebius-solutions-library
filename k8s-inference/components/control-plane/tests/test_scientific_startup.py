@@ -8,7 +8,7 @@ from types import MappingProxyType
 from uuid import uuid4
 
 import pytest
-from conftest import CATALOG_ROOT, SOLUTION_ROOT
+from conftest import CATALOG_ROOT, SCIENTIFIC_FLEET, SOLUTION_ROOT
 from test_scientific_batch_execution_handoff import (
     runtime_execution_map,
     runtime_plan,
@@ -177,7 +177,8 @@ def test_complete_committed_execution_map_keeps_normal_qualification_with_regist
     path = tmp_path / "execution-map.json"
     path.write_text(json.dumps(document, sort_keys=True, separators=(",", ":")))
     renderer = FileScientificManifestRenderer(path=path, profiles=profiles)
-    assert len(document["models"]) == 12
+    assert len(document["models"]) == len(SCIENTIFIC_FLEET)
+    assert {item["model_id"] for item in document["models"]} == SCIENTIFIC_FLEET
     for profile in profiles.list():
         assert renderer.qualification_matches(
             profile.model_id, "sha256:" + profile.value["qualification"]["execution_map_sha256"]

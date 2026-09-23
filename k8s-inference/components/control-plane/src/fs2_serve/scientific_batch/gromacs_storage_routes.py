@@ -1,4 +1,4 @@
-"""Resolve a GROMACS companion's destination from its durable submitting user."""
+"""Resolve a native MD companion's destination from its durable submitting user."""
 
 from __future__ import annotations
 
@@ -10,21 +10,27 @@ from fastapi.responses import JSONResponse
 
 from ..store import Store
 from .capability import ScientificWorkloadCapabilityAuthority
+from .native_workflows import workflow_for_binding
 from .workload_routes import WorkloadBatchRepository, authorize_workload_capability
 
 
 def gromacs_storage_router(
-    *, authority: ScientificWorkloadCapabilityAuthority, batches: WorkloadBatchRepository, store: Store, storage: Any
+    *,
+    authority: ScientificWorkloadCapabilityAuthority,
+    batches: WorkloadBatchRepository,
+    store: Store,
+    storage: Any,
+    family: str = "gromacs",
 ) -> APIRouter:
-    router = APIRouter(prefix="/internal/scientific-workloads/gromacs", tags=["scientific-workloads-internal"])
+    if family not in {"gromacs", "native"}:
+        raise ValueError("unknown native storage route family")
+    router = APIRouter(prefix=f"/internal/scientific-workloads/{family}", tags=["scientific-workloads-internal"])
 
     @router.get("/storage")
     async def destination(authorization: Annotated[str | None, Header()] = None) -> JSONResponse:
         capability, _, _ = await authorize_workload_capability(authority, batches, authorization)
-        if (capability.model_id, capability.stage_id, capability.collector_id) not in {
-            ("gromacs", "workflow", "gromacs-workflow-v1"),
-            ("gromacs-mpi", "workflow", "gromacs-mpi-workflow-v1"),
-        }:
+        workflow = workflow_for_binding(capability.model_id, capability.stage_id, capability.collector_id)
+        if workflow is None or (family == "gromacs" and workflow.engine != "gromacs"):
             raise HTTPException(403, "this workload has no customer checkpoint export")
         if storage is None:
             raise HTTPException(503, "customer storage is not configured")

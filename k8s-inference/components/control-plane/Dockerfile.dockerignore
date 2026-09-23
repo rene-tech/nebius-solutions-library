@@ -73,6 +73,20 @@ k8s-inference/models/molecular-dynamics/gromacs/runtime/*
 !k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs/
 !k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs/*.py
 !k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs/py.typed
+!k8s-inference/models/molecular-dynamics/lammps/
+k8s-inference/models/molecular-dynamics/lammps/*
+!k8s-inference/models/molecular-dynamics/lammps/runtime/
+k8s-inference/models/molecular-dynamics/lammps/runtime/*
+!k8s-inference/models/molecular-dynamics/lammps/runtime/fs2_lammps/
+!k8s-inference/models/molecular-dynamics/lammps/runtime/fs2_lammps/*.py
+!k8s-inference/models/molecular-dynamics/lammps/runtime/fs2_lammps/py.typed
+!k8s-inference/models/molecular-dynamics/namd/
+k8s-inference/models/molecular-dynamics/namd/*
+!k8s-inference/models/molecular-dynamics/namd/runtime/
+k8s-inference/models/molecular-dynamics/namd/runtime/*
+!k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd/
+!k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd/*.py
+!k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd/py.typed
 
 **/.git
 **/.git/**

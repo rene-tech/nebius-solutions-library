@@ -12,18 +12,20 @@ from fs2_gromacs.files import atomic_json, inventory
 
 from fs2_serve.scientific_batch.companion import WorkloadArtifactHttpClient
 from fs2_serve.scientific_batch.gromacs_checkpoints import GromacsCheckpointTransport
+from fs2_serve.scientific_batch.native_workflows import workflow_for_collector
 
 OPERATION = "9eb1af68-cee7-46ea-9c3c-270e039ba923"
 
 
 class Artifacts:
-    def __init__(self):
+    def __init__(self, checkpoint_media="application/vnd.fs2.gromacs-checkpoint+json"):
         self.base_url = "http://api.test"
         self.headers = {}
         self.objects = {}
         self.latest = None
         self.uploads = 0
         self.addresses = {}
+        self.checkpoint_media = checkpoint_media
 
     def _download_get(self, url, **kwargs):
         return {"checkpoint": self.latest}
@@ -46,7 +48,7 @@ class Artifacts:
         }
         self.objects[artifact["artifact_id"]] = content
         self.addresses[digest] = (identity, artifact)
-        if media_type == "application/vnd.fs2.gromacs-checkpoint+json":
+        if media_type == self.checkpoint_media:
             self.latest = artifact
         else:
             self.uploads += 1
@@ -69,12 +71,12 @@ def invocation():
     )
 
 
-def ready(root, generation):
+def ready(root, generation, engine="gromacs"):
     atomic_json(
         root / ".fs2/checkpoint-ready.json",
         {
             "state": {
-                "schema": "fs2-serve.nebius.ai/gromacs-checkpoint/v1",
+                "schema": f"fs2-serve.nebius.ai/{engine}-checkpoint/v1",
                 "operation_id": OPERATION,
                 "job_id": "replica",
                 "generation": generation,
@@ -113,6 +115,45 @@ def test_checkpoint_commit_and_restore_reuse_closed_segments(tmp_path, monkeypat
     assert resumed.generation == 2
     assert (second / "data/native.cpt").read_bytes() == b"checkpoint two"
     assert (second / "data/md.part0001.xtc").read_bytes() == b"trajectory segment"
+
+
+@pytest.mark.parametrize("engine", ["lammps", "namd", "amber"])
+def test_native_engines_share_transport_without_conflating_checkpoint_formats(tmp_path, engine):
+    workflow = workflow_for_collector(f"{engine}-workflow-v1")
+    client = Artifacts(workflow.checkpoint_media_type)
+    first = tmp_path / "first"
+    (first / "data").mkdir(parents=True)
+    transport = GromacsCheckpointTransport(client, invocation(), first, workflow=workflow)
+    transport.restore()
+    (first / "data/closed-trajectory").write_bytes(b"closed native segment")
+    ready(first, 1, engine)
+    transport.publish_ready()
+    assert client.latest["media_type"] == workflow.checkpoint_media_type
+    assert client.uploads == 1
+
+    replacement = tmp_path / "replacement"
+    resumed = GromacsCheckpointTransport(client, invocation(), replacement, workflow=workflow)
+    resumed.restore()
+    assert resumed.generation == 1
+    assert (replacement / "data/closed-trajectory").read_bytes() == b"closed native segment"
+    assert (
+        json.loads((replacement / ".fs2" / workflow.state_filename).read_text())["schema"] == workflow.checkpoint_schema
+    )
+    assert not (replacement / ".fs2/gromacs-state.json").exists()
+
+    other_engine = "lammps" if engine != "lammps" else "namd"
+    wrong = workflow_for_collector(f"{other_engine}-workflow-v1")
+    with pytest.raises(ValueError, match="size/type"):
+        GromacsCheckpointTransport(client, invocation(), tmp_path / "wrong", workflow=wrong).restore()
+
+
+@pytest.mark.parametrize("engine", ["lammps", "namd", "amber"])
+def test_native_transport_rejects_gromacs_state_under_another_engine_binding(tmp_path, engine):
+    (tmp_path / "data").mkdir()
+    ready(tmp_path, 1)
+    workflow = workflow_for_collector(f"{engine}-workflow-v1")
+    with pytest.raises(ValueError, match="another workflow"):
+        GromacsCheckpointTransport(Artifacts(), invocation(), tmp_path, workflow=workflow).publish_ready()
 
 
 def test_partial_upload_does_not_commit_a_generation(tmp_path):

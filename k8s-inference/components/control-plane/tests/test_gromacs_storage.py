@@ -12,6 +12,7 @@ from fastapi import FastAPI
 
 from fs2_serve.scientific_batch.gromacs_storage import GromacsCustomerStorage, _provider_failure, _verified_metadata
 from fs2_serve.scientific_batch.gromacs_storage_routes import gromacs_storage_router
+from fs2_serve.scientific_batch.native_workflows import workflow_for_collector
 from fs2_serve.user_storage_models import StorageCredentials
 
 
@@ -41,8 +42,10 @@ class S3:
 
 
 def test_nested_provider_failure_retains_code_but_not_secret_message():
-    inner = ClientError({"Error": {"Code": "SlowDown", "Message": "secret-url-and-key"},
-                         "ResponseMetadata": {"HTTPStatusCode": 503}}, "UploadPart")
+    inner = ClientError(
+        {"Error": {"Code": "SlowDown", "Message": "secret-url-and-key"}, "ResponseMetadata": {"HTTPStatusCode": 503}},
+        "UploadPart",
+    )
     outer = RuntimeError("wrapped secret-url-and-key")
     outer.__cause__ = inner
     assert _provider_failure(outer) == "RuntimeError code=SlowDown HTTP=503"
@@ -53,13 +56,15 @@ def test_unstructured_provider_error_does_not_leak_its_message():
 
 
 @pytest.mark.parametrize("metadata_case", [str.lower, str.title, str.upper])
-def test_export_preserves_files_and_publishes_manifest_last_without_reupload(tmp_path, metadata_case):
+@pytest.mark.parametrize("engine", ["gromacs", "lammps", "namd", "amber"])
+def test_export_preserves_files_and_publishes_manifest_last_without_reupload(tmp_path, metadata_case, engine):
     (tmp_path / "data").mkdir()
     path = tmp_path / "data/md.part0001.xtc"
     raw = b"native trajectory"
     path.write_bytes(raw)
     item = {"path": path.name, "sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)}
-    export = GromacsCustomerStorage(None, tmp_path, "operation", "replica")
+    workflow = workflow_for_collector(f"{engine}-workflow-v1")
+    export = GromacsCustomerStorage(None, tmp_path, "operation", "replica", workflow=workflow)
     export.s3, export.bucket, export.prefix, export.attempt, export.enabled = (
         S3(metadata_case),
         "customer",
@@ -74,6 +79,7 @@ def test_export_preserves_files_and_publishes_manifest_last_without_reupload(tmp
     raw_manifest, _ = export.s3.objects["customer", second["manifest_key"]]
     manifest = json.loads(raw_manifest)
     assert manifest["retention"] == "customer-managed"
+    assert manifest["schema"] == workflow.customer_checkpoint_schema
     assert manifest["files"][0]["path"] == path.name
     assert not any("secret" in key for key in manifest)
 
@@ -117,6 +123,10 @@ def test_export_failure_never_commits_a_customer_manifest(tmp_path, monkeypatch)
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "model,family",
+    [("gromacs", "gromacs"), ("gromacs-mpi", "gromacs"), ("lammps", "native"), ("namd", "native"), ("amber", "native")],
+)
+@pytest.mark.parametrize(
     "mode,ready,other_model,revoked,expected",
     [
         ("tenant", True, False, False, 200),
@@ -128,12 +138,12 @@ def test_export_failure_never_commits_a_customer_manifest(tmp_path, monkeypatch)
     ],
 )
 async def test_destination_uses_the_original_submitter_not_request_fields(
-    monkeypatch, mode, ready, other_model, revoked, expected
+    monkeypatch, mode, ready, other_model, revoked, expected, model, family
 ):
     capability = SimpleNamespace(
-        model_id="other" if other_model else "gromacs",
+        model_id="other" if other_model else model,
         stage_id="workflow",
-        collector_id="gromacs-workflow-v1",
+        collector_id=f"{model}-workflow-v1",
         operation_id=uuid4(),
         tenant_id="tenant-a",
         attempt_number=2,
@@ -143,7 +153,7 @@ async def test_destination_uses_the_original_submitter_not_request_fields(
         AsyncMock(return_value=(capability, None, None)),
     )
     operation = SimpleNamespace(
-        model_id="gromacs",
+        model_id=model,
         tenant_id="tenant-a",
         principal_id="scientist-a",
         token_id=uuid4(),
@@ -166,9 +176,11 @@ async def test_destination_uses_the_original_submitter_not_request_fields(
         repository=SimpleNamespace(disclose=AsyncMock(return_value=credential)),
     )
     app = FastAPI()
-    app.include_router(gromacs_storage_router(authority=None, batches=None, store=store, storage=storage))
+    app.include_router(
+        gromacs_storage_router(authority=None, batches=None, store=store, storage=storage, family=family)
+    )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.get("/internal/scientific-workloads/gromacs/storage")
+        response = await client.get(f"/internal/scientific-workloads/{family}/storage")
     assert response.status_code == expected
     if expected == 200:
         storage.repository.disclose.assert_awaited_once_with("tenant-a", "scientist-a")

@@ -1,4 +1,4 @@
-"""Export closed GROMACS segments with the existing customer's scoped S3 key.
+"""Export closed native MD segments with the existing customer's scoped S3 key.
 
 Only the trusted artifact companion receives credentials, in memory, through
 the current attempt capability. The simulation container never receives them.
@@ -18,10 +18,10 @@ import httpx
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from fs2_gromacs.contracts import normalize
 from fs2_gromacs.files import digest_file
 
 from .companion import WorkloadArtifactHttpClient
+from .native_workflows import NativeWorkflow, workflow_for_collector, workflow_for_schema
 
 
 def _verified_metadata(head: dict[str, Any], digest: str, size: int) -> bool:
@@ -52,8 +52,22 @@ def _provider_failure(error: BaseException) -> str:
 
 
 class GromacsCustomerStorage:
-    def __init__(self, client: WorkloadArtifactHttpClient, workspace: Path, operation: str, job: str) -> None:
+    """Shared exporter with a compatibility name for the original GROMACS App."""
+
+    def __init__(
+        self,
+        client: WorkloadArtifactHttpClient,
+        workspace: Path,
+        operation: str,
+        job: str,
+        *,
+        workflow: NativeWorkflow | None = None,
+    ) -> None:
         self.client, self.workspace, self.operation, self.job = client, workspace, operation, job
+        self.workflow = workflow or workflow_for_collector("gromacs-workflow-v1")
+        self.bound_model = workflow.model_id if workflow is not None else None
+        if self.workflow is None:
+            raise ValueError("native customer storage workflow is not registered")
         self.s3: Any = None
         self.bucket = ""
         self.prefix = ""
@@ -68,10 +82,12 @@ class GromacsCustomerStorage:
         )
 
     def initialize(self) -> None:
-        from fs2_gromacs import MPI_PARAMETER_SCHEMA
-
         raw = json.loads((self.workspace / ".fs2/request.json").read_text())
-        request = normalize(raw, mpi=raw.get("schema") == MPI_PARAMETER_SCHEMA)
+        workflow = workflow_for_schema(raw.get("schema", ""))
+        if workflow is None or (self.bound_model is not None and self.bound_model != workflow.model_id):
+            raise ValueError("customer export request differs from the native workflow binding")
+        self.workflow = workflow
+        request = workflow.normalize(raw)
         self.enabled = request["output_destination"] == "customer-bucket"
         if not self.enabled:
             return
@@ -81,7 +97,7 @@ class GromacsCustomerStorage:
             return cast(dict[str, Any], response.json())
 
         value = self.client._download_get(
-            self.client.base_url + "/internal/scientific-workloads/gromacs/storage",
+            self.client.base_url + workflow.storage_endpoint,
             headers=self.client.headers,
             read=read,
         )
@@ -146,7 +162,7 @@ class GromacsCustomerStorage:
             )
         key = f"{self.prefix}/attempt-{self.attempt:03d}/checkpoint-{state['generation']:08d}.json"
         manifest = {
-            "schema": "fs2-serve.nebius.ai/gromacs-customer-checkpoint/v1",
+            "schema": self.workflow.customer_checkpoint_schema,
             "state": state,
             "bucket": self.bucket,
             "files": exported,
@@ -159,3 +175,6 @@ class GromacsCustomerStorage:
             ContentType="application/json",
         )
         return {"bucket": self.bucket, "manifest_key": key, "prefix": self.prefix, "retention": "customer-managed"}
+
+
+NativeCustomerStorage = GromacsCustomerStorage

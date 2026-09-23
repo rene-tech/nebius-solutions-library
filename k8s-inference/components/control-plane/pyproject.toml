@@ -62,6 +62,8 @@ packages = ["src/fs2_serve"]
 "../../catalog/runtime/fs2_serve_catalog" = "fs2_serve_catalog"
 "migrations" = "fs2_serve/migrations"
 "../../models/molecular-dynamics/gromacs/runtime/fs2_gromacs" = "fs2_gromacs"
+"../../models/molecular-dynamics/lammps/runtime/fs2_lammps" = "fs2_lammps"
+"../../models/molecular-dynamics/namd/runtime/fs2_namd" = "fs2_namd"
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers"

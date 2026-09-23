@@ -5,7 +5,7 @@ import json
 import re
 from pathlib import PurePosixPath
 
-from conftest import CATALOG_ROOT, SOLUTION_ROOT
+from conftest import CATALOG_ROOT, SCIENTIFIC_FLEET, SOLUTION_ROOT
 
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
@@ -92,16 +92,7 @@ SECONDARY_ACTIVE = {
     },
 }
 
-COMPLETE_FLEET = {
-    "gromacs",
-    "cosmos3-lerobot-augmentation",
-    "boltzgen",
-    "proteina-complexa",
-    "bindcraft",
-    "mosaic",
-    "rfdiffusion",
-    *SECONDARY_ACTIVE,
-}
+COMPLETE_FLEET = SCIENTIFIC_FLEET
 
 
 def _documents() -> tuple[dict[str, object], dict[str, object]]:

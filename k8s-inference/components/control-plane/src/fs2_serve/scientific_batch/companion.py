@@ -1057,10 +1057,13 @@ def collect_and_commit(
     ):
         raise ValueError("collector arguments differ from the canonical invocation")
     checkpoint_transport = None
-    if collector_id in {"gromacs-workflow-v1", "gromacs-mpi-workflow-v1"}:
-        from .gromacs_checkpoints import GromacsCheckpointTransport
+    from .native_workflows import workflow_for_collector
 
-        checkpoint_transport = GromacsCheckpointTransport(client, invocation, workspace)
+    workflow = workflow_for_collector(collector_id)
+    if workflow is not None:
+        from .gromacs_checkpoints import NativeCheckpointTransport
+
+        checkpoint_transport = NativeCheckpointTransport(client, invocation, workspace, workflow=workflow)
         checkpoint_transport.restore()
     deadline = monotonic() + collection_deadline_seconds
     while True:

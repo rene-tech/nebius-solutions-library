@@ -5,7 +5,7 @@ import shutil
 from pathlib import Path
 
 import pytest
-from conftest import CATALOG_ROOT
+from conftest import CATALOG_ROOT, SCIENTIFIC_FLEET
 
 from fs2_serve.scientific_batch.canary import CANARY_ID, run_internal_cpu_canary
 from fs2_serve.scientific_batch.execution import (
@@ -14,20 +14,7 @@ from fs2_serve.scientific_batch.execution import (
 )
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificProfileError
 
-EXPECTED_FLEET = {
-    "alphafold3",
-    "bindcraft",
-    "boltzgen",
-    "cosmos3-lerobot-augmentation",
-    "esmfold2",
-    "esmfold2-fast",
-    "gromacs",
-    "mosaic",
-    "openfold3-openbind",
-    "proteina-complexa",
-    "protenix-v2",
-    "rfdiffusion",
-}
+EXPECTED_FLEET = SCIENTIFIC_FLEET
 
 
 def test_internal_cpu_canary_is_deterministic_and_never_a_discoverable_profile() -> None:

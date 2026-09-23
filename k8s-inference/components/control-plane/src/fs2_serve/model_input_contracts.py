@@ -313,6 +313,14 @@ _PURPOSES = {
     "openfold3-openbind": "Predict structures with the independent OpenFold3/OpenBind batch backend, not AlphaFold3.",
     "protenix-v2": "Predict structures with pinned Protenix v2, selected seeds and the no-MSA input lane.",
     "alphafold3": "Predict complexes with AlphaFold3; raw input first runs the reference-data CPU pipeline.",
+    "lammps": (
+        "Run ordered native LAMMPS scripts for molecular/materials dynamics, minimization and analysis; "
+        "returns trajectories, restart files, logs and hash-verified customer-bucket manifests."
+    ),
+    "namd": (
+        "Run NVIDIA-packaged NAMD preparation and molecular-dynamics workflows from complete native inputs; "
+        "returns trajectory segments, restart/bias state, logs and hash-verified customer-bucket manifests."
+    ),
 }
 
 

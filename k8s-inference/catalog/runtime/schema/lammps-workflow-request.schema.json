@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/lammps-workflow-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "jobs"
+  ],
+  "description": "Ordered native LAMMPS scripts in a complete gzip-tar bundle: include/data/potential files and explicit continuation context. Scientific parameters and units remain in the scripts. Independent jobs have isolated files and random seeds chosen by the customer.",
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/lammps-workflow-request/v1"
+    },
+    "jobs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "input"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,47}$"
+                },
+                "input": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Native LAMMPS input script relative to directory. Includes, native variables, loops, minimization, dynamics and analysis retain native semantics."
+                },
+                "directory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "default": "."
+                },
+                "backend": {
+                  "enum": [
+                    "kokkos-cuda",
+                    "cpu"
+                  ],
+                  "description": "Optional per-stage accelerator profile; CPU fallback must be explicit."
+                },
+                "variables": {
+                  "type": "object",
+                  "maxProperties": 64,
+                  "propertyNames": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+                  },
+                  "additionalProperties": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096
+                  },
+                  "default": {},
+                  "description": "Native index variables supplied as separate -var name value argv entries. Names beginning fs2_ are reserved."
+                },
+                "expected_outputs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "default": []
+                },
+                "continuation": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "input",
+                    "restart_file",
+                    "progress_file",
+                    "target_step"
+                  ],
+                  "description": "Opt-in native segmentation. Scripts must write a closed restart and integer timestep after each run, use fs2_segment_seconds timer timeout, and recreate complete restart context. Worker independently reads the restart timestep. Outputs must preserve segment history.",
+                  "properties": {
+                    "input": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "restart_file": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "progress_file": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "target_step": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 9007199254740991
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "backend": {
+      "enum": [
+        "kokkos-cuda",
+        "cpu"
+      ],
+      "default": "kokkos-cuda",
+      "description": "One MPI rank and at most one GPU. KOKKOS acceleration applies only to installed accelerated styles; retain engine logs to inspect dispatch. The separate GPU package is not built into this pinned NVIDIA image."
+    },
+    "threads": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8,
+      "default": 1,
+      "description": "OpenMP threads for native CPU styles. The pinned KOKKOS CUDA build has a Serial host backend and always uses one KOKKOS host thread."
+    },
+    "segment_seconds": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 3600,
+      "default": 300,
+      "description": "Offered native timer duration for scripts opting into continuation. Native timestep boundaries can delay exit. Does not rewrite arbitrary scripts."
+    },
+    "max_wall_seconds": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 259200,
+      "default": 21600
+    },
+    "max_output_bytes": {
+      "type": "integer",
+      "minimum": 1048576,
+      "maximum": 51539607552,
+      "default": 4294967296,
+      "description": "Total workspace budget. Individual files above 5 GiB are not qualified; output cadence and total retained size must fit the assigned shape."
+    },
+    "output_destination": {
+      "enum": [
+        "customer-bucket",
+        "platform-artifacts"
+      ],
+      "default": "customer-bucket"
+    },
+    "output_prefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "default": "runs/lammps"
+    }
+  }
+}

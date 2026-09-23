@@ -24,6 +24,7 @@ from ..scientific_artifacts import (
 from ..scientific_run_result import ArtifactRef
 from .capability import CapabilityArtifact, ScientificWorkloadCapability, ScientificWorkloadCapabilityAuthority
 from .models import AttemptOutcome, ScientificAttemptState, ScientificBatchState
+from .native_workflows import workflow_for_binding
 
 
 class WorkloadBatchRepository(Protocol):
@@ -116,10 +117,7 @@ def scientific_workload_artifact_router(
     async def checkpoint_records(capability: ScientificWorkloadCapability) -> list[ArtifactRecord]:
         # Recovery never widens a worker to another customer's, operation's,
         # stage's, or replica's files. Unrelated Apps retain the old boundary.
-        if (capability.model_id, capability.collector_id, capability.stage_id) not in {
-            ("gromacs", "gromacs-workflow-v1", "workflow"),
-            ("gromacs-mpi", "gromacs-mpi-workflow-v1", "workflow"),
-        }:
+        if workflow_for_binding(capability.model_id, capability.stage_id, capability.collector_id) is None:
             raise HTTPException(status_code=403, detail="this workload has no native checkpoint contract")
         records = await artifacts.list_artifacts(
             capability.operation_id, tenant_id=capability.tenant_id, stage_id=capability.stage_id
@@ -133,10 +131,13 @@ def scientific_workload_artifact_router(
     @router.get("/checkpoints/latest")
     async def latest_checkpoint(authorization: Annotated[str | None, Header()] = None) -> dict[str, ArtifactRef | None]:
         capability, _, _ = await authorized(authorization)
+        workflow = workflow_for_binding(capability.model_id, capability.stage_id, capability.collector_id)
+        if workflow is None:
+            raise HTTPException(status_code=403, detail="this workload has no native checkpoint contract")
         records = [
             record
             for record in await checkpoint_records(capability)
-            if record.media_type == "application/vnd.fs2.gromacs-checkpoint+json"
+            if record.media_type == workflow.checkpoint_media_type
         ]
         latest = max(records, key=lambda record: record.created_at) if records else None
         return {"checkpoint": latest.to_public_ref() if latest else None}

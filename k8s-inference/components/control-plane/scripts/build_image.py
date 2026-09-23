@@ -42,6 +42,8 @@ CONTEXT_INPUTS = (
     SOLUTION_REL / "models/cancer-immunotherapy/runtime-images/mosaic/runtime_entrypoint.py",
     SOLUTION_REL / "models/cancer-immunotherapy/runtime-images/mosaic/cpu/mosaic-batch",
     SOLUTION_REL / "models/molecular-dynamics/gromacs/runtime/fs2_gromacs",
+    SOLUTION_REL / "models/molecular-dynamics/lammps/runtime/fs2_lammps",
+    SOLUTION_REL / "models/molecular-dynamics/namd/runtime/fs2_namd",
 )
 LABEL_KEYS = {
     "commit": "org.opencontainers.image.revision",
