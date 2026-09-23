@@ -19,7 +19,19 @@ retained as incomplete grid evidence, not accepted grid qualification. All
 unaffected r4 results remain bound to their original image; fresh successor-image
 core, native recovery and grid confirmations are required before promotion.
 
-## Exact identity and protocol
+Successor r5 is
+`cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:30df40215f7df047463cf8e37f1fb80457b73fbb7ae8f681b9cb40d980e5f14e`,
+runtime correction `8b9e9190e`, build source `488aaaa99`. The dedicated
+`Successor.Containerfile` preserves all 33 immutable r4 layers and adds one
+wrapper layer; no OS/Python/native binary refresh enters this image. Build
+identity receipt `worker-r5-build-identity.json` SHA256
+`d8a6c01822d41adef1010e8466d1df5f0094184c29f43e89c397119d74c08b05`
+records this comparison. Thirty-eight offline tests pass. Fresh H100/L40S
+scientific cohorts started after all current r4 cases finished naturally and
+their output inventories were archived. Earlier full-rebuild local image
+`d60f5163...` was neither published nor deployed; it is not the r5 identity.
+
+## Retained r4 identity and protocol
 
 - Worker source: `ca59d2fcd`; qualification tooling continued in `203e6ee4a`.
 - Candidate r4: `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:1af3abab5c794c38ef19d557bd5ca0e754fd078343f36b7e41a9eeee2ac7354f`.
