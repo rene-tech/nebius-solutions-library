@@ -125,6 +125,28 @@ The resulting workspace inventory was 117,119,541 bytes.
 
 ## Remaining boundaries
 
+The initial ordinary hosted three-job NVE request failed before NAMD started:
+the shared completion runner selected `python`, while this image provides
+`python3`. Kubernetes OCI startup events identify the executable lookup failure;
+the native worker and checkpoint protocol were not reached. The release owner
+was given a shared-adapter fix that keeps the r4 worker image unchanged. Failed
+operation `39460065-edbb-4eaa-a316-f3d48ded823f` and its retained events are kept
+separate from native scientific passes. No customer-path pass is claimed yet.
+
+The exact-r4 SPDX SBOM contains 188 packages (Syft 1.43.0). Trivy 0.70.0 with
+the 23 September 2026 01:09 UTC vulnerability database reports zero critical,
+11 high package findings (two unique CVEs), 236 medium and 75 low. The high
+findings are inherited GnuPG 2.4.4-2ubuntu17.3 packages (fixed in 2.4.4-2ubuntu17.4)
+and OpenSSL/libssl3t64 3.0.13-0ubuntu3.6 (fixed in 3.0.13-0ubuntu3.11). These are package findings,
+not demonstrated application exploitability or an approved exception. Per the
+release owner's instruction, they are documented without opening a hardening
+lane or silently rebuilding the scientifically tested image.
+
+- `worker-r4.sbom.spdx.json` SHA256:
+  `412194f65dee0b9d38496f2d16e69fee6495a53a4068e33b302a3d20589cc49e`.
+- `worker-r4.trivy.json` SHA256:
+  `461487fe77f77cac7d8b4154c47b2d8eece217cced9ea58aa0d984486fff1de2`.
+
 NAMD 3.0.3 fixes for extended-Lagrangian spinAngle and GBIS GPU-offload behavior
 are absent from this NVIDIA artifact; affected modes remain unavailable. The
 guards do not qualify arbitrary dynamic Tcl or all other Colvars algorithms.
