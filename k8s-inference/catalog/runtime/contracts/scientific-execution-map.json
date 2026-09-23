@@ -2310,7 +2310,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "edf6218df0dfd3f057157f38045904a3f28f42b15de26a044e07bef6b5ea01f3",
+      "execution_identity_sha256": "b9b7c078dae7e18ecdb22b89970642f3dc53a7a5b347e418de2e2eaf97d8e40e",
       "model_id": "gromacs",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2322,7 +2322,7 @@
           "active_deadline_seconds": 261000,
           "collector_id": "gromacs-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:4636ae471eda7faee35cee1bf804e85f5c9635f94f99baad11c564c25516e123",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:d7c5e1dd61dfd0a26e9978ee547b8aa885c4bef0d0d03daeb5757a7602a4b6e2",
           "mounts": [
             {
               "claim_name": null,

@@ -31,6 +31,8 @@ def source_recipe(root):
         "components/control-plane/src/fs2_serve/scientific_batch/gromacs_checkpoints.py",
         "components/control-plane/src/fs2_serve/scientific_batch/gromacs_storage.py",
         "components/control-plane/src/fs2_serve/scientific_batch/gromacs_storage_routes.py",
+        "components/control-plane/src/fs2_serve/scientific_batch/artifact_bridge.py",
+        "components/control-plane/src/fs2_serve/scientific_artifacts.py",
         "components/control-plane/src/fs2_serve/scientific_batch/workload_routes.py",
         "catalog/runtime/schema/gromacs-workflow-request.schema.json",
         "models/molecular-dynamics/gromacs/runtime/Containerfile",
