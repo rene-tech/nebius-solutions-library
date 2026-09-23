@@ -28,7 +28,7 @@ def fixture(name, assets, steps, *, warmup=2000, segment_seconds=60, threads=1, 
         unit, dt, atoms = "lj", 0.005, 131072
     elif name == "eam":
         asset("bench/Cu_u3.eam")
-        setup = "units metal\natom_style atomic\nlattice fcc 3.615\nregion box block 0 20 0 20 0 20\ncreate_box 1 box\ncreate_atoms 1 box\nvelocity all create 1600.0 376847 loop geom\n"
+        setup = "units metal\natom_style atomic\nlattice fcc 3.615\nregion box block 0 20 0 20 0 20\ncreate_box 1 box\ncreate_atoms 1 box\npair_style eam\npair_coeff 1 1 Cu_u3.eam\nvelocity all create 1600.0 376847 loop geom\n"
         physics = "pair_style eam\npair_coeff 1 1 Cu_u3.eam\nneighbor 1.0 bin\nneigh_modify every 1 delay 5 check yes\nfix integrator all nve\ntimestep 0.005\n"
         unit, dt, atoms = "metal", 0.005, 32000
     elif name == "tersoff":
@@ -56,7 +56,11 @@ def fixture(name, assets, steps, *, warmup=2000, segment_seconds=60, threads=1, 
         raise ValueError("unknown fixture")
     thermo = "thermo 500\nthermo_style custom step atoms temp pe ke etotal press vol\nthermo_modify lost error flush yes format float %.15g\n"
     files["protocol.inc"] = (physics + thermo).encode()
-    files["in.prepare"] = (setup + "include protocol.inc\nrun " + str(warmup) + "\nwrite_restart prepared.restart\n").encode()
+    # Several native many-body and CHARMM KOKKOS styles require half neighbor
+    # lists/newton pair on. This is explicit protocol input, not a hidden worker
+    # rewrite. All matched repetitions and GPUs use these same settings.
+    acceleration = "package kokkos neigh half newton on\n"
+    files["in.prepare"] = (acceleration + setup + "include protocol.inc\nrun " + str(warmup) + "\nwrite_restart prepared.restart\n").encode()
     target = warmup + steps
     continuation = (
         "include protocol.inc\n"
@@ -67,9 +71,9 @@ def fixture(name, assets, steps, *, warmup=2000, segment_seconds=60, threads=1, 
         "write_restart state.restart\n"
         "print \"$(step:%.0f)\" file progress.txt screen no\n"
     )
-    files["in.production"] = ("read_restart prepared.restart\n" + continuation).encode()
-    files["in.resume"] = ("read_restart state.restart\n" + continuation).encode()
-    files["in.analyze"] = ("read_restart state.restart\ninclude protocol.inc\nrun 0\nwrite_dump all custom final.lammpstrj id type x y z vx vy vz modify sort id format float %.15g\nprint \"$(step:%.0f) $(atoms:%.0f) $(temp:%.15g) $(pe:%.15g) $(ke:%.15g) $(etotal:%.15g) $(press:%.15g) $(vol:%.15g)\" file final-thermo.txt screen no\n").encode()
+    files["in.production"] = (acceleration + "read_restart prepared.restart\n" + continuation).encode()
+    files["in.resume"] = (acceleration + "read_restart state.restart\n" + continuation).encode()
+    files["in.analyze"] = (acceleration + "read_restart state.restart\ninclude protocol.inc\nrun 0\nwrite_dump all custom final.lammpstrj id type x y z vx vy vz modify sort id format float %.15g\nprint \"$(step:%.0f) $(atoms:%.0f) $(temp:%.15g) $(pe:%.15g) $(ke:%.15g) $(etotal:%.15g) $(press:%.15g) $(vol:%.15g)\" file final-thermo.txt screen no\n").encode()
     protocol = {"fixture": name, "source_image": SOURCE_IMAGE, "units": unit, "timestep": dt, "warmup_steps": warmup, "production_steps": steps, "target_step": target, "expected_atoms": atoms, "ensemble": "NPT" if name == "rhodo" else "NVE", "seed_policy": "fixed native seed; benchmark repetitions are repeated experiments, not claimed independent scientific replicas", "trajectory_every_steps": trajectory_every, "reduced_time_conversion": None if unit == "lj" else "metal ps; real fs", "scientific_convergence_claimed": False}
     files["protocol.json"] = (json.dumps(protocol, indent=2) + "\n").encode()
     body = {"schema": "fs2-serve.nebius.ai/lammps-workflow-request/v1", "backend": "kokkos-cuda", "threads": threads, "segment_seconds": segment_seconds, "max_wall_seconds": 7200, "max_output_bytes": 4294967296, "output_destination": "platform-artifacts", "jobs": [{"id": name, "steps": [{"id": "prepare", "input": "in.prepare", "expected_outputs": ["prepared.restart"]}, {"id": "production", "input": "in.production", "expected_outputs": ["state.restart", "progress.txt"], "continuation": {"input": "in.resume", "restart_file": "state.restart", "progress_file": "progress.txt", "target_step": target}}, {"id": "analyze", "input": "in.analyze", "expected_outputs": ["final.lammpstrj", "final-thermo.txt"]}]}]}
