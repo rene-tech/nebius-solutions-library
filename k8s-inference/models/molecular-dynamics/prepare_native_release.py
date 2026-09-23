@@ -72,6 +72,8 @@ def validate_evidence(value: dict, model: str) -> dict:
         raise ValueError("runtime receipt must identify an immutable worker image")
     if value.get("customer_ready") is not False or not value.get("recorded_at"):
         raise ValueError("runtime receipt must not claim customer qualification")
+    if value.get("status") != "passed":
+        raise ValueError("runtime cohort is incomplete or failed; retain its evidence without activation")
     tests = value.get("tests", [])
     if not tests or any(test.get("status") not in {"passed", "succeeded"} for test in tests):
         raise ValueError("activation requires a completed successful native cohort")

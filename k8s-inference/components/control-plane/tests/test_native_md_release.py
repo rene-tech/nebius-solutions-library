@@ -45,6 +45,7 @@ def inputs():
             "runtime_image": f"registry.test/{model}@sha256:" + str(index) * 64,
             "recorded_at": "2026-09-23T14:00:00Z",
             "customer_ready": False,
+            "status": "passed",
             "tests": [
                 {
                     "case": "unit-test-synthetic-not-a-benchmark",
@@ -95,7 +96,9 @@ def test_native_additions_preserve_existing_apps_snapshots_quotas_and_proofs():
     }
 
 
-@pytest.mark.parametrize("change", ["image", "gpu", "failed", "missing-digest", "customer-ready", "model"])
+@pytest.mark.parametrize(
+    "change", ["image", "gpu", "failed", "incomplete", "missing-status", "missing-digest", "customer-ready", "model"]
+)
 def test_runtime_evidence_does_not_fabricate_missing_qualification(change):
     receipt = copy.deepcopy(inputs()[3]["lammps"])
     if change == "image":
@@ -104,6 +107,10 @@ def test_runtime_evidence_does_not_fabricate_missing_qualification(change):
         receipt["tests"][0]["gpu_name"] = "NVIDIA L40S"
     elif change == "failed":
         receipt["tests"][0]["status"] = "failed"
+    elif change == "incomplete":
+        receipt["status"] = "incomplete"
+    elif change == "missing-status":
+        del receipt["status"]
     elif change == "missing-digest":
         del receipt["tests"][0]["input_sha256"]
     elif change == "customer-ready":
