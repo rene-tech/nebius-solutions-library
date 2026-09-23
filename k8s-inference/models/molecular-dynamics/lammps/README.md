@@ -43,6 +43,28 @@ once stage execution, not exactly-once external effects. Abrupt cancellation kee
 the last committed generation; it does not invent a final native checkpoint.
 Persistent CUDA process snapshots are a separate, currently unqualified mode.
 
+## Failed native diagnostics
+
+The shared collector now exports a separately identified failed-result/log
+manifest after a normal nonzero native exit, before bounded worker cleanup.
+It preserves the original failure and never certifies partial trajectories or
+creates a checkpoint from uncommitted diagnostics. Logs remain subject to
+ordinary owner-scoped artifact access; abrupt loss before publication or an
+unavailable artifact store cannot promise the same retention.
+
+Actual hosted acceptance on backend226 and the unchanged exact worker passed:
+the deliberately invalid LAMMPS operation remained failed, executed once with
+exit1, and retained its exact `Unknown command` error. After its Pod was absent,
+the same ordinary customer key resumed that saved operation into a fresh
+artifact directory and downloaded the manifest, original native result, native
+log and diagnostic receipt again, all hash-verified. It did not submit new GPU
+work, mark science successful or create a failed-output checkpoint. The client
+stores these under `failed-attempt/` and `diagnostic_artifacts`, not successful
+scientific artifacts. See
+[the exact-image diagnostic receipt](qualification/receipts/hosted-failed-diagnostics-v1.json).
+The observed439-second capacity wait is separate from the0.665-second native
+erroring command; no quota or scheduling-limit change was made.
+
 ## References
 
 - [LAMMPS restart content and portability](https://docs.lammps.org/read_restart.html)
