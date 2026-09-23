@@ -6,10 +6,15 @@ case "${BUILD_JOBS}" in [1-8]) ;; *) exit 2;; esac
 export CC=gcc-13 CXX=g++-13 NVCC_WRAPPER_DEFAULT_COMPILER=g++-13
 export CFLAGS='-march=x86-64-v3 -mtune=generic -O3 -pipe'
 export CXXFLAGS="${CFLAGS}" LDFLAGS=-Wl,--as-needed
+# CPU-only builder: resolve the CUDA driver's SONAME during the executable
+# link/help probe. These toolkit stubs stay in the build stage, never runtime.
+test -f /usr/local/cuda/lib64/stubs/libcuda.so
+ln -sf libcuda.so /usr/local/cuda/lib64/stubs/libcuda.so.1
+export LD_LIBRARY_PATH=/usr/local/cuda/lib64/stubs:${LD_LIBRARY_PATH:-}
 sed -i -E "s/^default_arch=(.*)/default_arch=sm_${LAMMPS_ARCH}/g" /source/lib/kokkos/bin/nvcc_wrapper
 cmake -S /source/cmake -B /build \
   -DCMAKE_INSTALL_PREFIX="/usr/local/lammps/sm${INSTALL_ARCH}" \
-  -DCMAKE_EXE_LINKER_FLAGS=-L/usr/local/cuda/lib64 \
+  -DCMAKE_EXE_LINKER_FLAGS='-L/usr/local/cuda/lib64 -Wl,-rpath-link,/usr/local/cuda/lib64/stubs' \
   -DBUILD_SHARED_LIBS=ON -DCMAKE_BUILD_TYPE=Release \
   -DKokkos_ARCH_${kokkos_arch}=ON -DKokkos_ARCH_HSW=ON \
   -DMPI_C_COMPILER=mpicc -DMPI_CXX_COMPILER=mpicxx \
@@ -35,6 +40,8 @@ cmake --build /build --parallel "${BUILD_JOBS}"
 cmake --install /build
 mkdir /build-provenance
 cp /build/CMakeCache.txt /build-provenance/
+cp /source/LICENSE /build-provenance/LAMMPS-LICENSE
+git -C /source archive --format=tar.gz --output=/build-provenance/lammps-source.tar.gz HEAD
 git -C /source rev-parse HEAD > /build-provenance/source-revision.txt
 git -C /source diff > /build-provenance/source-diff.patch
 dpkg-query -W > /build-provenance/packages.tsv

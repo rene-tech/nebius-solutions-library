@@ -23,7 +23,7 @@ ARG FFT_KOKKOS=KISS
 ARG LAMMPS_ARCH=90
 ARG INSTALL_ARCH=90
 ARG BUILD_JOBS=8
-RUN bash /opt/build_fft_control.sh
+RUN --mount=type=cache,target=/build,id=fs2-lammps-c7-${LAMMPS_ARCH}-${FFT_KOKKOS} bash /opt/build_fft_control.sh
 
 FROM ${WORKER_IMAGE}
 ARG SOURCE_REVISION=development
