@@ -3,11 +3,12 @@
 Status: the single-GPU backend is deployed and has passed hosted MD, free-energy,
 six-job batch, Colvars, PLUMED, interrupted-worker recovery and cancellation tests. **This is not
 a blanket qualification of every GROMACS workflow.** The updated workbench image
-is published; the existing recording endpoint has not been replaced. The source
+is deployed as Rene's replacement client and passed a real browser-agent Colvars
+workflow with independently verified native outputs. The source
 template under `activation/` remains deliberately unrouted. See
 [initial qualification](qualification/RESULTS-20260923.md) and
 [advanced/MPI evidence](qualification/P2-20260923.md) for exact tested
-artifacts, limits and the remaining workbench/customer-release acceptance.
+artifacts, release scope and remaining unqualified execution shapes.
 
 This is a general molecular-dynamics App, not a customer-specific pipeline.
 The official NVIDIA artifact is an optimized **NGC HPC container**, not an HTTP
