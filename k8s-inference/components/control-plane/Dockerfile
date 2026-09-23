@@ -98,6 +98,9 @@ RUN chmod -R u=rwX,go=rX /opt/fs2/catalog \
 # ability to stat the schema. Every model stage needs this schema to commit.
 USER 1000:1000
 RUN python -I -c "import json; from pathlib import Path; schema=json.loads(Path('/opt/fs2/catalog/schema/scientific-artifact-manifest.schema.json').read_text()); assert schema['type'] == 'object'"
+# Compile-only tests miss omissions from the companion's production bootstrap.
+# Verify the wheel's actual native collectors as the non-root workload identity.
+RUN python -I -c "from fs2_serve.scientific_batch.adapters import _COLLECTORS, _COMPILERS, amber, gromacs, gromacs_mpi, lammps, namd; from fs2_serve.scientific_batch.adapters.production_registry import install_production_adapters; install_production_adapters(); assert all(module.MODEL_ID in _COMPILERS and _COLLECTORS.get(module.COLLECTOR_ID) == module.collect_companion_output for module in (amber, gromacs, gromacs_mpi, lammps, namd))"
 RUN /opt/fs2/bin/mosaic-batch aggregate --help >/dev/null
 USER 0:0
 

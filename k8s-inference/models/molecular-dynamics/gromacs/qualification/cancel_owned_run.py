@@ -37,6 +37,8 @@ async def run(args):
             "This cancellation test already has a receipt; do not repeat it blindly."
         )
     key = json.loads(args.key_file.read_text())
+    if not key.get("disposable") or key["key"]["tenant_id"] not in {"rene", "md-qualification-20260923"}:
+        raise ValueError("Use this task's disposable qualification key, never a customer key.")
     deadline = time.monotonic() + 900
     status_file = args.receipt / "status.json"
     async with httpx2.AsyncClient(
@@ -54,7 +56,8 @@ async def run(args):
                 status = json.loads(status_file.read_text())
                 operation = status["operation"]
                 assert operation["model_id"] == args.model
-                assert operation["tenant_id"] == operation["principal_id"] == "rene"
+                assert operation["tenant_id"] == key["key"]["tenant_id"]
+                assert operation["principal_id"] == key["key"]["principal_id"]
                 assert operation["idempotency_key"] == args.idempotency_key
                 assert operation["token_id"] == key["key"]["id"]
                 if operation["status"] in {"failed", "cancelled", "succeeded"}:
@@ -162,10 +165,10 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--idempotency-key", required=True)
     parser.add_argument(
-        "--model", choices=["gromacs", "gromacs-mpi"], default="gromacs"
+        "--model", choices=["gromacs", "gromacs-mpi", "amber", "namd", "lammps"], default="gromacs"
     )
     args = parser.parse_args()
-    if not args.idempotency_key.startswith("gromacs-qualified-cancellation-20260923-"):
+    if not args.idempotency_key.startswith(("gromacs-qualified-cancellation-20260923-", "md-alanine-")):
         raise ValueError("Only this task-owned cancellation fixture is in scope.")
     asyncio.run(run(args))
 

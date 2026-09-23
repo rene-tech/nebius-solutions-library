@@ -16,6 +16,7 @@ from . import (
     _DEFAULT_VARIANTS,
     AdapterCompiler,
     StageCollector,
+    amber,
     bindcraft,
     boltzgen,
     cosmos_lerobot,
@@ -57,6 +58,11 @@ def _primary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[st
     """
 
     return {
+        amber.MODEL_ID: (
+            _COMPILERS[amber.MODEL_ID],
+            amber.VARIANT_ID,
+            {amber.COLLECTOR_ID: amber.collect_companion_output},
+        ),
         namd.MODEL_ID: (
             _COMPILERS[namd.MODEL_ID],
             namd.VARIANT_ID,
