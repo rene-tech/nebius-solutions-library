@@ -52,21 +52,41 @@ export function DebugBodyView({
   body: DebugBody;
 }) {
   const [notice, setNotice] = useState<string | null>(null);
+  const isReference = body.capture_mode === "artifact_reference";
+  const reference = body.artifact_reference;
   async function copy() {
     try {
-      await navigator.clipboard.writeText(body.data);
-      setNotice(body.encoding === "base64" ? "Base64 copied." : "Body copied.");
+      await navigator.clipboard.writeText(
+        isReference ? JSON.stringify(reference, null, 2) : body.data,
+      );
+      setNotice(
+        isReference
+          ? "Artifact reference copied."
+          : body.encoding === "base64"
+            ? "Base64 copied."
+            : "Body copied.",
+      );
     } catch {
-      setNotice("Copy unavailable. Select the text or download the exchange.");
+      setNotice(
+        isReference
+          ? "Copy unavailable. Select the reference metadata or download the exchange JSON."
+          : "Copy unavailable. Select the text or download the exchange.",
+      );
     }
   }
   return (
     <section className="request-debug-body" aria-label={label}>
       <div className="section-heading">
         <h5>{label}</h5>
-        <button type="button" className="button" onClick={() => void copy()}>
-          Copy {label.toLowerCase()}
-          {body.encoding === "base64" ? " (base64)" : ""}
+        <button
+          type="button"
+          className="button"
+          onClick={() => void copy()}
+          disabled={isReference && !reference}
+        >
+          {isReference
+            ? `Copy ${label.toLowerCase()} reference`
+            : `Copy ${label.toLowerCase()}${body.encoding === "base64" ? " (base64)" : ""}`}
         </button>
       </div>
       <dl className="definition-grid">
@@ -75,8 +95,8 @@ export function DebugBodyView({
           <dd>{body.content_type ?? "Not observed"}</dd>
         </div>
         <div>
-          <dt>Encoding</dt>
-          <dd>{body.encoding}</dd>
+          <dt>{isReference ? "Capture mode" : "Encoding"}</dt>
+          <dd>{isReference ? "Artifact reference (metadata only)" : body.encoding}</dd>
         </div>
         <div>
           <dt>Observed bytes</dt>
@@ -84,7 +104,11 @@ export function DebugBodyView({
         </div>
         <div>
           <dt>Capture</dt>
-          <dd>{body.complete ? "Complete" : "Partial / incomplete"}</dd>
+          <dd>
+            {isReference
+              ? body.complete ? "Stream complete" : "Stream incomplete"
+              : body.complete ? "Complete" : "Partial / incomplete"}
+          </dd>
         </div>
         <div>
           <dt>Redaction</dt>
@@ -93,7 +117,9 @@ export function DebugBodyView({
       </dl>
       {!body.complete ? (
         <p className="inline-notice">
-          Only observed bytes are shown; this is not a complete body.
+          {isReference
+            ? "Artifact stream incomplete; reference metadata does not prove complete delivery."
+            : "Only observed bytes are shown; this is not a complete body."}
         </p>
       ) : null}
       {body.redacted ? (
@@ -102,12 +128,57 @@ export function DebugBodyView({
           exchange, not the displayed text.
         </p>
       ) : null}
-      {body.encoding === "base64" ? (
+      {!isReference && body.encoding === "base64" ? (
         <p className="supporting-copy">
           Binary body displayed as base64; no content is executed or opened.
         </p>
       ) : null}
-      {body.data ? (
+      {isReference ? (
+        <div aria-label={`${label} artifact reference`}>
+          <p className="supporting-copy">
+            Original artifact bytes are not embedded in this debug exchange.
+            Use the authorized artifact download workflow to retrieve the file;
+            copying or exporting this exchange returns reference metadata only.
+          </p>
+          {body.data ? <p className="supporting-copy">{body.data}</p> : null}
+          {reference ? (
+            <dl className="definition-grid">
+              <div>
+                <dt>Artifact ID</dt>
+                <dd><code>{reference.artifact_id}</code></dd>
+              </div>
+              <div>
+                <dt>Declared artifact bytes</dt>
+                <dd>{reference.size_bytes.toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt>Delivered bytes</dt>
+                <dd>{reference.delivered_bytes.toLocaleString()}</dd>
+              </div>
+              <div>
+                <dt>Expected SHA-256</dt>
+                <dd><code>{reference.sha256}</code></dd>
+              </div>
+              <div>
+                <dt>Observed SHA-256</dt>
+                <dd><code>{reference.observed_sha256}</code></dd>
+              </div>
+              <div>
+                <dt>Delivery verification</dt>
+                <dd>
+                  {reference.verified && body.complete
+                    ? "Verified size and SHA-256"
+                    : "Not verified — incomplete or mismatched stream"}
+                </dd>
+              </div>
+            </dl>
+          ) : (
+            <p className="inline-notice">
+              Artifact reference metadata is unavailable. No inline body was retained.
+            </p>
+          )}
+        </div>
+      ) : body.data ? (
         <pre className="request-debug-payload" aria-label={`${label} content`}>
           {body.data}
         </pre>
@@ -184,6 +255,14 @@ export function RequestDebugExchange({
             </button>
           </div>
           {downloadError ? <p role="alert">{downloadError}</p> : null}
+          {[data.request_body, data.response_body].some(
+            (body) => body.capture_mode === "artifact_reference",
+          ) ? (
+            <p className="supporting-copy">
+              Exchange JSON includes artifact-reference metadata, not the original
+              artifact bytes.
+            </p>
+          ) : null}
           <dl className="definition-grid request-debug-identities">
             <div>
               <dt>Exchange ID</dt>

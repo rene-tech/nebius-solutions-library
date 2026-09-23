@@ -1,4 +1,13 @@
 /** Actual retained exchanges, separate from logical operations and their results. */
+export interface DebugArtifactReference {
+  artifact_id: string;
+  sha256: string;
+  size_bytes: number;
+  observed_sha256: string;
+  delivered_bytes: number;
+  verified: boolean;
+}
+
 export interface DebugBody {
   encoding: "utf-8" | "base64";
   data: string;
@@ -6,6 +15,9 @@ export interface DebugBody {
   observed_bytes: number;
   complete: boolean;
   redacted: boolean;
+  /** Older rows omit these fields and retain their original inline behavior. */
+  capture_mode?: "inline" | "artifact_reference";
+  artifact_reference?: DebugArtifactReference | null;
 }
 
 export interface DebugExchangeSummary {

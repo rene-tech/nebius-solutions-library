@@ -31,6 +31,23 @@ const requestBody: DebugBody = {
 };
 const errorBody =
   '{"detail":[{"loc":["body","sequence"],"msg":"Field required","type":"missing"}]}';
+const artifactBody: DebugBody = {
+  encoding: "utf-8",
+  data: "Artifact retained by reference; original bytes are not embedded.",
+  content_type: "application/octet-stream",
+  observed_bytes: 953_000_000,
+  complete: true,
+  redacted: false,
+  capture_mode: "artifact_reference",
+  artifact_reference: {
+    artifact_id: "00000000-0000-4000-8000-000000000001",
+    sha256: "a".repeat(64),
+    size_bytes: 953_000_000,
+    observed_sha256: "a".repeat(64),
+    delivered_bytes: 953_000_000,
+    verified: true,
+  },
+};
 const exchange: DebugExchange = {
   id: "exchange-one",
   source: "upstream",
@@ -349,6 +366,106 @@ describe("actual request debug viewer", () => {
       expect(screen.getByText("Not observed")).toBeInTheDocument();
     },
   );
+
+  it("shows large artifact reference metadata and copies the reference, never a fake body", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    const { container } = renderPanel(
+      <DebugBodyView label="Response body" body={artifactBody} />,
+    );
+    const reference = screen.getByLabelText("Response body artifact reference");
+    expect(within(reference).getByText(artifactBody.artifact_reference!.artifact_id)).toBeInTheDocument();
+    expect(within(reference).getByText("Verified size and SHA-256")).toBeInTheDocument();
+    expect(within(reference).getByText("Declared artifact bytes")).toBeInTheDocument();
+    expect(within(reference).getByText("Delivered bytes")).toBeInTheDocument();
+    expect(screen.getByText("Artifact reference (metadata only)")).toBeInTheDocument();
+    expect(screen.getByText("Stream complete")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Response body content")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy response body" })).not.toBeInTheDocument();
+    expect(container.querySelector("pre,a")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Copy response body reference" }));
+    expect(await screen.findByText("Artifact reference copied.")).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(artifactBody.artifact_reference, null, 2));
+    expect(writeText).not.toHaveBeenCalledWith(artifactBody.data);
+  });
+
+  it("distinguishes an incomplete zero-byte stream from an empty captured body", () => {
+    renderPanel(<DebugBodyView label="Response body" body={{
+      ...artifactBody, complete: false, observed_bytes: 0,
+      artifact_reference: { ...artifactBody.artifact_reference!, delivered_bytes: 0, observed_sha256: "b".repeat(64), verified: false },
+    }} />);
+    expect(screen.getByText("Stream incomplete")).toBeInTheDocument();
+    expect(screen.getByText(/reference metadata does not prove complete delivery/)).toBeInTheDocument();
+    expect(screen.getByText("Not verified — incomplete or mismatched stream")).toBeInTheDocument();
+    expect(screen.queryByText("Empty body (0 bytes observed).")).not.toBeInTheDocument();
+    expect(screen.queryByText("Verified size and SHA-256")).not.toBeInTheDocument();
+  });
+
+  it("does not report a completed but hash-mismatched artifact stream as verified", () => {
+    renderPanel(<DebugBodyView label="Response body" body={{
+      ...artifactBody,
+      artifact_reference: { ...artifactBody.artifact_reference!, observed_sha256: "c".repeat(64), verified: false },
+    }} />);
+    expect(screen.getByText("Stream complete")).toBeInTheDocument();
+    expect(screen.getByText("Not verified — incomplete or mismatched stream")).toBeInTheDocument();
+    expect(screen.getByText("c".repeat(64))).toBeInTheDocument();
+    expect(screen.queryByText("Verified size and SHA-256")).not.toBeInTheDocument();
+  });
+
+  it("handles absent artifact metadata without inventing an empty raw body", () => {
+    renderPanel(<DebugBodyView label="Response body" body={{
+      ...artifactBody, data: "", artifact_reference: null,
+    }} />);
+    expect(screen.getByText(/Artifact reference metadata is unavailable/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy response body reference" })).toBeDisabled();
+    expect(screen.queryByLabelText("Response body content")).not.toBeInTheDocument();
+    expect(screen.queryByText("No body bytes retained.")).not.toBeInTheDocument();
+  });
+
+  it("renders reference notices and IDs literally rather than opening markup", () => {
+    const markup = '<img src="artifact" onerror="fixture()">';
+    const { container } = renderPanel(<DebugBodyView label="Response body" body={{
+      ...artifactBody, data: markup,
+      artifact_reference: { ...artifactBody.artifact_reference!, artifact_id: markup },
+    }} />);
+    expect(screen.getAllByText(markup)).toHaveLength(2);
+    expect(container.querySelector("img,script,a")).toBeNull();
+  });
+
+  it("preserves explicit inline capture and legacy body-copy semantics", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("navigator", { clipboard: { writeText } });
+    renderPanel(<DebugBodyView label="Response body" body={{ ...requestBody, capture_mode: "inline" }} />);
+    expect(screen.getByLabelText("Response body content")).toHaveTextContent(requestBody.data);
+    fireEvent.click(screen.getByRole("button", { name: "Copy response body" }));
+    expect(await screen.findByText("Body copied.")).toBeInTheDocument();
+    expect(writeText).toHaveBeenCalledWith(requestBody.data);
+    expect(screen.queryByText("Artifact reference (metadata only)")).not.toBeInTheDocument();
+  });
+
+  it("labels the exchange export as reference metadata without fetching artifact bytes", async () => {
+    const value = { ...exchange, response_body: artifactBody, http_status: 200 };
+    vi.mocked(requestDebugApi.detail).mockResolvedValue(testEnvelope(value));
+    const create = vi.fn().mockReturnValue("blob:reference-only");
+    vi.stubGlobal("URL", class extends URL {
+      static createObjectURL = create;
+      static revokeObjectURL = vi.fn();
+    });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    renderPanel(<RequestDebugLog appId="app-one" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Inspect exchange exchange-one" }));
+    expect(await screen.findByText(/Exchange JSON includes artifact-reference metadata/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Download exchange JSON" }));
+    expect(click).toHaveBeenCalledOnce();
+    const blob = create.mock.calls[0][0] as Blob;
+    expect(blob.type).toBe("application/json");
+    const reader = new FileReader();
+    const text = new Promise<string>((resolve) => { reader.onload = () => resolve(String(reader.result)); });
+    reader.readAsText(blob);
+    expect(JSON.parse(await text).response_body).toEqual(artifactBody);
+    expect(requestDebugApi.detail).toHaveBeenCalledOnce();
+    expect(screen.queryByLabelText("Response body content")).not.toBeInTheDocument();
+  });
 
   it("downloads the full retained exchange as JSON, not an executable content-type", async () => {
     const create = vi.fn().mockReturnValue("blob:test-only");
