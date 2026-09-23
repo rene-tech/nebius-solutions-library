@@ -1,6 +1,7 @@
 """Sequential repetitions on exactly one task-owned GPU Pod, retaining failures."""
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,17 +23,27 @@ def main():
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--segment-seconds", type=int, default=60)
     parser.add_argument("--trajectory-every", type=int, default=1000)
+    parser.add_argument("--resume", action="store_true", help="Continue only missing repetitions; never overwrite or rerun an existing attempt")
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=False)
+    args.output.mkdir(parents=True, exist_ok=args.resume)
     receipts = []
     step_map = {key: int(value) for key, value in (item.split(":", 1) for item in args.step_map.split(",") if item)}
     for case in args.cases.split(","):
         body, files = fixture(case, args.assets, step_map.get(case, args.steps), warmup=args.warmup, segment_seconds=args.segment_seconds, trajectory_every=args.trajectory_every)
         source = args.output / (case + "-fixture")
-        write_fixture(source, body, files)
+        if source.exists() and args.resume:
+            expected = {name: {"size_bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()} for name, content in files.items()}
+            if json.loads((source / "request.json").read_text()) != body or json.loads((source / "fixture-manifest.json").read_text()) != expected:
+                raise ValueError("existing fixture does not match the requested scientific protocol")
+        else:
+            write_fixture(source, body, files)
         for repeat in range(1, args.repetitions + 1):
             destination = args.output / f"{args.output.name}-{case}-r{repeat}"
-            run(SimpleNamespace(pod=args.pod, output=destination, input=source, job=case))
+            if destination.exists() and args.resume:
+                if not (destination / "qualification.json").is_file() or not (destination / "workspace/result.json").is_file():
+                    raise ValueError(f"recover incomplete evidence collection first: {destination}")
+            else:
+                run(SimpleNamespace(pod=args.pod, output=destination, input=source, job=case))
             try:
                 receipt = validate(destination / "workspace")
             except Exception as exc:

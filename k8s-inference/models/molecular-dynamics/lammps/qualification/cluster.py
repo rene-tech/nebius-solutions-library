@@ -49,7 +49,7 @@ def run(args):
         result = subprocess.run(KUBE + ["exec", args.pod, "--", "python3", "/mnt/fs2-scientific/run_case.py", "--workspace", remote, "--job", job], stdout=log, stderr=subprocess.STDOUT)
     elapsed = time.monotonic() - before
     before = time.monotonic()
-    subprocess.run(KUBE + ["cp", args.pod + ":" + remote, str(args.output / "workspace")], check=True)
+    subprocess.run(KUBE + ["cp", "--retries=3", args.pod + ":" + remote, str(args.output / "workspace")], check=True)
     output_seconds = time.monotonic() - before
     receipt = {"pod": args.pod, "pod_uid": pod["metadata"]["uid"], "node": pod["spec"]["nodeName"], "image": pod["spec"]["containers"][0]["image"], "image_id": pod["status"]["containerStatuses"][0]["imageID"], "created_at": pod["metadata"]["creationTimestamp"], "worker_exit": result.returncode, "job": job, "input_copy_seconds": input_seconds, "runtime_wall_seconds": elapsed, "output_copy_seconds": output_seconds, "customer_path_tested": False, "checkpoint_transport": "local-only", "cpu_limit": 8, "gpu_count": 1, "gpu_process_snapshot": "not-tested"}
     (args.output / "qualification.json").write_text(json.dumps(receipt, indent=2) + "\n")
