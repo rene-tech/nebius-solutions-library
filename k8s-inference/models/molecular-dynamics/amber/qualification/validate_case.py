@@ -11,12 +11,13 @@ from pathlib import Path
 import numpy as np
 from netCDF4 import Dataset
 from fs2_gromacs.files import inventory
-from fs2_amber.validation import NUMBER, validate_pmemd
+from fs2_amber.validation import NUMBER, restart_metadata, validate_pmemd
+from ti_validation import validate_ti
 
 
 def samples(path):
     rows, current, elapsed, ns_day = [], None, None, None
-    summaries = False
+    summaries, region = False, 1
     with path.open() as handle:
         for line in handle:
             summaries |= "A V E R A G E S" in line or "R M S  F L U C T U A T I O N S" in line
@@ -26,8 +27,10 @@ def samples(path):
                 ns_day = float(match.group(1))
             if summaries:
                 continue
+            if match := re.search(r"\| TI region\s+(\d+)", line):
+                region = int(match.group(1))
             if match := re.search(rf"NSTEP\s*=\s*(\d+)\s+TIME\(PS\)\s*=\s*({NUMBER})\s+TEMP\(K\)\s*=\s*({NUMBER})", line):
-                current = {"step": int(match.group(1)), "time_ps": float(match.group(2)), "temperature_k": float(match.group(3))}
+                current = {"step": int(match.group(1)), "time_ps": float(match.group(2)), "temperature_k": float(match.group(3)), "ti_region": region}
                 rows.append(current)
             if current is not None:
                 for key in ("Etot", "EKtot", "EPtot", "VOLUME", "DV/DL"):
@@ -46,7 +49,9 @@ def validate(root):
     if inventory(root / "data", max_bytes=request["max_output_bytes"]) != result["files"]:
         raise ValueError("native output inventory hash mismatch")
     production = [step for step in job["steps"] if step["id"].startswith("production-")]
-    all_rows, trajectories, boundaries = [], [], []
+    if sum(step["expected_nsteps"] for step in production) != protocol["production_steps"]:
+        raise ValueError("native stage lengths differ from declared production protocol")
+    all_rows, trajectories, boundaries, alchemical = [], [], [], []
     native_seconds = 0
     previous = None
     for step in production:
@@ -57,16 +62,28 @@ def validate(root):
         if protocol.get("expected_atoms", atoms) != atoms:
             raise ValueError("prepared system atom count differs from the stated fixture")
         rows, seconds, ns_day = samples(path / (step["output_prefix"] + ".mdout"))
+        if protocol["ensemble"] == "NVT-TI":
+            alchemical.append({"step": step["id"], **validate_ti((path / step["input"]).read_text(), (path / (step["output_prefix"] + ".mdout")).read_text(), step["expected_nsteps"])})
+            # Keep one consistent TI region at restart boundaries; comparing
+            # region2 of the prior stage against region1 is not an energy jump.
+            rows = [row for row in rows if row["ti_region"] == 1]
         if not rows or seconds is None or seconds <= 0:
             raise ValueError("no independently readable production thermodynamics/timing")
+        start = restart_metadata(path / step["coordinates"], require_velocities=True)
+        expected_end = start["time_ps"] + step["expected_nsteps"] * protocol["timestep_ps"]
+        if abs(expected_end - checked["restart"]["time_ps"]) > 0.0011 or abs(checked["completion"]["dt_ps"] - protocol["timestep_ps"]) > 1e-12:
+            raise ValueError("native restart time/protocol timestep disagrees with full production duration")
         if previous is not None:
             first = rows[0]
-            if abs(first["time_ps"] - previous["time_ps"]) > 0.0011:
-                raise ValueError("native stage start time is discontinuous")
-            jump = abs(first["Etot"] - previous["Etot"]) / max(abs(previous["Etot"]), 1)
-            if jump > 1e-4:
-                raise ValueError("native closed-stage energy discontinuity exceeds1e-4")
-            boundaries.append({"time_ps": first["time_ps"], "relative_energy_jump": jump, "temperature_jump_k": abs(first["temperature_k"] - previous["temperature_k"]), "exact_stochastic_stream_claimed": False})
+            if abs(start["time_ps"] - previous["time_ps"]) > 0.0011:
+                raise ValueError("native stage start restart time is discontinuous")
+            boundary = {"time_ps": start["time_ps"], "first_sample_step": first["step"], "same_step_thermodynamics_measured": first["step"] == 0, "exact_stochastic_stream_claimed": False}
+            if first["step"] == 0:
+                jump = abs(first["Etot"] - previous["Etot"]) / max(abs(previous["Etot"]), 1)
+                if jump > 1e-4:
+                    raise ValueError("native closed-stage energy discontinuity exceeds1e-4")
+                boundary.update(relative_energy_jump=jump, temperature_jump_k=abs(first["temperature_k"] - previous["temperature_k"]))
+            boundaries.append(boundary)
         previous = rows[-1]
         all_rows.extend(rows)
         native_seconds += seconds
@@ -90,6 +107,8 @@ def validate(root):
                     if not np.isfinite(values).all() or (values <= 0).any():
                         raise ValueError("native trajectory periodic cells are invalid")
         trajectories.append({"path": str(trajectory.relative_to(root)), "frames": frames, "atoms": atoms, "native_ns_day": ns_day, "native_elapsed_seconds": seconds})
+        if alchemical:
+            trajectories[-1]["alchemical"] = alchemical[-1]
     energies, temperatures = [row["Etot"] for row in all_rows], [row["temperature_k"] for row in all_rows]
     span = (max(energies) - min(energies)) / max(abs(energies[0]), 1)
     if not all(math.isfinite(value) for value in energies + temperatures) or min(temperatures) <= 0:
