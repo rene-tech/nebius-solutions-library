@@ -98,10 +98,13 @@ def validate_evidence(value: dict, model: str) -> dict:
 
 
 def compose(
-    values: dict, scheduling: bytes, candidates: dict, evidence: dict, recipes: dict, *, replace_models=frozenset()
+    values: dict, scheduling: bytes, candidates: dict, evidence: dict, recipes: dict, *, replace_models=frozenset(),
+    expand_qualified_pools=frozenset(),
 ):
     if not set(replace_models) <= set(candidates):
         raise ValueError("replacement requires an explicit candidate and runtime receipt")
+    if not set(expand_qualified_pools) <= set(replace_models):
+        raise ValueError("pool expansion requires an explicit successor and exact GPU evidence")
     baseline = copy.deepcopy(values)
     overlay, profiles = {}, {}
     # Replace explicit successors before adding new proof baselines which
@@ -122,6 +125,7 @@ def compose(
             receipt,
             digest(recipes[model]),
             replace_existing=model in replace_models,
+            expand_qualified_pools=model in expand_qualified_pools,
         )
         profiles[model] = profile
         for key, value in current.items():
@@ -194,6 +198,8 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--publish-catalog", action="store_true")
     parser.add_argument("--replace-existing-model", action="append", choices=sorted(MODELS), default=[])
+    parser.add_argument("--expand-qualified-pools", action="append", choices=sorted(MODELS), default=[],
+                        help="Explicitly add only receipt-tested existing pools; never change capacity or quotas.")
     args = parser.parse_args()
     os.umask(0o077)
     evidence = {}
@@ -219,6 +225,7 @@ def main() -> None:
         evidence,
         recipes,
         replace_models=frozenset(args.replace_existing_model),
+        expand_qualified_pools=frozenset(args.expand_qualified_pools),
     )
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     for name, value in [

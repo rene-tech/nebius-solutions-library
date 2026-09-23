@@ -110,6 +110,7 @@ def prepare(
     recipe_sha256,
     *,
     replace_existing=False,
+    expand_qualified_pools=False,
 ):
     model_id = candidate["model_id"]
     # One additive release composer for native MD engines; existing GROMACS
@@ -241,10 +242,17 @@ def prepare(
     scheduling = json.loads(scheduling_raw)
     pools = profile["resources"]["compatible_pool_ids"]
     current_pools = scheduling["model_eligible_pool_ids"].get(model_id)
+    expansion = (
+        replace_existing
+        and expand_qualified_pools
+        and current_pools is not None
+        and set(current_pools).issubset(pools)
+        and set(pools).issubset({test["pool"] for test in evidence["tests"]})
+    )
     if (
         not set(pools).issubset(scheduling["pools"])
         or current_pools is not None
-        and (not replace_existing or current_pools != pools)
+        and (not replace_existing or current_pools != pools and not expansion)
     ):
         raise ValueError(f"new {model_id} pool mapping does not match this deployment")
     scheduling["model_eligible_pool_ids"][model_id] = pools

@@ -163,6 +163,30 @@ def test_explicit_successor_precedes_new_app_and_preserves_legacy_rows():
     ] == old
 
 
+def test_pool_expansion_is_explicit_receipt_bound_and_preserves_capacity():
+    values, scheduling, candidates, evidence, recipes = inputs()
+    candidate = {"lammps": candidates["lammps"]}
+    proof = {"lammps": evidence["lammps"]}
+    recipe = {"lammps": recipes["lammps"]}
+    _, overlay, cm = release.compose(values, scheduling, candidate, proof, recipe)
+    for key, value in overlay.items():
+        values[key].update(value)
+    prior_schedule = cm["data"]["scheduling.json"].encode()
+    proof["lammps"]["tests"].append({**proof["lammps"]["tests"][0],
+                                    "pool": "l40s-1x", "gpu_name": "NVIDIA L40S"})
+    with pytest.raises(ValueError, match="pool mapping"):
+        release.compose(values, prior_schedule, candidate, proof, recipe, replace_models={"lammps"})
+    profiles, _, cm = release.compose(values, prior_schedule, candidate, proof, recipe,
+                                     replace_models={"lammps"}, expand_qualified_pools={"lammps"})
+    new = json.loads(cm["data"]["scheduling.json"])
+    old = json.loads(prior_schedule)
+    assert profiles["lammps"]["resources"]["compatible_pool_ids"] == ["h100-1x", "l40s-1x"]
+    new["model_eligible_pool_ids"]["lammps"] = old["model_eligible_pool_ids"]["lammps"]
+    assert new == old
+    with pytest.raises(ValueError, match="explicit successor"):
+        release.compose(values, prior_schedule, candidate, proof, recipe, expand_qualified_pools={"lammps"})
+
+
 def test_publish_adds_admin_source_receipts_without_replacing_existing_apps(tmp_path, monkeypatch):
     args = inputs()
     profiles, overlay, _ = release.compose(*args)
