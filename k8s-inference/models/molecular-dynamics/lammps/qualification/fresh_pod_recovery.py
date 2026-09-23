@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--new-pod", required=True)
     parser.add_argument("--assets", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--case", choices=("lj", "rhodo"), default="lj")
     args = parser.parse_args()
     old = owned(args.pod)
     if args.pod == args.new_pod:
@@ -39,13 +40,18 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
     save(args.output / "original-pod.json", old)
     source = args.output / "fixture"
-    body, files = fixture("lj", args.assets, 100000, warmup=2000, segment_seconds=60, trajectory_every=5000)
+    steps, first_boundary, cadence = (100000, 22000, 5000) if args.case == "lj" else (20000, 7000, 1000)
+    target = steps + 2000
+    body, files = fixture(args.case, args.assets, steps, warmup=2000, segment_seconds=60, trajectory_every=cadence)
     # An explicit first boundary makes the last pre-checkpoint thermo sample
     # coincide with the restart step, so numerical continuity is measurable.
     # Total steps, potential, integrator and timestep are unchanged.
-    files["in.production"] = files["in.production"].replace(b"run 102000 upto", b"run 22000 upto")
+    original_run = f"run {target} upto".encode()
+    if original_run not in files["in.production"]:
+        raise ValueError("fixture lacks the expected explicit native target")
+    files["in.production"] = files["in.production"].replace(original_run, f"run {first_boundary} upto".encode())
     protocol = json.loads(files["protocol.json"])
-    protocol["checkpoint_schedule"] = "explicit first boundary at 22000, then complete continuation to 102000"
+    protocol["checkpoint_schedule"] = f"explicit first boundary at {first_boundary}, then complete continuation to {target}"
     files["protocol.json"] = (json.dumps(protocol, indent=2) + "\n").encode()
     write_fixture(source, body, files)
     remote = "/mnt/fs2-scientific/native-recovery"
@@ -53,9 +59,9 @@ def main():
     subprocess.run(KUBE + ["cp", "--no-preserve", str(source), args.pod + ":/mnt/fs2-scientific/recovery-fixture"], check=True)
     subprocess.run(KUBE + ["cp", "--no-preserve", str(script), args.pod + ":/mnt/fs2-scientific/interrupt_resume.py"], check=True)
     with (args.output / "interrupt-client.log").open("wb") as log:
-        subprocess.run(KUBE + ["exec", args.pod, "--", "python3", "/mnt/fs2-scientific/interrupt_resume.py", "--phase", "interrupt", "--input", "/mnt/fs2-scientific/recovery-fixture", "--output", remote, "--job", "lj"], stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(KUBE + ["exec", args.pod, "--", "python3", "/mnt/fs2-scientific/interrupt_resume.py", "--phase", "interrupt", "--input", "/mnt/fs2-scientific/recovery-fixture", "--output", remote, "--job", args.case], stdout=log, stderr=subprocess.STDOUT, check=True)
     interrupted = args.output / "before-pod-deletion"
-    subprocess.run(KUBE + ["cp", args.pod + ":" + remote, str(interrupted)], check=True)
+    subprocess.run(KUBE + ["cp", "--retries=3", args.pod + ":" + remote, str(interrupted)], check=True)
     manifest_path = interrupted / "restored/.fs2/closed-manifest.json"
     manifest = json.loads(manifest_path.read_text())
     for entry in manifest["files"]:
@@ -75,12 +81,14 @@ def main():
     subprocess.run(KUBE + ["cp", "--no-preserve", str(script), args.new_pod + ":/mnt/fs2-scientific/interrupt_resume.py"], check=True)
     start = time.monotonic()
     with (args.output / "resume-client.log").open("wb") as log:
-        subprocess.run(KUBE + ["exec", args.new_pod, "--", "python3", "/mnt/fs2-scientific/interrupt_resume.py", "--phase", "resume", "--output", remote, "--job", "lj"], stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(KUBE + ["exec", args.new_pod, "--", "python3", "/mnt/fs2-scientific/interrupt_resume.py", "--phase", "resume", "--output", remote, "--job", args.case], stdout=log, stderr=subprocess.STDOUT, check=True)
     restored = args.output / "after-pod-replacement"
-    subprocess.run(KUBE + ["cp", args.new_pod + ":" + remote, str(restored)], check=True)
+    subprocess.run(KUBE + ["cp", "--retries=3", args.new_pod + ":" + remote, str(restored)], check=True)
     validation = validate(restored / "restored")
     save(args.output / "scientific-validation.json", validation)
     receipt = {"status": "passed" if validation["status"] == "passed" else "failed", "model_id": "lammps", "runtime_image": new["spec"]["containers"][0]["image"], "original_pod_uid": old["metadata"]["uid"], "replacement_pod_uid": new["metadata"]["uid"], "original_node": old["spec"]["nodeName"], "replacement_node": new["spec"]["nodeName"], "interrupted_status": json.loads((interrupted / "interrupted/result.json").read_text())["status"], "closed_generation": manifest["state"]["generation"], "closed_native_step": manifest["state"]["active_step"]["progress"], "closed_manifest_sha256": digest(manifest_path), "resumed_result_sha256": digest(restored / "restored/result.json"), "validation_sha256": digest(args.output / "scientific-validation.json"), "resume_and_copy_seconds": time.monotonic() - start, "fresh_pod": True, "native_checkpoint_recovery": True, "gpu_process_snapshot": False, "customer_transport_tested": False, "customer_ready": False, "interruption_kind": "SIGTERM during active native continuation followed by original Pod deletion", "raw_evidence": str(args.output)}
+    receipt["case"] = args.case
+    receipt["input_sha256"] = digest(source / "input.tar.gz")
     save(args.output / "fresh-pod-recovery.json", receipt)
     print(json.dumps(receipt))
     raise SystemExit(0 if receipt["status"] == "passed" else 1)
