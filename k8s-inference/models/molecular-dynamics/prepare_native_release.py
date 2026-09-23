@@ -22,7 +22,7 @@ sys.path.insert(0, str(HERE / "gromacs/runtime"))
 sys.path.insert(0, str(HERE / "gromacs/activation"))
 sys.path.insert(0, str(ROOT / "components/control-plane/src"))
 
-from prepare import canonical, digest, prepare
+from prepare import canonical, digest, prepare  # noqa: E402
 
 MODELS = frozenset({"lammps", "namd"})
 
@@ -91,10 +91,16 @@ def validate_evidence(value: dict, model: str) -> dict:
     return value
 
 
-def compose(values: dict, scheduling: bytes, candidates: dict, evidence: dict, recipes: dict):
+def compose(
+    values: dict, scheduling: bytes, candidates: dict, evidence: dict, recipes: dict, *, replace_models=frozenset()
+):
+    if not set(replace_models) <= set(candidates):
+        raise ValueError("replacement requires an explicit candidate and runtime receipt")
     baseline = copy.deepcopy(values)
     overlay, profiles = {}, {}
-    for model in sorted(candidates):
+    # Replace explicit successors before adding new proof baselines which
+    # contain them; unrelated App identities remain exactly as captured.
+    for model in sorted(candidates, key=lambda model: (model not in replace_models, model)):
         receipt = validate_evidence(evidence[model], model)
         candidate = copy.deepcopy(candidates[model])
         tested_pools = {test["pool"] for test in receipt["tests"]}
@@ -109,6 +115,7 @@ def compose(values: dict, scheduling: bytes, candidates: dict, evidence: dict, r
             receipt["runtime_image"],
             receipt,
             digest(recipes[model]),
+            replace_existing=model in replace_models,
         )
         profiles[model] = profile
         for key, value in current.items():
@@ -122,28 +129,40 @@ def compose(values: dict, scheduling: bytes, candidates: dict, evidence: dict, r
     return profiles, overlay, cm
 
 
-def publish_catalog(profiles: dict, final_map: dict, captured_map: dict) -> None:
+def publish_catalog(profiles: dict, final_map: dict, captured_map: dict, *, replace_models=frozenset()) -> None:
     contracts = ROOT / "catalog/runtime/contracts"
     map_path = contracts / "scientific-execution-map.json"
     source_map = json.loads(map_path.read_text())
-    comparable = lambda value: {key: val for key, val in value.items() if key != "snapshot_bundles"}
+
+    def comparable(value):
+        return {key: val for key, val in value.items() if key != "snapshot_bundles"}
+
     if comparable(source_map) != comparable(captured_map):
         raise ValueError("source execution map differs from captured deployment")
     catalog_path = contracts / "scientific-workload-profiles.json"
     catalog = json.loads(catalog_path.read_text())
-    if set(profiles) & {item["model_id"] for item in catalog["profiles"]}:
+    existing = set(profiles) & {item["model_id"] for item in catalog["profiles"]}
+    if existing != set(replace_models):
         raise ValueError("native engine already exists; use an explicit successor workflow")
     receipts_path = contracts / "scientific-source-candidate-receipts.json"
     receipts = json.loads(receipts_path.read_text())
-    if set(profiles) & {item["model_id"] for item in receipts["receipts"]}:
+    if set(profiles) & {item["model_id"] for item in receipts["receipts"]} != set(replace_models):
         raise ValueError("native engine source receipt already exists; review its existing identity")
     for model in sorted(profiles):
         receipt = json.loads((HERE / model / "activation/source-candidate-receipt.json").read_text())
         expected_source = {key: value for key, value in profiles[model]["source"].items() if key != "classification"}
         if receipt["model_id"] != model or receipt["source"] != expected_source:
             raise ValueError("native source receipt and activated profile disagree")
-        receipts["receipts"].append(receipt)
-    catalog["profiles"].extend(profiles[model] for model in sorted(profiles))
+        if model in replace_models:
+            prior = next(item for item in receipts["receipts"] if item["model_id"] == model)
+            if prior["source"] != receipt["source"]:
+                raise ValueError("successor changes the native source; review that acquisition explicitly")
+        else:
+            receipts["receipts"].append(receipt)
+    catalog["profiles"] = [
+        profiles[item["model_id"]] if item["model_id"] in replace_models else item for item in catalog["profiles"]
+    ]
+    catalog["profiles"].extend(profiles[model] for model in sorted(set(profiles) - set(replace_models)))
     proofs = set(final_map.get("qualification_baselines", {}))
     final_digest = digest({"schema": final_map["schema"], "models": final_map["models"]})
     for profile in catalog["profiles"]:
@@ -168,6 +187,7 @@ def main() -> None:
     parser.add_argument("--runtime-receipt", type=Path, action="append", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--publish-catalog", action="store_true")
+    parser.add_argument("--replace-existing-model", action="append", choices=sorted(MODELS), default=[])
     args = parser.parse_args()
     os.umask(0o077)
     evidence = {}
@@ -187,7 +207,12 @@ def main() -> None:
     if isinstance(captured_map, str):
         captured_map = json.loads(captured_map)
     profiles, overlay, cm = compose(
-        values, (args.baseline / "scheduling.json").read_bytes(), candidates, evidence, recipes
+        values,
+        (args.baseline / "scheduling.json").read_bytes(),
+        candidates,
+        evidence,
+        recipes,
+        replace_models=frozenset(args.replace_existing_model),
     )
     args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     for name, value in [
@@ -199,7 +224,12 @@ def main() -> None:
     ]:
         (args.output / name).write_bytes(canonical(value) + b"\n")
     if args.publish_catalog:
-        publish_catalog(profiles, overlay["scientificBatch"]["executionMap"], captured_map)
+        publish_catalog(
+            profiles,
+            overlay["scientificBatch"]["executionMap"],
+            captured_map,
+            replace_models=frozenset(args.replace_existing_model),
+        )
     print(
         json.dumps(
             {

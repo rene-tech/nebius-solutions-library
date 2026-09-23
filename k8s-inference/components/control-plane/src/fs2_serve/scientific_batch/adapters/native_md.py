@@ -144,7 +144,7 @@ class NativeMDAdapter:
                 StageInvocation(
                     stage_id="workflow",
                     shard_id=job["id"],
-                    argv=wrap_stage_argv(workspace, command),
+                    argv=wrap_stage_argv(workspace, command, interpreter="python3"),
                     environment=(),
                     working_directory=workspace,
                     consumes=(self.input_id,),

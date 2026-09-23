@@ -136,6 +136,29 @@ def test_recipe_covers_engine_and_shared_transports():
         assert all(len(item["sha256"]) == 64 and item["size_bytes"] > 0 for item in recipe["files"])
 
 
+def test_explicit_successor_precedes_new_app_and_preserves_legacy_rows():
+    values, scheduling, candidates, evidence, recipes = inputs()
+    initial, overlay, cm = release.compose(
+        values, scheduling, {"namd": candidates["namd"]}, {"namd": evidence["namd"]}, {"namd": recipes["namd"]}
+    )
+    for key, value in overlay.items():
+        values[key].update(value)
+    captured = copy.deepcopy(values["scientificBatch"]["executionMap"])
+    profiles, update, _ = release.compose(
+        values,
+        cm["data"]["scheduling.json"].encode(),
+        candidates,
+        evidence,
+        {**recipes, "namd": {"changed_adapter": True}},
+        replace_models={"namd"},
+    )
+    assert profiles["namd"]["execution_identity"] != initial["namd"]["execution_identity"]
+    old = [row for row in captured["models"] if row["model_id"] != "namd"]
+    assert [
+        row for row in update["scientificBatch"]["executionMap"]["models"] if row["model_id"] not in release.MODELS
+    ] == old
+
+
 def test_publish_adds_admin_source_receipts_without_replacing_existing_apps(tmp_path, monkeypatch):
     args = inputs()
     profiles, overlay, _ = release.compose(*args)
@@ -158,7 +181,9 @@ def test_publish_adds_admin_source_receipts_without_replacing_existing_apps(tmp_
         before[name] = value
         (target / name).write_text(json.dumps(value))
     monkeypatch.setattr(release, "ROOT", tmp_path)
-    release.publish_catalog(profiles, overlay["scientificBatch"]["executionMap"], args[0]["scientificBatch"]["executionMap"])
+    release.publish_catalog(
+        profiles, overlay["scientificBatch"]["executionMap"], args[0]["scientificBatch"]["executionMap"]
+    )
     receipts = json.loads((target / names[2]).read_text())["receipts"]
     old = before[names[2]]["receipts"]
     assert receipts[: len(old)] == old

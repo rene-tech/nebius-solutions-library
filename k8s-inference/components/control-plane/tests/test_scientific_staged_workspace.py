@@ -49,6 +49,19 @@ def _invocation(command: tuple[str, ...]) -> StageInvocation:
     )
 
 
+@pytest.mark.parametrize("interpreter", ["python", "python3"])
+def test_runner_preserves_explicit_worker_python_interpreter(interpreter):
+    invocation = _invocation(("python3", "--version"))
+    invocation = replace(
+        invocation,
+        argv=wrap_stage_argv(invocation.working_directory, ("python3", "--version"), interpreter=interpreter),
+    )
+    assert invocation.argv[0] == interpreter
+    assert staged_workspace.unwrapped_stage_argv(invocation, label="test") == ("python3", "--version")
+    with pytest.raises(ScientificAdapterError):
+        wrap_stage_argv(invocation.working_directory, ("python3", "--version"), interpreter="sh")
+
+
 def _runtime_marker(invocation: StageInvocation) -> str:
     return json.dumps(
         {
@@ -425,9 +438,7 @@ def test_workload_upload_does_not_retry_auth_or_content_failures(
     sleeps: list[float] = []
     content = b"invalid for this reservation"
     identity = "run.test.prepare.main:stage-handoff"
-    upload_id = str(
-        uuid5(NAMESPACE_URL, f"fs2-scientific-upload:{identity}:{hashlib.sha256(content).hexdigest()}")
-    )
+    upload_id = str(uuid5(NAMESPACE_URL, f"fs2-scientific-upload:{identity}:{hashlib.sha256(content).hexdigest()}"))
 
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/internal/scientific-workloads/uploads":

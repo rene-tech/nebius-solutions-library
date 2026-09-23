@@ -90,6 +90,8 @@ def test_independent_scientific_jobs_reuse_the_durable_gpu_queue(engine):
     assert [item.shard_id for item in plan.invocations] == ["replica-1", "replica-2"]
     assert len({item.working_directory for item in plan.invocations}) == 2
     for item in plan.invocations:
+        # NVIDIA HPC images install python3, not necessarily a python alias.
+        assert item.argv[0] == "python3"
         assert item.materializations[0].mode == MaterializationMode.COPY_FILE
         assert item.collector_id == engine.COLLECTOR_ID
         assert f"fs2_{engine.MODEL_ID}.worker" in item.argv

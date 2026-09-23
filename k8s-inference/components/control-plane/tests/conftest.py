@@ -27,6 +27,7 @@ SCIENTIFIC_FLEET = frozenset(
         "esmfold2-fast",
         "gromacs",
         "gromacs-mpi",
+        "lammps",
         "mosaic",
         "namd",
         "openfold3-openbind",

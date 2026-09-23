@@ -243,6 +243,24 @@
       "access_profile": "standard",
       "access_state": "not-required",
       "notes": "Official NVIDIA NGC HPC distribution, not a NIM HTTP microservice. The source identity is pinned and inspected. Native scientific tests, hosted customer qualification, storage/recovery and GPU snapshots are separate evidence."
+    },
+    {
+      "model_id": "lammps",
+      "upstream_name": "LAMMPS · NVIDIA-optimized molecular dynamics",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-23",
+      "source": {
+        "kind": "oci",
+        "repository": "nvidia/lammps",
+        "revision": "d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+        "review_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/containers/lammps"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Official NVIDIA NGC HPC distribution, not a NIM HTTP microservice. The source identity is pinned and inspected. Native scientific tests, hosted customer qualification, storage/recovery and GPU snapshots are separate evidence."
     }
   ]
 }
