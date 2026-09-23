@@ -4,8 +4,21 @@ import struct
 
 import pytest
 
+from audit_binary import summarize
 from make_fixture import colvars_configuration, configuration
 from validate_campaign import dcd, production_timing, radius_metadynamics, verify_grid_round_trip
+
+
+def test_binary_inventory_does_not_infer_runtime_dispatch_from_sm89_library_code():
+    result = summarize("ELF file 1: n.1.sm_86.cubin\nELF file 2: n.2.sm_89.cubin\n",
+                       "PTX file 1: n.1.sm_120.ptx\n",
+                       {"sm_86": {"stdout": "STT_FUNC STB_GLOBAL STO_ENTRY _ZbondedForcesKernel\n"},
+                        "sm_89": {"stdout": "STT_FUNC STB_GLOBAL STO_ENTRY _ZcurandState\n"}})
+    assert result["elf_architecture_counts"] == {"sm_86": 1, "sm_89": 1}
+    assert result["ptx_target_counts"] == {"sm_120": 1}
+    assert result["selected_architecture_symbol_inventory"]["sm_89"]["namd_marker_entry_count"] == 0
+    assert result["selected_architecture_symbol_inventory"]["sm_86"]["namd_marker_entry_count"] == 1
+    assert result["runtime_dispatch_proven"] is False
 
 
 def test_fixture_seed_schedule_is_explicit_native_input():

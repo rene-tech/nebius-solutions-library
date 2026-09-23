@@ -102,7 +102,7 @@ def main():
                                "No scientific ensemble or free-energy convergence claim",
                                "GBIS and spinAngle affected by fixes absent from this NVIDIA 3.0.2 image remain unavailable",
                                "Pool eligibility is limited to the exact tested GPU/pool; no untested-GPU inference",
-                               "Startup events were measured on an existing node with cached base layers, not an uncached node cold start"]}
+                               "Startup events were measured on an existing node; base-layer cache state was not independently measured, so this is not an uncached-node cold start"]}
     args.output.write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({"receipt": str(args.output), "sha256": sha(args.output), "cases": len(tests), "customer_ready": False}))
 

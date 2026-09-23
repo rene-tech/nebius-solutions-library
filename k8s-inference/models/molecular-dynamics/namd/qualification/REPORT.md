@@ -155,8 +155,30 @@ after a fresh zero-GPU-allocation check. The additional bounded worker is
 driver 580.173.02; exact r4 image and immutable H100 fixtures are unchanged.
 This first Pod started 10 s after creation; Kubernetes reported 9.156 s image
 pull for 586,744,068 image bytes. Existing-node base-layer cache status is not
-known, so this is not called an uncached-node cold start. Native L40S controls
-are running and no L40S scientific pass is claimed yet.
+known, so this is not called an uncached-node cold start. The first L40S NVE
+400 ps production passed with 20 finite DCD frames, a matching 221,000-step
+checkpoint and 216.02 ns/day native timing. Its independent 78-file artifact
+audit passed; result SHA256 is
+`276cc728f61a7221f2ec44e09d36201ada75ed0f0d7bdc7131cda84b3cc17ab7`.
+Other L40S cases and full repetitions are running, not yet qualified.
+
+The binary was independently inspected with local CUDA 12.8.90 `cuobjdump`
+without changing either worker. The copied bytes match the recorded `namd3`
+SHA256. `namd3-r4-binary-audit.json` retains full target lists and SM86/SM89/SM90
+symbol tables: 24 ELF modules each for SM80/86/90/100/103/120, plus six library
+modules each for SM50/60/70/75/89/101/121. The selected NAMD bonded/nonbonded
+symbol markers occur in SM86 and SM90 (213 entries each), not SM89. SM89's 116
+entry symbols include 111 cuRAND markers. A blanket claim that this binary has
+no SM89 code would therefore be incorrect; so would treating its library code
+as proof of SM89-specialized NAMD force kernels. This is a compiled-code
+inventory, not a profiler proof of live dispatch.
+
+Read-only environment records are retained inside each packaged-runtime evidence
+directory. Both nodes run driver 580.173.02/kernel 6.11.0-1016-nvidia and expose
+16 VM CPUs, but the H100 host uses Xeon Platinum 8468 while L40S uses Xeon Gold
+6338. Each Pod reserves eight vCPUs and native runs use four Charm++ threads.
+Cross-pool results therefore compare these complete tested node shapes, not an
+isolated GPU-only hardware ratio. Neither clocks nor power limits were changed.
 
 ## Remaining boundaries
 
