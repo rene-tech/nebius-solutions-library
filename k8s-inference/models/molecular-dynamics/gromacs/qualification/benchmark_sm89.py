@@ -12,6 +12,7 @@ import json
 import math
 import os
 import re
+import signal
 import statistics
 import subprocess
 import time
@@ -28,13 +29,22 @@ def sha256(path):
 
 def run_logged(argv, output, *, cwd=None, stdin=None, env=None, timeout=600):
     with output.open("wb") as log:
+        process = subprocess.Popen(
+            argv, cwd=cwd, stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+            stdout=log, stderr=subprocess.STDOUT, env=env, start_new_session=True,
+        )
         try:
-            result = subprocess.run(
-                argv, cwd=cwd, input=stdin, stdout=log, stderr=subprocess.STDOUT,
-                timeout=timeout, env=env,
-            )
-            return result.returncode
+            process.communicate(input=stdin, timeout=timeout)
+            return process.returncode
         except subprocess.TimeoutExpired:
+            # /usr/bin/time is the direct child for measurements. Terminating
+            # only that wrapper could leave its GPU engine running into the
+            # next cohort, so stop the entire task-owned process group.
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait(timeout=10)
             return 124
 
 
@@ -160,6 +170,7 @@ def main():
             cgroup[path] = Path(path).read_text().strip()
     (args.output / "environment.json").write_text(json.dumps({
         "tpr_sha256": args.sha256, "cgroup": cgroup,
+        "harness_sha256": sha256(Path(__file__)),
         "affinity": sorted(os.sched_getaffinity(0)), "cuda_cache_path": str(cache),
         "threads": args.threads, "binary": args.binary,
         "cuda_dispatch_environment": {key: env[key] for key in ("CUDA_DISABLE_PTX_JIT", "CUDA_FORCE_PTX_JIT", "CUDA_MODULE_LOADING") if key in env},
