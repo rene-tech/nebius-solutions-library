@@ -190,7 +190,7 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     )
     snapshot = await delivered.list_models()
 
-    assert len(snapshot.data.items) == 11
+    assert len(snapshot.data.items) == 12
     by_candidate = {item.candidate_id: item for item in snapshot.data.items}
     assert set(by_candidate) == {
         "cosmos3-lerobot-augmentation",
@@ -204,6 +204,7 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
         "proteina-complexa",
         "protenix-v2",
         "rfdiffusion-upstream",
+        "gromacs",
     }
     assert all(item.workload_profile == "published" for item in by_candidate.values())
     boltzgen = by_candidate["boltzgen"]

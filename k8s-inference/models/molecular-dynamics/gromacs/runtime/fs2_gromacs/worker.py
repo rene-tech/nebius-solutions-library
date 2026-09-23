@@ -120,6 +120,12 @@ class Workflow:
         # the budget. Otherwise the final checkpoint would be lost on timeout.
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
+            if self.stopped:
+                # Kubernetes terminates the companion too. Waiting for its
+                # acknowledgement would consume the Pod grace, turn SIGTERM
+                # into SIGKILL/137, and lose the explicit disruption receipt.
+                # Recovery uses the previous committed remote generation.
+                raise Interrupted("workflow interrupted; recover the last committed remote checkpoint")
             if (self.meta / "transport-error.json").is_file():
                 raise RuntimeError("durable checkpoint transport failed; see operation logs")
             if path.is_file():

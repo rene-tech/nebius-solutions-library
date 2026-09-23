@@ -136,3 +136,21 @@ def test_peer_transport_failure_releases_engine_without_the_handoff_timeout(tmp_
         assert result["status"] == "failed"
         assert result["completed_steps"] == []
         assert result["error"] == "durable checkpoint transport failed; see operation logs"
+
+
+@pytest.mark.parametrize("phase", ["restore", "publish"])
+def test_pod_termination_does_not_wait_for_the_terminated_companion(tmp_path, monkeypatch, phase):
+    from fs2_gromacs.worker import Interrupted
+
+    worker = Workflow(request(), job_id="replica", operation_id="one", workspace=tmp_path,
+                      checkpoint_mode="companion")
+    worker.stopped = True
+    monkeypatch.setattr("fs2_gromacs.worker.time.sleep",
+                        lambda _: (_ for _ in ()).throw(AssertionError("must release within Pod grace")))
+    if phase == "publish":
+        with pytest.raises(Interrupted, match="last committed remote checkpoint"):
+            worker._wait_json(worker.meta / "checkpoint-ack.json", lambda _: True)
+    else:
+        result = worker.run()
+        assert result["status"] == "interrupted"
+        assert result["completed_steps"] == []
