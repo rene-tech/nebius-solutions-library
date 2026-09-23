@@ -55,3 +55,44 @@ Primary native references:
 - [Nonbonded and LJ correction](https://www.ks.uiuc.edu/Research/namd/3.0.2/ug/node25.html)
 - [Pressure control and units](https://www-s.ks.uiuc.edu/Research/namd/3.0/ug/node39.html)
 - [Langevin hydrogen coupling](https://www-s.ks.uiuc.edu/Research/namd/3.0/ug/node38.html)
+
+## First exact-r5 native decomposition
+
+Corrected input `alanine-canonical-r3` SHA256
+`1411c421eb29ff0d7ce79983f0051c16bd1390d5bf0a3a92f0677d31e647fbe3`
+ran both diagnostics successfully on worker `30df4021…5f14e`, H100 and driver
+580.173.02. `campaign-alanine-singlepoint-r5-02/alanine-validation.json`
+SHA256 `fbc90eb5256f47c19dd5109266204cbcd71dd0968dc135a3d1a62c6594b82697`
+binds the complete inventories, immutable input members and native logs.
+All coordinates remained within 7.11e-15 Å of the original master. The native
+run0 kinetic energy is zero; saved velocities have at most 8.7e-14 native-unit
+round-off, explicitly measured against a 1e-10 diagnostic tolerance, not claimed
+bitwise zero. Both checkpoints remain at timestep zero.
+
+Tail-on energies (kcal/mol): bond 0.12634754, angle 0.36199813, dihedral
+9.64400692, improper 0, electrostatic -20652.46094296, VDW 2214.80743341,
+potential -18427.52115695. Native tail-on minus tail-off VDW is -68.63371423
+kcal/mol and atomic pressure is -108.16508628 bar. A 6.33e-6 kcal/mol
+electrostatic difference between the two separate GPU processes is retained;
+the diagnostic does not assert bitwise reduction reproducibility.
+
+Native logs independently report 6,598 atoms, 6,597 bonds, 36 angles, 67
+dihedrals and 6,674 exclusions, all 45 LJ pair entries, SCNB 2, scaled 1–4
+electrostatics, the actual 64³ order-4 PME grid, and tail energy/pressure on.
+The log represents AMBER improper terms in the dihedral total; a zero separate
+IMPRP column is not evidence that those terms disappeared.
+
+All native warnings remain retained and require fixture-specific interpretation:
+
+- GPU-resident disables lone-pair support. This audited master has no massless
+  extra sites; this is not qualification of lone-pair workflows.
+- Native GPU force tables are selected for this configuration. `GPUForceTable
+  on` was already explicit; no different cutoff, switching or topology was
+  substituted. Numerical force/energy equivalence still depends on the
+  cross-engine comparison.
+- Native reports 2,192 H–H bonds, matching exactly the canonical AMBER rigid
+  TIP3P water representation. This is not an accidental solute bond warning.
+
+The prior fixture typo failed before force evaluation and is retained separately
+at `campaign-alanine-singlepoint-r5-failed-01`. No dynamics or cross-engine
+equivalence is claimed by this single-point record.

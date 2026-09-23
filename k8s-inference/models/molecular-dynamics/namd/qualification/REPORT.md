@@ -99,7 +99,7 @@ file and scientific validator hash to the exact running image and GPU. An initia
 receipt can explicitly choose one repetition per case for hosted acceptance;
 that does not complete the planned three-repetition performance cohort.
 
-## Initial final-image cohort and native recovery
+## Retained r4 initial cohort and native recovery
 
 The exact r4 image passed one 400 ps production each of ApoA1 NVE, NPT and
 ungridded radius metadynamics, each retaining 20 finite/readable DCD frames.
