@@ -2460,6 +2460,134 @@
         "execution_map_sha256": "4f1137927e29085a6aa555430c636abe473618bc5a80c840ba151ce15b66c744",
         "qualified_at": "2026-09-23T12:04:30.771066+00:00"
       }
+    },
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "namd",
+      "display_name": "NAMD \u00b7 NVIDIA-optimized molecular dynamics",
+      "execution_mode": "scientific-batch",
+      "state": "active",
+      "route_exposed": true,
+      "source": {
+        "kind": "oci",
+        "repository": "nvidia/namd",
+        "revision": "e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+        "review_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/containers/namd",
+        "classification": "qualified-input"
+      },
+      "execution_identity": {
+        "model_revision": "e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+        "runtime_image_digest": "sha256:1af3abab5c794c38ef19d557bd5ca0e754fd078343f36b7e41a9eeee2ac7354f",
+        "runtime_recipe_sha256": "8eee11b82231820f32a073641200e70fd89a436c540570a65e8eb41ab367b17d",
+        "workload_recipe_sha256": "2fbb53490e7898cd24fbd80f19e4fd5c6d26f808fe2cac7f7babb60fb6566b9e",
+        "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "execution_identity_sha256": "5eb4b067ba4825d9a50bfeb7b475577f002c7159d68bbd07fc5a666d3c2f945c"
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/namd:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/namd-workflow-request/v1",
+        "operations": [
+          "run-workflow"
+        ],
+        "service_classes": [
+          "interactive",
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": true,
+          "tool_name": "submit_namd_workflow",
+          "description": "Run native NAMD preparation, minimization and dynamics with GPU-resident or offload execution. Submit bundled Tcl, topology and force-field inputs; receive native checkpoints, trajectories, energies and logs in customer Object Storage."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "not-required",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-ondemand-1x"
+        ],
+        "required_node_labels": {
+          "kubernetes.io/arch": "amd64"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "workflow",
+            "needs": [],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 128,
+            "checkpoint_mode": "resume",
+            "preemption_mode": "checkpointable",
+            "placement": {
+              "class": "accelerator"
+            },
+            "resources": {
+              "cpu_millis": 8000,
+              "memory_bytes": 17179869184,
+              "ephemeral_storage_bytes": 68719476736,
+              "limits": {
+                "cpu_millis": 8000,
+                "memory_bytes": 17179869184,
+                "ephemeral_storage_bytes": 68719476736
+              }
+            }
+          }
+        ],
+        "retry": {
+          "max_attempts": 3,
+          "retryable_exit_codes": [
+            75,
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 120
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "namd-workflow-v1",
+        "state": "active"
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "non_clinical": false,
+        "limitations": [
+          "Onboarding release: native engine runtime tested; customer REST/MCP, bucket recovery, queue/preemption and LibreChat qualification are not yet complete. Not customer-ready.",
+          "Operator confirms NVIDIA agreement coverage. The pinned accessible NVIDIA container carries NAMD 3.0.2, not the later upstream 3.0.3 fixes.",
+          "GPU-resident and GPU-offload feature coverage differs; each scientific protocol needs an appropriate execution mode.",
+          "One GPU and one native process per job. Independent jobs scale through the shared queue; multi-node Charm++ is not qualified.",
+          "Wrapper-managed dynamics uses finite native segments; arbitrary complete Tcl is recovered only at completed stage boundaries.",
+          "Upstream 3.0.3 correctness fixes affecting spinAngle/eABF and GBIS offload are not proven backported in this pinned image. Affected workflows remain unqualified.",
+          "Scientific settings and output cadence remain customer controlled. Execution success is not evidence of equilibration or convergence.",
+          "Native restart is distinct from GPU process snapshotting; GPU snapshot acceleration is not qualified.",
+          "Individual files larger than 5 GiB are unqualified; choose output segments that fit the platform and customer bucket envelope."
+        ]
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "ec89ce5d88a68e8043e2a0e17308179589937c166aaecc1dfdee4a775f048f99",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "3827bb523c3b3f727f055d877a99e4c463336542fb04be563ce0372ef47c1b1e",
+        "qualified_at": "2026-09-23T14:48:10.752881+00:00"
+      }
     }
   ]
 }

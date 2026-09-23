@@ -17,6 +17,11 @@ SPEC.loader.exec_module(release)
 
 def inputs():
     live = json.loads((SOLUTION_ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text())
+    # Exercise first onboarding even after one or both Apps are published.
+    live["models"] = [row for row in live["models"] if row["model_id"] not in release.MODELS]
+    live["qualification_baselines"] = {
+        sha: ids for sha, ids in live.get("qualification_baselines", {}).items() if not set(ids) & release.MODELS
+    }
     candidates = {
         model: json.loads(
             (SOLUTION_ROOT / f"models/molecular-dynamics/{model}/activation/workload-profile.json").read_text()
@@ -144,8 +149,14 @@ def test_publish_adds_admin_source_receipts_without_replacing_existing_apps(tmp_
     before = {}
     for name in names:
         source = SOLUTION_ROOT / "catalog/runtime/contracts" / name
-        before[name] = json.loads(source.read_text())
-        (target / name).write_text(source.read_text())
+        value = json.loads(source.read_text())
+        if name == "scientific-execution-map.json":
+            value = args[0]["scientificBatch"]["executionMap"]
+        else:
+            key = "profiles" if name == "scientific-workload-profiles.json" else "receipts"
+            value[key] = [row for row in value[key] if row["model_id"] not in release.MODELS]
+        before[name] = value
+        (target / name).write_text(json.dumps(value))
     monkeypatch.setattr(release, "ROOT", tmp_path)
     release.publish_catalog(profiles, overlay["scientificBatch"]["executionMap"], args[0]["scientificBatch"]["executionMap"])
     receipts = json.loads((target / names[2]).read_text())["receipts"]

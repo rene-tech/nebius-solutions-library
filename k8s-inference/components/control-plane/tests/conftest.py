@@ -28,6 +28,7 @@ SCIENTIFIC_FLEET = frozenset(
         "gromacs",
         "gromacs-mpi",
         "mosaic",
+        "namd",
         "openfold3-openbind",
         "proteina-complexa",
         "protenix-v2",
