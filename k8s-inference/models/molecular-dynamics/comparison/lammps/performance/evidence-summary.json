@@ -1,0 +1,80 @@
+{
+  "scope": "Bounded canonical LAMMPS representation/performance diagnostic; not full production or customer acceptance",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+  "gpu_name": "NVIDIA H100 80GB HBM3",
+  "gpu_uuid": "GPU-e8da8985-f0cc-43f6-9a6e-78f4ababcd10",
+  "driver": "580.173.02",
+  "pod_uid": "1fa15515-e59e-44c4-b5a5-7b8bfa565292",
+  "source_checkpoint_sha256": "0458091095da737f80e38befb329ddf4a2549933767b359e58b6a00d9842ea5d",
+  "matched_single_rank": {
+    "repetitions_per_case": 3,
+    "warmup_steps": 200,
+    "measured_steps": 1000,
+    "triclinic_median_ns_per_day": 11.771437913839614,
+    "orthogonal_median_ns_per_day": 28.417079849034266,
+    "maximum_coordinate_delta_A": 0.0,
+    "maximum_force_delta_kcal_mol_A": 1.2439826946319954e-11,
+    "maximum_energy_term_delta_kcal_mol": 1.021405182655144e-14,
+    "constrained_distances": 6588,
+    "validation_path": "/home/tux/fs2-alanine-lammps-performance-20260923/screen-03/scientific-validation.json",
+    "validation_sha256": "a95054cba02726690a09b8a42a42264a2f732dda8c199c5edb7af804ae30ef8b"
+  },
+  "already_orthogonal_restart": {
+    "validation_path": "/home/tux/fs2-alanine-lammps-performance-20260923/restart-check-01/validation.json",
+    "validation_sha256": "9a90838c6d7152fc8966fbfac313c5a3d9ec3bc04aa5960a4c73cd514c82cda9",
+    "maximum_coordinate_delta_A": 0.0,
+    "maximum_force_delta_kcal_mol_A": 1.1368683772161603e-13,
+    "all_nine_energies_equal": true
+  },
+  "fixture04_native_probe": {
+    "input_sha256": "cb0ab63bd6311acf030288db41544d7ea3988e47b7155da2dd62f18808162b53",
+    "result_sha256": "8e1dce07956856a2d2461687d326b49ea47cf44750181e0192bdce387e9d12dd",
+    "validation_sha256": "dd0dfeb63807d51f228841b85408ade8d369bf077db82ae780c7b15c591cd1c0",
+    "artifact_input_audit_sha256": "60a001987f69643d5b60e599fa34b4aba5c939a1e77e2471fcecc301ea3fba57",
+    "raw_path": "/home/tux/fs2-alanine-lammps-performance-20260923/fixture04-probe-local",
+    "verified_output_files": 35,
+    "verified_input_files": 22,
+    "native_steps": "original/adapted run0, minimization, 1000 NVT, 1000 NPT"
+  },
+  "profile": {
+    "nsight_systems_version": "2025.6.3.541-256337736014v0",
+    "capture": "CUDA/NVTX; no CPU sampling; 100 warmup plus 200 measured native steps and setup",
+    "attribution_path": "/home/tux/fs2-alanine-lammps-performance-20260923/profile-02/kernel-attribution.json",
+    "attribution_sha256": "f66d32c2b20e4270efee1a258f0bd4ecb340f328925e1155b74b34424739689c",
+    "profiled_timings_excluded_from_throughput": true
+  },
+  "rejected_single_gpu_mpi_screens": [
+    {
+      "ranks": 2,
+      "warmup_steps": 200,
+      "measured_steps": 1000,
+      "repetitions": 1,
+      "triclinic_ns_per_day": 2.7306213585789396,
+      "orthogonal_ns_per_day": 3.7682442554991726,
+      "validation_path": "/home/tux/fs2-alanine-lammps-performance-20260923/mpi2-01/cross-rank-validation.json",
+      "validation_sha256": "e802fa6082b352d6d1539e19941330d15b469424a5c742bcc6890d6ec55de9b5"
+    },
+    {
+      "ranks": 4,
+      "warmup_steps": 100,
+      "measured_steps": 200,
+      "repetitions": 1,
+      "triclinic_ns_per_day": 1.2800189632438996,
+      "orthogonal_ns_per_day": 1.4841726896764966,
+      "validation_path": "/home/tux/fs2-alanine-lammps-performance-20260923/mpi4-01/scientific-validation.json",
+      "validation_sha256": "c3f0aa25d1d1e55a62bbc1274a66b32f361edf145d42d0bc2588c805fcb4b882"
+    }
+  ],
+  "mps_enabled": false,
+  "image_changed": false,
+  "physics_changed": false,
+  "full_production_performance_qualified": false,
+  "distributed_app_feature_qualified": false,
+  "customer_ready": false,
+  "retained_failures": [
+    "screen-01-failed-library",
+    "screen-02-failed-reinitialization",
+    "profile-01-failed-tool-layout",
+    "fixture04-probe-missing-companion"
+  ]
+}
