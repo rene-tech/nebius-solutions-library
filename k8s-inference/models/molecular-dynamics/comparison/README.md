@@ -1,8 +1,17 @@
 # Four-engine alanine-dipeptide acceptance workload
 
-Status: implementation and validation in progress; no four-engine equivalence or
-completed-trajectory claim yet. This is a separate fixture from the earlier
-AMBER ff19SB/OPC preparation campaign.
+Status: all four engines completed two full canonical hosted workflows and
+native scientific validation. The final report, raw files, four clips, 2×2 video
+and phi/psi plots are assembled in the full delivery bundle. Read
+[the measured results and limitations](qualification/RESULTS-20260923.md).
+Topology conversion and native numerical differences are checked separately;
+this does not establish identical forces or converged ensembles. This is a
+separate fixture from the earlier AMBER ff19SB/OPC preparation campaign.
+
+The complete server bundle is
+`/home/tux/fs2-alanine-comparison-20260923/delivery-02`. Runtime/client delivery
+and workbench replacement have separate release receipts; native completion is
+not evidence that a later API/UI release was deployed or passed.
 
 ## Requested scientific protocol
 

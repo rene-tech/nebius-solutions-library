@@ -34,10 +34,13 @@ artifact recovery. The immutable runtime/release and precise input variants
 matter: earlier NAMD automatic-PME and GROMACS autotuned-PME runs are historical,
 not silently relabeled as the final fixed-grid/fixed-cutoff case.
 
-At this document's initial publication, final LAMMPS production and the final
-four-way report/video remain in progress. Do not use source or image presence
-as a completion claim; the final case inventory and scientific receipts are the
-authority. The acceptance case is deliberately short and does not prove ensemble
+All four engines have now passed two full canonical hosted workflows. The final
+four-way report, raw outputs, plots and five videos are assembled; see the
+[measured results](comparison/qualification/RESULTS-20260923.md). A separate
+network-disabled final-client reproduction matched 78,302 scientific values.
+Do not use source or image presence as a completion claim; the final case
+inventory and scoped deployment receipts are the authority. The acceptance
+case is deliberately short and does not prove ensemble
 convergence, correct force-field selection for another molecule, or free energy.
 
 ## Continuation and GPU process snapshots
@@ -78,3 +81,12 @@ rollups are application observations, not hardware-busy measurements or bills;
 missing trace context and phase-classification gaps remain visible. Failed
 native logs remain downloadable after worker teardown without converting failed
 trajectories into successful results.
+
+Full LAMMPS artifact downloads exposed unbounded API debug-body accumulation.
+Helm 227 changes successful artifact logging to immutable object references plus
+streaming checksums/byte counts, with corresponding operator UI support. Original
+objects remain in tenant storage; normal model and error-body capture remains
+unchanged. No API memory limit or cloud quota was increased. The final client
+also adds bounded read-only polling reconnects without replaying admission or
+upload. Native Helm 226 simulations remain labeled as such; later artifact
+readbacks are not represented as new GPU runs.
