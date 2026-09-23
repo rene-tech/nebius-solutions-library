@@ -6,6 +6,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 
 
 def main():
@@ -13,6 +14,8 @@ def main():
     parser.add_argument('--receipt', type=Path, required=True)
     parser.add_argument('--parameters', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--expected-frames', type=int)
+    parser.add_argument('--expected-last-time-ps', type=float)
     args = parser.parse_args()
     status = json.loads((args.receipt / 'status.json').read_text())
     assert status['operation']['status'] == 'succeeded' and status['batch']['result_published']
@@ -51,15 +54,25 @@ def main():
                     assert all(math.isfinite(value) for value in values), name
                     numeric_rows += 1
         trajectory_checks = [command for command in result['commands'] if command['command'][1] == 'check']
+        checked_trajectories = []
         for command in trajectory_checks:
             log = paths[command['log']].read_text(errors='replace')
             assert 'Last frame' in log and 'Item' in log and 'Time' in log
+            frames = re.findall(r'Last frame\s+(\d+)\s+time\s+([\d.]+)', log)
+            assert frames, command['log']
+            count, last_time = int(frames[-1][0]) + 1, float(frames[-1][1])
+            if args.expected_frames is not None:
+                assert count == args.expected_frames, command['log']
+            if args.expected_last_time_ps is not None:
+                assert math.isclose(last_time, args.expected_last_time_ps), command['log']
+            checked_trajectories.append({'log': command['log'], 'frames': count, 'last_time_ps': last_time})
         verified.append({'job_id': result['job_id'], 'completed_steps': len(result['completed_steps']),
                          'native_commands': len(result['commands']), 'files_verified': len(paths),
                          'max_file_bytes': max(item['size_bytes'] for item in result['files']),
                          'native_command_wall_seconds': sum(item['wall_seconds'] for item in result['commands']),
                          'checkpoint_generations': result['native_checkpoint_generation'],
-                         'numeric_analysis_rows': numeric_rows, 'trajectory_checks': len(trajectory_checks)})
+                         'numeric_analysis_rows': numeric_rows, 'trajectory_checks': len(trajectory_checks),
+                         'checked_trajectories': checked_trajectories})
     operation = status['operation']
     elapsed = (datetime.fromisoformat(operation['completed_at']) - datetime.fromisoformat(operation['accepted_at'])).total_seconds()
     evidence = {'operation_id': operation['id'], 'accepted_to_completed_seconds': elapsed,

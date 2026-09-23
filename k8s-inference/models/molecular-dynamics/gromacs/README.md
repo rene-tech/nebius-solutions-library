@@ -1,9 +1,12 @@
 # GROMACS on Scientific AI
 
-Status: implementation and GPU qualification in progress. **Not customer-released.**
-An onboarding profile is deployed for hosted qualification; the source template
-under `activation/` remains deliberately unrouted. See [qualification evidence](qualification/RESULTS-20260923.md)
-for what has actually run and which acceptance paths remain open.
+Status: the single-GPU backend is deployed and has passed hosted MD, free-energy,
+six-job batch, interrupted-worker recovery and cancellation tests. **This is not
+a blanket qualification of every GROMACS workflow.** The updated workbench image
+is published; the existing recording endpoint has not been replaced. The source
+template under `activation/` remains deliberately unrouted. See
+[qualification evidence](qualification/RESULTS-20260923.md) for exact tested
+artifacts, limits and the remaining workbench/customer-release acceptance.
 
 This is a general molecular-dynamics App, not a customer-specific pipeline.
 The official NVIDIA artifact is an optimized **NGC HPC container**, not an HTTP
@@ -52,7 +55,9 @@ appropriate topology parameters, charge/protonation decisions and validation.
 These are operational defaults, **not universal scientific standards**. A useful
 trajectory sampling interval depends on the phenomenon and analysis. The byte
 budget is not a bucket-quota increase. Input archive, temporary files and logs
-also consume scratch. Large single-object transfer qualification remains open.
+also consume scratch. A 144,113,652-byte native trajectory has passed the hosted
+download and customer-bucket paths, including multipart export. Larger individual
+objects have not yet been qualified.
 In particular, the current platform-artifact path uses single PUT uploads, not
 multipart uploads. Do not promise individual files over 5 GiB just because the
 aggregate workspace budget permits them. The customer-bucket copy does use
@@ -111,13 +116,13 @@ claim is made that every NVIDIA GPU has been tested.
 | Capability | Exact NVIDIA build / implementation status |
 | --- | --- |
 | Preparation, MD, analysis, native checkpoint | Implemented; GPU fixtures tested |
-| Free energy | Seven-window ethanol tutorial and BAR ran on L40S; hosted acceptance pending |
+| Free energy | Seven-window ethanol tutorial and BAR passed the hosted MCP/client/bucket path; no convergence claim |
 | Colvars | Compiled in; enhanced-sampling acceptance is Priority 2 |
 | PLUMED | Compiled in; kernel availability and workflow acceptance are Priority 2 |
 | CP2K QM/MM | Not compiled into this image; separate build required |
 | Torch NNPot | Not compiled into this image; separate build required |
 | Multi-node MPI | This image is thread-MPI, not external MPI; separate build required |
-| CUDA/CRIU snapshot acceleration | Unqualified; native `.cpt` is the default recovery path |
+| CUDA/CRIU snapshot acceleration | Same-process GPU suspend/resume measured, not persistent/new-Pod restore; native `.cpt` is the default |
 
 Future multi-node work should reuse the platform's JobSet/Kueue gang scheduling,
 an external-MPI GPU-aware build, compatible MPI/UCX/RDMA interfaces, and explicit
@@ -135,9 +140,24 @@ MIG and MPS must be measured per hardware/system, not inferred from an A100 blog
 - `components/control-plane/.../adapters/gromacs.py`: existing batch integration.
 - `gromacs_checkpoints.py`, `gromacs_storage.py`: companion recovery/export.
 
-The GROMACS runtime tests do not qualify hosted REST/MCP, customer bucket I/O,
-queue bursts, preempted-node recovery or LibreChat. Those are separate acceptance
-cases, and the candidate must not be marketed as available until they pass.
+Native runtime tests alone do not qualify the hosted customer experience. Hosted
+evidence now includes the exact packaged LibreChat CLI calling typed MCP, byte-
+verified customer-bucket output, a controlled own-Pod eviction and automatic
+restore, cancellation and six-job bursts. This is not a physical-node-loss test,
+a browser/LLM-agent interaction test, an uncached new-node cold-start benchmark,
+or evidence for arbitrary customer scientific protocols.
+
+The client hashes and uploads source files with bounded memory, validates exact
+finalized metadata, downloads four native files concurrently and retries only
+transient read failures. The saved operation/receipt is the resume boundary;
+transport recovery never silently resubmits GPU work. Inputs above the gateway's
+16 MiB inline threshold use its existing presigned Object Storage path.
+
+The current execution shape reserves a GPU for the entire job, including CPU
+preparation, analysis and artifact I/O. Report occupied GPU time separately from
+native simulation time; platform lifecycle `active_compute` is not a DCGM busy-
+time measurement. A CPU-only analysis/preparation shape and scheduler-owned MPS
+ensemble are follow-up optimizations, not currently released capabilities.
 
 ## Primary references
 
