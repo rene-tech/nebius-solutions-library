@@ -188,7 +188,23 @@ the shared completion runner selected `python`, while this image provides
 the native worker and checkpoint protocol were not reached. The release owner
 was given a shared-adapter fix that keeps the r4 worker image unchanged. Failed
 operation `39460065-edbb-4eaa-a316-f3d48ded823f` and its retained events are kept
-separate from native scientific passes. No customer-path pass is claimed yet.
+separate from subsequent passes.
+
+After the shared launcher fix, the release owner downloaded and hash-verified
+237 artifacts from the ordinary public MCP/customer-client NVE batch. Independent
+native output auditing passed all three requested jobs, all 234 native files
+(350,668,887 bytes), all 60 DCD frames and the exact 221,000-step final checkpoints.
+The three 400 ps NVE maximum relative energy deviations were 0.0293%, 0.0352%
+and 0.0423%; native median was 290.275 ns/day (289.736–290.390). These are native
+single-trajectory timings, not cloud end-to-end or aggregate throughput.
+Downloaded evidence is retained in
+`/home/tux/secure-handoff/fs2-md-engines-20260923/namd-hosted-nve-02-materialized/`.
+Its `hosted-validation-receipt.json` SHA256 is
+`9b5320a27b3d8c99c73b5ef01efd87f11e1040a4ecccda3d72e30d063eb09e05`.
+The receipt explicitly leaves credential, submitted-input binding, public API,
+materialization and exact worker-image provenance to the parent client/release
+receipt; downloaded native files alone do not prove those properties. This
+NVE output pass does not qualify all hosted protocols or full customer readiness.
 
 The exact-r4 SPDX SBOM contains 188 packages (Syft 1.43.0). Trivy 0.70.0 with
 the 23 September 2026 01:09 UTC vulnerability database reports zero critical,
