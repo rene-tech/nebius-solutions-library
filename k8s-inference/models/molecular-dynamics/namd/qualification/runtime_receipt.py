@@ -62,7 +62,7 @@ def main():
                    "min_ns_per_day": validation["min_ns_per_day"], "max_ns_per_day": validation["max_ns_per_day"]}
             tests.append(row)
             if not path.is_file():
-                row["error"] = "chosen repetition has not completed"
+                row["error"] = "chosen repetition result is absent from the supplied local archive"
                 continue
             result = json.loads(path.read_text())
             scientific = next(r for r in validation["repetitions"] if r["job"] == job_id)
@@ -104,7 +104,10 @@ def main():
                                "Pool eligibility is limited to the exact tested GPU/pool; no untested-GPU inference",
                                "Startup events were measured on an existing node; base-layer cache state was not independently measured, so this is not an uncached-node cold start"]}
     args.output.write_text(json.dumps(receipt, indent=2) + "\n")
-    print(json.dumps({"receipt": str(args.output), "sha256": sha(args.output), "cases": len(tests), "customer_ready": False}))
+    print(json.dumps({"receipt": str(args.output), "sha256": sha(args.output), "status": receipt["status"],
+                      "cases": len(tests), "customer_ready": False}))
+    if receipt["status"] != "passed":
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

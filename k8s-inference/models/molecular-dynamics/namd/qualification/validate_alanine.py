@@ -86,6 +86,8 @@ def validate(fixture, campaign):
             log = data / command["log"]
             rows = energy_rows(log)
             metrics = log_metrics(log)
+            if metrics["atoms"] != len(fields["MASS"]) or metrics["timestep_fs"] != protocol["timestep_fs"]:
+                raise ValueError("native atom count or timestep differs from the canonical protocol")
             report["native_logs"].append({"path": str(log), "sha256": digest_file(log), "warnings": warning_lines(log.read_text())})
             stage = {"id": step["id"], "native_first_energy_step": rows[0]["TS"], "native_last_energy_step": rows[-1]["TS"],
                      "last_energy_kcal_mol_bar_A3_K": rows[-1], "native_wall_seconds": command["wall_seconds"],
@@ -116,6 +118,8 @@ def validate(fixture, campaign):
             if step["id"] == "production":
                 first += protocol["npt_steps"]
             end, interval = first + count, protocol["output_every_steps"]
+            if metrics["configured_first_step"] != first or metrics["random_seed"] != protocol[step["id"] + "_seed"]:
+                raise ValueError("native stage origin or RNG seed differs from the canonical protocol")
             path = native / ("nvt.dcd" if step["id"] == "nvt" else step["id"] + ".part000001.dcd")
             trajectory = dcd(path)
             expected = {"atoms": len(fields["MASS"]), "frames": count // interval,
