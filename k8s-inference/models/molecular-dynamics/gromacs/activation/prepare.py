@@ -191,7 +191,10 @@ def main():
         # Environment-local snapshot PVC/configmap identities stay in the live
         # values overlay. Do not bake this cluster's bundle settings into IaC.
         published_map = copy.deepcopy(source_map)
-        published_map["models"] = overlay["scientificBatch"]["executionMap"]["models"]
+        if args.replace_existing:
+            published_map["models"] = [row if item["model_id"] == "gromacs" else item for item in published_map["models"]]
+        else:
+            published_map["models"].append(row)
         published_map["qualification_baselines"] = overlay["scientificBatch"]["executionMap"]["qualification_baselines"]
         (contracts / "scientific-execution-map.json").write_text(
             json.dumps(published_map, indent=2) + "\n")

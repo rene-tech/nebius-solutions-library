@@ -2,31 +2,32 @@
   "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3",
   "models": [
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "d07eea4259898300c5751643ab82f09d65d8eace03e227874a71596875aad50b",
       "model_id": "boltzgen",
+      "variant_id": "upstream-v0-3-2",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "d07eea4259898300c5751643ab82f09d65d8eace03e227874a71596875aad50b",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
-            "directory_count": 0,
-            "expanded_bytes": 10234382415,
-            "file_count": 6,
-            "inventory_sha256": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
-            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
-            "manifest_sha256": "723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
-          },
           "artifact_id": "boltzgen-checkpoints",
+          "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
           "content_digest": "sha256:ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
           "localization_receipt_digest": "sha256:723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f",
-          "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+            "manifest_sha256": "723ada21585427b7cec08ddeccbba3279e74bd3c4660c8d12cc0d33e3f36a44f",
+            "inventory_sha256": "ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "file_count": 6,
+            "directory_count": 0,
+            "expanded_bytes": 10234382415,
+            "canonical_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
           "aggregate_tree": {
@@ -49,75 +50,19 @@
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "boltzgen-v0-3-2",
-          "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
-          "mounts": [
-            {
-              "claim_name": null,
-              "host_path": null,
-              "kind": "artifact-workspace",
-              "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
-              "name": "boltzgen-checkpoints",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
-              "name": "boltzgen-inference-molecules",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
-            }
-          ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "default",
           "stage_id": "configure",
-          "termination_grace_seconds": 90,
-          "validator_id": "boltzgen-v0-3-2",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
-          "active_deadline_seconds": 43200,
-          "collector_id": "boltzgen-v0-3-2",
-          "environment": {},
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
               "claim_name": null,
@@ -138,42 +83,42 @@
               "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
             "requests": {
               "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
             }
           },
-          "service_account_name": "default",
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
           "stage_id": "design",
-          "termination_grace_seconds": 90,
-          "validator_id": "boltzgen-v0-3-2",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
-          "active_deadline_seconds": 43200,
-          "collector_id": "boltzgen-v0-3-2",
-          "environment": {},
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
               "claim_name": null,
@@ -194,42 +139,42 @@
               "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
             "requests": {
               "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
             }
           },
-          "service_account_name": "default",
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
           "stage_id": "inverse-folding",
-          "termination_grace_seconds": 90,
-          "validator_id": "boltzgen-v0-3-2",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
-          "active_deadline_seconds": 43200,
-          "collector_id": "boltzgen-v0-3-2",
-          "environment": {},
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
               "claim_name": null,
@@ -250,42 +195,42 @@
               "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
             "requests": {
               "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
             }
           },
-          "service_account_name": "default",
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
           "stage_id": "folding",
-          "termination_grace_seconds": 90,
-          "validator_id": "boltzgen-v0-3-2",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
-          "active_deadline_seconds": 43200,
-          "collector_id": "boltzgen-v0-3-2",
-          "environment": {},
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
               "claim_name": null,
@@ -306,42 +251,42 @@
               "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
             "requests": {
               "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
             }
           },
-          "service_account_name": "default",
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
           "stage_id": "design-folding",
-          "termination_grace_seconds": 90,
-          "validator_id": "boltzgen-v0-3-2",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
-          "active_deadline_seconds": 43200,
-          "collector_id": "boltzgen-v0-3-2",
-          "environment": {},
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
               "claim_name": null,
@@ -362,42 +307,51 @@
               "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
             "requests": {
               "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
             }
           },
-          "service_account_name": "default",
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
           "stage_id": "affinity",
-          "termination_grace_seconds": 90,
-          "validator_id": "boltzgen-v0-3-2",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
-          "active_deadline_seconds": 43200,
-          "collector_id": "boltzgen-v0-3-2",
-          "environment": {},
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-checkpoints",
+              "name": "boltzgen-checkpoints",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-checkpoints/sha256/ab822047e2d6c5fc4c3fabb35d15b611c96851ec4946304c661ecfc634acbbdf"
             },
             {
               "claim_name": null,
@@ -409,42 +363,42 @@
               "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "4000m",
-              "ephemeral_storage": "16Gi",
-              "memory": "8Gi"
-            },
             "requests": {
-              "cpu": "2000m",
-              "ephemeral_storage": "8Gi",
-              "memory": "4Gi"
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
             }
           },
-          "service_account_name": "default",
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
           "stage_id": "analysis",
-          "termination_grace_seconds": 90,
-          "validator_id": "boltzgen-v0-3-2",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
-          "active_deadline_seconds": 43200,
-          "collector_id": "boltzgen-v0-3-2",
-          "environment": {},
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
+          "validator_id": "boltzgen-v0-3-2",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
               "claim_name": null,
@@ -456,877 +410,926 @@
               "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "4000m",
-              "ephemeral_storage": "16Gi",
-              "memory": "8Gi"
-            },
             "requests": {
               "cpu": "2000m",
-              "ephemeral_storage": "8Gi",
-              "memory": "4Gi"
+              "memory": "4Gi",
+              "ephemeral_storage": "8Gi"
+            },
+            "limits": {
+              "cpu": "4000m",
+              "memory": "8Gi",
+              "ephemeral_storage": "16Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "filtering",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "filtering",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/boltzgen@sha256:9c3230424e02d725dc145b8f21a18f283910e1beba1f37466598ee832813820e",
+          "collector_id": "boltzgen-v0-3-2",
           "validator_id": "boltzgen-v0-3-2",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "kind": "reference",
+              "mount_path": "/opt/fs2/artifacts/boltzgen-inference-molecules",
+              "name": "boltzgen-inference-molecules",
+              "read_only": true,
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
+            }
+          ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
           "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "resources": {
+            "requests": {
+              "cpu": "2000m",
+              "memory": "4Gi",
+              "ephemeral_storage": "8Gi"
+            },
+            "limits": {
+              "cpu": "4000m",
+              "memory": "8Gi",
+              "ephemeral_storage": "16Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
         }
       ],
-      "variant_id": "upstream-v0-3-2",
-      "workload_namespace": "fs2-models"
+      "access_profile": "public"
     },
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "c230ea349544ecb0f340c7b97a0c6347c79357f2f599a17eedd78428121ed81e",
       "model_id": "proteina-complexa",
+      "variant_id": "upstream-dev-20260827",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "c230ea349544ecb0f340c7b97a0c6347c79357f2f599a17eedd78428121ed81e",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
-            "directory_count": 0,
-            "expanded_bytes": 7034391160,
-            "file_count": 2,
-            "inventory_sha256": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
-            "manifest_algorithm": "fs2-tree-inventory/v2",
-            "manifest_sha256": "b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536"
-          },
           "artifact_id": "complexa-protein",
+          "mount_path": "/opt/fs2/artifacts/complexa-protein",
           "content_digest": "sha256:eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
           "localization_receipt_digest": "sha256:02445f390a69ef754d5667686f36263f234720f496cfde12ac22e0c7e051d7e3",
-          "mount_path": "/opt/fs2/artifacts/complexa-protein"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+            "manifest_sha256": "b84403b26e5ac4acd2ea3203d3ea7936e8ef009a9ac1c19fbcfddd7c40667851",
+            "inventory_sha256": "eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+            "manifest_algorithm": "fs2-tree-inventory/v2",
+            "file_count": 2,
+            "directory_count": 0,
+            "expanded_bytes": 7034391160,
+            "canonical_path": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
-            "directory_count": 0,
-            "expanded_bytes": 5890739041,
-            "file_count": 2,
-            "inventory_sha256": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
-            "manifest_algorithm": "fs2-tree-inventory/v2",
-            "manifest_sha256": "868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5"
-          },
           "artifact_id": "complexa-ligand",
+          "mount_path": "/opt/fs2/artifacts/complexa-ligand",
           "content_digest": "sha256:61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
           "localization_receipt_digest": "sha256:02445f390a69ef754d5667686f36263f234720f496cfde12ac22e0c7e051d7e3",
-          "mount_path": "/opt/fs2/artifacts/complexa-ligand"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+            "manifest_sha256": "868551c2ec89d8296155ac5e5e0a674205cbc851c301ed58f32014d7fe404177",
+            "inventory_sha256": "61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+            "manifest_algorithm": "fs2-tree-inventory/v2",
+            "file_count": 2,
+            "directory_count": 0,
+            "expanded_bytes": 5890739041,
+            "canonical_path": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
-            "directory_count": 0,
-            "expanded_bytes": 5892211805,
-            "file_count": 2,
-            "inventory_sha256": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
-            "manifest_algorithm": "fs2-tree-inventory/v2",
-            "manifest_sha256": "18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a"
-          },
           "artifact_id": "complexa-ame",
+          "mount_path": "/opt/fs2/artifacts/complexa-ame",
           "content_digest": "sha256:d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
           "localization_receipt_digest": "sha256:02445f390a69ef754d5667686f36263f234720f496cfde12ac22e0c7e051d7e3",
-          "mount_path": "/opt/fs2/artifacts/complexa-ame"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+            "manifest_sha256": "18199cf0468000baefa7ed0cb604a2a7c64d0228ddf8d8e5579d6c1e543267db",
+            "inventory_sha256": "d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+            "manifest_algorithm": "fs2-tree-inventory/v2",
+            "file_count": 2,
+            "directory_count": 0,
+            "expanded_bytes": 5892211805,
+            "canonical_path": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
-            "directory_count": 0,
-            "expanded_bytes": 3038876446,
-            "file_count": 1,
-            "inventory_sha256": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
-            "manifest_algorithm": "fs2-tree-inventory/v2",
-            "manifest_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce"
-          },
           "artifact_id": "rosettafold3-checkpoint",
+          "mount_path": "/opt/fs2/artifacts/rosettafold3-checkpoint",
           "content_digest": "sha256:d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
           "localization_receipt_digest": "sha256:02445f390a69ef754d5667686f36263f234720f496cfde12ac22e0c7e051d7e3",
-          "mount_path": "/opt/fs2/artifacts/rosettafold3-checkpoint"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+            "manifest_sha256": "94002c4a6a8c7fdbdda20e658785cf63a7708728afccf9615f1d54ea71657822",
+            "inventory_sha256": "d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+            "manifest_algorithm": "fs2-tree-inventory/v2",
+            "file_count": 1,
+            "directory_count": 0,
+            "expanded_bytes": 3038876446,
+            "canonical_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
-            "directory_count": 0,
-            "expanded_bytes": 5587956571,
-            "file_count": 16,
-            "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
-            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
-            "manifest_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4"
-          },
           "artifact_id": "alphafold2-params",
+          "mount_path": "/opt/fs2/artifacts/alphafold2-params",
           "content_digest": "sha256:cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
           "localization_receipt_digest": "sha256:9c1684e5910c64b0a93dc91ec43ed2e3f6a595159758e743232b4f9548e8d795",
-          "mount_path": "/opt/fs2/artifacts/alphafold2-params"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+            "manifest_sha256": "da4d1936b6bb9c83ea4dc046cdc05131b0b2caf92cda71e086837f0f786d176f",
+            "inventory_sha256": "cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "file_count": 16,
+            "directory_count": 0,
+            "expanded_bytes": 5587956571,
+            "canonical_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         }
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "proteina-complexa-v1",
-          "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
-          "mounts": [
-            {
-              "claim_name": null,
-              "host_path": null,
-              "kind": "artifact-workspace",
-              "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/complexa-protein",
-              "name": "complexa-protein",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536"
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/complexa-ligand",
-              "name": "complexa-ligand",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5"
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/complexa-ame",
-              "name": "complexa-ame",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a"
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/rosettafold3-checkpoint",
-              "name": "rosettafold3-checkpoint",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce"
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/alphafold2-params",
-              "name": "alphafold2-params",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4"
-            }
-          ],
-          "required_node_labels": {
-            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
-            "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "default",
           "stage_id": "generate",
-          "termination_grace_seconds": 90,
-          "validator_id": "proteina-complexa-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
-          "active_deadline_seconds": 43200,
-          "collector_id": "proteina-complexa-v1",
-          "environment": {},
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+          "collector_id": "proteina-complexa-v1",
+          "validator_id": "proteina-complexa-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "complexa-protein",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/complexa-protein",
+              "sub_path": "scientific-localization/public/generations/complexa-protein/sha256/eaaf891e89935b909f13bece3ff1e8c4a1ae43d0e2378b834e07ca74e2607536",
+              "read_only": true
+            },
+            {
+              "name": "complexa-ligand",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/complexa-ligand",
+              "sub_path": "scientific-localization/public/generations/complexa-ligand/sha256/61247c8dbf261307d708be53decfda69f21e73ff421556662366045c30d9cea5",
+              "read_only": true
+            },
+            {
+              "name": "complexa-ame",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/complexa-ame",
+              "sub_path": "scientific-localization/public/generations/complexa-ame/sha256/d38c622eaa0dad419f0ff0af72f36ab49299c533f5f56bbf08fa180e829afa5a",
+              "read_only": true
+            },
+            {
+              "name": "rosettafold3-checkpoint",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+              "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+              "read_only": true
+            },
+            {
+              "name": "alphafold2-params",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+              "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+              "read_only": true
             }
           ],
-          "required_node_labels": {},
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "4000m",
-              "ephemeral_storage": "16Gi",
-              "memory": "8Gi"
-            },
             "requests": {
-              "cpu": "2000m",
-              "ephemeral_storage": "8Gi",
-              "memory": "4Gi"
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "filter",
-          "termination_grace_seconds": 90,
-          "validator_id": "proteina-complexa-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
           "active_deadline_seconds": 43200,
-          "collector_id": "proteina-complexa-v1",
+          "termination_grace_seconds": 90,
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
-          "mounts": [
-            {
-              "claim_name": null,
-              "host_path": null,
-              "kind": "artifact-workspace",
-              "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/rosettafold3-checkpoint",
-              "name": "rosettafold3-checkpoint",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce"
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/alphafold2-params",
-              "name": "alphafold2-params",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4"
-            }
-          ],
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "default",
-          "stage_id": "evaluate",
-          "termination_grace_seconds": 90,
-          "validator_id": "proteina-complexa-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          }
         },
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "proteina-complexa-v1",
-          "environment": {},
+          "stage_id": "filter",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+          "collector_id": "proteina-complexa-v1",
+          "validator_id": "proteina-complexa-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
-          "required_node_labels": {},
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "4000m",
-              "ephemeral_storage": "16Gi",
-              "memory": "8Gi"
-            },
             "requests": {
               "cpu": "2000m",
-              "ephemeral_storage": "8Gi",
-              "memory": "4Gi"
+              "memory": "4Gi",
+              "ephemeral_storage": "8Gi"
+            },
+            "limits": {
+              "cpu": "4000m",
+              "memory": "8Gi",
+              "ephemeral_storage": "16Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "analyze",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {}
+        },
+        {
+          "stage_id": "evaluate",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+          "collector_id": "proteina-complexa-v1",
           "validator_id": "proteina-complexa-v1",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "rosettafold3-checkpoint",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/rosettafold3-checkpoint",
+              "sub_path": "scientific-localization/public/generations/rosettafold3-checkpoint/sha256/d909fe65e86670b0a18a7494dd06811d301d0899e30778442e8ca6a343164bce",
+              "read_only": true
+            },
+            {
+              "name": "alphafold2-params",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/alphafold2-params",
+              "sub_path": "scientific-localization/public/generations/alphafold2-params/sha256/cdbb7c7c475442712c73f8f8ea40b42fb5dd4fb5c1bf81fdb4642ca9e27f5ac4",
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
           "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {
+            "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "analyze",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/proteina-complexa@sha256:e5e075237a680dc01ace45b97ecfcfb9f95f5897aa51f36164591a74778a9cd1",
+          "collector_id": "proteina-complexa-v1",
+          "validator_id": "proteina-complexa-v1",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            }
+          ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "2000m",
+              "memory": "4Gi",
+              "ephemeral_storage": "8Gi"
+            },
+            "limits": {
+              "cpu": "4000m",
+              "memory": "8Gi",
+              "ephemeral_storage": "16Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
+          "required_node_labels": {}
         }
       ],
-      "variant_id": "upstream-dev-20260827",
-      "workload_namespace": "fs2-models"
+      "access_profile": "public"
     },
     {
-      "access_profile": "academic",
-      "execution_identity_sha256": "1e7aabeac029b6ea9b5c0e3cd2677c6cc37ddd6d5e516c51897b74c18382230f",
       "model_id": "bindcraft",
+      "variant_id": "v1-5-3-pyrosetta-academic",
+      "workload_namespace": "fs2-academic-poc",
+      "execution_identity_sha256": "1e7aabeac029b6ea9b5c0e3cd2677c6cc37ddd6d5e516c51897b74c18382230f",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
-            "directory_count": 0,
-            "expanded_bytes": 5587959437,
-            "file_count": 17,
-            "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
-            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
-            "manifest_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f"
-          },
           "artifact_id": "alphafold2-params-bindcraft",
+          "mount_path": "/models/alphafold2",
           "content_digest": "sha256:9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
           "localization_receipt_digest": "sha256:bd2275bf6545c24fca98206338a4f45a580eeebb4f08536267c9cf1c0ed77932",
-          "mount_path": "/models/alphafold2"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+            "manifest_sha256": "25cad364aa28e5cf282a877d123ad938ea048a957ad8185307b5542c301406e0",
+            "inventory_sha256": "9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "file_count": 17,
+            "directory_count": 0,
+            "expanded_bytes": 5587959437,
+            "canonical_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
-            "directory_count": 0,
-            "expanded_bytes": 26602793,
-            "file_count": 5,
-            "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
-            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
-            "manifest_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f"
-          },
           "artifact_id": "colabdesign-mpnn-weights-vanilla",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
           "content_digest": "sha256:2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
           "localization_receipt_digest": "sha256:a5dc2215e30c4a92aabf5926f1020a7c18f147998dd9a5db52c236494f11cde2",
-          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+            "manifest_sha256": "07ee17ecbc3c2a5e50327461f3cde311c35a7fad18f7d92e244e220e15329fc8",
+            "inventory_sha256": "2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "file_count": 5,
+            "directory_count": 0,
+            "expanded_bytes": 26602793,
+            "canonical_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
-            "directory_count": 0,
-            "expanded_bytes": 26601241,
-            "file_count": 5,
-            "inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
-            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
-            "manifest_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146"
-          },
           "artifact_id": "colabdesign-mpnn-weights-soluble",
+          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
           "content_digest": "sha256:54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
           "localization_receipt_digest": "sha256:afa1c36a878c4765f9e848b7b36746bcdb606ff8b134b1ba72881b496d6c62f9",
-          "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+            "manifest_sha256": "471cd4bcd0964be0c2f462668d01885e9db268e14fed04ebe02b693491690660",
+            "inventory_sha256": "54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "file_count": 5,
+            "directory_count": 0,
+            "expanded_bytes": 26601241,
+            "canonical_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
-            "directory_count": 779,
-            "expanded_bytes": 3287122494,
-            "file_count": 8697,
-            "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
-            "manifest_algorithm": "fs2-tree-manifest/v1",
-            "manifest_sha256": "ee24f7445426b0536da9781bc57a9ef33e4e1e98a3434afae31cdd84e7b473d3",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
-          },
           "artifact_id": "bindcraft-pyrosetta-installed-tree",
+          "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
           "content_digest": "sha256:a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
           "localization_receipt_digest": "sha256:dc96da043375d4f5396307f3dbb3f39e8743d66d7b1f6c063fa01abc4c33aa47",
-          "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+            "manifest_sha256": "ee24f7445426b0536da9781bc57a9ef33e4e1e98a3434afae31cdd84e7b473d3",
+            "inventory_sha256": "a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+            "manifest_algorithm": "fs2-tree-manifest/v1",
+            "file_count": 8697,
+            "directory_count": 779,
+            "expanded_bytes": 3287122494,
+            "canonical_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         }
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "bindcraft-design-output-v1",
-          "environment": {},
+          "stage_id": "design",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+          "collector_id": "bindcraft-design-output-v1",
+          "validator_id": "bindcraft-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/models/alphafold2",
               "name": "alphafold2-params",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f"
-            },
-            {
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+              "mount_path": "/models/alphafold2",
+              "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+              "read_only": true
+            },
+            {
               "name": "mpnn-weights",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f"
-            },
-            {
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
-              "name": "mpnn-soluble",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146"
+              "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights",
+              "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-vanilla/sha256/2602ff1e01c8bdfd5773334e5724fcf0bdfecb3963100f05ad67ad6a5824ee4f",
+              "read_only": true
             },
             {
+              "name": "mpnn-soluble",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/conda/lib/python3.10/site-packages/colabdesign/mpnn/weights_soluble",
+              "sub_path": "scientific-localization/public/generations/colabdesign-mpnn-weights-soluble/sha256/54da6672d5677ab27bea0939bbbc591f8877484175a182736ca79af045d0f146",
+              "read_only": true
+            },
+            {
+              "name": "pyrosetta",
+              "kind": "private",
               "claim_name": "academic-assets-runtime-rwx",
               "host_path": null,
-              "kind": "private",
               "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
-              "name": "pyrosetta",
-              "read_only": true,
-              "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+              "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+              "read_only": true
             }
           ],
+          "service_account_name": "fs2-academic-runner",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "16000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "24000m",
+              "memory": "128Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "24000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "128Gi"
-            },
-            "requests": {
-              "cpu": "16000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "fs2-academic-runner",
-          "stage_id": "design",
-          "termination_grace_seconds": 90,
-          "validator_id": "bindcraft-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          }
         },
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "bindcraft-aggregate-output-v1",
-          "environment": {},
+          "stage_id": "aggregate",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/bindcraft@sha256:0d08bae1c8d7262bab513a10c93e51f7948e5f920b255efa5b44774b130daeb3",
+          "collector_id": "bindcraft-aggregate-output-v1",
+          "validator_id": "bindcraft-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
+              "name": "alphafold2-params",
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
               "mount_path": "/models/alphafold2",
-              "name": "alphafold2-params",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f"
+              "sub_path": "scientific-localization/public/generations/alphafold2-params-bindcraft/sha256/9e25d394b1a7296f7705a5be794c5e29b853beb967835db088069f7cc007aa4f",
+              "read_only": true
             },
             {
+              "name": "pyrosetta",
+              "kind": "private",
               "claim_name": "academic-assets-runtime-rwx",
               "host_path": null,
-              "kind": "private",
               "mount_path": "/opt/fs2/academic/pyrosetta-bindcraft/site-packages",
-              "name": "pyrosetta",
-              "read_only": true,
-              "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d"
+              "sub_path": "scientific-localization/private/generations/bindcraft-pyrosetta-installed-tree/sha256/a93d68e198c81cbb87926e012dff6b50a73e99d9a41261e65f73d264c792aa8d",
+              "read_only": true
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "fs2-academic-runner",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "4000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "16Gi"
-            },
             "requests": {
               "cpu": "2000m",
-              "ephemeral_storage": "16Gi",
-              "memory": "8Gi"
+              "memory": "8Gi",
+              "ephemeral_storage": "16Gi"
+            },
+            "limits": {
+              "cpu": "4000m",
+              "memory": "16Gi",
+              "ephemeral_storage": "32Gi"
             }
           },
-          "service_account_name": "fs2-academic-runner",
-          "stage_id": "aggregate",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
-          "validator_id": "bindcraft-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
         }
       ],
-      "variant_id": "v1-5-3-pyrosetta-academic",
-      "workload_namespace": "fs2-academic-poc"
+      "access_profile": "academic"
     },
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "549a8d19a6f03757d20e77eebd1ae2af9f7e22d899b18f09242e1997a8d31754",
       "model_id": "mosaic",
+      "variant_id": "mosaic-boltz2-proteinmpnn-v1",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "549a8d19a6f03757d20e77eebd1ae2af9f7e22d899b18f09242e1997a8d31754",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
           "artifact_id": "mosaic-boltz2-conf",
+          "mount_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
           "content_digest": "sha256:e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6",
+          "localization_receipt_digest": "sha256:a2cfc9a72c101d77ecc2a80fb779909bb3da0def3e3f0893be9238e65c948165",
           "file_manifest": [
             {
               "path": "boltz2_conf.ckpt",
               "sha256": "090e82ac8c92f5e943fa1b39e7410a44027bea7243c0bbb3caa67a77fc1428e1",
               "size_bytes": 2286561469
             }
-          ],
-          "localization_receipt_digest": "sha256:a2cfc9a72c101d77ecc2a80fb779909bb3da0def3e3f0893be9238e65c948165",
-          "mount_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt"
+          ]
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
-            "directory_count": 0,
-            "expanded_bytes": 1820698819,
-            "file_count": 45227,
-            "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
-            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
-            "manifest_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
-          },
           "artifact_id": "boltzgen-inference-molecules",
+          "mount_path": "/opt/fs2/artifacts/mosaic/boltz/mols",
           "content_digest": "sha256:8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
           "localization_receipt_digest": "sha256:1baf37e3110e7ec006f7896b38bd6fe2f04cb622cb7b7600411b3359527aa629",
-          "mount_path": "/opt/fs2/artifacts/mosaic/boltz/mols"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+            "manifest_sha256": "7f0e2c401abd73c1d4ff6deb6719e027db6ee9a75f7b7ed940b1e63ff54bbae4",
+            "inventory_sha256": "8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "file_count": 45227,
+            "directory_count": 0,
+            "expanded_bytes": 1820698819,
+            "canonical_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/mosaic-components/sha256/d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
-            "directory_count": 0,
-            "expanded_bytes": 33423545,
-            "file_count": 3,
-            "inventory_sha256": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
-            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
-            "manifest_sha256": "a2f5f436771705ecb1e57eb4d447c3343573ef7596a8fca1dbc67541ecfe701e",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6"
-          },
           "artifact_id": "mosaic-components",
+          "mount_path": "/opt/fs2/artifacts/mosaic/proteinmpnn",
           "content_digest": "sha256:d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
           "localization_receipt_digest": "sha256:a2cfc9a72c101d77ecc2a80fb779909bb3da0def3e3f0893be9238e65c948165",
-          "mount_path": "/opt/fs2/artifacts/mosaic/proteinmpnn"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+            "manifest_sha256": "a2f5f436771705ecb1e57eb4d447c3343573ef7596a8fca1dbc67541ecfe701e",
+            "inventory_sha256": "d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+            "manifest_algorithm": "fs2-flat-tree-inventory/v1",
+            "file_count": 3,
+            "directory_count": 0,
+            "expanded_bytes": 33423545,
+            "canonical_path": "scientific-localization/public/generations/mosaic-components/sha256/d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         }
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
+          "stage_id": "design",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
           "collector_id": "mosaic-boltz2-proteinmpnn-v1",
+          "validator_id": "mosaic-boltz2-proteinmpnn-v1",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "runtime-cache",
+              "kind": "runtime-cache",
+              "claim_name": "fs2-scientific-runtime-cache",
+              "host_path": null,
+              "mount_path": "/cache",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "mosaic-boltz2-conf",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
+              "sub_path": "scientific-localization/public/generations/mosaic-boltz2-conf/sha256/e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6/boltz2_conf.ckpt",
+              "read_only": true
+            },
+            {
+              "name": "mosaic-molecules",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/mosaic/boltz/mols",
+              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc",
+              "read_only": true
+            },
+            {
+              "name": "mosaic-components",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/opt/fs2/artifacts/mosaic/proteinmpnn",
+              "sub_path": "scientific-localization/public/generations/mosaic-components/sha256/d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6",
+              "read_only": true
+            }
+          ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "64Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "16000m",
+              "memory": "128Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
           "environment": {
             "JAX_COMPILATION_CACHE_DIR": "/cache/mosaic/jax",
             "JAX_PERSISTENT_CACHE_MIN_COMPILE_TIME_SECS": "0"
           },
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
-          "mounts": [
-            {
-              "claim_name": null,
-              "host_path": null,
-              "kind": "artifact-workspace",
-              "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
-            },
-            {
-              "claim_name": "fs2-scientific-runtime-cache",
-              "host_path": null,
-              "kind": "runtime-cache",
-              "mount_path": "/cache",
-              "name": "runtime-cache",
-              "read_only": false,
-              "sub_path": null
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/mosaic/boltz/boltz2_conf.ckpt",
-              "name": "mosaic-boltz2-conf",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/mosaic-boltz2-conf/sha256/e83af548fe01af5c43dc4ea2b0c52277c7c18a86de6efefbf6dc7b30f59af6a6/boltz2_conf.ckpt"
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/mosaic/boltz/mols",
-              "name": "mosaic-molecules",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/boltzgen-inference-molecules/sha256/8ab1a59c72fc27a37dea61aab9408d7619f7a91fe32409f7a2b36fd59ebeecdc"
-            },
-            {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/opt/fs2/artifacts/mosaic/proteinmpnn",
-              "name": "mosaic-components",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/mosaic-components/sha256/d66b5854b8e7150ded9179e2437cbaf63809ba886658ffd2bc307966b16f3cb6"
-            }
-          ],
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "16000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "128Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "64Gi"
-            }
-          },
-          "service_account_name": "default",
-          "stage_id": "design",
-          "termination_grace_seconds": 90,
-          "validator_id": "mosaic-boltz2-proteinmpnn-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          }
         },
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "mosaic-boltz2-proteinmpnn-v1",
-          "environment": {},
+          "stage_id": "aggregate",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/mosaic@sha256:853cb34b36e940303c126e11e9e66c7643efa15c4ab48861c73013018e477a92",
           "image_role": "scientific-tools",
+          "collector_id": "mosaic-boltz2-proteinmpnn-v1",
+          "validator_id": "mosaic-boltz2-proteinmpnn-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
-          "required_node_labels": {},
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "2000m",
-              "ephemeral_storage": "16Gi",
-              "memory": "4Gi"
-            },
             "requests": {
               "cpu": "1000m",
-              "ephemeral_storage": "8Gi",
-              "memory": "2Gi"
+              "memory": "2Gi",
+              "ephemeral_storage": "8Gi"
+            },
+            "limits": {
+              "cpu": "2000m",
+              "memory": "4Gi",
+              "ephemeral_storage": "16Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "aggregate",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
-          "validator_id": "mosaic-boltz2-proteinmpnn-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "environment": {},
+          "required_node_labels": {}
         }
       ],
-      "variant_id": "mosaic-boltz2-proteinmpnn-v1",
-      "workload_namespace": "fs2-models"
+      "access_profile": "public"
     },
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "5e819d407d360d7cdc08ce3b984bc948e37182ef87c627b93b4e893c4348a082",
       "model_id": "rfdiffusion",
+      "variant_id": "rfdiffusion-v1-1-0",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "5e819d407d360d7cdc08ce3b984bc948e37182ef87c627b93b4e893c4348a082",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
-          "aggregate_tree": {
-            "canonical_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
-            "directory_count": 0,
-            "expanded_bytes": 483616107,
-            "file_count": 1,
-            "inventory_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
-            "manifest_algorithm": "fs2-raw-file/v1",
-            "manifest_sha256": "abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599",
-            "marker_relative_path": ".fs2-runtime-tree.json",
-            "storage_kind": "localization-generation",
-            "tree_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c"
-          },
           "artifact_id": "rfdiffusion-base-checkpoint",
+          "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
           "content_digest": "sha256:7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
           "localization_receipt_digest": "sha256:6df70afd74708907e4a93fa873c6ddc94aa96965518e29b9ae110a27d5ce9868",
-          "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint"
+          "aggregate_tree": {
+            "storage_kind": "localization-generation",
+            "tree_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+            "manifest_sha256": "abd2a8127d0bd1b3cbd51d5ffc14a3351f805e15f593c8224ee94de57e3e4599",
+            "inventory_sha256": "7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+            "manifest_algorithm": "fs2-raw-file/v1",
+            "file_count": 1,
+            "directory_count": 0,
+            "expanded_bytes": 483616107,
+            "canonical_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+            "marker_relative_path": ".fs2-runtime-tree.json"
+          }
         }
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "rfdiffusion-v1-1-0",
-          "environment": {},
+          "stage_id": "inference",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
+          "collector_id": "rfdiffusion-v1-1-0",
+          "validator_id": "rfdiffusion-v1-1-0",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
+              "name": "rfdiffusion-checkpoint",
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
               "mount_path": "/opt/fs2/artifacts/rfdiffusion-base-checkpoint",
-              "name": "rfdiffusion-checkpoint",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c"
+              "sub_path": "scientific-localization/public/generations/rfdiffusion-base-checkpoint/sha256/7f34c945e580dbf5ba96596dcd325150f6452f7a76ee06a3784b2891a9d4c03c",
+              "read_only": true
             }
           ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "48Gi",
+              "ephemeral_storage": "16Gi"
+            },
+            "limits": {
+              "cpu": "16000m",
+              "memory": "64Gi",
+              "ephemeral_storage": "32Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "16000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "64Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "16Gi",
-              "memory": "48Gi"
-            }
-          },
-          "service_account_name": "default",
-          "stage_id": "inference",
-          "termination_grace_seconds": 90,
-          "validator_id": "rfdiffusion-v1-1-0",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          }
         },
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "rfdiffusion-v1-1-0",
-          "environment": {},
+          "stage_id": "collect",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/rfdiffusion@sha256:f31902e0fbece8e7f823b36e47b79ec02fe0bc545a44131188f9194f13711f19",
           "image_role": "scientific-tools",
+          "collector_id": "rfdiffusion-v1-1-0",
+          "validator_id": "rfdiffusion-v1-1-0",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
-          "required_node_labels": {},
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "4000m",
-              "ephemeral_storage": "16Gi",
-              "memory": "8Gi"
-            },
             "requests": {
               "cpu": "2000m",
-              "ephemeral_storage": "8Gi",
-              "memory": "4Gi"
+              "memory": "4Gi",
+              "ephemeral_storage": "8Gi"
+            },
+            "limits": {
+              "cpu": "4000m",
+              "memory": "8Gi",
+              "ephemeral_storage": "16Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "collect",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
-          "validator_id": "rfdiffusion-v1-1-0",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "environment": {},
+          "required_node_labels": {}
         }
       ],
-      "variant_id": "rfdiffusion-v1-1-0",
-      "workload_namespace": "fs2-models"
+      "access_profile": "public"
     },
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "c6ed03bab0aaba62d555f60e294046267d02243cd3f933722012ac59b375aa63",
       "model_id": "esmfold2",
+      "variant_id": "biohub-v3-4-0",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "c6ed03bab0aaba62d555f60e294046267d02243cd3f933722012ac59b375aa63",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
           "artifact_id": "esmfold2-trunk",
+          "mount_path": "/models/esmfold2",
           "content_digest": "sha256:136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+          "localization_receipt_digest": "sha256:9e3ea9f8efb36e5df66e9be4f48beee1107478e96d007a9b7f63b76249dd15e3",
           "file_manifest": [
             {
               "path": "config.json",
@@ -1338,13 +1341,13 @@
               "sha256": "138fd4350d6892b81ce6be7ff9bf5a93ae9d4d3751f46a27438a3f9f0dcefa0e",
               "size_bytes": 939505228
             }
-          ],
-          "localization_receipt_digest": "sha256:9e3ea9f8efb36e5df66e9be4f48beee1107478e96d007a9b7f63b76249dd15e3",
-          "mount_path": "/models/esmfold2"
+          ]
         },
         {
           "artifact_id": "esmc-6b",
+          "mount_path": "/models/esmc-6b",
           "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "localization_receipt_digest": "sha256:14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
           "file_manifest": [
             {
               "path": "config.json",
@@ -1401,143 +1404,143 @@
               "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833",
               "size_bytes": 1392
             }
-          ],
-          "localization_receipt_digest": "sha256:14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
-          "mount_path": "/models/esmc-6b"
+          ]
         },
         {
           "artifact_id": "esmfold2-ccd",
+          "mount_path": "/databases/esmfold2",
           "content_digest": "sha256:b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "localization_receipt_digest": "sha256:e1584e950890ca2be08bfb385148c7a66d3078d9b35cc42ef40a2e6b45b3cad8",
           "file_manifest": [
             {
               "path": "ccd.pkl",
               "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
               "size_bytes": 417306584
             }
-          ],
-          "localization_receipt_digest": "sha256:e1584e950890ca2be08bfb385148c7a66d3078d9b35cc42ef40a2e6b45b3cad8",
-          "mount_path": "/databases/esmfold2"
+          ]
         }
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "esmfold2-prepare-collector-v1",
-          "environment": {},
+          "stage_id": "prepare-input",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+          "collector_id": "esmfold2-prepare-collector-v1",
+          "validator_id": "esmfold2-prepare-validator-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
-          "required_node_labels": {},
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "8000m",
-              "ephemeral_storage": "64Gi",
-              "memory": "32Gi"
-            },
             "requests": {
               "cpu": "4000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "16Gi"
+              "memory": "16Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "32Gi",
+              "ephemeral_storage": "64Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "prepare-input",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
-          "validator_id": "esmfold2-prepare-validator-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "environment": {},
+          "required_node_labels": {}
         },
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "esmfold2-result-collector-v1",
-          "environment": {},
+          "stage_id": "fold",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2@sha256:b372dd7e34e464680a82456ca31b403b0ac0d0851511930d471b67041adbbde3",
+          "collector_id": "esmfold2-result-collector-v1",
+          "validator_id": "esmfold2-biohub-v3-4-0",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/models/esmfold2",
               "name": "esmfold2-trunk",
-              "read_only": true,
-              "sub_path": "model-artifacts/public/v1/objects/esmfold2-trunk/sha256/136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c"
-            },
-            {
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/models/esmc-6b",
+              "mount_path": "/models/esmfold2",
+              "sub_path": "model-artifacts/public/v1/objects/esmfold2-trunk/sha256/136a3580c01cc055ae5a1278bae056e5150a5441ddb89dfbafb9f4e88d763a0c",
+              "read_only": true
+            },
+            {
               "name": "esmc-6b",
-              "read_only": true,
-              "sub_path": "model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758"
-            },
-            {
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/databases/esmfold2",
+              "mount_path": "/models/esmc-6b",
+              "sub_path": "model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+              "read_only": true
+            },
+            {
               "name": "esmfold2-ccd",
-              "read_only": true,
-              "sub_path": "model-artifacts/public/v1/objects/esmfold2-ccd/sha256/b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e"
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/databases/esmfold2",
+              "sub_path": "model-artifacts/public/v1/objects/esmfold2-ccd/sha256/b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+              "read_only": true
             }
           ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "default",
-          "stage_id": "fold",
-          "termination_grace_seconds": 90,
-          "validator_id": "esmfold2-biohub-v3-4-0",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          }
         }
       ],
-      "variant_id": "biohub-v3-4-0",
-      "workload_namespace": "fs2-models"
+      "access_profile": "public"
     },
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "39261b4c8341a04d24dd5a5bf778cfae59203da9fdb3f15debf65892558d3dde",
       "model_id": "esmfold2-fast",
+      "variant_id": "biohub-v3-4-0",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "39261b4c8341a04d24dd5a5bf778cfae59203da9fdb3f15debf65892558d3dde",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
           "artifact_id": "esmfold2-fast-trunk",
+          "mount_path": "/models/esmfold2-fast",
           "content_digest": "sha256:19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+          "localization_receipt_digest": "sha256:a74aed10ce5a80d8406c3869f15166c59a28b59c666ca852057ab37b7dc18685",
           "file_manifest": [
             {
               "path": "config.json",
@@ -1549,13 +1552,13 @@
               "sha256": "60ca19f2898188beba92944365f7b909efd9c99212f5018af75cc47cd9a6184a",
               "size_bytes": 755416924
             }
-          ],
-          "localization_receipt_digest": "sha256:a74aed10ce5a80d8406c3869f15166c59a28b59c666ca852057ab37b7dc18685",
-          "mount_path": "/models/esmfold2-fast"
+          ]
         },
         {
           "artifact_id": "esmc-6b",
+          "mount_path": "/models/esmc-6b",
           "content_digest": "sha256:8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+          "localization_receipt_digest": "sha256:14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
           "file_manifest": [
             {
               "path": "config.json",
@@ -1612,290 +1615,290 @@
               "sha256": "e8d8e40c9f92b334f0272e80bb65ed4043cb9836523cbae899e9859e8cbb8833",
               "size_bytes": 1392
             }
-          ],
-          "localization_receipt_digest": "sha256:14599935d3e48e949cb8218d3192bb35e5947a15bacdc96796dbbee097860962",
-          "mount_path": "/models/esmc-6b"
+          ]
         },
         {
           "artifact_id": "esmfold2-ccd",
+          "mount_path": "/databases/esmfold2",
           "content_digest": "sha256:b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+          "localization_receipt_digest": "sha256:e1584e950890ca2be08bfb385148c7a66d3078d9b35cc42ef40a2e6b45b3cad8",
           "file_manifest": [
             {
               "path": "ccd.pkl",
               "sha256": "9ff44b1927c6b9198e38ffe0928706827a09a350c15530beeeabebfa88038fc5",
               "size_bytes": 417306584
             }
-          ],
-          "localization_receipt_digest": "sha256:e1584e950890ca2be08bfb385148c7a66d3078d9b35cc42ef40a2e6b45b3cad8",
-          "mount_path": "/databases/esmfold2"
+          ]
         }
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "esmfold2-fast-prepare-collector-v1",
-          "environment": {},
+          "stage_id": "prepare-input",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+          "collector_id": "esmfold2-fast-prepare-collector-v1",
+          "validator_id": "esmfold2-fast-prepare-validator-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
-          "required_node_labels": {},
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "8000m",
-              "ephemeral_storage": "64Gi",
-              "memory": "32Gi"
-            },
             "requests": {
               "cpu": "4000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "16Gi"
+              "memory": "16Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "32Gi",
+              "ephemeral_storage": "64Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "prepare-input",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
-          "validator_id": "esmfold2-fast-prepare-validator-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "environment": {},
+          "required_node_labels": {}
         },
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "esmfold2-fast-result-collector-v1",
-          "environment": {},
+          "stage_id": "fold",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/esmfold2-fast@sha256:6eaf386a9bb4453d5048e16c28b8ca4236ae0f222185e33d5a7a49a1e1c8fa35",
+          "collector_id": "esmfold2-fast-result-collector-v1",
+          "validator_id": "esmfold2-fast-biohub-v3-4-0",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/models/esmfold2-fast",
               "name": "esmfold2-fast-trunk",
-              "read_only": true,
-              "sub_path": "model-artifacts/public/v1/objects/esmfold2-fast-trunk/sha256/19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63"
-            },
-            {
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/models/esmc-6b",
+              "mount_path": "/models/esmfold2-fast",
+              "sub_path": "model-artifacts/public/v1/objects/esmfold2-fast-trunk/sha256/19ceaffb5860acf160ea199599fb719b0566519e4cc2fa7a7aa5ef547942ad63",
+              "read_only": true
+            },
+            {
               "name": "esmc-6b",
-              "read_only": true,
-              "sub_path": "model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758"
-            },
-            {
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/databases/esmfold2",
+              "mount_path": "/models/esmc-6b",
+              "sub_path": "model-artifacts/public/v1/objects/esmc-6b/sha256/8f21da30919b3e0d7af9ec6c4b9879542234d77d42ce061fef029397a4d39758",
+              "read_only": true
+            },
+            {
               "name": "esmfold2-ccd",
-              "read_only": true,
-              "sub_path": "model-artifacts/public/v1/objects/esmfold2-ccd/sha256/b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e"
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/databases/esmfold2",
+              "sub_path": "model-artifacts/public/v1/objects/esmfold2-ccd/sha256/b1c2fe19204c57f7a7cca6ab4cb0cb420b99312fff424ef2e405fc8234b7616e",
+              "read_only": true
             }
           ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {},
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "default",
-          "stage_id": "fold",
-          "termination_grace_seconds": 90,
-          "validator_id": "esmfold2-fast-biohub-v3-4-0",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          }
         }
       ],
-      "variant_id": "biohub-v3-4-0",
-      "workload_namespace": "fs2-models"
+      "access_profile": "public"
     },
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "addfe43f1d98f84240da0dcc7249fbfdfd0630dbaba737fc77dd950061bcd3b6",
       "model_id": "openfold3-openbind",
+      "variant_id": "upstream-openbind-v0-5-0",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "addfe43f1d98f84240da0dcc7249fbfdfd0630dbaba737fc77dd950061bcd3b6",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
           "artifact_id": "openfold3-openbind-0",
+          "mount_path": "/models/openfold3",
           "content_digest": "sha256:f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+          "localization_receipt_digest": "sha256:fd39c6ef471c575f0b797e5e7777c948d04151d59b31c5c32f4f0ede728a780c",
           "file_manifest": [
             {
               "path": "of3-ob-2025-06-30-174k.pt",
               "sha256": "bd43301c011d5f87580d3e8b548658869433e4488399feb03035ba248f8e29e4",
               "size_bytes": 2287872989
             }
-          ],
-          "localization_receipt_digest": "sha256:fd39c6ef471c575f0b797e5e7777c948d04151d59b31c5c32f4f0ede728a780c",
-          "mount_path": "/models/openfold3"
+          ]
         },
         {
           "artifact_id": "openfold3-components-bcif",
+          "mount_path": "/databases/openfold3",
           "content_digest": "sha256:ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+          "localization_receipt_digest": "sha256:c8195ee346b3bffad1940c0ff600e52bb2e1ba3046e579627f3ad0329ee0fcc6",
           "file_manifest": [
             {
               "path": "components.bcif",
               "sha256": "473d845c8b250b188dbed9bf505ae206692a178a2a7c4869bf8f9de707ffcc0c",
               "size_bytes": 63393643
             }
-          ],
-          "localization_receipt_digest": "sha256:c8195ee346b3bffad1940c0ff600e52bb2e1ba3046e579627f3ad0329ee0fcc6",
-          "mount_path": "/databases/openfold3"
+          ]
         }
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "openfold3-data-collector-v1",
-          "environment": {},
+          "stage_id": "data-pipeline",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
+          "collector_id": "openfold3-data-collector-v1",
+          "validator_id": "openfold3-data-validator-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
-          "required_node_labels": {},
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "8000m",
-              "ephemeral_storage": "64Gi",
-              "memory": "32Gi"
-            },
             "requests": {
               "cpu": "4000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "16Gi"
+              "memory": "16Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "32Gi",
+              "ephemeral_storage": "64Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "data-pipeline",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
-          "validator_id": "openfold3-data-validator-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "environment": {},
+          "required_node_labels": {}
         },
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "openfold3-result-collector-v1",
-          "environment": {
-            "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
-            "TRITON_CACHE_DIR": "/cache/openfold3/triton",
-            "XDG_CACHE_HOME": "/cache/openfold3/xdg"
-          },
+          "stage_id": "inference",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/openfold3-upstream@sha256:6b883e916c8698195808e1dee0ff603c7db725c2bdb1d7c7b0b1eb1cc1c20743",
+          "collector_id": "openfold3-result-collector-v1",
+          "validator_id": "openfold3-upstream-openbind-v0-5-0",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
-              "claim_name": null,
-              "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/models/openfold3",
               "name": "openfold3-checkpoint",
-              "read_only": true,
-              "sub_path": "model-artifacts/public/v1/objects/openfold3-openbind-0/sha256/f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5"
-            },
-            {
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
-              "mount_path": "/databases/openfold3",
-              "name": "openfold3-components",
-              "read_only": true,
-              "sub_path": "model-artifacts/public/v1/objects/openfold3-components-bcif/sha256/ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b"
+              "mount_path": "/models/openfold3",
+              "sub_path": "model-artifacts/public/v1/objects/openfold3-openbind-0/sha256/f954e2f2e3d0bdba297ac8009f6d590b3e2c28ca2985742c9bbd8167f276f6b5",
+              "read_only": true
             },
             {
+              "name": "openfold3-components",
+              "kind": "reference",
+              "claim_name": null,
+              "host_path": "/mnt/fs2-reference-data/data",
+              "mount_path": "/databases/openfold3",
+              "sub_path": "model-artifacts/public/v1/objects/openfold3-components-bcif/sha256/ff75f66793c11d7cb63531c758b210fa6fe33d5a39378bb0ab89094278e95e3b",
+              "read_only": true
+            },
+            {
+              "name": "runtime-cache",
+              "kind": "runtime-cache",
               "claim_name": "fs2-scientific-runtime-cache",
               "host_path": null,
-              "kind": "runtime-cache",
               "mount_path": "/cache",
-              "name": "runtime-cache",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {
+            "TRITON_CACHE_DIR": "/cache/openfold3/triton",
+            "TORCH_EXTENSIONS_DIR": "/cache/openfold3/torch-extensions",
+            "XDG_CACHE_HOME": "/cache/openfold3/xdg"
+          },
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "default",
-          "stage_id": "inference",
-          "termination_grace_seconds": 90,
-          "validator_id": "openfold3-upstream-openbind-v0-5-0",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          }
         }
       ],
-      "variant_id": "upstream-openbind-v0-5-0",
-      "workload_namespace": "fs2-models"
+      "access_profile": "public"
     },
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "d940c2eacb2e17d95af139bdd2e34e1715630cbbb437bd6570f0f60da088af7a",
       "model_id": "protenix-v2",
+      "variant_id": "upstream-v2-0-0",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "d940c2eacb2e17d95af139bdd2e34e1715630cbbb437bd6570f0f60da088af7a",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
           "artifact_id": "protenix-v2",
+          "mount_path": "/models/protenix-v2",
           "content_digest": "sha256:5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+          "localization_receipt_digest": "sha256:ea301407e2ac427bf87d4617136629f178a75d55f67e3aea882de4bc19ce04b4",
           "file_manifest": [
             {
               "path": ".fs2-manifest-sha256",
@@ -1932,178 +1935,176 @@
               "sha256": "8c1e3240cba92fa265ebfa7e3c806af2206d3ae9347444fe3075ab90e576444f",
               "size_bytes": 1855
             }
-          ],
-          "localization_receipt_digest": "sha256:ea301407e2ac427bf87d4617136629f178a75d55f67e3aea882de4bc19ce04b4",
-          "mount_path": "/models/protenix-v2"
+          ]
         }
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "protenix-v2-prep-collector-v1",
-          "environment": {
-            "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
-            "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
-            "TRITON_CACHE_DIR": "/cache/protenix/triton",
-            "XDG_CACHE_HOME": "/cache/protenix/xdg"
-          },
+          "stage_id": "prepare-data",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+          "collector_id": "protenix-v2-prep-collector-v1",
+          "validator_id": "protenix-v2-prep-validator-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
+              "name": "protenix-v2",
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
               "mount_path": "/models/protenix-v2",
-              "name": "protenix-v2",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48"
+              "sub_path": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+              "read_only": true
             },
             {
+              "name": "runtime-cache",
+              "kind": "runtime-cache",
               "claim_name": "fs2-scientific-runtime-cache",
               "host_path": null,
-              "kind": "runtime-cache",
               "mount_path": "/cache",
-              "name": "runtime-cache",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "8000m",
-              "ephemeral_storage": "64Gi",
-              "memory": "32Gi"
-            },
             "requests": {
               "cpu": "4000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "16Gi"
+              "memory": "16Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "32Gi",
+              "ephemeral_storage": "64Gi"
             }
           },
-          "service_account_name": "default",
-          "stage_id": "prepare-data",
-          "termination_grace_seconds": 90,
-          "validator_id": "protenix-v2-prep-validator-v1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
-        },
-        {
           "active_deadline_seconds": 43200,
-          "collector_id": "protenix-v2-result-collector-v1",
+          "termination_grace_seconds": 90,
           "environment": {
+            "TRITON_CACHE_DIR": "/cache/protenix/triton",
             "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
             "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
-            "TRITON_CACHE_DIR": "/cache/protenix/triton",
             "XDG_CACHE_HOME": "/cache/protenix/xdg"
           },
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
+        },
+        {
+          "stage_id": "sample-structure",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/cancer-immunotherapy/protenix-v2@sha256:ac8f7c2c35d2bc911281f9d4a8aa9779e2cb955cdb1c2c2d37eb31d89669980e",
+          "collector_id": "protenix-v2-result-collector-v1",
+          "validator_id": "protenix-v2-upstream-v2-0-0",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
+              "name": "protenix-v2",
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
               "mount_path": "/models/protenix-v2",
-              "name": "protenix-v2",
-              "read_only": true,
-              "sub_path": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48"
+              "sub_path": "scientific-localization/public/generations/protenix-v2/sha256/5e1c3b548af40752bb15f9f2ba06590e20e2b165e3fe9ab3fa99af9977574d48",
+              "read_only": true
             },
             {
+              "name": "runtime-cache",
+              "kind": "runtime-cache",
               "claim_name": "fs2-scientific-runtime-cache",
               "host_path": null,
-              "kind": "runtime-cache",
               "mount_path": "/cache",
-              "name": "runtime-cache",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
+          "environment": {
+            "TRITON_CACHE_DIR": "/cache/protenix/triton",
+            "CUEQ_TRITON_CACHE_DIR": "/cache/protenix/cueq-triton",
+            "TORCH_EXTENSIONS_DIR": "/cache/protenix/torch-extensions",
+            "XDG_CACHE_HOME": "/cache/protenix/xdg"
+          },
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
             "storage.fs2.nebius/reference-data": "true"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "default",
-          "stage_id": "sample-structure",
-          "termination_grace_seconds": 90,
-          "validator_id": "protenix-v2-upstream-v2-0-0",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          }
         }
       ],
-      "variant_id": "upstream-v2-0-0",
-      "workload_namespace": "fs2-models"
+      "access_profile": "public"
     },
     {
-      "access_profile": "academic",
-      "execution_identity_sha256": "641b0c1dc5102d0089d86815bd1c8a517a217cd2965174cb5289efb47fbc215b",
       "model_id": "alphafold3",
+      "variant_id": "upstream-v3-0-4",
+      "workload_namespace": "fs2-academic-poc",
+      "execution_identity_sha256": "641b0c1dc5102d0089d86815bd1c8a517a217cd2965174cb5289efb47fbc215b",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
       "runtime_artifacts": [
         {
           "artifact_id": "alphafold3-parameters",
+          "mount_path": "/models/af3.bin.zst",
           "content_digest": "sha256:74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
+          "localization_receipt_digest": "sha256:9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4",
           "file_manifest": [
             {
               "path": "af3.bin.zst",
               "sha256": "74d0258616917cd122f5eab6d076afe4a8930e96823851e65e4f777dfb1f33ff",
               "size_bytes": 1020545840
             }
-          ],
-          "localization_receipt_digest": "sha256:9c89f122ea3616efe70e07c2c27dddf236d347cab4002498c4dab9677d138bd4",
-          "mount_path": "/models/af3.bin.zst"
+          ]
         },
         {
-          "aggregate_tree": {
-            "canonical_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
-            "directory_count": 1,
-            "expanded_bytes": 672435030513,
-            "file_count": 195867,
-            "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
-            "manifest_algorithm": "fs2-serve.nebius.ai/reference-data-manifest/v1",
-            "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
-            "marker_relative_path": ".fs2-manifest-sha256",
-            "storage_kind": "reference-data-plane",
-            "tree_sha256": "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea"
-          },
           "artifact_id": "alphafold3-public-databases-v3.0",
+          "mount_path": "/reference-data",
           "content_digest": "sha256:d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
           "localization_receipt_digest": "sha256:b049e69846867caa75ef140e105a962fcf14e5c78ec8bfd97741cced32a8f6a6",
-          "mount_path": "/reference-data",
+          "aggregate_tree": {
+            "storage_kind": "reference-data-plane",
+            "tree_sha256": "d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+            "manifest_sha256": "aa585259ce05393cd38db1693299ed9ec7f9c421aa4e1159f8d5aa0eb0ba9748",
+            "inventory_sha256": "38af3baa89a66cd24dec785279670a2e37597f98d206f555a04c138c6be71579",
+            "manifest_algorithm": "fs2-serve.nebius.ai/reference-data-manifest/v1",
+            "file_count": 195867,
+            "directory_count": 1,
+            "expanded_bytes": 672435030513,
+            "canonical_path": "datasets/alphafold3-public-databases-v3.0/v3.0-paper-snapshot-2022-09-28/sha256/d27b8956170b5b0cf0f7daadf53a34e38cbe725dafbe9c91af86c671b32dfaea",
+            "marker_relative_path": ".fs2-manifest-sha256"
+          },
           "verification_receipt": {
             "bundle_id": "alphafold3-public-databases-v3.0",
             "content": {
@@ -2147,166 +2148,165 @@
       ],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "alphafold3-data-collector-v1",
-          "environment": {},
+          "stage_id": "data-pipeline",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
+          "collector_id": "alphafold3-data-collector-v1",
+          "validator_id": "alphafold3-data-validator-v1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             },
             {
+              "name": "alphafold3-databases",
+              "kind": "reference",
               "claim_name": null,
               "host_path": "/mnt/fs2-reference-data/data",
-              "kind": "reference",
               "mount_path": "/reference-data",
-              "name": "alphafold3-databases",
-              "read_only": true,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": true
             }
           ],
-          "required_node_labels": {
-            "storage.fs2.nebius/reference-data": "true"
-          },
+          "service_account_name": "fs2-academic-runner",
+          "workspace_uid": 1001,
+          "workspace_gid": 1001,
           "resources": {
-            "limits": {
-              "cpu": "16000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "64Gi"
-            },
             "requests": {
               "cpu": "16000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "64Gi"
+              "memory": "64Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "16000m",
+              "memory": "64Gi",
+              "ephemeral_storage": "32Gi"
             }
           },
-          "service_account_name": "fs2-academic-runner",
-          "stage_id": "data-pipeline",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 90,
-          "validator_id": "alphafold3-data-validator-v1",
-          "workspace_gid": 1001,
-          "workspace_uid": 1001
+          "environment": {},
+          "required_node_labels": {
+            "storage.fs2.nebius/reference-data": "true"
+          }
         },
         {
-          "active_deadline_seconds": 43200,
+          "stage_id": "inference",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
           "collector_id": "alphafold3-result-collector-v1",
+          "validator_id": "alphafold3-upstream-v3-0-4",
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            },
+            {
+              "name": "alphafold3-parameters",
+              "kind": "private",
+              "claim_name": "academic-assets-runtime-rwx",
+              "host_path": null,
+              "mount_path": "/models/af3.bin.zst",
+              "sub_path": "alphafold3/af3.bin.zst",
+              "read_only": true
+            },
+            {
+              "name": "runtime-cache",
+              "kind": "runtime-cache",
+              "claim_name": "fs2-scientific-runtime-cache",
+              "host_path": null,
+              "mount_path": "/cache",
+              "sub_path": null,
+              "read_only": false
+            }
+          ],
+          "service_account_name": "fs2-academic-runner",
+          "workspace_uid": 1001,
+          "workspace_gid": 1001,
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "96Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "32000m",
+              "memory": "256Gi",
+              "ephemeral_storage": "128Gi"
+            }
+          },
+          "active_deadline_seconds": 43200,
+          "termination_grace_seconds": 90,
           "environment": {
             "FS2_AF3_CACHE_ROOT": "/cache/alphafold3",
             "FS2_AF3_JAX_CACHE_DIR": "/cache/alphafold3/jax",
             "FS2_AF3_TRITON_CACHE_DIR": "/cache/alphafold3/triton",
             "FS2_AF3_XDG_CACHE_DIR": "/cache/alphafold3/xdg"
           },
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/alphafold3@sha256:ecc3e7352da7984e854f67d8024ed28fa6dbbbf7cfae39aa5a50f8a29eda85e7",
-          "mounts": [
-            {
-              "claim_name": null,
-              "host_path": null,
-              "kind": "artifact-workspace",
-              "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
-            },
-            {
-              "claim_name": "academic-assets-runtime-rwx",
-              "host_path": null,
-              "kind": "private",
-              "mount_path": "/models/af3.bin.zst",
-              "name": "alphafold3-parameters",
-              "read_only": true,
-              "sub_path": "alphafold3/af3.bin.zst"
-            },
-            {
-              "claim_name": "fs2-scientific-runtime-cache",
-              "host_path": null,
-              "kind": "runtime-cache",
-              "mount_path": "/cache",
-              "name": "runtime-cache",
-              "read_only": false,
-              "sub_path": null
-            }
-          ],
           "required_node_labels": {
             "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb"
-          },
-          "resources": {
-            "limits": {
-              "cpu": "32000m",
-              "ephemeral_storage": "128Gi",
-              "memory": "256Gi"
-            },
-            "requests": {
-              "cpu": "8000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "96Gi"
-            }
-          },
-          "service_account_name": "fs2-academic-runner",
-          "stage_id": "inference",
-          "termination_grace_seconds": 90,
-          "validator_id": "alphafold3-upstream-v3-0-4",
-          "workspace_gid": 1001,
-          "workspace_uid": 1001
+          }
         }
       ],
-      "variant_id": "upstream-v3-0-4",
-      "workload_namespace": "fs2-academic-poc"
+      "access_profile": "academic"
     },
     {
-      "access_profile": "public",
-      "execution_identity_sha256": "8a92680d991ff52e57de2188575cfc9748acf95f2684eb10f5fc2a561575acb2",
       "model_id": "cosmos3-lerobot-augmentation",
+      "variant_id": "cosmos3-nano-lerobot-v3",
+      "workload_namespace": "fs2-models",
+      "execution_identity_sha256": "8a92680d991ff52e57de2188575cfc9748acf95f2684eb10f5fc2a561575acb2",
       "plan_adapter": {
-        "function": "compile_adapter_run",
-        "module": "fs2_serve.scientific_batch.adapters"
+        "module": "fs2_serve.scientific_batch.adapters",
+        "function": "compile_adapter_run"
       },
+      "access_profile": "public",
       "runtime_artifacts": [],
       "stages": [
         {
-          "active_deadline_seconds": 43200,
-          "collector_id": "cosmos3-lerobot-v3-0-6-1",
-          "environment": {},
+          "stage_id": "augment-dataset",
           "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-lerobot-augmentation@sha256:69fe161d370fac4cc9517d24ecfee7b025bb569a935ffadab8eb31e49c783a11",
+          "collector_id": "cosmos3-lerobot-v3-0-6-1",
+          "validator_id": "cosmos3-lerobot-v3-0-6-1",
           "mounts": [
             {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
               "claim_name": null,
               "host_path": null,
-              "kind": "artifact-workspace",
               "mount_path": "/mnt/fs2-scientific",
-              "name": "artifact-workspace",
-              "read_only": false,
-              "sub_path": null
+              "sub_path": null,
+              "read_only": false
             }
           ],
-          "required_node_labels": {},
+          "service_account_name": "cosmos3-nano",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
           "resources": {
-            "limits": {
-              "cpu": "4000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "24Gi"
-            },
             "requests": {
               "cpu": "2000m",
-              "ephemeral_storage": "32Gi",
-              "memory": "16Gi"
+              "memory": "16Gi",
+              "ephemeral_storage": "32Gi"
+            },
+            "limits": {
+              "cpu": "4000m",
+              "memory": "24Gi",
+              "ephemeral_storage": "32Gi"
             }
           },
-          "service_account_name": "cosmos3-nano",
-          "stage_id": "augment-dataset",
+          "active_deadline_seconds": 43200,
           "termination_grace_seconds": 60,
-          "validator_id": "cosmos3-lerobot-v3-0-6-1",
-          "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "environment": {},
+          "required_node_labels": {}
         }
-      ],
-      "variant_id": "cosmos3-nano-lerobot-v3",
-      "workload_namespace": "fs2-models"
+      ]
     },
     {
       "access_profile": "public",
