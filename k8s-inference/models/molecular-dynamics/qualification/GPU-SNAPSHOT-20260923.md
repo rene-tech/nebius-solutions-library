@@ -6,6 +6,15 @@ native output validation. End-to-end benefit is **not established**. NAMD has
 a durable capture but its fresh-Pod CRIU restore failed. LAMMPS has not yet run.
 AMBER is gated on its private native qualification.
 
+These are **per-workflow continuation snapshots**, containing scientific inputs,
+coordinates, velocities, topology, runtime/RNG state and open output handles.
+They are not reusable generic App startup acceleration: classical MD has no
+large shared model-weight load that this capture makes reusable across unrelated
+systems. A saved trajectory cannot initialize another customer's molecule or
+produce an independent replica by copying its state. Any eventual integration
+must bind a snapshot to its tenant, operation, exact scientific input/protocol,
+runtime and supported device identity; new systems use native setup/startup.
+
 ## Scope and immutable identity
 
 Source starts at `63e8bc72849d34f1c40f55c794ceb38028c6585b`, in a clean detached
@@ -126,8 +135,14 @@ inside the isolated task namespace. The exact pinned NAMD/CRIU combination is
 **not persistent-restore qualified**. This open native thread-stat file is an
 observed CRIU restoration blocker, not a licence, image-pull or CUDA-driver error.
 No CRIU patch, process-memory change or host workaround was attempted. A separate
-same-input image-cached native fallback control is being measured; native restart
-support remains independent of this GPU snapshot failure.
+same-input image-cached native fallback control completed in 61.011 s of process
+wall time, from the original equilibrated step 21,000 to 121,000. All 10 DCD frames
+(30,000 through 120,000), finite 92,224-atom coordinate/velocity files, final XSC
+step 121,000 and native success/end markers pass. Maximum relative NVE energy
+deviation is 0.000226 (screen threshold 0.005, not a convergence assertion).
+This is native startup from the original fixture, not a state-matched restart at
+the CUDA capture point. Native continuation support remains independent of the
+GPU snapshot failure; no scheduler/volume/bucket timing is included in 61.011 s.
 
 ## Remaining gates and reproducibility
 
