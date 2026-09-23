@@ -13,12 +13,13 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import time
 
 
-IMAGE = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03"
+IMAGE = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d"
 ENGINES = ("gromacs", "namd", "amber", "lammps")
 METADATA = {"inputs", "provenance", "lifecycle_timings", "pressure_observation_provenance"}
 
@@ -151,6 +152,7 @@ def run(bundle, reference, output):
     container = None
     try:
         command = ["docker", "create", "--network", "none", "--runtime", "runc", "--cpus", "4", "--memory", "8g",
+                   "--user", f"{os.getuid()}:{os.getgid()}",
                    "--read-only", "--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--tmpfs", "/tmp:rw,nosuid,nodev,size=1g",
                    "--workdir", "/tmp", "--env", "PYTHONDONTWRITEBYTECODE=1", "--env", "MPLCONFIGDIR=/tmp/matplotlib",
                    "--mount", f"type=bind,source={bundle},target=/delivery,readonly",
@@ -163,7 +165,7 @@ def run(bundle, reference, output):
         require(host["NetworkMode"] == "none" and host["Runtime"] == "runc" and not host.get("DeviceRequests") and not host["Devices"], "container isolation differs")
         require({m["Destination"] for m in config["Mounts"] if m["Type"] == "bind"} == {"/delivery", "/validation"}, "unexpected host mount")
         require(not next(m for m in config["Mounts"] if m["Destination"] == "/delivery")["RW"], "delivery mount is writable")
-        record["container"] = {"id": container, "image_id": config["Image"], "network_mode": host["NetworkMode"],
+        record["container"] = {"id": container, "image_id": config["Image"], "user": config["Config"]["User"], "network_mode": host["NetworkMode"],
                                "runtime": host["Runtime"], "read_only_rootfs": host["ReadonlyRootfs"],
                                "mounts": config["Mounts"], "device_requests": host.get("DeviceRequests"), "devices": host["Devices"]}
         with (output / "regenerate.log").open("w") as log:
