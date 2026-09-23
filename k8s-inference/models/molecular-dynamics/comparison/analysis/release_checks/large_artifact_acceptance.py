@@ -6,7 +6,7 @@ The optional operator session is created and closed only to inspect our own
 request metadata. Neither scientific bytes nor credentials are persisted.
 """
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import argparse
 import base64
 import hashlib
@@ -58,13 +58,13 @@ def validate_headers(response, artifact):
 
 def download(origin, key, artifact, *, partial=False, barrier=None, transport=None, max_seconds=180):
     request_id = str(uuid4())
-    record = {"artifact": artifact, "request_id": request_id, "mode": "intentional-partial-close" if partial else "full-stream-retry", "started_at": now(), "received_bytes": 0, "verified": False, "scientific_bytes_retained": False}
+    record = {"artifact": artifact, "request_id": request_id, "qualification_id": request_id, "mode": "intentional-partial-close" if partial else "full-stream-retry", "started_at": now(), "received_bytes": 0, "verified": False, "scientific_bytes_retained": False}
     digest, started = hashlib.sha256(), time.monotonic()
     try:
         with new_client(origin, transport=transport) as client:
             if barrier:
                 barrier.wait(timeout=20)
-            with client.stream("GET", f"/v1/artifacts/{artifact['id']}/content", headers={"authorization": "Bearer " + key, "x-request-id": request_id, "accept-encoding": "identity"}) as response:
+            with client.stream("GET", f"/v1/artifacts/{artifact['id']}/content", headers={"authorization": "Bearer " + key, "x-request-id": request_id, "x-fs2-qualification-id": request_id, "accept-encoding": "identity"}) as response:
                 record["http_status"] = response.status_code
                 returned = response.headers.get("x-request-id")
                 if returned and re.fullmatch(r"[a-fA-F0-9-]{36}", returned):
@@ -181,49 +181,99 @@ def restart_deltas(before, after):
     return {"same_pod_container_identities": set(first) == set(second), "deltas": [{"pod_uid": uid, "container": name, "restart_delta": second.get((uid, name), -1) - count} for (uid, name), count in first.items()]}
 
 
-def sanitize_debug(detail, request_ids, tenant, principal):
-    if detail.get("request_id") not in request_ids or detail.get("tenant_id") != tenant or detail.get("principal_id") != principal:
+def parse_time(value):
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("debug_correlation_requires_timezone")
+    return parsed
+
+
+def sanitize_debug(detail, transfer, method, tenant, principal):
+    if detail.get("tenant_id") != tenant or detail.get("principal_id") != principal:
         raise ValueError("debug_row_owner_or_request_mismatch")
-    allowed = {f"/v1/artifacts/{a['id']}/content" for a in ARTIFACTS}
-    if detail.get("endpoint") not in allowed:
+    if detail.get("endpoint") != f"/v1/artifacts/{transfer['artifact']['id']}/content":
         raise ValueError("debug_row_not_owned_target_artifact")
     body = detail["response_body"]
     keys = ("id", "request_id", "tenant_id", "principal_id", "endpoint", "http_status", "started_at", "completed_at", "disconnected")
-    return {**{key: detail.get(key) for key in keys}, "response_body_metadata": {key: body.get(key) for key in ("capture_mode", "observed_bytes", "complete", "artifact_reference")}, "body_data_character_count": len(body.get("data", "")), "headers_query_body_and_error_text_exported": False}
+    metadata = {key: body.get(key) for key in ("capture_mode", "observed_bytes", "complete")}
+    metadata["artifact_reference"] = {key: (body.get("artifact_reference") or {}).get(key) for key in ("artifact_id", "sha256", "size_bytes", "observed_sha256", "delivered_bytes", "verified")}
+    return {**{key: detail.get(key) for key in keys}, "client_request_id": transfer["request_id"], "correlation": {"method": method, "unique_owned_target_candidates": 1, "client_started_at": transfer["started_at"], "client_finished_at": transfer["finished_at"], "client_qualification_id": transfer.get("qualification_id")}, "response_body_metadata": metadata, "body_data_character_count": len(body.get("data", "")), "headers_query_body_and_error_text_exported": False}
+
+
+def correlate_debug(details, transfers, tenant, principal):
+    """Require a unique owned match; never assume X-Request-ID survives ingress.
+
+    New requests must retain the distinct qualification header. The previously
+    recorded cohort, which predates that header, can only match a unique exact
+    artifact path with server start inside its client request interval. Body
+    success is deliberately NOT used to select a candidate.
+    """
+    rows, used = [], set()
+    for transfer in transfers:
+        candidates = [detail for detail in details if detail.get("tenant_id") == tenant and detail.get("principal_id") == principal and detail.get("endpoint") == f"/v1/artifacts/{transfer['artifact']['id']}/content"]
+        candidates = [detail for detail in candidates if parse_time(transfer["started_at"]) <= parse_time(detail["started_at"]) <= parse_time(transfer["finished_at"])]
+        if transfer.get("qualification_id"):
+            method = "unique-owner-artifact-start-window-and-x-fs2-qualification-id"
+            candidates = [detail for detail in candidates if any(key.lower() == "x-fs2-qualification-id" and value == transfer["qualification_id"] for key, value in detail.get("request_headers", []))]
+        else:
+            method = "legacy-unique-owner-artifact-server-start-within-client-interval"
+        if len(candidates) > 1:
+            raise ValueError("ambiguous_owned_debug_exchange")
+        if not candidates:
+            continue
+        detail = candidates[0]
+        if detail["id"] in used:
+            raise ValueError("debug_exchange_cannot_match_multiple_transfers")
+        used.add(detail["id"])
+        rows.append(sanitize_debug(detail, transfer, method, tenant, principal))
+    return rows
 
 
 def inspect_debug(args, transfers, started_at):
     secret = kubectl(args, "-n", "fs2-system", "get", "secret", "fs2-serve-admin", "-o", "json")
     token = base64.b64decode(secret["data"]["token"]).decode().strip()
-    ids = {t.get("response_request_id", t["request_id"]) for t in transfers}
-    rows = {}
+    ids = {t["request_id"] for t in transfers}
+    endpoints = {f"/v1/artifacts/{t['artifact']['id']}/content" for t in transfers}
+    details, rows = {}, []
+    end = (max(datetime.fromisoformat(t["finished_at"]) for t in transfers) + timedelta(seconds=1)).isoformat()
+    pages = 0
     with new_client(args.origin, headers={"origin": args.origin}) as client:
         response = client.post("/admin/api/v1/session", headers={"authorization": "Bearer " + token})
         if response.status_code not in (200, 201):
             raise RuntimeError("operator_session_unavailable")
         try:
             for attempt in range(5):
-                listing = bounded_json(client, "/admin/api/v1/requests", params={"from": started_at, "limit": 200})["data"]
-                for row in listing["items"]:
-                    if row.get("request_id") not in ids:
-                        continue
-                    if row.get("tenant_id") != args.tenant or row.get("principal_id") != args.principal:
-                        raise ValueError("own_request_debug_owner_mismatch")
-                    detail = bounded_json(client, "/admin/api/v1/requests/" + row["id"])["data"]
-                    rows[row["request_id"]] = sanitize_debug(detail, ids, args.tenant, args.principal)
+                cursor = None
+                for page in range(5):
+                    params = {"from": started_at, "to": end, "limit": 200}
+                    if cursor:
+                        params["cursor"] = cursor
+                    listing = bounded_json(client, "/admin/api/v1/requests", params=params)["data"]
+                    pages += 1
+                    for row in listing["items"]:
+                        if row.get("tenant_id") != args.tenant or row.get("principal_id") != args.principal or row.get("endpoint") not in endpoints:
+                            continue
+                        detail = bounded_json(client, "/admin/api/v1/requests/" + row["id"])["data"]
+                        details[detail["id"]] = detail
+                    cursor = listing.get("next_cursor")
+                    if not cursor:
+                        break
+                if cursor:
+                    raise ValueError("debug_window_exceeds_bounded_pagination")
+                rows = correlate_debug(list(details.values()), transfers, args.tenant, args.principal)
                 if len(rows) == len(ids):
                     break
                 time.sleep(2)
         finally:
             client.delete("/admin/api/v1/session")
-    return {"requested_rows": len(ids), "found_rows": len(rows), "rows": list(rows.values())}
+    return {"requested_rows": len(ids), "found_rows": len(rows), "owned_target_rows_in_window": len(details), "rows": rows, "list_pages_inspected": pages, "request_start_window": {"from": started_at, "to": end}}
 
 
 def debug_pass(debug, transfers):
-    rows = {row["request_id"]: row for row in debug["rows"]}
+    rows = {row["client_request_id"]: row for row in debug["rows"]}
     for transfer in transfers:
-        row = rows.get(transfer.get("response_request_id", transfer["request_id"]))
-        if row is None or row["body_data_character_count"] > 1024:
+        row = rows.get(transfer["request_id"])
+        if row is None or row["body_data_character_count"] > 1024 or row.get("http_status") != 200:
             return False
         body, artifact = row["response_body_metadata"], transfer["artifact"]
         ref = body.get("artifact_reference") or {}
@@ -237,6 +287,24 @@ def debug_pass(debug, transfers):
     return True
 
 
+def post_transfer_memory(args, selector, record):
+    end = max(datetime.fromisoformat(row["finished_at"]) for row in record["full_downloads"])
+    for attempt in range(10):
+        sample = memory_snapshot(args, selector)
+        record["memory_samples"].append(sample)
+        fresh = len(sample["metrics"]) == 3 and all(datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00")) >= end for row in sample["metrics"])
+        if fresh:
+            record["memory_after"] = sample
+            record["memory_after_fresh"] = True
+            return
+        time.sleep(5)
+    record["memory_after_fresh"] = False
+
+
+def cohort_passed(record, image):
+    return bool(record["partial"].get("intentional_close") and all(row["verified"] for row in record["full_downloads"]) and record["http_polls"] and all(row["passed"] for row in record["http_polls"]) and record["memory_samples"] and all("metrics" in row for row in record["memory_samples"]) and record.get("memory_after_fresh") and ready_exact(record["after"], image) and record["restart_check"]["same_pod_container_identities"] and all(row["restart_delta"] == 0 for row in record["restart_check"]["deltas"]) and record["debug_passed"])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--origin", default="https://89.169.99.188")
@@ -247,6 +315,7 @@ def main():
     parser.add_argument("--tenant", default="md-qualification-20260923")
     parser.add_argument("--principal", default="md-test")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--resume-receipt", type=Path, help="Recheck retained first-cohort metadata and run only the unfinished second cohort.")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     report = {"schema": "fs2-large-artifact-readonly-acceptance/v1", "status": "incomplete", "started_at": now(), "origin": args.origin, "expected_image": args.expected_image, "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(), "artifacts": ARTIFACTS, "operation_id": OPERATION, "credentials_or_scientific_bytes_persisted": False, "cohorts": []}
@@ -254,7 +323,27 @@ def main():
         deployment = kubectl(args, "-n", "fs2-system", "get", "deployment", "fs2-serve-control-plane", "-o", "json")
         selector = ",".join(f"{key}={value}" for key, value in sorted(deployment["spec"]["selector"]["matchLabels"].items()))
         key = json.loads(args.key_file.read_text())["secret"]
-        for number in (1, 2):
+        if args.resume_receipt:
+            prior = json.loads(args.resume_receipt.read_text())
+            if prior.get("expected_image") != args.expected_image or prior.get("origin") != args.origin or len(prior.get("cohorts", [])) != 1:
+                raise ValueError("resume_receipt_identity_or_cohort_count_differs")
+            record = prior["cohorts"][0]
+            if not all(row["verified"] for row in record.get("full_downloads", [])) or len(record.get("full_downloads", [])) != 2:
+                raise ValueError("resume_requires_existing_complete_verified_download_pair")
+            report["resumed_from"] = {"path": str(args.resume_receipt), "sha256": hashlib.sha256(args.resume_receipt.read_bytes()).hexdigest(), "scope": "new metadata correlation only; original failed receipt retained; completed downloads are not repeated"}
+            record["prior_debug_lookup"] = record["debug"]
+            transfers = [record["partial"], *record["full_downloads"]]
+            record["debug"] = inspect_debug(args, transfers, record["started_at"])
+            record["debug_passed"] = debug_pass(record["debug"], transfers)
+            record["metadata_rechecked_at"] = now()
+            record["memory_recheck_scope"] = "Fresh after-sample is a later metadata reconciliation, not contemporaneous transfer peak memory. Original sampled timestamps are retained."
+            post_transfer_memory(args, selector, record)
+            record["passed"] = cohort_passed(record, args.expected_image)
+            report["cohorts"].append(record)
+            save(args.output / "cohort-1-reconciled.json", record)
+            if not record["passed"]:
+                raise ValueError("existing_cohort_metadata_recheck_failed")
+        for number in range(len(report["cohorts"]) + 1, 3):
             record = {"cohort": number, "started_at": now(), "before": pod_snapshot(args, selector), "http_polls": [], "memory_samples": []}
             report["cohorts"].append(record)
             if not ready_exact(record["before"], args.expected_image):
@@ -281,7 +370,8 @@ def main():
             transfers = [record["partial"], *record["full_downloads"]]
             record["debug"] = inspect_debug(args, transfers, record["started_at"])
             record["debug_passed"] = debug_pass(record["debug"], transfers)
-            record["passed"] = bool(record["partial"].get("intentional_close") and all(row["verified"] for row in record["full_downloads"]) and record["http_polls"] and all(row["passed"] for row in record["http_polls"]) and record["memory_samples"] and all("metrics" in row for row in record["memory_samples"]) and ready_exact(record["after"], args.expected_image) and record["restart_check"]["same_pod_container_identities"] and all(row["restart_delta"] == 0 for row in record["restart_check"]["deltas"]) and record["debug_passed"])
+            post_transfer_memory(args, selector, record)
+            record["passed"] = cohort_passed(record, args.expected_image)
             save(args.output / f"cohort-{number}.json", record)
             print(json.dumps({"cohort": number, "passed": record["passed"], "full_bytes_verified": sum(row["received_bytes"] for row in record["full_downloads"] if row["verified"]), "debug_passed": record["debug_passed"], "health_polls": len(record["http_polls"])}), flush=True)
             if not record["passed"]:

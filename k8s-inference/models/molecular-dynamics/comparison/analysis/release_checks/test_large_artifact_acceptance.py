@@ -9,7 +9,7 @@ import unittest
 import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from large_artifact_acceptance import ARTIFACTS, CHUNK, debug_pass, download, memory_bytes, ready_exact, restart_deltas, sanitize_debug
+from large_artifact_acceptance import ARTIFACTS, CHUNK, correlate_debug, debug_pass, download, memory_bytes, ready_exact, restart_deltas, sanitize_debug
 
 
 class GeneratedStream(httpx.SyncByteStream):
@@ -26,6 +26,7 @@ class ArtifactTests(unittest.TestCase):
         def handler(request):
             self.assertEqual(request.method, "GET")
             self.assertEqual(request.headers["authorization"], "Bearer synthetic-secret")
+            self.assertEqual(request.headers["x-fs2-qualification-id"], request.headers["x-request-id"])
             headers = {"x-fs2-artifact-id": self.artifact["id"], "x-fs2-artifact-size-bytes": str(self.artifact["size"]), "content-length": str(self.artifact["size"]), "x-fs2-artifact-sha256": "0" * 64 if wrong_digest else self.artifact["sha256"]}
             return httpx.Response(200, headers=headers, stream=GeneratedStream())
         return httpx.MockTransport(handler)
@@ -78,17 +79,66 @@ class ArtifactTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             memory_bytes("unknown")
 
-    def test_debug_only_own_metadata_and_exact_reference(self):
+    def debug_fixture(self, *, qualified=True):
         artifact = ARTIFACTS[0]
-        detail = {"id": "exchange", "request_id": "our-request", "tenant_id": "our-tenant", "principal_id": "our-principal", "endpoint": f"/v1/artifacts/{artifact['id']}/content", "response_body": {"data": "reference only", "capture_mode": "artifact_reference", "observed_bytes": artifact["size"], "complete": True, "artifact_reference": {"artifact_id": artifact["id"], "sha256": artifact["sha256"], "size_bytes": artifact["size"], "delivered_bytes": artifact["size"], "observed_sha256": artifact["sha256"], "verified": True}}, "request_headers": [["authorization", "do not export"]]}
-        row = sanitize_debug(detail, {"our-request"}, "our-tenant", "our-principal")
+        detail = {"id": "exchange", "request_id": "different-server-owned-id", "http_status": 200, "started_at": "2026-09-23T19:30:27Z", "tenant_id": "our-tenant", "principal_id": "our-principal", "endpoint": f"/v1/artifacts/{artifact['id']}/content", "response_body": {"data": "reference only", "capture_mode": "artifact_reference", "observed_bytes": artifact["size"], "complete": True, "artifact_reference": {"artifact_id": artifact["id"], "sha256": artifact["sha256"], "size_bytes": artifact["size"], "delivered_bytes": artifact["size"], "observed_sha256": artifact["sha256"], "verified": True}}, "request_headers": [["authorization", "do not export"], ["x-request-id", "ingress-rewritten-id"]]}
+        transfer = {"request_id": "our-request", "mode": "full-stream-retry", "artifact": artifact, "started_at": "2026-09-23T19:30:26+00:00", "finished_at": "2026-09-23T19:30:40+00:00"}
+        if qualified:
+            transfer["qualification_id"] = "our-request"
+            detail["request_headers"].append(["X-FS2-Qualification-ID", "our-request"])
+        return detail, transfer
+
+    def test_debug_only_own_metadata_and_exact_reference(self):
+        detail, transfer = self.debug_fixture()
+        row, = correlate_debug([detail], [transfer], "our-tenant", "our-principal")
         self.assertNotIn("do not export", json.dumps(row))
-        transfer = {"request_id": "our-request", "mode": "full-stream-retry", "artifact": artifact}
         self.assertTrue(debug_pass({"rows": [row]}, [transfer]))
         row["response_body_metadata"]["artifact_reference"]["verified"] = False
         self.assertFalse(debug_pass({"rows": [row]}, [transfer]))
         with self.assertRaises(ValueError):
-            sanitize_debug(detail, {"our-request"}, "different-tenant", "our-principal")
+            sanitize_debug(detail, transfer, "test", "different-tenant", "our-principal")
+
+    def test_gateway_rewrite_legacy_unique_time_match(self):
+        detail, transfer = self.debug_fixture(qualified=False)
+        row, = correlate_debug([detail], [transfer], "our-tenant", "our-principal")
+        self.assertEqual(row["client_request_id"], transfer["request_id"])
+        self.assertTrue(row["correlation"]["method"].startswith("legacy-"))
+
+    def test_new_qualification_header_cannot_fallback_to_time(self):
+        detail, transfer = self.debug_fixture()
+        detail["request_headers"] = [["x-request-id", "our-request"]]
+        self.assertEqual(correlate_debug([detail], [transfer], "our-tenant", "our-principal"), [])
+
+    def test_ambiguous_owned_rows_rejected_even_if_only_one_successful(self):
+        detail, transfer = self.debug_fixture(qualified=False)
+        second = deepcopy(detail)
+        second["id"] = "second-exchange"
+        second["response_body"]["artifact_reference"]["verified"] = False
+        with self.assertRaisesRegex(ValueError, "ambiguous"):
+            correlate_debug([detail, second], [transfer], "our-tenant", "our-principal")
+
+    def test_other_owner_or_outside_start_window_cannot_match(self):
+        detail, transfer = self.debug_fixture(qualified=False)
+        detail["started_at"] = "2026-09-23T19:30:25Z"
+        self.assertEqual(correlate_debug([detail], [transfer], "our-tenant", "our-principal"), [])
+        detail["started_at"] = "2026-09-23T19:30:27Z"
+        self.assertEqual(correlate_debug([detail], [transfer], "foreign-tenant", "our-principal"), [])
+
+    def test_one_exchange_cannot_satisfy_two_transfers(self):
+        detail, transfer = self.debug_fixture(qualified=False)
+        second = {**transfer, "request_id": "another-client"}
+        with self.assertRaisesRegex(ValueError, "multiple_transfers"):
+            correlate_debug([detail], [transfer, second], "our-tenant", "our-principal")
+
+    def test_partial_server_buffered_bytes_are_not_client_consumed_bytes(self):
+        detail, transfer = self.debug_fixture()
+        transfer.update(mode="intentional-partial-close", received_bytes=1024**2)
+        detail["response_body"].update(complete=False, observed_bytes=24 * 1024**2)
+        detail["response_body"]["artifact_reference"].update(verified=False, delivered_bytes=24 * 1024**2, observed_sha256="a" * 64)
+        row, = correlate_debug([detail], [transfer], "our-tenant", "our-principal")
+        self.assertTrue(debug_pass({"rows": [row]}, [transfer]))
+        row["response_body_metadata"]["complete"] = True
+        self.assertFalse(debug_pass({"rows": [row]}, [transfer]))
 
 
 if __name__ == "__main__":
