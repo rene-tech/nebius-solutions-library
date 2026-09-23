@@ -189,6 +189,9 @@ def analyze_run(run, master, output):
     raw_thermo = native_thermo(run["thermo"]["path"], run["thermo"]["kind"], dt, float(master["u"].atoms.masses.sum()))
     thermo_rows = production_rows(raw_thermo, run.get("thermo_origin_step", run["production_origin_step"]), run.get("thermo_origin_time_ps", run["production_origin_time_ps"]), steps, dt)
     pressure_status = "native reported pressure"
+    if engine == "namd":
+        group_based = "PRESSURE CONTROL IS GROUP-BASED" in Path(run["thermo"]["path"]).read_text()
+        pressure_status = "native GPRESSURE: group-based pressure control confirmed in log; atomic PRESSURE retained separately" if group_based else "native atomic PRESSURE; no group-based pressure-control declaration in log"
     joined_pressure = None
     if all("uncomputed_pressure_placeholder_bar" in row for row in thermo_rows):
         pressure_status = "unavailable: AMBER explicitly reports PRESS=0 because pressure/virial is not calculated; placeholder is not a measured zero"
@@ -209,7 +212,7 @@ def analyze_run(run, master, output):
         writer.writeheader()
         writer.writerows(thermo_rows)
     summary = {"engine": engine, "image": run["image"], "status": "native-trajectory-analyzed; not force-field-equivalence or customer-release acceptance", "inputs": inputs, "atoms": natoms, "total_charge_e": master["manifest"]["total_charge_e"], "frame_count": len(rows), "common_frame_count": len(rows) - offset, "initial_frame_present": include_zero, "production_steps": steps, "production_duration_ps": steps * dt, "first_common_time_ps": rows[offset]["production_time_ps"], "last_time_ps": rows[-1]["production_time_ps"], "native_time_sources": sorted(all_sources), "density_from_native_cells_g_cm3": descriptive(densities[offset:]), "performance": native_performance(run["production_log"], engine, steps, dt), "stage_verification": run.get("stage_verification", {"status": "not established here; parent must attach native stage evidence"}), "force_field_equivalence": "separate parent gate; declared atom mapping is not force-field equivalence proof", "initial_potential_energy_kJ_mol": None, "initial_potential_energy_note": "must come from identical canonical-coordinate single-point gate, never substituted with first production frame", "lifecycle_timings": run.get("lifecycle_timings", {}), "provenance": run.get("provenance", {}), "scientific_convergence_claimed": False}
-    for field in ("temperature_K", "pressure_bar", "density_g_cm3", "potential_kJ_mol"):
+    for field in ("temperature_K", "pressure_bar", "atomic_pressure_bar", "group_pressure_bar", "density_g_cm3", "potential_kJ_mol"):
         values = [r[field] for r in thermo_rows if field in r]
         summary[field] = descriptive(values) if values else None
     summary["pressure_status"] = pressure_status

@@ -1,8 +1,10 @@
 # Canonical four-engine trajectory analysis
 
-Status: implemented; 30 explicitly synthetic unit tests pass. No completed canonical
-production trajectories have been supplied yet. Generated unit fixtures, even
-when encoded as MP4, are **not scientific simulation or acceptance evidence**.
+Status on 2026-09-23: 46 explicitly synthetic unit tests pass. Actual complete
+GROMACS, NAMD and AMBER production files have passed common analysis, and their
+three real clips are rendered and encoding/visually checked. LAMMPS production
+is still running, so the fourth clip and synchronized 2×2 remain pending.
+Generated unit fixtures are **not scientific simulation or acceptance evidence**.
 
 This CPU-only subtree owns analysis and visualization, not force-field
 conversion, GPU runs, or the combined customer-shaped release gate. The parent
@@ -23,6 +25,23 @@ ANALYSIS=/absolute/worktree/k8s-inference/models/molecular-dynamics/comparison/a
 "$PY" "$ANALYSIS/compare.py" --spec /evidence/real-runs.json --output /evidence/analysis-01
 "$PY" "$ANALYSIS/render.py" /evidence/analysis-01 --output /evidence/videos-01
 ```
+
+For an explicitly partial result, `render.py --engines gromacs namd amber`
+renders only those passed real analyses, labels the receipt incomplete, and
+does **not** fabricate a missing-engine panel or four-way comparison.
+
+Current actual evidence is `/home/tux/fs2-alanine-analysis-20260923`:
+`real-analysis-02` contains the three-engine validation/statistics/phi–psi plots;
+`real-clips-01` contains the actual three MP4s and PNG previews. Each clip has
+1,000 real frames, 720×720 H.264/yuv420p, 40 fps and 25 s. All previews were
+visually inspected. Raw native trajectories are preserved unchanged.
+
+Read [the static energy/force report](STATIC-REPORT-20260923.md) for actual
+four-engine single-point values, Coulomb/mesh diagnostics, C6 versus C6+C12 tail
+conventions and unclosed numerical differences. Read
+[the temperature report](TEMPERATURE-REPORT-20260923.md) for native reported
+versus AMBER saved-current-velocity observables, DOF and correlated block
+uncertainty. The native low AMBER reported means are retained, not replaced.
 
 The output directories must be new. Failed analysis/render receipts are retained;
 they are not overwritten by later attempts. Raw inputs are read-only and hashed

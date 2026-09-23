@@ -105,26 +105,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("analysis", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--engines", choices=ENGINES, nargs="+", help="explicit partial standalone clips; no 2x2 grid until all four pass")
     args = parser.parse_args()
     analysis_receipt = json.loads((args.analysis / "receipt.json").read_text())
-    if analysis_receipt["status"] != "analysis-passed":
-        parser.error("all four real engine analyses must pass before comparison rendering")
+    selected = args.engines or ENGINES
+    if len(selected) != len(set(selected)):
+        parser.error("engine selection contains duplicates")
+    complete = set(selected) == set(ENGINES)
+    expected = "analysis-passed" if complete else ("analysis-passed", "partial-analysis-passed; missing engines remain unqualified")
+    if analysis_receipt["status"] not in ((expected,) if isinstance(expected, str) else expected):
+        parser.error("selected real engine analyses must pass; all four required for comparison grid")
+    if not set(selected) <= {run["engine"] for run in analysis_receipt["runs"]}:
+        parser.error("selected engine has no passed analysis")
     if args.output.exists():
         parser.error("output directory must not exist")
     args.output.mkdir(parents=True)
     started = time.time()
-    receipt = {"status": "incomplete", "evidence_kind": "real-native-md-render", "source": source_identity(), "analysis_receipt": file_receipt(args.analysis / "receipt.json"), "settings": SETTINGS, "videos": {}, "scientific_convergence_claimed": False}
+    receipt = {"status": "incomplete", "evidence_kind": "real-native-md-render", "source": source_identity(), "analysis_receipt": file_receipt(args.analysis / "receipt.json"), "settings": SETTINGS, "videos": {}, "missing_engines": sorted(set(ENGINES) - set(selected)), "scientific_convergence_claimed": False}
     try:
         for record in analysis_receipt["outputs"]:
             if file_receipt(record["path"]) != record:
                 raise ValidationError("analysis output changed since receipt")
-        for engine in ENGINES:
+        for engine in selected:
             with np.load(args.analysis / engine / "display.npz", allow_pickle=False) as data:
                 if len(data["time_ps"]) != 1000 or not np.allclose(data["time_ps"], np.arange(1, 1001), atol=.001, rtol=0):
                     raise ValidationError("real rendering requires 1..1000 ps, every 1 ps")
                 receipt["videos"][engine] = render_clip(data, engine, args.output / f"{engine}.mp4")
-        receipt["videos"]["four-engine-2x2"] = compose_grid([args.output / f"{engine}.mp4" for engine in ENGINES], args.output / "four-engine-2x2.mp4", 1000)
-        receipt["status"] = "real-trajectories-rendered-and-encoding-validated"
+        if complete:
+            receipt["videos"]["four-engine-2x2"] = compose_grid([args.output / f"{engine}.mp4" for engine in ENGINES], args.output / "four-engine-2x2.mp4", 1000)
+        receipt["status"] = "real-trajectories-rendered-and-encoding-validated" if complete else "partial-real-clips-rendered; four-engine comparison incomplete"
     except Exception as exc:
         receipt.update(status="failed", error=f"{type(exc).__name__}: {exc}")
         raise

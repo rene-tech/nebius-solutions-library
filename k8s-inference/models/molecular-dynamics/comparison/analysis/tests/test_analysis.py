@@ -264,12 +264,29 @@ class ThermoTests(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["potential_kJ_mol"], -418.4)
         self.assertEqual(rows[0]["pressure_bar"], 1.2)
 
+    def test_namd_group_pressure_requires_native_declaration(self):
+        self.path.write_text("Info: PRESSURE CONTROL IS GROUP-BASED\nETITLE: TS TEMP PRESSURE GPRESSURE VOLUME POTENTIAL\nENERGY: 500 300 25 -1.2 20000 -100\nENERGY: 1000 301 27 2.3 20001 -99\n")
+        rows = native_thermo(self.path, "namd_log", .002, 12000.)
+        self.assertEqual(rows[0]["pressure_bar"], -1.2)
+        self.assertEqual(rows[0]["atomic_pressure_bar"], 25.)
+        self.assertEqual(rows[0]["group_pressure_bar"], -1.2)
+        self.path.write_text(self.path.read_text().replace("Info: PRESSURE CONTROL IS GROUP-BASED\n", ""))
+        self.assertEqual(native_thermo(self.path, "namd_log", .002, 12000.)[0]["pressure_bar"], 25.)
+
     def test_lammps_real_units(self):
         self.path.write_text("Step Time Temp Press Volume Density PotEng\n500 1000 300 1 20000 0.99 -100\n1000 2000 301 -1 20010 0.98 -101\nLoop time of 2 on 4 procs for 1000 steps\n")
         rows = native_thermo(self.path, "lammps_log", .002, 12000.)
         self.assertEqual(rows[0]["time_ps"], 1)
         self.assertEqual(rows[0]["pressure_bar"], 1.01325)
         self.assertAlmostEqual(native_performance(self.path, "lammps", 1000, .002)["native_ns_per_day"], 86.4)
+
+    def test_lammps_interleaved_shake_statistics_do_not_drop_rows(self):
+        self.path.write_text("Step Time Temp Press Volume Density PotEng\n500 1000 300 1 20000 0.99 -100\nSHAKE/KK stats (type/ave/delta/count) on step 1000\nBond: 8 0.9572 1e-8 4384\nAngle: 12 104.491 1e-5 2192\n1000 2000 301 -1 20010 0.98 -101\nLoop time of 2 on 4 procs for 1000 steps\n3 4 5\n")
+        rows = native_thermo(self.path, "lammps_log", .002, 12000.)
+        self.assertEqual([row["step"] for row in rows], [500, 1000])
+        self.path.write_text("Step Time Temp Press Volume Density PotEng\n500 1000 300 1 20000 0.99\n")
+        with self.assertRaises(ValidationError):
+            native_thermo(self.path, "lammps_log", .002, 12000.)
 
     def test_gromacs_labels_and_units(self):
         self.path.write_text('@ s0 legend "Temperature"\n@ s1 legend "Pressure"\n@ s2 legend "Density"\n1 300 1 998\n2 301 -1 997\n')
@@ -288,6 +305,18 @@ class ThermoTests(unittest.TestCase):
     def test_performance_missing_is_null_not_fabricated(self):
         self.path.write_text("SYNTHETIC no performance footer")
         self.assertIsNone(native_performance(self.path, "namd", 500000, .002)["native_ns_per_day"])
+
+    def test_amber_all_steps_timing_not_last_window(self):
+        self.path.write_text("| Average timings for last 200 steps:\n| Elapsed(s) = 2.0 Per Step(ms) = 10\n| ns/day = 999 seconds/ns = 5\n| Average timings for all steps:\n| Elapsed(s) = 118.38 Per Step(ms) = 0.24\n| ns/day = 729.84 seconds/ns = 118.38\n")
+        result = native_performance(self.path, "amber", 500000, .002)
+        self.assertEqual(result["native_ns_per_day"], 729.84)
+        self.assertEqual(result["native_loop_seconds"], 118.38)
+
+    def test_namd_accumulated_performance_not_startup_benchmark(self):
+        self.path.write_text("Info: Benchmark time: 4 CPUs 0.000410 s/step\nPERFORMANCE: 604500 averaging 415.909 ns/day, 0.000415476 sec/step with standard deviation 0.1\nPERFORMANCE: 605000 averaging 415.908 ns/day, 0.000415476 sec/step with standard deviation 0.1\n")
+        result = native_performance(self.path, "namd", 500000, .002)
+        self.assertEqual(result["native_ns_per_day"], 415.908)
+        self.assertEqual(result["native_final_timing_step"], 605000)
 
     def test_canonical_protocol_cannot_shorten_run(self):
         with self.assertRaises(ValidationError):

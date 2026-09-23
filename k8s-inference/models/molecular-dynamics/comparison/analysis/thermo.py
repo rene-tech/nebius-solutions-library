@@ -33,6 +33,7 @@ def native_thermo(path, kind, timestep_ps, total_mass_amu):
             rows.append(row)
     elif kind == "namd_log":
         names = None
+        group_pressure = "PRESSURE CONTROL IS GROUP-BASED" in text
         for line in text.splitlines():
             if line.startswith("ETITLE:"):
                 names = line.split()[1:]
@@ -43,7 +44,10 @@ def native_thermo(path, kind, timestep_ps, total_mass_amu):
                 if len(values) != len(names):
                     raise ValidationError("NAMD energy field count differs")
                 row = dict(zip(names, map(number, values)))
-                rows.append({"step": row["TS"], "time_ps": row["TS"] * timestep_ps, "temperature_K": row["TEMP"], "pressure_bar": row["PRESSURE"], "density_g_cm3": total_mass_amu / row["VOLUME"] * AMU_A3_TO_G_CM3, "potential_kJ_mol": row["POTENTIAL"] * 4.184})
+                sample = {"step": row["TS"], "time_ps": row["TS"] * timestep_ps, "temperature_K": row["TEMP"], "pressure_bar": row["GPRESSURE" if group_pressure else "PRESSURE"], "atomic_pressure_bar": row["PRESSURE"], "density_g_cm3": total_mass_amu / row["VOLUME"] * AMU_A3_TO_G_CM3, "potential_kJ_mol": row["POTENTIAL"] * 4.184}
+                if "GPRESSURE" in row:
+                    sample["group_pressure_bar"] = row["GPRESSURE"]
+                rows.append(sample)
     elif kind == "amber_mdout":
         # The averages/RMS footer repeats NSTEP; it is not another sample.
         text = re.split(r"A\s+V\s+E\s+R\s+A\s+G\s+E\s+S", text)[0]
@@ -65,12 +69,20 @@ def native_thermo(path, kind, timestep_ps, total_mass_amu):
         for line in text.splitlines():
             parts = line.split()
             if parts and parts[0] == "Step" and {"Temp", "Press"} <= set(parts):
+                if len(parts) != len(set(parts)):
+                    raise ValidationError("duplicate LAMMPS thermo fields")
                 columns = parts
                 continue
             if columns and parts:
-                if len(parts) != len(columns) or not re.fullmatch(NUMBER, parts[0]):
+                if line.startswith(("Loop time of ", "ERROR", "Total wall time:")):
                     columns = None
                     continue
+                if not re.fullmatch(NUMBER, parts[0]):
+                    # SHAKE statistics and other explicitly labeled native
+                    # diagnostics can be interleaved inside the thermo table.
+                    continue
+                if len(parts) != len(columns):
+                    raise ValidationError("incomplete LAMMPS thermo row")
                 values = dict(zip(columns, map(number, parts)))
                 row = {"step": values["Step"], "time_ps": values.get("Time", values["Step"] * timestep_ps), "temperature_K": values["Temp"], "pressure_bar": values["Press"] * 1.01325}
                 # In units real, thermo Time is femtoseconds, not picoseconds.
@@ -135,20 +147,29 @@ def native_performance(log_path, engine, production_steps, timestep_ps):
         if len(values) == 1:
             result.update(native_ns_per_day=number(values[0]), scope="GROMACS native Performance footer, production log only")
     elif engine == "amber":
-        values = re.findall(rf"ns/day\s*=\s*({NUMBER})", text)
-        if len(values) == 1:
-            result.update(native_ns_per_day=number(values[0]), scope="AMBER native ns/day production footer")
+        full = re.findall(rf"Average timings for all steps:\s*\|\s*Elapsed\(s\)\s*=\s*({NUMBER}).*?\|\s*ns/day\s*=\s*({NUMBER})", text, re.S)
+        if len(full) == 1:
+            result.update(native_loop_seconds=number(full[0][0]), native_ns_per_day=number(full[0][1]), scope="AMBER native all-steps production footer, not last-window timing")
+        else:
+            values = re.findall(rf"ns/day\s*=\s*({NUMBER})", text)
+            if len(values) == 1:
+                result.update(native_ns_per_day=number(values[0]), scope="AMBER native ns/day production footer")
     elif engine == "lammps":
         loops = re.findall(rf"Loop time of ({NUMBER}) on .*? for (\d+) steps", text)
         if loops and sum(int(n) for _, n in loops) == production_steps:
             seconds = sum(number(s) for s, _ in loops)
             result.update(native_loop_seconds=seconds, native_ns_per_day=duration_ns * 86400 / seconds, scope="sum of production LAMMPS loop times; real units")
     elif engine == "namd":
-        # NAMD's benchmark is a steady-loop estimate, not total production wall.
-        values = re.findall(rf"Benchmark time:.*?({NUMBER})\s+s/step", text)
-        if values:
-            seconds_per_step = number(values[-1])
-            result.update(native_ns_per_day=timestep_ps / 1000 * 86400 / seconds_per_step, scope="last native NAMD Benchmark s/step estimate; not workflow duration", native_seconds_per_step=seconds_per_step)
+        # Prefer the final accumulated native production estimate over startup
+        # benchmark windows. Neither is the end-to-end worker/process duration.
+        averages = re.findall(rf"^PERFORMANCE:\s*(\d+)\s+averaging\s+({NUMBER})\s+ns/day,\s*({NUMBER})\s+sec/step", text, re.M)
+        if averages:
+            result.update(native_ns_per_day=number(averages[-1][1]), native_seconds_per_step=number(averages[-1][2]), native_final_timing_step=int(averages[-1][0]), scope="final native NAMD accumulated PERFORMANCE estimate; not worker/process duration")
+        else:
+            values = re.findall(rf"Benchmark time:.*?({NUMBER})\s+s/step", text)
+            if values:
+                seconds_per_step = number(values[-1])
+                result.update(native_ns_per_day=timestep_ps / 1000 * 86400 / seconds_per_step, scope="last native NAMD Benchmark s/step estimate; not workflow duration", native_seconds_per_step=seconds_per_step)
     if result["native_ns_per_day"] is not None and (not np.isfinite(result["native_ns_per_day"]) or result["native_ns_per_day"] <= 0):
         raise ValidationError("invalid native performance")
     return result
