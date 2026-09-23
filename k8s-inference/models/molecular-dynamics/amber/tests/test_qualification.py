@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import tarfile
 from pathlib import Path
@@ -84,3 +85,21 @@ def test_binding_arithmetic_covers_both_models_and_all_components(tmp_path):
     path.write_text(path.read_text().replace("0,1,3,2,5", "0,1,3,2,6", 1))
     with pytest.raises(ValueError, match="arithmetic"):
         validator.binding_arithmetic(path)
+
+
+def test_upstream_summary_retains_failure_and_verifies_copied_files(tmp_path):
+    module = load_qualifier("regression_receipt")
+    log = tmp_path / "native.log"
+    log.write_bytes(b"upstream comparison retained\n")
+    sha = hashlib.sha256(log.read_bytes()).hexdigest()
+    tests = [{"case": "case-" + str(i // 2), "precision": "SPFP" if i % 2 else "DPFP", "status": "failed" if i == 1 else "passed", "argv": ["native-upstream"], "exit_code": 0, "timed_out": False, "wall_seconds": 1, "upstream_script_sha256": "a" * 64, "log": "native.log", "log_sha256": sha, "source_files": []} for i in range(14)]
+    receipt = {"status": "failed", "files": [{"path": "native.log", "size_bytes": log.stat().st_size, "sha256": sha}], "tests": tests, "gpu": "NVIDIA L40S, GPU-test, 580.173.02, 8.9", "engine_id": "private@sha256:" + "a" * 64, "pmemd_source_sha256": "b" * 64, "comparison_policy": "unchanged upstream"}
+    (tmp_path / "regression.json").write_text(json.dumps(receipt))
+    pod = {"spec": {"containers": [{"image": "private@sha256:" + "c" * 64}], "nodeName": "synthetic"}, "status": {"containerStatuses": [{"imageID": "private@sha256:" + "c" * 64}]}, "metadata": {"uid": "synthetic"}}
+    result = module.summarize(tmp_path, pod, "d" * 40)
+    assert result["status"] == "failed"
+    assert result["passed_comparisons"] == 13
+    assert result["pool"] == "l40s-1x"
+    log.write_bytes(b"changed log\n")
+    with pytest.raises(ValueError, match="mismatch"):
+        module.summarize(tmp_path, pod, "d" * 40)

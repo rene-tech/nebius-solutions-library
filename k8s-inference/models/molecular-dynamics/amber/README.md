@@ -1,4 +1,4 @@
-# AMBER26 private academic bootstrap
+# AMBER26 private academic native runtime
 
 PMEMD26, not an AmberTools substitute. The operator has confirmed the academic
 agreement and supplied the official archive. Its SHA256 is
@@ -63,10 +63,10 @@ PMEMD dynamics requires an exact `expected_nsteps`; native echoed `nstlim`,
 final step, finite restart coordinates/velocities, atom count and time are checked.
 The real CUDA final summary differs from older saved CPU logs; v1's overly
 narrow completion parser was corrected in v2, with the original failed wrapper
-receipt and successful native output retained.29 offline tests pass. Native
+receipt and successful native output retained.33 offline tests pass. Native
 closed-stage checkpoints are not partial-restart or GPU-process snapshots.
 
-Initial H100 upstream comparisons on v1 and again on v2 pass13/14 without
+H100 upstream comparisons on v1, v2 and the exact final v3 pass13/14 without
 changing upstream tolerances. The sole exception is sodium TI NVE SPFP:
 four printed temperature fields differ by0.01K, maximum relative2.83e-5,
 against the original1e-5 gate. The same DPFP test passes1e-7, and SPFP softcore
@@ -114,9 +114,13 @@ The selected sustained TI control samples lambda0.3 and reports MBAR neighbors
 0.2/0.3/0.4. Original full0..1 eleven-state attempts all failed due to a printed
 distant-lambda overflow; they are not accepted by dropping failed state values.
 Six v2 L40S classical repetitions also passed. These are separate images from
-v3: exact-v3 H100 sustained DHFR,GB8,nearby-state TI and full preparation now pass, while the
-broader v3 qualification remains in progress. No old-image receipt is promoted
-as new-image execution evidence.
+v3: the final v3 executed sustained DHFR (0.6ns), GB8 (1.2ns) and nearby-state
+TI-DPFP (100ps) on both H100 and L40S, one repetition per case/pool, all six
+passing. The full ff19SB/OPC15Å preparation through2ns production also passed on
+exact v3 H100. No old-image receipt or its repetition count is promoted as
+new-image execution evidence. Native throughput is input- and precision-specific:
+the nearby-state DPFP TI test is substantially slower on L40S than H100; it is
+not silently switched to SPFP to improve performance.
 
 The canonical four-engine acceptance is a separate ff14SB/TIP3P master with
 6598 atoms, not the ff19SB/OPC preparation example. Native zero-optimization CPU
@@ -129,8 +133,23 @@ the documented single-GPU Langevin LFMiddle and stochastic cell-rescaling
 barostat (`ischeme=1,ithermostat=1,therm_par=1,barostat=1,baro_stochastic=1`),
 not plain Berendsen. It computes molecular-virial pressure and retains matching
 coordinate/velocity frames every1ps. Monte Carlo's placeholder PRESS=0 in older
-fixtures is never interpreted as measured pressure. Canonical execution and
-fresh-Pod recovery remain separate acceptance gates until their receipts pass.
+fixtures is never interpreted as measured pressure.
+
+The canonical default1Å CUDA neighbor margin failed during initial NPT box
+contraction; that failed attempt is preserved. The separately frozen `skin2`
+fixture sets `skinnb=2.0,skin_permit=0.5` with the same10Å physical cutoff,
+force field, seeds, tolerances, durations and full native small-box guard.
+It is not a relaxed neighbor check or an altered thermodynamic protocol.
+On H100, the exact-v3 `skin2` run completed minimization,100ps NVT,100ps NPT
+and1ns production after deliberate active-production interruption and distinct
+Pod replacement. The closed generation5 preserved all preceding stages;
+production was retried from that acknowledged NPT boundary, not resumed as an
+exact random-stream/GPU-process snapshot. All6598 master atoms and original
+input bytes match; production has1000 finite1ps frames and matching velocities.
+Genuine molecular-virial pressure has1000 samples, mean-12.3712bar and sample
+SD268.1900bar; these fluctuations do not establish long-run pressure convergence.
+Native H100 production was729.853ns/day for this single run. The L40S canonical
+continuation and common four-engine ensemble analysis are separate gates.
 
 Private raw evidence lives under
 `/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/`. Source, native inputs,
