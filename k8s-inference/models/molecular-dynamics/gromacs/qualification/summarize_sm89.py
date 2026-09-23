@@ -68,7 +68,7 @@ def summarize(directory):
             if delta.get("nr_periods") else None
         )
         log = (path / "md.log").read_text() if (path / "md.log").exists() else ""
-        row["pme_tuning_trial_count"] = len(re.findall(r"^step\s+\d+: timed with pme grid", log, re.MULTILINE))
+        row["pme_tuning_trial_count"] = len(re.findall(r"^[ \t]*step\s+\d+: timed with pme grid", log, re.MULTILINE))
         pme_final = re.search(r"^\s*final\s+([\d.]+) nm\s+([\d.]+) nm\s+(\d+)\s+(\d+)\s+(\d+)", log, re.MULTILINE)
         row["pme_final_reported"] = ({
             "coulomb_cutoff_nm": float(pme_final[1]), "neighbor_list_nm": float(pme_final[2]),

@@ -32,12 +32,17 @@ def test_summary_keeps_native_timing_energy_and_gpu_evidence(tmp_path, monkeypat
         "utilization.gpu [%], power.draw [W], clocks.current.sm [MHz], memory.used [MiB]\n"
         "60 %, 240 W, 2500 MHz, 900 MiB\n"
     )
-    (run / "md.log").write_text("Time: 80 10.0 800\n Force 1 8 100 5 10 50.0\n")
+    (run / "md.log").write_text(
+        "Time: 80 10.0 800\n Force 1 8 100 5 10 50.0\n"
+        "step 100: timed with pme grid 144 144 144\n"
+        "  step 200: timed with pme grid 160 160 160\n"
+    )
     (run / "energy-validation.xvg").write_text('@ s0 legend "Temperature"\n0 298\n40 300\n')
     result = summary.summarize(tmp_path)
     row = result["runs"][0]
     assert row["outside_native_timed_wall_seconds"] == 2
     assert row["timing_bucket_percent"] == {"Force": 50}
+    assert row["pme_tuning_trial_count"] == 2
     assert row["pod_throttled_period_fraction"] == 0.2
     assert row["process_sm_clock_mhz_mean"] == 2500
     assert row["process_gpu_memory_mib_max"] == 900
