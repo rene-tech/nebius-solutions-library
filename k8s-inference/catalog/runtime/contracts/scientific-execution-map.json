@@ -2310,7 +2310,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "b9b7c078dae7e18ecdb22b89970642f3dc53a7a5b347e418de2e2eaf97d8e40e",
+      "execution_identity_sha256": "2b12635fa821eda4df492bf3cc248412ddb4ed99e39acd2e7de2e924830e81ee",
       "model_id": "gromacs",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2322,7 +2322,7 @@
           "active_deadline_seconds": 261000,
           "collector_id": "gromacs-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:d7c5e1dd61dfd0a26e9978ee547b8aa885c4bef0d0d03daeb5757a7602a4b6e2",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643",
           "mounts": [
             {
               "claim_name": null,
@@ -2359,6 +2359,58 @@
       ],
       "variant_id": "nvidia-2026-2-single-gpu-v1",
       "workload_namespace": "fs2-models"
+    },
+    {
+      "model_id": "gromacs-mpi",
+      "variant_id": "upstream-2026-2-mpi-v1",
+      "execution_identity_sha256": "5791b141bca9d4ba99fa4b1ea068ecfa9c409cc3a9e390ca84cad3e701073776",
+      "access_profile": "public",
+      "workload_namespace": "fs2-models",
+      "plan_adapter": {
+        "function": "compile_adapter_run",
+        "module": "fs2_serve.scientific_batch.adapters"
+      },
+      "runtime_artifacts": [],
+      "stages": [
+        {
+          "stage_id": "workflow",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:d9d287c858b377b9f22a1ac484ee9ef12ce02389839363ee67f1e835fabfeb64",
+          "collector_id": "gromacs-mpi-workflow-v1",
+          "validator_id": "gromacs-mpi-workflow-v1",
+          "environment": {},
+          "required_node_labels": {
+            "kubernetes.io/arch": "amd64"
+          },
+          "resources": {
+            "requests": {
+              "cpu": "8000m",
+              "memory": "16Gi",
+              "ephemeral_storage": "64Gi"
+            },
+            "limits": {
+              "cpu": "8000m",
+              "memory": "16Gi",
+              "ephemeral_storage": "64Gi"
+            }
+          },
+          "active_deadline_seconds": 261000,
+          "termination_grace_seconds": 120,
+          "service_account_name": "default",
+          "workspace_uid": 10001,
+          "workspace_gid": 10001,
+          "mounts": [
+            {
+              "name": "artifact-workspace",
+              "kind": "artifact-workspace",
+              "claim_name": null,
+              "host_path": null,
+              "mount_path": "/mnt/fs2-scientific",
+              "sub_path": null,
+              "read_only": false
+            }
+          ]
+        }
+      ]
     }
   ],
   "qualification_baselines": {
@@ -2386,6 +2438,20 @@
       "openfold3-openbind",
       "protenix-v2",
       "alphafold3"
+    ],
+    "4d716c55d92b5e44c851be8c1aa3f11cf01a2a6caf2af9480be444a831bd01a8": [
+      "boltzgen",
+      "proteina-complexa",
+      "bindcraft",
+      "mosaic",
+      "rfdiffusion",
+      "esmfold2",
+      "esmfold2-fast",
+      "openfold3-openbind",
+      "protenix-v2",
+      "alphafold3",
+      "cosmos3-lerobot-augmentation",
+      "gromacs"
     ]
   }
 }

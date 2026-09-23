@@ -2224,11 +2224,11 @@
       },
       "execution_identity": {
         "model_revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
-        "runtime_image_digest": "sha256:d7c5e1dd61dfd0a26e9978ee547b8aa885c4bef0d0d03daeb5757a7602a4b6e2",
-        "runtime_recipe_sha256": "f7059b8612d2f355cf2092fd62c778c9492bc3b1c822b268f0cd4c872061eb68",
+        "runtime_image_digest": "sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643",
+        "runtime_recipe_sha256": "e7016258c21263e0cc30b42c4f2f84cb12e12998c4d4ecd9ab89c9bd1b5b4e91",
         "workload_recipe_sha256": "2fbb53490e7898cd24fbd80f19e4fd5c6d26f808fe2cac7f7babb60fb6566b9e",
         "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "execution_identity_sha256": "b9b7c078dae7e18ecdb22b89970642f3dc53a7a5b347e418de2e2eaf97d8e40e"
+        "execution_identity_sha256": "2b12635fa821eda4df492bf3cc248412ddb4ed99e39acd2e7de2e924830e81ee"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -2248,7 +2248,7 @@
           "discoverable": true,
           "invocable": true,
           "tool_name": "submit_gromacs_workflow",
-          "description": "Run native NVIDIA GROMACS preparation, MD, minimization, analysis or free-energy workflows. Accepts an immutable input bundle and ordered commands; returns durable runs and trajectory/checkpoint artifacts."
+          "description": "Run NVIDIA GROMACS preparation, MD, free-energy and analysis, with Colvars or PLUMED. Submit a bundled input and native commands; receive durable checkpoints and trajectory artifacts. Not a docking pose-search tool."
         }
       },
       "access": {
@@ -2320,20 +2320,145 @@
         "commercial_use": "allowed",
         "non_clinical": false,
         "limitations": [
-          "Onboarding release: native single-GPU runtime tested; customer REST/MCP, bucket recovery, queue/preemption and LibreChat qualification are not yet complete. Not customer-ready.",
+          "Onboarding release: native engine runtime tested; customer REST/MCP, bucket recovery, queue/preemption and LibreChat qualification are not yet complete. Not customer-ready.",
           "Exact NVIDIA v2026.2 image identifies itself as GROMACS 2026.2-dev, CUDA 13, thread-MPI. Multi-node requires a separate external-MPI build.",
           "One GPU and up to eight OpenMP threads per job. Jobs are independent; coupled replica exchange is not implemented in this execution shape.",
           "All scientific settings and output cadence remain in customer inputs. Execution success is not proof of equilibration, convergence or force-field suitability.",
-          "Colvars and PLUMED are compiled in; external kernel availability and enhanced-sampling correctness remain Priority 2. CP2K and Torch NNPot are not compiled in.",
+          "Colvars and PLUMED 2.10 are packaged in the enhanced runtime. Customer protocols and bias convergence need scientific validation. CP2K and Torch NNPot are separate builds, not capabilities of this App.",
           "Native checkpoint continuation is distinct from optional CUDA process snapshots; GPU snapshot acceleration has not been qualified."
         ]
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "1b051e4ba7ed165350a895be5cc323b3c7cb479aef5255318e5fc86f79411eb3",
+        "h100_semantic_receipt_sha256": "cb58dac2a6be1d68eb09fcf4b4fd09bf6034e954e3841d3019b5d1c066603018",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "efeca44dc5d5999b72bd2b52cc0675378af36d90d787b7a21e4a2d30d618e126",
-        "qualified_at": "2026-09-23T09:11:45.044397+00:00"
+        "execution_map_sha256": "4d716c55d92b5e44c851be8c1aa3f11cf01a2a6caf2af9480be444a831bd01a8",
+        "qualified_at": "2026-09-23T11:16:33.328210+00:00"
+      }
+    },
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "gromacs-mpi",
+      "display_name": "GROMACS \u00b7 distributed CUDA MPI",
+      "execution_mode": "scientific-batch",
+      "state": "active",
+      "route_exposed": true,
+      "source": {
+        "kind": "git",
+        "repository": "gromacs/gromacs",
+        "revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
+        "review_url": "https://gitlab.com/gromacs/gromacs/-/tree/v2026.2",
+        "classification": "qualified-input"
+      },
+      "execution_identity": {
+        "model_revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
+        "runtime_image_digest": "sha256:d9d287c858b377b9f22a1ac484ee9ef12ce02389839363ee67f1e835fabfeb64",
+        "runtime_recipe_sha256": "e7016258c21263e0cc30b42c4f2f84cb12e12998c4d4ecd9ab89c9bd1b5b4e91",
+        "workload_recipe_sha256": "dc1bfdd87c33685b658c975b934f031547852fd0c3d43ae17b8f4bfd2b131b50",
+        "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "execution_identity_sha256": "5791b141bca9d4ba99fa4b1ea068ecfa9c409cc3a9e390ca84cad3e701073776"
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/gromacs-mpi:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/gromacs-mpi-workflow-request/v1",
+        "operations": [
+          "run-workflow"
+        ],
+        "service_classes": [
+          "interactive",
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": true,
+          "tool_name": "submit_gromacs_mpi_workflow",
+          "description": "Run one distributed GROMACS workflow across gang-admitted GPU nodes. Preparation and analysis run on rank zero; MD uses one MPI rank/GPU per node. Returns durable native checkpoints and customer-bucket results."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "not-required",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "multi-node",
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-ondemand-1x",
+          "h100-reserved-8x"
+        ],
+        "required_node_labels": {
+          "kubernetes.io/arch": "amd64"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "workflow",
+            "needs": [],
+            "resource_class": "gpu",
+            "admission_mode": "gang-jobset",
+            "min_parallelism": 2,
+            "max_parallelism": 8,
+            "checkpoint_mode": "resume",
+            "preemption_mode": "checkpointable",
+            "placement": {
+              "class": "accelerator"
+            },
+            "resources": {
+              "cpu_millis": 8000,
+              "memory_bytes": 17179869184,
+              "ephemeral_storage_bytes": 68719476736,
+              "limits": {
+                "cpu_millis": 8000,
+                "memory_bytes": 17179869184,
+                "ephemeral_storage_bytes": 68719476736
+              }
+            }
+          }
+        ],
+        "retry": {
+          "max_attempts": 3,
+          "retryable_exit_codes": [
+            75,
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 120
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "gromacs-mpi-workflow-v1",
+        "state": "active"
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "non_clinical": false,
+        "limitations": [
+          "Onboarding release: native engine runtime tested; customer REST/MCP, bucket recovery, queue/preemption and LibreChat qualification are not yet complete. Not customer-ready.",
+          "Separate upstream GROMACS 2026.2 CUDA/Open MPI build, not the NVIDIA NGC engine binary.",
+          "Two to eight gang-admitted nodes, one GPU/rank and up to eight CPU threads per node. No coupled replica exchange in this shape.",
+          "Portable TCP host-staged MPI baseline. RDMA/direct GPU communication requires a separately qualified network profile.",
+          "Native .cpt recovery is distinct from persistent GPU-process snapshots. Scientific convergence is not inferred from execution success."
+        ]
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "b3b1199a7782fdd0fd0b4316d156a93d280c6f57012276ced68f457ef5346e9e",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "8e98809e8a58d4e636563b1c06bbdf7362ca73f6e9733f9afd0263809dbe400d",
+        "qualified_at": "2026-09-23T11:16:33.550193+00:00"
       }
     }
   ]

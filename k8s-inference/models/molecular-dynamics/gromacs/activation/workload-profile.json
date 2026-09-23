@@ -41,7 +41,7 @@
         "discoverable": true,
         "invocable": false,
         "tool_name": "submit_gromacs_workflow",
-        "description": "Run native NVIDIA GROMACS preparation, MD, minimization, analysis or free-energy workflows. Accepts an immutable input bundle and ordered commands; returns durable runs and trajectory/checkpoint artifacts."
+        "description": "Run NVIDIA GROMACS preparation, MD, free-energy and analysis, with Colvars or PLUMED. Submit a bundled input and native commands; receive durable checkpoints and trajectory artifacts. Not a docking pose-search tool."
       }
     },
     "access": {
@@ -117,7 +117,7 @@
         "Exact NVIDIA v2026.2 image identifies itself as GROMACS 2026.2-dev, CUDA 13, thread-MPI. Multi-node requires a separate external-MPI build.",
         "One GPU and up to eight OpenMP threads per job. Jobs are independent; coupled replica exchange is not implemented in this execution shape.",
         "All scientific settings and output cadence remain in customer inputs. Execution success is not proof of equilibration, convergence or force-field suitability.",
-        "Colvars and PLUMED are compiled in; external kernel availability and enhanced-sampling correctness remain Priority 2. CP2K and Torch NNPot are not compiled in.",
+        "Colvars and PLUMED 2.10 are packaged in the enhanced runtime. Customer protocols and bias convergence need scientific validation. CP2K and Torch NNPot are separate builds, not capabilities of this App.",
         "Native checkpoint continuation is distinct from optional CUDA process snapshots; GPU snapshot acceleration has not been qualified."
       ]
     }

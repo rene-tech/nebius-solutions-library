@@ -20,11 +20,15 @@ def inputs():
     live = json.loads(
         (ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text()
     )
-    live["models"] = [row for row in live["models"] if row["model_id"] != "gromacs"]
+    live["models"] = [
+        row
+        for row in live["models"]
+        if row["model_id"] not in {"gromacs", "gromacs-mpi"}
+    ]
     live["qualification_baselines"] = {
         key: ids
         for key, ids in live.get("qualification_baselines", {}).items()
-        if "gromacs" not in ids
+        if not {"gromacs", "gromacs-mpi"}.intersection(ids)
     }
     candidate = json.loads((HERE / "activation/workload-profile.json").read_text())[
         "profile"
@@ -151,6 +155,15 @@ def test_mpi_addition_renders_the_full_frozen_gang(tmp_path):
     args[0]["scientificBatch"]["executionMap"] = json.loads(
         (ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text()
     )
+    baseline = args[0]["scientificBatch"]["executionMap"]
+    baseline["models"] = [
+        row for row in baseline["models"] if row["model_id"] != "gromacs-mpi"
+    ]
+    baseline["qualification_baselines"] = {
+        key: ids
+        for key, ids in baseline.get("qualification_baselines", {}).items()
+        if "gromacs-mpi" not in ids
+    }
     profile, row, overlay, _ = activation.prepare(*args)
     assert (
         overlay["scientificBatch"]["executionMap"]["models"][:-1]

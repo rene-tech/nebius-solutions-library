@@ -26,8 +26,12 @@ def main():
     mps = shutil.which("nvidia-cuda-mps-control")
     if not mps:
         raise RuntimeError("this image does not contain the MPS control binary")
-    env = {**os.environ, "OMP_NUM_THREADS": "4", "CUDA_MPS_PIPE_DIRECTORY": str(args.output / "mps-pipes"),
-           "CUDA_MPS_LOG_DIRECTORY": str(args.output / "mps-logs")}
+    env = {
+        **os.environ,
+        "OMP_NUM_THREADS": "4",
+        "CUDA_MPS_PIPE_DIRECTORY": str(args.output / "mps-pipes"),
+        "CUDA_MPS_LOG_DIRECTORY": str(args.output / "mps-logs"),
+    }
     for name in ("mps-pipes", "mps-logs"):
         (args.output / name).mkdir()
     records = []
@@ -42,16 +46,47 @@ def main():
                     directory.mkdir()
                     log = (directory / "command.log").open("wb")
                     handles.append(log)
-                    children.append((directory, subprocess.Popen([GMX, "mdrun", "-s", str(args.tpr.resolve()),
-                        "-deffnm", "md", "-ntmpi", "1", "-ntomp", "4", "-pin", "off"],
-                        env=env, cwd=directory, stdout=log, stderr=subprocess.STDOUT)))
+                    children.append(
+                        (
+                            directory,
+                            subprocess.Popen(
+                                [
+                                    GMX,
+                                    "mdrun",
+                                    "-s",
+                                    str(args.tpr.resolve()),
+                                    "-deffnm",
+                                    "md",
+                                    "-ntmpi",
+                                    "1",
+                                    "-ntomp",
+                                    "4",
+                                    "-pin",
+                                    "off",
+                                ],
+                                env=env,
+                                cwd=directory,
+                                stdout=log,
+                                stderr=subprocess.STDOUT,
+                            ),
+                        )
+                    )
                 outcomes = []
                 try:
                     for directory, child in children:
                         code = child.wait(timeout=300)
-                        performance = re.findall(r"Performance:\s+([0-9.eE+-]+)",
-                                                 (directory / "command.log").read_text(errors="replace"))
-                        outcomes.append({"exit_code": code, "ns_per_day": float(performance[-1]) if performance else None})
+                        performance = re.findall(
+                            r"Performance:\s+([0-9.eE+-]+)",
+                            (directory / "command.log").read_text(errors="replace"),
+                        )
+                        outcomes.append(
+                            {
+                                "exit_code": code,
+                                "ns_per_day": float(performance[-1])
+                                if performance
+                                else None,
+                            }
+                        )
                 finally:
                     for _, child in children:
                         if child.poll() is None:
@@ -60,11 +95,20 @@ def main():
                     for handle in handles:
                         handle.close()
                 wall = time.monotonic() - start
-                record = {"mode": mode, "repetition": repeat + 1, "processes": 2, "threads_each": 4,
-                          "wall_seconds": wall, "simulation_ns_total": 0.8,
-                          "end_to_end_aggregate_ns_per_day": 0.8 * 86400 / wall, "outcomes": outcomes}
+                record = {
+                    "mode": mode,
+                    "repetition": repeat + 1,
+                    "processes": 2,
+                    "threads_each": 4,
+                    "wall_seconds": wall,
+                    "simulation_ns_total": 0.8,
+                    "end_to_end_aggregate_ns_per_day": 0.8 * 86400 / wall,
+                    "outcomes": outcomes,
+                }
                 records.append(record)
-                (args.output / "measurements.json").write_text(json.dumps(records, indent=2) + "\n")
+                (args.output / "measurements.json").write_text(
+                    json.dumps(records, indent=2) + "\n"
+                )
                 print(json.dumps(record), flush=True)
         finally:
             if mode == "mps":

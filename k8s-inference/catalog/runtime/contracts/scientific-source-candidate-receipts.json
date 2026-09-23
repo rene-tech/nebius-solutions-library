@@ -207,6 +207,24 @@
       "access_profile": "standard",
       "access_state": "not-required",
       "notes": "Official NVIDIA NGC v2026.2 HPC container, not a NIM HTTP microservice. Manifest inspected and binary identifies itself as GROMACS 2026.2-dev. This source receipt is not customer qualification; hosted runtime, storage, recovery and performance evidence are separate."
+    },
+    {
+      "model_id": "gromacs-mpi",
+      "upstream_name": "GROMACS \u00b7 distributed CUDA MPI",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "pinned-runtime-artifact-manifest",
+      "observed_on": "2026-09-23",
+      "source": {
+        "kind": "git",
+        "repository": "gromacs/gromacs",
+        "revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
+        "review_url": "https://gitlab.com/gromacs/gromacs/-/tree/v2026.2"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "Separate upstream GROMACS 2026.2 external-MPI CUDA build with pinned Open MPI 5.0.8 and UCX 1.19.0. Not the NVIDIA NGC engine binary or a NIM. This source receipt does not qualify distributed execution, performance, recovery, hosted APIs or customer storage."
     }
   ]
 }

@@ -22,6 +22,11 @@ def main():
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--suffix", required=True)
+    parser.add_argument(
+        "--pool",
+        choices=("h100-ondemand-1x", "h100-reserved-8x"),
+        default="h100-ondemand-1x",
+    )
     args = parser.parse_args()
     if "@sha256:" not in args.image:
         raise ValueError("Use an immutable worker image")
@@ -40,7 +45,7 @@ def main():
         "spec": {
             "automountServiceAccountToken": False,
             "restartPolicy": "Never",
-            "nodeSelector": {"accelerator.fs2.nebius/pool-id": "h100-ondemand-1x"},
+            "nodeSelector": {"accelerator.fs2.nebius/pool-id": args.pool},
             "tolerations": [
                 {
                     "key": "dedicated",
@@ -221,7 +226,7 @@ def main():
     record = {
         "image": args.image,
         "jobset": name,
-        "pool": "h100-ondemand-1x",
+        "pool": args.pool,
         "ranks": results,
         "runtime_wall_seconds": time.monotonic() - running,
         "gpu_count": 2,

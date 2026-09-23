@@ -13,6 +13,11 @@ def main():
     parser.add_argument("--image", required=True)
     parser.add_argument("--binary", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--pool",
+        choices=("h100-ondemand-1x", "h100-reserved-8x"),
+        default="h100-ondemand-1x",
+    )
     args = parser.parse_args()
     if "@sha256:" not in args.image:
         raise ValueError("Pin the tested build image")
@@ -30,7 +35,7 @@ def main():
             "restartPolicy": "Never",
             "automountServiceAccountToken": False,
             "activeDeadlineSeconds": 3600,
-            "nodeSelector": {"accelerator.fs2.nebius/pool-id": "h100-ondemand-1x"},
+            "nodeSelector": {"accelerator.fs2.nebius/pool-id": args.pool},
             "tolerations": [
                 {
                     "key": "dedicated",

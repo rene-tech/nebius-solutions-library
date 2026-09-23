@@ -21,14 +21,23 @@ def main():
     parser.add_argument("--checkout", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    if subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=args.checkout, text=True).strip() != REVISION:
+    if (
+        subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=args.checkout, text=True
+        ).strip()
+        != REVISION
+    ):
         raise ValueError("tutorial checkout differs from the pinned revision")
     args.output.mkdir(parents=True, exist_ok=False)
     data = args.output / "data"
     data.mkdir()
-    (data / "UPSTREAM-LICENSE.txt").write_bytes((args.checkout / "LICENSE").read_bytes())
+    (data / "UPSTREAM-LICENSE.txt").write_bytes(
+        (args.checkout / "LICENSE").read_bytes()
+    )
     attribution = {
-        "source": REPO, "revision": REVISION, "license": "CC-BY-4.0",
+        "source": REPO,
+        "revision": REVISION,
+        "license": "CC-BY-4.0",
         "license_url": "https://creativecommons.org/licenses/by/4.0/",
         "authors": "GROMACS online tutorials contributors; see the pinned repository and tutorial credits",
         "changes": "Independent fixed stochastic seed per lambda; explicit trajectory output; ordered native commands.",
@@ -43,23 +52,64 @@ def main():
         target.mkdir()
         for name in ("conf.gro", "topol.top", "grompp.mdp"):
             raw = (upstream / name).read_bytes()
-            attribution["source_files"][f"reference/lambda_{index:02d}/{name}"] = hashlib.sha256(raw).hexdigest()
+            attribution["source_files"][f"reference/lambda_{index:02d}/{name}"] = (
+                hashlib.sha256(raw).hexdigest()
+            )
             if name.endswith(".mdp"):
                 raw += f"\nld-seed = {20260923 + index}\nnstxout-compressed = 1000\n".encode()
             (target / name).write_bytes(raw)
-        steps.extend([
-            {"id": f"prepare-{index}", "directory": directory, "command": "grompp",
-             "args": ["-f", "grompp.mdp", "-c", "conf.gro", "-p", "topol.top", "-o", "run.tpr"]},
-            {"id": f"simulate-{index}", "directory": directory, "command": "mdrun",
-             "args": ["-s", "run.tpr", "-deffnm", "run", "-dhdl", "dhdl.xvg"]},
-        ])
-    steps.append({"id": "bar-analysis", "command": "bar",
-                  "args": ["-f", {"files": "lambda-*/dhdl.part*.xvg"}, "-o", "bar.xvg",
-                           "-oi", "bar-integral.xvg", "-oh", "bar-histogram.xvg", "-b", "20"],
-                  "expected_outputs": ["bar.xvg", "bar-integral.xvg", "bar-histogram.xvg"]})
-    request = {"schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1", "threads": 8,
-               "segment_minutes": 5, "checkpoint_minutes": 5, "max_wall_seconds": 3600,
-               "jobs": [{"id": "solvation", "steps": steps}]}
+        steps.extend(
+            [
+                {
+                    "id": f"prepare-{index}",
+                    "directory": directory,
+                    "command": "grompp",
+                    "args": [
+                        "-f",
+                        "grompp.mdp",
+                        "-c",
+                        "conf.gro",
+                        "-p",
+                        "topol.top",
+                        "-o",
+                        "run.tpr",
+                    ],
+                },
+                {
+                    "id": f"simulate-{index}",
+                    "directory": directory,
+                    "command": "mdrun",
+                    "args": ["-s", "run.tpr", "-deffnm", "run", "-dhdl", "dhdl.xvg"],
+                },
+            ]
+        )
+    steps.append(
+        {
+            "id": "bar-analysis",
+            "command": "bar",
+            "args": [
+                "-f",
+                {"files": "lambda-*/dhdl.part*.xvg"},
+                "-o",
+                "bar.xvg",
+                "-oi",
+                "bar-integral.xvg",
+                "-oh",
+                "bar-histogram.xvg",
+                "-b",
+                "20",
+            ],
+            "expected_outputs": ["bar.xvg", "bar-integral.xvg", "bar-histogram.xvg"],
+        }
+    )
+    request = {
+        "schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1",
+        "threads": 8,
+        "segment_minutes": 5,
+        "checkpoint_minutes": 5,
+        "max_wall_seconds": 3600,
+        "jobs": [{"id": "solvation", "steps": steps}],
+    }
     (data / "ATTRIBUTION.json").write_text(json.dumps(attribution, indent=2) + "\n")
     (args.output / "request.json").write_text(json.dumps(request, indent=2) + "\n")
     with tarfile.open(args.output / "input.tar.gz", "w:gz") as archive:

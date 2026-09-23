@@ -98,12 +98,14 @@ def runtime_receipt(image, directories, *, model_id="gromacs"):
                 raise ValueError(
                     "MPI evidence requires successful ranks on two distinct nodes"
                 )
-    elif not {"h100-ondemand-1x", "l40s-1x"}.issubset(
-        {test["qualification"]["pool"] for test in tests}
-    ):
-        raise ValueError(
-            "this initial candidate needs both targeted GPU runtime records"
-        )
+    else:
+        pools = {test["qualification"]["pool"] for test in tests}
+        if "l40s-1x" not in pools or not pools.intersection(
+            {"h100-ondemand-1x", "h100-reserved-8x"}
+        ):
+            raise ValueError(
+                "The enhanced candidate needs both H100 and L40S runtime records"
+            )
     return {
         "schema": "fs2-serve.nebius.ai/gromacs-runtime-qualification/v1",
         "runtime_image": image,

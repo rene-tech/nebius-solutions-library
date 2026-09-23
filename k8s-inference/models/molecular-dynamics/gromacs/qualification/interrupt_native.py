@@ -22,23 +22,60 @@ def main():
     root.mkdir(parents=True, exist_ok=False)
     (root / "data").mkdir()
     (root / "data/run.tpr").write_bytes(args.tpr.read_bytes())
-    request = {"schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1", "threads": 8,
-        "segment_minutes": 0.1, "checkpoint_minutes": 0.1, "max_wall_seconds": 3600,
-        "jobs": [{"id": "resume", "steps": [
-            {"id": "production", "command": "mdrun", "args": ["-s", "run.tpr", "-deffnm", "md"]},
-            {"id": "join", "command": "trjcat", "args": ["-f", {"files": "md.part*.xtc"}, "-o", "md.xtc"]},
-            {"id": "check", "command": "check", "args": ["-f", "md.xtc"]},
-        ]}]}
+    request = {
+        "schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1",
+        "threads": 8,
+        "segment_minutes": 0.1,
+        "checkpoint_minutes": 0.1,
+        "max_wall_seconds": 3600,
+        "jobs": [
+            {
+                "id": "resume",
+                "steps": [
+                    {
+                        "id": "production",
+                        "command": "mdrun",
+                        "args": ["-s", "run.tpr", "-deffnm", "md"],
+                    },
+                    {
+                        "id": "join",
+                        "command": "trjcat",
+                        "args": ["-f", {"files": "md.part*.xtc"}, "-o", "md.xtc"],
+                    },
+                    {"id": "check", "command": "check", "args": ["-f", "md.xtc"]},
+                ],
+            }
+        ],
+    }
     (root / "request.json").write_text(json.dumps(request))
     with (root / "interruption.log").open("wb") as log:
-        child = subprocess.Popen(["python3", "-m", "fs2_gromacs.worker", "--workspace", str(root),
-            "--request", str(root / "request.json"), "--operation-id", "e6544ae5-e346-4993-9311-a63d1ae6b19e",
-            "--job-id", "resume", "--checkpoint-mode", "local"], stdout=log, stderr=subprocess.STDOUT)
+        child = subprocess.Popen(
+            [
+                "python3",
+                "-m",
+                "fs2_gromacs.worker",
+                "--workspace",
+                str(root),
+                "--request",
+                str(root / "request.json"),
+                "--operation-id",
+                "e6544ae5-e346-4993-9311-a63d1ae6b19e",
+                "--job-id",
+                "resume",
+                "--checkpoint-mode",
+                "local",
+            ],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
         deadline = time.monotonic() + 120
         marker = root / ".fs2/checkpoint-ready.json"
         signalled = False
         while time.monotonic() < deadline and child.poll() is None:
-            if marker.is_file() and json.loads(marker.read_text())["state"]["generation"] >= 1:
+            if (
+                marker.is_file()
+                and json.loads(marker.read_text())["state"]["generation"] >= 1
+            ):
                 child.send_signal(signal.SIGTERM)
                 signalled = True
                 break
@@ -48,9 +85,19 @@ def main():
         code = child.wait(timeout=120)
     result = json.loads((root / "result.json").read_text())
     if not signalled or code != 143 or result["status"] != "interrupted":
-        raise RuntimeError("the test did not interrupt an active checkpointed simulation")
-    print(json.dumps({"signalled": signalled, "exit_code": code,
-                      "generation": result["native_checkpoint_generation"], "status": result["status"]}))
+        raise RuntimeError(
+            "the test did not interrupt an active checkpointed simulation"
+        )
+    print(
+        json.dumps(
+            {
+                "signalled": signalled,
+                "exit_code": code,
+                "generation": result["native_checkpoint_generation"],
+                "status": result["status"],
+            }
+        )
+    )
 
 
 if __name__ == "__main__":
