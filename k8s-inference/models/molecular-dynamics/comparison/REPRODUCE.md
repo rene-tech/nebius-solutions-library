@@ -26,8 +26,11 @@ Engines therefore run inside the recorded containers. Preparation/conversion
 used AmberTools 26, ParmEd 4.3.1 and pinned InterMol with the retained Python 3.12
 configuration-parser compatibility patch. Analysis used MDAnalysis 2.10.0,
 NumPy 1.26.4, SciPy 1.16.3, Matplotlib 3.10.7 and FFmpeg 6.1.1. Blender, VMD and
-PyMOL were unavailable and were not claimed as used. See `inventory.py`, the
-preparation/conversion receipts and `analysis/README.md` for the full inventory.
+PyMOL were unavailable and were not claimed as used. See `preparation/inventory.py`,
+the preparation/conversion receipts and `analysis-inputs/README.md` for the full
+inventory. The final LibreChat image also provides its isolated analysis runtime
+at `/opt/md-analysis/bin/python`; its installed inventory records the actual
+Python/FFmpeg versions rather than assuming they match the original host.
 
 ## Run any of the four engines
 
@@ -93,7 +96,7 @@ independently built solvent box.
 | Timestep | 2 fs |
 | Coordinates/thermodynamic output | Every 500 steps = 1 ps |
 | Cutoffs | 10 Å, no LJ switching or potential shift |
-| Long-range electrostatics | PME, or LAMMPS PPPM; 64³ grid/order 4, requested tolerance 1e-5 |
+| Long-range electrostatics | PME, or LAMMPS PPPM; 64³ grid/order 4, requested tolerance 1e-5; GROMACS PME autotuning explicitly disabled |
 | Static diagnostic tolerance | 1e-6; no minimization/integration/constraint projection |
 | Constraints | Bonds involving H, rigid TIP3P; native constraint solvers disclosed |
 | Langevin friction | 1/ps, all atoms |
@@ -123,16 +126,16 @@ represents the zero-tilt cell as orthogonal before PPPM setup: no cell dimension
 coordinates, topology, mesh, timestep or pressure target are changed.
 
 There are small, measured engine numerical differences. Read
-`analysis/STATIC-REPORT-20260923.md` for Coulomb constants, mesh convergence,
+`diagnostics/STATIC-REPORT-20260923.md` for Coulomb constants, mesh convergence,
 native table/precision limits and attractive-only versus full LJ-tail
 conventions. Never hide those differences by silently rescaling charges.
 AMBER's LFMiddle printed kinetic-temperature estimator differs from its saved
 current-velocity estimator; both measurements and source-backed definitions
-are retained in `analysis/TEMPERATURE-REPORT-20260923.md`.
+are retained in `diagnostics/TEMPERATURE-REPORT-20260923.md`.
 
 ## Analyze and render
 
-Follow `analysis/README.md` with the retained common analysis specification.
+Follow `analysis-inputs/README.md` with the retained common analysis specification.
 Raw files remain untouched. The analysis unwraps the peptide, centers it and
 uses one heavy-atom alignment reference and fixed camera for every engine.
 Water oxygens are rendered as smaller transparent points within the disclosed
@@ -143,3 +146,16 @@ The report compares measured temperature, pressure, density, native throughput,
 backbone φ/ψ time series and conformational distributions. Report queue/startup,
 artifact I/O and end-to-end time separately from native ns/day. These four 1 ns
 trajectories are not an equilibrium-convergence proof or a free-energy estimate.
+
+## Verify delivery integrity
+
+The completed handover includes a portable SHA-256 inventory of every delivered
+file, including native outputs not used by the plots. From any directory run:
+
+```bash
+python3 /path/to/delivery/delivery_manifest.py /path/to/delivery
+```
+
+It detects missing, changed or extra files. It does not turn the short experiment
+into a scientific convergence or whole-platform readiness claim. Preserve the
+original bundle unchanged; use new directories for reruns and derived analyses.
