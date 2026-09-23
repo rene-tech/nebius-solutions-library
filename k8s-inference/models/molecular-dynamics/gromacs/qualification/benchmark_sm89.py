@@ -48,12 +48,17 @@ def run_logged(argv, output, *, cwd=None, stdin=None, env=None, timeout=600):
             return 124
 
 
-def expected_trajectories(mdp):
+def mdp_values(mdp):
     values = {}
     for line in mdp.splitlines():
         key, separator, value = line.split(";", 1)[0].partition("=")
         if separator:
             values[key.strip().replace("_", "-")] = value.strip()
+    return values
+
+
+def expected_trajectories(mdp):
+    values = mdp_values(mdp)
     expected = []
     if any(int(values.get(key, "0")) > 0 for key in ("nstxout", "nstvout", "nstfout")):
         expected.append("md.trr")

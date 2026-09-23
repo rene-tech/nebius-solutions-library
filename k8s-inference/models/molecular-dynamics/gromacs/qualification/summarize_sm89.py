@@ -3,11 +3,12 @@
 import argparse
 import csv
 import json
+import math
 from pathlib import Path
 import re
 import statistics
 
-from benchmark_sm89 import sha256
+from benchmark_sm89 import mdp_values, sha256
 
 
 def mean(values):
@@ -25,6 +26,7 @@ def timing_buckets(log):
 
 def summarize(directory):
     records = json.loads((directory / "measurements.json").read_text())
+    mdp = mdp_values((directory / "input.mdp").read_text()) if (directory / "input.mdp").exists() else {}
     runs = []
     for original in records:
         path = directory / original["cohort"]
@@ -66,6 +68,12 @@ def summarize(directory):
             if delta.get("nr_periods") else None
         )
         log = (path / "md.log").read_text() if (path / "md.log").exists() else ""
+        row["pme_tuning_trial_count"] = len(re.findall(r"^step\s+\d+: timed with pme grid", log, re.MULTILINE))
+        pme_final = re.search(r"^\s*final\s+([\d.]+) nm\s+([\d.]+) nm\s+(\d+)\s+(\d+)\s+(\d+)", log, re.MULTILINE)
+        row["pme_final_reported"] = ({
+            "coulomb_cutoff_nm": float(pme_final[1]), "neighbor_list_nm": float(pme_final[2]),
+            "grid": [int(pme_final[index]) for index in (3, 4, 5)],
+        } if pme_final else None)
         match = re.search(r"Time:\s+[\d.]+\s+([\d.]+)", log)
         row["native_timed_wall_seconds"] = float(match[1]) if match else None
         row["outside_native_timed_wall_seconds"] = (
@@ -73,6 +81,27 @@ def summarize(directory):
             if row["native_timed_wall_seconds"] is not None else None
         )
         row["timing_bucket_percent"] = timing_buckets(log)
+        row["native_trajectory_checks"] = {}
+        for check in path.glob("md.*.check.log"):
+            frames = re.findall(r"Last frame\s+(\d+)\s+time\s+([\d.eE+-]+)", check.read_text())
+            assert frames, check
+            name = check.name.removesuffix(".check.log")
+            row["native_trajectory_checks"][name] = {
+                "frames": int(frames[-1][0]) + 1, "last_time_ps": float(frames[-1][1]),
+            }
+        # The retained unsegmented fixture starts at zero and ends exactly on
+        # an XTC output step. Check the promised frame count, not just file size
+        # and successful native parsing. Do not infer this count for arbitrary
+        # non-aligned or continuation fixtures.
+        interval = int(mdp.get("nstxout-compressed", "0"))
+        validation = row.get("validation", {})
+        if (validation.get("passed") and interval > 0 and int(mdp.get("init-step", "0")) == 0
+                and validation.get("expected_steps", -1) % interval == 0):
+            trajectory = row["native_trajectory_checks"]["md.xtc"]
+            expected = validation["expected_steps"] // interval + 1
+            assert trajectory["frames"] == expected, (path, trajectory, expected)
+            assert math.isclose(trajectory["last_time_ps"], validation["expected_time_ps"], abs_tol=1e-5)
+            trajectory["expected_frames_verified"] = expected
         energy_path = path / "energy-validation.xvg"
         if energy_path.exists():
             energy = energy_path.read_text()
