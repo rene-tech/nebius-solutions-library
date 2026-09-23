@@ -17,6 +17,7 @@ from fs2_gromacs.files import atomic_json, digest_file, extract_inputs, inventor
 from . import ENGINE_ID, PMEMD_SOURCE_SHA256, RESULT_SCHEMA
 from .contracts import canonical, normalize
 from .validation import validate_pmemd, validate_tool_log
+from .advanced import validate_advanced
 
 STATE_SCHEMA = "fs2-serve.nebius.ai/amber-checkpoint/v1"
 PMEMD_BINARIES = {"cpu": "pmemd", "cuda-spfp": "pmemd.cuda_SPFP", "cuda-dpfp": "pmemd.cuda_DPFP"}
@@ -37,6 +38,19 @@ def native_argv(step, binary):
         return command
     if step["kind"] == "tleap":
         return [binary, "-f", step["input"]]
+    if step["kind"] == "antechamber":
+        return [binary, "-i", step["input"], "-fi", "mdl" if step["input_format"] == "sdf" else step["input_format"], "-o", step["output"], "-fo", "mol2", "-c", "bcc", "-at", step["atom_types"], "-nc", str(step["net_charge"]), "-m", str(step["multiplicity"]), "-rn", step["residue_name"], "-eq", str(step["charge_equivalence"]), "-s", "2", "-pf", "n"]
+    if step["kind"] == "parmchk2":
+        return [binary, "-i", step["input"], "-f", "mol2", "-o", step["output"], "-s", step["atom_types"]]
+    if step["kind"] == "mmpbsa":
+        prefix = step["output_prefix"]
+        command = [binary, "-O", "-i", step["input"], "-o", prefix + ".dat", "-eo", prefix + ".csv", "-prefix", prefix + ".intermediate_", "-cp", step["complex_topology"]]
+        for key, flag in (("receptor_topology", "-rp"), ("ligand_topology", "-lp"), ("solvated_topology", "-sp")):
+            if key in step:
+                command += [flag, step[key]]
+        if step["use_mdins"]:
+            command.append("-use-mdins")
+        return command + ["-y", *step["trajectories"]]
     command = [binary, "-i", step["input"]]
     if "topology" in step:
         command += ["-p", step["topology"]]
@@ -67,7 +81,7 @@ class Workflow:
             return self.binaries[key]
         if step["kind"] == "pmemd":
             return "/opt/amber26/bin/" + PMEMD_BINARIES[key]
-        return str(Path(os.environ.get("AMBERTOOLS_HOME", "/opt/ambertools")) / "bin" / key)
+        return str(Path(os.environ.get("AMBERTOOLS_HOME", "/opt/ambertools")) / "bin" / ("MMPBSA.py" if key == "mmpbsa" else key))
 
     def environment(self, step=None):
         env = {**os.environ, "OMP_NUM_THREADS": str(self.request["threads"]), "OPENBLAS_NUM_THREADS": str(self.request["threads"])}
@@ -167,17 +181,19 @@ class Workflow:
         if not cwd.is_dir() or cwd.is_symlink():
             raise ValueError("native step directory must exist in the input workspace")
         inputs = {}
-        for key in ("input", "topology", "coordinates", "reference"):
-            if key not in step:
-                continue
-            path = cwd / step[key]
+        paths = {key: step[key] for key in ("input", "topology", "coordinates", "reference", "complex_topology", "receptor_topology", "ligand_topology", "solvated_topology") if key in step}
+        paths.update({f"trajectory_{index}": name for index, name in enumerate(step.get("trajectories", []))})
+        for key, name in paths.items():
+            path = cwd / name
             if not path.is_file() or path.is_symlink() or path.stat().st_size == 0:
-                raise ValueError(f"missing or empty native {key}: {step[key]}")
+                raise ValueError(f"missing or empty native {key}: {name}")
             inputs[key] = {"path": str(path.relative_to(self.data)), "sha256": digest_file(path)}
         command = native_argv(step, self.binary(step))
         log = cwd / f"fs2-{step['id']}.stdout.log"
-        if step["kind"] == "pmemd":
+        if step["kind"] in {"pmemd", "mmpbsa"}:
             (cwd / step["output_prefix"]).parent.mkdir(parents=True, exist_ok=True)
+        elif step["kind"] in {"antechamber", "parmchk2"}:
+            (cwd / step["output"]).parent.mkdir(parents=True, exist_ok=True)
         code, elapsed = self.execute(command, step=step, cwd=cwd, log=log)
         receipt = {"step_id": step["id"], "kind": step["kind"], "backend": step.get("backend"), "argv": command, "inputs": inputs, "log": str(log.relative_to(self.data)), "exit_code": code, "wall_seconds": elapsed, "finished_at": utc()}
         self.state["commands"].append(receipt)
@@ -190,6 +206,8 @@ class Workflow:
             if not path.is_file() or path.is_symlink() or path.stat().st_size == 0:
                 raise ValueError(f"missing or empty expected native output: {name}")
         receipt["validation"] = validate_pmemd(cwd, step) if step["kind"] == "pmemd" else validate_tool_log(log, step["kind"])
+        if step["kind"] in {"antechamber", "parmchk2", "mmpbsa"}:
+            receipt["validation"]["scientific_outputs"] = validate_advanced(cwd, step)
         self.state["completed_steps"].append(step["id"])
         self.checkpoint()
 
