@@ -32,6 +32,40 @@ file and scientific validator hash to the exact running image and GPU. An initia
 receipt can explicitly choose one repetition per case for hosted acceptance;
 that does not complete the planned three-repetition performance cohort.
 
+## Initial final-image cohort and native recovery
+
+The exact r4 image passed one 400 ps production each of ApoA1 NVE, NPT and
+ungridded radius metadynamics, each retaining 20 finite/readable DCD frames.
+The first native throughput confirmations were 289.67, 215.57 and 190.64 ns/day,
+respectively. NVE maximum relative total-energy deviation was 0.0345%; NPT mean
+temperature was 299.29 K with volume 885,821–893,238 Å³. These finite-run
+observations do not assert ensemble or free-energy convergence.
+
+The source Pod was deliberately removed while native dynamics had advanced past
+timestep 137,000. Its externally preserved, inventory-verified checkpoint was
+generation 4 at timestep 121,000. A new Pod (different UID) restored that checkpoint,
+including the original 100 bias hills, and replayed the uncommitted segment to
+221,000. Original and native loaded bias states were byte-identical before
+advancing. The final state retained all old hills, grew to 200 hills and retained
+all 20 readable DCD frames. The lost uncommitted computation is not hidden.
+
+- Source Pod UID: `7777cdf5-a6a5-4395-b704-b2ead051c3d1`.
+- Fresh Pod UID: `d7f35d0b-0ed2-4c69-a622-babe5b793627`.
+- Checkpoint archive SHA256: `5b825bb0aeaea026d1a85391ce74fbb5b0705bfc146ae55f039f595a75480436`.
+- Original/loaded bias SHA256: `43363b7c5f25d48d8a3497b02e7680582d969e901595544b6e4c5c94a50a541e`.
+- Restored result SHA256: `ec6580dbcf17e127bd614c9d35dec175d5b8184fb40ee4e039c4708c1e491d12`.
+- Recovery validator SHA256: `758c17ef0dfbdb5e48a15eb828ae546c911d822dd3751e701e164a3943518839`.
+
+Combined `runtime-receipt-r4-hosted-input.json` SHA256
+`330cd0a2bec61c5352a1d73207e434b3ea2cc95412d57545cc4f7060888ef248`
+contains four flat passed test rows, exact GPU/image identity, real result and
+validator hashes, and raw evidence paths. `customer_ready:false`,
+`benchmark_cohort_complete:false` and `gpu_snapshot_qualified:false` are explicit.
+The checkpoint was copied through the local companion-handshake harness; this
+does not qualify the hosted Object Storage transport. Neither GPU process memory
+nor PRNG state was serialized. A complete repeated H100 cohort is now running in
+the fresh Pod, with additional preparation, GPU-offload and STMV cases.
+
 ## Scientific failure found and repaired
 
 All three r3 ungridded radius-metadynamics runs returned native exit zero and
