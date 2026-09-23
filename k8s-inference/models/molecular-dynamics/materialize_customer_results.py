@@ -70,6 +70,7 @@ def materialize(model: str, receipt: Path, parameters: Path, output: Path) -> di
         directory = output / job
         directory.mkdir()
         shutil.copyfile(source, directory / "result.json")
+        shutil.copyfile(parameters, directory / "request.json")
         for item in result["files"]:
             target = directory / "data" / item["path"]
             target.parent.mkdir(parents=True, exist_ok=True)

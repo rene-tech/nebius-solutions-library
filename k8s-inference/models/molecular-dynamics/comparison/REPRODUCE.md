@@ -17,15 +17,15 @@ Native reproduction additionally needs NVIDIA Container Toolkit and one
 compatible GPU. These exact runtime builds were evaluated on H100 and L40S;
 unavailable hardware, licences, registry access or executables are errors, not
 permission to substitute another engine. AMBER uses the approved academic
-PMEMD26 build with AmberTools26, **not an NVIDIA AMBER NIM**. NAMD and LAMMPS use
+PMEMD 26 build with AmberTools 26, **not an NVIDIA AMBER NIM**. NAMD and LAMMPS use
 their NVIDIA HPC container runtimes. Exact versions/build identities and native
 commands are preserved in each run's engine metadata, logs and `result.json`.
 
 The original host had no native `gmx`, `namd3`, `pmemd` or `lmp` installation.
 Engines therefore run inside the recorded containers. Preparation/conversion
-used AmberTools26, ParmEd4.3.1 and pinned InterMol with the retained Python3.12
-configuration-parser compatibility patch. Analysis used MDAnalysis2.10.0,
-NumPy1.26.4, SciPy1.16.3, Matplotlib3.10.7 and FFmpeg6.1.1. Blender, VMD and
+used AmberTools 26, ParmEd 4.3.1 and pinned InterMol with the retained Python 3.12
+configuration-parser compatibility patch. Analysis used MDAnalysis 2.10.0,
+NumPy 1.26.4, SciPy 1.16.3, Matplotlib 3.10.7 and FFmpeg 6.1.1. Blender, VMD and
 PyMOL were unavailable and were not claimed as used. See `inventory.py`, the
 preparation/conversion receipts and `analysis/README.md` for the full inventory.
 
@@ -54,7 +54,7 @@ python3 run_case.py --case . --engine lammps  --mode hosted --output ./reproduce
 Hosted mode reads `SCIENTIFIC_MODELS_MCP_URL` and `SCIENTIFIC_MODELS_API_KEY`.
 Alternatively use `--mcp-url` and `--key-file /private/credentials.json`.
 The commands can run concurrently within your authorized concurrency/capacity.
-After a bounded30-minute polling window a still-running operation is retained;
+After a bounded 30-minute polling window a still-running operation is retained;
 rerun the **same command/output directory** to continue observing it. A process
 exit code alone is not a scientific validation. Successful receipts must show
 `state=verified`; engine-specific duration, topology and trajectory validators
@@ -78,32 +78,32 @@ two processes against the same native workspace concurrently.
 ## Shared physical specification
 
 One canonical ACE–ALA–NME structure was built by AmberTools LEaP with ff14SB
-and TIP3P. There are6,598 atoms:22 peptide atoms and2,192 waters. The master
-box is44.537351×44.358839×44.629192Å, orthogonal, with measured minimum peptide
-clearance greater than10Å. The net charge is zero within stored-decimal
+and TIP3P. There are 6,598 atoms: 22 peptide atoms and 2,192 waters. The master
+box is 44.537351 × 44.358839 × 44.629192 Å, orthogonal, with measured minimum peptide
+clearance greater than 10 Å. The net charge is zero within stored-decimal
 rounding. Every engine begins from this same unminimized master, not an
 independently built solvent box.
 
 | Setting | Value |
 |---|---|
-| Minimization | Up to5,000 native minimization iterations; retain convergence/actual count |
-| NVT |50,000 steps =100ps at300K |
-| NPT equilibration |50,000 steps =100ps at300K,1bar |
-| Production |500,000 steps =1ns, NPT |
-| Timestep |2fs |
-| Coordinates/thermodynamic output | Every500 steps =1ps |
-| Cutoffs |10Å, no LJ switching or potential shift |
-| Long-range electrostatics | PME, or LAMMPS PPPM;64³ grid/order4, requested tolerance1e-5 |
-| Static diagnostic tolerance |1e-6; no minimization/integration/constraint projection |
+| Minimization | Up to 5,000 native minimization iterations; retain convergence/actual count |
+| NVT | 50,000 steps = 100 ps at 300 K |
+| NPT equilibration | 50,000 steps = 100 ps at 300 K, 1 bar |
+| Production | 500,000 steps = 1 ns, NPT |
+| Timestep | 2 fs |
+| Coordinates/thermodynamic output | Every 500 steps = 1 ps |
+| Cutoffs | 10 Å, no LJ switching or potential shift |
+| Long-range electrostatics | PME, or LAMMPS PPPM; 64³ grid/order 4, requested tolerance 1e-5 |
+| Static diagnostic tolerance | 1e-6; no minimization/integration/constraint projection |
 | Constraints | Bonds involving H, rigid TIP3P; native constraint solvers disclosed |
-| Langevin friction |1/ps, all atoms |
-| Seeds | NVT20260923; NPT20260924; production20260925 |
+| Langevin friction | 1/ps, all atoms |
+| Seeds | NVT 20260923; NPT 20260924; production 20260925 |
 
 The same integer seed does not make the engines' RNGs or trajectories
 identical. Native Maxwell initialization occurs after independent minimization.
 NPT uses each engine's native isotropic barostat; these algorithms are not
-claimed identical. LAMMPS `units real` uses0.9869232667160128atm for1bar.
-GROMACS LINCS(order8,2iterations)/SETTLE and other engines' native SHAKE/rigid
+claimed identical. LAMMPS `units real` uses 0.9869232667160128 atm for 1 bar.
+GROMACS LINCS (order 8, 2 iterations)/SETTLE and other engines' native SHAKE/rigid
 water solvers target the same distances. All solver and barostat inputs remain
 in the archives. Do not replace them with guessed defaults.
 
@@ -112,7 +112,7 @@ in the archives. Do not replace them with guessed defaults.
 NAMD and AMBER consume the canonical Amber topology. ParmEd writes GROMACS;
 the pinned InterMol conversion produces LAMMPS. The audit re-reads actual
 parameters: masses/types/charges, bonded potentials, LJ coefficients and
-combining rules, exclusions, and SCEE1.2/SCNB2.0(1–4 Coulomb5/6, LJ1/2).
+combining rules, exclusions, and SCEE 1.2/SCNB 2.0 (1–4 Coulomb 5/6, LJ 1/2).
 Semantic negative controls prove that altered parameters are rejected.
 
 Canonical TIP3P encodes OH/OH/HH harmonic bonds. The LAMMPS SHAKE adapter keeps
@@ -136,10 +136,10 @@ Follow `analysis/README.md` with the retained common analysis specification.
 Raw files remain untouched. The analysis unwraps the peptide, centers it and
 uses one heavy-atom alignment reference and fixed camera for every engine.
 Water oxygens are rendered as smaller transparent points within the disclosed
-viewing radius. Every actual1ps frame is shown once at40fps, giving25-second
-clips and the synchronized2×2 video. Nothing is interpolated or fabricated.
+viewing radius. Every actual 1 ps frame is shown once at 40 fps, giving 25-second
+clips and the synchronized 2×2 video. Nothing is interpolated or fabricated.
 
 The report compares measured temperature, pressure, density, native throughput,
-backboneφ/ψ time series and conformational distributions. Report queue/startup,
-artifact I/O and end-to-end time separately from native ns/day. These four1ns
+backbone φ/ψ time series and conformational distributions. Report queue/startup,
+artifact I/O and end-to-end time separately from native ns/day. These four 1 ns
 trajectories are not an equilibrium-convergence proof or a free-energy estimate.

@@ -29,7 +29,7 @@ def fixture(tmp_path, model):
     return receipt, params
 
 
-@pytest.mark.parametrize("model", ["lammps", "namd"])
+@pytest.mark.parametrize("model", ["gromacs", "lammps", "namd", "amber"])
 def test_materialized_native_workspace_preserves_bytes_not_scientific_claim(tmp_path, model):
     receipt, params = fixture(tmp_path, model)
     output = tmp_path / "workspace"
@@ -37,6 +37,7 @@ def test_materialized_native_workspace_preserves_bytes_not_scientific_claim(tmp_
     assert record["scientific_validation_complete"] is False
     assert (output / "rep-1/data/nested/result.txt").read_bytes() == (receipt / "output-01.artifact").read_bytes()
     assert (output / "rep-1/result.json").read_bytes() == (receipt / "output-00.artifact").read_bytes()
+    assert (output / "rep-1/request.json").read_bytes() == params.read_bytes()
     with pytest.raises(FileExistsError):
         results.materialize(model, receipt, params, output)
 
