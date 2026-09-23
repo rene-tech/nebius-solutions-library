@@ -7,11 +7,20 @@ from pathlib import Path
 import shutil
 import tarfile
 
-from adapter import generate, sha256
+from adapter import generate, read_data, sha256
 
 IMAGE = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c"
 HEADER = "package kokkos neigh half newton on\nunits real\natom_style full\nboundary p p p\n"
 STYLES = "bond_style hybrid harmonic\nangle_style hybrid harmonic\ndihedral_style hybrid charmm multi/harmonic\nspecial_bonds lj 0.0 0.0 0.5 coul 0.0 0.0 0.83333333\n"
+
+
+def restart_coefficients(sections):
+    """Replay exact hybrid substyle coefficients not stored by native restart."""
+    lines = []
+    for section, command in (("Bond Coeffs", "bond_coeff"), ("Angle Coeffs", "angle_coeff"), ("Dihedral Coeffs", "dihedral_coeff"), ("Improper Coeffs", "improper_coeff")):
+        for row in sections.get(section, []):
+            lines.append(command + " " + " ".join(row))
+    return "\n".join(lines) + "\n"
 
 
 def make_bundle(directory, archive):
@@ -33,6 +42,8 @@ def prepare(master, converted, output):
     output.mkdir(parents=True)
     inputs = output / "inputs"
     proof = generate(master, converted, inputs)
+    _, adapted_sections = read_data(inputs / "system-shake.lmp")
+    (inputs / "restart-coefficients.inc").write_text(restart_coefficients(adapted_sections))
     protocol = json.loads((master / "protocol.json").read_text())
     if (protocol["production_steps"], protocol["nvt_steps"], protocol["npt_steps"], protocol["timestep_fs"], protocol["output_every_steps"]) != (500000, 50000, 50000, 2., 500):
         raise ValueError("canonical protocol changed; review generator")
@@ -58,11 +69,11 @@ def prepare(master, converted, output):
 
     def fixes(stage, seed):
         integration = "fix integrate all nve\n" if stage == "nvt" else f"fix integrate all nph iso {pressure:.16g} {pressure:.16g} 2000.0 ptemp 300.0 mtk yes pchain 3\n"
-        # SHAKE is defined after the thermostat, so its force correction includes
-        # Langevin forces. No second thermostat or integrator is applied.
-        return integration + f"fix thermal all langevin 300.0 300.0 1000.0 {seed} zero yes\ninclude constraints.inc\n"
+        # Native Kokkos requires SHAKE before a box-changing fix, but SHAKE must
+        # also follow Langevin so its correction includes the thermostat forces.
+        return f"fix thermal all langevin 300.0 300.0 1000.0 {seed} zero yes\ninclude constraints.inc\n" + integration
 
-    probe = HEADER + "read_restart minimized.restart\ninclude nonbonded.inc\ninclude thermo.inc\nvelocity all create 300.0 20260923 mom yes rot no dist gaussian\n" + fixes("nvt", 20260923)
+    probe = HEADER + "read_restart minimized.restart\ninclude restart-coefficients.inc\ninclude nonbonded.inc\ninclude thermo.inc\n" + fixes("nvt", 20260923) + "velocity all create 300.0 20260923 mom yes rot no dist gaussian\n"
     probe += "dump coordinates all custom 500 probe.lammpstrj id type x y z vx vy vz\ndump_modify coordinates sort id format float %.15g\nrun 1000\nunfix constraints\nunfix thermal\nunfix integrate\n" + fixes("npt", 20260924)
     probe += "run 1000\nwrite_restart probe.restart\nprint \"$(step:%.0f)\" file probe-progress.txt screen no\n"
     (inputs / "probe.in").write_text(probe)
@@ -70,10 +81,10 @@ def prepare(master, converted, output):
     for stage, prior, origin, target, seed in (("nvt", "minimized", 0, 50000, 20260923), ("npt", "nvt", 50000, 100000, 20260924), ("production", "npt", 100000, 600000, 20260925)):
         for resume in (False, True):
             read_name = stage if resume else prior
-            text = HEADER + f"read_restart {read_name}.restart\ninclude nonbonded.inc\ninclude thermo.inc\n"
+            text = HEADER + f"read_restart {read_name}.restart\ninclude restart-coefficients.inc\ninclude nonbonded.inc\ninclude thermo.inc\n"
+            text += fixes("nvt" if stage == "nvt" else "npt", seed)
             if stage == "nvt" and not resume:
                 text += "velocity all create 300.0 20260923 mom yes rot no dist gaussian\n"
-            text += fixes("nvt" if stage == "nvt" else "npt", seed)
             text += f"dump coordinates all custom 500 {stage}.${{fs2_segment}}.lammpstrj id type x y z vx vy vz\ndump_modify coordinates sort id format float %.15g\ntimer timeout ${{fs2_segment_seconds}} every 500\nrun {target} upto\nwrite_restart {stage}.restart\nprint \"$(step:%.0f)\" file {stage}-progress.txt screen no\n"
             (inputs / f"{stage}{'-resume' if resume else ''}.in").write_text(text)
         stages.append({"id": stage, "input": f"{stage}.in", "expected_outputs": [f"{stage}.restart", f"{stage}-progress.txt"], "continuation": {"input": f"{stage}-resume.in", "restart_file": f"{stage}.restart", "progress_file": f"{stage}-progress.txt", "target_step": target}})

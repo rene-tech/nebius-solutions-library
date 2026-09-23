@@ -10,6 +10,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from adapter import adapt, coefficient_key, interactions, read_data, write_data
+from prepare_fixture import restart_coefficients
 
 
 def synthetic_water():
@@ -17,6 +18,15 @@ def synthetic_water():
 
 
 class AdapterTests(unittest.TestCase):
+    def test_restart_coefficients_preserve_exact_native_tokens(self):
+        sections, _ = adapt(synthetic_water(), [[1, 2, 3]])
+        sections["Dihedral Coeffs"] = [["1", "charmm", "0.2", "3", "0", "0.0"], ["2", "multi/harmonic", "1", "-2", "0", "0", "0"]]
+        sections["Improper Coeffs"] = [["1", "harmonic", "1.5", "180"]]
+        emitted = restart_coefficients(sections).splitlines()
+        for name, command in (("Bond Coeffs", "bond_coeff"), ("Angle Coeffs", "angle_coeff"), ("Dihedral Coeffs", "dihedral_coeff"), ("Improper Coeffs", "improper_coeff")):
+            self.assertEqual([line.split()[1:] for line in emitted if line.startswith(command + " ")], sections[name])
+        self.assertFalse(any(line.startswith("pair_coeff") for line in emitted))
+
     def test_retains_hh_term_and_compacts_oh_coefficients(self):
         original = synthetic_water()
         result, proof = adapt(original, [[1, 2, 3]])

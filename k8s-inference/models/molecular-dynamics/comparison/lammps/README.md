@@ -1,8 +1,8 @@
 # Canonical LAMMPS ff14SB/TIP3P fixture
 
-Status: adapter parameters/geometry and 8 synthetic unit tests pass; **real native
-probe and full dynamics are pending**. No simulation is claimed from generated
-inputs or algebraic tests. Shared platform/release and hosted submissions remain
+Status: adapter parameters/geometry, 9 synthetic unit tests and the **real native
+probe pass**. Full canonical dynamics is running, not yet accepted. No simulation
+is claimed from generated inputs or algebraic tests. Shared platform/release and hosted submissions remain
 parent-owned. Exact intended worker:
 
 `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c`
@@ -87,7 +87,9 @@ A passed algebra test or one native probe cannot replace those gates.
 - Native timer at500-step boundaries, segment-specific dump names, closed
   restart/progress after each segment. Worker independently reads restart step.
   Resume scripts recreate pair, PPPM, integrator, thermostat, constraints and
-  output context. SHAKE and Langevin fix state are not saved by native restart;
+  output context. They replay every exact bond/angle/dihedral coefficient from
+  the adapted data, because hybrid styles do not store substyle coefficients
+  in binary restart files. SHAKE and Langevin fix state are not saved by native restart;
   Langevin RNG restarts, so this is **statistical, not bitwise continuation**.
   The initial1800s segment target favors one uninterrupted production segment;
   preserve any actual segment boundaries for honest common analysis.
@@ -106,4 +108,44 @@ an additional explicitly provenance-bound step if a production run is segmented.
 
 Primary references: [LAMMPS SHAKE](https://docs.lammps.org/fix_shake.html),
 [native NPH/MTK](https://docs.lammps.org/fix_nh.html),
-[Langevin and restart semantics](https://docs.lammps.org/fix_langevin.html).
+[Langevin and restart semantics](https://docs.lammps.org/fix_langevin.html),
+[hybrid bond restart](https://docs.lammps.org/bond_hybrid.html),
+[hybrid angle restart](https://docs.lammps.org/angle_hybrid.html), and
+[hybrid dihedral restart](https://docs.lammps.org/dihedral_hybrid.html).
+
+## Retained native failure and narrow correction
+
+The first hosted probe (`cec80ced-079a-4577-96ef-a26189492302`) failed at
+`shake-probe`. Its inner native log did not survive hosted cleanup. Exact-image
+reproduction in a retained one-H100 Pod completed both static stages and native
+minimization, then showed `All bond coeffs are not set` after `read_restart`.
+Native SHAKE had already found all 2,192 frozen water-angle clusters. The failed
+workspace is retained at `/home/tux/fs2-alanine-lammps-20260923/native-probe-01`.
+The correction adds exact coefficient replay after each restart; no coefficients,
+force-field terms, targets, seeds, step counts or constraint selections change.
+Fixture-01 remains immutable. Fixture-02 is a separate evidence generation.
+
+Fixture-02 then completed 1,000 NVT steps but native NPH initialization required
+SHAKE before the box-changing fix. Fixture-03 declares Langevin, SHAKE, then
+NVE/NPH, and creates initial velocities after constraint DOF registration.
+The complete real probe passed on the exact image/H100: all nine decomposed
+energy changes were zero, maximum 6,598-atom force change was
+1.99e-13 kcal/mol/Å, final step2,000 and five frames were present, and maximum
+post-initial constrained distance error was4.76e-5 Å (NPT). Receipt and all raw
+files: `/home/tux/fs2-alanine-lammps-20260923/native-probe-03`.
+
+The same-state,1,000-step NPT screen retained GPU t1 (14.6881s native loop).
+CUDA+Serial rejects Kokkos t4/t8; full CPU serial was75.473s. CPU PPPM and
+Kokkos-host PPPM attempts failed at the first dynamics step and are not selected.
+The zero-tilt orthogonal representation attempt stopped at input setup, before
+dynamics. Failed attempts and commands are preserved in benchmark-01/02/03;
+benchmark-01 was a launcher-library-path error, not an engine measurement.
+Asynchronous GPU timing categories do not identify a bottleneck; total loop
+times remain the bounded performance measurement. No physics was tuned.
+
+Full fixture-03 bundle SHA256:
+`e04c642ea12237ea2840732dba86019536b61457c6e15eadf769b308559626c8`.
+One task H100 Pod `fs2-lammps-r20260923-alanine-probe` on
+`computeinstance-e00bwrmx5x05qn4bc8` executes the full protocol into
+`/home/tux/fs2-alanine-lammps-20260923/native-production-03`; this is native
+qualification, not yet a completed hosted/customer result.
