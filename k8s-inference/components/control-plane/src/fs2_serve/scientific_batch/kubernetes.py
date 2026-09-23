@@ -779,7 +779,7 @@ def _stalled_collection(
     now: datetime,
     model_id: str = "",
 ) -> tuple[WorkloadState, FailureKind, str] | None:
-    """Settle a staged Pod whose model is finished but whose collector is not.
+    """Settle a staged Pod when a required peer has failed or stopped progressing.
 
     A staged Pod runs the model and the artifact collector side by side under
     ``restartPolicy: Never``, so Kubernetes only settles the Pod once *both*
@@ -796,7 +796,19 @@ def _stalled_collection(
 
     for pod_status in pod_statuses:
         stage = _container_termination(pod_status, STAGE_CONTAINER_NAME)
-        if stage is None or _container_termination(pod_status, COLLECTOR_CONTAINER_NAME) is not None:
+        collector = _container_termination(pod_status, COLLECTOR_CONTAINER_NAME)
+        if stage is None and collector is not None:
+            exit_code = collector.get("exitCode")
+            if isinstance(exit_code, int) and exit_code != 0:
+                # The native worker may be waiting for a checkpoint/upload ACK
+                # which a dead collector can never send. Do not hold its GPU
+                # until the workflow's multi-hour execution deadline.
+                reasons = [value for value in (collector.get("reason"), pod_status.get("reason"))
+                           if isinstance(value, str) and value]
+                state, kind, code = _reported_failure(reasons or ["artifact_collector_failed"],
+                                                      [pod_status], model_id=model_id)
+                return state, kind, "artifact_collector_failed" if code in {"Error", "workload_failed"} else code
+        if stage is None or collector is not None:
             # The model still runs, or both containers are done and the Job
             # status settles this attempt through the existing failure path.
             continue
