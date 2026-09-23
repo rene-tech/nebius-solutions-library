@@ -14,7 +14,7 @@ from pathlib import Path, PurePosixPath
 import re
 import shutil
 
-MODELS = {"lammps", "namd", "amber"}
+MODELS = {"gromacs", "lammps", "namd", "amber"}
 
 
 def digest(path: Path) -> str:
