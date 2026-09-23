@@ -145,8 +145,12 @@ checkpoint and maximum relative total-energy deviation 0.0090%. Native timing
 was 31.38 ns/day; including production process startup/shutdown gives 29.14
 ns/day, while the 524.24 s full local workflow gives 16.48 ns/day of production.
 Its 83-file/1,333,635,918-byte inventory independently matched the request,
-result hashes and every recorded file hash. The other STMV repetitions are
-still running; this is not yet a completed repeated cohort.
+result hashes and every recorded file hash. The complete STMV NVE cohort then
+passed all three repetitions: median 31.376 ns/day (31.261–31.430), 15 finite
+DCD frames total, maximum relative energy deviations 0.00868–0.00949%, and
+523.2–524.2 s complete local workflows. Whole-workflow GPU utilization averaged
+80.4–80.8% and power 457.9–459.1 W. NPT and further resident/bias repetitions
+continue separately; no ensemble convergence is asserted.
 
 The released GROMACS L40S node was reused with explicit parent authorization
 after a fresh zero-GPU-allocation check. The additional bounded worker is
