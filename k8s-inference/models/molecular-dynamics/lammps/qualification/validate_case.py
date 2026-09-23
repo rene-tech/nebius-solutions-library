@@ -6,6 +6,7 @@ import json
 import math
 import re
 import statistics
+from contextlib import nullcontext
 from pathlib import Path
 
 
@@ -39,7 +40,18 @@ def trajectory(path, expected_atoms):
             steps.append(step)
     if not steps:
         raise ValueError("trajectory has no frames")
-    return {"name": path.name, "frames": len(steps), "first_step": steps[0], "last_step": steps[-1]}
+    return {"name": path.name, "frames": len(steps), "first_step": steps[0], "last_step": steps[-1], "steps": steps}
+
+
+def coverage(trajectories, protocol):
+    for prior, current in zip(trajectories, trajectories[1:]):
+        if current["first_step"] < prior["last_step"]:
+            raise ValueError("trajectory parts overlap out of order")
+    cadence = protocol["trajectory_every_steps"]
+    expected = set(range(((protocol["warmup_steps"] + cadence - 1) // cadence) * cadence, protocol["target_step"] + 1, cadence))
+    observed = {step for part in trajectories for step in part["steps"]}
+    if not trajectories or observed != expected:
+        raise ValueError("trajectory cadence coverage has missing or unexpected frames")
 
 
 def validate(root):
@@ -56,11 +68,9 @@ def validate(root):
         raise ValueError("final step, atom count, temperature or volume invalid")
     trajectories = [trajectory(p, atoms) for p in sorted(data.glob("trajectory.*.lammpstrj"), key=lambda p: int(p.name.split(".")[1]))]
     trajectory(data / "final.lammpstrj", atoms)
-    for prior, current in zip(trajectories, trajectories[1:]):
-        if current["first_step"] < prior["last_step"]:
-            raise ValueError("trajectory parts overlap out of order")
-    if not trajectories or protocol["target_step"] - trajectories[-1]["last_step"] >= protocol["trajectory_every_steps"]:
-        raise ValueError("final trajectory coverage is incomplete")
+    coverage(trajectories, protocol)
+    for part in trajectories:
+        del part["steps"]
     loops, thermodynamics, warnings, native_timing_seconds = [], [], [], {}
     for log in sorted(data.glob("fs2-production-segment-*.log")):
         collecting = False
@@ -97,7 +107,8 @@ def validate(root):
     # A 2% energy-span gate catches gross integration defects; it is not a
     # material-specific accuracy criterion or a thermodynamic convergence claim.
     gpu = []
-    with (root / "gpu.csv").open() as handle:
+    gpu_path = root / "gpu.csv"
+    with gpu_path.open() if gpu_path.exists() else nullcontext([]) as handle:
         for row in csv.reader(handle):
             if len(row) == 7:
                 try:
