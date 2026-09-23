@@ -1,0 +1,11 @@
+ARG TOOLS_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/ambertools26@sha256:c6444becd326ae171a8c9b992fc43e00c052891d6a5a549bbbc5e9f8d49081da
+ARG PMEMD_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-pmemd26@sha256:744b8d42a846f93118d9288efed67546236cfafd2f7d2377e5c99bc7b9a6dcca
+FROM ${TOOLS_IMAGE} AS tools
+FROM ${PMEMD_IMAGE}
+COPY --from=tools /opt/ambertools/ /opt/ambertools/
+COPY --from=tools /opt/fs2/ambertools/ /opt/fs2/ambertools/
+LABEL org.opencontainers.image.title="Private AMBER26 engine bundle with AmberTools26" \
+      scientific-ai.nebius.com.ambertools-cuda="false" \
+      scientific-ai.nebius.com.ambertools-prefix="/opt/ambertools"
+# PMEMD keeps its inherited environment. A preparation/analysis stage selects
+# /opt/ambertools/bin, AMBERHOME and libraries only for its own native subprocess.

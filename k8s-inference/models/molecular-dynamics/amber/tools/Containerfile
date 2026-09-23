@@ -1,0 +1,13 @@
+# Complete dependency lock from the separately inspected upstream solve.
+FROM mambaorg/micromamba@sha256:e0a99b0f17a759e14c2f967dc0ca2d3a3c1ca3c62955f4d20bba770eaaf0184d AS tools
+USER root
+COPY environment-linux-64.lock /opt/fs2/ambertools/environment-linux-64.lock
+RUN micromamba create --yes --no-rc --prefix /opt/ambertools \
+      --file /opt/fs2/ambertools/environment-linux-64.lock \
+    && micromamba list --prefix /opt/ambertools --json > /opt/fs2/ambertools/packages.json
+
+# A layer for composition, not an independently runnable MD service. Keeping
+# this prefix exact preserves the upstream native binaries and Python shebangs.
+FROM scratch
+COPY --from=tools /opt/ambertools/ /opt/ambertools/
+COPY --from=tools /opt/fs2/ambertools/ /opt/fs2/ambertools/

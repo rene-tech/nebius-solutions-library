@@ -5,6 +5,7 @@ Authentication is passed in process environment, never in command arguments.
 """
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,7 +16,26 @@ MODEL_CONTRACTS = {
     "gromacs-mpi": ("submit_gromacs_mpi_workflow", "gromacs"),
     "lammps": ("submit_lammps_workflow", "lammps"),
     "namd": ("submit_namd_workflow", "namd"),
+    "amber": ("submit_amber_workflow", "amber"),
 }
+
+
+def transport_parameters(fixture, output, destination):
+    """Persist a transport-only variant; never mutate the scientific fixture."""
+    original = (fixture / "request.json").read_bytes()
+    request = json.loads(original)
+    previous = request.get("output_destination", "customer-bucket")
+    request["output_destination"] = destination
+    encoded = (json.dumps(request, indent=2) + "\n").encode()
+    (output / "request-transport.json").write_bytes(encoded)
+    (output / "transport-variant.json").write_text(json.dumps({
+        "original_request_sha256": hashlib.sha256(original).hexdigest(),
+        "derived_request_sha256": hashlib.sha256(encoded).hexdigest(),
+        "changed_fields": {"output_destination": {"from": previous, "to": destination}},
+        "native_input_archive_changed": False,
+        "scientific_parameters_changed": False,
+    }, indent=2) + "\n")
+    return "/qualification/receipt/request-transport.json"
 
 
 def main():
@@ -28,11 +48,16 @@ def main():
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--idempotency-key", required=True)
+    parser.add_argument("--output-destination", choices=["customer-bucket", "platform-artifacts"])
     args = parser.parse_args()
     tool, input_family = MODEL_CONTRACTS[args.model]
     if "@sha256:" not in args.image:
         raise ValueError("Pin the tested workbench image digest.")
     args.output.mkdir(parents=True, exist_ok=True, mode=0o700)
+    parameters = (
+        transport_parameters(args.fixture, args.output, args.output_destination)
+        if args.output_destination else "/qualification/input/request.json"
+    )
     env = {
         **os.environ,
         "SCIENTIFIC_MODELS_API_KEY": json.loads(args.key_file.read_text())["secret"],
@@ -65,7 +90,7 @@ def main():
         "--source",
         "/qualification/input/input.tar.gz",
         "--parameters",
-        "/qualification/input/request.json",
+        parameters,
         "--entry-name",
         f"{input_family}-inputs",
         "--semantic-type",

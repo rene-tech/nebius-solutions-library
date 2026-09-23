@@ -26,7 +26,7 @@ def inputs():
         model: json.loads(
             (SOLUTION_ROOT / f"models/molecular-dynamics/{model}/activation/workload-profile.json").read_text()
         )["profile"]
-        for model in ("lammps", "namd")
+        for model in ("lammps", "namd", "amber")
     }
     schedule = {
         "pools": {pool: {} for pool in candidates["lammps"]["resources"]["compatible_pool_ids"]},
@@ -98,6 +98,7 @@ def test_native_additions_preserve_existing_apps_snapshots_quotas_and_proofs():
         "application/vnd.fs2.gromacs-checkpoint+json",
         "application/vnd.fs2.lammps-checkpoint+json",
         "application/vnd.fs2.namd-checkpoint+json",
+        "application/vnd.fs2.amber-checkpoint+json",
     }
 
 
@@ -127,13 +128,16 @@ def test_runtime_evidence_does_not_fabricate_missing_qualification(change):
 
 
 def test_recipe_covers_engine_and_shared_transports():
-    for model in ("lammps", "namd"):
+    for model in ("lammps", "namd", "amber"):
         recipe = release.source_recipe(SOLUTION_ROOT, model)
         paths = {item["path"] for item in recipe["files"]}
         assert f"models/molecular-dynamics/{model}/runtime/fs2_{model}/worker.py" in paths
         assert "components/control-plane/src/fs2_serve/scientific_batch/native_workflows.py" in paths
         assert "components/control-plane/src/fs2_serve/scientific_batch/gromacs_storage_routes.py" in paths
         assert all(len(item["sha256"]) == 64 and item["size_bytes"] > 0 for item in recipe["files"])
+        if model == "amber":
+            assert "models/molecular-dynamics/amber/tools/environment-linux-64.lock" in paths
+            assert "models/molecular-dynamics/amber/runtime/Containerfile.worker" in paths
 
 
 def test_explicit_successor_precedes_new_app_and_preserves_legacy_rows():

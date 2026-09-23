@@ -227,6 +227,7 @@ for _module_name in (
     "gromacs_mpi",
     "lammps",
     "namd",
+    "amber",
     "video_augmentation",
     "cosmos_lerobot",
     "proteina_complexa",

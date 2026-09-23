@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "components/control-plane/src"))
 
 from prepare import canonical, digest, prepare  # noqa: E402
 
-MODELS = frozenset({"lammps", "namd"})
+MODELS = frozenset({"lammps", "namd", "amber"})
 
 
 def source_recipe(root: Path, model: str) -> dict:
@@ -51,6 +51,12 @@ def source_recipe(root: Path, model: str) -> dict:
         str(path.relative_to(root))
         for path in (root / f"models/molecular-dynamics/{model}/runtime/fs2_{model}").glob("*.py")
     )
+    if model == "amber":
+        paths.update(f"models/molecular-dynamics/amber/{path}" for path in (
+            "runtime/Containerfile.worker", "runtime/Containerfile.worker.dockerignore",
+            "runtime/build_pmemd.sh", "runtime/cuda-sm89-sm90.patch",
+            "tools/Containerfile", "tools/Containerfile.engine", "tools/environment-linux-64.lock",
+        ))
     return {
         "schema": "fs2-serve.nebius.ai/native-md-runtime-recipe/v1",
         "model_id": model,

@@ -14,7 +14,7 @@ client = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(client)
 
 
-@pytest.mark.parametrize("model", ["gromacs", "gromacs-mpi", "lammps", "namd"])
+@pytest.mark.parametrize("model", ["gromacs", "gromacs-mpi", "lammps", "namd", "amber"])
 def test_exact_customer_image_uses_engine_contract_and_non_argument_credential(model, tmp_path, monkeypatch):
     secret = "synthetic-test-credential"
     key = tmp_path / "key.json"
@@ -61,3 +61,22 @@ def test_exact_customer_image_uses_engine_contract_and_non_argument_credential(m
     assert secret not in " ".join(command)
     assert captured["env"]["SCIENTIFIC_MODELS_API_KEY"] == secret
     assert image in command
+
+
+def test_transport_variant_preserves_scientific_inputs_and_records_only_change(tmp_path):
+    fixture, output = tmp_path / "fixture", tmp_path / "receipt"
+    fixture.mkdir()
+    output.mkdir()
+    request = {"jobs": [{"id": "rep-1", "steps": [{"steps": 200000}]}],
+               "output_destination": "customer-bucket"}
+    original = json.dumps(request).encode()
+    (fixture / "request.json").write_bytes(original)
+    path = client.transport_parameters(fixture, output, "platform-artifacts")
+    result = json.loads((output / "request-transport.json").read_text())
+    assert result == {**request, "output_destination": "platform-artifacts"}
+    assert (fixture / "request.json").read_bytes() == original
+    assert path == "/qualification/receipt/request-transport.json"
+    receipt = json.loads((output / "transport-variant.json").read_text())
+    assert receipt["scientific_parameters_changed"] is False
+    assert receipt["changed_fields"] == {"output_destination": {
+        "from": "customer-bucket", "to": "platform-artifacts"}}

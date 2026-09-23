@@ -16,6 +16,30 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
 ENGINES = {
+    "amber": {
+        "repository": "fs2-platform/amber26-engine",
+        "review_url": "https://ambermd.org/GetAmber.php",
+        "display_name": "AMBER26 · PMEMD and AmberTools",
+        "commercial_use": "license-dependent",
+        "source_notes": (
+            "Private PMEMD26/AmberTools26 OCI bundle built from the official academic PMEMD source. "
+            "Operator confirms the AMBER agreement and academic use. Not an NVIDIA NIM; "
+            "the source archive and licensed binaries remain private. Native and hosted qualification "
+            "are separate evidence; user access uses the existing App grants."
+        ),
+        "description": (
+            "Run AMBER26 PMEMD CUDA/CPU simulations and AmberTools preparation/analysis. "
+            "Supply native MDIN, topology, coordinates and restraints; retrieve trajectories, "
+            "energies, restart files and logs from Object Storage."
+        ),
+        "limitations": [
+            "This deployment is for operator-approved academic use under the confirmed AMBER agreement. Other usage requires suitable licence coverage, not just access to an image.",
+            "PMEMD CUDA SPFP and DPFP are distinct precision modes. AmberTools preparation and analysis use the pinned CPU-only conda-forge distribution.",
+            "One GPU and one native process per job. Independent replicas and alchemical windows share the durable queue; coupled MPI/replica exchange is not qualified.",
+            "Recovery commits the complete stopped workspace at successful native stage boundaries. An interrupted active stage retries from its preceding committed state; partial restart files are not silently accepted.",
+            "Native restart does not imply serialization of stochastic state. Set scientifically appropriate seeds and validate continuation for the selected thermostat and sampling method.",
+        ],
+    },
     "lammps": {
         "repository": "nvidia/lammps",
         "display_name": "LAMMPS · NVIDIA-optimized molecular dynamics",
@@ -91,7 +115,7 @@ def profile(model: str) -> dict:
             "kind": "oci",
             "repository": config["repository"],
             "revision": revision,
-            "review_url": f"https://catalog.ngc.nvidia.com/orgs/nvidia/containers/{model}",
+            "review_url": config.get("review_url", f"https://catalog.ngc.nvidia.com/orgs/nvidia/containers/{model}"),
             "classification": "candidate-input",
         },
         "execution_identity": {
@@ -133,7 +157,7 @@ def profile(model: str) -> dict:
         "workload": workload,
         "semantic_validation": {"validator_id": f"{model}-workflow-v1", "state": "candidate-unqualified"},
         "policy": {
-            "commercial_use": "allowed",
+            "commercial_use": config.get("commercial_use", "allowed"),
             "non_clinical": False,
             "limitations": [
                 "Unrouted candidate. Runtime tests do not qualify hosted REST/MCP, recovery or customer storage.",
@@ -169,11 +193,11 @@ def outputs(model: str) -> dict[Path, dict]:
             "source": {key: value for key, value in candidate["source"].items() if key != "classification"},
             "access_profile": "standard",
             "access_state": "not-required",
-            "notes": (
+            "notes": ENGINES[model].get("source_notes", (
                 "Official NVIDIA NGC HPC distribution, not a NIM HTTP microservice. "
                 "The source identity is pinned and inspected. Native scientific tests, hosted "
                 "customer qualification, storage/recovery and GPU snapshots are separate evidence."
-            ),
+            )),
         },
     }
 

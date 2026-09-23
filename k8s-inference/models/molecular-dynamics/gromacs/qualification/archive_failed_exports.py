@@ -1,6 +1,6 @@
-"""Archive exact terminal failed/cancelled task exports; optionally free their space.
+"""Archive explicitly enumerated terminal test exports; optionally free their space.
 
-No bucket-wide cleanup and no successful/customer operation prefix is allowed.
+No bucket-wide cleanup or unlisted customer operation prefix is allowed.
 Every byte is retained locally and hash-verified before any deletion. Manifests
 and metadata are retained so an operator can restore the original object keys.
 """
@@ -19,25 +19,48 @@ OWNED = {
     '6ac88364-d1c3-4052-ba13-101fbc519af6',
     '98d3798b-c7e1-458c-b75e-e3fef01b3562',
 }
+MD_EXPORTS = {
+    '3a49aa8e-a02a-429a-936e-813b0425a9ba': ('namd', 'succeeded', 'qualification/namd'),
+    'f963df4d-1141-49c6-906e-1b05a2953b7a': ('lammps', 'failed', 'runs/lammps/sustained-six-case'),
+}
+
+
+def target(status, operation_id):
+    status = status.get('final', status)
+    operation = status['operation']
+    if operation_id not in OWNED | MD_EXPORTS.keys() or operation['id'] != operation_id:
+        raise ValueError('Only an explicitly enumerated task operation may be archived.')
+    if operation['tenant_id'] != 'rene' or operation['principal_id'] != 'rene':
+        raise ValueError('Unexpected test owner.')
+    if operation_id in MD_EXPORTS:
+        model, terminal, base = MD_EXPORTS[operation_id]
+        if (operation['model_id'], operation['status']) != (model, terminal):
+            raise ValueError('The test operation identity/outcome differs.')
+        prefix = f'{base}/{operation_id}/'
+    else:
+        if operation['model_id'] != 'gromacs-mpi' or operation['status'] not in {'failed', 'cancelled'}:
+            raise ValueError('Only the enumerated failed GROMACS tests are allowed.')
+        prefix = f'runs/gromacs-mpi/{operation_id}/'
+    if not all(attempt['resource_released'] for stage in status['batch']['stages'] for attempt in stage['attempts']):
+        raise ValueError('Test resources must have been released before archiving.')
+    return prefix
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--key-file', type=Path, required=True)
-    parser.add_argument('--operation-id', choices=sorted(OWNED), required=True)
+    parser.add_argument('--operation-id', choices=sorted(OWNED | MD_EXPORTS.keys()), required=True)
     parser.add_argument('--status', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--delete-archived', action='store_true')
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument('--delete-archived', action='store_true')
+    action.add_argument('--inventory-only', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
     status = json.loads(args.status.read_text())
-    status = status.get('final', status)
-    assert status['operation']['id'] == args.operation_id
-    assert status['operation']['tenant_id'] == status['operation']['principal_id'] == 'rene'
-    assert status['operation']['model_id'] == 'gromacs-mpi'
-    assert status['operation']['status'] in {'failed', 'cancelled'}
-    assert all(attempt['resource_released'] for stage in status['batch']['stages'] for attempt in stage['attempts'])
-    args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    prefix = target(status, args.operation_id)
+    if not args.inventory_only:
+        args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
     with httpx.Client(base_url='https://89.169.99.188', timeout=90, trust_env=False,
                       headers={'Authorization': 'Bearer ' + json.loads(args.key_file.read_text())['secret']}) as http:
         response = http.post('/v1/storage/credentials')
@@ -49,9 +72,14 @@ def main():
                                    response_checksum_validation='when_required', s3={'addressing_style': 'path'}))
     bucket = credentials['bucket_name']
     credentials.clear()
-    prefix = f'runs/gromacs-mpi/{args.operation_id}/'
+    if bucket != 'fs2-data-bucket-081a89fb4b12bf2194ad340d':
+        raise ValueError('This helper is scoped to the original Rene qualification bucket.')
     listed = [item for page in s3.get_paginator('list_objects_v2').paginate(Bucket=bucket, Prefix=prefix)
               for item in page.get('Contents', [])]
+    if args.inventory_only:
+        print(json.dumps({'bucket': bucket, 'prefix': prefix, 'objects': len(listed),
+                          'bytes': sum(item['Size'] for item in listed), 'mutated': False}))
+        return
     archive = {'bucket': bucket, 'prefix': prefix, 'operation_id': args.operation_id, 'objects': [], 'deleted': []}
     receipt = args.output / 'archive-private.json'
     for index, item in enumerate(listed):
@@ -73,7 +101,8 @@ def main():
         for item in archive['objects']:
             head = s3.head_object(Bucket=bucket, Key=item['key'])
             assert head['ContentLength'] == item['bytes'] and head['ETag'] == item['etag']
-            assert hashlib.file_digest((args.output / item['local']).open('rb'), 'sha256').hexdigest() == item['sha256']
+            with (args.output / item['local']).open('rb') as saved:
+                assert hashlib.file_digest(saved, 'sha256').hexdigest() == item['sha256']
             s3.delete_object(Bucket=bucket, Key=item['key'])
             archive['deleted'].append(item['key'])
             receipt.write_text(json.dumps(archive, indent=2))

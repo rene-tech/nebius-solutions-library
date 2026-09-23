@@ -120,6 +120,7 @@ def prepare(
         "gromacs-mpi": "upstream-2026-2-mpi-v1",
         "lammps": "nvidia-2025-07-22-single-gpu-v1",
         "namd": "nvidia-3-0-2-single-gpu-v1",
+        "amber": "pmemd-26-single-gpu-v1",
     }
     if model_id not in variants:
         raise ValueError("Only explicit native MD Apps are handled by this onboarding")

@@ -14,7 +14,7 @@ import subprocess
 import httpx
 
 KEY_NAME = "native-md-qualification-20260923"
-MODELS = ["gromacs", "gromacs-mpi", "lammps", "namd"]
+MODELS = ["gromacs", "gromacs-mpi", "lammps", "namd", "amber"]
 
 
 def private(path, value):

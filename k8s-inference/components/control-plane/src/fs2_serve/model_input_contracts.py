@@ -321,6 +321,11 @@ _PURPOSES = {
         "Run NVIDIA-packaged NAMD preparation and molecular-dynamics workflows from complete native inputs; "
         "returns trajectory segments, restart/bias state, logs and hash-verified customer-bucket manifests."
     ),
+    "amber": (
+        "Run licensed AMBER26 PMEMD CUDA or CPU simulations and AmberTools preparation/analysis from native inputs; "
+        "returns trajectories, energies, native restart files, logs and hash-verified customer-bucket manifests. "
+        "Available for the operator-approved academic use; not an NVIDIA NIM."
+    ),
 }
 
 

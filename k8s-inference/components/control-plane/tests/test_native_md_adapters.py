@@ -9,7 +9,7 @@ from fs2_gromacs.contracts import canonical
 from fs2_gromacs.files import atomic_json, inventory
 from jsonschema import Draft202012Validator
 
-from fs2_serve.scientific_batch.adapters import lammps, namd
+from fs2_serve.scientific_batch.adapters import amber, lammps, namd
 from fs2_serve.scientific_batch.adapters.staged_workspace import STAGE_COMPLETION_SCHEMA, unwrapped_stage_argv
 from fs2_serve.scientific_batch.input_contracts import public_input_contract, validate_input_roles
 from fs2_serve.scientific_batch.models import MaterializationMode, ScientificInputArtifact
@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[3]
 OP = "9eb1af68-cee7-46ea-9c3c-270e039ba923"
 
 
-@pytest.fixture(params=[lammps, namd], ids=["lammps", "namd"])
+@pytest.fixture(params=[lammps, namd, amber], ids=["lammps", "namd", "amber"])
 def engine(request):
     return request.param
 
@@ -42,6 +42,11 @@ def request_body(engine):
             "output_prefix": "production",
         }
     )
+    if engine is amber:
+        step = {
+            "id": "production", "input": "production.mdin", "topology": "system.prmtop",
+            "coordinates": "equilibrated.rst7", "expected_nsteps": 10000,
+        }
     return {
         "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
         "operation": "run-workflow",
@@ -79,6 +84,14 @@ def test_profiles_and_schemas_are_typed_but_not_falsely_published(engine):
     assert (ROOT / f"catalog/runtime/schema/{engine.MODEL_ID}-workflow-request.schema.json").read_bytes() == (
         ROOT / f"components/control-plane/src/fs2_serve/model_input_schemas/{engine.MODEL_ID}-workflow.json"
     ).read_bytes()
+
+
+def test_amber_preserves_private_academic_provenance_without_calling_it_a_nim():
+    value = profile(amber)
+    assert value["source"]["repository"] == "fs2-platform/amber26-engine"
+    assert value["source"]["review_url"] == "https://ambermd.org/GetAmber.php"
+    assert value["policy"]["commercial_use"] == "license-dependent"
+    assert "academic" in value["policy"]["limitations"][1]
 
 
 def test_independent_scientific_jobs_reuse_the_durable_gpu_queue(engine):

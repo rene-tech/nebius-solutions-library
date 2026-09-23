@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fs2-serve.nebius.ai/schema/amber-workflow-request/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "jobs"
+  ],
+  "description": "Ordered native AMBER workflows in a complete gzip-tar bundle. MDIN, topology, coordinates, restraints, reference files and alchemical context remain explicit. Native PMEMD CUDA SPFP/DPFP and CPU are distinct choices. Completed stages checkpoint the full stopped workspace; an interrupted active stage retries from the preceding committed stage, not an arbitrary partial restart.",
+  "properties": {
+    "schema": {
+      "const": "fs2-serve.nebius.ai/amber-workflow-request/v1"
+    },
+    "jobs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+          },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "input"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9-]{0,47}$"
+                },
+                "kind": {
+                  "enum": [
+                    "pmemd",
+                    "tleap",
+                    "cpptraj",
+                    "parmed"
+                  ],
+                  "default": "pmemd"
+                },
+                "input": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Native MDIN or native tool script, relative to the step directory. No shell command or arbitrary executable interface is added."
+                },
+                "directory": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "default": "."
+                },
+                "topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "PMEMD topology; optional default topology for cpptraj or ParmEd."
+                },
+                "coordinates": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "PMEMD initial coordinates/restart; optional ParmEd coordinates."
+                },
+                "reference": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "PMEMD restraint reference, passed with -ref. All auxiliary native dependencies must also be bundled."
+                },
+                "backend": {
+                  "enum": [
+                    "cuda-spfp",
+                    "cuda-dpfp",
+                    "cpu"
+                  ],
+                  "description": "PMEMD-only per-stage precision/accelerator override."
+                },
+                "task": {
+                  "enum": [
+                    "dynamics",
+                    "minimization"
+                  ],
+                  "description": "PMEMD completion assertion only; never rewrites imin or the native scientific settings."
+                },
+                "expected_nsteps": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647,
+                  "description": "Required for dynamics: exact requested native nstlim, checked against native input echo and final NSTEP. A timlim early exit is incomplete."
+                },
+                "output_prefix": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "PMEMD-only native output stem, defaulting to step ID. Generates .mdout, .rst7, .nc, .mdvel, .mden and .mdinfo names using fixed native flags."
+                },
+                "expected_outputs": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "maxItems": 256,
+                  "uniqueItems": true,
+                  "default": [],
+                  "description": "Additional nonempty native outputs required for completion. Required nonempty for preparation/analysis tools; their scientific interpretation remains workflow-specific."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "backend": {
+      "enum": [
+        "cuda-spfp",
+        "cuda-dpfp",
+        "cpu"
+      ],
+      "default": "cuda-spfp"
+    },
+    "threads": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 8,
+      "default": 1,
+      "description": "CPU/tool threading limit; one process and at most one GPU. No multi-GPU/MPI qualification is implied."
+    },
+    "max_wall_seconds": {
+      "type": "integer",
+      "minimum": 60,
+      "maximum": 259200,
+      "default": 21600
+    },
+    "max_output_bytes": {
+      "type": "integer",
+      "minimum": 1048576,
+      "maximum": 51539607552,
+      "default": 4294967296,
+      "description": "Full workspace budget; individual files above 5 GiB are not qualified."
+    },
+    "output_destination": {
+      "enum": [
+        "customer-bucket",
+        "platform-artifacts"
+      ],
+      "default": "customer-bucket"
+    },
+    "output_prefix": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512,
+      "default": "runs/amber"
+    }
+  }
+}

@@ -11,6 +11,7 @@ from typing import Any
 
 from .adapters import (
     alphafold3,
+    amber,
     bindcraft,
     boltzgen,
     esmfold2,
@@ -47,7 +48,7 @@ def public_input_contract(model_id: str) -> dict[str, Any] | None:
     """Return a fresh, caller-visible descriptor; never infer by model name."""
     if model_id in {gromacs.MODEL_ID, "gromacs-mpi"}:
         return gromacs.public_input_contract()
-    for engine in (lammps, namd):
+    for engine in (lammps, namd, amber):
         if model_id == engine.MODEL_ID:
             return engine.public_input_contract()
     if model_id == video_augmentation.MODEL_ID:
