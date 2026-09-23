@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fs2-namd-r20260923-h100-worker
+  namespace: fs2-models
+  labels:
+    app.kubernetes.io/name: namd-qualification
+    scientific-ai.nebius.com/task: namd-r20260923
+spec:
+  restartPolicy: Never
+  activeDeadlineSeconds: 14400
+  automountServiceAccountToken: false
+  nodeSelector:
+    accelerator.fs2.nebius/pool-id: h100-ondemand-1x
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: fs2-inference
+      effect: NoSchedule
+  securityContext:
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: runtime
+      image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:d4a29fe6e826dc466fec9f50a7ecfc9f76c38ef79a3bd6760549259b80bcf1bb
+      command: [bash, -c]
+      args:
+        - |
+          nvidia-smi --query-gpu=name,uuid,driver_version,memory.total,compute_cap --format=csv
+          sleep 14000
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+      env:
+        - name: CUDA_CACHE_PATH
+          value: /work/cuda-cache
+      resources:
+        requests:
+          cpu: "8"
+          memory: 32Gi
+          nvidia.com/gpu: "1"
+        limits:
+          cpu: "8"
+          memory: 32Gi
+          nvidia.com/gpu: "1"
+      volumeMounts:
+        - name: work
+          mountPath: /work
+        - name: tmp
+          mountPath: /tmp
+  volumes:
+    - name: work
+      emptyDir:
+        sizeLimit: 64Gi
+    - name: tmp
+      emptyDir:
+        sizeLimit: 1Gi

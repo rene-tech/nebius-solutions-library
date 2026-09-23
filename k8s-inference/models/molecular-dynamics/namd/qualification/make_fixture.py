@@ -28,7 +28,7 @@ def configuration(source, *, managed, ensemble, gpu_mode, seed):
         elif re.match(r"\s*(run|firsttimestep|outputName|binCoordinates|binVelocities|extendedSystem)\s+", line):
             continue
         elif re.match(r"\s*seed\s+", line):
-            output.append(f"seed {seed}")
+            output.append(f"seed [expr {{{seed} + $fs2_first_step}}]" if managed else f"seed {seed}")
         else:
             output.append(line)
     output += ["DCDFreq 10000", "XSTFreq 1000", "restartFreq 10000"]
@@ -112,7 +112,10 @@ metadynamics {
                   "source_sha256": digest_file(args.archive), "input_sha256": digest_file(args.output / "input.tar.gz"),
                   "system": args.system, "ensemble": args.ensemble, "gpu_mode": args.gpu_mode,
                   "repetitions": args.repetitions, "production_steps": args.steps, "screen_only": args.screen,
-                  "changes": ["Fixed finite steps replace benchmarkTime early stop", "Explicit seed 314159",
+                  "changes": ["Fixed finite steps replace benchmarkTime early stop",
+                              "Qualification seed schedule: native minimization 314159; managed segment 314159 + fs2_first_step",
+                              "Native RNG state is not serialized; stochastic restarts are non-bitwise continuation",
+                              "Performance repetitions reuse the same seed schedule and are not an independent ensemble",
                               "DCD every 10000, XST every 1000, restart every 10000 steps",
                               "Managed coherent segment output names and checkpoint continuation",
                               "Optional 1000-step minimization and 40000-fs NPT equilibration",

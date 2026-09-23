@@ -7,7 +7,7 @@ import pytest
 
 from fs2_namd import PARAMETER_SCHEMA
 from fs2_namd.contracts import normalize
-from fs2_namd.worker import Workflow, binary_vectors, log_metrics, tcl, xsc_step
+from fs2_namd.worker import Workflow, binary_vectors, colvars_step, log_metrics, tcl, xsc_step
 
 
 def request():
@@ -59,15 +59,27 @@ def test_xsc_requires_finite_single_state(tmp_path):
         xsc_step(path)
 
 
+def test_colvars_state_must_name_its_native_step(tmp_path):
+    path = tmp_path / "md.colvars.state"
+    path.write_text("configuration {\n step 21000\n dt 2\n}\n")
+    assert colvars_step(path) == 21000
+    path.write_text("configuration {\n dt 2\n}\n")
+    with pytest.raises(ValueError, match="step"):
+        colvars_step(path)
+
+
 def test_restart_log_does_not_confuse_first_step_with_timestep(tmp_path):
     path = tmp_path / "md.log"
     path.write_text("Info: TIMESTEP 2\nInfo: FIRST TIMESTEP 1000\nInfo: 92224 ATOMS\n"
+                    "Info: RANDOM NUMBER SEED     315159\n"
                     "Info: 4 ATOMS IN LARGEST GROUP\n"
                     "TIMING: 2000 CPU: 1, 0.0006/step Wall: 1, 0.0005/step\n"
                     "ENERGY: " + " ".join(map(str, [2000] + [1.0] * 19)) + "\n")
     metrics = log_metrics(path)
     assert metrics["atoms"] == 92224
     assert metrics["timestep_fs"] == 2
+    assert metrics["random_seed"] == 315159
+    assert metrics["configured_first_step"] == 1000
     assert metrics["energy_records"] == 1
     assert metrics["performance_ns_per_day"] == pytest.approx(345.6)
     assert metrics["last_energy"]["TS"] == 2000

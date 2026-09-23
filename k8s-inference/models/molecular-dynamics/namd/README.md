@@ -68,6 +68,12 @@ between stages and on restore; modifications require a new workflow.
 Native restart is a scientific continuation, not bitwise preservation of every
 stochastic thermostat state. No independent-replica RNG or persistent CUDA
 snapshot claim follows from restoring one native checkpoint.
+Effective native seeds and first timesteps are recorded for each process. The
+wrapper does not silently rewrite or prohibit scientist-selected seeds. The
+qualification inputs explicitly choose `314159 + $fs2_first_step` per managed
+segment; this avoids intentionally reusing a fixed segment seed in those tests,
+but is not serialization of the thermostat RNG. Performance repetitions use
+the same schedule, not a claim of independent scientific replicas.
 
 ## Existing transport interface
 

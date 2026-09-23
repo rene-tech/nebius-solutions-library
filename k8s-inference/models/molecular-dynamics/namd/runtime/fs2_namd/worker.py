@@ -47,6 +47,17 @@ def xsc_step(path):
     return int(values[0])
 
 
+def colvars_step(path):
+    # The native state begins with its configuration { step ... } block.
+    # Validate that bias history belongs to the same coordinate/cell boundary.
+    with path.open() as stream:
+        head = stream.read(65536)
+    match = re.search(r"\bconfiguration\s*\{[^}]*\bstep\s+(\d+)\b", head, re.IGNORECASE)
+    if not match:
+        raise ValueError("Colvars state lacks a native configuration step")
+    return int(match.group(1))
+
+
 def binary_vectors(path):
     """Validate NAMD binary coordinates/velocities with bounded memory."""
     with path.open("rb") as handle:
@@ -70,7 +81,7 @@ def log_metrics(path):
     # 3.0.2 classic-energy layout, replaced by ETITLE whenever emitted.
     fields = "TS BOND ANGLE DIHED IMPRP ELECT VDW BOUNDARY MISC KINETIC TOTAL TEMP POTENTIAL TOTALAVG TEMPAVG PRESSURE GPRESSURE VOLUME PRESSAVG GPRESSAVG".split()
     records, timings, benchmark, first_step = [], [], [], None
-    version, dt, atom_count = None, None, None
+    version, dt, atom_count, random_seed, configured_first_step = None, None, None, None, None
     with path.open(errors="replace") as handle:
         for line in handle:
             if line.startswith("ETITLE:"):
@@ -100,9 +111,16 @@ def log_metrics(path):
             match = re.search(r"^Info:\s+(\d+) ATOMS\s*$", line)
             if match:
                 atom_count = int(match.group(1))
+            match = re.search(r"^Info:\s+RANDOM NUMBER SEED\s+(-?\d+)", line)
+            if match:
+                random_seed = int(match.group(1))
+            match = re.search(r"^Info:\s+FIRST TIMESTEP\s+(\d+)", line)
+            if match:
+                configured_first_step = int(match.group(1))
     timings = [v for v in timings if math.isfinite(v) and v > 0]
     seconds_step = statistics.median(timings[-10:]) if timings else (benchmark[-1] if benchmark else None)
     return {"engine": version, "atoms": atom_count, "timestep_fs": dt,
+            "random_seed": random_seed, "configured_first_step": configured_first_step,
             "energy_records": len(records), "first_energy_step": first_step,
             "last_energy": records[-1] if records else None,
             "native_seconds_per_step": seconds_step,
@@ -259,9 +277,14 @@ class Workflow:
         if mode == "native":
             # Before every scientific run, inspect effective options. The source
             # can still use arbitrary Tcl; this is a compatibility guard only.
-            lines += ["rename run fs2_native_run", "rename minimize fs2_native_minimize",
-                      "proc run {args} {fs2_feature_guard; uplevel 1 [list fs2_native_run {*}$args]}",
-                      "proc minimize {args} {fs2_feature_guard; uplevel 1 [list fs2_native_minimize {*}$args]}",
+            lines += [f"set fs2_expected_resident {int(step['gpu_mode'] == 'resident')}",
+                      "proc fs2_mode_guard {} {",
+                      "  set actual 0",
+                      "  foreach key {CUDASOAintegrate GPUresident} {if {[isset $key] && [istrue $key]} {set actual 1}}",
+                      '  if {$actual != $::fs2_expected_resident} {error "native config and requested gpu_mode disagree"}', "}",
+                      "rename run fs2_native_run", "rename minimize fs2_native_minimize",
+                      "proc run {args} {fs2_mode_guard; fs2_feature_guard; uplevel 1 [list fs2_native_run {*}$args]}",
+                      "proc minimize {args} {fs2_mode_guard; fs2_feature_guard; uplevel 1 [list fs2_native_minimize {*}$args]}",
                       f"source {tcl(step['config'])}", "fs2_feature_guard"]
             return "\n".join(lines) + "\n"
         lines += [f"set fs2_restart {int(bool(restart))}", f"set fs2_first_step {current}",
@@ -321,6 +344,8 @@ class Workflow:
                         raise ValueError("native restart component is missing")
                 if xsc_step(cwd / restart["cell"]) != current:
                     raise ValueError("native restart cell timestep does not match continuation")
+                if "colvars_state" in restart and colvars_step(cwd / restart["colvars_state"]) != current:
+                    raise ValueError("Colvars bias-state timestep does not match the coordinate/cell checkpoint")
             script = cwd / f"fs2-{step['id']}-part{number:06d}.namd"
             script.write_text(self.script(step, prefix=prefix, current=current, count=count, restart=restart))
             command = [PSFGEN, script.name] if step["mode"] == "prepare" else [self.namd, f"+p{self.request['threads']}", "+devices", "0", script.name]
@@ -345,6 +370,8 @@ class Workflow:
                     raise ValueError("native checkpoint components disagree")
                 bias = cwd / (prefix + ".colvars.state")
                 if bias.exists():
+                    if colvars_step(bias) != current + count:
+                        raise ValueError("native Colvars output timestep does not match its cell")
                     new["colvars_state"] = prefix + ".colvars.state"
                 if not item["energy_records"]:
                     raise ValueError("managed dynamics returned no finite energy samples")
@@ -385,6 +412,8 @@ class Workflow:
                   "status": status, "error": error, "recipe_sha256": self.recipe, "engine_id": ENGINE_ID,
                   "completed_steps": self.state["completed_steps"], "commands": self.state["commands"],
                   "native_checkpoint_generation": self.state["generation"], "gpu_snapshot_used": False,
+                  "native_restart_semantics": {"rng_state_serialized": False, "bitwise_continuation_claimed": False,
+                                               "seed_policy": "scientist-owned native configuration; effective seeds are recorded per command"},
                   "files": files}
         atomic_json(self.root / "result.json", result)
         return result
