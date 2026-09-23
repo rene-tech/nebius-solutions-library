@@ -61,8 +61,14 @@ def expand_args(tokens, cwd):
         if not matches:
             raise ValueError("explicit input file pattern matched no files")
         for path in matches:
-            if path.is_symlink() or not path.is_file() or cwd.resolve() not in path.resolve().parents:
-                raise ValueError("input file pattern must select contained regular files")
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or cwd.resolve() not in path.resolve().parents
+            ):
+                raise ValueError(
+                    "input file pattern must select contained regular files"
+                )
             args.append(str(path.relative_to(cwd)))
     if len(args) > 4096 or sum(len(arg.encode()) + 1 for arg in args) > 128 * 1024:
         raise ValueError("expanded native command exceeds the argument budget")
@@ -80,7 +86,11 @@ def publish_final_coordinates(cwd, args):
     destination = cwd / flag_value(args, "-c", default)
     if not destination.suffix:
         destination = destination.with_suffix(".gro")
-    parts = sorted(destination.parent.glob(destination.stem + ".part[0-9][0-9][0-9][0-9]" + destination.suffix))
+    parts = sorted(
+        destination.parent.glob(
+            destination.stem + ".part[0-9][0-9][0-9][0-9]" + destination.suffix
+        )
+    )
     if parts:
         shutil.copyfile(parts[-1], destination)
 
@@ -90,23 +100,50 @@ class Interrupted(RuntimeError):
 
 
 class Workflow:
-    def __init__(self, request, *, job_id, operation_id, workspace, gmx=DEFAULT_GMX, checkpoint_mode="local"):
-        self.request = normalize(request)
+    def __init__(
+        self,
+        request,
+        *,
+        job_id,
+        operation_id,
+        workspace,
+        gmx=None,
+        checkpoint_mode="local",
+        mpi=False,
+    ):
+        self.mpi = mpi
+        self.request = normalize(request, mpi=mpi)
         self.job = next(job for job in self.request["jobs"] if job["id"] == job_id)
         self.operation_id = operation_id
         self.root = Path(workspace).resolve()
         self.data = self.root / "data"
         self.meta = self.root / ".fs2"
-        self.gmx = gmx
+        self.gmx = gmx or os.environ.get("FS2_GROMACS_BINARY", DEFAULT_GMX)
         self.checkpoint_mode = checkpoint_mode
         self.stopped = False
         self.child = None
         self.started = time.monotonic()
         self.deadline = self.started + self.request["max_wall_seconds"]
-        self.recipe = hashlib.sha256(canonical({"request": self.request, "job": job_id, "image": NVIDIA_IMAGE})).hexdigest()
-        self.state = {"schema": "fs2-serve.nebius.ai/gromacs-checkpoint/v1", "operation_id": operation_id,
-                      "job_id": job_id, "recipe_sha256": self.recipe, "generation": 0,
-                      "completed_steps": [], "commands": [], "active_step": None, "elapsed_seconds": 0}
+        self.engine_id = os.environ.get("FS2_GROMACS_ENGINE_ID", NVIDIA_IMAGE)
+        self.mpi_stager = None
+        if mpi:
+            from .mpi_files import InputStager
+
+            self.mpi_stager = InputStager(self.root)
+        self.recipe = hashlib.sha256(
+            canonical({"request": self.request, "job": job_id, "image": self.engine_id})
+        ).hexdigest()
+        self.state = {
+            "schema": "fs2-serve.nebius.ai/gromacs-checkpoint/v1",
+            "operation_id": operation_id,
+            "job_id": job_id,
+            "recipe_sha256": self.recipe,
+            "generation": 0,
+            "completed_steps": [],
+            "commands": [],
+            "active_step": None,
+            "elapsed_seconds": 0,
+        }
 
     def stop(self, signum, frame):
         self.stopped = True
@@ -125,9 +162,13 @@ class Workflow:
                 # acknowledgement would consume the Pod grace, turn SIGTERM
                 # into SIGKILL/137, and lose the explicit disruption receipt.
                 # Recovery uses the previous committed remote generation.
-                raise Interrupted("workflow interrupted; recover the last committed remote checkpoint")
+                raise Interrupted(
+                    "workflow interrupted; recover the last committed remote checkpoint"
+                )
             if (self.meta / "transport-error.json").is_file():
-                raise RuntimeError("durable checkpoint transport failed; see operation logs")
+                raise RuntimeError(
+                    "durable checkpoint transport failed; see operation logs"
+                )
             if path.is_file():
                 value = json.loads(path.read_text())
                 if predicate(value):
@@ -138,22 +179,40 @@ class Workflow:
     def initialize(self):
         self.meta.mkdir(parents=True, exist_ok=True)
         if self.checkpoint_mode == "companion":
-            self._wait_json(self.meta / "restore-complete.json", lambda value: value.get("status") == "ready")
+            self._wait_json(
+                self.meta / "restore-complete.json",
+                lambda value: value.get("status") == "ready",
+            )
         previous = self.meta / "gromacs-state.json"
         if previous.is_file():
             state = json.loads(previous.read_text())
-            if (state.get("recipe_sha256"), state.get("operation_id"), state.get("job_id")) != (
-                self.recipe, self.operation_id, self.job["id"],
+            if (
+                state.get("recipe_sha256"),
+                state.get("operation_id"),
+                state.get("job_id"),
+            ) != (
+                self.recipe,
+                self.operation_id,
+                self.job["id"],
             ):
-                raise ValueError("checkpoint belongs to another workflow, job or engine recipe")
+                raise ValueError(
+                    "checkpoint belongs to another workflow, job or engine recipe"
+                )
             self.state = state
             self.deadline -= float(state["elapsed_seconds"])
         archive = self.root / "input.tar.gz"
         if not self.data.exists() and archive.is_file():
-            extract_inputs(archive, self.data, max_bytes=self.request["max_output_bytes"])
+            extract_inputs(
+                archive, self.data, max_bytes=self.request["max_output_bytes"]
+            )
         self.data.mkdir(parents=True, exist_ok=True)
-        self.version = subprocess.check_output([self.gmx, "--version"], stderr=subprocess.STDOUT, text=True, timeout=30)
-        atomic_json(self.meta / "engine.json", {"image": NVIDIA_IMAGE, "version": self.version})
+        self.version = subprocess.check_output(
+            [self.gmx, "--version"], stderr=subprocess.STDOUT, text=True, timeout=30
+        )
+        atomic_json(
+            self.meta / "engine.json",
+            {"image": self.engine_id, "version": self.version},
+        )
 
     def checkpoint(self):
         self.state["generation"] += 1
@@ -161,25 +220,46 @@ class Workflow:
         self.started = time.monotonic()
         files = inventory(self.data, max_bytes=self.request["max_output_bytes"])
         atomic_json(self.meta / "gromacs-state.json", self.state)
-        marker = {"schema": "fs2-serve.nebius.ai/gromacs-checkpoint-ready/v1",
-                  "state": self.state, "files": files}
+        marker = {
+            "schema": "fs2-serve.nebius.ai/gromacs-checkpoint-ready/v1",
+            "state": self.state,
+            "files": files,
+        }
         atomic_json(self.meta / "checkpoint-ready.json", marker)
         if self.checkpoint_mode == "companion":
             generation = self.state["generation"]
-            self._wait_json(self.meta / "checkpoint-ack.json",
-                            lambda value: value.get("generation") == generation and value.get("status") == "committed")
+            self._wait_json(
+                self.meta / "checkpoint-ack.json",
+                lambda value: value.get("generation") == generation
+                and value.get("status") == "committed",
+            )
 
     def execute(self, argv, *, cwd, log, stdin="", timeout=None):
         remaining = self.deadline - time.monotonic()
         if remaining <= 0 or self.stopped:
-            raise Interrupted("workflow stopped before starting the next native command")
-        env = {**os.environ, "OMP_NUM_THREADS": str(self.request["threads"]), "GMX_MAXBACKUP": "-1"}
+            raise Interrupted(
+                "workflow stopped before starting the next native command"
+            )
+        env = {
+            **os.environ,
+            "OMP_NUM_THREADS": str(self.request["threads"]),
+            "GMX_MAXBACKUP": "-1",
+        }
         started = time.monotonic()
         with log.open("wb") as output:
-            self.child = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.PIPE,
-                                          stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+            self.child = subprocess.Popen(
+                argv,
+                cwd=cwd,
+                env=env,
+                stdin=subprocess.PIPE,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
             try:
-                self.child.communicate(stdin.encode(), timeout=min(remaining, timeout or remaining))
+                self.child.communicate(
+                    stdin.encode(), timeout=min(remaining, timeout or remaining)
+                )
             except subprocess.TimeoutExpired:
                 self.stop(signal.SIGTERM, None)
                 try:
@@ -194,18 +274,29 @@ class Workflow:
     def input_parameters(self, cwd, args, step_id):
         tpr = cwd / flag_value(args, "-s", "topol.tpr")
         if not tpr.is_file():
-            raise ValueError("mdrun requires an existing prepared TPR; use a grompp step first")
+            raise ValueError(
+                "mdrun requires an existing prepared TPR; use a grompp step first"
+            )
         output = self.meta / f"{step_id}-tpr.mdp"
         with (self.meta / f"{step_id}-tpr.log").open("wb") as log:
-            subprocess.run([self.gmx, "dump", "-s", str(tpr), "-om", str(output)],
-                           stdout=subprocess.DEVNULL, stderr=log, check=True, timeout=120)
+            subprocess.run(
+                [self.gmx, "dump", "-s", str(tpr), "-om", str(output)],
+                stdout=subprocess.DEVNULL,
+                stderr=log,
+                check=True,
+                timeout=120,
+            )
         params = parse_mdp(output.read_text())
         return params, digest_file(tpr)
 
     def checkpoint_step(self, checkpoint):
         found = None
-        process = subprocess.Popen([self.gmx, "dump", "-cp", str(checkpoint)],
-                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        process = subprocess.Popen(
+            [self.gmx, "dump", "-cp", str(checkpoint)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
         assert process.stdout is not None
         # Stream the dump: checkpoint coordinates can contain millions of lines.
         for line in process.stdout:
@@ -227,35 +318,99 @@ class Workflow:
         if is_md:
             params, tpr_digest = self.input_parameters(cwd, args, step["id"])
             previous = self.state.get("active_step")
-            if previous and previous["id"] == step["id"] and previous["tpr_sha256"] != tpr_digest:
-                raise ValueError("the active checkpoint's TPR changed; refusing an incompatible continuation")
+            if (
+                previous
+                and previous["id"] == step["id"]
+                and previous["tpr_sha256"] != tpr_digest
+            ):
+                raise ValueError(
+                    "the active checkpoint's TPR changed; refusing an incompatible continuation"
+                )
             segmented = params.get("integrator") in DYNAMICS and "-rerun" not in args
             steps = int(params.get("nsteps", "-1"))
             if segmented and steps < 0:
-                raise ValueError("supply a finite nsteps in the TPR; an unbounded simulation has no completion criterion")
+                raise ValueError(
+                    "supply a finite nsteps in the TPR; an unbounded simulation has no completion criterion"
+                )
             target_step = int(params.get("init-step", "0")) + steps
-            args += ["-ntmpi", "1", "-ntomp", str(self.request["threads"]),
-                     "-cpt", str(self.request["checkpoint_minutes"]), "-cpo", checkpoint.name, "-noappend"]
+            if not self.mpi:
+                args += ["-ntmpi", "1"]
+            args += [
+                "-ntomp",
+                str(self.request["threads"]),
+                "-cpt",
+                str(self.request["checkpoint_minutes"]),
+                "-cpo",
+                checkpoint.name,
+                "-noappend",
+            ]
+            if step.get("plumed_input"):
+                plumed = cwd / step["plumed_input"]
+                kernel = Path(
+                    os.environ.get(
+                        "PLUMED_KERNEL", "/opt/plumed/lib/libplumedKernel.so"
+                    )
+                )
+                if not plumed.is_file() or not kernel.is_file():
+                    raise ValueError(
+                        "PLUMED requires an existing input file and the packaged runtime kernel"
+                    )
+                args += ["-plumed", step["plumed_input"]]
             if "-deffnm" not in args:
                 args += ["-deffnm", step["id"]]
             for option in ("-nb", "-pme", "-bonded", "-update"):
                 if option not in args:
                     args += [option, "auto"]
-            self.state["active_step"] = {"id": step["id"], "tpr_sha256": tpr_digest, "target_step": target_step}
-        segment = sum(command["step_id"] == step["id"] for command in self.state["commands"])
+            self.state["active_step"] = {
+                "id": step["id"],
+                "tpr_sha256": tpr_digest,
+                "target_step": target_step,
+            }
+        segment = sum(
+            command["step_id"] == step["id"] for command in self.state["commands"]
+        )
         while True:
             segment += 1
             command = [self.gmx, step["command"], *args]
+            staging = None
             if is_md:
                 if checkpoint.is_file():
                     command += ["-cpi", checkpoint.name]
                 elif step.get("restart_checkpoint"):
                     original = cwd / step["restart_checkpoint"]
                     if not original.is_file():
-                        raise ValueError("requested restart checkpoint does not exist; refusing a fresh start")
+                        raise ValueError(
+                            "requested restart checkpoint does not exist; refusing a fresh start"
+                        )
                     command += ["-cpi", step["restart_checkpoint"]]
                 if segmented:
                     command += ["-maxh", str(self.request["segment_minutes"] / 60)]
+            if is_md and self.mpi:
+                staging = self.mpi_stager.stage(
+                    cwd, command[2:], timeout=self.deadline - time.monotonic()
+                )
+                command = [
+                    "mpirun",
+                    "--prefix",
+                    "/opt/ompi",
+                    "--hostfile",
+                    os.environ["FS2_GROMACS_MPI_HOSTFILE"],
+                    "-np",
+                    str(self.request["nodes"]),
+                    "--map-by",
+                    "ppr:1:node",
+                    "--bind-to",
+                    "none",
+                    "-x",
+                    "OMP_NUM_THREADS",
+                    "-x",
+                    "LD_LIBRARY_PATH",
+                    "-x",
+                    "PATH",
+                    "-x",
+                    "GMX_DISABLE_DIRECT_GPU_COMM",
+                    *command,
+                ]
             log = self.data / f"fs2-{step['id']}-segment-{segment:06d}.log"
             code, wall = self.execute(command, cwd=cwd, log=log, stdin=step["stdin"])
             # Log parsing is bounded; logs themselves are retained in full.
@@ -263,33 +418,58 @@ class Workflow:
                 handle.seek(max(0, log.stat().st_size - 256 * 1024))
                 tail = handle.read().decode(errors="replace")
             performance = re.findall(r"Performance:\s+([0-9.eE+-]+)", tail)
-            item = {"step_id": step["id"], "segment": segment, "command": command,
-                    "directory": step["directory"], "exit_code": code, "wall_seconds": wall,
-                    "performance_ns_per_day": float(performance[-1]) if performance else None,
-                    "log": str(log.relative_to(self.data)), "finished_at": utc()}
+            item = {
+                "step_id": step["id"],
+                "segment": segment,
+                "command": command,
+                "directory": step["directory"],
+                "exit_code": code,
+                "wall_seconds": wall,
+                "performance_ns_per_day": float(performance[-1])
+                if performance
+                else None,
+                "log": str(log.relative_to(self.data)),
+                "finished_at": utc(),
+            }
             self.state["commands"].append(item)
+            if staging is not None:
+                item["mpi_input_staging"] = staging
             if code != 0:
                 self.checkpoint()
-                raise RuntimeError(f"native command {step['id']} failed with exit code {code}; see its full log")
-            current_step = self.checkpoint_step(checkpoint) if segmented and checkpoint.is_file() else None
+                raise RuntimeError(
+                    f"native command {step['id']} failed with exit code {code}; see its full log"
+                )
+            current_step = (
+                self.checkpoint_step(checkpoint)
+                if segmented and checkpoint.is_file()
+                else None
+            )
             item["checkpoint_step"] = current_step
-            complete = not segmented or (current_step is not None and current_step >= target_step)
+            complete = not segmented or (
+                current_step is not None and current_step >= target_step
+            )
             if complete:
                 if is_md:
                     publish_final_coordinates(cwd, args)
                 for name in step["expected_outputs"]:
                     path = cwd / name
                     if not path.is_file() or not path.stat().st_size:
-                        raise ValueError(f"expected output is missing or empty after {step['id']}: {name}")
+                        raise ValueError(
+                            f"expected output is missing or empty after {step['id']}: {name}"
+                        )
                 self.state["completed_steps"].append(step["id"])
                 self.state["active_step"] = None
             self.checkpoint()
             if self.stopped:
-                raise Interrupted("workflow interrupted; last committed checkpoint is retained")
+                raise Interrupted(
+                    "workflow interrupted; last committed checkpoint is retained"
+                )
             if complete:
                 return
             if current_step is None:
-                raise RuntimeError("segmented dynamics returned without a native checkpoint")
+                raise RuntimeError(
+                    "segmented dynamics returned without a native checkpoint"
+                )
 
     def run(self):
         self.version = "unavailable: engine initialization did not complete"
@@ -300,13 +480,30 @@ class Workflow:
                 if step["id"] not in self.state["completed_steps"]:
                     self.run_step(step)
         except Exception as exc:
-            status, error = "interrupted" if self.stopped or isinstance(exc, Interrupted) else "failed", str(exc)
-        result = {"schema": RESULT_SCHEMA, "operation_id": self.operation_id, "job_id": self.job["id"],
-                  "status": status, "error": error, "recipe_sha256": self.recipe, "engine": self.version,
-                  "nvidia_image": NVIDIA_IMAGE, "completed_steps": self.state["completed_steps"],
-                  "commands": self.state["commands"], "native_checkpoint_generation": self.state["generation"],
-                  "gpu_snapshot_used": False, "finished_at": utc(),
-                  "files": inventory(self.data, max_bytes=self.request["max_output_bytes"])}
+            status, error = (
+                "interrupted"
+                if self.stopped or isinstance(exc, Interrupted)
+                else "failed",
+                str(exc),
+            )
+        result = {
+            "schema": RESULT_SCHEMA,
+            "operation_id": self.operation_id,
+            "job_id": self.job["id"],
+            "status": status,
+            "error": error,
+            "recipe_sha256": self.recipe,
+            "engine": self.version,
+            "nvidia_image": NVIDIA_IMAGE if self.engine_id == NVIDIA_IMAGE else None,
+            "engine_id": self.engine_id,
+            "mpi_ranks": self.request.get("nodes", 1),
+            "completed_steps": self.state["completed_steps"],
+            "commands": self.state["commands"],
+            "native_checkpoint_generation": self.state["generation"],
+            "gpu_snapshot_used": False,
+            "finished_at": utc(),
+            "files": inventory(self.data, max_bytes=self.request["max_output_bytes"]),
+        }
         atomic_json(self.root / "result.json", result)
         return result
 
@@ -317,15 +514,32 @@ def main():
     parser.add_argument("--job-id", required=True)
     parser.add_argument("--operation-id", required=True)
     parser.add_argument("--workspace", type=Path, required=True)
-    parser.add_argument("--checkpoint-mode", choices=("local", "companion"), default="companion")
+    parser.add_argument(
+        "--checkpoint-mode", choices=("local", "companion"), default="companion"
+    )
     args = parser.parse_args()
-    worker = Workflow(json.loads(args.request.read_text()), job_id=args.job_id, operation_id=args.operation_id,
-                      workspace=args.workspace, checkpoint_mode=args.checkpoint_mode)
+    worker = Workflow(
+        json.loads(args.request.read_text()),
+        job_id=args.job_id,
+        operation_id=args.operation_id,
+        workspace=args.workspace,
+        checkpoint_mode=args.checkpoint_mode,
+    )
     signal.signal(signal.SIGTERM, worker.stop)
     signal.signal(signal.SIGINT, worker.stop)
     result = worker.run()
-    print(json.dumps({key: result[key] for key in ("operation_id", "job_id", "status", "error")}))
-    raise SystemExit(0 if result["status"] == "succeeded" else 143 if result["status"] == "interrupted" else 1)
+    print(
+        json.dumps(
+            {key: result[key] for key in ("operation_id", "job_id", "status", "error")}
+        )
+    )
+    raise SystemExit(
+        0
+        if result["status"] == "succeeded"
+        else 143
+        if result["status"] == "interrupted"
+        else 1
+    )
 
 
 if __name__ == "__main__":

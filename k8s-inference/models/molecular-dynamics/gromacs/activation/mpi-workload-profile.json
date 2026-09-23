@@ -3,32 +3,32 @@
   "merge_target": "catalog/runtime/contracts/scientific-workload-profiles.json",
   "profile": {
     "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
-    "model_id": "gromacs",
-    "display_name": "GROMACS \u00b7 NVIDIA-optimized molecular dynamics",
+    "model_id": "gromacs-mpi",
+    "display_name": "GROMACS \u00b7 distributed CUDA MPI",
     "execution_mode": "scientific-batch",
     "state": "candidate-unqualified",
     "route_exposed": false,
     "source": {
-      "kind": "oci",
-      "repository": "nvidia/gromacs",
-      "revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
-      "review_url": "https://catalog.ngc.nvidia.com/orgs/nvidia/containers/gromacs",
+      "kind": "git",
+      "repository": "gromacs/gromacs",
+      "revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
+      "review_url": "https://gitlab.com/gromacs/gromacs/-/tree/v2026.2",
       "classification": "candidate-input"
     },
     "execution_identity": {
-      "model_revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+      "model_revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
       "runtime_image_digest": null,
       "runtime_recipe_sha256": "d9180aa0a73989a455b27a6c55158e22f7ba8a544beb18914e4dbf02e79a97af",
-      "workload_recipe_sha256": "2fbb53490e7898cd24fbd80f19e4fd5c6d26f808fe2cac7f7babb60fb6566b9e",
+      "workload_recipe_sha256": "dc1bfdd87c33685b658c975b934f031547852fd0c3d43ae17b8f4bfd2b131b50",
       "artifact_manifest_digest": null,
       "execution_identity_sha256": null
     },
     "interface": {
       "protocol": "scientific-batch-v1",
-      "submit_endpoint": "/v1/models/gromacs:submit",
+      "submit_endpoint": "/v1/models/gromacs-mpi:submit",
       "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
       "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
-      "parameter_schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1",
+      "parameter_schema": "fs2-serve.nebius.ai/gromacs-mpi-workflow-request/v1",
       "operations": [
         "run-workflow"
       ],
@@ -40,8 +40,8 @@
       "mcp": {
         "discoverable": true,
         "invocable": false,
-        "tool_name": "submit_gromacs_workflow",
-        "description": "Run native NVIDIA GROMACS preparation, MD, minimization, analysis or free-energy workflows. Accepts an immutable input bundle and ordered commands; returns durable runs and trajectory/checkpoint artifacts."
+        "tool_name": "submit_gromacs_mpi_workflow",
+        "description": "Run one distributed GROMACS workflow across gang-admitted GPU nodes. Preparation and analysis run on rank zero; MD uses one MPI rank/GPU per node. Returns durable native checkpoints and customer-bucket results."
       }
     },
     "access": {
@@ -52,15 +52,13 @@
     },
     "resources": {
       "gpu_count": 1,
-      "gpu_topology": "single-gpu",
+      "gpu_topology": "multi-node",
       "host_architectures": [
         "amd64"
       ],
       "compatible_pool_ids": [
         "h100-ondemand-1x",
-        "h100-1x",
-        "h100-reserved-8x",
-        "l40s-1x"
+        "h100-reserved-8x"
       ],
       "required_node_labels": {
         "kubernetes.io/arch": "amd64"
@@ -72,9 +70,9 @@
           "id": "workflow",
           "needs": [],
           "resource_class": "gpu",
-          "admission_mode": "independent-jobs",
-          "min_parallelism": 1,
-          "max_parallelism": 128,
+          "admission_mode": "gang-jobset",
+          "min_parallelism": 2,
+          "max_parallelism": 8,
           "checkpoint_mode": "resume",
           "preemption_mode": "checkpointable",
           "placement": {
@@ -106,19 +104,18 @@
       }
     },
     "semantic_validation": {
-      "validator_id": "gromacs-workflow-v1",
+      "validator_id": "gromacs-mpi-workflow-v1",
       "state": "candidate-unqualified"
     },
     "policy": {
       "commercial_use": "allowed",
       "non_clinical": false,
       "limitations": [
-        "Unrouted candidate. Runtime tests do not qualify hosted REST/MCP, preemption or customer storage.",
-        "Exact NVIDIA v2026.2 image identifies itself as GROMACS 2026.2-dev, CUDA 13, thread-MPI. Multi-node requires a separate external-MPI build.",
-        "One GPU and up to eight OpenMP threads per job. Jobs are independent; coupled replica exchange is not implemented in this execution shape.",
-        "All scientific settings and output cadence remain in customer inputs. Execution success is not proof of equilibration, convergence or force-field suitability.",
-        "Colvars and PLUMED are compiled in; external kernel availability and enhanced-sampling correctness remain Priority 2. CP2K and Torch NNPot are not compiled in.",
-        "Native checkpoint continuation is distinct from optional CUDA process snapshots; GPU snapshot acceleration has not been qualified."
+        "Unrouted candidate. Distributed runtime probes do not qualify customer execution or recovery.",
+        "Separate upstream GROMACS 2026.2 CUDA/Open MPI build, not the NVIDIA NGC engine binary.",
+        "Two to eight gang-admitted nodes, one GPU/rank and up to eight CPU threads per node. No coupled replica exchange in this shape.",
+        "Portable TCP host-staged MPI baseline. RDMA/direct GPU communication requires a separately qualified network profile.",
+        "Native .cpt recovery is distinct from persistent GPU-process snapshots. Scientific convergence is not inferred from execution success."
       ]
     }
   }

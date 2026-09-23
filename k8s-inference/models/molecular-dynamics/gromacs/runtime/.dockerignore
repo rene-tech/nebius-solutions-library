@@ -1,6 +1,7 @@
 **
 !Containerfile
 !requirements.lock
+!requirements-mpi.lock
 !fs2_gromacs/
 !fs2_gromacs/*.py
 !fs2_gromacs/py.typed

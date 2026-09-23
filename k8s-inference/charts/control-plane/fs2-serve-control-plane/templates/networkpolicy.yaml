@@ -208,6 +208,32 @@ spec:
         - port: 443
           protocol: TCP
     {{- end }}
+---
+# MPI needs peer-to-peer data and launch traffic in addition to the existing
+# scientific artifact egress. This selects only the distributed GROMACS App.
+# Each gang uses distinct ephemeral SSH identities; no public SSH listener.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "fs2-serve.fullname" $root }}-gromacs-mpi-peers
+  namespace: {{ $workloadNamespace }}
+  labels:
+    {{- include "fs2-serve.labels" $root | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      fs2.nebius.ai/model-id: gromacs-mpi
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              fs2.nebius.ai/model-id: gromacs-mpi
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              fs2.nebius.ai/model-id: gromacs-mpi
 {{- end }}
 {{- end }}
 {{- if .Values.publicGateway.enabled }}

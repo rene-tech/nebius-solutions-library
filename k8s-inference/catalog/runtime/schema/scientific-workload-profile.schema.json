@@ -276,7 +276,8 @@
         "gpu_topology": {
           "enum": [
             "single-gpu",
-            "single-node-multi-gpu"
+            "single-node-multi-gpu",
+            "multi-node"
           ]
         },
         "host_architectures": {

@@ -4,9 +4,9 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from jsonschema import Draft202012Validator
+from jsonschema import Draft202012Validator, ValidationError
 
-from fs2_serve.scientific_batch.adapters import gromacs
+from fs2_serve.scientific_batch.adapters import gromacs, gromacs_mpi
 from fs2_serve.scientific_batch.input_contracts import public_input_contract, validate_input_roles
 from fs2_serve.scientific_batch.models import MaterializationMode, ScientificInputArtifact
 from fs2_serve.scientific_batch.profile_catalog import ScientificRequestError
@@ -93,6 +93,39 @@ def test_bundle_contract_is_discoverable_and_verified_before_admission():
         validate_input_roles("gromacs", request(), ())
     with pytest.raises(ValueError, match="verified"):
         gromacs.compile_run(profile(), request(), operation_id=OP, input_artifacts=())
+
+
+@pytest.mark.parametrize("nodes", [2, 4, 8])
+def test_mpi_compiles_one_gang_with_one_gpu_per_rank(nodes):
+    candidate = json.loads(
+        (ROOT / "models/molecular-dynamics/gromacs/activation/mpi-workload-profile.json").read_text()
+    )["profile"]
+    Draft202012Validator(
+        json.loads((ROOT / "catalog/runtime/schema/scientific-workload-profile.schema.json").read_text())
+    ).validate(candidate)
+    body = request()
+    body["parameters"].update(schema=gromacs.MPI_PARAMETER_SCHEMA, nodes=nodes)
+    body["parameters"]["jobs"][0]["id"] = "gang"
+    plan = gromacs_mpi.compile_run(candidate, body, operation_id=OP, input_artifacts=(source(),))
+    assert len(plan.invocations) == 1
+    assert plan.invocations[0].collector_id == "gromacs-mpi-workflow-v1"
+    assert "fs2_gromacs.mpi" in plan.invocations[0].argv
+    stage = plan.controller_plan.stages[0]
+    assert stage.gang_size == nodes
+    assert stage.shards == ("gang",)
+    assert stage.checkpoint_mode.value == "resume"
+
+
+def test_mpi_rejects_ambiguous_shards_and_single_node():
+    candidate = json.loads(
+        (ROOT / "models/molecular-dynamics/gromacs/activation/mpi-workload-profile.json").read_text()
+    )["profile"]
+    for nodes, job_id in [(1, "gang"), (9, "gang"), (2, "replica-1")]:
+        body = request()
+        body["parameters"].update(schema=gromacs.MPI_PARAMETER_SCHEMA, nodes=nodes)
+        body["parameters"]["jobs"][0]["id"] = job_id
+        with pytest.raises(ValidationError):
+            gromacs_mpi.compile_run(candidate, body, operation_id=OP, input_artifacts=(source(),))
 
 
 @pytest.mark.asyncio

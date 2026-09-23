@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from fs2_gromacs import MODEL_ID, NVIDIA_IMAGE, PARAMETER_SCHEMA, RESULT_SCHEMA
+from fs2_gromacs import MODEL_ID, MPI_ENGINE, MPI_PARAMETER_SCHEMA, NVIDIA_IMAGE, PARAMETER_SCHEMA, RESULT_SCHEMA
 from fs2_gromacs.contracts import canonical, normalize
 from fs2_gromacs.files import digest_file, inventory, media_type
 
@@ -66,16 +66,23 @@ def compile_run(
     *,
     operation_id: str,
     input_artifacts: tuple[ScientificInputArtifact, ...] | None = None,
+    mpi: bool = False,
 ) -> AdapterExecutionPlan:
     request = parse_public_request(request_value, maximum_input_bytes=MAX_INPUT_BYTES)
-    value = normalize(request.parameters)
+    value = normalize(request.parameters, mpi=mpi)
+    model_id = "gromacs-mpi" if mpi else MODEL_ID
+    variant_id = "upstream-2026-2-mpi-v1" if mpi else VARIANT_ID
+    repository = "gromacs/gromacs" if mpi else SOURCE_REPOSITORY
+    source_revision = MPI_ENGINE.split("@")[1] if mpi else SOURCE_REVISION
+    collector_id = "gromacs-mpi-workflow-v1" if mpi else COLLECTOR_ID
     assert_profile_identity(
         profile,
-        model_id=MODEL_ID,
-        repository=SOURCE_REPOSITORY,
-        revision=SOURCE_REVISION,
-        parameter_schema=PARAMETER_SCHEMA,
+        model_id=model_id,
+        repository=repository,
+        revision=source_revision,
+        parameter_schema=MPI_PARAMETER_SCHEMA if mpi else PARAMETER_SCHEMA,
         request=request,
+        gpu_topology="multi-node" if mpi else "single-gpu",
     )
     entries = input_artifacts or ()
     if len(entries) != 1:
@@ -90,11 +97,11 @@ def compile_run(
         raise ScientificAdapterError("GROMACS bundle metadata differs from its typed input contract")
     invocations = []
     for job in value["jobs"]:
-        workspace = run_workspace(MODEL_ID, operation_id, job["id"])
+        workspace = run_workspace(model_id, operation_id, job["id"])
         command = (
             "python3",
             "-m",
-            "fs2_gromacs.worker",
+            "fs2_gromacs.mpi" if mpi else "fs2_gromacs.worker",
             "--request",
             f"{workspace}/.fs2/request.json",
             "--workspace",
@@ -117,8 +124,8 @@ def compile_run(
                 working_directory=workspace,
                 consumes=(INPUT_ID,),
                 produces=logical_stage_artifact(operation_id, "workflow", job["id"]),
-                collector_id=COLLECTOR_ID,
-                validator_id=VALIDATOR_ID,
+                collector_id=collector_id,
+                validator_id=collector_id,
                 max_output_artifacts=10000,
                 max_output_bytes=value["max_output_bytes"] + 16 * 1024**2,
                 materializations=(
@@ -130,21 +137,28 @@ def compile_run(
             )
         )
     return build_execution_plan(
-        model_id=MODEL_ID,
-        variant_id=VARIANT_ID,
-        source_revision=SOURCE_REVISION,
+        model_id=model_id,
+        variant_id=variant_id,
+        source_revision=source_revision,
         request=request,
         profile=profile,
-        expansions={"workflow": ScientificStageExpansion(shard_ids=tuple(job["id"] for job in value["jobs"]))},
+        expansions={
+            "workflow": ScientificStageExpansion(
+                shard_ids=tuple(job["id"] for job in value["jobs"]), gang_size=value["nodes"] if mpi else None
+            )
+        },
         invocations=tuple(invocations),
         required_model_artifacts=(),
     )
 
 
-def collect_companion_output(invocation: StageInvocation, workspace: Path) -> CollectedStageOutput:
+def collect_companion_output(
+    invocation: StageInvocation, workspace: Path, *, mpi: bool = False
+) -> CollectedStageOutput:
     from . import CollectedArtifactFile, CollectedStageOutput
 
-    if invocation.stage_id != "workflow" or invocation.collector_id != COLLECTOR_ID:
+    collector_id = "gromacs-mpi-workflow-v1" if mpi else COLLECTOR_ID
+    if invocation.stage_id != "workflow" or invocation.collector_id != collector_id:
         raise ScientificAdapterError("GROMACS collector received another stage contract")
     completion_marker(invocation, workspace, label="GROMACS workflow")
     result_path, raw = contained_stable_file(
@@ -153,10 +167,12 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
     _, request_raw = contained_stable_file(
         workspace, ".fs2/request.json", maximum_bytes=1024**2, label="GROMACS request"
     )
-    result, request = json.loads(raw), normalize(json.loads(request_raw))
+    result, request = json.loads(raw), normalize(json.loads(request_raw), mpi=mpi)
     operation = invocation.argv[invocation.argv.index("--operation-id") + 1]
     job = next(job for job in request["jobs"] if job["id"] == invocation.shard_id)
-    recipe = hashlib.sha256(canonical({"request": request, "job": job["id"], "image": NVIDIA_IMAGE})).hexdigest()
+    recipe = hashlib.sha256(
+        canonical({"request": request, "job": job["id"], "image": MPI_ENGINE if mpi else NVIDIA_IMAGE})
+    ).hexdigest()
     if (
         result.get("schema"),
         result.get("operation_id"),
@@ -184,7 +200,7 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path) -> Co
     return CollectedStageOutput(
         tuple(files),
         {
-            "validator_id": VALIDATOR_ID,
+            "validator_id": collector_id,
             "status": "passed",
             "command_count": len(result["commands"]),
             "completed_steps": result["completed_steps"],

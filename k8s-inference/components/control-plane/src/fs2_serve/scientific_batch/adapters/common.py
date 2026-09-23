@@ -359,6 +359,7 @@ def assert_profile_identity(
     revision: str,
     parameter_schema: str,
     request: PublicRunRequest,
+    gpu_topology: str = "single-gpu",
 ) -> None:
     if (
         profile.get("schema") != "fs2-serve.nebius.ai/scientific-workload-profile/v1"
@@ -408,7 +409,7 @@ def assert_profile_identity(
         ),
         label="catalog profile resources",
     )
-    if resources["gpu_count"] != 1 or resources["gpu_topology"] != "single-gpu":
+    if resources["gpu_count"] != 1 or resources["gpu_topology"] != gpu_topology:
         raise ScientificAdapterError("primary adapters require one GPU per GPU workload unit")
 
 

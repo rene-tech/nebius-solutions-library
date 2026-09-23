@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://fs2-serve.nebius.ai/schema/gromacs-workflow-request/v1",
+  "$id": "https://fs2-serve.nebius.ai/schema/gromacs-mpi-workflow-request/v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -9,13 +9,13 @@
   ],
   "properties": {
     "schema": {
-      "const": "fs2-serve.nebius.ai/gromacs-workflow-request/v1"
+      "const": "fs2-serve.nebius.ai/gromacs-mpi-workflow-request/v1"
     },
     "jobs": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 128,
-      "description": "Independent single-GPU jobs, e.g. replicas or lambda windows. Steps within each job run in order. Different jobs do not share mutable files.",
+      "maxItems": 1,
+      "description": "One distributed workflow with ID gang; every mdrun uses the complete admitted MPI gang. Preparation and analysis run once on rank zero.",
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -25,8 +25,7 @@
         ],
         "properties": {
           "id": {
-            "type": "string",
-            "pattern": "^[a-z][a-z0-9-]{0,47}$"
+            "const": "gang"
           },
           "steps": {
             "type": "array",
@@ -198,12 +197,6 @@
                   "maxLength": 512,
                   "description": "Optional native .cpt path relative to directory. Missing files are errors, never a silent fresh simulation."
                 },
-                "plumed_input": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 512,
-                  "description": "PLUMED input file relative to directory for an mdrun step. Uses the packaged kernel; GROMACS passes native checkpoint/restart events to PLUMED. Include all bias/restart files in the input bundle when continuing an external run."
-                },
                 "expected_outputs": {
                   "type": "array",
                   "maxItems": 256,
@@ -227,7 +220,7 @@
       "minimum": 1,
       "maximum": 8,
       "default": 8,
-      "description": "OpenMP threads per single thread-MPI rank, within the initial eight-vCPU execution shape."
+      "description": "OpenMP threads per MPI rank/node, within the eight-vCPU execution shape."
     },
     "checkpoint_minutes": {
       "type": "number",
@@ -269,9 +262,16 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 512,
-      "default": "runs/gromacs",
+      "default": "runs/gromacs-mpi",
       "description": "Customer-bucket prefix. The platform appends operation ID and replica ID, so independent runs cannot overwrite each other."
+    },
+    "nodes": {
+      "type": "integer",
+      "minimum": 2,
+      "maximum": 8,
+      "default": 2,
+      "description": "Gang-admitted nodes, one GPU and one MPI rank per node."
     }
   },
-  "description": "NVIDIA-optimized GROMACS native preparation, MD, minimization, analysis and free-energy tools. Supply one immutable gzip-tar input bundle containing all required topology/force-field includes, coordinates, MDP/TPR and optional checkpoints. Physics and trajectory cadence remain in the supplied protocol. Docking pose search and external extension builds are separate capabilities."
+  "description": "Distributed upstream GROMACS 2026.2 CUDA/Open MPI workflows. One GPU/rank per admitted node; preparation and analysis run on rank zero. Portable TCP baseline, not the NVIDIA NGC binary. PLUMED, CP2K, Torch NNPot and coupled replica exchange are not exposed by this execution shape."
 }

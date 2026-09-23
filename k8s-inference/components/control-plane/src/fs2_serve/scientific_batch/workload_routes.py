@@ -116,11 +116,10 @@ def scientific_workload_artifact_router(
     async def checkpoint_records(capability: ScientificWorkloadCapability) -> list[ArtifactRecord]:
         # Recovery never widens a worker to another customer's, operation's,
         # stage's, or replica's files. Unrelated Apps retain the old boundary.
-        if (capability.model_id, capability.collector_id, capability.stage_id) != (
-            "gromacs",
-            "gromacs-workflow-v1",
-            "workflow",
-        ):
+        if (capability.model_id, capability.collector_id, capability.stage_id) not in {
+            ("gromacs", "gromacs-workflow-v1", "workflow"),
+            ("gromacs-mpi", "gromacs-mpi-workflow-v1", "workflow"),
+        }:
             raise HTTPException(status_code=403, detail="this workload has no native checkpoint contract")
         records = await artifacts.list_artifacts(
             capability.operation_id, tenant_id=capability.tenant_id, stage_id=capability.stage_id

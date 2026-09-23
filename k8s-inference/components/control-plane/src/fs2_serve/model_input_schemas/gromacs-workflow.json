@@ -198,6 +198,12 @@
                   "maxLength": 512,
                   "description": "Optional native .cpt path relative to directory. Missing files are errors, never a silent fresh simulation."
                 },
+                "plumed_input": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "PLUMED input file relative to directory for an mdrun step. Uses the packaged kernel; GROMACS passes native checkpoint/restart events to PLUMED. Include all bias/restart files in the input bundle when continuing an external run."
+                },
                 "expected_outputs": {
                   "type": "array",
                   "maxItems": 256,

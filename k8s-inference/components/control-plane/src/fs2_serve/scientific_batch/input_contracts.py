@@ -43,7 +43,7 @@ def _entry(
 
 def public_input_contract(model_id: str) -> dict[str, Any] | None:
     """Return a fresh, caller-visible descriptor; never infer by model name."""
-    if model_id == gromacs.MODEL_ID:
+    if model_id in {gromacs.MODEL_ID, "gromacs-mpi"}:
         return gromacs.public_input_contract()
     if model_id == video_augmentation.MODEL_ID:
         return video_augmentation.public_input_contract()

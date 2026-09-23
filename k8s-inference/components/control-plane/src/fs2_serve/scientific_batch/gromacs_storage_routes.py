@@ -21,11 +21,10 @@ def gromacs_storage_router(
     @router.get("/storage")
     async def destination(authorization: Annotated[str | None, Header()] = None) -> JSONResponse:
         capability, _, _ = await authorize_workload_capability(authority, batches, authorization)
-        if (capability.model_id, capability.stage_id, capability.collector_id) != (
-            "gromacs",
-            "workflow",
-            "gromacs-workflow-v1",
-        ):
+        if (capability.model_id, capability.stage_id, capability.collector_id) not in {
+            ("gromacs", "workflow", "gromacs-workflow-v1"),
+            ("gromacs-mpi", "workflow", "gromacs-mpi-workflow-v1"),
+        }:
             raise HTTPException(403, "this workload has no customer checkpoint export")
         if storage is None:
             raise HTTPException(503, "customer storage is not configured")

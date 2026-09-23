@@ -1705,6 +1705,27 @@ class FileScientificManifestRenderer:
         if self.tools_image is None or self.internal_api_url is None or self.capability_authority is None:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")
         capability = self.capability_authority.issue(resource)
+        if resource.model_id == "gromacs-mpi":
+            if resource.kind is not WorkloadKind.JOB_SET or resource.gang_size is None:
+                raise ScientificExecutionMapError("GROMACS MPI requires its admitted JobSet gang")
+            # An independent secret derived from the existing attempt capability;
+            # the MPI process receives no reusable platform API credential.
+            seed = hashlib.sha256(b"fs2-mpi-ssh-v1\0" + capability.encode()).hexdigest()
+            env.extend(
+                [
+                    {"name": "FS2_MPI_SSH_SEED", "value": seed},
+                    {
+                        "name": "FS2_MPI_RANK",
+                        "valueFrom": {"fieldRef": {"fieldPath": "metadata.labels['jobset.sigs.k8s.io/job-index']"}},
+                    },
+                    {
+                        "name": "FS2_MPI_HOSTS",
+                        "value": ",".join(
+                            f"{resource.name}-gang-{index}-0.{resource.name}" for index in range(resource.gang_size)
+                        ),
+                    },
+                ]
+            )
         if (resource.model_id, invocation.stage_id, invocation.collector_id) in {
             ("cosmos3-lerobot-augmentation", "augment-dataset", "cosmos3-lerobot-v3-0-6-1"),
             ("physical-ai-video-augmentation", "augment-videos", "paidf-video-v1"),
@@ -1716,11 +1737,22 @@ class FileScientificManifestRenderer:
                 ]
             )
         if (resource.model_id, invocation.stage_id, invocation.collector_id) == (
-            "physical-ai-video-augmentation", "augment-videos", "paidf-video-v1"
+            "physical-ai-video-augmentation",
+            "augment-videos",
+            "paidf-video-v1",
         ):
-            env.append({"name": "PAIDF_PROVIDER_API_KEY", "valueFrom": {"secretKeyRef": {
-                "name": "fs2-video-augmentation-provider", "key": "api-key", "optional": False,
-            }}})
+            env.append(
+                {
+                    "name": "PAIDF_PROVIDER_API_KEY",
+                    "valueFrom": {
+                        "secretKeyRef": {
+                            "name": "fs2-video-augmentation-provider",
+                            "key": "api-key",
+                            "optional": False,
+                        }
+                    },
+                }
+            )
         workspace_mount = next(mount for mount in volume_mounts if mount["mountPath"] == "/mnt/fs2-scientific")
         companion_env = [
             {"name": "FS2_ATTEMPT_ID", "value": str(resource.attempt_id)},
@@ -2008,12 +2040,19 @@ class FileScientificManifestRenderer:
                 },
             }
         assert resource.gang_size is not None
+        if resource.model_id == "gromacs-mpi":
+            self._configure_mpi_pod(pod, resource)
         return {
             "apiVersion": "jobset.x-k8s.io/v1alpha2",
             "kind": "JobSet",
             "metadata": metadata,
             "spec": {
                 "failurePolicy": {"maxRestarts": 0},
+                **(
+                    {"network": {"enableDNSHostnames": True, "publishNotReadyAddresses": True}}
+                    if resource.model_id == "gromacs-mpi"
+                    else {}
+                ),
                 "replicatedJobs": [
                     {
                         "name": "gang",
@@ -2029,3 +2068,35 @@ class FileScientificManifestRenderer:
                 ],
             },
         }
+
+    @staticmethod
+    def _configure_mpi_pod(pod: dict[str, Any], resource: WorkloadResource) -> None:
+        """Configure one rank per node, with a single output/checkpoint owner."""
+        assert resource.invocation is not None
+        spec = pod["spec"]
+        spec.setdefault("affinity", {})["podAntiAffinity"] = {
+            "requiredDuringSchedulingIgnoredDuringExecution": [
+                {
+                    "labelSelector": {"matchLabels": {"jobset.sigs.k8s.io/jobset-name": resource.name}},
+                    "topologyKey": "kubernetes.io/hostname",
+                }
+            ],
+        }
+        collector = next(item for item in spec["containers"] if item["name"] == COLLECTOR_CONTAINER_NAME)
+        original = collector["command"]
+        collector["command"] = [
+            "python",
+            "-m",
+            "fs2_gromacs.mpi",
+            "--workspace",
+            resource.invocation.working_directory,
+            "--peer-collector",
+            "--collector-command",
+            *original,
+        ]
+        collector["env"].append(
+            {
+                "name": "FS2_MPI_RANK",
+                "valueFrom": {"fieldRef": {"fieldPath": "metadata.labels['jobset.sigs.k8s.io/job-index']"}},
+            }
+        )

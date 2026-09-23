@@ -48,7 +48,10 @@ class GromacsCustomerStorage:
         )
 
     def initialize(self) -> None:
-        request = normalize(json.loads((self.workspace / ".fs2/request.json").read_text()))
+        from fs2_gromacs import MPI_PARAMETER_SCHEMA
+
+        raw = json.loads((self.workspace / ".fs2/request.json").read_text())
+        request = normalize(raw, mpi=raw.get("schema") == MPI_PARAMETER_SCHEMA)
         self.enabled = request["output_destination"] == "customer-bucket"
         if not self.enabled:
             return

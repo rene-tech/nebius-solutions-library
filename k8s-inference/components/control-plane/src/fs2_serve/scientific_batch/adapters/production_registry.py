@@ -22,6 +22,7 @@ from . import (
     esmfold2,
     esmfold2_fast,
     gromacs,
+    gromacs_mpi,
     mosaic,
     openfold3,
     proteina_complexa,
@@ -54,16 +55,24 @@ def _primary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[st
     """
 
     return {
+        gromacs_mpi.MODEL_ID: (
+            _COMPILERS[gromacs_mpi.MODEL_ID],
+            gromacs_mpi.VARIANT_ID,
+            {gromacs_mpi.COLLECTOR_ID: gromacs_mpi.collect_companion_output},
+        ),
         gromacs.MODEL_ID: (
-            _COMPILERS[gromacs.MODEL_ID], gromacs.VARIANT_ID,
+            _COMPILERS[gromacs.MODEL_ID],
+            gromacs.VARIANT_ID,
             {gromacs.COLLECTOR_ID: gromacs.collect_companion_output},
         ),
         video_augmentation.MODEL_ID: (
-            _COMPILERS[video_augmentation.MODEL_ID], video_augmentation.VARIANT_ID,
+            _COMPILERS[video_augmentation.MODEL_ID],
+            video_augmentation.VARIANT_ID,
             {video_augmentation.COLLECTOR_ID: video_augmentation.collect_companion_output},
         ),
         cosmos_lerobot.MODEL_ID: (
-            _COMPILERS[cosmos_lerobot.MODEL_ID], cosmos_lerobot.VARIANT_ID,
+            _COMPILERS[cosmos_lerobot.MODEL_ID],
+            cosmos_lerobot.VARIANT_ID,
             {cosmos_lerobot.COLLECTOR_ID: cosmos_lerobot.collect_companion_output},
         ),
         proteina_complexa.MODEL_ID: (
