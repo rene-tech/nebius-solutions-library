@@ -1,0 +1,125 @@
+"""Stream-read every trajectory frame and report native scientific/performance gates."""
+
+import argparse
+import csv
+import json
+import math
+import re
+import statistics
+from pathlib import Path
+
+
+def trajectory(path, expected_atoms):
+    steps = []
+    with path.open() as handle:
+        while line := handle.readline():
+            if line.strip() != "ITEM: TIMESTEP":
+                raise ValueError(f"invalid trajectory frame header in {path.name}")
+            step = int(handle.readline())
+            if handle.readline().strip() != "ITEM: NUMBER OF ATOMS":
+                raise ValueError("missing atom count")
+            count = int(handle.readline())
+            if count != expected_atoms:
+                raise ValueError(f"atom count changed: {count} != {expected_atoms}")
+            if not handle.readline().startswith("ITEM: BOX BOUNDS"):
+                raise ValueError("missing box")
+            for _ in range(3):
+                bounds = [float(x) for x in handle.readline().split()]
+                if len(bounds) < 2 or not all(math.isfinite(x) for x in bounds) or bounds[1] <= bounds[0]:
+                    raise ValueError("invalid box bounds")
+            columns = handle.readline().strip().split()[2:]
+            if columns != ["id", "type", "x", "y", "z", "vx", "vy", "vz"]:
+                raise ValueError("unexpected native dump columns")
+            for identifier in range(1, count + 1):
+                row = handle.readline().split()
+                if len(row) != len(columns) or int(row[0]) != identifier or not all(math.isfinite(float(x)) for x in row):
+                    raise ValueError("incomplete, unsorted or nonfinite native atom record")
+            if steps and step <= steps[-1]:
+                raise ValueError("native trajectory timesteps fail to advance")
+            steps.append(step)
+    if not steps:
+        raise ValueError("trajectory has no frames")
+    return {"name": path.name, "frames": len(steps), "first_step": steps[0], "last_step": steps[-1]}
+
+
+def validate(root):
+    data = root / "data"
+    result = json.loads((root / "result.json").read_text())
+    protocol = json.loads((data / "protocol.json").read_text())
+    if result["status"] != "succeeded" or result["completed_steps"] != ["prepare", "production", "analyze"]:
+        raise ValueError("native workflow did not complete all requested stages")
+    atoms = protocol["expected_atoms"]
+    final = [float(x) for x in (data / "final-thermo.txt").read_text().split()]
+    if len(final) != 8 or not all(math.isfinite(x) for x in final):
+        raise ValueError("final thermodynamics are absent or nonfinite")
+    if int(final[0]) != protocol["target_step"] or int(final[1]) != atoms or final[2] <= 0 or final[-1] <= 0:
+        raise ValueError("final step, atom count, temperature or volume invalid")
+    trajectories = [trajectory(p, atoms) for p in sorted(data.glob("trajectory.*.lammpstrj"), key=lambda p: int(p.name.split(".")[1]))]
+    trajectory(data / "final.lammpstrj", atoms)
+    for prior, current in zip(trajectories, trajectories[1:]):
+        if current["first_step"] < prior["last_step"]:
+            raise ValueError("trajectory parts overlap out of order")
+    if not trajectories or protocol["target_step"] - trajectories[-1]["last_step"] >= protocol["trajectory_every_steps"]:
+        raise ValueError("final trajectory coverage is incomplete")
+    loops, thermodynamics, warnings = [], [], []
+    for log in sorted(data.glob("fs2-production-segment-*.log")):
+        collecting = False
+        for line in log.read_text().splitlines():
+            if match := re.search(r"Loop time of ([0-9.eE+-]+) on (\d+) procs for (\d+) steps with (\d+) atoms", line):
+                loops.append({"seconds": float(match[1]), "ranks": int(match[2]), "steps": int(match[3]), "atoms": int(match[4])})
+            if line.strip().startswith("Step") and "TotEng" in line:
+                collecting = True
+                continue
+            if "WARNING:" in line:
+                warnings.append(line.strip())
+            values = line.split()
+            if collecting and len(values) == 8:
+                try:
+                    numbers = [float(x) for x in values]
+                except ValueError:
+                    continue
+                if not all(math.isfinite(x) for x in numbers):
+                    raise ValueError("nonfinite thermodynamic sample")
+                thermodynamics.append(numbers)
+    total_steps = sum(x["steps"] for x in loops)
+    if total_steps != protocol["production_steps"] or any(x["atoms"] != atoms for x in loops):
+        raise ValueError("native loop summaries disagree with requested production length")
+    simulation_seconds = sum(x["seconds"] for x in loops)
+    steps_per_second = total_steps / simulation_seconds
+    energies = [row[5] for row in thermodynamics]
+    temperatures = [row[2] for row in thermodynamics]
+    if not energies:
+        raise ValueError("no readable native production thermodynamics")
+    relative_energy_span = (max(energies) - min(energies)) / max(abs(energies[0]), 1e-12)
+    finite_ensemble_gate = protocol["ensemble"] != "NVE" or relative_energy_span <= 0.02
+    # A 2% energy-span gate catches gross integration defects; it is not a
+    # material-specific accuracy criterion or a thermodynamic convergence claim.
+    gpu = []
+    with (root / "gpu.csv").open() as handle:
+        for row in csv.reader(handle):
+            if len(row) == 7:
+                try:
+                    gpu.append([float(x.strip()) for x in row[2:]])
+                except ValueError:
+                    pass
+    time_scale = {"real": 1e-6, "metal": 1e-3, "lj": None}[protocol["units"]]
+    return {"fixture": protocol["fixture"], "status": "passed" if finite_ensemble_gate else "failed-energy-drift", "scientific_convergence_claimed": False, "atoms": atoms, "production_steps": total_steps, "units": protocol["units"], "timestep": protocol["timestep"], "ensemble": protocol["ensemble"], "native_loop_seconds": simulation_seconds, "atom_timesteps_per_second": atoms * steps_per_second, "ns_per_day": None if time_scale is None else steps_per_second * protocol["timestep"] * time_scale * 86400, "reduced_time_per_day": steps_per_second * protocol["timestep"] * 86400 if time_scale is None else None, "temperature_min": min(temperatures), "temperature_max": max(temperatures), "relative_total_energy_span": relative_energy_span, "energy_span_gate": 0.02 if protocol["ensemble"] == "NVE" else None, "trajectories": trajectories, "trajectory_frames": sum(t["frames"] for t in trajectories), "native_segments": len(loops), "native_loops": loops, "gpu_samples": len(gpu), "gpu_utilization_mean_percent": statistics.mean(x[0] for x in gpu) if gpu else None, "gpu_memory_peak_mib": max(x[2] for x in gpu) if gpu else None, "gpu_power_mean_watts": statistics.mean(x[3] for x in gpu) if gpu else None, "warnings": sorted(set(warnings)), "final_thermodynamics": final}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("workspace", type=Path)
+    parser.add_argument("--output", type=Path)
+    args = parser.parse_args()
+    try:
+        receipt = validate(args.workspace)
+    except Exception as exc:
+        receipt = {"status": "failed", "error": str(exc)}
+    if args.output:
+        args.output.write_text(json.dumps(receipt, indent=2) + "\n")
+    print(json.dumps(receipt))
+    raise SystemExit(0 if receipt["status"] == "passed" else 1)
+
+
+if __name__ == "__main__":
+    main()
