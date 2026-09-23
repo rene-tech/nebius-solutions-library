@@ -98,8 +98,9 @@ def production_timing(commands):
 def radius_metadynamics(data):
     """Validate this fixture's explicit hill list survives a native restart.
 
-    This parser qualifies only the supplied ungridded radius-metadynamics case,
-    not arbitrary Colvars algorithms or free-energy convergence.
+    This parser qualifies only the supplied explicit-hill radius-metadynamics
+    fixtures (ungridded or grid + keepHills), not arbitrary Colvars algorithms
+    or free-energy convergence.
     """
     states = sorted(path for path in data.rglob("production.part*.colvars.state")
                     if re.fullmatch(r"production\.part\d{6}\.colvars\.state", path.name))

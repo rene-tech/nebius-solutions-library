@@ -139,6 +139,25 @@ averaged 18.5–18.7% at approximately 168 W, consistent with the much greater
 CPU-side work of offload mode at the selected four-thread shape. This is a
 measured shape-specific comparison, not an architectural peak-throughput claim.
 
+The first final-image STMV NVE repetition also passed: 1,066,628 atoms, 100 ps
+production in two continued segments, five finite DCD frames, 71,000-step final
+checkpoint and maximum relative total-energy deviation 0.0090%. Native timing
+was 31.38 ns/day; including production process startup/shutdown gives 29.14
+ns/day, while the 524.24 s full local workflow gives 16.48 ns/day of production.
+Its 83-file/1,333,635,918-byte inventory independently matched the request,
+result hashes and every recorded file hash. The other STMV repetitions are
+still running; this is not yet a completed repeated cohort.
+
+The released GROMACS L40S node was reused with explicit parent authorization
+after a fresh zero-GPU-allocation check. The additional bounded worker is
+`fs2-namd-r20260923-l40s-worker`, UID `def31fbe-1477-4da6-8905-a852837a9e3e`, on
+`computeinstance-e00krzha55t0sg3t56`, pool `l40s-1x`. GPU is NVIDIA L40S,
+driver 580.173.02; exact r4 image and immutable H100 fixtures are unchanged.
+This first Pod started 10 s after creation; Kubernetes reported 9.156 s image
+pull for 586,744,068 image bytes. Existing-node base-layer cache status is not
+known, so this is not called an uncached-node cold start. Native L40S controls
+are running and no L40S scientific pass is claimed yet.
+
 ## Remaining boundaries
 
 The initial ordinary hosted three-job NVE request failed before NAMD started:
