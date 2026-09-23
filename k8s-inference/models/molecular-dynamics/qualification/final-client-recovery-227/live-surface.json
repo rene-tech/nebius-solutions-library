@@ -1,0 +1,363 @@
+{
+  "schema": "fs2-serve.nebius.ai/read-only-live-release-observation/v1",
+  "during_recovery": {
+    "recorded_at": "2026-09-23T19:33:24.111538+00:00",
+    "context": "fs2-remediation-sandbox2",
+    "namespace": "fs2-system",
+    "collection": "read-only kubectl GET and helm status; selected non-secret fields only",
+    "deployments": [
+      {
+        "name": "fs2-serve-control-plane",
+        "generation": 337,
+        "observed_generation": 337,
+        "replicas": 3,
+        "ready_replicas": 3,
+        "updated_replicas": 3,
+        "available_replicas": 3,
+        "containers": [
+          {
+            "name": "control-plane",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "resources": {
+              "limits": {
+                "cpu": "2",
+                "memory": "2Gi"
+              },
+              "requests": {
+                "cpu": "250m",
+                "memory": "512Mi"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller",
+        "generation": 188,
+        "observed_generation": 188,
+        "replicas": 2,
+        "ready_replicas": 2,
+        "updated_replicas": 2,
+        "available_replicas": 2,
+        "containers": [
+          {
+            "name": "model-controller",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "resources": {
+              "limits": {
+                "cpu": "500m",
+                "memory": "512Mi"
+              },
+              "requests": {
+                "cpu": "50m",
+                "memory": "128Mi"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console",
+        "generation": 38,
+        "observed_generation": 38,
+        "replicas": 2,
+        "ready_replicas": 2,
+        "updated_replicas": 2,
+        "available_replicas": 2,
+        "containers": [
+          {
+            "name": "admin-console",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4",
+            "resources": {
+              "limits": {
+                "cpu": "250m",
+                "memory": "128Mi"
+              },
+              "requests": {
+                "cpu": "25m",
+                "memory": "32Mi"
+              }
+            }
+          }
+        ]
+      }
+    ],
+    "pods": [
+      {
+        "name": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "requested_containers": [
+          {
+            "name": "control-plane",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c"
+          }
+        ],
+        "containers": [
+          {
+            "name": "control-plane",
+            "image": "sha256:90dc3e1585968cce8fed2beea93d79643a4bfcdc7f6ae827a26c30d5ce581f58",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "requested_containers": [
+          {
+            "name": "control-plane",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c"
+          }
+        ],
+        "containers": [
+          {
+            "name": "control-plane",
+            "image": "sha256:90dc3e1585968cce8fed2beea93d79643a4bfcdc7f6ae827a26c30d5ce581f58",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "requested_containers": [
+          {
+            "name": "control-plane",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c"
+          }
+        ],
+        "containers": [
+          {
+            "name": "control-plane",
+            "image": "sha256:90dc3e1585968cce8fed2beea93d79643a4bfcdc7f6ae827a26c30d5ce581f58",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console-7f6ddc445d-9nz8s",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "requested_containers": [
+          {
+            "name": "admin-console",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4"
+          }
+        ],
+        "containers": [
+          {
+            "name": "admin-console",
+            "image": "sha256:31054a35e2160ae8eefff6974dedd2ca888d8e76207dda599c3e1a6af5206bcf",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console-7f6ddc445d-jnb8b",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "requested_containers": [
+          {
+            "name": "admin-console",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4"
+          }
+        ],
+        "containers": [
+          {
+            "name": "admin-console",
+            "image": "sha256:31054a35e2160ae8eefff6974dedd2ca888d8e76207dda599c3e1a6af5206bcf",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller-74ddf56988-mwcwq",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "requested_containers": [
+          {
+            "name": "model-controller",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c"
+          }
+        ],
+        "containers": [
+          {
+            "name": "model-controller",
+            "image": "sha256:90dc3e1585968cce8fed2beea93d79643a4bfcdc7f6ae827a26c30d5ce581f58",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller-74ddf56988-ngpkl",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "requested_containers": [
+          {
+            "name": "model-controller",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c"
+          }
+        ],
+        "containers": [
+          {
+            "name": "model-controller",
+            "image": "sha256:90dc3e1585968cce8fed2beea93d79643a4bfcdc7f6ae827a26c30d5ce581f58",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      }
+    ],
+    "helm": {
+      "name": "fs2-serve-control-plane",
+      "namespace": "fs2-system",
+      "version": 227,
+      "status": "deployed",
+      "last_deployed": "2026-09-23T19:20:38.651505505Z"
+    },
+    "pods_recorded_at": "2026-09-23T19:35:28.050554+00:00"
+  },
+  "after_recovery": {
+    "recorded_at": "2026-09-23T19:37:23.340109+00:00",
+    "collection": "read-only post-recovery kubectl GET; selected non-secret fields",
+    "deployments": [
+      {
+        "name": "fs2-serve-control-plane",
+        "generation": 337,
+        "replicas": 3,
+        "ready_replicas": 3,
+        "images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c"
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console",
+        "generation": 38,
+        "replicas": 2,
+        "ready_replicas": 2,
+        "images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4"
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller",
+        "generation": 188,
+        "replicas": 2,
+        "ready_replicas": 2,
+        "images": [
+          "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c"
+        ]
+      }
+    ],
+    "pods": [
+      {
+        "name": "fs2-serve-control-plane-7cbd9f4f49-7pn7r",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "containers": [
+          {
+            "name": "control-plane",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-7cbd9f4f49-hgksh",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "containers": [
+          {
+            "name": "control-plane",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-7cbd9f4f49-jhr7n",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "containers": [
+          {
+            "name": "control-plane",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console-7f6ddc445d-9nz8s",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "containers": [
+          {
+            "name": "admin-console",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console-7f6ddc445d-jnb8b",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "containers": [
+          {
+            "name": "admin-console",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller-74ddf56988-mwcwq",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "containers": [
+          {
+            "name": "model-controller",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller-74ddf56988-ngpkl",
+        "phase": "Running",
+        "deletion_timestamp": null,
+        "containers": [
+          {
+            "name": "model-controller",
+            "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+            "ready": true,
+            "restart_count": 0
+          }
+        ]
+      }
+    ]
+  },
+  "scope": "Selected non-secret deployment, Pod runtime image and Helm status fields. No resources were changed; no individual HTTP request-to-Pod routing trace is claimed."
+}

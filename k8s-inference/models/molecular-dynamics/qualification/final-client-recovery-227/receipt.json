@@ -1,0 +1,572 @@
+{
+  "schema": "fs2-serve.nebius.ai/exact-image-completed-result-recovery-qualification/v1",
+  "status": "passed",
+  "recorded_at": "2026-09-23T19:37:23.340109+00:00",
+  "customer_ready": false,
+  "scope": "Fresh owner-scoped artifact recovery for two already completed canonical simulations in each of GROMACS, NAMD, AMBER and LAMMPS. The simulations ran under Helm 226; this qualification reads their retained results through the final client against Helm 227. No new MD simulation, admission, upload, cancellation, browser acceptance or whole-platform readiness claim.",
+  "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+  "client_source": "88109af67d11726d1e07e14c5d0ff4e83a4837e0",
+  "backend_release": {
+    "helm_release": "fs2-serve-control-plane",
+    "namespace": "fs2-system",
+    "revision": 227,
+    "status": "deployed",
+    "last_deployed": "2026-09-23T19:20:38.651505505Z",
+    "source_commit": "a36ff62d2ee619e88ecf841944fdedda3fd08394",
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e9cd77c",
+    "platform_manifest_sha256": "be3d91cdc988893308090b58c62b92c668dcb0ebcd242188990374c93e50bfa3",
+    "provenance_scope": "Rollout owner supplied source commit, platform manifest identity and readiness by 19:24 UTC. Independent read-only live observation confirmed Helm 227, requested/runtime image identities and ready replicas during and after this readback campaign. All eight readbacks began after 19:25 UTC. No per-request routing capture is claimed.",
+    "admin_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4",
+    "admin_source_commit": "85abb29f5b1868e8b6b5b1f067b32ec27835729e",
+    "api_limit": {
+      "cpu": "2",
+      "memory": "2Gi"
+    },
+    "observed_ready_replicas": {
+      "api": 3,
+      "model_controller": 2,
+      "admin": 2
+    },
+    "observed_pod_restarts": 0
+  },
+  "live_surface_evidence": {
+    "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/final-client-recovery-227/live-surface.json",
+    "sha256": "bf2343fb7f0be6cffc14067f894003a394317626af4ec347b6ce1a77d5050d64",
+    "size_bytes": 13834
+  },
+  "helper_source_commit": "510d142a507524275f0eb7bd3c8de3559694e099",
+  "helper_evidence": {
+    "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/recover_image_customer_results.py",
+    "sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+    "size_bytes": 8345
+  },
+  "rollout_render_evidence": {
+    "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/activation-07-artifact-stream/rendered.yaml",
+    "sha256": "ff5f6477e22734df9c0fe0cede4fe884745d877c093ea25e07ec5c4378aaaa98",
+    "size_bytes": 235938
+  },
+  "original_scientific_receipts": {
+    "amber": {
+      "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/hosted-two-cohort-226/amber.json",
+      "sha256": "b4e6e1cade1db1ad23cdd18a9162b6dd54d45a84be3a102d5442a1264e2a748a",
+      "size_bytes": 15562
+    },
+    "namd": {
+      "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/hosted-two-cohort-226/namd.json",
+      "sha256": "8953d95afaef111e164ef55e53aabf08e1a2dc8e8b01df2f9c175f2ca74600a1",
+      "size_bytes": 16185
+    },
+    "gromacs": {
+      "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/hosted-two-cohort-226/gromacs.json",
+      "sha256": "1c00501fbf05a8dbe5989bddacda5daf247fc1c322987d6237f05e67eb5d838b",
+      "size_bytes": 32079
+    },
+    "lammps_primary": {
+      "path": "/home/tux/fs2-alanine-lammps-20260923/hosted-primary-validation-02.json",
+      "sha256": "2ec4224a549ea288fccf95c8ea45aa70434f3f809cfe0adaba853b4a7145d56d",
+      "size_bytes": 14100
+    },
+    "lammps_repeat": {
+      "path": "/home/tux/fs2-alanine-lammps-20260923/hosted-repeat-validation-01.json",
+      "sha256": "9e708227971d593d376e0d8b330cb07a32c6ad54769ede2b8f641c1a41e86123",
+      "size_bytes": 14097
+    }
+  },
+  "verified_artifacts_total": 424,
+  "verified_artifact_bytes_total": 2749521423,
+  "manifests_total": 8,
+  "fresh_content_downloads_including_manifests_total": 432,
+  "transport_attempts_including_manifests_total": 432,
+  "network_get_claim": "432 artifact-content GETs are supported by fresh empty output directories, verified-copy receipts with one transfer attempt each, and direct inspection of the digest-pinned client's _download_once GET path. MCP status/result calls are read-only RPCs; their number is not inferred. No packet capture is claimed.",
+  "artifact_retry_scope": "All artifact downloads succeeded on their first transfer attempt. This successful readback campaign does not itself exercise transient transport-error handling.",
+  "ownership": "Every operation used its original ordinary owner key and endpoint. The helper checks the original receipt's owner fingerprint before starting Docker or creating an output directory. GROMACS uses its separate original key. Key values and caller fingerprints are not published.",
+  "source_audit": {
+    "installed_client_source_sha256": {
+      "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+      "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+    },
+    "recovery_entrypoint": "invoke-scientific-batch.py main lines 835-845 selects only --recover-operation-id and --output",
+    "recovery_function": "recover_completed lines 635-659 calls observe_operation with recovery=True; no reserve/upload/admit/cancel/infer",
+    "download_function": "_download_once lines 519-561 streams GET /v1/artifacts/<artifact_id>/content, checks declared size/SHA256 and publishes a verified copy"
+  },
+  "fresh_output_directories": true,
+  "original_manifest_byte_identity_all": true,
+  "independent_report_rehash_all": true,
+  "simulations_submitted": 0,
+  "upload_or_cancel_calls": 0,
+  "gpus_requested": 0,
+  "credentials_published": false,
+  "tests": [
+    {
+      "status": "passed",
+      "model_id": "amber",
+      "operation_id": "80fb3f64-d199-4884-b8ec-d503d38c69d7",
+      "verified_artifacts": 39,
+      "verified_artifact_bytes": 193941984,
+      "fresh_content_downloads_including_manifest": 40,
+      "transport_attempts_including_manifest": 40,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "e7615d2de7fa8f5845ffeef678f903460108290179c51e7f2da23de4ac3ed14d",
+      "recovery_receipt_sha256": "d2ae7d3ea0bcb9e51f76085ffb03d079bad787d4694a32cd5425f1df06abe671",
+      "original_receipt_sha256": "0e57f22c085bb5128776f1520ea2569830ce6e843fdd557fc45eb3caeb2f6404",
+      "original_operation_completed_at": "2026-09-23T17:58:18.914361Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T19:31:47.431655+00:00",
+      "finished_at": "2026-09-23T19:32:11.005598+00:00",
+      "readback_elapsed_seconds": 23.57388062402606,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-01",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-01.client.log",
+      "case": "amber-01",
+      "original_receipt_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-amber-dynamics-02",
+      "independent_report_rehash": "passed",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-01.summary.json",
+        "sha256": "40c7e9e704e61894e1bc90a24674e6985382b686b13dcdb086864c6422a752bf",
+        "size_bytes": 1842
+      },
+      "private_log_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-01.client.log",
+        "sha256": "f6fad880abeecb68cf51c7dcb384687b308ac8eb74e71393b05a30209ee24ead",
+        "size_bytes": 14706
+      },
+      "recovery_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-01/recovery-receipt.json",
+        "sha256": "d2ae7d3ea0bcb9e51f76085ffb03d079bad787d4694a32cd5425f1df06abe671",
+        "size_bytes": 17898
+      },
+      "output_manifest_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-01/output-manifest.json",
+        "sha256": "e7615d2de7fa8f5845ffeef678f903460108290179c51e7f2da23de4ac3ed14d",
+        "size_bytes": 10899
+      },
+      "original_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-amber-dynamics-02/receipt.json",
+        "sha256": "0e57f22c085bb5128776f1520ea2569830ce6e843fdd557fc45eb3caeb2f6404",
+        "size_bytes": 18961
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "amber",
+      "operation_id": "b6ad10b6-8c2e-4002-8b1d-76201ad25715",
+      "verified_artifacts": 39,
+      "verified_artifact_bytes": 193941978,
+      "fresh_content_downloads_including_manifest": 40,
+      "transport_attempts_including_manifest": 40,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "8c6d3b1b77ae6ae0105edd5252f312df9437751de2053b31f28242029e1b3115",
+      "recovery_receipt_sha256": "d2ee9ee8f5215575a3a7f570a95f18cd3dcf084f0efb61cb9aa4448d8db1052b",
+      "original_receipt_sha256": "e9f77a856bd72d5d1e180d2f5a045ab42f59d38bd8c566be53dda3b1f45ffc3d",
+      "original_operation_completed_at": "2026-09-23T18:14:50.005939Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T19:32:22.219967+00:00",
+      "finished_at": "2026-09-23T19:32:43.331568+00:00",
+      "readback_elapsed_seconds": 21.11154317855835,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-02",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-02.client.log",
+      "case": "amber-02",
+      "original_receipt_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-amber-dynamics-03",
+      "independent_report_rehash": "passed",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-02.summary.json",
+        "sha256": "c641180e8be1b47a53d118102dfe3e6dc7d1916c6d1df398b10cd46dde0a046d",
+        "size_bytes": 1842
+      },
+      "private_log_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-02.client.log",
+        "sha256": "e0ba8cad9ca4ef3461233dd174f496682191e1535a66ee215128043eae252b59",
+        "size_bytes": 14706
+      },
+      "recovery_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-02/recovery-receipt.json",
+        "sha256": "d2ee9ee8f5215575a3a7f570a95f18cd3dcf084f0efb61cb9aa4448d8db1052b",
+        "size_bytes": 17898
+      },
+      "output_manifest_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-amber-02/output-manifest.json",
+        "sha256": "8c6d3b1b77ae6ae0105edd5252f312df9437751de2053b31f28242029e1b3115",
+        "size_bytes": 10899
+      },
+      "original_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-amber-dynamics-03/receipt.json",
+        "sha256": "e9f77a856bd72d5d1e180d2f5a045ab42f59d38bd8c566be53dda3b1f45ffc3d",
+        "size_bytes": 18961
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "namd",
+      "operation_id": "b38ab578-138f-4e5d-b708-18e33fa95bf5",
+      "verified_artifacts": 77,
+      "verified_artifact_bytes": 108019984,
+      "fresh_content_downloads_including_manifest": 78,
+      "transport_attempts_including_manifest": 78,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "a2a2d4f3210393d6004c3f0ad8454486f2bbd75b6de034f5917e4f1ad7ad0c06",
+      "recovery_receipt_sha256": "d50dcea7ec6c0e3156ab8da0ba95c6578924eef0b786dd447e58fd03693f2d1b",
+      "original_receipt_sha256": "49028e7bf4b3cedf18216b6160afdaf2d4d8c2771a113c5aca3b98f3e704ffb1",
+      "original_operation_completed_at": "2026-09-23T18:21:39.671903Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T19:32:36.629475+00:00",
+      "finished_at": "2026-09-23T19:33:00.444261+00:00",
+      "readback_elapsed_seconds": 23.814737195149064,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-01",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-01.client.log",
+      "case": "namd-01",
+      "original_receipt_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-namd-pme64-dynamics-01",
+      "independent_report_rehash": "passed",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-01.summary.json",
+        "sha256": "cf7aec6b07f7c6c868d084e5516f461a5d642ea1f3ad8314796b0b90a848c770",
+        "size_bytes": 1840
+      },
+      "private_log_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-01.client.log",
+        "sha256": "3d95910cae4304a9be4554c9eb6415d58adaead60f787ee86bf89b60d513fa73",
+        "size_bytes": 28814
+      },
+      "recovery_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-01/recovery-receipt.json",
+        "sha256": "d50dcea7ec6c0e3156ab8da0ba95c6578924eef0b786dd447e58fd03693f2d1b",
+        "size_bytes": 34666
+      },
+      "output_manifest_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-01/output-manifest.json",
+        "sha256": "a2a2d4f3210393d6004c3f0ad8454486f2bbd75b6de034f5917e4f1ad7ad0c06",
+        "size_bytes": 21303
+      },
+      "original_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-namd-pme64-dynamics-01/receipt.json",
+        "sha256": "49028e7bf4b3cedf18216b6160afdaf2d4d8c2771a113c5aca3b98f3e704ffb1",
+        "size_bytes": 36750
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "namd",
+      "operation_id": "5d3ae566-0a2a-4a4d-9917-acea617d4d30",
+      "verified_artifacts": 77,
+      "verified_artifact_bytes": 108021706,
+      "fresh_content_downloads_including_manifest": 78,
+      "transport_attempts_including_manifest": 78,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "b2e2f1f7318722bf4d406b8e67567cc04fbc64e6c839375ffb84abb9e52b0322",
+      "recovery_receipt_sha256": "1d8c42c8601e520e3dec1a8f3dbff7d3b84a9ac2593e7406efd57a5f8b5b9eed",
+      "original_receipt_sha256": "a96ee23a96bd1344c2087802590236b568ee0da0a90f2a44287f7d501354494e",
+      "original_operation_completed_at": "2026-09-23T18:28:06.813069Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T19:33:22.921709+00:00",
+      "finished_at": "2026-09-23T19:33:47.585438+00:00",
+      "readback_elapsed_seconds": 24.663680255413055,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-02",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-02.client.log",
+      "case": "namd-02",
+      "original_receipt_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-namd-pme64-dynamics-02",
+      "independent_report_rehash": "passed",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-02.summary.json",
+        "sha256": "d2723ad6438e75a449b76bedf9317388846818fddc9bfe83c9beb0b764bf7279",
+        "size_bytes": 1840
+      },
+      "private_log_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-02.client.log",
+        "sha256": "7f6190bfdab05ef29451e9ef3738a1190e7dd729d73c543c105603cdb55d511c",
+        "size_bytes": 28814
+      },
+      "recovery_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-02/recovery-receipt.json",
+        "sha256": "1d8c42c8601e520e3dec1a8f3dbff7d3b84a9ac2593e7406efd57a5f8b5b9eed",
+        "size_bytes": 34666
+      },
+      "output_manifest_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-namd-02/output-manifest.json",
+        "sha256": "b2e2f1f7318722bf4d406b8e67567cc04fbc64e6c839375ffb84abb9e52b0322",
+        "size_bytes": 21303
+      },
+      "original_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-namd-pme64-dynamics-02/receipt.json",
+        "sha256": "a96ee23a96bd1344c2087802590236b568ee0da0a90f2a44287f7d501354494e",
+        "size_bytes": 36750
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "gromacs",
+      "operation_id": "f94586c6-b137-4542-87c7-a2e9dd96f5b0",
+      "verified_artifacts": 56,
+      "verified_artifact_bytes": 119373544,
+      "fresh_content_downloads_including_manifest": 57,
+      "transport_attempts_including_manifest": 57,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "8766d0c2cd17f22e8e2b6eec9428022fcc6435c9d9762f88c47d7f548a5c7c7b",
+      "recovery_receipt_sha256": "9f6ea4e766026766cc59a02d68f2d86a5ef2dac29cc3e2746699f5b236e0667b",
+      "original_receipt_sha256": "db4f62267350192be964ac4c8b62e149de069730d729c6e728c8a83e9e6b211b",
+      "original_operation_completed_at": "2026-09-23T18:49:40.109403Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T19:35:23.761409+00:00",
+      "finished_at": "2026-09-23T19:35:44.922025+00:00",
+      "readback_elapsed_seconds": 21.160566806793213,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-01",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-01.client.log",
+      "case": "gromacs-01",
+      "original_receipt_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-06",
+      "independent_report_rehash": "passed",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-01.summary.json",
+        "sha256": "65ccbd7d88b27f142bae951d9c3f5a0af80cd9a1d1dc4535c0043e95f41eb0ce",
+        "size_bytes": 1849
+      },
+      "private_log_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-01.client.log",
+        "sha256": "eb6d27526edbc44cbb3cd77b1ade50f15b073b6f0428fd2935b83ae996089be8",
+        "size_bytes": 21178
+      },
+      "recovery_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-01/recovery-receipt.json",
+        "sha256": "9f6ea4e766026766cc59a02d68f2d86a5ef2dac29cc3e2746699f5b236e0667b",
+        "size_bytes": 25560
+      },
+      "output_manifest_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-01/output-manifest.json",
+        "sha256": "8766d0c2cd17f22e8e2b6eec9428022fcc6435c9d9762f88c47d7f548a5c7c7b",
+        "size_bytes": 15716
+      },
+      "original_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-06/receipt.json",
+        "sha256": "db4f62267350192be964ac4c8b62e149de069730d729c6e728c8a83e9e6b211b",
+        "size_bytes": 27390
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "gromacs",
+      "operation_id": "ad0a2dac-25b0-459a-8dff-dcfc94a888d6",
+      "verified_artifacts": 56,
+      "verified_artifact_bytes": 119416416,
+      "fresh_content_downloads_including_manifest": 57,
+      "transport_attempts_including_manifest": 57,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "d5f88e81bad47eda0182248ca89da8aef6ac1d4705454e88ff0261c82936da58",
+      "recovery_receipt_sha256": "baf93134051336694d4c245b3362f5f7cb55e07f8b42ea5ff4fea50f7fdb564e",
+      "original_receipt_sha256": "e0e8bdda02b90c30da15b011901c714625ca6a685bd5ec001ba323d0773c7f5b",
+      "original_operation_completed_at": "2026-09-23T18:49:41.111168Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T19:35:25.401867+00:00",
+      "finished_at": "2026-09-23T19:35:50.470678+00:00",
+      "readback_elapsed_seconds": 25.06876408867538,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-02",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-02.client.log",
+      "case": "gromacs-02",
+      "original_receipt_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-07",
+      "independent_report_rehash": "passed",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-02.summary.json",
+        "sha256": "bd3bbc62202a87c2c1df36d6809573c031ca8e039395b6f0164226ca8a6025da",
+        "size_bytes": 1848
+      },
+      "private_log_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-02.client.log",
+        "sha256": "553555a905cd0c1cad85eb2d3fe8afdf2d6a72253f2227231ce523223771c4fb",
+        "size_bytes": 21178
+      },
+      "recovery_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-02/recovery-receipt.json",
+        "sha256": "baf93134051336694d4c245b3362f5f7cb55e07f8b42ea5ff4fea50f7fdb564e",
+        "size_bytes": 25560
+      },
+      "output_manifest_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-gromacs-02/output-manifest.json",
+        "sha256": "d5f88e81bad47eda0182248ca89da8aef6ac1d4705454e88ff0261c82936da58",
+        "size_bytes": 15716
+      },
+      "original_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-gromacs-dynamics-07/receipt.json",
+        "sha256": "e0e8bdda02b90c30da15b011901c714625ca6a685bd5ec001ba323d0773c7f5b",
+        "size_bytes": 27390
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "lammps",
+      "operation_id": "46ea947b-fecc-4036-9c87-42df6886f1a6",
+      "verified_artifacts": 40,
+      "verified_artifact_bytes": 953405753,
+      "fresh_content_downloads_including_manifest": 41,
+      "transport_attempts_including_manifest": 41,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "04133ab2d2c22a746adba379316804f4eddea327eba8c9a6aee87dd1e375810c",
+      "recovery_receipt_sha256": "e36bbdbafe57d13266c5e296ae4684380014f3af5adb31fc57c8b9068c509b26",
+      "original_receipt_sha256": "6ab5257c2498db8cb3de0d4cbd9df035dd804989a0b9db2cc10fb44292e7efd5",
+      "original_operation_completed_at": "2026-09-23T18:56:38.556052Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T19:25:54.883008+00:00",
+      "finished_at": "2026-09-23T19:26:38.344544+00:00",
+      "readback_elapsed_seconds": 43.46148623153567,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-01",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-01.client.log",
+      "case": "lammps-01",
+      "original_receipt_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-lammps-dynamics-01",
+      "independent_report_rehash": "passed",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-01.summary.json",
+        "sha256": "65e44654e28a8e717be951980b21e6a796dd893e61d551373ee4af8b2ff78674",
+        "size_bytes": 1845
+      },
+      "private_log_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-01.client.log",
+        "sha256": "73a85e73a8de7d8ada803dcac726d8c169f80e4595cff591ffcd469b73f4841e",
+        "size_bytes": 15118
+      },
+      "recovery_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-01/recovery-receipt.json",
+        "sha256": "e36bbdbafe57d13266c5e296ae4684380014f3af5adb31fc57c8b9068c509b26",
+        "size_bytes": 18380
+      },
+      "output_manifest_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-01/output-manifest.json",
+        "sha256": "04133ab2d2c22a746adba379316804f4eddea327eba8c9a6aee87dd1e375810c",
+        "size_bytes": 11208
+      },
+      "original_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-lammps-dynamics-01/receipt.json",
+        "sha256": "6ab5257c2498db8cb3de0d4cbd9df035dd804989a0b9db2cc10fb44292e7efd5",
+        "size_bytes": 19995
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "lammps",
+      "operation_id": "445903bd-4e95-4483-a178-4c395b9a24b6",
+      "verified_artifacts": 40,
+      "verified_artifact_bytes": 953400058,
+      "fresh_content_downloads_including_manifest": 41,
+      "transport_attempts_including_manifest": 41,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "d06cf119ed7d961ac913559c39222b92df8064ecb41b5e3c19955617b2452095",
+      "recovery_receipt_sha256": "ca59cca6371ca1763dd665a41791fbee3d919f8d707d4cc8d87dc4038d70a932",
+      "original_receipt_sha256": "2b3d5b04ac8377b3439eca5bbeddd7906fee37297920dc8d3dab8e2c0c3c69ab",
+      "original_operation_completed_at": "2026-09-23T19:09:19.076735Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "3d40bb466778ac12244421f889899122f1c7a73a5415e910d25dc0adda165f4d",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T19:25:56.454435+00:00",
+      "finished_at": "2026-09-23T19:26:46.197433+00:00",
+      "readback_elapsed_seconds": 49.742946272715926,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-02",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-02.client.log",
+      "case": "lammps-02",
+      "original_receipt_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-lammps-dynamics-02",
+      "independent_report_rehash": "passed",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-02.summary.json",
+        "sha256": "83aab6f09205779099d30f90d1010c2de636f7c26222755ba7070be0e703b973",
+        "size_bytes": 1846
+      },
+      "private_log_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-02.client.log",
+        "sha256": "e513ebac218575d6771a61279eb146220def22373fba464bee014363b2f78f64",
+        "size_bytes": 15118
+      },
+      "recovery_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-02/recovery-receipt.json",
+        "sha256": "ca59cca6371ca1763dd665a41791fbee3d919f8d707d4cc8d87dc4038d70a932",
+        "size_bytes": 18380
+      },
+      "output_manifest_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-227-lammps-02/output-manifest.json",
+        "sha256": "d06cf119ed7d961ac913559c39222b92df8064ecb41b5e3c19955617b2452095",
+        "size_bytes": 11208
+      },
+      "original_receipt_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/alanine-lammps-dynamics-02/receipt.json",
+        "sha256": "2b3d5b04ac8377b3439eca5bbeddd7906fee37297920dc8d3dab8e2c0c3c69ab",
+        "size_bytes": 19447
+      }
+    }
+  ],
+  "local_checks": {
+    "recovery_helper_unit_tests": 14,
+    "portable_gate_unit_tests": 21,
+    "combined_tests_passed": 35,
+    "diff_check": "passed"
+  },
+  "historical_evidence_preserved": "Earlier aac7719/d074317 client readbacks and the original Helm 226 scientific receipts remain unchanged. Historical autotuned GROMACS 04/05 are not selected here: this report uses fixed-cutoff -notunepme GROMACS 06/07. NAMD uses the explicit PME64 protocol, not the superseded PME44 variant. LAMMPS's qualified restart-boundary SHAKE projection and original strict failure remain documented by the linked scientific receipts."
+}
