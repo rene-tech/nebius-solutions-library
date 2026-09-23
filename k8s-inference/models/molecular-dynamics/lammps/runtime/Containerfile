@@ -1,0 +1,24 @@
+ARG NVIDIA_LAMMPS_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-ngc@sha256:d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731
+FROM ${NVIDIA_LAMMPS_IMAGE}
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.title="Scientific AI native NVIDIA LAMMPS worker" \
+      org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library/tree/main/k8s-inference/models/molecular-dynamics/lammps" \
+      org.opencontainers.image.revision=${SOURCE_REVISION}
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/opt/fs2/lammps:/opt/fs2/gromacs OMP_NUM_THREADS=8
+# Build context is models/molecular-dynamics. Reuse reviewed streaming file and
+# canonical path helpers; no duplicate checkpoint or artifact upload framework.
+COPY gromacs/runtime/requirements.lock /opt/fs2/requirements.lock
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends python3 python3-pip python-is-python3 \
+    && python3 -m pip install --no-cache-dir --require-hashes -r /opt/fs2/requirements.lock \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/fs2 fs2 \
+    && mkdir -p /mnt/fs2-scientific \
+    && chown 10001:10001 /mnt/fs2-scientific
+COPY gromacs/runtime/fs2_gromacs /opt/fs2/gromacs/fs2_gromacs
+COPY lammps/runtime/fs2_lammps /opt/fs2/lammps/fs2_lammps
+USER 10001:10001
+WORKDIR /mnt/fs2-scientific
+ENTRYPOINT ["python3", "-m", "fs2_lammps.worker"]
