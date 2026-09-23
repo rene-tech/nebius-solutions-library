@@ -1,7 +1,12 @@
 import importlib.util
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
+
+from fs2_gromacs.files import extract_inputs
+from fs2_lammps.contracts import normalize
 
 spec = importlib.util.spec_from_file_location("validate_case", Path(__file__).parents[1] / "qualification/validate_case.py")
 validation = importlib.util.module_from_spec(spec)
@@ -24,3 +29,14 @@ def test_same_closed_boundary_can_appear_in_both_native_parts():
     validation.coverage([part(1000, 2000), part(2000, 3000, 4000, 5000)], protocol)
     with pytest.raises(ValueError, match="overlap"):
         validation.coverage([part(1000, 2000, 3000), part(2000, 3000, 4000, 5000)], protocol)
+
+
+def test_customer_starter_contract_and_bundle_are_accepted(tmp_path):
+    example = Path(__file__).parents[1] / "examples/lj-native"
+    request = normalize(json.loads((example / "request.json").read_text()))
+    archive = tmp_path / "input.tar.gz"
+    names = ["in.prepare", "in.production", "in.resume", "in.analyze", "protocol.inc", "production.inc"]
+    subprocess.run(["tar", "-C", str(example / "inputs"), "-czf", str(archive), *names], check=True)
+    extract_inputs(archive, tmp_path / "data", max_bytes=1000000)
+    assert len(list((tmp_path / "data").iterdir())) == 6
+    assert request["jobs"][0]["steps"][1]["continuation"]["target_step"] == 51000

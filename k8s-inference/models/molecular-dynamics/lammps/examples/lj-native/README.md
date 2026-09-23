@@ -8,7 +8,7 @@ It is not a material prediction or an equilibration/convergence prescription.
 From this directory, package only the native files:
 
 ```bash
-tar -C inputs -czf input.tar.gz .
+tar -C inputs -czf input.tar.gz in.prepare in.production in.resume in.analyze protocol.inc production.inc
 ```
 
 Submit `request.json` and the bundle through the hosted LAMMPS workflow interface
