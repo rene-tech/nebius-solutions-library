@@ -53,9 +53,8 @@ def stage(args):
                     shutil.copyfile(args.fixture / "request.json", args.snapshot / "request.json")
                     archive = args.snapshot / "checkpoint.tar.gz"
                     with tarfile.open(archive, "w:gz") as bundle:
-                        bundle.add(args.workspace / ".fs2/namd-state.json", arcname=".fs2/namd-state.json", recursive=False)
                         for item in manifest["files"]:
-                            bundle.add(args.workspace / "data" / item["path"], arcname="data/" + item["path"], recursive=False)
+                            bundle.add(args.workspace / "data" / item["path"], arcname=item["path"], recursive=False)
                     restart = active["restart"]
                     directory = next(s["directory"] for s in request["jobs"][0]["steps"] if s["id"] == "production")
                     native = args.workspace / "data" / directory
@@ -90,8 +89,12 @@ def restore(args):
     archive = args.snapshot / "checkpoint.tar.gz"
     if digest_file(archive) != staged["archive_sha256"] or digest_file(args.snapshot / "manifest.json") != staged["manifest_sha256"]:
         raise ValueError("transferred native checkpoint archive identity changed")
-    extract_inputs(archive, args.workspace, max_bytes=8 * 1024**3)
+    args.workspace.mkdir(parents=True, exist_ok=False)
+    extract_inputs(archive, args.workspace / "data", max_bytes=8 * 1024**3)
     verify_files(args.workspace / "data", manifest["files"])
+    # Platform metadata travels in the separately hashed manifest, never in the
+    # scientist-input extractor's reserved .fs2 namespace.
+    atomic_json(args.workspace / ".fs2/namd-state.json", manifest["state"])
     request = json.loads((args.snapshot / "request.json").read_text())
     result = Workflow(request, job_id=staged["job_id"], operation_id=staged["operation_id"],
                       workspace=args.workspace, checkpoint_mode="local").run()
