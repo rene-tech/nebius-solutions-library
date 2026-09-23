@@ -49,6 +49,7 @@ def drive(root, job, *, interrupt=False, snapshot=None):
                         (snapshot / ".fs2").mkdir()
                         shutil.copy2(root / "request.json", snapshot / "request.json")
                         atomic_json(snapshot / ".fs2/lammps-state.json", state)
+                        atomic_json(snapshot / ".fs2/closed-manifest.json", value)
                     atomic_json(meta / "checkpoint-ack.json", {"status": "committed", "generation": last})
                     if capture:
                         # Wait until the next engine process is alive, after the
@@ -75,24 +76,37 @@ def drive(root, job, *, interrupt=False, snapshot=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True)
+    parser.add_argument("--input", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--job", required=True)
+    parser.add_argument("--phase", choices=("both", "interrupt", "resume"), default="both", help="Separate phases allow a host conductor to copy the closed workspace and replace the Pod")
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=False)
-    attempt = args.output / "interrupted"
-    shutil.copytree(args.input, attempt)
     restored = args.output / "restored"
-    first = drive(attempt, args.job, interrupt=True, snapshot=restored)
+    if args.phase in ("both", "interrupt"):
+        args.output.mkdir(parents=True, exist_ok=False)
+        attempt = args.output / "interrupted"
+        shutil.copytree(args.input, attempt)
+        first = drive(attempt, args.job, interrupt=True, snapshot=restored)
+        atomic_json(args.output / "interrupted-receipt.json", first)
+    else:
+        first = json.loads((args.output / "interrupted-receipt.json").read_text())
     if first["status"] != "interrupted" or first["exit_code"] != 143 or not first["interrupted_at"]:
         raise ValueError("attempt did not interrupt active committed native dynamics")
+    if args.phase == "interrupt":
+        print(json.dumps({"status": "interrupted", "checkpoint_step": first["interrupted_at"]["native_step"], "snapshot": str(restored)}))
+        return
+    manifest = json.loads((restored / ".fs2/closed-manifest.json").read_text())
+    for entry in manifest["files"]:
+        path = restored / "data" / entry["path"]
+        if path.stat().st_size != entry["size_bytes"] or digest_file(path) != entry["sha256"]:
+            raise ValueError("restored workspace differs from the closed native generation")
     second = drive(restored, args.job)
     expected = json.loads((restored / "request.json").read_text())["jobs"][0]["steps"]
     if second["status"] != "succeeded" or second["completed_steps"] != [s["id"] for s in expected]:
         raise ValueError("restored native worker did not complete")
-    if first["worker_pid"] == second["worker_pid"]:
+    if args.phase == "both" and first["worker_pid"] == second["worker_pid"]:
         raise ValueError("resume did not use a fresh worker process")
-    receipt = {"interrupted": first, "restored": second, "native_recovery_passed": True, "gpu_process_snapshot": False, "fresh_pod": False, "customer_transport_tested": False, "snapshot_kind": "closed complete workspace plus native restart and continuation script"}
+    receipt = {"interrupted": first, "restored": second, "native_recovery_passed": True, "gpu_process_snapshot": False, "fresh_pod": False if args.phase == "both" else "host-conductor-must-verify-distinct-UIDs", "customer_transport_tested": False, "snapshot_kind": "closed complete workspace plus native restart and continuation script"}
     (args.output / "interrupt-resume.json").write_text(json.dumps(receipt, indent=2) + "\n")
     print(json.dumps({"native_recovery_passed": True, "checkpoint_step": first["interrupted_at"]["native_step"], "new_worker_pid": second["worker_pid"]}))
 
