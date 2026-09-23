@@ -103,3 +103,46 @@ were not treated as test failures or grounds to delete unrelated files.
 Public receipts intentionally omit keys, caller fingerprints, signed object
 URLs and licensed source. Raw customer evidence remains in task-owned private
 directories; published digests make its identity independently checkable.
+
+## Final additive client: completed-result recovery
+
+Exact client `d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03`
+subsequently recovered all four completed operations with the same ordinary key
+into **fresh empty directories**. No original receipt or artifact was copied.
+The client receives only `--recover-operation-id` and `--output`; it performs
+read-only status/result RPCs and artifact-content GETs, never admission, upload
+or cancellation. This is **artifact recovery, not a new simulation**.
+
+[The final-client recovery receipt](final-client-recovery.json) records 232
+artifacts / 603,925,652 bytes plus four manifests. Every content download has
+`verified-copy` and one transfer attempt: 236 fresh content GETs supported by the
+receipts and inspected transport, not packet-capture telemetry. All four
+manifests are byte-identical to the original scientifically validated outputs;
+every downloaded file was independently size/SHA-256 checked again.
+No Pods or Jobs for these operations existed after readback.
+
+Direct network-disabled inspection of both exact images proved byte identity of
+`invoke-scientific-batch.py` (`7e5c7b36...`) and `scientific_receipts.py`
+(`d0064416...`). The new image adds an isolated analysis environment from source
+`c9a1481f...`; its browser/analysis-environment acceptance belongs to the
+workbench owner, not this readback receipt. The original simulation client
+remains recorded as `aac7719c...`; it is never retroactively relabeled.
+
+The reusable [recovery helper](../recover_image_customer_results.py) checks the
+original owner/endpoint identity before starting, mounts no input bundle,
+retains complete client output in a sibling mode-0600 log, and emits a compact
+sanitized summary. Its output directory must not already exist:
+
+```bash
+python3 k8s-inference/models/molecular-dynamics/qualification/recover_image_customer_results.py \
+  --image "$EXACT_CLIENT_IMAGE" \
+  --operation-id "$COMPLETED_OPERATION_ID" \
+  --key-file "$OWNER_KEY_FILE" \
+  --previous-receipt "$ORIGINAL_VERIFIED_RECEIPT" \
+  --output "$NEW_RECOVERY_DIRECTORY" \
+  --mcp-url https://89.169.99.188/mcp
+```
+
+The recovery helper adds 14 passing tests; the combined NAMD, immutable-identity
+and recovery suite passes 94 tests. This same-owner readback does not replace
+cross-tenant denial or full browser-agent acceptance.

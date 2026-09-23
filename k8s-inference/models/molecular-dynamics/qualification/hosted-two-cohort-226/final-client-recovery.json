@@ -1,0 +1,193 @@
+{
+  "schema": "fs2-serve.nebius.ai/exact-image-completed-result-recovery-qualification/v1",
+  "status": "passed",
+  "recorded_at": "2026-09-23T18:38:52.914103+00:00",
+  "customer_ready": false,
+  "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+  "additive_analysis_image_source": "c9a1481f0d57d0ca6dd41041c56dc3f54e375c6e",
+  "helper_source_commit": "510d142a507524275f0eb7bd3c8de3559694e099",
+  "scope": "Fresh owner-key readback of two completed AMBER and two completed PME64 NAMD operations; no new simulations and no claim to have rerun MD through this additive client.",
+  "original_simulation_receipts": {
+    "amber": {
+      "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/hosted-two-cohort-226/amber.json",
+      "sha256": "b4e6e1cade1db1ad23cdd18a9162b6dd54d45a84be3a102d5442a1264e2a748a"
+    },
+    "namd": {
+      "path": "/home/tux/worktrees/fs2-namd-grid64-20260923/k8s-inference/models/molecular-dynamics/qualification/hosted-two-cohort-226/namd.json",
+      "sha256": "8953d95afaef111e164ef55e53aabf08e1a2dc8e8b01df2f9c175f2ca74600a1"
+    }
+  },
+  "source_byte_comparison": {
+    "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-source-comparison.json",
+    "sha256": "e1612c85edffec625eb905ce4fe8dea253a67476cce467153139ac363af7e645"
+  },
+  "resources_after": {
+    "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-resources-after.json",
+    "sha256": "275d695f4de03ded4abfefd47a7fbfed70a6c49c68a658099c896dba653306db"
+  },
+  "verified_artifacts_total": 232,
+  "verified_artifact_bytes_total": 603925652,
+  "fresh_content_downloads_including_manifests_total": 236,
+  "transport_attempts_including_manifests_total": 236,
+  "network_get_claim": "236 artifact-content GETs are supported by 236 fresh verified-copy records with one transfer attempt each and the inspected unchanged artifact-content GET path. MCP status/result calls are read-only RPCs; no packet capture is claimed.",
+  "owner_identity_reused": true,
+  "credentials_published": false,
+  "no_input_or_admission_arguments": true,
+  "simulations_submitted": 0,
+  "upload_or_cancel_calls": 0,
+  "tests": [
+    {
+      "status": "passed",
+      "model_id": "amber",
+      "operation_id": "80fb3f64-d199-4884-b8ec-d503d38c69d7",
+      "verified_artifacts": 39,
+      "verified_artifact_bytes": 193941984,
+      "fresh_content_downloads_including_manifest": 40,
+      "transport_attempts_including_manifest": 40,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "e7615d2de7fa8f5845ffeef678f903460108290179c51e7f2da23de4ac3ed14d",
+      "recovery_receipt_sha256": "d2ae7d3ea0bcb9e51f76085ffb03d079bad787d4694a32cd5425f1df06abe671",
+      "original_receipt_sha256": "0e57f22c085bb5128776f1520ea2569830ce6e843fdd557fc45eb3caeb2f6404",
+      "original_operation_completed_at": "2026-09-23T17:58:18.914361Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "7e5c7b36c464de147fb51e761fb3a2df7c8be5614483d23d20ac626e5b44ac71",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T18:36:10.201852+00:00",
+      "finished_at": "2026-09-23T18:36:46.909703+00:00",
+      "readback_elapsed_seconds": 36.707812666893005,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-amber-01",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-amber-01.client.log",
+      "case": "amber-01",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-amber-01.summary.json",
+        "sha256": "c77262069c15f8bd6d17c1fb59fdeca9dc7d58cf7e2a5fe8be03f99d9c3bb61a"
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "amber",
+      "operation_id": "b6ad10b6-8c2e-4002-8b1d-76201ad25715",
+      "verified_artifacts": 39,
+      "verified_artifact_bytes": 193941978,
+      "fresh_content_downloads_including_manifest": 40,
+      "transport_attempts_including_manifest": 40,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "8c6d3b1b77ae6ae0105edd5252f312df9437751de2053b31f28242029e1b3115",
+      "recovery_receipt_sha256": "d2ee9ee8f5215575a3a7f570a95f18cd3dcf084f0efb61cb9aa4448d8db1052b",
+      "original_receipt_sha256": "e9f77a856bd72d5d1e180d2f5a045ab42f59d38bd8c566be53dda3b1f45ffc3d",
+      "original_operation_completed_at": "2026-09-23T18:14:50.005939Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "7e5c7b36c464de147fb51e761fb3a2df7c8be5614483d23d20ac626e5b44ac71",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T18:37:06.972535+00:00",
+      "finished_at": "2026-09-23T18:37:44.630382+00:00",
+      "readback_elapsed_seconds": 37.657792910933495,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-amber-02",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-amber-02.client.log",
+      "case": "amber-02",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-amber-02.summary.json",
+        "sha256": "079fb20970f287c031593bf0a3029b457ccecbda900d48a49b67542f8e4fc633"
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "namd",
+      "operation_id": "b38ab578-138f-4e5d-b708-18e33fa95bf5",
+      "verified_artifacts": 77,
+      "verified_artifact_bytes": 108019984,
+      "fresh_content_downloads_including_manifest": 78,
+      "transport_attempts_including_manifest": 78,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "a2a2d4f3210393d6004c3f0ad8454486f2bbd75b6de034f5917e4f1ad7ad0c06",
+      "recovery_receipt_sha256": "d50dcea7ec6c0e3156ab8da0ba95c6578924eef0b786dd447e58fd03693f2d1b",
+      "original_receipt_sha256": "49028e7bf4b3cedf18216b6160afdaf2d4d8c2771a113c5aca3b98f3e704ffb1",
+      "original_operation_completed_at": "2026-09-23T18:21:39.671903Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "7e5c7b36c464de147fb51e761fb3a2df7c8be5614483d23d20ac626e5b44ac71",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T18:36:10.707136+00:00",
+      "finished_at": "2026-09-23T18:37:01.848053+00:00",
+      "readback_elapsed_seconds": 51.140879698097706,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-namd-pme64-01",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-namd-pme64-01.client.log",
+      "case": "namd-pme64-01",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-namd-pme64-01.summary.json",
+        "sha256": "81f3b94567c1627e97956bb3ff62a5c325aead3f1bfed52a996c0d7c37e9fcfc"
+      }
+    },
+    {
+      "status": "passed",
+      "model_id": "namd",
+      "operation_id": "5d3ae566-0a2a-4a4d-9917-acea617d4d30",
+      "verified_artifacts": 77,
+      "verified_artifact_bytes": 108021706,
+      "fresh_content_downloads_including_manifest": 78,
+      "transport_attempts_including_manifest": 78,
+      "all_downloads_publication": "verified-copy",
+      "original_manifest_byte_identity": true,
+      "network_get_evidence": "Fresh empty directory + verified-copy receipts + inspected immutable client GET path; not a packet capture.",
+      "inference_submitted": false,
+      "upload_or_cancel_requested": false,
+      "scientific_simulations_rerun": false,
+      "output_manifest_sha256": "b2e2f1f7318722bf4d406b8e67567cc04fbc64e6c839375ffb84abb9e52b0322",
+      "recovery_receipt_sha256": "1d8c42c8601e520e3dec1a8f3dbff7d3b84a9ac2593e7406efd57a5f8b5b9eed",
+      "original_receipt_sha256": "a96ee23a96bd1344c2087802590236b568ee0da0a90f2a44287f7d501354494e",
+      "original_operation_completed_at": "2026-09-23T18:28:06.813069Z",
+      "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:d074317715d911addafc4b27860eb8088e0ebce6bdd21fde1f4afacda22a1c03",
+      "installed_client_source_sha256": {
+        "/opt/bionemo/invoke-scientific-batch.py": "7e5c7b36c464de147fb51e761fb3a2df7c8be5614483d23d20ac626e5b44ac71",
+        "/opt/bionemo/scientific_receipts.py": "d006441697bbc1c9941daba5f7e6e9ea19ffc4798354a5cf3f83cdef5ecfae56"
+      },
+      "helper_source_sha256": "3be8038ff709dd7a1e445f4aa136aefe5b332ab9435dad90befcbf73e61b59ee",
+      "started_at": "2026-09-23T18:37:23.536356+00:00",
+      "finished_at": "2026-09-23T18:38:02.340037+00:00",
+      "readback_elapsed_seconds": 38.803620275110006,
+      "private_output_directory": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-namd-pme64-02",
+      "private_log": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-namd-pme64-02.client.log",
+      "case": "namd-pme64-02",
+      "summary_evidence": {
+        "path": "/home/tux/secure-handoff/fs2-md-engines-20260923/final-client-recovery-namd-pme64-02.summary.json",
+        "sha256": "dd45b3371ee921d3bb8f96cbc12b758412c442d14e300391f5ad2fb1e7f76b12"
+      }
+    }
+  ],
+  "tests_offline": {
+    "recovery_helper_tests_passed": 14,
+    "combined_namd_identity_recovery_tests_passed": 94,
+    "ruff": "passed",
+    "diff_check": "passed"
+  },
+  "limits": [
+    "This is artifact recovery from previously completed operations, not additional scientific simulation, GPU execution or independent statistical sampling.",
+    "The original scientific validations remain bound by byte-identical manifests and independent verification of every new downloaded file.",
+    "The additive analysis environment and actual browser user experience are separately qualified by the workbench owner.",
+    "The same owner key was retained; this test does not replace separate cross-tenant denial acceptance.",
+    "Raw client stdout remains in mode-0600 private logs; keys, caller fingerprints and signed URLs are omitted from this receipt."
+  ]
+}
