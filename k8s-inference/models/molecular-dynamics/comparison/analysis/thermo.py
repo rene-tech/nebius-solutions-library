@@ -16,6 +16,7 @@ def number(value):
 
 def native_thermo(path, kind, timestep_ps, total_mass_amu):
     text = Path(path).read_text()
+    pressure_not_computed = kind == "amber_mdout" and "reported pressure is always 0 because it is not calculated" in " ".join(text.lower().split())
     rows = []
     if kind == "gromacs_xvg":
         legends = {int(i): name for i, name in re.findall(r'@\s+s(\d+)\s+legend\s+"([^"]+)"', text)}
@@ -90,6 +91,10 @@ def native_thermo(path, kind, timestep_ps, total_mass_amu):
         finite(list(row.values()), "native thermodynamics")
         if "step" in row and row["step"] != int(row["step"]):
             raise ValidationError("noninteger thermodynamic step")
+        if pressure_not_computed:
+            if row["pressure_bar"] != 0:
+                raise ValidationError("AMBER not-computed pressure warning conflicts with nonzero PRESS")
+            row["uncomputed_pressure_placeholder_bar"] = row.pop("pressure_bar")
     return rows
 
 

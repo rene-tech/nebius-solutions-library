@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from geometry import ValidationError, align_frame, dihedral, kabsch, make_whole, minimum_image, validate_cell
 from native import Frame, frames, lammps_frames, validate_timeline
 from thermo import native_performance, native_thermo, production_rows
-from compare import analyze_run, comparison_table, plots, validate_protocol
+from compare import analyze_run, comparison_table, plots, pressure_observations, sha256, validate_protocol
 
 
 class GeometryTests(unittest.TestCase):
@@ -236,6 +236,27 @@ class ThermoTests(unittest.TestCase):
         self.assertEqual(len(result), 2)
         self.assertEqual(result[0]["pressure_bar"], -23)
         self.assertEqual(result[0]["potential_kJ_mol"], -2092)
+
+    def test_amber_mc_pressure_placeholder_is_not_observation(self):
+        self.path.write_text("| MONTE CARLO BAROSTAT IMPORTANT NOTE:\n| is that the reported pressure is always 0 because it is not calculated.\n NSTEP = 500 TIME(PS) = 201.0 TEMP(K) = 300.0 PRESS = 0.0\n EPtot = -500.0 VOLUME = 20000.0 Density = 0.99\n")
+        row = native_thermo(self.path, "amber_mdout", .002, 12000.)[0]
+        self.assertNotIn("pressure_bar", row)
+        self.assertEqual(row["uncomputed_pressure_placeholder_bar"], 0)
+
+    def test_pressure_join_requires_actual_bound_artifact(self):
+        self.path.write_text("SYNTHETIC trajectory bytes")
+        observations = self.path.with_suffix(".csv")
+        observations.write_text("production_time_ps,pressure_bar\n1,-12\n2,33\n")
+        provenance = self.path.with_suffix(".json")
+        provenance.write_text('{"evidence":"SYNTHETIC pressure join unit fixture"}')
+        spec = {"trajectory_sha256": sha256(self.path), "engine_image": "synthetic/fixture@sha256:" + "0" * 64, "method": "synthetic unit fixture only", "path": str(observations), "provenance_files": [str(provenance)]}
+        values, receipt = pressure_observations(spec, self.path, [1, 2])
+        self.assertEqual(values, {1: -12, 2: 33})
+        self.assertEqual(len(receipt["files"]), 2)
+        with self.assertRaises(ValidationError):
+            pressure_observations(spec, self.path, [1, 3])
+        with self.assertRaises(ValidationError):
+            pressure_observations({**spec, "trajectory_sha256": "f" * 64}, self.path, [1, 2])
 
     def test_namd_units(self):
         self.path.write_text("ETITLE: TS TEMP PRESSURE VOLUME POTENTIAL\nENERGY: 500 300 1.2 20000 -100\nENERGY: 1000 301 -4 20001 -99\n")

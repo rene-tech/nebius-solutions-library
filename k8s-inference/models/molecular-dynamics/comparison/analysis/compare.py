@@ -45,6 +45,32 @@ def source_identity():
     return {"head": head.stdout.strip() if head.returncode == 0 else None, "files": [file_receipt(path) for path in sorted(directory.glob("*.py"))]}
 
 
+def pressure_observations(spec, trajectory_path, expected_times):
+    """Join only actual, provenance-bound observations, never target pressure.
+
+    The parent owns validation of the native virial/replay scientific method.
+    This reader verifies transport, source binding, units, finite values and
+    exact time coverage. Native original logs remain separate and unchanged.
+    """
+    if spec["trajectory_sha256"] != sha256(trajectory_path):
+        raise ValidationError("pressure observations refer to a different trajectory")
+    if not spec.get("method") or not spec.get("provenance_files"):
+        raise ValidationError("pressure observation method and native provenance required")
+    if not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", spec["engine_image"]):
+        raise ValidationError("pressure observation runtime digest required")
+    with Path(spec["path"]).open(newline="") as stream:
+        reader = csv.DictReader(stream)
+        if reader.fieldnames != ["production_time_ps", "pressure_bar"]:
+            raise ValidationError("pressure CSV requires exact production_time_ps,pressure_bar columns")
+        rows = list(reader)
+    times = finite([float(row["production_time_ps"]) for row in rows], "pressure observation times")
+    values = finite([float(row["pressure_bar"]) for row in rows], "pressure observations")
+    if len(times) != len(expected_times) or not np.allclose(times, expected_times, atol=.001, rtol=0):
+        raise ValidationError("pressure observations do not cover the native production frame schedule")
+    provenance = {**spec, "files": [file_receipt(path) for path in [spec["path"], *spec["provenance_files"]]], "scope": "actual provided pressure observations; native virial/replay method acceptance remains parent gate"}
+    return dict(zip(times, values)), provenance
+
+
 def inventory():
     programs = {}
     for name in ("ffmpeg", "ffprobe", "blender", "vmd", "pymol", "povray"):
@@ -162,6 +188,21 @@ def analyze_run(run, master, output):
         writer.writerows(rows)
     raw_thermo = native_thermo(run["thermo"]["path"], run["thermo"]["kind"], dt, float(master["u"].atoms.masses.sum()))
     thermo_rows = production_rows(raw_thermo, run.get("thermo_origin_step", run["production_origin_step"]), run.get("thermo_origin_time_ps", run["production_origin_time_ps"]), steps, dt)
+    pressure_status = "native reported pressure"
+    joined_pressure = None
+    if all("uncomputed_pressure_placeholder_bar" in row for row in thermo_rows):
+        pressure_status = "unavailable: AMBER explicitly reports PRESS=0 because pressure/virial is not calculated; placeholder is not a measured zero"
+    if run.get("pressure_observations"):
+        if any("pressure_bar" in row for row in thermo_rows):
+            raise ValidationError("refusing to replace available native pressure with another source")
+        observations, joined_pressure = pressure_observations(run["pressure_observations"], run["trajectory"], np.arange(every, steps + 1, every) * dt)
+        for row in thermo_rows:
+            matching = [value for t, value in observations.items() if abs(t - row["time_ps"]) <= .001]
+            if len(matching) != 1:
+                raise ValidationError("thermodynamic sample has no unique actual pressure observation")
+            row["pressure_bar"] = float(matching[0])
+        inputs.extend(joined_pressure["files"])
+        pressure_status = "joined actual pressure observations; original native uncomputed placeholders preserved separately"
     fields = sorted(set().union(*(row.keys() for row in thermo_rows)))
     with (output / "thermodynamics.csv").open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fields)
@@ -171,6 +212,10 @@ def analyze_run(run, master, output):
     for field in ("temperature_K", "pressure_bar", "density_g_cm3", "potential_kJ_mol"):
         values = [r[field] for r in thermo_rows if field in r]
         summary[field] = descriptive(values) if values else None
+    summary["pressure_status"] = pressure_status
+    summary["pressure_observation_provenance"] = joined_pressure
+    if summary["pressure_bar"] and summary["pressure_bar"]["min"] == summary["pressure_bar"]["max"] == 0:
+        summary["pressure_status"] += "; all values exactly zero: verify native pressure calculation before interpreting physically"
     summary["dihedrals"] = {}
     for field in ("phi_degrees", "psi_degrees"):
         radians = np.radians([row[field] for row in rows[offset:]])
@@ -233,7 +278,7 @@ def comparison_table(output, summaries):
     columns = ["engine", "atoms", "total_charge_e", "initial_potential_energy_kJ_mol", "mean_temperature_K", "mean_pressure_bar", "mean_density_from_cells_g_cm3", "native_ns_per_day"]
     rows = []
     for summary in summaries:
-        rows.append({"engine": summary["engine"], "atoms": summary["atoms"], "total_charge_e": summary["total_charge_e"], "initial_potential_energy_kJ_mol": summary["initial_potential_energy_kJ_mol"], "mean_temperature_K": summary["temperature_K"]["mean"], "mean_pressure_bar": summary["pressure_bar"]["mean"], "mean_density_from_cells_g_cm3": summary["density_from_native_cells_g_cm3"]["mean"], "native_ns_per_day": summary["performance"]["native_ns_per_day"]})
+        rows.append({"engine": summary["engine"], "atoms": summary["atoms"], "total_charge_e": summary["total_charge_e"], "initial_potential_energy_kJ_mol": summary["initial_potential_energy_kJ_mol"], "mean_temperature_K": summary["temperature_K"]["mean"], "mean_pressure_bar": summary["pressure_bar"]["mean"] if summary["pressure_bar"] else None, "mean_density_from_cells_g_cm3": summary["density_from_native_cells_g_cm3"]["mean"], "native_ns_per_day": summary["performance"]["native_ns_per_day"]})
     with (output / "comparison.csv").open("w", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=columns)
         writer.writeheader()

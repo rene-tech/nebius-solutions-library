@@ -1,6 +1,6 @@
 # Canonical four-engine trajectory analysis
 
-Status: implemented; 28 explicitly synthetic unit tests pass. No completed canonical
+Status: implemented; 30 explicitly synthetic unit tests pass. No completed canonical
 production trajectories have been supplied yet. Generated unit fixtures, even
 when encoded as MP4, are **not scientific simulation or acceptance evidence**.
 
@@ -64,6 +64,18 @@ kJ/mol; LAMMPS pressure atm becomes bar and thermo `Time` fs becomes ps. Density
 is also calculated independently from total topology mass and each native cell.
 Missing native performance remains null. Native loop/footer performance is never
 replaced by queue, image pull, preparation, artifact transfer or end-to-end time.
+
+If AMBER explicitly warns that its MC-barostat pressure was not calculated,
+`PRESS=0` is retained as `uncomputed_pressure_placeholder_bar`, **not** a physical
+pressure measurement. Mean pressure is unavailable. A later actual native virial
+or replay artifact may be joined with `pressure_observations`: CSV columns must
+be exactly `production_time_ps,pressure_bar` at every production frame time;
+the object also requires `path`, the original `trajectory_sha256`, immutable
+`engine_image`, a real `method` description, and nonempty `provenance_files`.
+The trajectory hash, complete time coverage, finite observations and all source
+hashes are checked. An available native pressure series cannot be overwritten.
+The parent must separately validate the virial/kinetic-pressure method; this
+join does not manufacture missing observations or substitute target pressure.
 
 ## Scientific and geometric checks
 
