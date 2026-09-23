@@ -23,7 +23,9 @@ def native_completion(path: Path, step: dict) -> dict:
                 values["dt_ps"] = float(match.group(1).replace("D", "E").replace("d", "e"))
             time_limit |= "Wall clock limit reached" in line
             timings |= bool(re.search(r"5\.\s+TIMINGS", line))
-            finished |= bool(re.search(r"\bRun\s+done at", line))
+            # PMEMD26 CUDA terminates with Total wall time, whereas older CPU
+            # saved regressions use Run done. Both are native final summaries.
+            finished |= bool(re.search(r"\bRun\s+done at|^\|\s+Total wall time:\s+[0-9.]+\s+seconds", line))
             final_minimum |= "FINAL RESULTS" in line
             summaries |= "A V E R A G E S" in line or "R M S  F L U C T U A T I O N S" in line
             if summaries:

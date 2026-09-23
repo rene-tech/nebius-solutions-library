@@ -49,6 +49,8 @@ def test_native_completion_is_exact_and_finite(tmp_path):
     step = normalize(request())["jobs"][0]["steps"][0]
     output(path)
     assert native_completion(path, step)["completed_native_steps"] == 10
+    path.write_text(path.read_text().replace("| Run   done at now", "|  Total wall time:           1    seconds     0.00 hours"))
+    assert native_completion(path, step)["completed_native_steps"] == 10
     output(path, steps=9)
     with pytest.raises(ValueError, match="exact"):
         native_completion(path, step)
