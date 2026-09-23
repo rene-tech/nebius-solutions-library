@@ -40,6 +40,14 @@ def test_restore_refuses_same_or_missing_pod_identity():
     assert not module.same_worker({"pod_uid": "one"}, "two")
 
 
+def test_progress_follows_closed_and_current_native_segments(tmp_path):
+    (tmp_path / "part-1.log").write_text("1000 131072 1.0\n2000 131072 1.0\n")
+    (tmp_path / "part-2.log").write_text("2000 131072 1.0\n3000 131072 1.0\n")
+    assert probe().progress(tmp_path, {"progress_glob": "part-*.log", "progress_pattern": r"^(\d+)\s+131072"}) == 3000
+    with pytest.raises(ValueError):
+        probe().progress(tmp_path, {"progress_glob": "../customer/*", "progress_pattern": r"(\d+)"})
+
+
 def test_manifest_has_one_gpu_and_no_host_access():
     spec = importlib.util.spec_from_file_location("renderer", Path(__file__).with_name("render_snapshot_probe.py"))
     module = importlib.util.module_from_spec(spec)

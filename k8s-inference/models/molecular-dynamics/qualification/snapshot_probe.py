@@ -51,10 +51,15 @@ def relative_path(root, name):
 
 
 def progress(root, plan):
-    path = relative_path(root, plan["progress_file"])
-    if not path.exists():
-        return None
-    values = re.findall(plan["progress_pattern"], path.read_text(errors="replace"), re.MULTILINE)
+    if plan.get("progress_glob"):
+        relative_path(root, plan["progress_glob"])
+        paths = list(root.glob(plan["progress_glob"]))
+    else:
+        paths = [relative_path(root, plan["progress_file"])]
+    values = [
+        value for path in paths if path.is_file()
+        for value in re.findall(plan["progress_pattern"], path.read_text(errors="replace"), re.MULTILINE)
+    ]
     return max((int(value) for value in values), default=None)
 
 
@@ -162,6 +167,7 @@ def main():
             receipt["captured_logged_step"] = captured["captured_logged_step"]
             command = ["restore", "--directory", str(directory / "images")]
         helper_started = time.monotonic()
+        receipt["pre_helper_seconds"] = helper_started - started
         restore_attempted = args.action == "restore"
         helper = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), "checkpoint-helper", *command],
@@ -202,6 +208,7 @@ def main():
                 if step is not None and step > captured["captured_logged_step"]:
                     receipt["first_new_logged_step"] = step
                     receipt["restore_to_new_logged_step_seconds"] = time.monotonic() - helper_started
+                    receipt["probe_start_to_new_logged_step_seconds"] = time.monotonic() - started
                     break
                 state = process_state(pid)
                 if state is None or state["state"] == "Z" or time.monotonic() - helper_started > 180:
