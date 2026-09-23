@@ -35,7 +35,7 @@ def energy_rows(path):
             rows.append(current)
         if current is not None:
             for name in ("BOND", "ANGLE", "DIHED", "VDWAALS", "EEL", "EGB", "EPB"):
-                if match := re.search(rf"\b{name}\s*=\s*(\S+)", line):
+                if match := re.search(rf"(?<!1-4 )\b{name}\s*=\s*(\S+)", line):
                     current[name] = float(match.group(1))
     return rows
 

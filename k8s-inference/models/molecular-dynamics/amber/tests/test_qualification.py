@@ -61,7 +61,7 @@ def test_canonical_fixture_keeps_master_physics_and_real_pressure_method(tmp_pat
         minimum = archive.extractfile("minimize.in").read().decode()
         production = archive.extractfile("production-001.in").read().decode()
         assert "ntc=1, ntf=1" in minimum
-        for setting in ("nstlim=500000", "barostat=1, baro_stochastic=1", "ischeme=1, ithermostat=1, therm_par=1.0", "ntwv=500", "ig=20260925", "vdwmeth=1", "tol=0.000001"):
+        for setting in ("nstlim=500000", "barostat=1, baro_stochastic=1", "ischeme=1, ithermostat=1, therm_par=1.0", "ntwv=500", "ig=20260925", "vdwmeth=1", "tol=0.000001", "skinnb=2.0, skin_permit=0.5"):
             assert setting in production
     protocol["water_model"] = "OPC"
     (master / "protocol.json").write_text(json.dumps(protocol))
