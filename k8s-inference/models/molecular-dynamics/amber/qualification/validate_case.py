@@ -33,7 +33,7 @@ def samples(path):
                 current = {"step": int(match.group(1)), "time_ps": float(match.group(2)), "temperature_k": float(match.group(3)), "ti_region": region}
                 rows.append(current)
             if current is not None:
-                for key in ("Etot", "EKtot", "EPtot", "VOLUME", "DV/DL"):
+                for key in ("Etot", "EKtot", "EPtot", "VOLUME", "PRESS", "DV/DL"):
                     if match := re.search(rf"\b{key}\s*=\s*({NUMBER})", line):
                         current[key] = float(match.group(1))
     return rows, elapsed, ns_day

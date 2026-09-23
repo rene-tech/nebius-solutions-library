@@ -1,4 +1,6 @@
 import importlib.util
+import json
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -24,3 +26,61 @@ def test_all_ti_states_and_scheduled_mbar_blocks_are_required():
         module.validate_ti(mdin, output.replace("Energy at 1.0000 = -90.00000000", ""), 200)
     with pytest.raises(ValueError, match="nonfinite"):
         module.validate_ti(mdin, output.replace("DV/DL = 12.4", "DV/DL = NaN"), 200)
+
+
+def load_qualifier(name):
+    path = Path(__file__).parents[1] / ("qualification/" + name + ".py")
+    spec = importlib.util.spec_from_file_location(name, path)
+    target = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(target)
+    return target
+
+
+def test_static_native_fields_distinguish_total_and_one_four_electrostatics():
+    static = load_qualifier("static_energy")
+    text = "BOND=0.1264 ANGLE=0.3620 DIHED=9.6440\nVDWAALS=2209.5285 EEL=-20700.5546 HBOND=0.0000\n1-4 VDW=5.0157 1-4 EEL=48.9355 RESTRAINT=0.0000\n"
+    terms = static.energy_terms(text)
+    assert len(terms) == 9
+    assert terms["EEL"] == -20700.5546
+    assert terms["1-4 EEL"] == 48.9355
+    assert sum(terms.values()) == pytest.approx(-18426.9425)
+
+
+def test_canonical_fixture_keeps_master_physics_and_real_pressure_method(tmp_path):
+    generator = load_qualifier("make_canonical_fixture")
+    master = tmp_path / "master"
+    master.mkdir()
+    protocol = {"molecule": "ACE-ALA-NME", "force_field": "Amber ff14SB", "water_model": "TIP3P", "temperature_K": 300.0, "pressure_bar": 1.0, "timestep_fs": 2.0, "cutoff_A": 10.0, "langevin_friction_per_ps": 1.0, "nvt_steps": 50000, "npt_steps": 50000, "production_steps": 500000, "output_every_steps": 500, "constraint_tolerance": 1e-6, "nvt_seed": 20260923, "npt_seed": 20260924, "production_seed": 20260925}
+    (master / "protocol.json").write_text(json.dumps(protocol))
+    for name in ("system.prmtop", "system.rst7", "system.pdb", "master-manifest.json"):
+        (master / name).write_bytes(b"immutable synthetic test bytes\n")
+    output = tmp_path / "fixture"
+    generator.make(master, output)
+    with tarfile.open(output / "input.tar.gz") as archive:
+        assert archive.extractfile("system.prmtop").read() == (master / "system.prmtop").read_bytes()
+        minimum = archive.extractfile("minimize.in").read().decode()
+        production = archive.extractfile("production-001.in").read().decode()
+        assert "ntc=1, ntf=1" in minimum
+        for setting in ("nstlim=500000", "barostat=1, baro_stochastic=1", "ischeme=1, ithermostat=1, therm_par=1.0", "ntwv=500", "ig=20260925", "vdwmeth=1", "tol=0.000001"):
+            assert setting in production
+    protocol["water_model"] = "OPC"
+    (master / "protocol.json").write_text(json.dumps(protocol))
+    with pytest.raises(ValueError, match="canonical master"):
+        generator.make(master, tmp_path / "invalid")
+
+
+def test_binding_arithmetic_covers_both_models_and_all_components(tmp_path):
+    validator = load_qualifier("validate_advanced_fixture")
+    rows = []
+    values = {"Complex": "2,5,5,10", "Receptor": "0.5,1,2,3", "Ligand": "0.5,1,1,2", "DELTA": "1,3,2,5"}
+    for model in ("GENERALIZED BORN:", "POISSON BOLTZMANN:"):
+        rows.append(model)
+        for component, numbers in values.items():
+            rows.extend([component + " Energy Terms", "Frame #,BOND,G gas,G solv,TOTAL"])
+            rows.extend(str(frame) + "," + numbers for frame in range(5))
+    path = tmp_path / "binding.csv"
+    path.write_text("\n".join(rows) + "\n")
+    assert len(validator.binding_arithmetic(path)) == 2
+    path.write_text(path.read_text().replace("0,1,3,2,5", "0,1,3,2,6", 1))
+    with pytest.raises(ValueError, match="arithmetic"):
+        validator.binding_arithmetic(path)
