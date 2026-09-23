@@ -22,8 +22,9 @@ def create(args):
     if "@sha256:" not in args.image:
         raise ValueError("pin the candidate image digest")
     pods = json.loads(subprocess.check_output(KUBE + ["get", "pod", "-l", "scientific-ai.nebius.com/task=" + TASK, "-o", "json"]))
-    if any(p["status"].get("phase") not in ("Succeeded", "Failed") and any(c.get("resources", {}).get("limits", {}).get("nvidia.com/gpu") for c in p["spec"]["containers"]) for p in pods["items"]):
-        raise ValueError("one task-owned GPU Pod is already active")
+    active = sum(p["status"].get("phase") not in ("Succeeded", "Failed") and any(c.get("resources", {}).get("limits", {}).get("nvidia.com/gpu") for c in p["spec"]["containers"]) for p in pods["items"])
+    if active >= args.max_active_gpu_pods:
+        raise ValueError("task-owned GPU Pod concurrency limit reached")
     node = json.loads(subprocess.check_output(KUBE + ["get", "node", args.node, "-o", "json"]))
     if not any(c["type"] == "Ready" and c["status"] == "True" for c in node["status"]["conditions"]):
         raise ValueError("target node is not Ready")
@@ -64,6 +65,7 @@ def main():
     parser.add_argument("--input", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--job")
+    parser.add_argument("--max-active-gpu-pods", type=int, choices=(1, 2), default=1, help="Use 2 only after parent explicitly approves simultaneous pool qualification")
     args = parser.parse_args()
     if args.action == "create":
         create(args)
