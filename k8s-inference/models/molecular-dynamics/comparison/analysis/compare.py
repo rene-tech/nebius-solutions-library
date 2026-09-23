@@ -300,10 +300,15 @@ def comparison_table(output, summaries):
         writer = csv.DictWriter(stream, fieldnames=columns)
         writer.writeheader()
         writer.writerows(rows)
-    lines = ["# Native trajectory comparison", "", "Descriptive 1 ns production statistics; no convergence or force-field-equivalence claim.", "", "| " + " | ".join(columns) + " |", "| " + " | ".join("---" for _ in columns) + " |"]
+    lines = ["# Native trajectory comparison", "", "Descriptive statistics from 1 ns of production, sampled at 1 ps. No convergence or force-field-equivalence claim.", "", "| Engine | Atoms | Mean T (K) | Mean pressure (bar) | Mean density (g/cm³) | Native production (ns/day) |", "|---|---:|---:|---:|---:|---:|"]
+    display_columns = ("engine", "atoms", "mean_temperature_K", "mean_pressure_bar", "mean_density_from_cells_g_cm3", "native_ns_per_day")
     for row in rows:
-        lines.append("| " + " | ".join("not supplied" if row[key] is None else f"{row[key]:.6g}" if isinstance(row[key], float) else str(row[key]) for key in columns) + " |")
-    lines.extend(["", "Initial canonical-coordinate potential energy is a separate single-point gate; it is never inferred from production coordinates. Native performance sources/boundaries are recorded per engine in summary.json. Queue/startup/artifact/end-to-end timings remain separate. Sample SDs and counts are in the per-engine JSON, not independent-sample confidence intervals.", ""])
+        lines.append("| " + " | ".join("unavailable" if row[key] is None else f"{row[key]:.6g}" if isinstance(row[key], float) else str(row[key]).upper() if key == "engine" else str(row[key]) for key in display_columns) + " |")
+    lines.extend(["", "Density is independently calculated from the native periodic cells and unchanged topology mass. Native thermodynamic density is cross-checked. Full precision, charge and source-specific statistics are retained in comparison.csv and each engine's summary.json.", "", "Initial canonical-coordinate potential energy is a separate single-point gate; it is never inferred from production coordinates. Native performance sources and boundaries are recorded per engine. Queue, startup, preparation, checkpoint, artifact and end-to-end timings remain separate. A common GPU model does not make different CPU thread counts, integrators, barostats and numerical kernels identical.", "", "Sample SDs and counts in the per-engine JSON are not independent-sample confidence intervals. Native temperatures and pressure definitions are preserved; no target value is substituted. Read the separate estimator and electrostatics/dispersion diagnostics before interpreting differences.", "", "## Actual run provenance", ""])
+    for summary in summaries:
+        provenance = summary.get("provenance", {})
+        lines.append(f"- {summary['engine'].upper()}: {provenance.get('hardware', 'hardware not supplied')}; {summary['common_frame_count']:,} common frames. Pressure: {summary['pressure_status']}. Exact image: `{summary['image']}`.")
+    lines.extend(["", "[Phi/psi time series](phi-psi-timeseries.png), [angular distributions](phi-psi-distributions.png), [Ramachandran distributions](ramachandran.png), and [thermodynamics](thermodynamics.png) use the actual shared production-relative 1..1000 ps schedule. No trajectory interpolation or synthetic replacement is used.", ""])
     (output / "comparison.md").write_text("\n".join(lines))
 
 
