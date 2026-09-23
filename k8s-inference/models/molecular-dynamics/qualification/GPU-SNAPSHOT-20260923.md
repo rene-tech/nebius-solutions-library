@@ -40,79 +40,79 @@ Parent authorized isolated privileged root containers for this screen only.
 No host PID/IPC/network, host mounts, service-account tokens, driver changes,
 global policy changes or unrelated process inspection. The child native engine
 runs as UID/GID10001. GPU UUID binding follows the scheduler allocation.
-Task32GiB RWO PVC `fs2-md-snapshot-r20260923`, storage class
-`compute-csi-default-sc`; no shared model cache. Initial hard stop16:27UTC.
+Task-owned 32 GiB RWO PVC `fs2-md-snapshot-r20260923`, storage class
+`compute-csi-default-sc`; no shared model cache. Initial hard stop 16:27 UTC.
 
 ## GROMACS: persistent continuation passes once
 
-Synthetic lysozyme,23961atoms,200000steps/400ps, exact TPR SHA256
+Synthetic lysozyme, 23,961 atoms, 200,000 steps / 400 ps, exact TPR SHA256
 `e21e2a07ed800f66b6c581beb1b7dabbd695df786f4faf3692ac090875be588f`.
-Command is recorded in `gromacs-plan.json`: one thread-MPI rank,8OpenMP threads,
-pinning off, native checkpoint cadence0.02minutes. This deliberately short
+Command is recorded in `gromacs-plan.json`: one thread-MPI rank, 8 OpenMP threads,
+pinning off, native checkpoint cadence 0.02 minutes. This deliberately short
 checkpoint cadence is a qualification choice, not a recommended default.
 
-Donor UID `86703d76-1521-4b2f-b128-9292fc2617e5` reached logged step10000.
-CUDA checkpoint and CRIU dump killed its native PID220. Saved files were fsynced,
+Donor UID `86703d76-1521-4b2f-b128-9292fc2617e5` reached logged step 10,000.
+CUDA checkpoint and CRIU dump killed its native PID 220. Saved files were fsynced,
 inventoried, archived and hashed; donor Pod was deleted before the restore Pod
 was created. Fresh Pod UID `a37f6b7b-c294-4a9f-8705-58bb6011caf8` restored that
 saved process on the same GPU. Every inventoried saved-file size/hash was checked
-before restore. The restored PID is necessarily220, but its start ticks changed;
+before restore. The restored PID is necessarily 220, but its start ticks changed;
 kernel PID-namespace inode numbers happened to be recycled and are not used as
 independent-worker proof.
 
-Continuation advanced beyond captured10000 to requested200000. Native `gmx check`
-read all201XTC frames through400ps;201energy samples are finite. Final checkpoint
-step200000 and nonempty final coordinates pass. This is a continuation, never an
+Continuation advanced beyond captured 10,000 to requested 200,000. Native `gmx check`
+read all 201 XTC frames through 400 ps; 201 energy samples are finite. Final checkpoint
+step 200,000 and nonempty final coordinates pass. This is a continuation, never an
 independent replica; no stochastic-ensemble independence is asserted.
 
 | Measured phase | Seconds |
 |---|---:|
-| Donor probe start to native logged10000 | 4.845 |
+| Donor probe start to native logged step 10,000 | 4.845 |
 | CUDA checkpoint | 0.446 |
 | CRIU dump | 0.390 |
 | Saved-state durability flush | 41.983 |
 | Complete capture probe | 48.238 |
 | Fresh restore Pod creation to runtime start | 52 |
 | Restore helper, including CUDA restore/unlock | 0.754 |
-| Restore helper start to later native step11000 | 0.806 |
+| Restore helper start to later native step 11,000 | 0.806 |
 | Complete restore probe: hash verification + restore + remaining simulation | 83.704 |
-| Image-cached native checkpoint restart to step11000 | 3.565 |
+| Image-cached native checkpoint restart to step 11,000 | 3.565 |
 | Image-cached native checkpoint restart to completion | 29.339 |
 
-Raw saved image bundle667545742bytes. Fast helper timing excludes the preceding
+Raw saved image bundle 667,545,742 bytes. Fast helper timing excludes the preceding
 full saved-image hash read, Pod scheduling, volume attachment and image startup.
 The first harness did not separately time that hash read; do not derive an exact
 breakdown by subtracting unrelated runs. The subsequent harness explicitly
 records pre-helper and probe-start-to-useful-step time.
 
-Native comparator starts from the retained **step9500 native checkpoint**, while
-the CUDA capture had logged10000: not exactly state matched, not3repetitions and
+Native comparator starts from the retained **step 9,500 native checkpoint**, while
+the CUDA capture had logged 10,000: not exactly state matched, not three repetitions and
 not proof of a net speedup. Both finish the same200000step TPR and pass the same
-native validators. Chaotic trajectory divergence is expected; bitwise equality
+native validators. Trajectory equality was not established; bitwise equality
 was not required or claimed. Snapshot downtime also affects native wall-clock
 timers; engine-reported `ns/day` including this pause is not steady throughput.
 No cold-node or disk-cache eviction experiment was performed.
 
 ## NAMD: capture passes; restore awaiting capacity
 
-Public ApoA1 fixture,92224atoms,NVE100000steps/200ps. The exact qualified
-`fs2-production-part000001.namd` begins from equilibrated step21000 and requests
-121000. Only9allowlisted input files were copied; no previous production outputs.
+Public ApoA1 fixture, 92,224 atoms, NVE 100,000 steps / 200 ps. The exact qualified
+`fs2-production-part000001.namd` begins from equilibrated step 21,000 and requests
+121,000. Only 9 allowlisted input files were copied; no previous production outputs.
 `namd-input-hashes.json` records every input hash. Four CPU workers, one GPU.
 
-Donor UID `b956034f-c134-4b68-b993-4ce01741b765`, native PID180, logged31000.
-CUDA checkpoint0.576s, CRIU dump0.714s, fsync87.885s; raw saved bytes1374302284,
-complete capture98.158s. Donor process terminated; hashed full archive retained
+Donor UID `b956034f-c134-4b68-b993-4ce01741b765`, native PID 180, logged step 31,000.
+CUDA checkpoint 0.576 s, CRIU dump 0.714 s, fsync 87.885 s; raw saved bytes 1,374,302,284,
+complete capture 98.158 s. Donor process terminated; hashed full archive retained
 before Pod deletion. These facts prove capture only, not persistent restore.
 
-At15:57UTC a finite hosted NPT qualification workflow acquired the original H100.
+At 15:57 UTC a finite hosted NPT qualification workflow acquired the original H100.
 The task restore Pod stayed Pending with insufficient GPU/CPU; it was removed
 without interfering with the running workflow. No cross-GPU UUID remapping was
 enabled. Its Pending object/events are retained separately from engine failures.
 
 ## Remaining gates and reproducibility
 
-LAMMPS uses the qualified synthetic LJ131072atom input archive
+LAMMPS uses the qualified synthetic LJ 131,072-atom input archive
 `4f94b8e91c775993926300f3b6f92788a3aca6de38ee580e6d6a628c18ab0508`, request
 `a4788ef394e405d1aa5aa73a17691469ea0ba069f3b71f6acec305fcf2d8d861`.
 The harness follows all native production segment logs rather than assuming a
@@ -134,7 +134,7 @@ python3 /snapshot-source/snapshot_probe.py restore --directory /checkpoints/CASE
 
 GROMACS and NAMD use immutable source ConfigMap `fs2-md-snapshot-source-cf7e2c6`;
 segmented LAMMPS uses `fs2-md-snapshot-source-22c8be8`. Keep each captured source
-unchanged for its restore. Tests:13pass, including unchanged platform checkpoint
+unchanged for its restore. Tests: 16 pass, including unchanged platform checkpoint
 identity/cache/tree tests and new one-GPU/no-host/path/Pod-identity guards.
 
 Before adoption: exact-state-matched repeated native restart comparison, full
