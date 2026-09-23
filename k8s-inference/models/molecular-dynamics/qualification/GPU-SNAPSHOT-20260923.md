@@ -3,8 +3,9 @@
 This is isolated qualification, not a public snapshot feature or a release
 approval. GROMACS has one successful persistent fresh-Pod continuation with
 native output validation. End-to-end benefit is **not established**. NAMD has
-a durable capture but its fresh-Pod CRIU restore failed. LAMMPS has not yet run.
-AMBER is gated on its private native qualification.
+a durable capture but its fresh-Pod CRIU restore failed. LAMMPS reaches native
+CUDA capture but persistent dumping is blocked by an open GDRCopy device handle.
+AMBER is not tested: its final private native/typed identity is still changing.
 
 These are **per-workflow continuation snapshots**, containing scientific inputs,
 coordinates, velocities, topology, runtime/RNG state and open output handles.
@@ -35,7 +36,7 @@ All image paths start with `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/`:
 |---|---|
 | GROMACS, released NGC binary + PLUMED | `fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643` |
 | NAMD 3.0.2 CUDA 12.9 GPU resident | `fs2-platform/namd-worker@sha256:1af3abab5c794c38ef19d557bd5ca0e754fd078343f36b7e41a9eeee2ac7354f` |
-| LAMMPS qualified native worker, queued only | `fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c` |
+| LAMMPS qualified native worker | `fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c` |
 | CRIU / CUDA checkpoint tools | `fs2-snapshot/scientific-tools@sha256:17cc3536dd847355b8457b2e92bd7d0fdf292bdd8e6acc457e25f14e28284ba4` |
 
 CRIU 4.2.1 commit `91d552257809d0e5c7148190e9aa0372f13b76a0`
@@ -144,15 +145,64 @@ This is native startup from the original fixture, not a state-matched restart at
 the CUDA capture point. Native continuation support remains independent of the
 GPU snapshot failure; no scheduler/volume/bucket timing is included in 61.011 s.
 
-## Remaining gates and reproducibility
+## LAMMPS: packaging corrected, persistent dump blocked by GDRCopy
 
 LAMMPS uses the qualified synthetic LJ 131,072-atom input archive
 `4f94b8e91c775993926300f3b6f92788a3aca6de38ee580e6d6a628c18ab0508`, request
 `a4788ef394e405d1aa5aa73a17691469ea0ba069f3b71f6acec305fcf2d8d861`.
 The harness follows all native production segment logs rather than assuming a
 single process survives a native timer boundary. Its existing speed-oriented
-neighbor policy is not an accuracy default. No LAMMPS GPU snapshot result yet.
-AMBER is not screened until private native qualification succeeds.
+neighbor policy is not an accuracy default.
+
+Attempt r1 reached logged step 10,000 in 5.397 s. The scoped process tree contained
+the Python workflow, native LAMMPS and its OpenMPI daemon. CUDA capture passed
+in 0.540 s, but CRIU could not lock an established loopback TCP connection because
+`iptables` was not on the runtime tools path (exit 127). This was a probe packaging
+problem, not a fundamental CUDA incompatibility.
+
+The immutable tools image already contained iptables 1.8.10-3ubuntu2, libxtables
+1.8.10-3ubuntu2, libmnl 1.0.5-2build1 and libnftnl 1.2.6-2build1. The probe now
+reuses `install_network_tools` from the existing server renderer and the existing
+nft wrapper, copying those pinned libraries into the private tools mount. No
+image, host firewall, shared-cluster rule, driver or TCP consistency bypass was
+introduced. Backend binary SHA256
+`a1610dd70bb5ab04180671280df65b0077b680b627c0b6c51480b327732a762d`;
+wrapper SHA256 `5efab043555822f13fb4756a88f953a20ac68c5db47f1d5c4169e84c2db786e0`.
+
+Attempt r2 exposed a separate probe integration error: the shared server helper's
+fixed PATH selected system Python instead of the runtime's `/opt/fs2/venv` and
+`jsonschema` was unavailable. It exited before MD initialization. Retained without
+discarding it; the renderer now preserves image PATH and the harness prepends only
+its private tools path. Attempt r3 explicitly used the unchanged runtime venv
+interpreter with the r2 immutable source ConfigMap.
+
+Attempt r3, donor UID `03493e2e-0fa2-4443-9a1c-c55dc0f788e1`, reached logged step
+10,000 in 5.447 s. CUDA checkpoint PID381 passed in 0.529 s; CRIU successfully
+locked TCP, then rejected native fd31:
+
+```text
+Error (criu/files-ext.c:98): Can't dump file 31 of that type [20666] (chr 234:0)
+Error (criu/cr-dump.c:1550): Dump files (pid: 381) failed with -1
+```
+
+Read-only device inventory identified `/dev/gdrdrv` as hexadecimal `ea:0`
+(decimal 234:0); `/dev/nvidia-uvm` was `1ff:0`, a different device. CRIU removed
+its temporary INPUT and OUTPUT rules. Before/after filter policies were identical
+and no added rule remained. Donor CUDA restoration/unlock passed (0.298/0.017 s),
+then the task harness terminated its native process tree. There is **no persistent
+LAMMPS dump or fresh-worker restore proof** for this exact tested runtime. A future
+transport/GDRCopy configuration requires documented support and native numerical
+qualification; no speculative disable flag, CRIU plugin or host change was tried.
+
+Fresh unchanged native workflow control passed in 114.045 s of process wall time
+(106.770 s native production loops), 300,000 production steps through target
+302,000. All 30 trajectory frames were read across two parts (17 + 13); final
+state/analysis and finite observables passed. Relative energy span 0.007886 was
+below the fixture's 0.02 gross gate; neighbor convergence was not claimed.
+These are LJ reduced units, not a physical ns/day result. Native baseline is
+from the original fixture, not a restored CUDA state.
+
+## Remaining gates and reproducibility
 
 Evidence root: `/home/tux/secure-handoff/fs2-md-snapshot-20260923`. Exact rendered
 Pod/PVC manifests, immutable source ConfigMaps, plans, observed Pod objects,
@@ -167,8 +217,9 @@ python3 /snapshot-source/snapshot_probe.py restore --directory /checkpoints/CASE
 ```
 
 GROMACS and NAMD use immutable source ConfigMap `fs2-md-snapshot-source-cf7e2c6`;
-segmented LAMMPS uses `fs2-md-snapshot-source-22c8be8`. Keep each captured source
-unchanged for its restore. Tests: 16 pass, including unchanged platform checkpoint
+initial LAMMPS uses `fs2-md-snapshot-source-22c8be8`, corrected packaging attempts
+use `fs2-md-snapshot-source-network-r2` and `fs2-md-snapshot-network-r20260923`.
+Keep each captured source unchanged for its restore. Tests: 19 pass, including unchanged platform checkpoint
 identity/cache/tree tests and new one-GPU/no-host/path/Pod-identity guards.
 
 Before adoption: exact-state-matched repeated native restart comparison, full
@@ -177,6 +228,17 @@ stochastic state checks, cancellation/error fallback, actual customer API/bucket
 acceptance, image/runtime changes requalified, and parent-controlled release.
 Successful same-GPU isolated continuation is not proof of cross-GPU portability,
 safe public privilege, independent replica generation or a beneficial product.
+NAMD's subsequent r5 wrapper image is not relabeled with this r4 evidence.
+
+## Cleanup
+
+All task GPU Pods were deleted before 16:24:26 UTC. A fresh allocation inventory
+showed zero GPU requests on the released H100, and parent/NAMD workers were told
+explicitly. After readable, hashed full archives were retained locally, the
+32 GiB task PVC and all four task ConfigMaps were deleted at about 16:24 UTC.
+The disk contents can be reconstructed from those archives; no customer data,
+shared image/cache or unrelated resources were removed. No production release
+or App flags were changed. The bounded screen ended before its 16:27 UTC cap.
 
 The distinction between CUDA suspend/resume and persistent CPU+GPU restore
 follows the [pinned NVIDIA tool documentation](https://github.com/NVIDIA/cuda-checkpoint/blob/00d5cce84c628088d6caa203fc4af40c1538b6f7/README.md)

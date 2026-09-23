@@ -72,6 +72,7 @@ def test_network_cleanup_recognizes_only_own_loopback_criu_lock():
     module = probe()
     own = "-A INPUT -s 127.0.0.1/32 -d 127.0.0.1/32 -p tcp -m mark ! --mark 0xc114 -j DROP"
     assert module.own_tcp_lock_rule(own)
+    assert module.own_tcp_lock_rule(own.replace("INPUT", "OUTPUT"))
     assert not module.own_tcp_lock_rule(own.replace("0xc114", "0x1234"))
     assert not module.own_tcp_lock_rule(own.replace("127.0.0.1/32", "10.0.0.1/32"))
     assert not module.own_tcp_lock_rule("-P INPUT ACCEPT")
@@ -82,3 +83,15 @@ def test_network_tools_preserve_runtime_venv(monkeypatch):
     monkeypatch.setenv("PATH", "/opt/fs2/venv/bin:/usr/bin")
     module.configure_network_tools({"pod_local_tcp_locking": True})
     assert module.os.environ["PATH"] == "/tools/usr/sbin:/opt/fs2/venv/bin:/usr/bin"
+
+
+def test_network_cleanup_removes_only_added_owned_rule(monkeypatch):
+    module = probe()
+    before = ["-P INPUT ACCEPT", "-P OUTPUT ACCEPT"]
+    own = "-A OUTPUT -s 127.0.0.1/32 -d 127.0.0.1/32 -p tcp -m mark ! --mark 0xc114 -j DROP"
+    observations = iter([before + [own], before])
+    monkeypatch.setattr(module, "network_rules", lambda: next(observations))
+    commands = []
+    monkeypatch.setattr(module.subprocess, "run", lambda command, **kwargs: commands.append(command))
+    assert module.clean_own_tcp_locks(before)["restored"]
+    assert len(commands) == 1 and commands[0][:5] == ["iptables", "-t", "filter", "-D", "OUTPUT"]

@@ -97,7 +97,7 @@ def own_tcp_lock_rule(line):
     words = shlex.split(line)
     try:
         return (
-            words[:2] == ["-A", "INPUT"]
+            words[0] == "-A" and words[1] in {"INPUT", "OUTPUT"}
             and words[words.index("-j") + 1] == "DROP"
             and int(words[words.index("--mark") + 1], 0) == 0xC114
             and words[words.index("-s") + 1] in {"127.0.0.1", "127.0.0.1/32"}
