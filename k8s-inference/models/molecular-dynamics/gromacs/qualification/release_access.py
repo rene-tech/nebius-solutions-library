@@ -14,7 +14,7 @@ import subprocess
 import httpx
 
 KEY_NAME = "native-md-qualification-20260923"
-KEY_NAMES = {KEY_NAME, "amber-qualification-20260923"}
+KEY_NAMES = {KEY_NAME, "amber-qualification-20260923", "gromacs-qualification-20260923"}
 MODELS = ["gromacs", "gromacs-mpi", "lammps", "namd", "amber"]
 
 

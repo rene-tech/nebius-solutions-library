@@ -52,6 +52,7 @@ def main():
     parser.add_argument("--master", type=Path, required=True)
     parser.add_argument("--converted", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--rehash-mutants", action="store_true", help="Also test semantic gates independently of stale manifest hashes")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("output must be new; preserve prior audit evidence")
@@ -75,6 +76,14 @@ def main():
         directory = args.output / name
         shutil.copytree(args.converted, directory)
         mutate(directory)
+        if args.rehash_mutants:
+            path = directory / "conversion.json"
+            manifest = json.loads(path.read_text())
+            for row in manifest["files"]:
+                artifact = directory / row["path"]
+                row.update(sha256=digest(artifact), bytes=artifact.stat().st_size)
+            manifest["synthetic_negative_fixture"] = name
+            path.write_text(json.dumps(manifest, indent=2) + "\n")
         try:
             result = module.audit(args.master, directory)
             rejected = result["status"] != "passed"

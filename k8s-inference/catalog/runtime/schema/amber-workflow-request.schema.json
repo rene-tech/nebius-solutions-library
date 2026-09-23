@@ -49,7 +49,10 @@
                     "pmemd",
                     "tleap",
                     "cpptraj",
-                    "parmed"
+                    "parmed",
+                    "antechamber",
+                    "parmchk2",
+                    "mmpbsa"
                   ],
                   "default": "pmemd"
                 },
@@ -108,7 +111,99 @@
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 512,
-                  "description": "PMEMD-only native output stem, defaulting to step ID. Generates .mdout, .rst7, .nc, .mdvel, .mden and .mdinfo names using fixed native flags."
+                  "description": "Native output stem, defaulting to step ID: PMEMD uses .mdout/.rst7/.nc/.mdvel/.mden/.mdinfo; MMPBSA uses .dat/.csv plus a stage-specific intermediate prefix."
+                },
+                "output": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Antechamber MOL2 or parmchk2 FRCMOD output filename."
+                },
+                "input_format": {
+                  "enum": [
+                    "pdb",
+                    "mol2",
+                    "sdf"
+                  ],
+                  "description": "Explicit molecular input format; parmchk2 currently accepts MOL2 only."
+                },
+                "atom_types": {
+                  "enum": [
+                    "gaff",
+                    "gaff2"
+                  ],
+                  "description": "Explicit native small-molecule parameter set; default GAFF2."
+                },
+                "net_charge": {
+                  "type": "integer",
+                  "minimum": -20,
+                  "maximum": 20,
+                  "description": "Antechamber requested total molecular charge in electron units."
+                },
+                "multiplicity": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 9
+                },
+                "residue_name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z][A-Za-z0-9]{0,2}$"
+                },
+                "charge_equivalence": {
+                  "enum": [
+                    0,
+                    1,
+                    2
+                  ],
+                  "description": "Native-eq option:0none,1atomic paths,2paths and stereochemistry. Default1; changing it is a scientific input change."
+                },
+                "charge_tolerance_e": {
+                  "type": "number",
+                  "minimum": 1e-06,
+                  "maximum": 0.05,
+                  "description": "Explicit final MOL2 charge-sum assertion; default0.001e. Residual is always reported, never silently corrected."
+                },
+                "complex_topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "receptor_topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "ligand_topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "solvated_topology": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                },
+                "trajectories": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 128,
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "uniqueItems": true,
+                  "description": "MMPBSA explicit trajectory filenames in order, not shell globs."
+                },
+                "expected_frames": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1000000,
+                  "description": "MMPBSA exact analyzed-frame assertion for every component energy table; never rewrites native frame selection."
+                },
+                "use_mdins": {
+                  "type": "boolean",
+                  "description": "MMPBSA-only native-use-mdins: caller supplies complete prefix.intermediate_gb.mdin/pb.mdin context. No native MDIN is rewritten by the worker."
                 },
                 "expected_outputs": {
                   "type": "array",

@@ -18,7 +18,7 @@
     "execution_identity": {
       "model_revision": "cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
       "runtime_image_digest": null,
-      "runtime_recipe_sha256": "f135026529e4aa2767e75eac10dd484f07e9e6427809ce745cd1b0760de89555",
+      "runtime_recipe_sha256": "2ebe60caae757fd983f43efa398d9b3eac9bbb2e8aa35d973b2fc1ae06663b88",
       "workload_recipe_sha256": "2fbb53490e7898cd24fbd80f19e4fd5c6d26f808fe2cac7f7babb60fb6566b9e",
       "artifact_manifest_digest": null,
       "execution_identity_sha256": null

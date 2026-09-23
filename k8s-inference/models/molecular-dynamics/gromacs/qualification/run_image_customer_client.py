@@ -20,9 +20,9 @@ MODEL_CONTRACTS = {
 }
 
 
-def transport_parameters(fixture, output, destination):
+def transport_parameters(fixture, output, destination, request_name="request.json"):
     """Persist a transport-only variant; never mutate the scientific fixture."""
-    original = (fixture / "request.json").read_bytes()
+    original = (fixture / request_name).read_bytes()
     request = json.loads(original)
     previous = request.get("output_destination", "customer-bucket")
     request["output_destination"] = destination
@@ -46,17 +46,21 @@ def main():
     )
     parser.add_argument("--key-file", type=Path, required=True)
     parser.add_argument("--fixture", type=Path, required=True)
+    parser.add_argument("--request-name", default="request.json",
+                        help="Named JSON request inside the immutable fixture directory.")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--idempotency-key", required=True)
     parser.add_argument("--output-destination", choices=["customer-bucket", "platform-artifacts"])
     args = parser.parse_args()
+    if Path(args.request_name).name != args.request_name or not args.request_name.endswith(".json"):
+        raise ValueError("Request name must be a JSON basename inside the fixture.")
     tool, input_family = MODEL_CONTRACTS[args.model]
     if "@sha256:" not in args.image:
         raise ValueError("Pin the tested workbench image digest.")
     args.output.mkdir(parents=True, exist_ok=True, mode=0o700)
     parameters = (
-        transport_parameters(args.fixture, args.output, args.output_destination)
-        if args.output_destination else "/qualification/input/request.json"
+        transport_parameters(args.fixture, args.output, args.output_destination, args.request_name)
+        if args.output_destination else "/qualification/input/" + args.request_name
     )
     env = {
         **os.environ,

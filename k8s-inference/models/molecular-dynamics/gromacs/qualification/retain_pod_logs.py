@@ -13,11 +13,13 @@ def main():
     parser.add_argument("--kubeconfig", required=True)
     parser.add_argument("--context", required=True)
     parser.add_argument("--pod", required=True)
+    parser.add_argument("--job", action="store_true", help="Match generated Pods of this exact task-owned Job.")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not re.fullmatch(r"fs2-workflow-[a-z0-9-]+", args.pod):
         raise ValueError("Use the exact task-owned scientific workflow Pod.")
-    query = '{k8s_namespace_name="fs2-models",k8s_pod_name="' + args.pod + '"}'
+    selector = '=~"' + args.pod + '-[a-z0-9]+"' if args.job else '="' + args.pod + '"'
+    query = '{k8s_namespace_name="fs2-models",k8s_pod_name' + selector + '}'
     script = (
         """import json,urllib.parse,urllib.request
 params={'query':%r,'since':'4h','limit':'2000','direction':'forward'}
