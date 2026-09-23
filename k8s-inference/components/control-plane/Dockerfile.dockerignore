@@ -87,6 +87,13 @@ k8s-inference/models/molecular-dynamics/namd/runtime/*
 !k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd/
 !k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd/*.py
 !k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd/py.typed
+!k8s-inference/models/molecular-dynamics/amber/
+k8s-inference/models/molecular-dynamics/amber/*
+!k8s-inference/models/molecular-dynamics/amber/runtime/
+k8s-inference/models/molecular-dynamics/amber/runtime/*
+!k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber/
+!k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber/*.py
+!k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber/py.typed
 
 **/.git
 **/.git/**
