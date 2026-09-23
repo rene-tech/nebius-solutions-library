@@ -28,7 +28,9 @@ def main():
         steps = [
             steps[0],
             steps[1],
-            {"id": "check", "command": "check", "args": ["-e", "md-1.part0001.edr"]},
+            {"id": "join-energies", "command": "eneconv", "args": ["-f", {"files": "md-1.part*.edr"}, "-o", "md.edr"]},
+            {"id": "energies", "command": "energy", "args": ["-f", "md.edr", "-o", "energies.xvg"], "stdin": "Potential\nTotal-Energy\nTemperature\n0\n"},
+            {"id": "check", "command": "check", "args": ["-e", "md.edr"]},
         ]
         steps[0]["args"][-1] = str(args.steps)
         if args.gpu_pme:

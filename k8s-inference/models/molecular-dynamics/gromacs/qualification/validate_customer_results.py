@@ -80,8 +80,12 @@ def main():
         checked_trajectories = []
         for command in trajectory_checks:
             log = paths[command["log"]].read_text(errors="replace")
-            assert "Last frame" in log and "Item" in log and "Time" in log
-            frames = re.findall(r"Last frame\s+(\d+)\s+time\s+([\d.]+)", log)
+            if '-e' in command['command']:
+                assert 'Checking energy file' in log and 'Found ' in log
+                frames = re.findall(r"Last energy frame read\s+(\d+)\s+time\s+([\d.]+)", log)
+            else:
+                assert "Last frame" in log and "Item" in log and "Time" in log
+                frames = re.findall(r"Last frame\s+(\d+)\s+time\s+([\d.]+)", log)
             assert frames, command["log"]
             count, last_time = int(frames[-1][0]) + 1, float(frames[-1][1])
             if args.expected_frames is not None:

@@ -91,3 +91,21 @@ def test_historical_proof_never_accepts_changed_or_missing_legacy_row(tmp_path, 
         row["execution_identity_sha256"] = "f" * 64
     with pytest.raises(ScientificExecutionMapError, match="qualification baseline"):
         render(tmp_path, profiles, document)
+
+
+def test_variable_gang_is_discoverable_with_its_minimum_legal_plan():
+    catalog = ScientificProfileCatalog.load(CATALOG_ROOT)
+    renderer = FileScientificManifestRenderer(
+        path=CATALOG_ROOT / "contracts/scientific-execution-map.json", profiles=catalog,
+    )
+    service = object.__new__(ScientificBatchService)
+    service.profiles = catalog
+    service.execution_binding = renderer
+    observed = []
+    service.scheduling = SimpleNamespace(freeze=lambda **kwargs: observed.append(kwargs["plan"]))
+    discovered = service.discovery_profiles(tenant_id="rene", allowed_models=frozenset({"gromacs-mpi"}), surface="mcp")
+    assert [row.model_id for row in discovered] == ["gromacs-mpi"]
+    assert len(observed) == 3
+    assert all(plan.stages[0].gang_size == 2 for plan in observed)
+    # Discovery does not narrow the actual request's configurable gang range.
+    assert catalog.get("gromacs-mpi").value["workload"]["stages"][0]["max_parallelism"] == 8

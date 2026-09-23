@@ -15,7 +15,7 @@ from ..models import AdmissionRequest, OperationView, PendingScientificAdmission
 from ..scientific_run_result import ArtifactRef, ScientificRunResult
 from ..scientific_run_result import SchedulingAdmission as PublicSchedulingAdmission
 from ..store import ConflictError, Store
-from .catalog_adapter import CatalogProfileAdapterError, scientific_plan_from_catalog_profile
+from .catalog_adapter import CatalogProfileAdapterError, ScientificStageExpansion, scientific_plan_from_catalog_profile
 from .codec import state_from_value, state_to_value
 from .controller import ScientificBatchController
 from .input_contracts import validate_input_roles
@@ -332,7 +332,15 @@ class ScientificBatchService:
                 workload_namespace = self.execution_binding.workload_namespace(profile.model_id)
                 for stage in profile.value["workload"]["stages"]:
                     self.execution_binding.collector_id(profile.model_id, str(stage["id"]))
-                plan = scientific_plan_from_catalog_profile(profile.value)
+                # Discovery has no request-specific gang size. Probe each
+                # gang's minimum legal size without changing submission-time
+                # validation or the customer's requested parallelism.
+                expansions = {
+                    stage["id"]: ScientificStageExpansion(shard_ids=("gang",), gang_size=stage["min_parallelism"])
+                    for stage in profile.value["workload"]["stages"]
+                    if stage["admission_mode"] == "gang-jobset"
+                }
+                plan = scientific_plan_from_catalog_profile(profile.value, expansions=expansions)
                 possible_attempts = sum(len(stage.workload_units) * stage.max_attempts for stage in plan.stages)
                 if possible_attempts > self.profiles.max_result_attempts:
                     raise ScientificProfileError("scientific plan exceeds the public result attempt bound")
