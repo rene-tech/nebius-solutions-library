@@ -160,7 +160,16 @@ known, so this is not called an uncached-node cold start. The first L40S NVE
 checkpoint and 216.02 ns/day native timing. Its independent 78-file artifact
 audit passed; result SHA256 is
 `276cc728f61a7221f2ec44e09d36201ada75ed0f0d7bdc7131cda84b3cc17ab7`.
-Other L40S cases and full repetitions are running, not yet qualified.
+The initial L40S NPT and repaired ungridded-bias 400 ps cases also passed:
+155.98 and 132.59 ns/day, respectively, each with 20 finite DCD frames and a
+221,000-step checkpoint. Bias restored all 100 previous hills before advancing
+to 200; original/native-loaded state bytes matched at SHA256
+`595818463ebb387b2c210119b8ac58cba8356e678a85070e097a3a667657929d`.
+All native output inventories passed the independent downloaded-file auditor.
+The three-case `runtime-receipt-r4-l40s-initial.json` SHA256 is
+`645683a49f0eb49fdcc03a2255247a32f01920a602f7f42b472e3acb7fccb174`.
+Its chosen initial cohort is passed; full planned repetitions remain explicitly
+incomplete, with `customer_ready:false`. Repetitions two and three are running.
 
 The binary was independently inspected with local CUDA 12.8.90 `cuobjdump`
 without changing either worker. The copied bytes match the recorded `namd3`
