@@ -68,7 +68,10 @@ def metadynamics(text):
             if not {"step", "weight", "centers", "widths"}.issubset(row):
                 raise ValueError("incomplete native metadynamics hill")
             hills.append(row)
-        result[name[1]] = {"hills": hills, "has_grids": bool(re.search(r"\bhills_energy(?:_gradients)?\s*\{", body)),
+        # Native 2024-06-04 writes an unbraced grid marker followed by a
+        # grid_parameters block and numeric data, not hills_energy { ... }.
+        # A gridded state must never receive the ungridded marker repair.
+        result[name[1]] = {"hills": hills, "has_grids": bool(re.search(r"(?m)^\s*hills_energy(?:_gradients)?[ \t]*(?:\{|$)", body)),
                            "keeps_hills": bool(re.search(r"(?mi)^\s*keepHills\s+(?:on|yes|true|1)\s*$", config[0][2])),
                            "configuration_end": start + config[0][1]}
     return result

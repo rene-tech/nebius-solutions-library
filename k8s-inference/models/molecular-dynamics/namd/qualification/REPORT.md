@@ -4,6 +4,21 @@ In progress; **not customer-ready**. Hosted REST/MCP, artifact delivery, exact-p
 native protocols, full repeated performance cohorts and persistent GPU snapshots
 are separate gates. A native restart is not a GPU process-memory snapshot.
 
+The r4 worker is being superseded explicitly, not relabeled. Its first actual
+gridded control exposed an incorrect assumption in the repair classifier and
+offline validator: native Colvars uses an unbraced `hills_energy` marker followed
+by `grid_parameters { ... }` and numeric values. The original parser expected
+braces immediately after the grid marker. The exercised `keepHills on` protocol
+was not rewritten, but another gridded state lacking that marker could receive
+an unintended ungridded compatibility repair. The successor recognizes the real
+layout before considering any repair. Its offline qualifier additionally checks
+the actual grid shape/count, every numeric value across native loading and PMF
+samples. Real-layout, missing/on/off keepHills, count and non-finite regressions
+were added. Earlier r4 initial grid reports with empty grid/PMF checks are
+retained as incomplete grid evidence, not accepted grid qualification. All
+unaffected r4 results remain bound to their original image; fresh successor-image
+core, native recovery and grid confirmations are required before promotion.
+
 ## Exact identity and protocol
 
 - Worker source: `ca59d2fcd`; qualification tooling continued in `203e6ee4a`.

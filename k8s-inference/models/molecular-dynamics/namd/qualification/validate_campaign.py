@@ -109,7 +109,10 @@ def radius_metadynamics(data):
     previous, summaries, previous_text, grid_round_trips, pmfs = [], [], None, [], []
     for path in states:
         text = path.read_text()
-        if blocks(text, "hills_energy"):
+        if re.search(r"(?m)^\s*hills_energy(?:_gradients)?[ \t]*(?:\{|$)", text):
+            for name in ("hills_energy", "hills_energy_gradients"):
+                if not grid_blocks(text, name):
+                    raise ValueError("native Colvars state lacks a metadynamics grid")
             if previous_text is not None:
                 loaded_path = path.with_name(path.name.removesuffix(".colvars.state") + ".loaded.colvars.state")
                 grid_round_trips.append(verify_grid_round_trip(previous_text, loaded_path.read_text()))
@@ -150,11 +153,56 @@ def radius_metadynamics(data):
             "grid_round_trips": grid_round_trips, "pmfs": pmfs}
 
 
+def grid_blocks(text, name):
+    """Read the actual unbraced one-dimensional native qualification grid.
+
+    The braced form remains readable for explicit older parser fixtures. Native
+    output is a keyword, grid_parameters block, then exactly sizes[0] numbers.
+    This intentionally does not claim multidimensional/vector-Colvar coverage.
+    """
+    found = list(blocks(text, name))
+    for marker in re.finditer(r"(?m)^[ \t]*" + re.escape(name) + r"[ \t]*$", text):
+        tail = text[marker.end():]
+        if not re.match(r"\s*grid_parameters\s*\{", tail):
+            raise ValueError("native metadynamics grid lacks parameters")
+        parameters = blocks(tail, "grid_parameters")[0]
+        metadata = {}
+        for line in parameters[2].splitlines():
+            if not line.strip():
+                continue
+            key, value = line.split(maxsplit=1)
+            if key in metadata:
+                raise ValueError("duplicate native metadynamics grid parameter")
+            metadata[key] = value.split()
+        if set(metadata) != {"n_colvars", "lower_boundaries", "upper_boundaries", "widths", "sizes"} or any(len(v) != 1 for v in metadata.values()):
+            raise ValueError("unsupported native qualification grid parameters")
+        fields = {k: float(v[0]) for k, v in metadata.items()}
+        if not all(math.isfinite(v) for v in fields.values()):
+            raise ValueError("non-finite native qualification grid parameters")
+        count = int(fields["sizes"])
+        if (fields["n_colvars"] != 1 or fields["sizes"] != count or count < 1 or fields["widths"] <= 0
+                or not math.isclose(fields["upper_boundaries"] - fields["lower_boundaries"], count * fields["widths"])):
+            raise ValueError("invalid or unsupported native qualification grid shape")
+        values = []
+        for token in tail[parameters[1] + 1:].split():
+            try:
+                value = float(token)
+            except ValueError:
+                break
+            if not math.isfinite(value):
+                raise ValueError("non-finite native metadynamics grid values")
+            values.append(token)
+        if len(values) != count:
+            raise ValueError("native metadynamics grid value count differs from its shape")
+        found.append((marker.start(), marker.end(), "grid_parameters { " + parameters[2] + " } " + " ".join(values)))
+    return found
+
+
 def verify_grid_round_trip(original, loaded):
     """Compare every serialized grid field/value for the explicit grid fixture."""
     summaries = {}
     for name in ("hills_energy", "hills_energy_gradients"):
-        before, after = blocks(original, name), blocks(loaded, name)
+        before, after = grid_blocks(original, name), grid_blocks(loaded, name)
         if not before or len(before) != len(after):
             raise ValueError("native Colvars restart lost a metadynamics grid")
         count = 0

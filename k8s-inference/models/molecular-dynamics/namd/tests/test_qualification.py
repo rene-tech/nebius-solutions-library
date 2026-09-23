@@ -8,7 +8,7 @@ from audit_binary import summarize
 from capture_hosted import pod_record
 from inspect_warnings import KNOWN, psf_inventory, warning_lines
 from make_fixture import colvars_configuration, configuration
-from validate_campaign import dcd, production_timing, radius_metadynamics, verify_grid_round_trip
+from validate_campaign import dcd, grid_blocks, production_timing, radius_metadynamics, verify_grid_round_trip
 
 
 def test_warning_inventory_does_not_hide_unknown_or_colvars_warnings():
@@ -91,6 +91,27 @@ def test_native_grid_round_trip_checks_every_value_and_metadata():
         verify_grid_round_trip(original, original.replace("lower", "upper"))
     with pytest.raises(ValueError, match="lost"):
         verify_grid_round_trip(original, original.replace("hills_energy_gradients", "missing"))
+
+
+def test_actual_native_unbraced_grid_layout_checks_shape_values_and_pmf(tmp_path):
+    metadata = "grid_parameters {\n n_colvars 1\n lower_boundaries 0\n upper_boundaries 0.4\n widths 0.2\n sizes 2\n}\n"
+    grid = "hills_energy\n" + metadata + " 0.0 0.5\nhills_energy_gradients\n" + metadata + " 0.1 -0.2\n"
+    report = verify_grid_round_trip(grid, grid)
+    assert report["hills_energy"]["numeric_values_verified"] == 7
+    with pytest.raises(ValueError, match="grid values"):
+        verify_grid_round_trip(grid, grid.replace("0.0 0.5", "0.0 0.6"))
+    with pytest.raises(ValueError, match="grid value count"):
+        grid_blocks(grid.replace("0.0 0.5", "0.0"), "hills_energy")
+    with pytest.raises(ValueError, match="non-finite"):
+        grid_blocks(grid.replace("0.0 0.5", "nan 0.5"), "hills_energy")
+    path = tmp_path / "production.part000001.colvars.state"
+    path.write_text("configuration { step 1000 }\n" + grid + "hill {\nstep 1000\nweight 0.01\ncenters 0.2\nwidths 0.4\n}\n")
+    path.with_suffix(".traj").write_text("1000 0.2\n")
+    path.with_name("production.part000001.pmf").write_text("# grid\n0.1 0.0\n0.3 0.5\n")
+    assert radius_metadynamics(tmp_path)["pmfs"][0]["points"] == 2
+    path.with_name("production.part000001.pmf").write_text("0.1 nan\n")
+    with pytest.raises(ValueError, match="non-finite"):
+        radius_metadynamics(tmp_path)
 
 
 def test_dcd_reads_all_frames_and_rejects_nan(tmp_path):

@@ -30,6 +30,22 @@ def test_empty_already_marked_and_gridded_states_are_not_rewritten(tmp_path, val
     assert not derived.exists()
 
 
+@pytest.mark.parametrize("extra", ["", "keepHills on\n", "keepHills off\n"])
+def test_actual_native_unbraced_grid_layout_never_receives_ungridded_repair(tmp_path, extra):
+    grid = ("hills_energy\ngrid_parameters {\n n_colvars 1\n lower_boundaries 0\n"
+            " upper_boundaries 0.4\n widths 0.2\n sizes 2\n}\n 0.0 0.5\n"
+            "hills_energy_gradients\ngrid_parameters {\n n_colvars 1\n lower_boundaries 0\n"
+            " upper_boundaries 0.4\n widths 0.2\n sizes 2\n}\n 0.1 -0.2\n")
+    original, derived = tmp_path / "native.state", tmp_path / "derived.state"
+    value = state(grids=grid, extra=extra)
+    original.write_text(value)
+    assert metadynamics(value)["radius_meta"]["has_grids"]
+    report = prepare(original, derived)
+    assert report["repair"] is None and not derived.exists()
+    assert report["original_sha256"] == report["loaded_input_sha256"]
+    assert original.read_text() == value
+
+
 def test_round_trip_detects_native_hill_loss_and_value_change(tmp_path):
     original, loaded = tmp_path / "original.state", tmp_path / "loaded.state"
     original.write_text(state())
