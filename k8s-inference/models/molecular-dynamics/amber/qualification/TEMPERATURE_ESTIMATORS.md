@@ -42,11 +42,15 @@ All source paths below are relative to `pmemd26_src/src/pmemd/src`.
    freedom. The canonical topology has6598 atoms and6588 constrained bonds,
    giving `3*6598 - 6588 = 13206` DOF, not13203. It has no extra-point correction.
 
-The Fortran printed-temperature constant is
-`KB = (1.380658e-23 * 6.0221367e23) / 4184`
-(`constants.F90:121`). The CUDA thermostat separately uses
-`KB_cuda = 0.00831441 / 4.184` (`cuda/kForcesUpdate.cu:486`). Their small numerical
-difference must be recorded but cannot explain a roughly1.8 K estimator offset.
+The Fortran printed-temperature path explicitly imports `gbl_constants_mod`
+at `runmd.F90:57`. Its constant is `KB = 8.31441 / 4184`
+(`gbl_constants.F90:26`), numerically matching the CUDA thermostat's
+`KB_cuda = 0.00831441 / 4.184` (`cuda/kForcesUpdate.cu:486`). An initial source
+note incorrectly followed the similarly named constant in the unrelated
+`constants.F90` module. That alternative differs by about12.17 ppm and would
+shift a300 K calculation by about0.00365 K; it does not explain the roughly1.8 K
+estimator offset. The explicit Fortran module binding resolves the correction;
+none of the native outputs or the velocity-averaging conclusion changed.
 
 The [AMBER26 manual](https://ambermd.org/doc12/Amber26.pdf), section23.6,
 printed pages443–444, describes the same leapfrog-middle propagation and
@@ -74,6 +78,7 @@ every-step paired-velocity diagnostic would be a separate bounded control.
 | `prmtop_dat.F90` | `d3c6a4ce3716c471ab757b0d0777db3fb84cd1a196134911955b0bdfc652f353` |
 | `degcnt.F90` | `6a230178df71f34250b96a90b06e91ddda00b5128605734065406a3bf7698615` |
 | `constants.F90` | `e5fd9aa3ee4d7d2adf399ebf0feaa26a43686881887612fa36d448e351df1246` |
+| `gbl_constants.F90` (actual imported KB) | `a8073e9f1951ebfb141809dbd85e92544ef063bb0cf8781ad2940506dc183745` |
 | `cuda/kForcesUpdate.cu` | `4848bbf63f8ad64388e85bad1ab17d718120f43859a81101dab236b24d851707` |
 | `cuda/kMiddle.h` | `ed5e74868a40d1bcceb0a4e5cfc67f2f1f2a0aa8653179e7943c655b360b0f09` |
 | `cuda/gpu.cpp` | `2d2deb107ed8cf2e0afbb79d795b7cbec07e858d093ef6337de29af9ff05aed0` |
