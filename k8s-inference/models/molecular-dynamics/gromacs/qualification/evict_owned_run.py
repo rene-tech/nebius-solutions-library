@@ -11,18 +11,19 @@ from pathlib import Path
 import subprocess
 import time
 
-IMAGE = 'cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:4636ae471eda7faee35cee1bf804e85f5c9635f94f99baad11c564c25516e123'
-
-
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--kubeconfig', required=True)
     parser.add_argument('--context', required=True)
     parser.add_argument('--receipt', type=Path, required=True)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--image', required=True)
+    parser.add_argument('--idempotency-key', required=True)
     args = parser.parse_args()
     if args.output.exists():
         raise ValueError('This fault injection has already been attempted; use its retained receipt.')
+    if '@sha256:' not in args.image or not args.idempotency_key.startswith('gromacs-qualified-recovery-large-20260923-'):
+        raise ValueError('Use an immutable worker image and this task-owned recovery fixture.')
     kube = ['kubectl', '--kubeconfig', args.kubeconfig, '--context', args.context, '-n', 'fs2-models']
     deadline = time.monotonic() + 900
     while time.monotonic() < deadline:
@@ -37,7 +38,7 @@ def main():
         operation = status['operation']
         assert operation['model_id'] == 'gromacs'
         assert operation['tenant_id'] == operation['principal_id'] == 'rene'
-        assert operation['idempotency_key'] == 'gromacs-qualified-recovery-large-20260923-01'
+        assert operation['idempotency_key'] == args.idempotency_key
         assert operation['token_id'] == '6f4b312e-cdf1-480d-9e37-bc31c9b952fd'
         if operation['status'] in {'failed', 'cancelled', 'succeeded'}:
             raise RuntimeError('Operation ended before the controlled disruption.')
@@ -55,7 +56,7 @@ def main():
         pod = pods[0]
         assert any(owner['uid'] == attempt['workload_uid'] for owner in pod['metadata']['ownerReferences'])
         stage = next(container for container in pod['spec']['containers'] if container['name'] == 'scientific-stage')
-        assert stage['image'] == IMAGE
+        assert stage['image'] == args.image
         inspect = """import json,pathlib
 items=[]
 for ack in pathlib.Path('/mnt/fs2-scientific').rglob('checkpoint-ack.json'):

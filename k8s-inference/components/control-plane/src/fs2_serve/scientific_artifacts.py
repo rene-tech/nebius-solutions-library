@@ -35,7 +35,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Annotated, Any, Final, Literal, Protocol
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import asyncpg
 from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_validator
@@ -1199,6 +1199,20 @@ class ScientificArtifactService:
         terminal = [attempt for attempt in attempts if attempt.status.terminal]
         if len(terminal) != len(attempts):
             raise ArtifactConflictError("every attempt must be terminal before the run result is published")
+        # Controller-only manifest publication is artifact bookkeeping, not a
+        # scheduled scientific stage. Keep its durable repository/event record,
+        # but do not invent a GPU attempt in the customer's frozen workload.
+        publication_id = uuid5(NAMESPACE_URL, f"fs2-result-publication:{draft.operation_id}")
+        scientific_attempts = []
+        for attempt in terminal:
+            if attempt.attempt_id == publication_id and attempt.stage_id == "result-publication":
+                if (attempt.status is not AttemptStatus.SUCCEEDED or attempt.admission is None
+                        or attempt.admission.accelerator_count != 0 or attempt.k8s_job_uid is not None
+                        or attempt.kueue_workload_uid is not None or attempt.pod_uids
+                        or attempt.node_uids or attempt.gpu_uuids):
+                    raise ArtifactConflictError("controller manifest publication has a workload allocation")
+                continue
+            scientific_attempts.append(attempt)
         input_manifest = await self._repository.get_artifact(
             draft.input_manifest_artifact_id, tenant_id=draft.tenant_id
         )
@@ -1238,7 +1252,7 @@ class ScientificArtifactService:
                 "attempts": [
                     attempt.to_public_attempt().model_dump(mode="json")
                     for attempt in sorted(
-                        terminal, key=lambda item: (item.stage_id, item.shard_key, item.attempt_number)
+                        scientific_attempts, key=lambda item: (item.stage_id, item.shard_key, item.attempt_number)
                     )
                 ],
                 "semantic_validation": {

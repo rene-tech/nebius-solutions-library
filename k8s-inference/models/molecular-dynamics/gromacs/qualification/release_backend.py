@@ -19,6 +19,8 @@ def main():
     parser.add_argument('--activation', type=Path, required=True)
     parser.add_argument('--image-digest', required=True)
     parser.add_argument('--apply', action='store_true')
+    parser.add_argument('--backend-only', action='store_true',
+                        help='Preserve every execution/profile row while repairing result publication.')
     args = parser.parse_args()
     if not re.fullmatch(r'sha256:[a-f0-9]{64}', args.image_digest):
         raise ValueError('Use an immutable published image digest.')
@@ -30,6 +32,16 @@ def main():
     live = json.loads(subprocess.check_output(helm + ['get', 'values', 'fs2-serve-control-plane', '-o', 'json']))
     if live != baseline:
         raise ValueError('The live release changed. Recapture/rebase; do not overwrite another task.')
+    if args.backend_only:
+        args.activation.mkdir(mode=0o700, parents=True, exist_ok=False)
+        config = baseline['scientificBatch']
+        overlay = {'scientificBatch': {'executionMap': config['executionMap']}}
+        (args.activation / 'activation.values.json').write_text(json.dumps(overlay))
+        cm = {'apiVersion': 'v1', 'kind': 'ConfigMap',
+              'metadata': {'name': config['schedulingContractConfigMapName'],
+                           'namespace': config['schedulingContractNamespace']},
+              'data': {config['schedulingContractKey']: (args.baseline / 'scheduling.json').read_text()}}
+        (args.activation / 'scheduling.configmap.json').write_text(json.dumps(cm))
     overlay_path = args.activation / 'activation.values.json'
     overlay = json.loads(overlay_path.read_text())
     source = json.loads((root / 'catalog/runtime/contracts/scientific-execution-map.json').read_text())

@@ -7,8 +7,9 @@ import hashlib
 import json
 import re
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Any, Protocol, cast
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 import httpx
 
@@ -16,10 +17,13 @@ from ..lifecycle import LifecycleRepository
 from ..scientific_artifacts import (
     ArtifactAccess,
     ArtifactAccessProfile,
+    ArtifactDirection,
     ArtifactNotFoundError,
     ArtifactRepository,
+    BeginArtifactUpload,
     CloseStageAttempt,
     CommitStageResult,
+    FinalizeArtifactUpload,
     KueueAdmission,
     ManifestEntryDraft,
     OpenStageAttempt,
@@ -549,6 +553,80 @@ class ArtifactServiceBridge:
             raise ScientificProfileError("scientific batch terminal event is absent or ambiguous")
         return terminal[0]
 
+    async def _terminal_manifest(
+        self, state: ScientificBatchState, commits: tuple[AttemptArtifactCommit, ...]
+    ) -> UUID:
+        """Flatten validated terminal shards without copying native result bytes.
+
+        The metadata-only publication attempt uses the existing artifact
+        lifecycle. It runs in the controller, requests no Pod/GPU, and cannot
+        reopen a closed scientific attempt. Single-shard results stay identical.
+        """
+        if not commits:
+            raise ScientificProfileError("terminal stage has no canonical output manifest")
+        if len(commits) == 1:
+            return commits[0].manifest_artifact_id
+        if self.content_reader is None:
+            raise ScientificProfileError("terminal manifest reader is unavailable")
+        entries = []
+        for index, commit in enumerate(commits):
+            manifest = self.profiles.validate_artifact_manifest(json.loads(await self.content_reader.read(
+                commit.manifest_artifact_id, tenant_id=state.tenant_id, maximum_bytes=_MAX_MANIFEST_BYTES,
+            )))
+            for entry in cast(list[dict[str, Any]], manifest["entries"]):
+                # Index prefixes keep repeated native names distinct and stable;
+                # each GROMACS result document retains its original job/file IDs.
+                name = f"shard-{index:04d}.{entry['name']}"
+                if len(name) > 128:
+                    name = f"shard-{index:04d}." + hashlib.sha256(entry['name'].encode()).hexdigest()
+                entries.append({**entry, "name": name})
+        document = {"schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+                    "manifest_id": f"result-{state.operation_id.hex}", "entries": entries}
+        self.profiles.validate_artifact_manifest(document)
+        payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+        if len(payload) > _MAX_MANIFEST_BYTES:
+            raise ScientificProfileError("aggregate output manifest exceeds the published bound")
+        digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+        stage = "result-publication"
+        attempt_id = uuid5(NAMESPACE_URL, f"fs2-result-publication:{state.operation_id}")
+        service = self._require_service()
+        try:
+            attempt = await self.artifacts.get_attempt(attempt_id, tenant_id=state.tenant_id)
+        except ArtifactNotFoundError:
+            attempt = await service.open_attempt(OpenStageAttempt(
+                attempt_id=attempt_id, operation_id=state.operation_id, tenant_id=state.tenant_id,
+                stage_id=stage, attempt_number=1, started_at=datetime.now(UTC),
+            ))
+        existing = await service.list_artifacts(state.operation_id, tenant_id=state.tenant_id,
+                                                stage_id=stage, attempt_id=attempt_id)
+        if len(existing) > 1 or existing and existing[0].digest != digest:
+            raise ScientificProfileError("terminal publication identity changed")
+        if existing:
+            artifact = existing[0]
+        else:
+            upload_id = uuid5(NAMESPACE_URL, f"fs2-result-publication:{state.operation_id}:{digest}")
+            await service.begin_upload(BeginArtifactUpload(
+                upload_id=upload_id, attempt_id=attempt_id, operation_id=state.operation_id,
+                tenant_id=state.tenant_id, direction=ArtifactDirection.OUTPUT,
+                expected_digest=digest, expected_size_bytes=len(payload),
+                media_type="application/vnd.fs2.scientific-manifest+json",
+                access=ArtifactAccess(profile=ArtifactAccessProfile(state.access_context.profile),
+                                      receipt_digest=state.access_context.receipt_digest),
+            ))
+            request = FinalizeArtifactUpload(upload_id=upload_id, operation_id=state.operation_id,
+                                             tenant_id=state.tenant_id)
+            await service.store_trusted_upload_content(request, content=payload)
+            artifact = await service.finalize_upload(request)
+        if not attempt.status.terminal:
+            await service.close_attempt(CloseStageAttempt(
+                attempt_id=attempt_id, operation_id=state.operation_id, tenant_id=state.tenant_id,
+                status=ArtifactAttemptStatus.SUCCEEDED, completed_at=datetime.now(UTC),
+                admission=KueueAdmission(accelerator_count=0, admitted_at=attempt.started_at),
+            ))
+        elif attempt.status is not ArtifactAttemptStatus.SUCCEEDED:
+            raise ScientificProfileError("terminal publication attempt did not succeed")
+        return artifact.artifact_id
+
     async def publish_terminal(self, state: ScientificBatchState) -> None:
         """Idempotently publish the artifact-service-owned terminal result."""
 
@@ -572,11 +650,11 @@ class ArtifactServiceBridge:
             if len(sinks) != 1:
                 raise ScientificProfileError("successful scientific batch has no unique terminal stage")
             commits = await self.artifact_commits(state, stage_id=sinks[0])
-            if len(commits) != 1:
-                raise ScientificProfileError("terminal stage has no unique canonical output manifest")
-            output_manifest_id = commits[0].manifest_artifact_id
+            if len({item.validator_id for item in commits}) != 1:
+                raise ScientificProfileError("terminal stage validators disagree")
+            output_manifest_id = await self._terminal_manifest(state, commits)
             validator_id = commits[0].validator_id
-            validation_receipt = commits[0].validation_digest
+            validation_receipt = self._validation_digest(commits)
         access = ArtifactAccess(
             profile=ArtifactAccessProfile(state.access_context.profile),
             receipt_digest=state.access_context.receipt_digest,
