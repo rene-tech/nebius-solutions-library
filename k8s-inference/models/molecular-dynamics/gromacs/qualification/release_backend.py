@@ -5,6 +5,7 @@ Render output is private because operator values must not be printed to stdout.
 """
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,10 @@ def main():
     parser.add_argument("--activation", type=Path, required=True)
     parser.add_argument("--image-digest", required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--admin-image-digest")
+    parser.add_argument("--admin-source-commit")
+    parser.add_argument("--admin-source-tree")
+    parser.add_argument("--admin-sbom-file", type=Path)
     parser.add_argument(
         "--backend-only",
         action="store_true",
@@ -28,6 +33,17 @@ def main():
     args = parser.parse_args()
     if not re.fullmatch(r"sha256:[a-f0-9]{64}", args.image_digest):
         raise ValueError("Use an immutable published image digest.")
+    admin_values = (args.admin_image_digest, args.admin_source_commit, args.admin_source_tree, args.admin_sbom_file)
+    if any(admin_values):
+        if not all(admin_values):
+            raise ValueError("An admin image update requires its digest, source commit/tree and exact SBOM.")
+        if not re.fullmatch(r"sha256:[a-f0-9]{64}", args.admin_image_digest) or any(
+            not re.fullmatch(r"[a-f0-9]{40}", value)
+            for value in (args.admin_source_commit, args.admin_source_tree)
+        ):
+            raise ValueError("Pin immutable admin source and image identities.")
+        if json.loads(args.admin_sbom_file.read_text()).get("bomFormat") != "CycloneDX":
+            raise ValueError("The admin image SBOM must be CycloneDX JSON.")
     root = Path(__file__).resolve().parents[4]
     chart = root / "charts/control-plane/fs2-serve-control-plane"
     kube = ["kubectl", "--kubeconfig", args.kubeconfig, "--context", args.context]
@@ -79,6 +95,21 @@ def main():
     merged = {**baseline, "image": {**baseline["image"], "digest": args.image_digest}}
     for key, value in overlay.items():
         merged[key] = {**merged[key], **value}
+    if args.admin_image_digest:
+        current_admin = baseline["adminConsole"]
+        if not current_admin["enabled"]:
+            raise ValueError("This update may not enable a previously disabled admin console.")
+        merged["adminConsole"] = {
+            **current_admin,
+            "image": {**current_admin["image"], "digest": args.admin_image_digest},
+            "provenance": {
+                **current_admin.get("provenance", {}),
+                "sourceCommit": args.admin_source_commit,
+                "sourceTree": args.admin_source_tree,
+                "sbomFormat": "cyclonedx-json",
+                "sbomSha256": hashlib.sha256(args.admin_sbom_file.read_bytes()).hexdigest(),
+            },
+        }
     render_values = args.activation / "release.values.json"
     if render_values.exists():
         raise ValueError("Use a new activation directory for each release attempt.")
