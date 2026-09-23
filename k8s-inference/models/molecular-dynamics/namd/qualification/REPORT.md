@@ -1,8 +1,8 @@
 # Native NAMD qualification — 23 September 2026
 
-In progress; **not customer-ready**. Hosted REST/MCP, tenant artifact delivery,
-L40S, full repeated performance cohorts and persistent GPU snapshots are separate
-gates. A native restart is not a GPU process-memory snapshot.
+In progress; **not customer-ready**. Hosted REST/MCP, artifact delivery, exact-pool
+native protocols, full repeated performance cohorts and persistent GPU snapshots
+are separate gates. A native restart is not a GPU process-memory snapshot.
 
 ## Exact identity and protocol
 
@@ -172,8 +172,17 @@ to 200; original/native-loaded state bytes matched at SHA256
 All native output inventories passed the independent downloaded-file auditor.
 The three-case `runtime-receipt-r4-l40s-initial.json` SHA256 is
 `645683a49f0eb49fdcc03a2255247a32f01920a602f7f42b472e3acb7fccb174`.
-Its chosen initial cohort is passed; full planned repetitions remain explicitly
-incomplete, with `customer_ready:false`. Repetitions two and three are running.
+Its chosen initial cohort is passed and the original receipt remains unchanged.
+The subsequent full L40S core cohort passed nine runs: three 400 ps repetitions
+each of NVE, NPT and repaired ungridded metadynamics. All 180 DCD frames were
+finite/readable, final steps were 221,000, and every original input member and
+native inventory hash passed independent checks. Native medians were 215.368,
+155.982 and 132.804 ns/day, respectively. All three bias runs restored 100 old
+hills and retained their complete prefix in the final 200 hills. The nine-test
+`runtime-receipt-r4-l40s-core.json` SHA256 is
+`3d11ecd8e6c1fb46bf8799162c1d05fbbaadf129c4f5c442e7178b484c85cc16`.
+Its chosen repeated core cohort is complete; matched grid, preparation, offload
+and STMV controls continue. No hosted L40S or full customer-readiness claim.
 
 The binary was independently inspected with local CUDA 12.8.90 `cuobjdump`
 without changing either worker. The copied bytes match the recorded `namd3`
@@ -224,6 +233,55 @@ bytes matched in each downloaded job. No archive was extracted or executed by
 this auditor. `hosted-validation-inputs-receipt.json` SHA256 is
 `6e5280af34c468c76010e23a4431431e6d660ba76d19aeb01d016817b5e2df38`;
 the earlier receipt and its referenced audit files remain unchanged.
+
+The subsequent ordinary hosted NPT batch also passed all three requested 400 ps
+jobs and all 237 downloaded artifacts. Independent validation covered 234 native
+files, every immutable input member, 60 finite DCD frames, paired 221,000-step
+checkpoints, mean temperatures 299.29–299.41 K and finite variable volumes.
+Native median was 216.287 ns/day (215.949–216.424). Operation
+`09c69586-3b70-41cb-86c0-bb9559a2b5d8` used the same scientific fixture and the
+explicit transport-only `platform-artifacts` override; its exact derived request
+SHA256 is `2809707a5485b8e2a0bf4cb01a337128fadcfd6438de40962ff7cc4d1ef450e6`.
+The output validation receipt is
+`/home/tux/secure-handoff/fs2-md-engines-20260923/hosted-namd-npt-01-materialized/hosted-validation-receipt.json`,
+SHA256 `c9a205bf8afe4019af56135ad8a741ba0a04fa5bf9ea85edcfc84e72214e352e`.
+Filtered runtime-provenance snapshots in the client receipt directory cover
+all three exact-r4 H100 workers, driver 580.173.02, without recording secrets or
+native payloads. The recorded collector/backend image was
+`sha256:3f4408c3ae860fba456d51ad6af8a2294166d5964bb89c4fcb06bdbc360b5050`.
+Hosted Colvars is a separate pending cohort; NPT does not qualify it.
+
+## Native warning review
+
+No warning was suppressed and no source scientific setting was silently changed.
+`warning-inventory-r4-01.json` records 84 native logs across completed H100/L40S
+and hosted cohorts, their exact hashes, ten distinct warning lines and zero
+unclassified warning text. SHA256:
+`a47637263a1202683fe5954556d90d0c70484c53d6e9eb0738398fb434d9b54c`.
+This is an inventory with explicit interpretation, not automatic release approval.
+
+- Deprecated aliases (`1-4scaling`, `CUDASOAintegrate`, `DeviceMigration`,
+  `CUDAForceTable`) are present in the unchanged native benchmark configuration;
+  their replacements are identified by the native messages.
+- `GPUAtomMigration on` and `GPUForceTable off` are explicit experimental
+  benchmark options. The latter uses direct non-PME-step calculations and does
+  not support every force variant. They remain experimental: our finite-run
+  energy/trajectory checks do not establish long-timescale conservation or
+  qualify other force variants. See the [native GPU option documentation](https://www.ks.uiuc.edu/Research/namd/3.0/ug/node102.html).
+- The two Langevin warning lines report differing per-particle damping and
+  extra rigid-bond work. These inputs deliberately specify
+  `langevinHydrogen off`, leaving hydrogens uncoupled while other atoms are
+  thermostatted; no thermostat parameter was rewritten to silence the warning.
+  This interpretation follows the [native Langevin settings](https://www-s.ks.uiuc.edu/Research/namd/3.0/ug/node38.html).
+- The GPU-resident lone-pair capability warning occurs before structure loading.
+  Both actual benchmark PSFs have no `NUMLP` section; all 92,224 ApoA1 and
+  1,066,628 STMV atom records were independently parsed and have mass at least
+  1.008 amu (no zero-mass sites). The [public PSF reader](https://www.ks.uiuc.edu/Research/namd/doxygen/Molecule_8C_source.html)
+  distinguishes absent/zero lone-pair hosts. This establishes that these listed
+  fixtures do not request explicit lone-pair sites; it does not qualify arbitrary
+  Tcl, lone-pair force fields or other native inputs.
+
+## Other remaining boundaries
 
 The exact-r4 SPDX SBOM contains 188 packages (Syft 1.43.0). Trivy 0.70.0 with
 the 23 September 2026 01:09 UTC vulnerability database reports zero critical,

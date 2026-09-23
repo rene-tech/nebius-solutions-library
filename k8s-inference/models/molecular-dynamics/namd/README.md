@@ -21,8 +21,11 @@ the workstation's registry-root HTTP 403 does not establish missing entitlement.
 The binary reports NAMD 3.0.2, multicore Charm++ 8.0.0, CUDA 12.9, built
 8 December 2025. The included build recipe contains SM80, SM86, SM90, SM100,
 SM103 and SM120 targets plus compute_120 PTX. This recipe is build metadata;
-per-GPU runtime qualification remains required. H100 discovery observed driver
-580.173.02. L40S has not yet been qualified for this App.
+per-GPU runtime qualification remains required. H100 and L40S both use driver
+580.173.02 in the retained qualification. The exact r4 worker passed three
+400 ps ApoA1 NVE/NPT/ungridded-metadynamics repetitions per case on L40S;
+additional matched controls remain in progress. These results do not imply
+qualification of every mode, a hosted L40S path, or a peak GPU-only comparison.
 
 No 3.0.3 correctness backport was found. This build predates the July 2026 fixes.
 GBIS and Colvars spinAngle are rejected by effective-option compatibility guards.
@@ -148,6 +151,19 @@ segment boundaries/GPU mode, required outputs and final paired native timesteps.
 The optional input-bundle comparison checks every original immutable member
 against the downloaded files without extracting or executing the archive.
 This is qualification tooling; it adds no runtime restriction on user physics.
+
+`qualification/capture_hosted.py` records only the selected operation's filtered
+Pod/image/resource identities and a read-only GPU query. It excludes environment,
+arguments, annotations, secrets and customer payloads. `hosted_receipt.py` binds
+the downloaded scientific and inventory audits; the released client and parent
+release receipt remain responsible for authentication, transport and deployment
+provenance. Use the exact submitted parameters, including a transport-only
+`request-transport.json` when the client selects platform-managed artifacts.
+
+`qualification/inspect_warnings.py` retains every warning line with log hashes
+and a narrow PSF inventory. Classification does not suppress warnings or approve
+a release. Explicit experimental options in the source benchmark inputs and
+their limitations are documented in the qualification report.
 
 Native worker tests do not establish REST/MCP, admin, tenant storage, customer
 skills, interruption recovery or persistent fresh-worker GPU snapshots. Those

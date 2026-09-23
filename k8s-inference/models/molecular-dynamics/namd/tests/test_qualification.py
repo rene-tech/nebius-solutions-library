@@ -6,8 +6,27 @@ import pytest
 
 from audit_binary import summarize
 from capture_hosted import pod_record
+from inspect_warnings import KNOWN, psf_inventory, warning_lines
 from make_fixture import colvars_configuration, configuration
 from validate_campaign import dcd, production_timing, radius_metadynamics, verify_grid_round_trip
+
+
+def test_warning_inventory_does_not_hide_unknown_or_colvars_warnings():
+    lines = warning_lines("Info: normal\nWarning: GPUAtomMigration is experimental\ncolvars: Warning: new problem\n")
+    assert len(lines) == 2
+    assert KNOWN[lines[0]] == "explicit-experimental-optimization"
+    assert lines[1] not in KNOWN
+
+
+def test_psf_inventory_records_lonepair_evidence_without_inferring_tcl_features(tmp_path):
+    psf = tmp_path / "test.psf"
+    psf.write_text("PSF\n 2 !NATOM\n 1 SEG 1 RES C CT 0 12.011\n 2 SEG 1 RES LP LP 0 0\n 1 3 !NUMLP NUMLPH\n")
+    result = psf_inventory(psf)
+    assert result["atoms"] == 2 and result["atoms_below_0_1_amu"] == 1
+    assert result["explicit_lonepair_section_headers"] == ["1 3 !NUMLP NUMLPH"]
+    psf.write_text("PSF\n 2 !NATOM\n 1 SEG 1 RES C CT 0 12.011\n")
+    with pytest.raises(ValueError, match="incomplete"):
+        psf_inventory(psf)
 
 
 def test_hosted_pod_capture_omits_environment_arguments_annotations_and_unrelated_labels():
