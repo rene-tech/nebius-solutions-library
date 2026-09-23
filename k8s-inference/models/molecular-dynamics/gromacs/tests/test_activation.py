@@ -26,6 +26,7 @@ def inputs():
               "schedulingContractSha256": activation.hashlib.sha256(raw).hexdigest(),
               "schedulingContractConfigMapName": "existing-abc123", "schedulingContractNamespace": "fs2-models",
               "schedulingContractKey": "scheduling.json"}}
+    values["scientificArtifacts"] = {"mediaTypes": ["application/json", "image/png"]}
     image = "registry.example/gromacs@sha256:" + "1" * 64
     evidence = {"runtime_image": image, "recorded_at": "2026-09-23T07:00:00Z", "tests": [{"fixture": True}]}
     return values, raw, candidate, image, evidence, "2" * 64
@@ -42,6 +43,8 @@ def test_addition_preserves_current_models_snapshots_and_quotas(tmp_path):
     assert live.get("snapshot_bundles") == desired.get("snapshot_bundles")
     assert json.loads(cm["data"]["scheduling.json"])["quotas"] == {"unchanged": True}
     assert profile["qualification"]["public_completion_receipt_sha256"] is None
+    assert set(overlay["scientificArtifacts"]["mediaTypes"]) == {
+        "application/json", "image/png", "application/x-tar", "application/vnd.fs2.gromacs-checkpoint+json"}
     assert row["stages"][0]["required_node_labels"] == {"kubernetes.io/arch": "amd64"}
     assert row["runtime_artifacts"] == []
     Draft202012Validator(json.loads((ROOT / "catalog/runtime/schema/scientific-workload-profile.schema.json").read_text())).validate(profile)

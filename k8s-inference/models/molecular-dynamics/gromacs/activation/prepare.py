@@ -127,8 +127,8 @@ def prepare(values, scheduling_raw, candidate, runtime_image, evidence, recipe_s
           "namespace": current["schedulingContractNamespace"]}, "data": {current["schedulingContractKey"]: raw.decode()}}
     overlay = {"scientificBatch": {"executionMap": desired, "schedulingContractConfigMapName": name,
                                    "schedulingContractSha256": sha}}
-    if "artifacts" in values:
-        overlay["artifacts"] = {"mediaTypes": sorted(set(values["artifacts"]["mediaTypes"]) |
+    if "scientificArtifacts" in values:
+        overlay["scientificArtifacts"] = {"mediaTypes": sorted(set(values["scientificArtifacts"]["mediaTypes"]) |
             {"application/x-tar", "application/vnd.fs2.gromacs-checkpoint+json"})}
     return profile, row, overlay, cm
 
