@@ -14,6 +14,7 @@ import subprocess
 import httpx
 
 KEY_NAME = "native-md-qualification-20260923"
+KEY_NAMES = {KEY_NAME, "amber-qualification-20260923"}
 MODELS = ["gromacs", "gromacs-mpi", "lammps", "namd", "amber"]
 
 
@@ -41,6 +42,7 @@ def main():
     parser.add_argument("--origin", default="https://89.169.99.188")
     parser.add_argument("--tenant", default="rene")
     parser.add_argument("--source-key", default="internal-test")
+    parser.add_argument("--key-name", choices=sorted(KEY_NAMES), default=KEY_NAME)
     parser.add_argument("--key-file", type=Path)
     parser.add_argument("--model", choices=MODELS, action="append")
     parser.add_argument("--receipt", required=True, type=Path)
@@ -128,7 +130,7 @@ def main():
                 for key in ("tenant_id", "principal_id", "scopes", "max_concurrency")
             }
             payload.update(
-                name=KEY_NAME,
+                name=args.key_name,
                 models=args.model or ["gromacs"],
                 scopes=sorted(set(source["scopes"]) | {"artifacts.write"}),
                 expires_at=(
@@ -145,7 +147,7 @@ def main():
             value = json.loads(args.key_file.read_text())
             if (
                 not value.get("disposable")
-                or value["key"]["name"] not in {KEY_NAME, "gromacs-qualification-20260923"}
+                or value["key"]["name"] not in KEY_NAMES | {"gromacs-qualification-20260923"}
             ):
                 raise ValueError("Only this task-owned disposable key can be revoked.")
             revoked = result(client.delete("/admin/api/v1/keys/" + value["key"]["id"]))[
