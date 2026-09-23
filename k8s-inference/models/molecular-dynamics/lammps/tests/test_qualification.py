@@ -40,3 +40,15 @@ def test_customer_starter_contract_and_bundle_are_accepted(tmp_path):
     extract_inputs(archive, tmp_path / "data", max_bytes=1000000)
     assert len(list((tmp_path / "data").iterdir())) == 6
     assert request["jobs"][0]["steps"][1]["continuation"]["target_step"] == 51000
+
+
+def test_restart_comparison_never_compares_different_physical_steps():
+    row = [1000, 100, 300, -10, 2, -8, 1, 200]
+    following = [1100, 100, 302, -10.1, 2, -8.1, 1, 200]
+    result = validation.restart_continuity([[row], [following]], [{"native_restart_step": 1100}])
+    assert result[0]["numerical_continuity_measured"] is False
+    assert "relative_energy_jump" not in result[0]
+    with pytest.raises(ValueError, match="independently decoded"):
+        validation.restart_continuity([[row], [following]], [{"native_restart_step": 1200}])
+    measured = validation.restart_continuity([[row], [row]], [{"native_restart_step": 1000}])
+    assert measured[0]["relative_energy_jump"] == 0

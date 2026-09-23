@@ -39,7 +39,14 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
     save(args.output / "original-pod.json", old)
     source = args.output / "fixture"
-    body, files = fixture("lj", args.assets, 100000, warmup=2000, segment_seconds=5, trajectory_every=5000)
+    body, files = fixture("lj", args.assets, 100000, warmup=2000, segment_seconds=60, trajectory_every=5000)
+    # An explicit first boundary makes the last pre-checkpoint thermo sample
+    # coincide with the restart step, so numerical continuity is measurable.
+    # Total steps, potential, integrator and timestep are unchanged.
+    files["in.production"] = files["in.production"].replace(b"run 102000 upto", b"run 22000 upto")
+    protocol = json.loads(files["protocol.json"])
+    protocol["checkpoint_schedule"] = "explicit first boundary at 22000, then complete continuation to 102000"
+    files["protocol.json"] = (json.dumps(protocol, indent=2) + "\n").encode()
     write_fixture(source, body, files)
     remote = "/mnt/fs2-scientific/native-recovery"
     script = Path(__file__).with_name("interrupt_resume.py")
