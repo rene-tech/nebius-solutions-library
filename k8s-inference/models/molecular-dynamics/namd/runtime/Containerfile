@@ -1,0 +1,20 @@
+# Build context: k8s-inference/models/molecular-dynamics
+ARG NVIDIA_NAMD_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-ngc@sha256:e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f
+FROM ${NVIDIA_NAMD_IMAGE}
+ARG SOURCE_REVISION=development
+LABEL org.opencontainers.image.title="Scientific AI NVIDIA NAMD workflow worker" \
+      org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library/tree/main/k8s-inference/models/molecular-dynamics/namd" \
+      org.opencontainers.image.revision=${SOURCE_REVISION}
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/opt/fs2/namd:/opt/fs2/gromacs
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends python3 python3-jsonschema \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 10001 fs2 \
+    && useradd --uid 10001 --gid 10001 --create-home --home-dir /home/fs2 fs2 \
+    && mkdir -p /mnt/fs2-scientific \
+    && chown 10001:10001 /mnt/fs2-scientific
+COPY gromacs/runtime/fs2_gromacs /opt/fs2/gromacs/fs2_gromacs
+COPY namd/runtime/fs2_namd /opt/fs2/namd/fs2_namd
+USER 10001:10001
+WORKDIR /mnt/fs2-scientific
+ENTRYPOINT ["python3", "-m", "fs2_namd.worker"]
