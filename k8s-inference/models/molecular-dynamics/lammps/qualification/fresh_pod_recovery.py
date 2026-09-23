@@ -54,12 +54,13 @@ def main():
     protocol["checkpoint_schedule"] = f"explicit first boundary at {first_boundary}, then complete continuation to {target}"
     files["protocol.json"] = (json.dumps(protocol, indent=2) + "\n").encode()
     write_fixture(source, body, files)
-    remote = "/mnt/fs2-scientific/native-recovery"
+    remote = "/mnt/fs2-scientific/" + args.output.name
+    remote_fixture = "/mnt/fs2-scientific/fixture-" + args.output.name
     script = Path(__file__).with_name("interrupt_resume.py")
-    subprocess.run(KUBE + ["cp", "--no-preserve", str(source), args.pod + ":/mnt/fs2-scientific/recovery-fixture"], check=True)
+    subprocess.run(KUBE + ["cp", "--no-preserve", str(source), args.pod + ":" + remote_fixture], check=True)
     subprocess.run(KUBE + ["cp", "--no-preserve", str(script), args.pod + ":/mnt/fs2-scientific/interrupt_resume.py"], check=True)
     with (args.output / "interrupt-client.log").open("wb") as log:
-        subprocess.run(KUBE + ["exec", args.pod, "--", "python3", "/mnt/fs2-scientific/interrupt_resume.py", "--phase", "interrupt", "--input", "/mnt/fs2-scientific/recovery-fixture", "--output", remote, "--job", args.case], stdout=log, stderr=subprocess.STDOUT, check=True)
+        subprocess.run(KUBE + ["exec", args.pod, "--", "python3", "/mnt/fs2-scientific/interrupt_resume.py", "--phase", "interrupt", "--input", remote_fixture, "--output", remote, "--job", args.case], stdout=log, stderr=subprocess.STDOUT, check=True)
     interrupted = args.output / "before-pod-deletion"
     subprocess.run(KUBE + ["cp", "--retries=3", args.pod + ":" + remote, str(interrupted)], check=True)
     manifest_path = interrupted / "restored/.fs2/closed-manifest.json"
