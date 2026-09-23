@@ -9,7 +9,7 @@ tar -xjf /pmemd-source/pmemd26.tar.bz2 -C /source
 patch --directory=/source/pmemd26_src --strip=1 --forward < /opt/fs2-build/cuda-sm89-sm90.patch
 cmake -S /source/pmemd26_src -B /build -Wno-dev \
     -DCMAKE_INSTALL_PREFIX=/opt/amber26 -DCMAKE_BUILD_TYPE=Release \
-    -DCOMPILER=GNU -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13 \
+    -DCOMPILER=MANUAL -DCMAKE_C_COMPILER=gcc-13 -DCMAKE_CXX_COMPILER=g++-13 \
     -DCMAKE_Fortran_COMPILER=gfortran-13 \
     -DCUDA=TRUE -DMPI=FALSE -DNCCL=FALSE -DGTI=TRUE -DPGM=FALSE \
     -DPMEMD_ONLY=TRUE -DINSTALL_TESTS=TRUE -DCHECK_UPDATES=FALSE \
