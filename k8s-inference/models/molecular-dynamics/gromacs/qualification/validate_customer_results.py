@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--expected-frames", type=int)
     parser.add_argument("--expected-last-time-ps", type=float)
+    parser.add_argument("--extension", choices=("plumed", "colvars"))
     args = parser.parse_args()
     status = json.loads((args.receipt / "status.json").read_text())
     assert (
@@ -72,6 +73,22 @@ def main():
                     values = [float(value) for value in line.split()]
                     assert all(math.isfinite(value) for value in values), name
                     numeric_rows += 1
+        bias_checks = []
+        if args.extension:
+            required = ['HILLS', 'COLVAR'] if args.extension == 'plumed' else [name for name in paths if name.endswith('.colvars.traj')]
+            assert len(required) >= (2 if args.extension == 'plumed' else 1), 'Missing native bias trajectory'
+            for name in required:
+                assert name in paths, name
+                rows = [[float(value) for value in line.split()] for line in paths[name].read_text().splitlines()
+                        if line.strip() and not line.lstrip().startswith('#')]
+                assert rows and all(all(math.isfinite(value) for value in row) for row in rows), name
+                times = [row[0] for row in rows]
+                assert all(left <= right for left, right in zip(times, times[1:])), name
+                if args.extension == 'plumed' and args.expected_last_time_ps is not None:
+                    assert math.isclose(times[-1], args.expected_last_time_ps, abs_tol=2.0), name
+                    # Mixed-precision GROMACS reports 2 ps as ~2.000000095.
+                    assert times[0] <= 2.0001 and len(rows) >= args.expected_last_time_ps / 2, 'Bias history was truncated during resume'
+                bias_checks.append({'file': name, 'rows': len(rows), 'first_coordinate': times[0], 'last_coordinate': times[-1]})
         trajectory_checks = [
             command
             for command in result["commands"]
@@ -109,6 +126,7 @@ def main():
                 ),
                 "checkpoint_generations": result["native_checkpoint_generation"],
                 "numeric_analysis_rows": numeric_rows,
+                "native_bias_checks": bias_checks,
                 "trajectory_checks": len(trajectory_checks),
                 "checked_trajectories": checked_trajectories,
             }

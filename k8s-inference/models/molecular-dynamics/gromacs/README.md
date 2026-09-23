@@ -1,11 +1,12 @@
 # GROMACS on Scientific AI
 
 Status: the single-GPU backend is deployed and has passed hosted MD, free-energy,
-six-job batch, interrupted-worker recovery and cancellation tests. **This is not
+six-job batch, Colvars, PLUMED, interrupted-worker recovery and cancellation tests. **This is not
 a blanket qualification of every GROMACS workflow.** The updated workbench image
 is published; the existing recording endpoint has not been replaced. The source
 template under `activation/` remains deliberately unrouted. See
-[qualification evidence](qualification/RESULTS-20260923.md) for exact tested
+[initial qualification](qualification/RESULTS-20260923.md) and
+[advanced/MPI evidence](qualification/P2-20260923.md) for exact tested
 artifacts, limits and the remaining workbench/customer-release acceptance.
 
 This is a general molecular-dynamics App, not a customer-specific pipeline.
@@ -117,17 +118,18 @@ claim is made that every NVIDIA GPU has been tested.
 | --- | --- |
 | Preparation, MD, analysis, native checkpoint | Implemented; GPU fixtures tested |
 | Free energy | Seven-window ethanol tutorial and BAR passed the hosted MCP/client/bucket path; no convergence claim |
-| Colvars | Compiled in; enhanced-sampling acceptance is Priority 2 |
-| PLUMED | Compiled in; kernel availability and workflow acceptance are Priority 2 |
+| Colvars | Compiled in; 200 ps radius-of-gyration metadynamics, restart and analysis qualified |
+| PLUMED | Pinned 2.10 runtime kernel added; 1 ns hosted metadynamics survived Pod eviction with complete bias history |
 | CP2K QM/MM | Not compiled into this image; separate build required |
-| Torch NNPot | Not compiled into this image; separate build required |
-| Multi-node MPI | This image is thread-MPI, not external MPI; separate build required |
+| Torch NNPot | Separate LibTorch build passes 18 upstream H100 tests; not a customer-qualified App |
+| Multi-node MPI | Separate `gromacs-mpi` App and external-MPI image; two-H100 STMV, hosted peer-eviction recovery, bucket export and cancellation passed; TCP is slower than one H100 |
 | CUDA/CRIU snapshot acceleration | Same-process GPU suspend/resume measured, not persistent/new-Pod restore; native `.cpt` is the default |
 
-Future multi-node work should reuse the platform's JobSet/Kueue gang scheduling,
-an external-MPI GPU-aware build, compatible MPI/UCX/RDMA interfaces, and explicit
-network/topology eligibility. Benchmark strong scaling on large systems before
-selecting more nodes. MPS can improve aggregate independent-simulation throughput;
+The separate MPI App reuses JobSet/Kueue gang scheduling and an external-MPI
+GPU-aware build. Its present transport is host-staged TCP, not RDMA, and is
+slower than one H100 for the matched large-system fixture. RDMA and explicit
+network/topology eligibility need their own qualification before promotion.
+Benchmark strong scaling before selecting more nodes. MPS can improve aggregate independent-simulation throughput;
 MIG and MPS must be measured per hardware/system, not inferred from an A100 blog.
 
 ## Development and qualification
