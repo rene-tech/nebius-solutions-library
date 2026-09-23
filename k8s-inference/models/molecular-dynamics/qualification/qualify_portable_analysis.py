@@ -94,6 +94,18 @@ def verify_package(bundle):
     return file_record(bundle / "analysis-inputs/packaging-receipt.json")
 
 
+def complete_timeline(summary):
+    # DCD stores a finite-precision AKMA timestep. Do not reject the reference
+    # itself by demanding exact decimal endpoint equality after conversion.
+    # Every actual stored value is still compared against the frozen reference
+    # below, and the native reader checks the entire 1 ps schedule.
+    require(summary["common_frame_count"] == 1000 and summary["production_steps"] == 500000 and
+            summary["production_duration_ps"] == 1000 and
+            math.isclose(summary["first_common_time_ps"], 1, rel_tol=0, abs_tol=.001) and
+            math.isclose(summary["last_time_ps"], 1000, rel_tol=0, abs_tol=.001),
+            "incomplete native production trajectory: " + summary["engine"])
+
+
 def verify_outputs(output, reference):
     analysis = read(output / "analysis/receipt.json")
     render = read(output / "videos/receipt.json")
@@ -106,9 +118,7 @@ def verify_outputs(output, reference):
     for engine in ENGINES:
         actual = read(output / "analysis" / engine / "summary.json")
         expected = read(reference / engine / "summary.json")
-        require(actual["common_frame_count"] == 1000 and actual["production_steps"] == 500000 and
-                actual["production_duration_ps"] == 1000 and actual["first_common_time_ps"] == 1 and actual["last_time_ps"] == 1000,
-                "incomplete native production trajectory: " + engine)
+        complete_timeline(actual)
         equal_science({k: v for k, v in actual.items() if k not in METADATA},
                       {k: v for k, v in expected.items() if k not in METADATA}, differences, engine)
         for filename in ("frames.csv", "thermodynamics.csv"):

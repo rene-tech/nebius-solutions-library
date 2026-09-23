@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from qualify_portable_analysis import compare_csv, equal_science, verify_package
+from qualify_portable_analysis import compare_csv, complete_timeline, equal_science, verify_package
 
 
 def counter():
@@ -23,6 +23,24 @@ def test_records_machine_rounding_without_hiding_it():
     equal_science(300. + 1e-11, 300., stats)
     assert stats["non_bit_identical_numeric_values"] == 1
     assert stats["maximum_absolute_difference"] > 0
+
+
+def timeline():
+    return {"engine": "namd", "common_frame_count": 1000, "production_steps": 500000,
+            "production_duration_ps": 1000., "first_common_time_ps": 1.0000006290766237,
+            "last_time_ps": 1000.000003607501}
+
+
+def test_native_dcd_finite_precision_time_is_not_an_incomplete_trajectory():
+    complete_timeline(timeline())
+
+
+@pytest.mark.parametrize("field,value", [("common_frame_count", 999), ("production_steps", 499500),
+                                       ("production_duration_ps", 999), ("first_common_time_ps", 2),
+                                       ("last_time_ps", 999), ("last_time_ps", float("nan"))])
+def test_incomplete_native_timeline_still_fails(field, value):
+    with pytest.raises(ValueError, match="incomplete"):
+        complete_timeline({**timeline(), field: value})
 
 
 @pytest.mark.parametrize("left,right", [
