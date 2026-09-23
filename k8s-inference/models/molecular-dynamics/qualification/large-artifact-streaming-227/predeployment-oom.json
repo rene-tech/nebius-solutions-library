@@ -1,0 +1,147 @@
+{
+  "observed_at_utc": "2026-09-23T19:19:56Z",
+  "scope": "exact predeployment control-plane ReplicaSet only; no logs or secrets",
+  "pods": [
+    {
+      "name": "fs2-serve-control-plane-58bf8cbc65-ch4pr",
+      "namespace": "fs2-system",
+      "uid": "e60a997f-e18b-47c9-9b4d-c04b48820ba1",
+      "node": "computeinstance-e00np06w11et5qq9xp",
+      "creationTimestamp": "2026-09-23T17:51:10Z",
+      "phase": "Running",
+      "containers": [
+        {
+          "name": "control-plane",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:bbab6ea4c6af1a10aea021913b5c321ccd6b47984b205ad88cd1215036a49fb5",
+          "resources": {
+            "limits": {
+              "cpu": "2",
+              "memory": "2Gi"
+            },
+            "requests": {
+              "cpu": "250m",
+              "memory": "512Mi"
+            }
+          }
+        }
+      ],
+      "containerStatuses": [
+        {
+          "name": "control-plane",
+          "ready": true,
+          "restartCount": 2,
+          "image": "sha256:4bf8386cb2fb6f0c521be75c96e60e196d3371e2305626d7b62f92bea23bfc72",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:bbab6ea4c6af1a10aea021913b5c321ccd6b47984b205ad88cd1215036a49fb5",
+          "state": {
+            "running": {
+              "startedAt": "2026-09-23T18:59:12Z"
+            }
+          },
+          "lastState": {
+            "terminated": {
+              "containerID": "containerd://a10c93194738e71f28ef06dfe7cd3e8b5df62948adaa1f82f847950edcdc3ff2",
+              "exitCode": 137,
+              "finishedAt": "2026-09-23T18:58:59Z",
+              "reason": "OOMKilled",
+              "startedAt": "2026-09-23T18:57:36Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "fs2-serve-control-plane-58bf8cbc65-l8fsv",
+      "namespace": "fs2-system",
+      "uid": "8c0d265d-7727-4bf6-80ee-5e705cc23e17",
+      "node": "computeinstance-e00np06w11et5qq9xp",
+      "creationTimestamp": "2026-09-23T17:52:13Z",
+      "phase": "Running",
+      "containers": [
+        {
+          "name": "control-plane",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:bbab6ea4c6af1a10aea021913b5c321ccd6b47984b205ad88cd1215036a49fb5",
+          "resources": {
+            "limits": {
+              "cpu": "2",
+              "memory": "2Gi"
+            },
+            "requests": {
+              "cpu": "250m",
+              "memory": "512Mi"
+            }
+          }
+        }
+      ],
+      "containerStatuses": [
+        {
+          "name": "control-plane",
+          "ready": true,
+          "restartCount": 1,
+          "image": "sha256:4bf8386cb2fb6f0c521be75c96e60e196d3371e2305626d7b62f92bea23bfc72",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:bbab6ea4c6af1a10aea021913b5c321ccd6b47984b205ad88cd1215036a49fb5",
+          "state": {
+            "running": {
+              "startedAt": "2026-09-23T18:57:15Z"
+            }
+          },
+          "lastState": {
+            "terminated": {
+              "containerID": "containerd://dd60a819c20431f99b1decfabd24eb6c73355147d418a7503105a19e86dcac10",
+              "exitCode": 137,
+              "finishedAt": "2026-09-23T18:57:15Z",
+              "reason": "OOMKilled",
+              "startedAt": "2026-09-23T17:52:27Z"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "fs2-serve-control-plane-58bf8cbc65-vlx45",
+      "namespace": "fs2-system",
+      "uid": "c295fe55-ce56-4884-8c45-c18a48beff66",
+      "node": "computeinstance-e00tq9jk3nbvh4ceck",
+      "creationTimestamp": "2026-09-23T17:51:41Z",
+      "phase": "Running",
+      "containers": [
+        {
+          "name": "control-plane",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:bbab6ea4c6af1a10aea021913b5c321ccd6b47984b205ad88cd1215036a49fb5",
+          "resources": {
+            "limits": {
+              "cpu": "2",
+              "memory": "2Gi"
+            },
+            "requests": {
+              "cpu": "250m",
+              "memory": "512Mi"
+            }
+          }
+        }
+      ],
+      "containerStatuses": [
+        {
+          "name": "control-plane",
+          "ready": true,
+          "restartCount": 2,
+          "image": "sha256:4bf8386cb2fb6f0c521be75c96e60e196d3371e2305626d7b62f92bea23bfc72",
+          "imageID": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:bbab6ea4c6af1a10aea021913b5c321ccd6b47984b205ad88cd1215036a49fb5",
+          "state": {
+            "running": {
+              "startedAt": "2026-09-23T19:09:53Z"
+            }
+          },
+          "lastState": {
+            "terminated": {
+              "containerID": "containerd://96f17edfd3be36a2478e555d5cbb2a71b68aca8faeafb2bbf579449024a4fe7a",
+              "exitCode": 137,
+              "finishedAt": "2026-09-23T19:09:53Z",
+              "reason": "OOMKilled",
+              "startedAt": "2026-09-23T18:58:53Z"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
