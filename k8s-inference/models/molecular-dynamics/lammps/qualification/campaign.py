@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cases", default="lj,eam,tersoff,snap,reaxff,rhodo")
     parser.add_argument("--steps", type=int, default=2000)
+    parser.add_argument("--step-map", default="", help="Optional case:steps comma-separated overrides, fixed before repetitions.")
     parser.add_argument("--warmup", type=int, default=100)
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--segment-seconds", type=int, default=60)
@@ -24,8 +25,9 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     receipts = []
+    step_map = {key: int(value) for key, value in (item.split(":", 1) for item in args.step_map.split(",") if item)}
     for case in args.cases.split(","):
-        body, files = fixture(case, args.assets, args.steps, warmup=args.warmup, segment_seconds=args.segment_seconds, trajectory_every=args.trajectory_every)
+        body, files = fixture(case, args.assets, step_map.get(case, args.steps), warmup=args.warmup, segment_seconds=args.segment_seconds, trajectory_every=args.trajectory_every)
         source = args.output / (case + "-fixture")
         write_fixture(source, body, files)
         for repeat in range(1, args.repetitions + 1):

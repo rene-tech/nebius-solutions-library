@@ -61,7 +61,7 @@ def validate(root):
             raise ValueError("trajectory parts overlap out of order")
     if not trajectories or protocol["target_step"] - trajectories[-1]["last_step"] >= protocol["trajectory_every_steps"]:
         raise ValueError("final trajectory coverage is incomplete")
-    loops, thermodynamics, warnings = [], [], []
+    loops, thermodynamics, warnings, native_timing_seconds = [], [], [], {}
     for log in sorted(data.glob("fs2-production-segment-*.log")):
         collecting = False
         for line in log.read_text().splitlines():
@@ -72,6 +72,8 @@ def validate(root):
                 continue
             if "WARNING:" in line:
                 warnings.append(line.strip())
+            if match := re.match(r"^(Pair|Bond|Kspace|Neigh|Comm|Output|Modify|Other)\s*\|\s*([0-9.eE+-]+)", line):
+                native_timing_seconds[match[1]] = native_timing_seconds.get(match[1], 0) + float(match[2])
             values = line.split()
             if collecting and len(values) == 8:
                 try:
@@ -103,7 +105,7 @@ def validate(root):
                 except ValueError:
                     pass
     time_scale = {"real": 1e-6, "metal": 1e-3, "lj": None}[protocol["units"]]
-    return {"fixture": protocol["fixture"], "status": "passed" if finite_ensemble_gate else "failed-energy-drift", "scientific_convergence_claimed": False, "atoms": atoms, "production_steps": total_steps, "units": protocol["units"], "timestep": protocol["timestep"], "ensemble": protocol["ensemble"], "native_loop_seconds": simulation_seconds, "atom_timesteps_per_second": atoms * steps_per_second, "ns_per_day": None if time_scale is None else steps_per_second * protocol["timestep"] * time_scale * 86400, "reduced_time_per_day": steps_per_second * protocol["timestep"] * 86400 if time_scale is None else None, "temperature_min": min(temperatures), "temperature_max": max(temperatures), "relative_total_energy_span": relative_energy_span, "energy_span_gate": 0.02 if protocol["ensemble"] == "NVE" else None, "trajectories": trajectories, "trajectory_frames": sum(t["frames"] for t in trajectories), "native_segments": len(loops), "native_loops": loops, "gpu_samples": len(gpu), "gpu_utilization_mean_percent": statistics.mean(x[0] for x in gpu) if gpu else None, "gpu_memory_peak_mib": max(x[2] for x in gpu) if gpu else None, "gpu_power_mean_watts": statistics.mean(x[3] for x in gpu) if gpu else None, "warnings": sorted(set(warnings)), "final_thermodynamics": final}
+    return {"fixture": protocol["fixture"], "status": "passed" if finite_ensemble_gate else "failed-energy-drift", "scientific_convergence_claimed": False, "atoms": atoms, "production_steps": total_steps, "units": protocol["units"], "timestep": protocol["timestep"], "ensemble": protocol["ensemble"], "native_loop_seconds": simulation_seconds, "native_timing_seconds": native_timing_seconds, "atom_timesteps_per_second": atoms * steps_per_second, "ns_per_day": None if time_scale is None else steps_per_second * protocol["timestep"] * time_scale * 86400, "reduced_time_per_day": steps_per_second * protocol["timestep"] * 86400 if time_scale is None else None, "temperature_min": min(temperatures), "temperature_max": max(temperatures), "relative_total_energy_span": relative_energy_span, "energy_span_gate": 0.02 if protocol["ensemble"] == "NVE" else None, "trajectories": trajectories, "trajectory_frames": sum(t["frames"] for t in trajectories), "native_segments": len(loops), "native_loops": loops, "gpu_samples": len(gpu), "gpu_utilization_mean_percent": statistics.mean(x[0] for x in gpu) if gpu else None, "gpu_memory_peak_mib": max(x[2] for x in gpu) if gpu else None, "gpu_power_mean_watts": statistics.mean(x[3] for x in gpu) if gpu else None, "warnings": sorted(set(warnings)), "final_thermodynamics": final}
 
 
 def main():
