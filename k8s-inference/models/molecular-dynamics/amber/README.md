@@ -175,11 +175,20 @@ AMBER and LAMMPS suites pass52 tests when collected together with pytest's
 Canonical recovery has no GPU-utilization monitor, so that metric remains null,
 not an invented zero. Cold image-pull timing is not inferred from cached Pods.
 
+The exact v3 worker is now deployed on the platform's Helm226 runtime. Two
+ordinary-key ff14SB/TIP3P customer-path runs completed all requested stages and
+published 39 verified artifacts each, followed by fresh readback through the
+final client image. See [hosted qualification](../qualification/hosted-two-cohort-226/README.md).
+This supersedes the earlier pre-publication status; it does not qualify every
+AMBER feature, broaden the operator-confirmed academic scope, or qualify GPU
+process snapshots.
+
 Private raw evidence lives under
 `/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/`. Source, native inputs,
 upstream reference data, failed attempts and full logs remain private; do not
-copy them into Git. Current status is qualification in progress, not a public
-App, fully supported pool, customer-ready release or qualified GPU snapshot.
+copy them into Git. The complete four-engine comparison and final client release
+are tracked separately in the [MD evidence map](../README.md); native-only
+campaigns must not be relabeled as hosted customer-path qualification.
 
 Sources: [official acquisition/license](https://ambermd.org/GetAmber.php),
 [Ubuntu installation](https://ambermd.org/InstUbuntu.php),
