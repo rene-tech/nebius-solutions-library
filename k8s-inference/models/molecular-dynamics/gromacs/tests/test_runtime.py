@@ -119,3 +119,20 @@ def test_inventory_rejects_changing_output_type(tmp_path):
     (tmp_path / "link").symlink_to("elsewhere")
     with pytest.raises(ValueError, match="regular files"):
         inventory(tmp_path, max_bytes=1000)
+
+
+@pytest.mark.parametrize("phase", ["restore", "publish"])
+def test_peer_transport_failure_releases_engine_without_the_handoff_timeout(tmp_path, monkeypatch, phase):
+    worker = Workflow(request(), job_id="replica", operation_id="one", workspace=tmp_path,
+                      checkpoint_mode="companion")
+    atomic_json(worker.meta / "transport-error.json", {"status": "failed", "phase": phase})
+    monkeypatch.setattr("fs2_gromacs.worker.time.sleep",
+                        lambda _: (_ for _ in ()).throw(AssertionError("should not wait after peer failure")))
+    if phase == "publish":
+        with pytest.raises(RuntimeError, match="transport failed"):
+            worker._wait_json(worker.meta / "checkpoint-ack.json", lambda _: True)
+    else:
+        result = worker.run()
+        assert result["status"] == "failed"
+        assert result["completed_steps"] == []
+        assert result["error"] == "durable checkpoint transport failed; see operation logs"

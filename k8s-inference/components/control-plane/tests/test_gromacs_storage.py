@@ -10,21 +10,25 @@ import pytest
 from botocore.exceptions import ClientError
 from fastapi import FastAPI
 
-from fs2_serve.scientific_batch.gromacs_storage import GromacsCustomerStorage
+from fs2_serve.scientific_batch.gromacs_storage import GromacsCustomerStorage, _verified_metadata
 from fs2_serve.scientific_batch.gromacs_storage_routes import gromacs_storage_router
 from fs2_serve.user_storage_models import StorageCredentials
 
 
 class S3:
-    def __init__(self):
+    def __init__(self, metadata_case=str.lower):
         self.objects = {}
         self.writes = []
+        self.metadata_case = metadata_case
 
     def head_object(self, *, Bucket, Key):  # noqa: N803 - boto3's public API
         if (Bucket, Key) not in self.objects:
             raise ClientError({"ResponseMetadata": {"HTTPStatusCode": 404}}, "HeadObject")
         body, metadata = self.objects[Bucket, Key]
-        return {"ContentLength": len(body), "Metadata": metadata}
+        return {
+            "ContentLength": len(body),
+            "Metadata": {self.metadata_case(key): value for key, value in metadata.items()},
+        }
 
     def upload_file(self, filename, bucket, key, *, Config, ExtraArgs):  # noqa: N803
         assert Config.max_concurrency == 2 and Config.multipart_chunksize == 64 * 1024**2
@@ -36,7 +40,8 @@ class S3:
         self.writes.append(Key)
 
 
-def test_export_preserves_files_and_publishes_manifest_last_without_reupload(tmp_path):
+@pytest.mark.parametrize("metadata_case", [str.lower, str.title, str.upper])
+def test_export_preserves_files_and_publishes_manifest_last_without_reupload(tmp_path, metadata_case):
     (tmp_path / "data").mkdir()
     path = tmp_path / "data/md.part0001.xtc"
     raw = b"native trajectory"
@@ -44,7 +49,7 @@ def test_export_preserves_files_and_publishes_manifest_last_without_reupload(tmp
     item = {"path": path.name, "sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw)}
     export = GromacsCustomerStorage(None, tmp_path, "operation", "replica")
     export.s3, export.bucket, export.prefix, export.attempt, export.enabled = (
-        S3(),
+        S3(metadata_case),
         "customer",
         "runs/op/replica",
         2,
@@ -59,6 +64,19 @@ def test_export_preserves_files_and_publishes_manifest_last_without_reupload(tmp
     assert manifest["retention"] == "customer-managed"
     assert manifest["files"][0]["path"] == path.name
     assert not any("secret" in key for key in manifest)
+
+
+@pytest.mark.parametrize(
+    "head",
+    [
+        {"ContentLength": 10, "Metadata": {}},
+        {"ContentLength": 11, "Metadata": {"Sha256": "correct"}},
+        {"ContentLength": 10, "Metadata": {"Sha256": "incorrect"}},
+        {"ContentLength": 10, "Metadata": {"sha256": "correct", "Sha256": "incorrect"}},
+    ],
+)
+def test_metadata_case_does_not_mask_missing_or_conflicting_integrity(head):
+    assert not _verified_metadata(head, "correct", 10)
 
 
 def test_export_failure_never_commits_a_customer_manifest(tmp_path, monkeypatch):

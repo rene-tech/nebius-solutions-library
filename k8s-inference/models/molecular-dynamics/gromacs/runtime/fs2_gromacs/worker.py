@@ -120,6 +120,8 @@ class Workflow:
         # the budget. Otherwise the final checkpoint would be lost on timeout.
         deadline = time.monotonic() + seconds
         while time.monotonic() < deadline:
+            if (self.meta / "transport-error.json").is_file():
+                raise RuntimeError("durable checkpoint transport failed; see operation logs")
             if path.is_file():
                 value = json.loads(path.read_text())
                 if predicate(value):
@@ -284,9 +286,10 @@ class Workflow:
                 raise RuntimeError("segmented dynamics returned without a native checkpoint")
 
     def run(self):
-        self.initialize()
+        self.version = "unavailable: engine initialization did not complete"
         status, error = "succeeded", None
         try:
+            self.initialize()
             for step in self.job["steps"]:
                 if step["id"] not in self.state["completed_steps"]:
                     self.run_step(step)

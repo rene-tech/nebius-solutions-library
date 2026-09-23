@@ -118,6 +118,20 @@ def test_partial_upload_does_not_commit_a_generation(tmp_path):
     with pytest.raises(ConnectionError):
         transport.publish_ready()
     assert client.latest is None and not (tmp_path / ".fs2/checkpoint-ack.json").exists()
+    assert json.loads((tmp_path / ".fs2/transport-error.json").read_text()) == {"status": "failed", "phase": "publish"}
+
+
+def test_restore_failure_notifies_the_engine_without_provider_details(tmp_path, monkeypatch):
+    transport = GromacsCheckpointTransport(Artifacts(), invocation(), tmp_path)
+
+    def fail():
+        raise RuntimeError("provider details that must not enter the workspace")
+
+    monkeypatch.setattr(transport.customer, "initialize", fail)
+    with pytest.raises(RuntimeError):
+        transport.restore()
+    assert json.loads((tmp_path / ".fs2/transport-error.json").read_text()) == {"status": "failed", "phase": "restore"}
+    assert not (tmp_path / ".fs2/restore-complete.json").exists()
 
 
 def test_checkpoint_cannot_claim_another_replica(tmp_path):

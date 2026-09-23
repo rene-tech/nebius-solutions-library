@@ -65,6 +65,19 @@ class GromacsCheckpointTransport:
         return state, files
 
     def restore(self) -> None:
+        try:
+            self._restore()
+        except Exception:
+            self._notify_failure("restore")
+            raise
+
+    def _notify_failure(self, phase: str) -> None:
+        # The engine must not hold a GPU for its full handoff timeout after
+        # the companion exits. Never put provider messages/credentials here.
+        self.meta.mkdir(parents=True, exist_ok=True)
+        atomic_json(self.meta / "transport-error.json", {"status": "failed", "phase": phase})
+
+    def _restore(self) -> None:
         self.meta.mkdir(parents=True, exist_ok=True)
         self.customer.initialize()
 
@@ -109,6 +122,13 @@ class GromacsCheckpointTransport:
         atomic_json(self.meta / "restore-complete.json", {"status": "ready", "generation": self.generation})
 
     def publish_ready(self) -> None:
+        try:
+            self._publish_ready()
+        except Exception:
+            self._notify_failure("publish")
+            raise
+
+    def _publish_ready(self) -> None:
         path = self.meta / "checkpoint-ready.json"
         if not path.is_file():
             return

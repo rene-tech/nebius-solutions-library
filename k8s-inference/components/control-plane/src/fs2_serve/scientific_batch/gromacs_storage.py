@@ -23,6 +23,14 @@ from fs2_gromacs.files import digest_file
 from .companion import WorkloadArtifactHttpClient
 
 
+def _verified_metadata(head: dict[str, Any], digest: str, size: int) -> bool:
+    # S3 user metadata is carried in case-insensitive HTTP headers. Nebius
+    # returns "Sha256" in HEAD responses; other providers use "sha256".
+    # Reject conflicting aliases rather than silently choosing one of them.
+    digests = [value for key, value in head.get("Metadata", {}).items() if key.lower() == "sha256"]
+    return head.get("ContentLength") == size and bool(digests) and all(value == digest for value in digests)
+
+
 class GromacsCustomerStorage:
     def __init__(self, client: WorkloadArtifactHttpClient, workspace: Path, operation: str, job: str) -> None:
         self.client, self.workspace, self.operation, self.job = client, workspace, operation, job
@@ -80,7 +88,7 @@ class GromacsCustomerStorage:
             if error.response.get("ResponseMetadata", {}).get("HTTPStatusCode") != 404:
                 raise RuntimeError("customer bucket is unavailable; checkpoint export was not committed") from None
         else:
-            if head["ContentLength"] != size or head.get("Metadata", {}).get("sha256") != digest:
+            if not _verified_metadata(head, digest, size):
                 raise ValueError("customer checkpoint object has conflicting metadata")
             return key
         if source.stat().st_size != size or digest_file(source) != digest:
@@ -98,7 +106,7 @@ class GromacsCustomerStorage:
             # Provider errors may contain keys/headers. Give the user a useful
             # failure without leaking credential material into Job logs.
             raise RuntimeError("customer checkpoint export failed; check bucket availability and quota") from None
-        if head["ContentLength"] != size or head.get("Metadata", {}).get("sha256") != digest:
+        if not _verified_metadata(head, digest, size):
             raise ValueError("customer checkpoint export size/digest metadata did not verify")
         return key
 
