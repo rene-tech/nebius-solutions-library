@@ -14,7 +14,7 @@ import shutil
 
 from spec_paths import map_paths, resolve_spec
 
-CODE = ("compare.py", "native.py", "thermo.py", "geometry.py", "render.py", "spec_paths.py")
+CODE = ("compare.py", "native.py", "thermo.py", "geometry.py", "render.py", "spec_paths.py", "shake_boundary.py")
 
 
 def digest(path):

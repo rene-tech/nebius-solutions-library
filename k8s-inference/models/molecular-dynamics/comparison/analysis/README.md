@@ -1,11 +1,11 @@
 # Canonical four-engine trajectory analysis
 
-Status on 2026-09-23: 54 explicitly synthetic unit tests pass. The final Helm 226
-hosted GROMACS and AMBER productions passed common analysis. Final explicit-64³
-NAMD and LAMMPS productions are pending. Three earlier native-engine clips were
-rendered and visually checked, but are retained as an earlier cohort, not mixed
-into the final primary comparison. The final four clips and synchronized 2×2
-remain pending all final primary results.
+Status on 2026-09-23: 62 explicitly synthetic unit tests pass. Final Helm 226
+raw primaries are corrected GROMACS 06 (-notunepme), NAMD explicit PME64 01,
+AMBER 02 and LAMMPS fixture04 01. Full LAMMPS native duration/frame/constraint
+validation passed after independently explaining its SHAKE setup projection;
+the original strict failed receipt remains preserved. Final combined analysis
+and rendering are regenerated from these four exact primary selections.
 Generated unit fixtures are **not scientific simulation or acceptance evidence**.
 
 This CPU-only subtree owns analysis and visualization, not force-field
@@ -74,6 +74,13 @@ the next segment's initialization value; only the former contributes to the
 summary. Trajectory/thermo boundary steps and the full 1 ps output schedule must
 agree. Production loop durations are summed only when their native step counts
 sum to 500,000. No raw segment is rewritten or joined into fabricated frames.
+
+The opt-in `restart_boundary_policy` is a separate exact-file-bound gate, not a
+relaxed generic tolerance. It covers the measured native LAMMPS SHAKE setup
+projection only, independently reconstructs the mass-weighted constraint solve,
+and requires unchanged velocities/cell and agreement within 1e-9 Å. Read
+[the retained boundary failure and resolution](LAMMPS-BOUNDARY-REPORT-20260923.md).
+Every original native thermo field is retained with a `native_` prefix.
 
 Native topology/conversion evidence must establish `canonical_to_native` (either
 `"identity"` or a complete zero-based permutation). The mapping alone is not

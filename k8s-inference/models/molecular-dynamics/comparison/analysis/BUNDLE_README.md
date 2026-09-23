@@ -4,8 +4,10 @@ Keep this `analysis-inputs` directory beside the delivered `master/` and
 `runs/<engine>/` directories. `spec.json` resolves its paths relative to itself,
 not your shell's working directory. No original server directory is needed.
 
-Use Python 3.12 with the pinned packages in `requirements.txt` and system
-FFmpeg/ffprobe with the libx264 encoder (tested: FFmpeg 6.1.1). In an isolated
+Use Python 3.11 or 3.12 with the pinned packages in `requirements.txt` and system
+FFmpeg/ffprobe with the libx264 encoder. The original host uses Python 3.12 and
+FFmpeg 6.1.1; the final client preflight has Python 3.11 and FFmpeg 5.1.9. Its
+independent regeneration receipt records actual cross-environment results. In an isolated
 environment, run from any directory:
 
 ```bash
@@ -18,6 +20,14 @@ Both output directories must be new. Omitting `--video-output` performs analysis
 only. The comparison reads the unmodified native trajectories, verifies every
 frame/step/time and finite coordinate, and displays exactly 1,000 samples at
 production-relative 1..1000 ps. No interpolation or synthesized frames are used.
+
+Generic segment joins reject changed boundary coordinates. This exact LAMMPS
+run has an explicit, hash-bound exception only for its native SHAKE setup
+projection. It independently reconstructs the position-only constraint solve,
+requires unchanged velocities/cell and agreement within 1e-9 Å, and
+retains the failed strict receipt, both raw boundary records and every native
+thermodynamic field. The preceding closed-step observation supplies that one
+sample; the next initialization is not counted as additional physical time.
 
 All four clips share the canonical peptide reference, whole-molecule periodic
 wrapping, heavy-atom Kabsch alignment, camera, 1 ps frame interval and playback

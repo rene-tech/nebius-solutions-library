@@ -19,6 +19,8 @@ def map_paths(spec, transform):
             if key in run:
                 run[key] = path(run[key])
         run["thermo"]["path"] = path(run["thermo"]["path"])
+        if run.get("restart_boundary_policy"):
+            run["restart_boundary_policy"]["evidence_path"] = path(run["restart_boundary_policy"]["evidence_path"])
         if run.get("pressure_observations"):
             for key in ("path", "provenance_files"):
                 run["pressure_observations"][key] = path(run["pressure_observations"][key])

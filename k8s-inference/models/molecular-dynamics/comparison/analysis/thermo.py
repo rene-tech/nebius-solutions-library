@@ -112,6 +112,9 @@ def native_thermo(path, kind, timestep_ps, total_mass_amu, *, boundary_receipts=
                     row["density_g_cm3"] = total_mass_amu / values["Volume"] * AMU_A3_TO_G_CM3
                 if "PotEng" in values:
                     row["potential_kJ_mol"] = values["PotEng"] * 4.184
+                # Preserve every original numerical field, including both
+                # setup/closed observations at a native restart boundary.
+                row.update({f"native_{key}": value for key, value in values.items()})
                 rows.append(row)
     else:
         raise ValidationError(f"unsupported native thermodynamic source {kind}")

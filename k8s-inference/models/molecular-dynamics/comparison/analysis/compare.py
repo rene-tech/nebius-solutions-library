@@ -147,6 +147,13 @@ def analyze_run(run, master, output):
             return value
         return [value]
     files = [*paths(run["trajectory"]), run["native_topology"], *paths(run["production_log"]), *paths(run["thermo"]["path"]), *run.get("provenance_files", [])]
+    boundary_policy = None
+    if run.get("restart_boundary_policy"):
+        if engine != "lammps":
+            raise ValidationError("SHAKE setup boundary policy requires native LAMMPS")
+        from shake_boundary import load_policy
+        boundary_policy = load_policy(run["restart_boundary_policy"], run["image"], paths(run["trajectory"]), run["native_topology"])
+        files.append(run["restart_boundary_policy"]["evidence_path"])
     inputs = [file_receipt(path) for path in sorted(set(files))]
     protocol = master["protocol"]
     natoms = master["manifest"]["atoms"]
@@ -164,7 +171,7 @@ def analyze_run(run, master, output):
     densities, all_sources = [], set()
     trajectory_boundaries, thermo_boundaries = [], []
     # Store only peptide and oxygen display coordinates; validate every raw atom.
-    for frame in frames(run["trajectory"], engine, dt, run.get("trajectory_format"), boundary_receipts=trajectory_boundaries):
+    for frame in frames(run["trajectory"], engine, dt, run.get("trajectory_format"), boundary_receipts=trajectory_boundaries, boundary_policy=boundary_policy):
         if frame.index > steps // every:
             raise ValidationError("extra trajectory frames beyond declared production")
         if frame.positions.shape != (natoms, 3):
@@ -183,6 +190,7 @@ def analyze_run(run, master, output):
         all_sources.add(frame.time_source)
         # Validation metadata excludes the large coordinate arrays.
         frame.positions = None
+        frame.velocities = None
         metadata.append(frame)
     expected_steps, include_zero = validate_timeline(metadata, run["production_origin_step"], run["production_origin_time_ps"], steps, every, dt)
     for row, step in zip(rows, expected_steps):

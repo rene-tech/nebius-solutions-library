@@ -15,6 +15,8 @@ class Frame:
     time_ps: float
     step: int | None
     time_source: str
+    velocities: np.ndarray | None = None
+    cell_origin: np.ndarray | None = None
 
 
 def lammps_frames(path, timestep_ps):
@@ -77,15 +79,17 @@ def lammps_frames(path, timestep_ps):
             positions = data[order][:, [columns.index(c) for c in xyz]]
             if xyz[0] in ("xs", "xsu"):
                 positions = positions @ cell + lo
-            yield Frame(index, positions, cell, step * timestep_ps, step, "native dump step × declared protocol timestep")
+            velocities = data[order][:, [columns.index(c) for c in ("vx", "vy", "vz")]] if {"vx", "vy", "vz"} <= set(columns) else None
+            yield Frame(index, positions, cell, step * timestep_ps, step, "native dump step × declared protocol timestep", velocities, lo)
             index += 1
 
 
-def lammps_segment_frames(paths, timestep_ps, boundary_receipts=None):
-    """Read closed native segments; de-duplicate only identical boundary states."""
+def lammps_segment_frames(paths, timestep_ps, boundary_receipts=None, boundary_policy=None):
+    """Strict boundaries; an explicit exact-file SHAKE policy is a separate gate."""
     if not paths or len({str(Path(path).resolve()) for path in paths}) != len(paths):
         raise ValidationError("distinct ordered native trajectory segment paths required")
     previous_step, previous_positions, previous_cell, index = None, None, None, 0
+    previous = None
     for segment, path in enumerate(paths):
         count = 0
         for frame in lammps_frames(path, timestep_ps):
@@ -95,10 +99,17 @@ def lammps_segment_frames(paths, timestep_ps, boundary_receipts=None):
                     raise ValidationError("closed segment boundary has different positions or cell")
                 raw_delta = frame.positions - previous_positions
                 periodic_delta = minimum_image(raw_delta, previous_cell)
+                projection = None
                 if np.abs(periodic_delta).max() > 1e-7:
-                    raise ValidationError("closed segment boundary has different periodic atom positions")
+                    if boundary_policy is None:
+                        raise ValidationError("closed segment boundary has different periodic atom positions")
+                    from shake_boundary import verify_projection
+                    projection = verify_projection(previous, frame, boundary_policy)
                 if boundary_receipts is not None:
-                    boundary_receipts.append({"step": frame.step, "next_segment_index": segment, "next_segment_file": str(Path(path).resolve()), "maximum_raw_position_difference_A": float(np.abs(raw_delta).max()), "maximum_periodic_position_difference_A": float(np.abs(periodic_delta).max()), "periodically_rewrapped_atoms": int(np.count_nonzero(np.any(np.abs(raw_delta) > 1e-7, axis=1))), "maximum_cell_difference_A": float(np.abs(frame.cell - previous_cell).max()), "action": "omit next segment's identical periodic initial state only; legitimate cell-image changes recorded; raw files preserved"})
+                    entry = {"step": frame.step, "next_segment_index": segment, "next_segment_file": str(Path(path).resolve()), "maximum_raw_position_difference_A": float(np.abs(raw_delta).max()), "maximum_periodic_position_difference_A": float(np.abs(periodic_delta).max()), "periodically_rewrapped_atoms": int(np.count_nonzero(np.any(np.abs(raw_delta - periodic_delta) > 1e-7, axis=1))), "maximum_cell_difference_A": float(np.abs(frame.cell - previous_cell).max()), "action": "omit next segment's identical periodic initial state only; legitimate cell-image changes recorded; raw files preserved"}
+                    if projection:
+                        entry.update(action=projection["action"], verified_SHAKE_setup_projection=projection)
+                    boundary_receipts.append(entry)
                 continue
             if previous_step is not None and frame.step <= previous_step:
                 raise ValidationError("native segment steps are duplicated or out of order")
@@ -106,6 +117,7 @@ def lammps_segment_frames(paths, timestep_ps, boundary_receipts=None):
             # Consumers discard large frame arrays after analysis. Keep a
             # private boundary copy instead of retaining their mutable Frame.
             previous_positions, previous_cell = frame.positions.copy(), frame.cell.copy()
+            previous = Frame(frame.index, previous_positions, previous_cell, frame.time_ps, frame.step, frame.time_source, None if frame.velocities is None else frame.velocities.copy(), None if frame.cell_origin is None else frame.cell_origin.copy())
             frame.index = index
             index += 1
             yield frame
@@ -113,11 +125,11 @@ def lammps_segment_frames(paths, timestep_ps, boundary_receipts=None):
             raise ValidationError("empty native trajectory segment")
 
 
-def frames(path, engine, timestep_ps, trajectory_format=None, *, boundary_receipts=None):
+def frames(path, engine, timestep_ps, trajectory_format=None, *, boundary_receipts=None, boundary_policy=None):
     if isinstance(path, list):
         if engine != "lammps" or trajectory_format not in (None, "LAMMPSDUMP"):
             raise ValidationError("multi-file native comparison currently supports only LAMMPS dumps")
-        yield from lammps_segment_frames(path, timestep_ps, boundary_receipts)
+        yield from lammps_segment_frames(path, timestep_ps, boundary_receipts, boundary_policy)
         return
     if engine == "lammps":
         if trajectory_format not in (None, "LAMMPSDUMP"):

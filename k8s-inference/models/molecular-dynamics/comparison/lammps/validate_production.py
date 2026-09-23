@@ -14,9 +14,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "analysis"))
 from geometry import ValidationError, minimum_image
 from native import lammps_frames
 from thermo import native_thermo, descriptive
+from shake_boundary import KIND, WORKER_IMAGE, load_policy, verify_projection
 
 
-def validate(workspace):
+def validate(workspace, shake_setup_evidence=None, worker_image=None):
     workspace = Path(workspace)
     directory = workspace / "data"
     result = json.loads((workspace / "result.json").read_text())
@@ -34,6 +35,9 @@ def validate(workspace):
     distances = np.array([coefficients[r[1]] for r in selected])
     masses = {r[0]: float(r[1]) for r in data["Masses"]}
     total_mass = sum(masses[r[2]] for r in data["Atoms"])
+    boundary_policy = None
+    if shake_setup_evidence:
+        boundary_policy = load_policy({"kind": KIND, "evidence_path": str(shake_setup_evidence), "evidence_sha256": sha256(shake_setup_evidence)}, worker_image, [directory / "production.1.lammpstrj", directory / "production.2.lammpstrj"], directory / "system-shake.lmp")
     stages = []
     for stage, origin, final in (("nvt", 0, 50000), ("npt", 50000, 100000), ("production", 100000, 600000)):
         commands = [command for command in result["commands"] if command["step_id"] == stage]
@@ -63,9 +67,17 @@ def validate(workspace):
                 # that exact, geometry-verified boundary may be de-duplicated in
                 # the count; originals and duplicate receipt are retained.
                 if previous and frame.step == previous.step and segment_frames == 0:
-                    if not np.allclose(frame.cell, previous.cell, atol=1e-7, rtol=0) or np.abs(minimum_image(frame.positions - previous.positions, frame.cell)).max() > 1e-7:
+                    projection = None
+                    if not np.allclose(frame.cell, previous.cell, atol=1e-7, rtol=0):
                         raise ValidationError("restart boundary coordinates or cell differ")
-                    boundary_duplicates.append({"step": frame.step, "segment": command["segment"], "maximum_raw_position_difference_A": float(np.abs(frame.positions - previous.positions).max()), "maximum_periodic_position_difference_A": float(np.abs(minimum_image(frame.positions - previous.positions, frame.cell)).max())})
+                    if np.abs(minimum_image(frame.positions - previous.positions, frame.cell)).max() > 1e-7:
+                        if boundary_policy is None or stage != "production":
+                            raise ValidationError("restart boundary coordinates or cell differ")
+                        projection = verify_projection(previous, frame, boundary_policy)
+                    boundary = {"step": frame.step, "segment": command["segment"], "maximum_raw_position_difference_A": float(np.abs(frame.positions - previous.positions).max()), "maximum_periodic_position_difference_A": float(np.abs(minimum_image(frame.positions - previous.positions, frame.cell)).max())}
+                    if projection:
+                        boundary["verified_SHAKE_setup_projection"] = projection
+                    boundary_duplicates.append(boundary)
                 else:
                     frames_seen.append(frame.step)
                 if frame.step > origin:
@@ -85,18 +97,20 @@ def validate(workspace):
             raise ValidationError(f"{stage} thermo schedule/boundaries differ from trajectory")
         thermo_samples = [row for row in native_rows if row["step"] > origin]
         stages.append({"stage": stage, "origin_step": origin, "final_step": final, "steps": sum(native_steps), "duration_ps": (final - origin) * .002, "unique_native_frames_including_initial": len(frames_seen), "segments": len(commands), "verified_duplicate_segment_boundaries": boundary_duplicates, "native_thermo_boundary_observations": thermo_boundaries, "max_constraint_distance_error_A": worst_error, "temperature_K": descriptive([row["temperature_K"] for row in thermo_samples]), "pressure_bar": descriptive([row["pressure_bar"] for row in thermo_samples]), "density_g_cm3": descriptive([row["density_g_cm3"] for row in thermo_samples])})
-    return {"status": "native-stage-duration-frame-constraint-validation-passed", "scope": "actual complete canonical LAMMPS output semantics; cross-engine equivalence, convergence and combined customer acceptance remain separate gates", "operation_id": result["operation_id"], "job_id": result["job_id"], "native_build": result["native_build"], "native_engine_id": result["engine_id"], "stages": stages, "files": {str(path.relative_to(workspace)): sha256(path) for path in workspace.rglob("*") if path.is_file()}, "scientific_convergence_claimed": False}
+    return {"status": "native-stage-duration-frame-constraint-validation-passed", "scope": "actual complete canonical LAMMPS output semantics; cross-engine equivalence, convergence and combined customer acceptance remain separate gates", "operation_id": result["operation_id"], "job_id": result["job_id"], "native_build": result["native_build"], "native_engine_id": result["engine_id"], "worker_image": worker_image, "explicit_SHAKE_setup_evidence_sha256": sha256(shake_setup_evidence) if shake_setup_evidence else None, "stages": stages, "files": {str(path.relative_to(workspace)): sha256(path) for path in workspace.rglob("*") if path.is_file()}, "scientific_convergence_claimed": False}
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("workspace", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--shake-setup-evidence", type=Path)
+    parser.add_argument("--worker-image", choices=[WORKER_IMAGE])
     args = parser.parse_args()
     if args.output.exists():
         parser.error("output must be new")
     try:
-        report = validate(args.workspace)
+        report = validate(args.workspace, args.shake_setup_evidence, args.worker_image)
     except Exception as exc:
         report = {"status": "failed", "error": f"{type(exc).__name__}: {exc}"}
         args.output.write_text(json.dumps(report, indent=2) + "\n")
