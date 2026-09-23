@@ -76,8 +76,8 @@ def restart_continuity(segments, commands):
     return boundaries
 
 
-def validate(root):
-    data = root / "data"
+def validate(root, *, job_directory="."):
+    data = root / "data" / job_directory
     result = json.loads((root / "result.json").read_text())
     protocol = json.loads((data / "protocol.json").read_text())
     if result["status"] != "succeeded" or result["completed_steps"] != ["prepare", "production", "analyze"]:
@@ -170,9 +170,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("workspace", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--job-directory", default=".", help="Job-specific native input directory inside data/, for a six-case customer bundle")
     args = parser.parse_args()
     try:
-        receipt = validate(args.workspace)
+        receipt = validate(args.workspace, job_directory=args.job_directory)
     except Exception as exc:
         receipt = {"status": "failed", "error": str(exc)}
     if args.output:
