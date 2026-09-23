@@ -1,0 +1,282 @@
+{
+  "schema": "fs2-serve.nebius.ai/amber-upstream-regression-summary/v1",
+  "recorded_at": "2026-09-23T17:21:47.975171+00:00",
+  "model_id": "amber",
+  "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+  "image_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber-worker@sha256:1ca8115d4b4f899a282e449e05c59c1e6a6897fbb3ab8f889965ec73677d11fc",
+  "runtime_source_commit": "3a486b5f01eb7d8efda9972f692c46017cb5becc",
+  "engine_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber26-engine@sha256:cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+  "pmemd_source_sha256": "0478ccce892f3525e995e9c85458d552c6060b73dd28acd03c366e61ecf23a14",
+  "status": "failed",
+  "passed_comparisons": 13,
+  "total_comparisons": 14,
+  "pool": "l40s-1x",
+  "gpu_name": "NVIDIA L40S",
+  "gpu_uuid": "GPU-9d5eee34-1624-31d1-157a-ad75bf3fc187",
+  "driver": "580.173.02",
+  "compute_capability": "8.9",
+  "pod_uid": "68b45c64-6019-43d5-86e7-d9cf181cb6cc",
+  "node": "computeinstance-e00dczh75qcnbj0bx8",
+  "comparison_policy": "unmodified upstream scripts and precision-specific thresholds; ignored upstream failures still fail this cohort",
+  "tests": [
+    {
+      "case": "dhfr-nve",
+      "precision": "SPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.dhfr",
+        "SPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.7659747370053083,
+      "upstream_script_sha256": "b536fd392af75fdf42f1ca9b2d97a1adbe71c1e9a37089dab22be005475b3b42",
+      "log": "dhfr-nve-spfp/regression.log",
+      "log_sha256": "d4b7bbfbfad7181970ce9c544edaddea62145858bb2e1ccc4690c76211f23799",
+      "input_inventory_sha256": "07dbb017add0d47454a87c90db4286fdf649b6f7544345843906987a5baaea6d"
+    },
+    {
+      "case": "dhfr-minimization",
+      "precision": "SPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.dhfr.min",
+        "SPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.7155636859824881,
+      "upstream_script_sha256": "f0ba90b547290e47f211e20e186d327ed9e0ec4196a19d80689eb84ef7d3ec60",
+      "log": "dhfr-minimization-spfp/regression.log",
+      "log_sha256": "b381c9e3ea6b2a025547fe17b12739c7989a2678c0755e91bee5dfbd737e5313",
+      "input_inventory_sha256": "07dbb017add0d47454a87c90db4286fdf649b6f7544345843906987a5baaea6d"
+    },
+    {
+      "case": "dhfr-npt",
+      "precision": "SPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.dhfr.ntb2",
+        "SPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.7156914690276608,
+      "upstream_script_sha256": "afaf7ff598b0cc9538411bd4a23bc15ee8ddc38a3a75b99ab041c443d1d3a4b0",
+      "log": "dhfr-npt-spfp/regression.log",
+      "log_sha256": "f279c7a9ebfe437f82b51e90833335060c07f90465ad5c368bfddbbaf7369a23",
+      "input_inventory_sha256": "07dbb017add0d47454a87c90db4286fdf649b6f7544345843906987a5baaea6d"
+    },
+    {
+      "case": "ala3-gb5",
+      "precision": "SPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.irest1_ntt0_igb5_ntc2",
+        "SPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.3648622730979696,
+      "upstream_script_sha256": "33f83dc76a4d0096749321ea62754bfd6f0389f1623f3c175e49a0ad7ccdbec4",
+      "log": "ala3-gb5-spfp/regression.log",
+      "log_sha256": "ec42e780cbb7e78238a3e510571251beddc991425dd13e1867ac7b8a39f30af2",
+      "input_inventory_sha256": "da49c4611ac74c0d28f4973a9ac8bb192cf01135327ab60cfbdcded823414ca3"
+    },
+    {
+      "case": "myoglobin-gb8",
+      "precision": "SPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run_md_myoglobin_igb8",
+        "SPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.41482069599442184,
+      "upstream_script_sha256": "d90980d8e918db2aa61adb2794fa67811cb30f6c4bf0a4d8c448de571c3974cb",
+      "log": "myoglobin-gb8-spfp/regression.log",
+      "log_sha256": "ddd94d7c4e01a246037291e585a82e832b570d3ee403438b618618f715b32637",
+      "input_inventory_sha256": "593fe7a0b8ef423d96f868c8726224844bcb728bc26964271f863b12702252a1"
+    },
+    {
+      "case": "sodium-ti",
+      "precision": "SPFP",
+      "status": "failed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.NVE",
+        "SPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.6652209860039875,
+      "upstream_script_sha256": "7f528ad01bd7a1b55fc7ad527ad864d4f3672ba60f2ece6abd9755e6837665de",
+      "log": "sodium-ti-spfp/regression.log",
+      "log_sha256": "8b706c9fa79461b41a5b8646d00e34f49b5d1cbfb8cd2cf3fd14865574bf3169",
+      "input_inventory_sha256": "d1cc3ba8926d7ce235747ddb769606a0cfbbd54aa24ffb3d6043f0471f75feef"
+    },
+    {
+      "case": "sodium-softcore-mbar",
+      "precision": "SPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.SC_NVT_MBAR",
+        "SPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.7153193909907714,
+      "upstream_script_sha256": "bf3fdbe7a2e6b54602348eb4dba168d031c8ce405cad81df9a6c163262d8c44b",
+      "log": "sodium-softcore-mbar-spfp/regression.log",
+      "log_sha256": "5425f822ee0a76c6925df14545ca9bf99394cef4059c22f70085ec6eccc0e7d2",
+      "input_inventory_sha256": "d1cc3ba8926d7ce235747ddb769606a0cfbbd54aa24ffb3d6043f0471f75feef"
+    },
+    {
+      "case": "dhfr-nve",
+      "precision": "DPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.dhfr",
+        "DPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.7152910570148379,
+      "upstream_script_sha256": "b536fd392af75fdf42f1ca9b2d97a1adbe71c1e9a37089dab22be005475b3b42",
+      "log": "dhfr-nve-dpfp/regression.log",
+      "log_sha256": "cd8b6cb9bbd12d095f9b8c1e17db6cbb307c624bd3c81ef34cbbbb8bde7bb645",
+      "input_inventory_sha256": "07dbb017add0d47454a87c90db4286fdf649b6f7544345843906987a5baaea6d"
+    },
+    {
+      "case": "dhfr-minimization",
+      "precision": "DPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.dhfr.min",
+        "DPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.7154927010415122,
+      "upstream_script_sha256": "f0ba90b547290e47f211e20e186d327ed9e0ec4196a19d80689eb84ef7d3ec60",
+      "log": "dhfr-minimization-dpfp/regression.log",
+      "log_sha256": "8208b83650b4251504c822a2a4ddda467dee676cdf733f7d310f96e082b908fd",
+      "input_inventory_sha256": "07dbb017add0d47454a87c90db4286fdf649b6f7544345843906987a5baaea6d"
+    },
+    {
+      "case": "dhfr-npt",
+      "precision": "DPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.dhfr.ntb2",
+        "DPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.8658710760064423,
+      "upstream_script_sha256": "afaf7ff598b0cc9538411bd4a23bc15ee8ddc38a3a75b99ab041c443d1d3a4b0",
+      "log": "dhfr-npt-dpfp/regression.log",
+      "log_sha256": "6984f6ab3b781c161317fe6f22cd118938b84b45f88e896a4902c200fbdad0d4",
+      "input_inventory_sha256": "07dbb017add0d47454a87c90db4286fdf649b6f7544345843906987a5baaea6d"
+    },
+    {
+      "case": "ala3-gb5",
+      "precision": "DPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.irest1_ntt0_igb5_ntc2",
+        "DPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.4148878220003098,
+      "upstream_script_sha256": "33f83dc76a4d0096749321ea62754bfd6f0389f1623f3c175e49a0ad7ccdbec4",
+      "log": "ala3-gb5-dpfp/regression.log",
+      "log_sha256": "118fb1582eed7c0fea82ec41f2e8ba397471b1a739e1d0ebfca28c0804e28895",
+      "input_inventory_sha256": "da49c4611ac74c0d28f4973a9ac8bb192cf01135327ab60cfbdcded823414ca3"
+    },
+    {
+      "case": "myoglobin-gb8",
+      "precision": "DPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run_md_myoglobin_igb8",
+        "DPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.5149553100345656,
+      "upstream_script_sha256": "d90980d8e918db2aa61adb2794fa67811cb30f6c4bf0a4d8c448de571c3974cb",
+      "log": "myoglobin-gb8-dpfp/regression.log",
+      "log_sha256": "84dce2946e94a1f51e13f54074154205f1dbbcea05b2b5f8a8bbf53ad4821ea5",
+      "input_inventory_sha256": "593fe7a0b8ef423d96f868c8726224844bcb728bc26964271f863b12702252a1"
+    },
+    {
+      "case": "sodium-ti",
+      "precision": "DPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.NVE",
+        "DPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.865584158920683,
+      "upstream_script_sha256": "7f528ad01bd7a1b55fc7ad527ad864d4f3672ba60f2ece6abd9755e6837665de",
+      "log": "sodium-ti-dpfp/regression.log",
+      "log_sha256": "079a123f3912756afaa8d07fd6f73e4f5d6050520a81fda9d718358c2a9c12cd",
+      "input_inventory_sha256": "d1cc3ba8926d7ce235747ddb769606a0cfbbd54aa24ffb3d6043f0471f75feef"
+    },
+    {
+      "case": "sodium-softcore-mbar",
+      "precision": "DPFP",
+      "status": "passed",
+      "argv": [
+        "/bin/tcsh",
+        "-f",
+        "Run.SC_NVT_MBAR",
+        "DPFP"
+      ],
+      "exit_code": 0,
+      "timed_out": false,
+      "wall_seconds": 0.9157721139490604,
+      "upstream_script_sha256": "bf3fdbe7a2e6b54602348eb4dba168d031c8ce405cad81df9a6c163262d8c44b",
+      "log": "sodium-softcore-mbar-dpfp/regression.log",
+      "log_sha256": "c0141c863d07d8a1c0a2146cbb0698b8b63d9b0ceb586c8646130c97d15b33f4",
+      "input_inventory_sha256": "d1cc3ba8926d7ce235747ddb769606a0cfbbd54aa24ffb3d6043f0471f75feef"
+    }
+  ],
+  "raw_receipt_sha256": "ec491dc2fc53c17bc322e2d411676d5d07bfcf0e07713c57242a0d4294f243d4",
+  "raw_evidence": "/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/l40s-upstream-v3",
+  "preserved_files_verified": 636,
+  "customer_ready": false,
+  "sustained_benchmark": false,
+  "free_energy_convergence_claimed": false,
+  "pod_context_sha256": "f5bd3320ebcef4ff6651ca92d3ec52e5a1ef9f9f464dabe9b29e54f651fbd579"
+}

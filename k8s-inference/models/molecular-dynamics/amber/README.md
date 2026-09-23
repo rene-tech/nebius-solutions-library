@@ -66,7 +66,7 @@ narrow completion parser was corrected in v2, with the original failed wrapper
 receipt and successful native output retained.33 offline tests pass. Native
 closed-stage checkpoints are not partial-restart or GPU-process snapshots.
 
-H100 upstream comparisons on v1, v2 and the exact final v3 pass13/14 without
+H100 upstream comparisons on v1 and v2, plus final-v3 H100 and L40S, pass13/14 without
 changing upstream tolerances. The sole exception is sodium TI NVE SPFP:
 four printed temperature fields differ by0.01K, maximum relative2.83e-5,
 against the original1e-5 gate. The same DPFP test passes1e-7, and SPFP softcore
@@ -148,8 +148,24 @@ exact random-stream/GPU-process snapshot. All6598 master atoms and original
 input bytes match; production has1000 finite1ps frames and matching velocities.
 Genuine molecular-virial pressure has1000 samples, mean-12.3712bar and sample
 SD268.1900bar; these fluctuations do not establish long-run pressure convergence.
-Native H100 production was729.853ns/day for this single run. The L40S canonical
-continuation and common four-engine ensemble analysis are separate gates.
+Native H100 production was729.853ns/day for this single run. L40S independently
+passed the identical frozen canonical protocol and distinct-Pod continuation,
+with1000 matched finite coordinate/velocity frames, unchanged master inputs,
+and mean pressure-7.2614bar (sample SD270.5260bar). Native production was
+594.714ns/day. The L40S donor workspace was safely archived before a temporary
+capacity conflict; the replacement reused that verified capture after the other
+task released its slot, without eviction or repeating the donor history.
+Each pool has its own `canonical-*-fresh-recovery-v3.json` and
+`canonical-*-science-v3.json` receipt. Common four-engine ensemble analysis and
+hosted customer-path acceptance remain separate parent-owned gates.
+
+Both AMBER GPU Pods were removed after verified copies of the complete native
+outputs and final-v3 upstream archives (636 preserved files per pool). No
+scientific stage or source/image changed during these final checks. The offline
+AMBER and LAMMPS suites pass52 tests when collected together with pytest's
+`--import-mode=importlib` (their test basenames overlap); AMBER alone passes33.
+Canonical recovery has no GPU-utilization monitor, so that metric remains null,
+not an invented zero. Cold image-pull timing is not inferred from cached Pods.
 
 Private raw evidence lives under
 `/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/`. Source, native inputs,

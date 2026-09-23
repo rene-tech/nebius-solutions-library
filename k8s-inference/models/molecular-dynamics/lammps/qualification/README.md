@@ -167,6 +167,13 @@ The earlier quota failure remains preserved. Final release acceptance, the
 new canonical ff14SB/TIP3P four-engine comparison and separate GPU snapshot
 screen are parent-coordinated gates, not inferred from these passes.
 
+All task-owned baseline GPU Pods and the completed CPU mirror Job plus its
+temporary task-owned Secret have been removed after evidence capture. The
+pre-existing `wan2-ngc-pull` Secret was not changed. Mirror cleanup is retained
+as `mirror-final.log`, `mirror-job-before-cleanup.json` and `mirror-cleanup.txt`
+under the evidence root. Separately owned canonical/snapshot Pods are outside
+this cleanup scope. No customer files, quotas or shared infrastructure were deleted.
+
 Sources: [LAMMPS restart contract](https://docs.lammps.org/read_restart.html),
 [Kokkos acceleration](https://docs.lammps.org/Speed_kokkos.html),
 [exact source](https://github.com/lammps/lammps/tree/c7ae612a9497437412cb787b78769570f48653dd),
