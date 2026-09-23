@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import struct
+import tarfile
 
 import pytest
 
@@ -68,3 +69,18 @@ def test_audit_rejects_missing_requested_native_output_and_stage(tmp_path):
     result["completed_steps"] = []
     with pytest.raises(ValueError, match="ordered stages"):
         audit(request, result, tmp_path)
+
+
+def test_audit_independently_compares_immutable_input_bundle_even_when_result_hashes_match(tmp_path):
+    data = tmp_path / "data"
+    data.mkdir()
+    request, result = example(data)
+    bundle = tmp_path / "input.tar.gz"
+    with tarfile.open(bundle, "w:gz") as archive:
+        archive.add(data / "run.namd", arcname="run.namd")
+    report = audit(request, result, data, bundle)
+    assert report["immutable_input_bundle"]["verified_files"] == 1
+    (data / "run.namd").write_text("timestep 1\n")
+    result["files"] = inventory(data, max_bytes=4096)
+    with pytest.raises(ValueError, match="immutable input differs"):
+        audit(request, result, data, bundle)

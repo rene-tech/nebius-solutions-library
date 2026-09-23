@@ -218,6 +218,12 @@ The receipt explicitly leaves credential, submitted-input binding, public API,
 materialization and exact worker-image provenance to the parent client/release
 receipt; downloaded native files alone do not prove those properties. This
 NVE output pass does not qualify all hosted protocols or full customer readiness.
+An additional, separately retained audit also compared every immutable input
+member against the original compressed fixture: all 15 files/20,781,382 input
+bytes matched in each downloaded job. No archive was extracted or executed by
+this auditor. `hosted-validation-inputs-receipt.json` SHA256 is
+`6e5280af34c468c76010e23a4431431e6d660ba76d19aeb01d016817b5e2df38`;
+the earlier receipt and its referenced audit files remain unchanged.
 
 The exact-r4 SPDX SBOM contains 188 packages (Syft 1.43.0). Trivy 0.70.0 with
 the 23 September 2026 01:09 UTC vulnerability database reports zero critical,

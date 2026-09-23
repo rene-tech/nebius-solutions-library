@@ -140,11 +140,13 @@ and this fixture's full explicit-hill history across segments.
 
 Independently audit each downloaded result with `qualification/audit_outputs.py
 --request <actual-workflow-parameters.json> --result <result.json> --data <data>
---output <artifact-audit.json>`, using the same Python path. Pass the actual
+--input-bundle <input.tar.gz> --output <artifact-audit.json>`, using the same Python path. Pass the actual
 submitted workflow parameters, including any changed output prefix, not the
 surrounding REST envelope or a pre-submission example. The audit checks the
 canonical recipe, exact completed stages, every inventoried file's size/SHA256,
 segment boundaries/GPU mode, required outputs and final paired native timesteps.
+The optional input-bundle comparison checks every original immutable member
+against the downloaded files without extracting or executing the archive.
 This is qualification tooling; it adds no runtime restriction on user physics.
 
 Native worker tests do not establish REST/MCP, admin, tenant storage, customer

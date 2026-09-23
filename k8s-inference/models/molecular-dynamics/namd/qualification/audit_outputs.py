@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import tarfile
 
 from fs2_gromacs.contracts import relative_path
 from fs2_gromacs.files import digest_file
@@ -17,7 +18,29 @@ from fs2_namd.contracts import canonical, normalize
 from fs2_namd.worker import binary_vectors, colvars_step, xsc_step
 
 
-def audit(request, result, data):
+def audit_input_bundle(bundle, data, listed):
+    """Compare immutable input members without extracting or executing the bundle."""
+    seen, total = set(), 0
+    with tarfile.open(bundle, "r:gz") as archive:
+        for member in archive:
+            if member.isdir():
+                continue
+            name = relative_path(member.name)
+            if not member.isfile() or name in seen or name not in listed:
+                raise ValueError("input bundle contains a non-regular, duplicate or unrecorded member")
+            seen.add(name)
+            path = data / name
+            with archive.extractfile(member) as stream:
+                source_sha = hashlib.file_digest(stream, "sha256").hexdigest()
+            if member.size != path.stat().st_size or source_sha != digest_file(path):
+                raise ValueError("immutable input differs from the qualification bundle: " + name)
+            total += member.size
+    if not seen:
+        raise ValueError("qualification input bundle is empty")
+    return {"sha256": digest_file(bundle), "verified_files": len(seen), "verified_bytes": total}
+
+
+def audit(request, result, data, input_bundle=None):
     request = normalize(request)
     if result["schema"] != RESULT_SCHEMA or result["status"] != "succeeded" or result["engine_id"] != ENGINE_ID:
         raise ValueError("native result is not successful for the pinned engine/schema")
@@ -82,9 +105,12 @@ def audit(request, result, data):
             raise ValueError("native log and checkpoint atom counts disagree")
         dynamics.append({"step": step["id"], "segments": len(commands), "atoms": atoms,
                          "first_step": step["first_step"], "final_step": end, "gpu_mode": step["gpu_mode"]})
-    return {"status": "passed", "job_id": result["job_id"], "recipe_sha256": expected,
-            "verified_files": len(listed), "verified_bytes": total, "dynamics": dynamics,
-            "scientific_convergence_claimed": False}
+    report = {"status": "passed", "job_id": result["job_id"], "recipe_sha256": expected,
+              "verified_files": len(listed), "verified_bytes": total, "dynamics": dynamics,
+              "scientific_convergence_claimed": False}
+    if input_bundle is not None:
+        report["immutable_input_bundle"] = audit_input_bundle(input_bundle, data, listed)
+    return report
 
 
 def main():
@@ -93,8 +119,9 @@ def main():
     parser.add_argument("--result", type=Path, required=True)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--input-bundle", type=Path, help="Independently compare every immutable input member with the uploaded fixture")
     args = parser.parse_args()
-    report = audit(json.loads(args.request.read_text()), json.loads(args.result.read_text()), args.data)
+    report = audit(json.loads(args.request.read_text()), json.loads(args.result.read_text()), args.data, args.input_bundle)
     report.update(request_sha256=digest_file(args.request), result_sha256=digest_file(args.result))
     args.output.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report))
