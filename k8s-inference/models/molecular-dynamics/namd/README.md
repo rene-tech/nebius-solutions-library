@@ -125,6 +125,22 @@ GPU and retains all outcomes and 1-second telemetry. These are single-trajectory
 measurements; no MPS daemon is started, and NVIDIA aggregate MPS results are a
 different experiment. Short screens are development evidence only.
 
+For downloaded hosted artifacts, retain each native `result.json` beside its
+`data/` tree under `campaign/rep-N/`. Run the scientific reader with
+`PYTHONPATH=namd/runtime:gromacs/runtime python3 namd/qualification/validate_campaign.py
+--campaign <campaign> --output <validation.json>` from the molecular-dynamics
+directory. It reads every production DCD frame, finite energy/cell/vector data
+and this fixture's full explicit-hill history across segments.
+
+Independently audit each downloaded result with `qualification/audit_outputs.py
+--request <actual-workflow-parameters.json> --result <result.json> --data <data>
+--output <artifact-audit.json>`, using the same Python path. Pass the actual
+submitted workflow parameters, including any changed output prefix, not the
+surrounding REST envelope or a pre-submission example. The audit checks the
+canonical recipe, exact completed stages, every inventoried file's size/SHA256,
+segment boundaries/GPU mode, required outputs and final paired native timesteps.
+This is qualification tooling; it adds no runtime restriction on user physics.
+
 Native worker tests do not establish REST/MCP, admin, tenant storage, customer
 skills, interruption recovery or persistent fresh-worker GPU snapshots. Those
 release gates remain separate and must be exercised on the integrated identity.
