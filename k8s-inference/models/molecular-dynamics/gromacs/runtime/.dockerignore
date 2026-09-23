@@ -1,0 +1,8 @@
+**
+!Containerfile
+!requirements.lock
+!fs2_gromacs/
+!fs2_gromacs/*.py
+!fs2_gromacs/py.typed
+**/__pycache__
+**/*.pyc
