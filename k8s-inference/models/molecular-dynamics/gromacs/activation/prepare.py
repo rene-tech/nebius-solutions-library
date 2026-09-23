@@ -1,6 +1,7 @@
 """Prepare an additive onboarding release from captured live values; never apply.
 
-Existing model rows, snapshot bundles and qualification baselines remain exact.
+Unchanged model rows and snapshot bundles remain exact. Historical proof
+projections exclude explicit successors; they never qualify a changed row.
 An active onboarding profile is explicitly not a customer-ready qualification.
 """
 
@@ -21,6 +22,82 @@ from fs2_gromacs.contracts import canonical
 
 def digest(value):
     return hashlib.sha256(canonical(value)).hexdigest()
+
+
+def qualification_proofs(execution_map):
+    """Validate captured proofs before using them, including model membership."""
+    rows = execution_map["models"]
+    by_id = {row["model_id"]: row for row in rows}
+    if len(by_id) != len(rows):
+        raise ValueError("duplicate execution model in qualification baseline")
+    proofs = copy.deepcopy(execution_map.get("qualification_baselines", {}))
+    for expected, ids in proofs.items():
+        if (
+            not isinstance(ids, list)
+            or not ids
+            or any(not isinstance(model, str) for model in ids)
+            or len(ids) != len(set(ids))
+            or not set(ids).issubset(by_id)
+        ):
+            raise ValueError("invalid qualification baseline model membership")
+        if digest({"schema": execution_map["schema"], "models": [by_id[model] for model in ids]}) != expected:
+            raise ValueError("existing qualification baseline changed")
+    proofs[digest({"schema": execution_map["schema"], "models": rows})] = list(by_id)
+    return proofs
+
+
+def rebase_qualification_baselines(captured, desired, replace_models=frozenset()):
+    """Project valid prior proofs onto byte-identical, non-successor rows."""
+    proofs = qualification_proofs(captured)
+    before = {row["model_id"]: row for row in captured["models"]}
+    after = {row["model_id"]: row for row in desired["models"]}
+    if (
+        captured["schema"] != desired["schema"]
+        or len(after) != len(desired["models"])
+        or not set(replace_models).issubset(before)
+        or not set(before).issubset(after)
+        or any(after[model] != row for model, row in before.items() if model not in replace_models)
+    ):
+        raise ValueError("successor changed an unrelated execution row or schema")
+    rebased = {}
+    for ids in proofs.values():
+        unchanged = [model for model in ids if model not in replace_models]
+        if unchanged:
+            sha = digest({"schema": desired["schema"], "models": [after[model] for model in unchanged]})
+            rebased[sha] = unchanged
+    return rebased
+
+
+def rebase_profile_qualifications(profiles, captured, desired, replace_models=frozenset()):
+    """Rebind only unchanged Apps' map references, preserving every receipt."""
+    original = qualification_proofs(captured)
+    available = qualification_proofs(desired)
+    # Validate all unchanged rows, not just those referenced by exposed Apps.
+    rebase_qualification_baselines(captured, desired, replace_models)
+    after = {row["model_id"]: row for row in desired["models"]}
+    result = copy.deepcopy(profiles)
+    for profile in result:
+        model = profile["model_id"]
+        if model in replace_models or not profile.get("route_exposed"):
+            continue
+        reference = profile["qualification"]["execution_map_sha256"]
+        if model not in original.get(reference, []):
+            raise ValueError("existing App qualification does not prove its captured model row")
+        unchanged = [key for key in original[reference] if key not in replace_models]
+        projected = digest({"schema": desired["schema"], "models": [after[key] for key in unchanged]})
+        if model not in available.get(projected, []):
+            raise ValueError("successor lacks the unchanged App qualification projection")
+        profile["qualification"]["execution_map_sha256"] = projected
+    return result
+
+
+def validate_profile_qualifications(profiles, execution_map):
+    proofs = qualification_proofs(execution_map)
+    for profile in profiles:
+        if profile.get("route_exposed") and profile["model_id"] not in proofs.get(
+            profile["qualification"]["execution_map_sha256"], []
+        ):
+            raise ValueError("release would invalidate an App's qualification membership")
 
 
 def source_recipe(root):
@@ -139,6 +216,7 @@ def prepare(
     live = json.loads(live) if isinstance(live, str) else live
     if set(live) - {"schema", "models", "snapshot_bundles", "qualification_baselines"}:
         raise ValueError("unrecognized execution map fields")
+    qualification_proofs(live)
     existing = next((row for row in live["models"] if row["model_id"] == model_id), None)
     if existing is not None and not replace_existing:
         raise ValueError(f"{model_id} already exists; prepare an explicit successor")
@@ -224,14 +302,10 @@ def prepare(
         row["stages"][0]["image"] = runtime_image
         desired["models"] = [row if item["model_id"] == model_id else item for item in desired["models"]]
     else:
-        desired.setdefault("qualification_baselines", {})[
-            digest({"schema": live["schema"], "models": live["models"]})
-        ] = [item["model_id"] for item in live["models"]]
         desired["models"].append(row)
-    by_id = {item["model_id"]: item for item in desired["models"]}
-    for expected, ids in desired["qualification_baselines"].items():
-        if digest({"schema": live["schema"], "models": [by_id[key] for key in ids]}) != expected:
-            raise ValueError("existing qualification baseline changed")
+    desired["qualification_baselines"] = rebase_qualification_baselines(
+        live, desired, {model_id} if replace_existing else frozenset()
+    )
     profile["qualification"] = {
         "h100_semantic_receipt_sha256": digest(evidence),
         "public_completion_receipt_sha256": None,
@@ -340,10 +414,15 @@ def main():
         comparable = lambda value: {k: v for k, v in value.items() if k != "snapshot_bundles"}
         if comparable(source_map) != comparable(captured_map):
             raise ValueError("source execution map differs from the captured live release")
+        catalog["profiles"] = rebase_profile_qualifications(
+            catalog["profiles"], captured_map, overlay["scientificBatch"]["executionMap"],
+            {args.model} if args.replace_existing else frozenset(),
+        )
         if args.replace_existing:
             catalog["profiles"] = [profile if item["model_id"] == args.model else item for item in catalog["profiles"]]
         else:
             catalog["profiles"].append(profile)
+        validate_profile_qualifications(catalog["profiles"], overlay["scientificBatch"]["executionMap"])
         catalog_path.write_text(json.dumps(catalog, indent=2) + "\n")
         # Environment-local snapshot PVC/configmap identities stay in the live
         # values overlay. Do not bake this cluster's bundle settings into IaC.

@@ -22,7 +22,9 @@ sys.path.insert(0, str(HERE / "gromacs/runtime"))
 sys.path.insert(0, str(HERE / "gromacs/activation"))
 sys.path.insert(0, str(ROOT / "components/control-plane/src"))
 
-from prepare import canonical, digest, prepare  # noqa: E402
+from prepare import (  # noqa: E402
+    canonical, digest, prepare, rebase_profile_qualifications, validate_profile_qualifications,
+)
 
 MODELS = frozenset({"lammps", "namd", "amber"})
 
@@ -169,17 +171,14 @@ def publish_catalog(profiles: dict, final_map: dict, captured_map: dict, *, repl
                 raise ValueError("successor changes the native source; review that acquisition explicitly")
         else:
             receipts["receipts"].append(receipt)
+    catalog["profiles"] = rebase_profile_qualifications(
+        catalog["profiles"], captured_map, final_map, replace_models
+    )
     catalog["profiles"] = [
         profiles[item["model_id"]] if item["model_id"] in replace_models else item for item in catalog["profiles"]
     ]
     catalog["profiles"].extend(profiles[model] for model in sorted(set(profiles) - set(replace_models)))
-    proofs = set(final_map.get("qualification_baselines", {}))
-    final_digest = digest({"schema": final_map["schema"], "models": final_map["models"]})
-    for profile in catalog["profiles"]:
-        if profile.get("route_exposed") and profile["qualification"]["execution_map_sha256"] not in proofs | {
-            final_digest
-        }:
-            raise ValueError("native addition would invalidate another App's qualification")
+    validate_profile_qualifications(catalog["profiles"], final_map)
     # Live snapshot bundle paths are deployment data, not new repository data.
     published_map = copy.deepcopy(final_map)
     if "snapshot_bundles" in source_map:

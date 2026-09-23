@@ -221,3 +221,174 @@ def test_publish_adds_admin_source_receipts_without_replacing_existing_apps(tmp_
         assert receipt["source"]["revision"] == profiles[model]["source"]["revision"]
     catalog = json.loads((target / names[1]).read_text())["profiles"]
     assert catalog[: len(before[names[1]]["profiles"])] == before[names[1]]["profiles"]
+
+
+def successor_inputs():
+    """A captured release with a historical proof containing the NAMD predecessor."""
+    values, scheduling, candidates, evidence, recipes = inputs()
+    initial = {}
+    for model in ("namd", "lammps"):
+        profiles, overlay, cm = release.compose(
+            values, scheduling, {model: candidates[model]}, {model: evidence[model]}, {model: recipes[model]}
+        )
+        initial.update(profiles)
+        for key, value in overlay.items():
+            values[key].update(value)
+        scheduling = cm["data"]["scheduling.json"].encode()
+    evidence["lammps"]["tests"].append(
+        {**evidence["lammps"]["tests"][0], "pool": "l40s-1x", "gpu_name": "NVIDIA L40S"}
+    )
+    recipes.update(namd={"successor": "r5"}, lammps={"successor": "qualified-pool-expansion"})
+    evidence["namd"]["runtime_image"] = "registry.test/namd@sha256:" + "9" * 64
+    return (values, scheduling, candidates, evidence, recipes), initial
+
+
+def test_combined_successors_project_old_proofs_without_requalifying_changed_apps():
+    args, initial = successor_inputs()
+    before = copy.deepcopy(args)
+    captured = args[0]["scientificBatch"]["executionMap"]
+    profiles, overlay, cm = release.compose(
+        *args, replace_models={"namd", "lammps"}, expand_qualified_pools={"lammps"}
+    )
+    assert args == before
+    desired = overlay["scientificBatch"]["executionMap"]
+    after_rows = {row["model_id"]: row for row in desired["models"]}
+    for row in captured["models"]:
+        if row["model_id"] not in {"namd", "lammps"}:
+            assert after_rows[row["model_id"]] == row
+        else:
+            updated = copy.deepcopy(after_rows[row["model_id"]])
+            updated["execution_identity_sha256"] = row["execution_identity_sha256"]
+            updated["stages"][0]["image"] = row["stages"][0]["image"]
+            assert updated == row
+    for sha, ids in captured["qualification_baselines"].items():
+        unchanged = [model for model in ids if model not in {"namd", "lammps"}]
+        projected = release.digest({"schema": captured["schema"], "models": [after_rows[key] for key in unchanged]})
+        assert desired["qualification_baselines"][projected] == unchanged
+        if set(ids) & {"namd", "lammps"}:
+            assert sha not in desired["qualification_baselines"]
+        else:
+            assert projected == sha
+    assert desired.get("snapshot_bundles") == captured.get("snapshot_bundles")
+    new_schedule = json.loads(cm["data"]["scheduling.json"])
+    old_schedule = json.loads(args[1])
+    del new_schedule["model_eligible_pool_ids"]["amber"]
+    new_schedule["model_eligible_pool_ids"]["lammps"] = old_schedule["model_eligible_pool_ids"]["lammps"]
+    assert new_schedule == old_schedule
+    for model in ("namd", "lammps"):
+        assert profiles[model]["execution_identity"] != initial[model]["execution_identity"]
+        assert profiles[model]["qualification"]["public_completion_receipt_sha256"] is None
+        assert profiles[model]["qualification"]["scheduler_eligibility_receipt_sha256"] is None
+        assert profiles[model]["qualification"]["h100_semantic_receipt_sha256"] == release.digest(args[3][model])
+
+
+@pytest.mark.parametrize("corruption", ["changed-row", "missing-row", "duplicate-membership", "duplicate-row"])
+def test_successor_rejects_invalid_captured_proofs_before_rebasing(corruption):
+    args, _ = successor_inputs()
+    captured = args[0]["scientificBatch"]["executionMap"]
+    sha = next(key for key, ids in captured["qualification_baselines"].items() if "namd" in ids)
+    if corruption == "changed-row":
+        next(row for row in captured["models"] if row["model_id"] == "namd")["execution_identity_sha256"] = "f" * 64
+    elif corruption == "missing-row":
+        captured["qualification_baselines"][sha].append("absent-app")
+    elif corruption == "duplicate-membership":
+        captured["qualification_baselines"][sha].append("namd")
+    else:
+        captured["models"].append(copy.deepcopy(captured["models"][0]))
+    with pytest.raises(ValueError, match="qualification baseline|duplicate execution"):
+        release.compose(*args, replace_models={"namd", "lammps"}, expand_qualified_pools={"lammps"})
+
+
+def test_single_successor_only_proof_is_removed_not_transferred():
+    args, _ = successor_inputs()
+    captured = args[0]["scientificBatch"]["executionMap"]
+    predecessor = next(row for row in captured["models"] if row["model_id"] == "namd")
+    old_sha = release.digest({"schema": captured["schema"], "models": [predecessor]})
+    captured["qualification_baselines"][old_sha] = ["namd"]
+    _, overlay, _ = release.compose(
+        *args, replace_models={"namd", "lammps"}, expand_qualified_pools={"lammps"}
+    )
+    proofs = overlay["scientificBatch"]["executionMap"]["qualification_baselines"]
+    assert old_sha not in proofs
+    assert [] not in proofs.values()
+
+
+def test_publish_successors_rebases_only_unchanged_profile_references(tmp_path, monkeypatch):
+    args, initial = successor_inputs()
+    captured = args[0]["scientificBatch"]["executionMap"]
+    profiles, overlay, _ = release.compose(
+        *args, replace_models={"namd", "lammps"}, expand_qualified_pools={"lammps"}
+    )
+    target = tmp_path / "catalog/runtime/contracts"
+    target.mkdir(parents=True)
+    catalog = json.loads((SOLUTION_ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json").read_text())
+    catalog["profiles"] = [item for item in catalog["profiles"] if item["model_id"] not in release.MODELS]
+    # Exercise profiles referencing the whole predecessor map, not only older
+    # baselines that happen to omit the changed App.
+    old_digest = release.digest({"schema": captured["schema"], "models": captured["models"]})
+    for item in catalog["profiles"]:
+        if item.get("route_exposed"):
+            item["qualification"]["execution_map_sha256"] = old_digest
+    catalog["profiles"].extend(initial.values())
+    receipts = {"receipts": [json.loads((release.HERE / model / "activation/source-candidate-receipt.json").read_text())
+                             for model in initial]}
+    before = copy.deepcopy(catalog)
+    for name, value in (
+        ("scientific-execution-map.json", captured),
+        ("scientific-workload-profiles.json", catalog),
+        ("scientific-source-candidate-receipts.json", receipts),
+    ):
+        (target / name).write_text(json.dumps(value))
+    monkeypatch.setattr(release, "ROOT", tmp_path)
+    release.publish_catalog(profiles, overlay["scientificBatch"]["executionMap"], captured,
+                            replace_models={"namd", "lammps"})
+    published = json.loads((target / "scientific-workload-profiles.json").read_text())
+    by_id = {item["model_id"]: item for item in published["profiles"]}
+    for old in before["profiles"]:
+        if old["model_id"] in initial:
+            assert by_id[old["model_id"]] == profiles[old["model_id"]]
+            continue
+        new = copy.deepcopy(by_id[old["model_id"]])
+        if old.get("route_exposed"):
+            assert new["qualification"]["execution_map_sha256"] != old_digest
+            new["qualification"]["execution_map_sha256"] = old_digest
+        assert new == old
+    published_map = json.loads((target / "scientific-execution-map.json").read_text())
+    release.validate_profile_qualifications(published["profiles"], published_map)
+    assert published_map.get("snapshot_bundles") == captured.get("snapshot_bundles")
+    assert json.loads((target / "scientific-source-candidate-receipts.json").read_text())["receipts"][:2] == receipts["receipts"]
+
+
+@pytest.mark.parametrize("corruption", ["nonmember", "unknown-proof", "changed-unrelated", "missing-projection"])
+def test_profile_rebase_rejects_invalid_membership_or_unrelated_changes(corruption):
+    args, _ = successor_inputs()
+    captured = args[0]["scientificBatch"]["executionMap"]
+    _, overlay, _ = release.compose(*args, replace_models={"namd", "lammps"}, expand_qualified_pools={"lammps"})
+    desired = overlay["scientificBatch"]["executionMap"]
+    rows = {row["model_id"]: row for row in captured["models"]}
+    full = release.digest({"schema": captured["schema"], "models": captured["models"]})
+    profile = {"model_id": "rfdiffusion", "route_exposed": True, "qualification": {"execution_map_sha256": full}}
+    if corruption == "nonmember":
+        reference = release.digest({"schema": captured["schema"], "models": [rows["namd"]]})
+        captured["qualification_baselines"][reference] = ["namd"]
+        profile["qualification"]["execution_map_sha256"] = reference
+    elif corruption == "unknown-proof":
+        profile["qualification"]["execution_map_sha256"] = "0" * 64
+    elif corruption == "changed-unrelated":
+        next(row for row in desired["models"] if row["model_id"] == "rfdiffusion")["variant_id"] = "changed"
+        desired["qualification_baselines"] = {}
+    else:
+        desired["qualification_baselines"] = {}
+    with pytest.raises(ValueError, match="qualification|unrelated"):
+        release.rebase_profile_qualifications([profile], captured, desired, {"namd", "lammps"})
+
+
+def test_final_profile_check_requires_membership_not_just_a_known_hash():
+    args, _ = successor_inputs()
+    captured = args[0]["scientificBatch"]["executionMap"]
+    sha, ids = next(iter(captured["qualification_baselines"].items()))
+    assert "namd" not in ids
+    with pytest.raises(ValueError, match="membership"):
+        release.validate_profile_qualifications(
+            [{"model_id": "namd", "route_exposed": True, "qualification": {"execution_map_sha256": sha}}], captured
+        )
