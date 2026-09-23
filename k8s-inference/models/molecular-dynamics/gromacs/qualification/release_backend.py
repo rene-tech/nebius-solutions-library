@@ -54,7 +54,7 @@ def main():
     if args.apply:
         subprocess.run(kube + ['apply', '-f', str(cm)], check=True)
         subprocess.run(helm + ['upgrade', 'fs2-serve-control-plane', str(chart), '-f', str(render_values),
-                              '--atomic', '--wait', '--timeout', '8m'], check=True)
+                              '--rollback-on-failure', '--wait', '--timeout', '8m'], check=True)
 
 
 if __name__ == '__main__':

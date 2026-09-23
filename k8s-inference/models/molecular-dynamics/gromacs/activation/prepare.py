@@ -59,7 +59,7 @@ def runtime_receipt(image, directories):
             "recorded_at": datetime.now(timezone.utc).isoformat(), "tests": tests, "customer_ready": False}
 
 
-def prepare(values, scheduling_raw, candidate, runtime_image, evidence, recipe_sha256):
+def prepare(values, scheduling_raw, candidate, runtime_image, evidence, recipe_sha256, *, replace_existing=False):
     if not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", runtime_image):
         raise ValueError("runtime image must be immutable")
     if evidence.get("runtime_image") != runtime_image or not evidence.get("tests") or not evidence.get("recorded_at"):
@@ -71,8 +71,11 @@ def prepare(values, scheduling_raw, candidate, runtime_image, evidence, recipe_s
     live = json.loads(live) if isinstance(live, str) else live
     if set(live) - {"schema", "models", "snapshot_bundles", "qualification_baselines"}:
         raise ValueError("unrecognized execution map fields")
-    if any(row["model_id"] == "gromacs" for row in live["models"]):
+    existing = next((row for row in live["models"] if row["model_id"] == "gromacs"), None)
+    if existing is not None and not replace_existing:
         raise ValueError("GROMACS already exists; prepare an explicit successor")
+    if existing is None and replace_existing:
+        raise ValueError("a successor requires the captured GROMACS release")
     profile = copy.deepcopy(candidate)
     if (profile["model_id"], profile["state"], profile["route_exposed"]) != ("gromacs", "candidate-unqualified", False):
         raise ValueError("expected the unrouted GROMACS candidate")
@@ -104,9 +107,19 @@ def prepare(values, scheduling_raw, candidate, runtime_image, evidence, recipe_s
                            "host_path": None, "mount_path": "/mnt/fs2-scientific", "sub_path": None, "read_only": False}],
            }]}
     desired = copy.deepcopy(live)
-    desired.setdefault("qualification_baselines", {})[digest({"schema": live["schema"], "models": live["models"]})] = [
-        item["model_id"] for item in live["models"]]
-    desired["models"].append(row)
+    if replace_existing:
+        # A bugfix successor changes only this App's image/identity. Keep the
+        # operator's resources, adapter, namespace and other Apps unchanged.
+        row = copy.deepcopy(existing)
+        if len(row["stages"]) != 1 or row["stages"][0]["stage_id"] != "workflow":
+            raise ValueError("unexpected GROMACS stage layout; review the successor explicitly")
+        row["execution_identity_sha256"] = identity["execution_identity_sha256"]
+        row["stages"][0]["image"] = runtime_image
+        desired["models"] = [row if item["model_id"] == "gromacs" else item for item in desired["models"]]
+    else:
+        desired.setdefault("qualification_baselines", {})[digest({"schema": live["schema"], "models": live["models"]})] = [
+            item["model_id"] for item in live["models"]]
+        desired["models"].append(row)
     by_id = {item["model_id"]: item for item in desired["models"]}
     for expected, ids in desired["qualification_baselines"].items():
         if digest({"schema": live["schema"], "models": [by_id[key] for key in ids]}) != expected:
@@ -117,7 +130,9 @@ def prepare(values, scheduling_raw, candidate, runtime_image, evidence, recipe_s
                                 "qualified_at": evidence["recorded_at"]}
     scheduling = json.loads(scheduling_raw)
     pools = profile["resources"]["compatible_pool_ids"]
-    if not set(pools).issubset(scheduling["pools"]) or "gromacs" in scheduling["model_eligible_pool_ids"]:
+    current_pools = scheduling["model_eligible_pool_ids"].get("gromacs")
+    if (not set(pools).issubset(scheduling["pools"])
+            or current_pools is not None and (not replace_existing or current_pools != pools)):
         raise ValueError("new GROMACS pool mapping does not match this deployment")
     scheduling["model_eligible_pool_ids"]["gromacs"] = pools
     raw = canonical(scheduling)
@@ -141,12 +156,14 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--publish-catalog", action="store_true",
                         help="Write the generated onboarding profile/map to this source checkout; never deploy")
+    parser.add_argument("--replace-existing", action="store_true",
+                        help="Prepare an explicit GROMACS-only image/recipe successor; preserve other Apps")
     args = parser.parse_args()
     evidence = runtime_receipt(args.runtime_image, args.gpu_result)
     recipe = source_recipe(ROOT)
     profile, row, overlay, cm = prepare(json.loads((args.baseline / "values.json").read_text()),
         (args.baseline / "scheduling.json").read_bytes(), json.loads((HERE / "workload-profile.json").read_text())["profile"],
-        args.runtime_image, evidence, digest(recipe))
+        args.runtime_image, evidence, digest(recipe), replace_existing=args.replace_existing)
     args.output.mkdir(parents=True, exist_ok=False)
     for name, value in [("profile.json", profile), ("execution-row.json", row), ("activation.values.json", overlay),
                          ("scheduling.configmap.json", cm), ("runtime-receipt.json", evidence), ("source-recipe.json", recipe)]:
@@ -155,20 +172,26 @@ def main():
         contracts = ROOT / "catalog/runtime/contracts"
         catalog_path = contracts / "scientific-workload-profiles.json"
         catalog = json.loads(catalog_path.read_text())
-        if any(item["model_id"] == "gromacs" for item in catalog["profiles"]):
+        existing = any(item["model_id"] == "gromacs" for item in catalog["profiles"])
+        if existing and not args.replace_existing:
             raise ValueError("source already contains GROMACS; review an explicit successor")
+        if not existing and args.replace_existing:
+            raise ValueError("the source catalog must contain the predecessor")
         source_map = json.loads((contracts / "scientific-execution-map.json").read_text())
         captured_map = json.loads((args.baseline / "values.json").read_text())["scientificBatch"]["executionMap"]
         captured_map = json.loads(captured_map) if isinstance(captured_map, str) else captured_map
         comparable = lambda value: {k: v for k, v in value.items() if k != "snapshot_bundles"}
         if comparable(source_map) != comparable(captured_map):
             raise ValueError("source execution map differs from the captured live release")
-        catalog["profiles"].append(profile)
+        if args.replace_existing:
+            catalog["profiles"] = [profile if item["model_id"] == "gromacs" else item for item in catalog["profiles"]]
+        else:
+            catalog["profiles"].append(profile)
         catalog_path.write_text(json.dumps(catalog, indent=2) + "\n")
         # Environment-local snapshot PVC/configmap identities stay in the live
         # values overlay. Do not bake this cluster's bundle settings into IaC.
         published_map = copy.deepcopy(source_map)
-        published_map["models"].append(row)
+        published_map["models"] = overlay["scientificBatch"]["executionMap"]["models"]
         published_map["qualification_baselines"] = overlay["scientificBatch"]["executionMap"]["qualification_baselines"]
         (contracts / "scientific-execution-map.json").write_text(
             json.dumps(published_map, indent=2) + "\n")

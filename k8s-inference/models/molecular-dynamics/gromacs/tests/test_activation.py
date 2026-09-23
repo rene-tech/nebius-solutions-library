@@ -77,3 +77,27 @@ def test_source_recipe_binds_storage_and_native_worker():
     paths = {entry["path"] for entry in activation.source_recipe(ROOT)["files"]}
     assert "components/control-plane/src/fs2_serve/scientific_batch/gromacs_storage_routes.py" in paths
     assert "models/molecular-dynamics/gromacs/runtime/fs2_gromacs/worker.py" in paths
+
+
+def test_explicit_successor_changes_only_gromacs_image_and_identity():
+    args = list(inputs())
+    _, old_row, overlay, cm = activation.prepare(*args)
+    args[0]["scientificBatch"].update(overlay["scientificBatch"])
+    args[1] = cm["data"]["scheduling.json"].encode()
+    before = copy.deepcopy(args[0])
+    args[3] = "registry.example/gromacs@sha256:" + "3" * 64
+    args[4]["runtime_image"] = args[3]
+    args[5] = "4" * 64
+    with pytest.raises(ValueError, match="explicit successor"):
+        activation.prepare(*args)
+    _, new_row, desired, new_cm = activation.prepare(*args, replace_existing=True)
+    expected = copy.deepcopy(old_row)
+    expected["stages"][0]["image"] = args[3]
+    expected["execution_identity_sha256"] = new_row["execution_identity_sha256"]
+    assert new_row == expected
+    assert old_row["execution_identity_sha256"] != new_row["execution_identity_sha256"]
+    assert new_cm == cm
+    for key in ("snapshot_bundles", "qualification_baselines"):
+        assert desired["scientificBatch"]["executionMap"].get(key) == before["scientificBatch"]["executionMap"].get(key)
+    assert [row for row in desired["scientificBatch"]["executionMap"]["models"] if row["model_id"] != "gromacs"] == [
+        row for row in before["scientificBatch"]["executionMap"]["models"] if row["model_id"] != "gromacs"]
