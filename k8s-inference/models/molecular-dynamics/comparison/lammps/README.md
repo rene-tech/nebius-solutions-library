@@ -149,3 +149,23 @@ One task H100 Pod `fs2-lammps-r20260923-alanine-probe` on
 `computeinstance-e00bwrmx5x05qn4bc8` executes the full protocol into
 `/home/tux/fs2-alanine-lammps-20260923/native-production-03`; this is native
 qualification, not yet a completed hosted/customer result.
+# Optional zero-tilt orthogonal representation
+
+`prepare_fixture.py --orthogonal-proof PASSED_SCREEN.json` opts into the exact
+geometry-preserving orthogonal-box recipe. It requires three passed, unprofiled
+native repetitions for both representations and zero xy/xz/yz source tilts.
+Every initial/restart script places `change_box all ortho` immediately after the
+read, before PPPM, fixes or dumps. The native command also rejects nonzero tilt.
+No box length, coordinate, interaction, cutoff, mesh, timestep or stage changes.
+The original data and native performance proof are retained in the bundle.
+
+The 2026-09-23 exact-image short screen reported medians 11.7714 versus28.4171
+ns/day (three1000-step measured NPT windows after200 continuous warmup steps),
+with identical coordinates, maximum force difference1.244e-11 kcal/mol/Å and
+energy-term difference1.03e-14 kcal/mol. These are **short-screen results, not
+full-production performance**. Raw results are under
+`/home/tux/fs2-alanine-lammps-performance-20260923/screen-03`; the passed receipt
+SHA256 is `a95054cba02726690a09b8a42a42264a2f732dda8c199c5edb7af804ae30ef8b`.
+The already-orthogonal restart run0 check also passed. Fixture04's complete
+adapter/minimize/SHAKE probe and long public run remain separate required gates;
+the original fixture03 full baseline is retained and continues unchanged.

@@ -10,7 +10,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from adapter import adapt, coefficient_key, interactions, read_data, write_data
-from prepare_fixture import restart_coefficients
+from prepare_fixture import orthogonal_command, restart_coefficients
 
 
 def synthetic_water():
@@ -18,6 +18,13 @@ def synthetic_water():
 
 
 class AdapterTests(unittest.TestCase):
+    def test_orthogonal_representation_requires_all_zero_tilts(self):
+        self.assertEqual(orthogonal_command(["0 0.000 -0.0 xy xz yz"]), "change_box all ortho\n")
+        self.assertEqual(orthogonal_command(["0 10 xlo xhi"]), "change_box all ortho\n")
+        for invalid in (["0 0.0001 0 xy xz yz"], ["0 0 0 xy xz yz"] * 2, ["0 0 xy xz yz"]):
+            with self.assertRaises(ValueError):
+                orthogonal_command(invalid)
+
     def test_restart_coefficients_preserve_exact_native_tokens(self):
         sections, _ = adapt(synthetic_water(), [[1, 2, 3]])
         sections["Dihedral Coeffs"] = [["1", "charmm", "0.2", "3", "0", "0.0"], ["2", "multi/harmonic", "1", "-2", "0", "0", "0"]]
