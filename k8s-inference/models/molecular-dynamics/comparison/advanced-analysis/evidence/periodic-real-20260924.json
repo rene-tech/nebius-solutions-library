@@ -1,0 +1,116 @@
+{
+  "schema": "fs2-periodic-wham-real-handoff/v1",
+  "recorded_at": "2026-09-24T14:10:32Z",
+  "status": "completed-with-sampling-limitations",
+  "analysis_completed": true,
+  "scientific_convergence": "not-established",
+  "scope": "24 actual native 2ns umbrella windows, periodic native WHAM, two temporal bootstrap lengths, frozen historical 1ns overlay; CPU-only analysis",
+  "analysis_source_commit": "206d40793c9f8ba1291b69232c6f548973ce9ef3",
+  "analysis_source_sha256": "cf6ddd91bc4265803dca9905fccac2adaaef2fd3eeed414afd14e35025112960",
+  "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643",
+  "native_version": "2026.2-dev",
+  "manifest": {
+    "path": "/home/tux/fs2-alanine-analysis-20260924/umbrella/native-04/windows.json",
+    "sha256": "e4b2516e39631444cc8105116a3422eb55dbf635f87e892bc76d58c25d63d6bf",
+    "native_result_hashes_independently_verified": 24,
+    "samples_per_window": 20000,
+    "sample_dt_ps": 0.1,
+    "time_zero_excluded": true,
+    "temperature_k": 300,
+    "force_constant_kj_mol_rad2": 200,
+    "windows": 24,
+    "production_ns_per_window": 2,
+    "total_biased_production_ns": 48
+  },
+  "native_canary_audit": {
+    "path": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/canary-01/receipt.json",
+    "sha256": "99d48b2de0a5d0f32eb13fe4c775482feb0596739c0f8e14c18ebc38b340e4bb",
+    "trajectory_frames_independently_checked": 2001,
+    "max_phi_error_degrees": 0.0013275062534034987,
+    "max_psi_error_degrees": 0.0013719955496753755,
+    "max_native_torque_error_kj_mol_rad": 0.0017889462341571516
+  },
+  "analyses": [
+    {
+      "role": "primary",
+      "block_ps": 100,
+      "bootstrap_draws": 200,
+      "seed": 20260924,
+      "failed_draws": 0,
+      "bins_finite_in_every_draw": 180,
+      "median_interval_width_kj_mol": 0.7938001914885682,
+      "maximum_interval_width_kj_mol": 1.16596564635946,
+      "psi_block_length_warnings": 13,
+      "receipt_path": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/real-100ps-01/receipt.json",
+      "receipt_sha256": "ad20956029aacedef7932b9197e3492045f16f1ec906556fe44a13124474cf85"
+    },
+    {
+      "role": "sensitivity",
+      "block_ps": 200,
+      "bootstrap_draws": 200,
+      "seed": 20260924,
+      "failed_draws": 0,
+      "bins_finite_in_every_draw": 180,
+      "median_interval_width_kj_mol": 0.7361271543345236,
+      "maximum_interval_width_kj_mol": 1.2281460743898691,
+      "psi_block_length_warnings": 6,
+      "receipt_path": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/real-200ps-01/receipt.json",
+      "receipt_sha256": "09aea51ea065ca8a75120302570e1888b6c3ec4e6b43bb3937a106eebbe5f6d6"
+    }
+  ],
+  "common_results": {
+    "point_and_half_profiles_identical_between_analyses": true,
+    "reference_bin_degrees": -59,
+    "minimum_phi_degrees": -71,
+    "maximum_phi_degrees": 127,
+    "profile_span_kj_mol": 55.80013191941736,
+    "observed_support_connected": true,
+    "minimum_adjacent_overlap": 0.0275,
+    "minimum_overlap_window_centers_degrees": [120, 135],
+    "seam_overlap": 0.32175,
+    "split_half_pmf_rms_difference_kj_mol": 0.41492307983951177,
+    "split_half_pmf_max_abs_difference_kj_mol": 1.1000809010966819,
+    "maximum_estimated_psi_iact_ps": 130.16801571402195,
+    "maximum_psi_half_histogram_total_variation": 0.5387,
+    "psi_no_observed_half_circle_crossing_windows": ["window-12"],
+    "unbiased_overlay_frames": 1000,
+    "unbiased_overlay_occupied_bins": 69,
+    "unbiased_overlay_missing_bins": 111
+  },
+  "independent_final_audit": {
+    "path": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/comparison-01/receipt.json",
+    "sha256": "32bff92eb188a5533dd08baeba3d1f0e88335fbdad11470938d04dbb2ba52fab",
+    "input_records_verified_per_analysis": 50,
+    "output_records_verified_per_analysis": 1457,
+    "successful_native_commands_per_analysis": 228,
+    "bootstrap_native_profiles_independently_checked": 400,
+    "derived_bootstrap_inputs_replayed": "First and last draw, all24 windows, both block lengths",
+    "plots_visually_checked": ["phi-pmf-and-unbiased-overlay.png", "phi-time-split.png", "window-overlap.png", "orthogonal-psi-mixing.png", "block-sensitivity.png"],
+    "histogram_edge_arithmetic": "Five of480000 exact-edge observations differ by one adjacent bin between NumPy and native divide-then-multiply arithmetic; independent native histogram reproduction is exact, no lost observations or support change, maximum overlap difference0.00005. Native estimator remains authoritative."
+  },
+  "final_report": {
+    "path": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/comparison-01/FINAL_REPORT.md",
+    "sha256": "3fa2de77ebe5e791ebba8fc154f089e1ee1ec272455e3ec937796bbebce4d587"
+  },
+  "conditional_features": {
+    "path": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/comparison-01/conditional-features.json",
+    "sha256": "e1caf9591200aed8fae43810d2d69089161ba6b573e13206e78031c31fcbed57",
+    "scope": "Descriptive conditional positive-phi half-circle probability, not an additional acceptance gate or converged metastable-basin population"
+  },
+  "limitations": [
+    "A one-dimensional phi PMF and connected overlap do not establish psi or global equilibration.",
+    "Within-window bootstrap is conditional on observed states and cannot account for unvisited orthogonal basins or residual initialization memory.",
+    "Intervals are pointwise percentiles about a fixed reference bin, not simultaneous confidence bands; longer blocks do not guarantee wider or complete uncertainty.",
+    "The historical1ns overlay is one finite trajectory, not equilibrium truth; its empty bins remain missing.",
+    "Neither narrow intervals nor split-profile similarity establish transition rates, a rigorous equilibrium barrier or metastable-basin probabilities."
+  ],
+  "resources": {
+    "owned_gpu_or_cloud_work": false,
+    "cpu_containers_remaining": 0,
+    "analysis_processes_complete": true,
+    "native_run_directories_frozen": true,
+    "frozen_original_delivery_modified": false,
+    "simulation_extended": false,
+    "publication_owner": "root"
+  }
+}

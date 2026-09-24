@@ -5,6 +5,29 @@ Python code audits inputs, prepares selected/resampled observations, runs the
 upstream implementation, and reports uncertainty and sampling limitations.
 It does not launch molecular dynamics, deploy services or write cloud storage.
 
+## Actual 24-window result, 2026-09-24
+
+The real native cohort is now analyzed: 24 × 2 ns, 180 periodic bins, and
+200 native bootstrap draws each for 100 ps and 200 ps temporal blocks (seed
+20260924 in both). Both completed without failed draws or missing PMF bins.
+The point estimates are identical. Median 95% pointwise interval widths are
+0.7938/0.7361 kJ/mol; maxima are 1.1660/1.2281 kJ/mol. These conditional bands
+do **not** establish equilibrium convergence: ψ half-histogram total variation
+reaches 0.5387 and estimated integrated correlation time reaches 130.17 ps.
+The minimum adjacent overlap is 0.02750; the seam remains connected (0.32175).
+First/second-half PMF RMS difference is 0.4149 kJ/mol. The earlier unbiased
+1 ns overlay occupies 69/180 bins; its 111 missing bins are not filled.
+
+The separate [real-data evidence record](evidence/periodic-real-20260924.json)
+binds the manifest, both native analyses, independent numerical audit and final
+report. Raw outputs are in
+`/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/real-{100,200}ps-01`;
+the combined narrative and read-only verification scripts are in
+`/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/comparison-01`.
+These results do not replace the earlier method-only receipt or its retained
+failures. No protocol extension, cloud write or frozen-delivery mutation was
+made by the analysis lane.
+
 ## Native conventions and exact method validation
 
 The pinned `gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643`
