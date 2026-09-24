@@ -78,6 +78,16 @@ class DenseTests(unittest.TestCase):
             module.archive(inputs, root / "b.tar.gz")
             self.assertEqual(module.sha(root / "a.tar.gz"), module.sha(root / "b.tar.gz"))
 
+    def test_native_netcdf_restart_time_is_rank_zero(self):
+        from scipy.io import netcdf_file
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "synthetic-restart.nc"
+            with netcdf_file(path, "w") as target:
+                variable = target.createVariable("time", "d", ())
+                variable[...] = 1199.9999999854476
+            with netcdf_file(path, "r", mmap=False) as source:
+                self.assertEqual(module.netcdf_scalar(source.variables["time"]), 1199.9999999854476)
+
 
 if __name__ == "__main__":
     unittest.main()

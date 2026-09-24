@@ -181,6 +181,12 @@ def frame_schedule(times, steps, engine):
     return initial
 
 
+def netcdf_scalar(variable):
+    # A native AMBER restart time is rank zero; [:] is invalid for that shape.
+    # Ellipsis accepts the scalar without inventing an extra dimension.
+    return float(variable[...].item())
+
+
 def gromacs_log(text):
     require("-notunepme" in text and "-cpi source-final.cpt" in text and "Finished mdrun" in text, "native full-checkpoint continuation/completion missing")
     require(not re.search(r"LINCS WARNING|Fatal error:|timed with pme grid|PP/PME load balancing changed|optimal pme grid", text, re.I), "native failure or PME tuning")
@@ -275,7 +281,7 @@ def validate(engine, fixture, workspace, customer, delivery):
             velocity_times = velocities.variables["time"][:].copy()
             require(velocity.shape == (1000, 6598, 3) and np.isfinite(velocity).all() and np.allclose(velocity_times, times, atol=1e-4, rtol=0), "dense AMBER velocity frames missing/nonfinite/misaligned")
         with netcdf_file(data / "source-final.rst7", "r", mmap=False) as restart:
-            restart_time = float(restart.variables["time"][:].item())
+            restart_time = netcdf_scalar(restart.variables["time"])
             require(abs(restart_time - 1200) < 1e-6 and np.isfinite(restart.variables["velocities"][:]).all(), "source native AMBER restart time/velocities invalid")
         native_proof = {"worker_native_completion": proof, "source_exact_restart_time_ps": restart_time, "native_step_counter_restarts_at_zero": True, "thermo_samples": len(values), "dense_velocity_frames": len(velocity_times), "velocity_units": "native Amber NetCDF; scale_factor retained, not discarded"}
     return {

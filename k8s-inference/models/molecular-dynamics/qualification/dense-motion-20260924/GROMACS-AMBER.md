@@ -6,6 +6,53 @@ old trajectories, interpolate coordinates or repeat equilibration/production.
 Root owns rendering, labeling and upload. The frozen original delivery is never
 modified.
 
+## Actual completed runs, 2026-09-24
+
+Both ran once through the current typed customer path with the existing
+`md-qualification-20260923` / `md-test` identity, exact client 81a2f3b5 and
+unchanged backend 719ec336. Caller-scoped discovery confirmed the unchanged
+GROMACS 14ffdae0 and AMBER 1ca8115d runtime digests before submission. The
+existing scheduler admitted one H100 on-demand GPU per run; no pool, quota,
+runtime, limit or unrelated workload was changed. All owned operations are
+terminal `succeeded`, with `resource_released=true` in retained customer status.
+
+| Native continuation | GROMACS | AMBER |
+|---|---|---|
+| Operation | `da92902e-9420-41e7-b02a-e65b9ac07da2` | `d2f82bde-b3a9-44ac-9c4f-669dc96e9cbe` |
+| New native steps | 10,000 | 10,000 |
+| Native time range | 1,000–1,020 ps | 1,200.02–1,220 ps |
+| Raw coordinate frames | 1,001 including initial | 1,000 nonzero |
+| Nonzero 20 fs motion samples | 1,000 | 1,000 |
+| Maximum constraint error | 1.90731e-5 Å | 1.49278e-5 Å |
+| Verified customer artifacts | 23 | 12 |
+
+The GROMACS initial XTC frame exactly matches the frozen final XTC frame under
+periodic comparison. AMBER also has 1,000 finite, aligned native velocity frames.
+Its first native float32 time is 1200.02001953125 ps, within the declared 1e-4 ps
+storage tolerance of 1200.02; its step counter is independently checked in MDOUT,
+not fabricated inside NetCDF. Both retain exact source checkpoint hashes,
+native command arguments, execution/image identity and GPU/Pod/node UUIDs.
+
+Evidence root: `/home/tux/fs2-alanine-videos-20260924/dense/`.
+The engine subdirectories contain immutable `fixture-01/`, verified customer
+receipts in `customer-01/`, and every native file in
+`materialized-01/dense-<engine>/data/`.
+
+- GROMACS trajectory: `gromacs/materialized-01/dense-gromacs/data/dense-motion.xtc`;
+  validation: `gromacs/validation-01.json`, SHA256
+  `a5891db5441704d6e54c86d6934965319bc300017f485df500096eaed87bbf1c`.
+- AMBER trajectory: `amber/materialized-01/dense-amber/data/dense.nc`;
+  validation: `amber/validation-02.json`, SHA256
+  `49f383862012c7149dc39cd915c7ed1e791467fa72e465212ad1a86aa3212a19`.
+
+Both validation receipts have `status: passed` and a renderer input description.
+AMBER `validation-01.json` remains as a failed **offline reader** receipt:
+SciPy rejects `[:]` for native rank-zero restart time. The fix reads that scalar
+with `[...]`, has an actual scalar-NetCDF unit fixture, and validates the same
+unchanged native files. No native failure, extra MD run or softened scientific
+tolerance is hidden by this correction. Ten synthetic tests pass separately
+from these actual scientific outputs.
+
 Both use 10,000 steps at 2 fs with coordinates every 10 steps (20 fs): 1,000
 nonzero samples over 20 ps, optionally preceded by the native boundary frame.
 Canonical atom order, all 6,598 atoms and 6,588 constrained distances are checked.
