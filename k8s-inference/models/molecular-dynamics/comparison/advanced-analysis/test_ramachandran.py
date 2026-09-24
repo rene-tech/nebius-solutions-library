@@ -1,7 +1,9 @@
 """Offline synthetic method tests, never scientific evidence for native runs."""
 import importlib.util
+import csv
 import json
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 
@@ -171,5 +173,64 @@ class FrozenSources(unittest.TestCase):
         self.assertTrue(all(r["Bonferroni_36_family_interval"] is None for r in rows if r["basin"] == "alphaL"))
 
 
+def verify_actual_output(directory, output):
+    """Independent file/array arithmetic checks; does not alter analysis output."""
+    directory, output = Path(directory), Path(output)
+    if output.exists() or output.resolve().is_relative_to(directory.resolve()):
+        raise ValueError("use a new verification receipt outside the analysis directory")
+    report = m.read(directory / "receipt.json")
+    for entry in report["outputs"]:
+        path = directory / entry["path"]
+        if path.stat().st_size != entry["bytes"] or m.sha(path) != entry["sha256"]:
+            raise AssertionError("output hash/size mismatch: " + entry["path"])
+    details = []
+    for engine in m.ENGINES:
+        folder = directory / engine
+        with (folder / "production-phi-psi-basins.csv").open() as stream:
+            rows = list(csv.DictReader(stream))
+        if len(rows) != 1000:
+            raise AssertionError("wrong native production count")
+        np.testing.assert_allclose([float(r["production_time_ps"]) for r in rows], np.arange(1, 1001), atol=.001, rtol=0)
+        labels = np.asarray([m.BASINS.index(row["exclusive_basin"]) for row in rows])
+        states = np.column_stack([(labels == i).astype(float) for i in range(5)] + [np.isin(labels, [0, 1]).astype(float)])
+        counts = states.sum(axis=0)
+        for j, basin in enumerate(m.BASINS):
+            if counts[j] != report["engines"][engine]["basins"][basin]["count"]:
+                raise AssertionError("saved population differs from per-frame assignments")
+        with (folder / "histogram-free-energy-10deg.csv").open() as stream:
+            grid = list(csv.DictReader(stream))
+        if sum(int(r["count"]) for r in grid) != 1000:
+            raise AssertionError("histogram lost a frame")
+        for row in grid:
+            count = int(row["count"])
+            if count == 0 and (row["F_kJ_mol"] or row["delta_F_kJ_mol"]):
+                raise AssertionError("unvisited free-energy bin was filled")
+            if count:
+                expected = -.00831446261815324 * 300 * np.log(count / 1000)
+                np.testing.assert_allclose(float(row["F_kJ_mol"]), expected, atol=1e-12)
+        with np.load(folder / "bootstrap-populations.npz") as stored:
+            for length in m.BLOCKS:
+                samples = stored[f"block_{length}_ps"]
+                if samples.shape != (report["bootstrap_replicates"], 6):
+                    raise AssertionError("wrong bootstrap replicate shape")
+                np.testing.assert_allclose(samples[:, :5].sum(axis=1), 1, atol=1e-12)
+                np.testing.assert_allclose(samples[:, 5], samples[:, 0] + samples[:, 1], atol=1e-12)
+                # Reconstruct frame-by-frame resampling, independently of the
+                # production code's cumulative block-sum optimization.
+                rng = np.random.default_rng([report["bootstrap_seed"], m.ENGINES.index(engine), length])
+                starts = rng.integers(0, 1000, size=(3, 1000 // length))
+                indices = ((starts[:, :, None] + np.arange(length)) % 1000).reshape(3, 1000)
+                np.testing.assert_allclose(samples[:3], states[indices].mean(axis=1), atol=1e-12)
+        details.append({"engine": engine, "positive_native_frames": len(rows), "histogram_count": 1000,
+                        "bootstrap_shapes_and_composition": "passed", "independent_frame_resampling_arithmetic": "passed"})
+    result = {"status": "passed", "analysis_receipt_sha256": m.sha(directory / "receipt.json"),
+              "verified_output_files": len(report["outputs"]), "engines": details, "source_sha256": m.sha(Path(__file__))}
+    m.save(output, result)
+    print(json.dumps(result))
+
+
 if __name__ == "__main__":
-    unittest.main()
+    if len(sys.argv) == 4 and sys.argv[1] == "--verify-output":
+        verify_actual_output(sys.argv[2], sys.argv[3])
+    else:
+        unittest.main()

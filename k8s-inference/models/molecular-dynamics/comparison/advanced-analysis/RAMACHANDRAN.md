@@ -72,8 +72,10 @@ and a new output parent at `/output`. Use the actual host UID/GID.
 ```sh
 /opt/md-analysis/bin/python /source/test_ramachandran.py
 /opt/md-analysis/bin/python /source/ramachandran.py \
-  --delivery /delivery --output /output/analysis-01 \
+  --delivery /delivery --output /output/analysis-02 \
   --seed 20260924 --bootstrap-replicates 50000
+/opt/md-analysis/bin/python /source/test_ramachandran.py \
+  --verify-output /output/analysis-02 /output/output-verification-02.json
 ```
 
 Do not reuse an existing output directory. Failures create `failure.json` while
@@ -82,6 +84,13 @@ receipt records every output SHA256, native input hashes, reader/script source,
 method settings, environment and commands. Plots and numerical data are both
 retained for independent inspection. No scientific convergence claim follows
 from a `status:passed` analysis/validation receipt.
+
+The separate saved-output verification checks every inventoried size/SHA256,
+native sample counts and times, per-frame basin counts, histogram normalization,
+zero masks, thermodynamic units, bootstrap array shape/composition, and explicit
+frame-by-frame resampling arithmetic independent of the optimized block sums.
+It writes only a new external receipt. See [the actual results](RAMACHANDRAN_RESULTS.md)
+for the final evidence identities and scientific limitations.
 
 ## Primary references checked online
 
