@@ -1,5 +1,8 @@
 # Smoother presentation and genuine dense native motion
 
+Delivered files, native results and verification:
+[24 September result](MOTION-VIDEO-RESULT-20260924.md).
+
 The owner authorized two distinct derivatives of the canonical four-engine MD
 delivery. These do not replace the frozen 23 September evidence, plots or raw
 trajectories, and they do not qualify unrelated platform or LibreChat features.
