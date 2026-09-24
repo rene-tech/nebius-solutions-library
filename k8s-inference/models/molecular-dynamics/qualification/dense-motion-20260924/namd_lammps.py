@@ -246,6 +246,32 @@ def customer(args):
     return code
 
 
+def observe(args):
+    operation = read(args.receipt / "receipt.json")["operation_id"]
+    from uuid import UUID
+    operation = str(UUID(operation))
+    base = ["kubectl", "--kubeconfig", str(args.kubeconfig), "--context", args.context, "-n", "fs2-models"]
+    raw = json.loads(subprocess.check_output(base + ["get", "pods", "-l", "fs2.nebius.ai/operation-id=" + operation, "-o", "json"], text=True))
+    records = []
+    for pod in raw["items"]:
+        if pod["metadata"]["labels"].get("fs2.nebius.ai/operation-id") != operation:
+            raise ValueError("unexpected unrelated pod")
+        containers = [{"name": c["name"], "image": c["image"], "resources": c.get("resources", {})} for c in pod["spec"]["containers"]]
+        row = {"name": pod["metadata"]["name"], "uid": pod["metadata"]["uid"], "labels": pod["metadata"]["labels"],
+               "node": pod["spec"].get("nodeName"), "phase": pod["status"]["phase"], "containers": containers,
+               "container_statuses": pod["status"].get("containerStatuses", []), "gpu_observation": None}
+        runner = next((c for c in containers if c["resources"].get("limits", {}).get("nvidia.com/gpu")), None)
+        if row["phase"] == "Running" and runner:
+            probe = subprocess.run(base + ["exec", row["name"], "-c", runner["name"], "--", "nvidia-smi",
+                "--query-gpu=name,uuid,driver_version", "--format=csv,noheader"], capture_output=True, text=True)
+            row["gpu_observation"] = {"exit_code": probe.returncode, "stdout": probe.stdout.strip(), "stderr": probe.stderr.strip()}
+        records.append(row)
+    result = {"schema": "fs2-owned-dense-pod-observation/v1", "operation_id": operation,
+              "observed_at": datetime.now(timezone.utc).isoformat(), "pods": records, "changes_made": False}
+    save(args.output, result)
+    print(json.dumps({"operation_id": operation, "pods": [{"name": r["name"], "phase": r["phase"], "gpu": r["gpu_observation"]} for r in records]}))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -253,6 +279,11 @@ def main():
     p.add_argument("--delivery", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--engine", choices=WORKERS, required=True)
+    p = sub.add_parser("observe")
+    p.add_argument("--receipt", type=Path, required=True)
+    p.add_argument("--output", type=Path, required=True)
+    p.add_argument("--kubeconfig", type=Path, required=True)
+    p.add_argument("--context", required=True)
     for kind in ("discover", "submit", "_discover"):
         p = sub.add_parser(kind)
         p.add_argument("--fixture", type=Path, required=True)
@@ -269,6 +300,8 @@ def main():
         print(json.dumps({k: f[k] for k in ("engine", "start_step", "final_step", "input_sha256", "request_sha256")}))
     elif args.command == "_discover":
         asyncio.run(discover_inside(args.fixture, args.output))
+    elif args.command == "observe":
+        observe(args)
     else:
         raise SystemExit(customer(args))
 
