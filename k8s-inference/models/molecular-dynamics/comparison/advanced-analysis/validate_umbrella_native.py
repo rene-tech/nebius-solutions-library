@@ -99,6 +99,50 @@ def verify_topology(topology, frozen):
     require(topology.read_bytes() == frozen.read_bytes(), "topology", "native topology differs from frozen delivery bytes")
 
 
+def bind_native_inputs(result, request, data_root, output_directory, declared):
+    """Bind mixed batch-input/output layouts to actual grompp arguments.
+
+    A batch archives every window's input subtree in each isolated workspace.
+    Never select an arbitrary matching filename or another window's topology.
+    """
+    jobs = [job for job in request["jobs"] if job["id"] == result["job_id"]]
+    require(len(jobs) == 1, "input-binding", "request/result job identity differs")
+    steps = [step for step in jobs[0]["steps"] if step["id"] == "prepare-production"]
+    native = [command for command in result["commands"] if command["step_id"] == "prepare-production"]
+    require(len(steps) == len(native) == 1, "input-binding", "ambiguous/missing production preparation")
+    step, command = steps[0], native[0]
+    require(step["command"] == "grompp" and len(command["command"]) >= 2
+            and command["command"][1] == "grompp" and command["command"][2:] == step["args"]
+            and command.get("directory", ".") == step.get("directory", "."),
+            "input-binding", "native grompp command/directory differs from exact requested step")
+
+    def resolve(directory, argument):
+        workdir = Path() if directory == "." else safe_relative(directory)
+        relative = workdir / safe_relative(argument)
+        require(all(not re.fullmatch(r"window-\d{2}", part) or part == result["job_id"] for part in relative.parts),
+                "input-binding", f"cross-window native reference {relative}")
+        require(str(relative) in declared, "input-binding", f"native path is not result-inventory-bound: {relative}")
+        return data_root / relative
+
+    def option(arguments, flag):
+        require(arguments.count(flag) == 1, "input-binding", f"expected one {flag} argument")
+        index = arguments.index(flag) + 1
+        require(index < len(arguments) and isinstance(arguments[index], str), "input-binding", f"invalid {flag} path")
+        return arguments[index]
+
+    resolved = {flag: resolve(command.get("directory", "."), option(command["command"], flag))
+                for flag in ("-f", "-p", "-n", "-o")}
+    require(resolved["-o"] == output_directory / "production.tpr", "input-binding", "prepared TPR/output directory differs")
+    production = [item for item in result["commands"] if item["step_id"] == "production"]
+    require(production, "input-binding", "missing production command")
+    for item in production:
+        require(resolve(item.get("directory", "."), option(item["command"], "-s")) == resolved["-o"],
+                "input-binding", "production reads a different TPR")
+    return resolved, {"native_grompp_command": command, "requested_prepare_step": step,
+                      "resolved_paths": {flag: str(path) for flag, path in resolved.items()},
+                      "cross_window_references_allowed": False}
+
+
 def validate_completion(result, request, native_logs):
     require(result.get("status") == "succeeded" and result.get("error") is None,
             "native-completion", "native result is not successful")
@@ -270,12 +314,13 @@ def validate_window(workspace, delivery, master, pairs, lengths, output):
     require(len(candidates) == 1, "inventory", "ambiguous/missing production trajectory")
     trajectory, data = candidates[0], candidates[0].parent
     declared = {str(Path(item["path"])) for item in result["files"]}
-    required = ("system.top", "production.mdp", "production.tpr", "fs2-production.cpt", "production-canonical.xtc")
+    required = ("production.tpr", "fs2-production.cpt", "production-canonical.xtc")
     require(all(str((data / name).relative_to(data_root)) in declared for name in required),
             "inventory", "required native input/output is not bound by result inventory")
     frozen = delivery / "runs/gromacs/data/system.top"
-    verify_topology(data / "system.top", frozen)
-    settings = controls((data / "production.mdp").read_text())
+    input_paths, input_binding = bind_native_inputs(result, request, data_root, data, declared)
+    verify_topology(input_paths["-p"], frozen)
+    settings = controls(input_paths["-f"].read_text())
     log_paths = sorted(data.glob("production.part*.log"))
     completion = validate_completion(result, request, [path.read_text() for path in log_paths])
     pull_paths = sorted(data.glob("production.part*_pullx.xvg"))
@@ -332,7 +377,7 @@ def validate_window(workspace, delivery, master, pairs, lengths, output):
     return {"status": "passed", "window_id": result["job_id"], "workspace": str(workspace),
             "operation_id": result["operation_id"], "native_engine_id": result.get("engine_id"),
             "native_engine_version": result.get("engine"), "inputs": before,
-            "frozen_topology": file_receipt(frozen), "master_atom_order": "identity",
+            "frozen_topology": file_receipt(frozen), "master_atom_order": "identity", "native_input_binding": input_binding,
             "completion": completion, "atoms": master["manifest"]["atoms"],
             "production_steps": STEPS, "production_duration_ps": STEPS * DT_PS,
             "real_nonzero_frames": len(rows) - int(include_zero), "initial_frame_present": bool(include_zero),

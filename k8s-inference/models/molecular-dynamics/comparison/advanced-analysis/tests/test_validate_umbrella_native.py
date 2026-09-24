@@ -224,5 +224,57 @@ class FileAndBoundaryChecks(unittest.TestCase):
             with self.assertRaises(v.ValidationError): v.validate_source_segments(["a"], canonical)
 
 
+class ExactInputBinding(unittest.TestCase):
+    def fixture(self, prefix="window-01/"):
+        args = ["-f", prefix + "production.mdp", "-p", prefix + "system.top",
+                "-n", prefix + "dihedrals.ndx", "-o", "production.tpr"]
+        step = {"id": "prepare-production", "command": "grompp", "args": args}
+        command = {"step_id": "prepare-production", "command": ["gmx", "grompp", *args], "directory": "."}
+        production = {"step_id": "production", "command": ["gmx", "mdrun", "-s", "production.tpr"], "directory": "."}
+        result = {"job_id": "window-01", "commands": [command, production]}
+        request = {"jobs": [{"id": "window-01", "steps": [step]}]}
+        declared = {prefix + name for name in ("production.mdp", "system.top", "dihedrals.ndx")} | {"production.tpr"}
+        return result, request, declared
+
+    def bind(self, result, request, declared):
+        return v.bind_native_inputs(result, request, Path("/synthetic/data"), Path("/synthetic/data"), declared)
+
+    def test_mixed_batch_layout_resolves_exact_own_inputs(self):
+        result, request, declared = self.fixture()
+        declared |= {"window-02/production.mdp", "window-02/system.top", "window-02/dihedrals.ndx"}
+        paths, proof = self.bind(result, request, declared)
+        self.assertEqual(paths["-p"], Path("/synthetic/data/window-01/system.top"))
+        self.assertEqual(paths["-o"], Path("/synthetic/data/production.tpr"))
+        self.assertFalse(proof["cross_window_references_allowed"])
+
+    def test_flat_canary_remains_supported(self):
+        paths, _ = self.bind(*self.fixture(""))
+        self.assertEqual(paths["-p"], Path("/synthetic/data/system.top"))
+
+    def test_matching_request_cannot_authorize_cross_window_reference(self):
+        with self.assertRaisesRegex(v.GateError, "cross-window"):
+            self.bind(*self.fixture("window-02/"))
+
+    def test_actual_and_requested_commands_must_match(self):
+        result, request, declared = self.fixture()
+        result["commands"][0]["command"][3] = "window-01/other.mdp"
+        declared.add("window-01/other.mdp")
+        with self.assertRaisesRegex(v.GateError, "differs from exact requested"):
+            self.bind(result, request, declared)
+
+    def test_inventory_binding_and_non_escaping_paths(self):
+        result, request, declared = self.fixture()
+        declared.remove("window-01/system.top")
+        with self.assertRaises(v.GateError): self.bind(result, request, declared)
+        with self.assertRaises(v.GateError): self.bind(*self.fixture("../window-01/"))
+
+    def test_production_cannot_use_different_tpr(self):
+        result, request, declared = self.fixture()
+        result["commands"][1]["command"][-1] = "other.tpr"
+        declared.add("other.tpr")
+        with self.assertRaisesRegex(v.GateError, "different TPR"):
+            self.bind(result, request, declared)
+
+
 if __name__ == "__main__":
     unittest.main()

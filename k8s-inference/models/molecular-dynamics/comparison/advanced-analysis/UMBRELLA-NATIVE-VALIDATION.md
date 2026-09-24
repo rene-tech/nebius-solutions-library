@@ -26,8 +26,18 @@ different repetitions must not silently substitute for different windows.
 
 Each workspace supplies `result.json`, `request.json` and `data/`. Both flat
 `data/production-canonical.xtc` and batch-prefixed
-`data/window-NN/production-canonical.xtc` are supported. The unique trajectory
-selects the native input/output directory, not a hard-coded batch layout.
+`data/window-NN/production-canonical.xtc` are supported. The actual batch layout
+has flat outputs and archived inputs under `data/window-NN/`; every window's
+input subtree is retained. Inputs are therefore resolved from the exact native
+`prepare-production` grompp `-f/-p/-n` arguments, which must match the requested
+step. They must belong to this window, be result-inventory-bound, and produce
+the same `-o` TPR subsequently selected by production `mdrun -s`. Cross-window
+references fail even if the referenced topology has identical bytes.
+
+The first batch validator pass, `validation-batch01-01`, is retained as failed:
+the original reader assumed inputs and outputs were colocated. The correction
+changes path binding only, with explicit cross-window negative tests; it does
+not change native data or scientific tolerances. Retry receipts use new paths.
 
 Output must be a new directory outside all original workspace and frozen
 delivery trees. It contains an immutable `receipt.json` and one frame-by-frame
