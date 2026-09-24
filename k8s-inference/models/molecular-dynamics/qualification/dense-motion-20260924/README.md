@@ -94,8 +94,10 @@ Customer client:
 - LAMMPS worker: `lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c`.
 
 Full registry names, upstream engine identities, native commands, source hashes
-and artifact SHA256 values are in `receipts/*-validation.json`, exact copies of
-the frozen passed evidence. Both caller-scoped active model digests matched
+and artifact SHA256 values are in `receipts/*-validation.json`, semantically
+identical JSON copies of the frozen passed evidence (JSON number formatting
+differs, so their file hashes are not the frozen render-input receipt hashes).
+Both caller-scoped active model digests matched
 before upload/admission.
 
 NAMD had a live Pod/image capture and `nvidia-smi`: H100 80GB HBM3, driver
