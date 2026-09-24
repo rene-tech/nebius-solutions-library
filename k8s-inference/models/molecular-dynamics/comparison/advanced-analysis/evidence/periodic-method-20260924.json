@@ -1,0 +1,46 @@
+{
+  "schema": "fs2-periodic-wham-method-handoff/v1",
+  "recorded_at": "2026-09-24T13:22:20.452578+00:00",
+  "scope": "CPU-only native method validation and analysis implementation; real 24-window analysis pending",
+  "status": "method-validation-passed",
+  "real_umbrella_pmf_completed": false,
+  "scientific_convergence": "not-established",
+  "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643",
+  "native_version": "2026.2-dev",
+  "source_file_sha256": "cf6ddd91bc4265803dca9905fccac2adaaef2fd3eeed414afd14e35025112960",
+  "unit_tests": {
+    "passed": 31,
+    "command": "python -m pytest -q test_umbrella_wham.py",
+    "scope": "Units, periodicity, missing data, input semantics, temporal resampling and mocked report plumbing; not real simulation"
+  },
+  "native_synthetic_validation": {
+    "path": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/synthetic-04/receipt.json",
+    "sha256": "2f30d24f4795fa6923a007069211316fe5174ac84315a0c31138aed7062444ec",
+    "flat_max_error_kj_mol": 0.0002005422715143368,
+    "asymmetric_periodic_max_error_kj_mol": 0.0011522255382345747,
+    "negative_noncyclic_max_error_kj_mol": 109.44564267876214,
+    "negative_degree_force_constant_max_error_kj_mol": 6.734724898060535,
+    "unbiased_psi_selected_out": true,
+    "native_bootstrap_replay_identical": true,
+    "windows": 24,
+    "bins": 180,
+    "observations_per_window": 100000,
+    "temperature_k": 300,
+    "force_constant_kj_mol_rad2": 200,
+    "kind": "Deterministic discrete-grid analytical observations; native preprocessing only, no MD"
+  },
+  "actual_zero_step_cv_tpr_layout": {
+    "path": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/native-cv-layout-01/receipt.json",
+    "sha256": "1fd1153ba80d07f5675652764abf0d08b226fbfbbfa3e26cef1db0ce39de7ae5",
+    "coordinate_selection": [1, 0],
+    "not_a_production_window": true,
+    "actual_audit_cadence_ps": 0.002,
+    "planned_production_cadence_ps": 0.1
+  },
+  "failures_retained": [
+    "synthetic-01: exact native CLI rejected explicit -noauto with explicit bounds; corrected by omitting both auto forms, not by changing periodic boundaries",
+    "native-cv-layout-01: initial production-cadence assumption correctly rejected for the separately labeled zero-step audit TPR; its actual cadence is 0.002ps",
+    "initial local venv resolution selected Python3.13, incompatible with pinned NumPy1.26.4 wheels; stopped build, retained that environment and created explicit /usr/bin/python3.12 venv using binary-only packages"
+  ],
+  "resource_scope": "No GPU, cloud write, deployment, image rebuild or frozen-delivery mutation. Bounded CPU containers removed after commands."
+}
