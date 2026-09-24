@@ -1,0 +1,212 @@
+{
+  "schema": "fs2-dense-native-validation/v1",
+  "status": "passed",
+  "recorded_at": "2026-09-24T02:17:33.495057+00:00",
+  "engine": "lammps",
+  "operation_id": "199127a9-c7be-4a57-b99c-c58c29499bce",
+  "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+  "engine_id": "nvcr.io/nvidia/lammps@sha256:d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+  "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+  "native_command": {
+    "argv": [
+      "/usr/local/lammps/sm90/bin/lmp",
+      "-k",
+      "on",
+      "g",
+      "1",
+      "t",
+      "1",
+      "-sf",
+      "kk",
+      "-var",
+      "fs2_segment_seconds",
+      "900",
+      "-var",
+      "fs2_segment",
+      "1",
+      "-var",
+      "fs2_restart",
+      "0",
+      "-log",
+      "none",
+      "-in",
+      "dense.in"
+    ],
+    "backend": "kokkos-cuda",
+    "exit_code": 0,
+    "finished_at": "2026-09-24T02:12:15.432078+00:00",
+    "input_sha256": "dc2116f70e82cf5eff3e6883890959fea6a01591ba9918fbb2b59fac9257a159",
+    "log": "fs2-dense-segment-000001.log",
+    "native_restart_step": 610000,
+    "segment": 1,
+    "step_id": "dense",
+    "wall_seconds": 74.33328255199012
+  },
+  "inventory": {
+    "recipe_sha256": "dd51da3d1c0d47829a455d8d5537dd51f57b86fa14325f434283de80b1ba551a",
+    "verified_files": 18,
+    "verified_bytes": 790312053,
+    "immutable_input_files": 14
+  },
+  "input_sha256": "e738a1183bbadeaf99ddaae7b3e47e5f5c8fe3b58e4e44aba0f5f44c5cb3627c",
+  "request_sha256": "2025d1355ddc66fac1f4ead11f1ae9259929770396d3d42a0499dea7e3cceb7e",
+  "result": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/materialized/dense-motion/result.json",
+    "sha256": "d6ee09863922e7ea5199e8ef695f069d656244b9eddebf463ba818f52557cc10",
+    "bytes": 21336
+  },
+  "trajectory": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/materialized/dense-motion/data/dense.1.lammpstrj",
+    "sha256": "d4ec2cd65d07a9b0621edd6e8c90f50efbba5429e62e476d938a759485d27167",
+    "bytes": 786081401
+  },
+  "topology": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/materialized/dense-motion/data/system-shake.lmp",
+    "sha256": "48bf8ab0e22af94aae98154c3cfc70d4e72207fd10f25fc8441659a28b113446",
+    "bytes": 758710
+  },
+  "native_log": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/materialized/dense-motion/data/fs2-dense-segment-000001.log",
+    "sha256": "6f231dd6d9e88490836d192490788ab352bf42b87f4f846f155140b67f252f7a",
+    "bytes": 285704
+  },
+  "restart_files": [
+    {
+      "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/materialized/dense-motion/data/origin.restart",
+      "sha256": "993cffcff60dd02d18d886a5c3a0b3af827ceb2568f84520005f2730c0fa40ca",
+      "bytes": 1078658
+    },
+    {
+      "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/materialized/dense-motion/data/dense.restart",
+      "sha256": "2cdb342eb1928cc6541f75405d7b4d2848fc04e59b692a8184f2c46d6c7973d3",
+      "bytes": 1078658
+    }
+  ],
+  "master_topology_sha256": "805a5f22bd3d3b0045b1ed02652f4272a8e6df8a143fe98278f924d77ad4b61a",
+  "timeline": {
+    "native_frames": 1001,
+    "positive_frames": 1000,
+    "initial_frame": true,
+    "first_step": 600000,
+    "last_step": 610000,
+    "origin_step": 600000,
+    "origin_time_ps": 1200,
+    "duration_ps": 20,
+    "cadence_ps": 0.02,
+    "maximum_native_time_roundoff_ps": 0
+  },
+  "atoms": 6598,
+  "constraints": 6588,
+  "max_constraint_distance_error_A": 0.00002948121079970889,
+  "constraint_tolerance_A": 0.0001,
+  "finite_coordinates_cells_and_thermodynamics": true,
+  "identical_consecutive_frames": 0,
+  "thermodynamic_samples": 1001,
+  "boundary": {
+    "policy": "exact-lammps-shake-setup-projection-v1",
+    "evidence_sha256": "6d89e51101ecd6dbc67a14e02ad8a2790a70c40eb889b1acbcd2b85e407c797e",
+    "source_revision": "c7ae612a9497437412cb787b78769570f48653dd",
+    "metrics": {
+      "atoms": 6598,
+      "constraints": 6588,
+      "clusters": 2198,
+      "unconstrained_atoms": [
+        5,
+        6,
+        15,
+        16
+      ],
+      "maximum_periodic_component_displacement_A": 0.0000060032310997826235,
+      "maximum_periodic_atom_displacement_A": 0.000006055246806844954,
+      "rms_component_displacement_A": 0.000002465989149196776,
+      "maximum_unconstrained_atom_component_displacement_A": 0,
+      "maximum_cluster_COM_component_displacement_A": 9.525437478459712e-14,
+      "maximum_component_difference_from_position_only_SHAKE_solution_A": 1.301268705487216e-13,
+      "rms_component_difference_from_position_only_SHAKE_solution_A": 3.6906501746585524e-14,
+      "maximum_constraint_distance_error_before_A": 0.00000863474955337118,
+      "maximum_constraint_distance_error_after_A": 1.2612133559741778e-13,
+      "rms_constraint_distance_error_before_A": 0.000006670833925568161,
+      "rms_constraint_distance_error_after_A": 3.7809228508661247e-14,
+      "maximum_raw_component_displacement_A": 40.77738771100666
+    },
+    "limits": {
+      "maximum_periodic_component_displacement_A": 0.0001,
+      "maximum_unconstrained_atom_component_displacement_A": 1e-12,
+      "maximum_cluster_COM_component_displacement_A": 1e-10,
+      "maximum_component_difference_from_position_only_SHAKE_solution_A": 1e-9,
+      "maximum_constraint_distance_error_before_A": 0.0001,
+      "maximum_constraint_distance_error_after_A": 1e-8
+    },
+    "cell_and_origin_exactly_unchanged": true,
+    "velocities_exactly_unchanged": true,
+    "previous_positions_float64_sha256": "5298ca35c8a689d62a1e09fa52e8e6470e03442c7ed0ac944fda0c0f61fabd36",
+    "next_positions_float64_sha256": "9b685e237a3dc75fc1bb70355f2f31afc29da5a95f8ce8d599246487158d7d41",
+    "unchanged_velocities_float64_sha256": "a4d1ffee4cf7238a65941dd8c6b9aed1b5e75d4097737657cad6e3a3b0f4ffec",
+    "action": "retain preceding closed-step sample; separately preserve verified native SHAKE setup projection and both raw boundary records; no trajectory repair or bitwise continuation claim",
+    "new_boundary_evidence": {
+      "kind": "exact-lammps-shake-setup-projection-v1",
+      "source_revision": "c7ae612a9497437412cb787b78769570f48653dd",
+      "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/lammps-worker@sha256:e4e21f952285134be263c9ea3f1f06ce461fdca2409622b568b186b12f7f199c",
+      "step": 600000,
+      "topology_sha256": "48bf8ab0e22af94aae98154c3cfc70d4e72207fd10f25fc8441659a28b113446",
+      "previous_record_sha256": "c3e3ee82f8da1d19cf13f92cdaa2c430459ebe3b86383c7de60ea382fb40d33b",
+      "next_trajectory_sha256": "d4ec2cd65d07a9b0621edd6e8c90f50efbba5429e62e476d938a759485d27167"
+    },
+    "model_reconstructed_from_verified_topology": true
+  },
+  "native_performance": {
+    "native_ns_per_day": 23.648135451264725,
+    "native_loop_seconds": 73.0713,
+    "scope": "sum of production LAMMPS loop times; real units"
+  },
+  "restart_semantics": "Native binary state restored; original pair/PPPM/thermal/constraints/integrate fix IDs and coefficients recreated. Langevin seed 20260925 retained but RNG resets. Native SHAKE position setup may adjust step-600000 coordinates; this new boundary must be measured and independently validated, not accepted using old step-396000 evidence.",
+  "warnings": [
+    "WARNING: Using default KISS FFT with Kokkos GPU backends may give suboptimal performance (src/KOKKOS/pppm_kokkos.cpp:110)"
+  ],
+  "customer_artifact_count": 19,
+  "customer_receipt": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/customer-01/receipt.json",
+    "sha256": "bc5e17fa0ac1ba6b9f944a281f11c9ed4bb398084e831b0797e0dbbb6c0e1492",
+    "bytes": 10138
+  },
+  "released_attempt": {
+    "attempt_id": "c3d7aed4-1a5d-5ac4-a280-b8e20e983494",
+    "shard_id": "dense-motion",
+    "attempt_number": 1,
+    "workload_kind": "Job",
+    "workload_name": "fs2-workflow-dense-motion-a1-3cb182a0290d",
+    "workload_uid": "c43338c4-43ba-4f19-a6d5-e8e9b827712a",
+    "workload_namespace": "fs2-models",
+    "route_namespace": "fs2-models",
+    "outcome": "succeeded",
+    "last_phase": "teardown",
+    "resource_released": true,
+    "scheduling_admission": {
+      "resolved_pool_id": "h100-ondemand-1x",
+      "admitted_resource_flavor": "inference-h100-ondemand-1x",
+      "accelerator_resource_name": "nvidia.com/gpu",
+      "accelerator_count": 1,
+      "admitted_at": "2026-09-24T02:10:42Z"
+    },
+    "failure_kind": null,
+    "failure_code": null
+  },
+  "pod_evidence": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/lammps/pods-01.json",
+    "sha256": "c363f680ad08cead8ca3c56dd86a559d22c7ef16422826f9276e898ac57272d5",
+    "bytes": 203
+  },
+  "pod_captures": [],
+  "identity_limitations": [
+    "Native Pod deleted before live observation; no per-Pod imageID/GPU UUID/driver capture. Exact caller-visible runtime digest and retained admission/native dispatch evidence are preserved; no inferred UUID or driver."
+  ],
+  "analysis_source": {
+    "comparison/analysis/native.py": "3495dfe95380660e9c7c7572574136a15d6a4f88fcce4f635fec51578cb7d1cf",
+    "comparison/analysis/geometry.py": "bcd188ec173affcb9223ba49bee3b45cdd6375148bccab2e7c986d0379399027",
+    "comparison/analysis/thermo.py": "a08099008541f2c3e56e1fc81db04c957010aa31a8b7a64b9405a22eb0bbf376",
+    "comparison/analysis/shake_boundary.py": "a71ae7fe3939216db2bcb4b95a4d4f6faa54e8b9a0bf1fca2e70646125aba03b"
+  },
+  "validator_source_sha256": "8af11dd05ba6977d52e37ec51e5cb710f8734bac49ed0a91819190c26ed633c6",
+  "scientific_convergence_claimed": false,
+  "interpolation_or_coordinate_averaging": false
+}

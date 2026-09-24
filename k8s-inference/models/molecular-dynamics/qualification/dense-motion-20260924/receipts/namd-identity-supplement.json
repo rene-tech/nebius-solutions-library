@@ -1,0 +1,169 @@
+{
+  "schema": "fs2-dense-owned-identity-supplement/v1",
+  "status": "passed-with-explicit-capture-limitations",
+  "engine": "namd",
+  "operation_id": "f88b4e14-9ae0-4930-b314-23e59f8591a1",
+  "worker_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:30df40215f7df047463cf8e37f1fb80457b73fbb7ae8f681b9cb40d980e5f14e",
+  "client_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d",
+  "native_validation_receipt": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/validation-02.json",
+    "sha256": "cdb421daee3eeb2122f2c5779f147958f29f74aef6769438bb5d0a63d590a585"
+  },
+  "retained_lifecycle": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/lifecycle-01.json",
+    "sha256": "f91e88f324bf545017f2f6931fbc32587fa740516fade24625f3c2b46ca845a2"
+  },
+  "caller_scoped_runtime_discovery": {
+    "path": "/home/tux/fs2-alanine-videos-20260924/dense/namd/preflight-03/scientific-models.json",
+    "sha256": "683ca04c5b732ddee73581171075174de8e9023f502ae5460245ba0da7986672",
+    "runtime_digest": "sha256:30df40215f7df047463cf8e37f1fb80457b73fbb7ae8f681b9cb40d980e5f14e"
+  },
+  "lifecycle": {
+    "schema": "fs2-md-lifecycle-observation/v1",
+    "observed_at": "2026-09-24T02:14:50.320493+00:00",
+    "operation_id": "f88b4e14-9ae0-4930-b314-23e59f8591a1",
+    "changes_made": false,
+    "workloads": [
+      {
+        "subject": {
+          "subject_id": "2bb04f77-a244-5798-961d-27a3376c5dc0",
+          "operation_id": "f88b4e14-9ae0-4930-b314-23e59f8591a1",
+          "model_id": "namd",
+          "model_revision": "e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+          "accepted_at": "2026-09-24T02:08:42.353071Z"
+        },
+        "rollup": {
+          "rollup_id": "66f3171c-abe3-4871-a780-1c826d652086",
+          "subject_id": "2bb04f77-a244-5798-961d-27a3376c5dc0",
+          "generated_at": "2026-09-24T02:09:25.874897Z",
+          "event_watermark": 30581580,
+          "events_sha256": "2ff019bbd91264c10d4f7c788e2891fe4bc28f6c2274e887eb902c1b45d7e283",
+          "terminal": true,
+          "outcome": "succeeded",
+          "quota_reserved_gpu_seconds": 41.36687,
+          "scheduler_occupied_gpu_seconds": 35,
+          "device_allocated_gpu_seconds": 33.656606,
+          "active_gpu_seconds": 24,
+          "occupied_idle_gpu_seconds": 11,
+          "phase_gpu_seconds": {
+            "warmup": 0,
+            "compile": 0,
+            "restore": 0,
+            "teardown": 0,
+            "image_pull": 0,
+            "unclassified": 3,
+            "artifact_load": 4,
+            "resident_idle": 4,
+            "workflow_wait": 0,
+            "active_compute": 24,
+            "cooldown_grace": 0,
+            "checkpoint_drain": 0
+          },
+          "reconciliation_delta_seconds": 0,
+          "device_scheduler_delta_seconds": 1.343394,
+          "tolerance_seconds": 2,
+          "reconciled": true,
+          "quality": "application_observed",
+          "data_gaps": [
+            "phase_classification_incomplete",
+            "trace_context_missing"
+          ],
+          "output_shape": {}
+        },
+        "correlations": [
+          {
+            "correlation_key": "scientific:2bb04f77-a244-5798-961d-27a3376c5dc0:pod:03897d8f-093c-444a-bc92-99963c4733a1:node:faaaa6fd-b016-46b9-8733-bfb01029affd",
+            "subject_id": "2bb04f77-a244-5798-961d-27a3376c5dc0",
+            "observed_at": "2026-09-24T02:08:44Z",
+            "source": "kubernetes",
+            "attempt": 1,
+            "cluster": "k8s-inference-h100",
+            "namespace": "fs2-models",
+            "queue_name": null,
+            "kueue_workload_name": null,
+            "kueue_workload_uid": null,
+            "job_name": "fs2-workflow-dense-motion-a1-599364eb14e2",
+            "job_uid": "ac8692e4-ce14-4996-a834-8be6e87b9a71",
+            "pod_name": "fs2-workflow-dense-motion-a1-599364eb14e2-l7296",
+            "pod_uid": "03897d8f-093c-444a-bc92-99963c4733a1",
+            "node_name": "computeinstance-e00wet1bnnk38nbxms",
+            "node_uid": "faaaa6fd-b016-46b9-8733-bfb01029affd",
+            "gpu_uuid": null,
+            "gpu_rank": null
+          },
+          {
+            "correlation_key": "scientific:2bb04f77-a244-5798-961d-27a3376c5dc0:pod:03897d8f-093c-444a-bc92-99963c4733a1:device:GPU-d144da30-c688-aed8-5999-f9d44cee79d0:0",
+            "subject_id": "2bb04f77-a244-5798-961d-27a3376c5dc0",
+            "observed_at": "2026-09-24T02:08:45.343394Z",
+            "source": "kubelet",
+            "attempt": 1,
+            "cluster": "k8s-inference-h100",
+            "namespace": "fs2-models",
+            "queue_name": null,
+            "kueue_workload_name": null,
+            "kueue_workload_uid": null,
+            "job_name": "fs2-workflow-dense-motion-a1-599364eb14e2",
+            "job_uid": "ac8692e4-ce14-4996-a834-8be6e87b9a71",
+            "pod_name": "fs2-workflow-dense-motion-a1-599364eb14e2-l7296",
+            "pod_uid": "03897d8f-093c-444a-bc92-99963c4733a1",
+            "node_name": null,
+            "node_uid": null,
+            "gpu_uuid": "GPU-d144da30-c688-aed8-5999-f9d44cee79d0",
+            "gpu_rank": 0
+          }
+        ],
+        "signals": [
+          {
+            "occurred_at": "2026-09-24T02:08:45.343394Z",
+            "source": "kubelet",
+            "quality": "measured",
+            "phase": "gpu_allocation",
+            "edge": "start",
+            "gpu_uuid": "GPU-d144da30-c688-aed8-5999-f9d44cee79d0",
+            "gpu_rank": 0,
+            "detail": {}
+          },
+          {
+            "occurred_at": "2026-09-24T02:09:19Z",
+            "source": "kubernetes",
+            "quality": "application_observed",
+            "phase": "gpu_allocation",
+            "edge": "end",
+            "gpu_uuid": "GPU-d144da30-c688-aed8-5999-f9d44cee79d0",
+            "gpu_rank": 0,
+            "detail": {}
+          },
+          {
+            "occurred_at": "2026-09-24T02:09:14.904000Z",
+            "source": "dcgm",
+            "quality": "measured",
+            "phase": "gpu_allocation",
+            "edge": "instant",
+            "gpu_uuid": "GPU-d144da30-c688-aed8-5999-f9d44cee79d0",
+            "gpu_rank": 0,
+            "detail": {
+              "reason_code": "dcgm_sample_summary",
+              "dcgm_max_percent": "16.0",
+              "dcgm_min_percent": "0.0",
+              "dcgm_sample_count": "6",
+              "dcgm_zero_samples": "5",
+              "dcgm_phase_samples": "{\"active_compute\":5,\"artifact_load\":1}",
+              "dcgm_allocation_end": "\"2026-09-24T02:09:19Z\"",
+              "dcgm_last_sample_at": "\"2026-09-24T02:09:14.904000Z\"",
+              "dcgm_samples_sha256": "\"785e812287ec34118cf4de7b0061adb18b3a1bd998981f88caa51ddb0f0f6963\"",
+              "dcgm_first_sample_at": "\"2026-09-24T02:08:49.904000Z\"",
+              "dcgm_max_gap_seconds": "5.007",
+              "dcgm_allocation_start": "\"2026-09-24T02:08:45.343394Z\"",
+              "dcgm_positive_samples": "1",
+              "dcgm_phase_zero_samples": "{\"active_compute\":4,\"artifact_load\":1}",
+              "dcgm_phase_positive_samples": "{\"active_compute\":1}"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "identity_limitations": [],
+  "scientific_validation_receipt_modified": false,
+  "additional_gpu_runs_submitted": false
+}

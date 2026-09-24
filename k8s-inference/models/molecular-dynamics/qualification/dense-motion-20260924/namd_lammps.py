@@ -12,6 +12,7 @@ from collections import deque
 from datetime import datetime, timezone
 import gzip
 import hashlib
+import importlib
 import json
 import os
 from pathlib import Path
@@ -272,6 +273,243 @@ def observe(args):
     print(json.dumps({"operation_id": operation, "pods": [{"name": r["name"], "phase": r["phase"], "gpu": r["gpu_observation"]} for r in records]}))
 
 
+def require_patterns(text, patterns):
+    for pattern in patterns:
+        if not re.search(pattern, text, re.M):
+            raise ValueError("required native setting missing: " + pattern)
+
+
+def frame_schedule(steps, times, origin, *, initial):
+    """Native timestamps are observed, never filled in from frame indexes."""
+    import numpy as np
+    expected = list(range(origin if initial else origin + CADENCE, origin + STEPS + 1, CADENCE))
+    if steps != expected or len(times) != len(expected):
+        raise ValueError("native frame count/step schedule differs from 1,000 positive 20 fs samples")
+    error = float(np.max(np.abs(np.asarray(times) - np.asarray(expected) * .002)))
+    if not np.isfinite(error) or error > 1e-3:
+        raise ValueError("native frame timestamps differ from declared timestep")
+    return {"native_frames": len(steps), "positive_frames": 1000, "initial_frame": initial,
+            "first_step": steps[0], "last_step": steps[-1], "origin_step": origin,
+            "origin_time_ps": origin * .002, "duration_ps": 20, "cadence_ps": .02,
+            "maximum_native_time_roundoff_ps": error}
+
+
+def inventory_audit(engine, fixture, workspace):
+    """Reuse engine normalization and independently bind every returned byte."""
+    contract = importlib.import_module(f"fs2_{engine}.contracts")
+    package = importlib.import_module(f"fs2_{engine}")
+    request = contract.normalize(read(fixture / "request.json"))
+    result = read(workspace / "result.json")
+    expected = hashlib.sha256(contract.canonical({"request": request, "job": "dense-motion", "image": package.ENGINE_ID})).hexdigest()
+    if (result["status"] != "succeeded" or result["schema"] != package.RESULT_SCHEMA
+            or result["engine_id"] != package.ENGINE_ID or result["job_id"] != "dense-motion"
+            or result["recipe_sha256"] != expected or result["completed_steps"] != ["dense"]):
+        raise ValueError("result does not bind the exact successful requested native recipe")
+    if len(result["commands"]) != 1 or result["commands"][0]["exit_code"] != 0 or result["commands"][0]["step_id"] != "dense":
+        raise ValueError("expected exactly one successful continuation process, no hidden retry")
+    data, seen, total = workspace / "data", set(), 0
+    for item in result["files"]:
+        name = item["path"]
+        path = data / name
+        if (name in seen or path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(data.resolve())
+                or path.stat().st_size != item["size_bytes"] or sha(path) != item["sha256"]):
+            raise ValueError("result file inventory mismatch: " + name)
+        seen.add(name)
+        total += item["size_bytes"]
+    provenance = read(fixture / "fixture.json")
+    if sha(fixture / "input.tar.gz") != provenance["input_sha256"] or sha(fixture / "request.json") != provenance["request_sha256"]:
+        raise ValueError("dense immutable fixture changed")
+    for item in provenance["input_files"]:
+        path = data / item["path"]
+        if item["path"] not in seen or sha(path) != item["sha256"] or path.stat().st_size != item["bytes"]:
+            raise ValueError("immutable native input changed: " + item["path"])
+    return result, {"recipe_sha256": expected, "verified_files": len(seen), "verified_bytes": total,
+                    "immutable_input_files": len(provenance["input_files"])}
+
+
+def constraint_model(engine, data, master):
+    import numpy as np
+    import parmed
+    topology = parmed.load_file(str(master / "system.prmtop"))
+    if len(topology.atoms) != ATOMS:
+        raise ValueError("master atom count differs")
+    if engine == "namd":
+        if sha(data / "system.prmtop") != sha(master / "system.prmtop"):
+            raise ValueError("NAMD topology differs from canonical master")
+        selected = [b for b in topology.bonds if min(b.atom1.mass, b.atom2.mass) < 2]
+        pairs = np.asarray([[b.atom1.idx, b.atom2.idx] for b in selected], dtype=int)
+        distances = np.asarray([b.type.req for b in selected])
+        masses = np.asarray([a.mass for a in topology.atoms])
+        path = data / "system.prmtop"
+    else:
+        from adapter import read_data
+        proof = read(data / "adapter-manifest.json")
+        path = data / "system-shake.lmp"
+        if proof["adapted_data_sha256"] != sha(path) or proof["master_topology_sha256"] != sha(master / "system.prmtop"):
+            raise ValueError("LAMMPS adapted topology/master binding differs")
+        _, table = read_data(path)
+        types = set(map(str, proof["shake_bond_types"]))
+        water_hh = {frozenset((a, b)) for _, a, b in proof["water_atom_ids_O_H_H"]}
+        selected = [r for r in table["Bonds"] if r[1] in types or frozenset(map(int, r[2:])) in water_hh]
+        pairs = np.asarray([[int(r[2]) - 1, int(r[3]) - 1] for r in selected])
+        coefficients = {r[0]: float(r[3]) for r in table["Bond Coeffs"]}
+        distances = np.asarray([coefficients[r[1]] for r in selected])
+        type_mass = {r[0]: float(r[1]) for r in table["Masses"]}
+        masses = np.asarray([type_mass[r[2]] for r in sorted(table["Atoms"], key=lambda r: int(r[0]))])
+    if pairs.shape != (6588, 2) or masses.shape != (ATOMS,) or len(np.unique(np.sort(pairs, axis=1), axis=0)) != 6588:
+        raise ValueError("canonical 6,588-constraint model differs")
+    if not np.allclose(masses, [a.mass for a in topology.atoms], atol=1e-6, rtol=0):
+        raise ValueError("native atom/mass ordering differs from master")
+    return path, masses, pairs, distances
+
+
+def validate_native_settings(engine, data, command, origin):
+    log = data / command["log"]
+    text = log.read_text()
+    if engine == "namd":
+        from fs2_namd.worker import binary_vectors, xsc_step
+        if (command["configured_first_step"] != origin or command["checkpoint_step"] != origin + STEPS
+                or command["gpu_mode"] != "resident" or command["atoms"] != ATOMS
+                or command["random_seed"] != 20260925 or command["timestep_fs"] != 2):
+            raise ValueError("native NAMD segment/restart settings differ")
+        folder = data / "alanine"
+        for base, step in (("origin", origin), ("dense", origin + STEPS)):
+            if xsc_step(folder / (base + ".xsc")) != step or any(binary_vectors(folder / (base + s)) != ATOMS for s in (".coor", ".vel")):
+                raise ValueError("NAMD complete binary restart state differs")
+        wrapper = (folder / "fs2-dense-part000001.namd").read_text()
+        require_patterns(wrapper, [r'^binCoordinates "origin.coor"$', r'^binVelocities "origin.vel"$', r'^extendedSystem "origin.xsc"$', rf"^firsttimestep {origin}$", r"^run 10000$"])
+        if re.search(r"(?im)^\s*(temperature|reinitvels)\s", wrapper):
+            raise ValueError("NAMD continuation reinitializes velocities")
+        require_patterns(text, [r"Info: Running with GPU-resident mode", r"Info: TIMESTEP\s+2$", r"Info: CUTOFF\s+10$",
+            r"Info: PME GRID DIMENSIONS\s+64 64 64$", r"Info: PME INTERPOLATION ORDER\s+4$", r"Info: PME TOLERANCE\s+1e-05$",
+            r"Info: PME CALCULATION WILL BE PERFORMED ON GPU", r"Info: LANGEVIN TEMPERATURE\s+300$",
+            r"Info: LANGEVIN DAMPING COEFFICIENT IS 1 INVERSE PS", r"TARGET PRESSURE IS 1 BAR",
+            r"Info: RIGID BONDS TO HYDROGEN : ALL", r"ERROR TOLERANCE : 1e-06", r"Info: RANDOM NUMBER SEED\s+20260925$"])
+        checkpoints = [folder / (base + suffix) for base in ("origin", "dense") for suffix in (".coor", ".vel", ".xsc")]
+    else:
+        if command["native_restart_step"] != origin + STEPS or (data / "dense-progress.txt").read_text().strip() != str(origin + STEPS):
+            raise ValueError("LAMMPS native restart/progress is incomplete")
+        if re.findall(r"Loop time of \S+ on .*? for (\d+) steps", text) != [str(STEPS)]:
+            raise ValueError("LAMMPS native loop is not exactly 10,000 steps")
+        require_patterns(text, [r"KOKKOS mode", r"restoring atom style full/kk from restart", r"  6598 atoms$",
+            r"fix style: nph/kk, fix ID: integrate", r"All restart file global fix info was re-assigned",
+            r"grid = 64 64 64$", r"stencil order = 4$", r"Time step\s+: 2$", rf"Current step\s+: {origin}$",
+            r"pair lj/cut/coul/long/kk", r"kokkos_device", r"update: every = 1 steps, delay = 0 steps, check = yes"])
+        script = (data / "dense.in").read_text()
+        require_patterns(script, [r"^read_restart origin.restart$", r"^fix thermal all langevin 300.0 300.0 1000.0 20260925 zero yes$", r"^run 610000 upto$"])
+        require_patterns((data / "nonbonded.inc").read_text(), [r"^pair_style lj/cut/coul/long 10.0 10.0$", r"^kspace_style pppm 1e-5$", r"^kspace_modify mesh 64 64 64 order 4$", r"^timestep 2.0$"])
+        checkpoints = [data / "origin.restart", data / "dense.restart"]
+    return log, checkpoints, [line for line in text.splitlines() if line.lower().startswith("warning")]
+
+
+def validate(args):
+    """CPU-only semantic gate over already downloaded native customer artifacts."""
+    import numpy as np
+    md = args.md_source.resolve()
+    # The released image deliberately isolates API and analysis environments.
+    # Only schema packages are needed from its existing API environment; no install.
+    for path in Path("/opt/scientific-client/lib").glob("python*/site-packages"):
+        sys.path.append(str(path))
+    for relative in ("gromacs/runtime", "namd/runtime", "lammps/runtime", "comparison/analysis", "comparison/lammps"):
+        sys.path.insert(0, str(md / relative))
+    from native import frames
+    from geometry import minimum_image
+    from thermo import native_thermo, native_performance
+    fixture, workspace = args.fixture.resolve(), args.workspace.resolve()
+    provenance = read(fixture / "fixture.json")
+    engine, origin = provenance["engine"], provenance["start_step"]
+    if origin != START[engine] or provenance["worker_image"] != WORKERS[engine]:
+        raise ValueError("dense origin/worker identity differs")
+    result, audit = inventory_audit(engine, fixture, workspace)
+    command = result["commands"][0]
+    data = workspace / "data"
+    native_data = data / "alanine" if engine == "namd" else data
+    topology, masses, pairs, distances = constraint_model(engine, native_data, args.master)
+    log, checkpoints, warnings = validate_native_settings(engine, data, command, origin)
+    trajectory = native_data / ("dense.part000001.dcd" if engine == "namd" else "dense.1.lammpstrj")
+    steps, times, max_error, first, final = [], [], 0., None, None
+    previous_positions, identical_consecutive_frames = None, 0
+    for frame in frames(trajectory, engine, .002):
+        if frame.positions.shape != (ATOMS, 3) or not np.isfinite(frame.positions).all() or not np.isfinite(frame.cell).all() or np.linalg.det(frame.cell) <= 0:
+            raise ValueError("invalid native frame dimensions/coordinates/cell")
+        first = frame if first is None else first
+        final = frame
+        steps.append(frame.step)
+        times.append(frame.time_ps)
+        vector = minimum_image(frame.positions[pairs[:, 0]] - frame.positions[pairs[:, 1]], frame.cell)
+        max_error = max(max_error, float(np.abs(np.linalg.norm(vector, axis=1) - distances).max()))
+        if previous_positions is not None and np.array_equal(previous_positions, frame.positions):
+            identical_consecutive_frames += 1
+        previous_positions = frame.positions.copy()
+    timeline = frame_schedule(steps, times, origin, initial=engine == "lammps")
+    if max_error > 1e-4 or identical_consecutive_frames:
+        raise ValueError("constraint tolerance exceeded or consecutive trajectory frames duplicated")
+    boundary = None
+    if engine == "lammps":
+        from shake_boundary import KIND, SOURCE_REVISION, verify_projection
+        old = list(frames(native_data / "origin-closed.lammpstrj", engine, .002))
+        if len(old) != 1:
+            raise ValueError("preceding closed checkpoint record is ambiguous")
+        evidence = {"kind": KIND, "source_revision": SOURCE_REVISION, "worker_image": WORKERS[engine],
+                    "step": origin, "topology_sha256": sha(topology), "previous_record_sha256": sha(native_data / "origin-closed.lammpstrj"),
+                    "next_trajectory_sha256": sha(trajectory), "model": {"masses_Da": masses.tolist(), "pairs_zero_based": pairs.tolist(), "distances_A": distances.tolist()}}
+        evidence_hash = hashlib.sha256(json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        boundary = verify_projection(old[0], first, {**evidence, "evidence_sha256": evidence_hash})
+        boundary["new_boundary_evidence"] = {k: v for k, v in evidence.items() if k != "model"}
+        boundary["model_reconstructed_from_verified_topology"] = True
+    else:
+        import struct
+        raw = (native_data / "dense.coor").read_bytes()
+        endian = next(e for e in ("<", ">") if struct.unpack(e + "i", raw[:4])[0] == ATOMS)
+        final_positions = np.frombuffer(raw[4:], dtype=endian + "f8").reshape(ATOMS, 3)
+        difference = float(np.abs(minimum_image(final.positions - final_positions, final.cell)).max())
+        if difference > 1e-4:
+            raise ValueError("last DCD frame differs from final binary checkpoint")
+        boundary = {"final_DCD_checkpoint_max_component_difference_A": difference,
+                    "native_COM_velocity_removal_log": [line for line in log.read_text().splitlines() if "REMOVING COM VELOCITY" in line],
+                    "note": "Native restart coordinates/velocities/XSC restored; native COM-velocity setup is retained, not a bitwise RNG continuation claim."}
+    rows = native_thermo(log, engine + "_log", .002, float(masses.sum()))
+    if [r["step"] for r in rows] != list(range(origin, origin + STEPS + 1, CADENCE)):
+        raise ValueError("native thermodynamic cadence/endpoints differ")
+    customer, status = read(args.receipt / "receipt.json"), read(args.receipt / "status.json")
+    attempts = [a for s in status["batch"]["stages"] for a in s["attempts"]]
+    if (customer["state"] != "verified" or customer["operation_id"] != result["operation_id"]
+            or status["operation"]["id"] != result["operation_id"] or status["operation"]["status"] != "succeeded"
+            or len(attempts) != 1 or attempts[0]["outcome"] != "succeeded" or not attempts[0]["resource_released"]):
+        raise ValueError("customer operation/attempt not verified, successful and released")
+    pod = read(args.pod_evidence)
+    if pod["operation_id"] != result["operation_id"]:
+        raise ValueError("pod evidence belongs to another operation")
+    captures = []
+    for entry in pod["pods"]:
+        runner = [c for c in entry["containers"] if c["resources"].get("limits", {}).get("nvidia.com/gpu")]
+        if len(runner) != 1 or runner[0]["image"] != WORKERS[engine]:
+            raise ValueError("captured worker image differs")
+        captures.append({"pod": entry["name"], "uid": entry["uid"], "node": entry["node"], "worker_image": runner[0]["image"], "gpu": entry["gpu_observation"]})
+    def file_record(path):
+        return {"path": str(path), "sha256": sha(path), "bytes": path.stat().st_size}
+    report = {"schema": "fs2-dense-native-validation/v1", "status": "passed", "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "engine": engine, "operation_id": result["operation_id"], "worker_image": WORKERS[engine], "engine_id": result["engine_id"],
+        "client_image": CLIENT, "native_command": command, "inventory": audit,
+        "input_sha256": provenance["input_sha256"], "request_sha256": provenance["request_sha256"], "result": file_record(workspace / "result.json"),
+        "trajectory": file_record(trajectory), "topology": file_record(topology), "native_log": file_record(log),
+        "restart_files": [file_record(p) for p in checkpoints], "master_topology_sha256": sha(args.master / "system.prmtop"),
+        "timeline": timeline, "atoms": ATOMS, "constraints": len(pairs), "max_constraint_distance_error_A": max_error,
+        "constraint_tolerance_A": 1e-4, "finite_coordinates_cells_and_thermodynamics": True,
+        "identical_consecutive_frames": identical_consecutive_frames, "thermodynamic_samples": len(rows), "boundary": boundary,
+        "native_performance": native_performance(log, engine, STEPS, .002), "restart_semantics": provenance["restart_semantics"],
+        "warnings": warnings, "customer_artifact_count": len(customer["verified_artifacts"]), "customer_receipt": file_record(args.receipt / "receipt.json"),
+        "released_attempt": attempts[0], "pod_evidence": file_record(args.pod_evidence), "pod_captures": captures,
+        "identity_limitations": [] if captures else ["Native Pod deleted before live observation; no per-Pod imageID/GPU UUID/driver capture. Exact caller-visible runtime digest and retained admission/native dispatch evidence are preserved; no inferred UUID or driver."],
+        "analysis_source": {str(p.relative_to(md)): sha(p) for p in [md / "comparison/analysis" / name for name in ("native.py", "geometry.py", "thermo.py", "shake_boundary.py")]},
+        "validator_source_sha256": sha(Path(__file__)), "scientific_convergence_claimed": False, "interpolation_or_coordinate_averaging": False}
+    save(args.output, report)
+    renderer = {"engine": engine, "trajectory": str(trajectory), "trajectory_format": "DCD" if engine == "namd" else "LAMMPSDUMP",
+                "origin_time_ps": origin * .002, "origin_step": origin, "canonical_to_native": "identity", "validation_receipt": str(args.output.resolve())}
+    save(args.output.with_name(args.output.stem + "-render-spec.json"), renderer)
+    print(json.dumps({"status": "passed", "engine": engine, "operation_id": result["operation_id"], "positive_frames": 1000, "max_constraint_distance_error_A": max_error, "receipt": str(args.output)}))
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -284,6 +522,9 @@ def main():
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--kubeconfig", type=Path, required=True)
     p.add_argument("--context", required=True)
+    p = sub.add_parser("validate")
+    for name in ("fixture", "workspace", "md-source", "master", "receipt", "pod-evidence", "output"):
+        p.add_argument("--" + name, type=Path, required=True)
     for kind in ("discover", "submit", "_discover"):
         p = sub.add_parser(kind)
         p.add_argument("--fixture", type=Path, required=True)
@@ -302,6 +543,15 @@ def main():
         asyncio.run(discover_inside(args.fixture, args.output))
     elif args.command == "observe":
         observe(args)
+    elif args.command == "validate":
+        if args.output.exists():
+            raise ValueError("use a new validation receipt path")
+        try:
+            validate(args)
+        except Exception as exc:
+            if not args.output.exists():
+                save(args.output, {"status": "failed", "error": f"{type(exc).__name__}: {exc}", "validator_source_sha256": sha(Path(__file__))})
+            raise
     else:
         raise SystemExit(customer(args))
 
