@@ -22,7 +22,6 @@ import subprocess
 import sys
 import tarfile
 
-MD = Path(__file__).resolve().parents[2]
 CLIENT = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:81a2f3b54a98299933d487ccca4e9eb3fbea3130257a5a818a83940127429a4d"
 WORKERS = {
     "namd": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/namd-worker@sha256:30df40215f7df047463cf8e37f1fb80457b73fbb7ae8f681b9cb40d980e5f14e",
@@ -180,6 +179,7 @@ async def discover_inside(fixture, output):
     from mcp import Client
     from mcp.client.streamable_http import streamable_http_client
     from jsonschema import Draft202012Validator
+    sys.path.insert(0, "/opt/bionemo")
     helper = runpy.run_path("/opt/bionemo/invoke-scientific-batch.py")
     f = read(fixture / "fixture.json")
     headers = {"authorization": "Bearer " + os.environ["SCIENTIFIC_MODELS_API_KEY"]}
