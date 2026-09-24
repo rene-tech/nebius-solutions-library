@@ -37,6 +37,25 @@ class ArchiveTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 pub.archive(source, root / "delivery.tgz")
 
+    def test_explicit_plan_excludes_unselected_files(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "plot.png").write_bytes(b"plot")
+            (root / "private.json").write_bytes(b"not selected")
+            result = pub.publication_plan(root, ["plot.png"])
+            self.assertEqual(result["files"], [{"path": "plot.png", "bytes": 4,
+                              "sha256": pub.digest(root / "plot.png")}])
+            self.assertEqual(result["bucket"], "renes-bucket")
+
+    def test_plan_rejects_duplicates_links_and_escape(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "file").write_bytes(b"x")
+            (root / "link").symlink_to(root / "file")
+            for names in ([], ["file", "file"], ["../file"], [str(root / "file")], ["link"]):
+                with self.assertRaises(ValueError):
+                    pub.publication_plan(root, names)
+
 
 if __name__ == "__main__":
     unittest.main()

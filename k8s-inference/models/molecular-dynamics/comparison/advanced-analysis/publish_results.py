@@ -80,6 +80,25 @@ def transfer(row, root):
             "created_new": result.returncode == 0}
 
 
+def publication_plan(root, names):
+    """Hash only explicitly selected deliverables; never sweep private files."""
+    root = root.resolve(strict=True)
+    if not names or len(names) != len(set(names)):
+        raise ValueError("Select a nonempty, unique list of publication paths")
+    rows = []
+    for name in sorted(names):
+        relative = Path(name)
+        if relative.is_absolute() or ".." in relative.parts:
+            raise ValueError("Publication paths must stay beneath the manifest")
+        candidate = root / relative
+        path = candidate.resolve(strict=True)
+        if candidate.is_symlink() or not path.is_relative_to(root) or not path.is_file():
+            raise ValueError("Publish explicit regular files only")
+        rows.append({"path": relative.as_posix(), "bytes": path.stat().st_size,
+                     "sha256": digest(path)})
+    return {"bucket": BUCKET, "prefix": PREFIX, "files": rows}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
@@ -90,7 +109,16 @@ def main():
     p = sub.add_parser("publish")
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--receipt", type=Path, required=True)
+    plan = sub.add_parser("plan")
+    plan.add_argument("--output", type=Path, required=True)
+    plan.add_argument("--file", nargs="+", required=True)
     args = parser.parse_args()
+    if args.action == "plan":
+        value = publication_plan(args.output.parent, args.file)
+        save_new(args.output, value)
+        print(json.dumps({"manifest": str(args.output), "files": len(value["files"]),
+                          "sha256": digest(args.output)}))
+        return
     if args.receipt.exists():
         raise ValueError("Use a new receipt path")
     if args.action == "archive":
