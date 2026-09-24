@@ -1,0 +1,34 @@
+{
+  "date": "2026-09-24",
+  "kind": "analysis-and-publication-tests-not-simulation-evidence",
+  "unit_tests": {
+    "test_equilibration.py": 22,
+    "test_validate_umbrella_native.py": 29,
+    "test_ramachandran.py": 26,
+    "test_umbrella_wham.py": 31,
+    "test_umbrella_batches.py": 18,
+    "test_umbrella_campaign.py": 5,
+    "test_publish_results.py": 4,
+    "test_export_umbrella_manifest.py": 3
+  },
+  "unit_tests_total": 138,
+  "unit_test_failures": 0,
+  "execution": {
+    "unittest_python": "/home/tux/.venvs/fs2-four-engine-20260923/bin/python",
+    "wham_pytest_python": "/home/tux/fs2-alanine-analysis-20260924/umbrella-analysis/.venv/bin/python",
+    "pure_standard_library_tests_also_run_with": "system Python 3",
+    "python_version": "3.12.3",
+    "requirements_resolution": "uv pip install --dry-run resolved complete requirements.txt; no environment modified",
+    "missing_pip_note": "The pre-existing analysis venv has no pip module; uv performed the successful dry-run resolution. The reproduction guide creates a standard new venv."
+  },
+  "real_evidence_separate_from_unit_tests": {
+    "all24_native_validation_sha256": "72d3d74dc6188759748049d2e7482e4e9970ecb3bf99bc0a01e27dec45c25057",
+    "original_1ns_ramachandran_verification_sha256": "a4133c246279db8a9ce0d87f22b5f16b43d7476ad56c6c06c44e5378c86cf82c",
+    "full_stage_verification_sha256": "4420279e4cd76413b0c60b833bc550e9579c2325ba95f9904ac78c255d7c89dd",
+    "native_wham_primary_receipt_sha256": "ad20956029aacedef7932b9197e3492045f16f1ec906556fe44a13124474cf85",
+    "native_wham_sensitivity_receipt_sha256": "09aea51ea065ca8a75120302570e1888b6c3ec4e6b43bb3937a106eebbe5f6d6",
+    "native_wham_independent_verification_sha256": "32bff92eb188a5533dd08baeba3d1f0e88335fbdad11470938d04dbb2ba52fab",
+    "portable_manifest_sha256": "828a226804e1b7d46b11fc9f7aeaf5bc98eb4334657cb49e67e0a0fd12dbc3a9"
+  },
+  "claim_boundary": "Native completion, transport integrity, geometry and estimator checks passed. Thermodynamic convergence and engine equivalence are not established."
+}

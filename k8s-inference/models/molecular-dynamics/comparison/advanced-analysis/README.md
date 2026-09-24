@@ -5,6 +5,9 @@ comparison, plus a separate native GROMACS umbrella campaign. Original
 trajectories are never repaired, replaced by display interpolation, or silently
 extended. Successful execution and statistical convergence are separate claims.
 
+Read the [measured results](RESULTS.md) and the
+[bucket delivery/reproduction guide](BUNDLE_README.md).
+
 ## Entry points
 
 | Work | Code | Methods and measured evidence |
@@ -15,7 +18,7 @@ extended. Successful execution and statistical convergence are separate claims.
 | Ordinary isolated batch jobs; no infrastructure or quota edits | `umbrella_batches.py` | [Batch contract](UMBRELLA_BATCHES.md) |
 | Native frame, topology, constraint, chirality and φ/ψ correspondence validation | `validate_umbrella_native.py` | [Validation scope](UMBRELLA-NATIVE-VALIDATION.md) |
 | Exact native periodic WHAM, within-window temporal bootstrap and unbiased overlay | `umbrella_wham.py` | [Method, units, sources and reproducible commands](UMBRELLA_WHAM.md) |
-| Complete-cohort binding and immutable bucket publication | `assemble_umbrella.py`, `publish_results.py` | Explicit file manifests, conditional writes and full-download SHA256 verification |
+| Complete-cohort binding and immutable bucket publication | `assemble_umbrella.py`, `export_umbrella_manifest.py`, `publish_results.py` | Explicit file manifests, archive-checked portable paths, conditional writes and full-download SHA256 verification |
 
 ## Umbrella protocol
 
@@ -57,13 +60,14 @@ for actual WHAM. `original-four-engine-delivery.tar.gz` contains the unchanged
 `delivery-02` directory, including its complete file-hash inventory.
 
 ```sh
+python -m pip install -r comparison/advanced-analysis/requirements.txt
 python comparison/advanced-analysis/ramachandran.py \
   --delivery /data/delivery-02 --output /new/ramachandran \
   --seed 20260924 --bootstrap-replicates 50000
 python comparison/advanced-analysis/equilibration.py \
   --delivery /data/delivery-02 --output /new/equilibration
 python comparison/advanced-analysis/umbrella_wham.py analyze \
-  --manifest /data/umbrella/windows.json --output /new/wham \
+  --manifest /data/umbrella-native/windows.json --output /new/wham \
   --bins 180 --bootstrap 200 --block-ps 100 --seed 20260924
 ```
 
