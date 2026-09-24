@@ -30,6 +30,7 @@ post-hoc burn-in removal. No angle or coordinate interpolation is performed.
   basin indicator diagnostics are retained. Autocovariance has denominator N.
 - Geyer paired sums `(ρ0+ρ1),(ρ2+ρ3),...` stop before the first nonpositive pair
   and are monotonized. `g=max(1,-1+2Σpair)`, `τ_int=g Δt/2`, `Neff=N/g`.
+  Estimation is capped at N/2 lag; the full ACF is retained diagnostically.
   Constant observables have null correlation estimates. This convention is
   coordinated with the parallel equilibration-diagnostics worker.
 - Nonoverlapping block means and circular moving-block bootstrap use
@@ -40,6 +41,10 @@ post-hoc burn-in removal. No angle or coordinate interpolation is performed.
 - Constant/unvisited indicators never receive `[0,0]` or `[1,1]` confidence
   intervals. They provide no measured relaxation time or physical sampling
   requirement. Hypothetical rare-state planning is separated from inference.
+- Basin probability-ratio free energies relative to β/PPII retain zero-count
+  bootstrap draws as unbounded or undefined limits. They are never discarded
+  to make an interval finite. Few-visit/effective-sample warnings are explicit;
+  fewer than three sampled runs do not support time extrapolation here.
 - All 36 pair/basin comparisons have nominal and Bonferroni-family intervals.
   Inclusion of zero is not equivalence; any exclusion remains conditional on
   stationary single-trajectory bootstrap assumptions. One run per engine does

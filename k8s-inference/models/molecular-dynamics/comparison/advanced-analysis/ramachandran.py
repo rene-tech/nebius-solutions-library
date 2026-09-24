@@ -40,7 +40,7 @@ METHOD = {
     "basin_interpretation": "Fixed geometric counting regions, not inferred metastable/committor basins or universal boundaries.",
     "histogram": "10 degree periodic bins, shared edges; probability mass per bin, no pseudocount or smoothing; zero bins masked",
     "free_energy": "F=-RT ln(P_bin); plotted delta F=F-min(F) separately for each engine, one common finite colour scale",
-    "correlation": "Biased lag covariance (denominator N), centered cos/sin trace ACF for each circular angle, separate sin/cos and basin indicators; Geyer initial-positive paired sums monotonized",
+    "correlation": "Biased lag covariance (denominator N), centered cos/sin trace ACF for each circular angle, separate sin/cos and basin indicators; Geyer initial-positive paired sums monotonized, estimation capped at N/2 lag; full ACF retained diagnostically",
     "correlation_equations": "Gamma_k=rho_(2k)+rho_(2k+1); keep initial positive sequence and cumulative minimum; g=max(1,-1+2 sum Gamma); tau_int=g*dt/2; Neff=N/g",
     "correlation_limits": "Reversible stationary-chain estimator used diagnostically for MD; no proof of stationarity, reversibility, hidden-state mixing or convergence. Constant observables have undefined g/tau/Neff.",
     "block_bootstrap": "Fixed-length circular moving blocks, uniform starts, paired basin indicators, independent RNG streams by engine/block length; percentile intervals conditional on observed trajectory and stationarity",
@@ -144,6 +144,7 @@ def initial_monotone(rho, n, dt=1.):
     r = np.asarray(rho, dtype=float)
     if not np.isfinite(r).all() or len(r) < 2 or abs(r[0] - 1) > 1e-8 or dt <= 0:
         raise ValueError("invalid normalized ACF or interval")
+    r = r[:min(len(r), n // 2 + 1)]
     paired = r[:len(r) // 2 * 2].reshape(-1, 2).sum(axis=1)
     stop = np.flatnonzero(paired <= 0)
     keep = int(stop[0]) if len(stop) else len(paired)
@@ -152,7 +153,8 @@ def initial_monotone(rho, n, dt=1.):
     g = max(1., raw_g)
     return {"g": g, "unclamped_g": raw_g, "tau_int_ps": g * dt / 2,
             "Neff": n / g, "positive_pairs": keep, "last_included_lag_ps": (2 * keep - 1) * dt if keep else 0,
-            "reached_available_lag_limit": not len(stop), "status": "diagnostic-estimate-not-convergence-proof",
+            "reached_available_lag_limit": not len(stop), "maximum_estimation_lag_ps": (len(r) - 1) * dt,
+            "status": "diagnostic-estimate-not-convergence-proof",
             "weak_effective_sample_size": n / g < 20, "conservative_antipersistence_clamp": raw_g < 1}
 
 
@@ -195,6 +197,28 @@ def population_interval(samples, observed, alpha=.05):
     if not 0 < observed < 1:
         return None
     return np.quantile(samples, [alpha / 2, 1 - alpha / 2]).tolist()
+
+
+def basin_free_energy(p, reference_p, boot_p, boot_reference):
+    """Keep zero bootstrap counts as unbounded/undefined, never discard them."""
+    if not 0 < p < 1 or not 0 < reference_p <= 1:
+        return {"delta_F_to_beta_PPII_kJ_mol": None, "interval_95": None,
+                "reason": "unvisited or constant basin/reference; no finite free-energy bound inferred"}
+    point = -R_KJ_MOL_K * TEMPERATURE_K * math.log(p / reference_p)
+    a, b = np.asarray(boot_p), np.asarray(boot_reference)
+    both_zero = (a == 0) & (b == 0)
+    if np.any(both_zero):
+        return {"delta_F_to_beta_PPII_kJ_mol": point, "interval_95": None,
+                "both_zero_bootstrap_fraction": float(both_zero.mean()), "reason": "bootstrap ratio undefined in retained draws; no silent draw deletion"}
+    with np.errstate(divide="ignore", invalid="ignore"):
+        values = -R_KJ_MOL_K * TEMPERATURE_K * np.log(a / b)
+    # Discrete empirical quantiles avoid interpolating between +/-infinity.
+    bounds = np.quantile(values, [.025, .975], method="inverted_cdf")
+    return {"delta_F_to_beta_PPII_kJ_mol": point,
+            "interval_95": [float(x) if np.isfinite(x) else None for x in bounds],
+            "lower_unbounded": bool(np.isneginf(bounds[0])), "upper_unbounded": bool(np.isposinf(bounds[1])),
+            "zero_basin_bootstrap_fraction": float(np.mean(a == 0)), "zero_reference_bootstrap_fraction": float(np.mean(b == 0)),
+            "interpretation": "Observed basin probability-ratio free energy; conditional block bootstrap, no bin-volume correction or convergence claim."}
 
 
 def sample_runs(indicator):
@@ -298,10 +322,17 @@ def analyze_engine(engine, phi, psi, state, out, repeats, seed):
     bootstraps, block_rows, basin_summary = {}, [], {}
     for j, name in enumerate(BASINS):
         p, diagnostic = float(mean[j]), corr["basin_" + name]
+        run_info = sample_runs(state[:, j])
+        rare = min(int(state[:, j].sum()), len(state) - int(state[:, j].sum())) < 20 or run_info["sampled_runs"] < 10
         basin_summary[name] = {"count": int(state[:, j].sum()), "population": p, "correlation": diagnostic, **sample_runs(state[:, j]),
             "zero_or_constant_warning": "No estimate of unseen opposite state, uncertainty or relaxation from a constant indicator." if p in (0, 1) else None,
-            "sampling_for_absolute_5_percentage_points": sampling_requirement(p, diagnostic["g"], .05),
-            "sampling_for_relative_20_percent": sampling_requirement(p, diagnostic["g"], .2 * p) if p > 0 else None, "block_sensitivity": {}}
+            "few_visits_or_samples_warning": rare,
+            "effective_successes_diagnostic": diagnostic["Neff"] * p if diagnostic["Neff"] is not None else None,
+            "inference_quality": "unresolved-constant" if p in (0, 1) else "weak-few-visits-or-small-Neff" if rare or diagnostic["Neff"] < 20 else "conditional-single-trajectory",
+            "sampling_for_absolute_5_percentage_points": sampling_requirement(p, diagnostic["g"], .05) if run_info["sampled_runs"] >= 3 else None,
+            "sampling_for_relative_20_percent": sampling_requirement(p, diagnostic["g"], .2 * p) if p > 0 and run_info["sampled_runs"] >= 3 else None,
+            "sampling_projection_caution": "No time extrapolation from fewer than three sampled runs. Other projections remain optimistic conditional scales; the warning flags are not coverage guarantees.",
+            "block_sensitivity": {}}
     for length in BLOCKS:
         stream_seed = [seed, ENGINES.index(engine), length]
         boot = circular_bootstrap(state, length, repeats, stream_seed)
@@ -314,7 +345,8 @@ def analyze_engine(engine, phi, psi, state, out, repeats, seed):
             info["block_sensitivity"][str(length)] = {"blocks_in_original": len(means), "bootstrap_seed": stream_seed,
                 "bootstrap_percentile_95": population_interval(boot[:, j], mean[j]),
                 "block_mean_standard_error": float(means[:, j].std(ddof=1) / np.sqrt(len(means))) if 0 < mean[j] < 1 else None,
-                "few_original_blocks_warning": len(means) < 10}
+                "few_original_blocks_warning": len(means) < 10,
+                "free_energy_relative_to_beta_PPII": basin_free_energy(mean[j], mean[5], boot[:, j], boot[:, 5])}
     csv_rows(out / "nonoverlapping-block-means.csv", block_rows)
     np.savez_compressed(out / "bootstrap-populations.npz", **{f"block_{length}_ps": values for length, values in bootstraps.items()}, basin_order=np.asarray(BASINS))
     sensitivity = []
@@ -384,6 +416,8 @@ def plots(output, summaries, grids, length):
         axis.set(title=f"{engine.upper()} · {np.count_nonzero(counts)}/1296 bins visited", xlabel="φ (degrees)", ylabel="ψ (degrees)", xticks=[-180, -90, 0, 90, 180], yticks=[-180, -90, 0, 90, 180], aspect="equal")
         axis.axvline(0, color="white", lw=.6, alpha=.5)
         axis.axvline(-90, ymin=2 / 3, color="white", lw=.6, alpha=.5)
+        axis.hlines([-150, -120, 60], -180, 0, color="white", lw=.5, alpha=.5)
+        axis.hlines([-60, 120], 0, 180, color="white", lw=.5, alpha=.5)
     fig.colorbar(artist, ax=axes, label="Observed ΔF = −RT ln(P/Pmax), kJ/mol · T = 300 K")
     fig.suptitle("Original 1 ns trajectories · unsmoothed 10° bins\nGray = unvisited, not an infinite measured barrier")
     fig.savefig(output / "free-energy-common-scale.png", dpi=180)
@@ -427,6 +461,17 @@ def markdown_report(output, result):
             ci = info["block_sensitivity"][str(length)]["bootstrap_percentile_95"]
             values.append(f"{info['population']:.3f} " + (f"[{ci[0]:.3f}, {ci[1]:.3f}]" if ci else "(unresolved)"))
         lines.append("| " + " | ".join((basin, *values)) + " |")
+    absent = [e for e in ENGINES if result["engines"][e]["basins"]["alphaL"]["count"] == 0]
+    residual_counts = "/".join(str(result["engines"][e]["basins"]["residual"]["count"]) for e in ENGINES)
+    lines += ["", f"The αL basin was unvisited in: {', '.join(absent) or 'none'}. Observed zeros are not evidence of zero equilibrium population. Residual frame counts in engine order are {residual_counts}; fewer than three sampled runs do not support a physical sampling forecast here.", "", "## Slow-state sampling diagnostics", "", "| Engine | αR sampled runs | αR τ_int (ps) | αR Neff | Conditional total ns for ±0.05 |", "| --- | ---: | ---: | ---: | ---: |"]
+    for engine in ENGINES:
+        info = result["engines"][engine]["basins"]["alphaR"]
+        plan = info["sampling_for_absolute_5_percentage_points"]
+        def number(value):
+            return "unresolved" if value is None else f"{value:.2f}"
+        lines.append(f"| {engine} | {info['sampled_runs']} | {number(info['correlation']['tau_int_ps'])} | {number(info['correlation']['Neff'])} | {number(plan['plug_in_total_ns'] if plan else None)} |")
+    weak = [e for e in ENGINES if result["engines"][e]["basins"]["alphaR"]["correlation"].get("Neff") is None or result["engines"][e]["basins"]["alphaR"]["correlation"]["Neff"] < 20]
+    lines += ["", f"These runs, τ values and sample-size projections are diagnostics of the visited sequence—not independent-transition counts or trustworthy rare-event kinetics. Engines with fewer than 20 or undefined effective αR samples: {', '.join(weak) or 'none'}. The predeclared five-τ block rule is {'met' if result['primary_block']['meets_estimated_rule'] else 'NOT met'}; the chosen length leaves {1000 // length} original blocks. Neither diagnostic proves independence."]
     lines += ["", "## What the uncertainty does and does not mean", "", f"The common block rule requested at least {result['primary_block']['five_times_maximum_estimated_tau_ps']:.2f} ps (five times the largest estimated integrated correlation time); chosen length is {length} ps, giving {1000 // length} nonoverlapping blocks. The 5, 10, 20, 50, 100 and 200 ps sensitivity outputs remain available. A finite-series correlation estimate or apparent block plateau cannot rule out unseen slow states.", "", "`receipt.json` uses g = 2τ_int/Δt and Neff = N/g consistently for circular trace ACFs, separate trigonometric components and state indicators. Constant indicators have null τ/Neff. All intervals assume sufficient stationarity/mixing within the observed trajectory and omit between-replica variability; one trajectory per engine cannot separate integration/model differences from stochastic undersampling. [Geyer](https://www.stat.umn.edu/geyer/mcmc/library/mcmc/html/initseq.html), [Grossfield and Zuckerman](https://pmc.ncbi.nlm.nih.gov/articles/PMC2865156/).", "", "## Inter-engine comparison", "", "`engine-agreement.json` contains every one of the 36 predeclared pair/basin comparisons with nominal and Bonferroni-family intervals; the combined β/PPII category overlaps its two components. An interval including zero is not proof of equality. Even a family-adjusted exclusion is conditional on the block-bootstrap assumptions, not proof of engine bias. Comparisons involving a constant/unvisited indicator are unresolved. Empirical histogram Jensen–Shannon and total-variation distances are reported at 5°, 10°, 15° and 30° and are not p-values. Multiple-comparison caution follows the union-bound rationale discussed by [Holm](https://www.ime.usp.br/~abe/lista/pdf4R8xPVzCnX.pdf).", "", "## Free-energy and basin conventions", "", "All surfaces use equal 10° bins and 300 K, with no smoothing or pseudocount. F = −RT ln(P_bin), and each surface's observed minimum is subtracted; the colour scale is shared. This is a finite-sample configurational free-energy estimate up to an arbitrary constant, not an absolute thermodynamic free energy. Gray bins are unvisited, not measured infinite barriers. Sparse visited bins are also noisy. Fixed rectangles and ±10° boundary sensitivity are fully specified in `method.json`; the geometric labels follow representative conformer nomenclature, not population targets from a different force field. [Drozdov, Grossfield and Pappu](https://www2.stat.duke.edu/~scs/SimGroup/PappuSolventPPII.pdf).", "", "## Sampling requirements", "", "Per visited basin, the report gives plug-in stationary-Bernoulli planning scales for a nominal 95% population half-width of 0.05 and of 20% of that basin's observed population. These use measured g and p but do not account for unknown slow modes, bias, or uncertainty in g itself. They are optimistic conditional scales, not run-length guarantees. They should motivate independent seeded replicas and reassessment rather than a declaration of sufficient sampling.", "", "For a basin with no visits, its equilibrium population, relaxation time, confidence interval and required physical simulation time are not identifiable here. `rare-state-planning.json` gives only hypothetical independent-sample calculations for assumed populations; it never substitutes these for observed confidence. Umbrella sampling is a separate campaign requiring overlap and orthogonal ψ-mixing checks, not an automatic cure for this limitation.", "", "## Reproducibility", "", "Native inputs, code hashes, exact client image, package versions, seed streams, 50k-default bootstrap replicates, all reconstructed phi/psi values, raw histograms, block means, bootstrap arrays and sensitivity outputs are retained. No frames were trimmed as burn-in; no native simulation or cloud write was performed. Circular block resampling is a stationary-series method ([Politis and Romano](https://statistics.stanford.edu/technical-reports/circular-block-resampling-procedure-stationary-data)); its assumptions are explicit, not tested away by resampling.", ""]
     (output / "REPORT.md").write_text("\n".join(lines))
 
@@ -469,6 +514,13 @@ def main():
         primary = primary_block(summaries)
         comparison, shape = agreement(summaries, boots, angles, primary["length_ps"])
         save(output / "engine-agreement.json", {"family_size": 36, "primary_block_ps": primary["length_ps"], "comparisons": comparison, "histogram_distances": shape})
+        agreement_sensitivity = {}
+        for length in BLOCKS:
+            entries, _ = agreement(summaries, boots, angles, length)
+            agreement_sensitivity[str(length)] = {"comparisons": entries,
+                "family_adjusted_exclusions": sum(r["conditional_verdict"] == "conditional-interval-excludes-zero" for r in entries),
+                "nominal_exclusions": sum(r["nominal_95_interval"] is not None and (r["nominal_95_interval"][0] > 0 or r["nominal_95_interval"][1] < 0) for r in entries)}
+        save(output / "engine-agreement-block-sensitivity.json", {"warning": "Block sizes are sensitivity diagnostics, not independent hypothesis families to select after seeing results.", "block_lengths_ps": agreement_sensitivity})
         scenarios = [{"assumed_equilibrium_probability": p, "independent_samples_for_95_percent_chance_of_at_least_one_visit": math.ceil(math.log(.05) / math.log1p(-p)),
                       "independent_samples_for_95_percent_relative_20_percent_precision_CLT": 1.959963984540054**2 * (1 - p) / (.2**2 * p)} for p in (.1, .01, .001)]
         save(output / "rare-state-planning.json", {"kind": "hypothetical-not-inferred-from-zero-visits", "scenarios": scenarios, "physical_time_prediction": None,

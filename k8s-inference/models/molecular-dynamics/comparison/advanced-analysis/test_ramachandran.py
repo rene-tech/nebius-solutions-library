@@ -90,6 +90,12 @@ class Correlations(unittest.TestCase):
         self.assertEqual(result["positive_pairs"], 3)
         self.assertAlmostEqual(result["g"], -1 + 2 * (1.8 + 1.1 + 1.1))
 
+    def test_estimation_lag_is_capped(self):
+        result = m.initial_monotone(np.ones(100), 100)
+        self.assertEqual(result["maximum_estimation_lag_ps"], 50)
+        self.assertEqual(result["last_included_lag_ps"], 49)
+        self.assertTrue(result["reached_available_lag_limit"])
+
 
 class Bootstrap(unittest.TestCase):
     def test_reproducible_and_compositional(self):
@@ -111,6 +117,18 @@ class Bootstrap(unittest.TestCase):
         self.assertIsNone(m.population_interval(np.zeros(100), 0))
         self.assertIsNone(m.population_interval(np.ones(100), 1))
         self.assertIsNone(m.sampling_requirement(0, None, .05))
+
+    def test_zero_bootstrap_free_energy_draws_not_discarded(self):
+        values = np.r_[np.zeros(10), np.full(90, .2)]
+        result = m.basin_free_energy(.2, .8, values, np.full(100, .8))
+        self.assertTrue(result["upper_unbounded"])
+        self.assertIsNone(result["interval_95"][1])
+        self.assertEqual(result["zero_basin_bootstrap_fraction"], .1)
+
+    def test_both_zero_ratio_is_unresolved(self):
+        result = m.basin_free_energy(.2, .8, [0, .2], [0, .8])
+        self.assertIsNone(result["interval_95"])
+        self.assertEqual(result["both_zero_bootstrap_fraction"], .5)
 
     def test_short_or_inexact_blocks_rejected(self):
         with self.assertRaises(ValueError):
