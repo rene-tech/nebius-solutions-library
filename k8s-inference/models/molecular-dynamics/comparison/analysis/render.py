@@ -39,7 +39,10 @@ def compose_grid(paths, output, count, settings=None):
     for path in paths:
         verify_video(path, count, settings["pixels"], settings["fps"])
         command.extend(["-i", str(path)])
-    command.extend(["-filter_complex", "[0:v][1:v][2:v][3:v]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[v]", "-map", "[v]", "-c:v", "libx264", "-crf", "19", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-threads", "2", str(output)])
+    command.extend(["-filter_complex", "[0:v][1:v][2:v][3:v]xstack=inputs=4:layout=0_0|w0_0|0_h0|w0_h0[v]", "-map", "[v]", "-c:v", "libx264", "-crf", "19", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-threads", "2"])
+    if settings.get("metadata_comment"):
+        command.extend(["-metadata", "title=Four-engine canonical alanine comparison", "-metadata", "comment=" + settings["metadata_comment"]])
+    command.append(str(output))
     subprocess.run(command, check=True)
     return verify_video(output, count, settings["pixels"], settings["fps"], grid=True)
 
@@ -61,6 +64,8 @@ def render_clip(data, engine, output, *, settings=None, synthetic=False):
         raise ValidationError("display time interval differs")
     bonds = data["bonds"]
     elements = data["elements"]
+    visible = np.ones(len(elements), dtype=bool) if settings.get("show_hydrogens", True) else np.asarray(elements) != "H"
+    bonds = np.asarray([bond for bond in bonds if visible[bond].all()], dtype=int)
     colors = [COLORS.get(e, "#88d968") for e in elements]
     sizes = [9 if e == "H" else 34 for e in elements]
     fig = plt.figure(figsize=(settings["pixels"] / 100, settings["pixels"] / 100), dpi=100, facecolor="#0c1824")
@@ -72,28 +77,39 @@ def render_clip(data, engine, output, *, settings=None, synthetic=False):
     axis.set_box_aspect((1, 1, 1), zoom=settings["camera_zoom"])
     axis.set_axis_off()
     water_artist = axis.scatter([], [], [], s=3, c="#57b4d5", alpha=.18, edgecolors="none", depthshade=False)
-    atoms = axis.scatter(*peptide[0].T, s=sizes, c=colors, edgecolors="none", depthshade=False)
+    atoms = axis.scatter(*peptide[0, visible].T, s=np.asarray(sizes)[visible], c=np.asarray(colors)[visible], edgecolors="none", depthshade=False)
     segments = Line3DCollection([], colors=[colors[int(i)] for bond in bonds for i in bond], linewidths=3, alpha=1.)
     axis.add_collection3d(segments, autolim=False)
     fig.text(.5, .95, engine.upper(), ha="center", color="white", fontsize=21, weight="bold")
-    fig.text(.5, .916, "SYNTHETIC geometry fixture · no production simulation" if synthetic else "ACE–ALA–NME · ff14SB / TIP3P · NPT targets: 300 K, 1 bar", ha="center", color="#acbdca", fontsize=10)
+    fig.text(.5, .916, "SYNTHETIC geometry fixture · no production simulation" if synthetic else settings.get("subtitle", "ACE–ALA–NME · ff14SB / TIP3P · NPT targets: 300 K, 1 bar"), ha="center", color="#acbdca", fontsize=10)
+    if settings.get("mode_label"):
+        fig.text(.5, .875, settings["mode_label"], ha="center", color="#b4ed9a", fontsize=11, weight="bold")
     clock = fig.text(.5, .075, "", ha="center", color="white", fontsize=13)
-    fig.text(.5, .046, "Encoder/geometry unit test only" if synthetic else "1 ps/frame · 40 ps/s · one shared camera + master reference", ha="center", color="#acbdca", fontsize=9)
-    fig.text(.5, .022, "Water: translucent O points within 13 Å · raw trajectories preserved", ha="center", color="#acbdca", fontsize=8)
+    fig.text(.5, .046, "Encoder/geometry unit test only" if synthetic else settings.get("timing_caption", "1 ps/frame · 40 ps/s · one shared camera + master reference"), ha="center", color="#acbdca", fontsize=9)
+    fig.text(.5, .022, settings.get("water_caption", "Water: translucent O points within 13 Å · raw trajectories preserved"), ha="center", color="#acbdca", fontsize=8)
     if synthetic:
         fig.text(.5, .17, "SYNTHETIC UNIT FIXTURE\nNOT SCIENTIFIC EVIDENCE", ha="center", color="#ffcc66", fontsize=17, alpha=.9)
-    writer = FFMpegWriter(fps=settings["fps"], codec="libx264", metadata={"title": f"{engine}: canonical alanine comparison", "comment": "Synthetic unit fixture" if synthetic else "Real native MD coordinates; no interpolation, smoothing or generated frames; 1 ns is not a convergence claim"}, extra_args=["-crf", "19", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-threads", "2"])
+    writer = FFMpegWriter(fps=settings["fps"], codec="libx264", metadata={"title": f"{engine}: canonical alanine comparison", "comment": "Synthetic unit fixture" if synthetic else settings.get("metadata_comment", "Real native MD coordinates; no interpolation, smoothing or generated frames; 1 ns is not a convergence claim")}, extra_args=["-crf", "19", "-pix_fmt", "yuv420p", "-movflags", "+faststart", "-threads", "2"])
     with writer.saving(fig, str(output), dpi=100):
         for index, (p, w, t) in enumerate(zip(peptide, water, times)):
             w = w[np.linalg.norm(w, axis=1) <= settings["water_display_radius_A"]]
             water_artist._offsets3d = tuple(w.T)
-            atoms._offsets3d = tuple(p.T)
+            if "water_fade_inner_A" in settings:
+                from matplotlib.colors import to_rgba
+                outer, inner = settings["water_display_radius_A"], settings["water_fade_inner_A"]
+                fraction = np.clip((np.linalg.norm(w, axis=1) - inner) / (outer - inner), 0, 1)
+                rgba = np.tile(to_rgba("#57b4d5"), (len(w), 1))
+                rgba[:, 3] = .18 * (1 - fraction * fraction * (3 - 2 * fraction))
+                water_artist.set_alpha(None)
+                water_artist.set_facecolors(rgba)
+            atoms._offsets3d = tuple(p[visible].T)
             half_segments = []
             for a, b in bonds:
                 midpoint = (p[a] + p[b]) * .5
                 half_segments.extend(((p[a], midpoint), (midpoint, p[b])))
             segments.set_segments(half_segments)
-            clock.set_text(f"Synthetic frame {index + 1} / {len(times)}" if synthetic else f"Production {t:7.1f} / 1000 ps")
+            precision = settings.get("time_decimal_places", 1)
+            clock.set_text(f"Synthetic frame {index + 1} / {len(times)}" if synthetic else f"{settings.get('time_label', 'Production')} {t:.{precision}f} / {settings.get('duration_ps', 1000):g} ps")
             writer.grab_frame()
             if index == len(times) // 2:
                 fig.savefig(Path(output).with_suffix(".png"), dpi=100, facecolor=fig.get_facecolor())
