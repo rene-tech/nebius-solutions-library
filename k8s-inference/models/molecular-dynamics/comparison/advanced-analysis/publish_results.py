@@ -70,8 +70,11 @@ def transfer(row, root):
         get = subprocess.run(AWS + ["get-object", "--bucket", BUCKET, "--key", key, str(downloaded)],
                              capture_output=True, text=True, check=True)
         metadata = json.loads(get.stdout)
+        # Object metadata originates in case-insensitive HTTP headers; Nebius
+        # returns Sha256, whereas some S3 implementations return sha256.
+        normalized_metadata = {key.lower(): value for key, value in metadata.get("Metadata", {}).items()}
         if (downloaded.stat().st_size != row["bytes"] or digest(downloaded) != row["sha256"]
-                or metadata.get("Metadata", {}).get("sha256") != row["sha256"]):
+                or normalized_metadata.get("sha256") != row["sha256"]):
             raise ValueError("Full object readback failed size/hash/metadata check")
     return {**row, "bucket": BUCKET, "key": key, "readback_verified": True,
             "created_new": result.returncode == 0}
