@@ -100,3 +100,12 @@ def test_reproducible_archive(tmp_path):
     m.bundle(source, tmp_path / "a.tar.gz")
     m.bundle(source, tmp_path / "b.tar.gz")
     assert m.sha(tmp_path / "a.tar.gz") == m.sha(tmp_path / "b.tar.gz")
+
+
+@pytest.mark.parametrize("engine", ["namd", "lammps"])
+def test_published_digest_binding(engine):
+    row = {"model_id": engine, "state": "active", "runtime_image_digest": m.WORKERS[engine].split("@")[1]}
+    assert m.verify_runtime({"data": [row]}, engine, m.WORKERS[engine]) == row
+    row["runtime_image_digest"] = "sha256:" + "0" * 64
+    with pytest.raises(ValueError, match="digest differs"):
+        m.verify_runtime({"data": [row]}, engine, m.WORKERS[engine])

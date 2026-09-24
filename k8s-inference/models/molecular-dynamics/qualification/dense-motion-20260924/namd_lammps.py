@@ -46,6 +46,13 @@ def save(path, value):
         stream.write("\n")
 
 
+def verify_runtime(models, engine, image):
+    rows = [row for row in models.get("data", []) if row.get("model_id") == engine]
+    if len(rows) != 1 or rows[0].get("state") != "active" or rows[0].get("runtime_image_digest") != image.split("@", 1)[1]:
+        raise ValueError("caller-visible active runtime digest differs from frozen worker")
+    return rows[0]
+
+
 def replace_once(text, old, new):
     if text.count(old) != 1:
         raise ValueError("expected exactly one native source directive: " + old)
@@ -196,8 +203,9 @@ async def discover_inside(fixture, output):
     save(output / "scientific-models.json", models)
     # Persist caller-visible identity and inspect it before admitting work. Some
     # contract versions publish image identity only in scientific discovery.
+    runtime = verify_runtime(models, f["engine"], f["worker_image"])
     result = {"status": "schema-and-access-verified", "engine": f["engine"], "expected_worker_image": f["worker_image"],
-              "exact_image_visible_in_discovery": f["worker_image"] in json.dumps([discovery, models]),
+              "exact_image_visible_in_discovery": True, "caller_visible_runtime": runtime,
               "caller_fingerprint": hashlib.sha256(os.environ["SCIENTIFIC_MODELS_API_KEY"].encode()).hexdigest(),
               "observed_at": datetime.now(timezone.utc).isoformat(), "uploads_or_runs_submitted": False}
     save(output / "discovery-receipt.json", result)
