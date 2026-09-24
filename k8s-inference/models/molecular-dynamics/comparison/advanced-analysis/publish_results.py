@@ -62,7 +62,7 @@ def transfer(row, root):
     result = subprocess.run(AWS + ["put-object", "--bucket", BUCKET, "--key", key,
         "--body", str(path), "--if-none-match", "*", "--content-type", content_type,
         "--metadata", "sha256=" + row["sha256"]], capture_output=True, text=True)
-    if result.returncode and not any(code in result.stderr for code in ("PreconditionFailed", "(412)")):
+    if result.returncode and not any(code in result.stderr for code in ("PreconditionFailed", "(412)", "(KeyAlreadyExists)")):
         raise RuntimeError("Object upload failed: " + result.stderr)
     # A repeated execution verifies an existing object; it never overwrites it.
     with tempfile.TemporaryDirectory(prefix="fs2-alanine-readback-") as temporary:
