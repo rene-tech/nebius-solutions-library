@@ -125,6 +125,30 @@ and `physical_capacity_exhaustion_claimed=false`. It does not satisfy or rename
 the separate physical `no-spare` scenario. A patch race fails closed and the
 runner cancels only its own accepted operation through public MCP.
 
+### Disjoint parallel additional cases
+
+After the two primary recovery cohorts, the owner may render two separately
+named, exact-task instances with `--instance init --shard window-03
+--pause-seconds 150` and `--instance synthetic --shard window-01
+--synthetic-no-eligible-capacity`. The renderer creates separate names and
+namespaces ending in `-init` and `-synthetic`, with their own short-lived TLS.
+The server source, exact tenant/model/stage selectors and mutation guards are
+unchanged. Install each new instance only after checking its exact namespace
+and webhook are absent, using the same server-first/webhook-last sequence.
+
+Run the initialization case with unchanged fixture windows `window-03 window-04`
+and the synthetic case with `window-01 window-02`. `--concurrent-cohort PATH`
+permits this pair only when their saved ordinary identity, platform release and
+client agree, their window sets and injected shards are disjoint, and the first
+case's recorded injector UIDs/configuration remain unchanged and ready. Both
+instances retain exact task selectors; neither matches the other case's shards.
+This does not relax the two primary cohorts' sequential unchanged-plan gate.
+
+Cleanup each instance's exact name and namespace from its verified `plan.json`,
+again webhook first. Do not remove the other case's instance while it is running.
+These additional tests must not overlap a platform/seed rollout; recapture the
+release after the owner announces the final revision.
+
 ## Cleanup and verification
 
 The owner removes the webhook **first**, before stopping its server. Resolve the
