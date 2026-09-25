@@ -105,7 +105,54 @@ def accepted_operation(document, policy, forbidden=(), *, new=False):
     return identifier
 
 
-def concurrent_cohorts(paths, expected, status_reader):
+def disjoint_parallel_injectors(prior, expected):
+    """Only the two explicitly named, disjoint extra matrix cases may overlap."""
+    left, right = prior.get("injector"), expected.get("injector")
+    require(left and right and prior.get("injection_mode") == expected.get("injection_mode") == "task-only-create-webhook",
+            "parallel_cases_require_exact_injectors")
+    modes = []
+    for value, identity in ((left, prior), (right, expected)):
+        config = value["config"]
+        require(config["tenant"] == TENANT and config["namespace"] == "fs2-models"
+                and config["runtime_image"] == expected["release"]["runtime_image"] and config["dead_pool"] == "h100-1x",
+                "parallel_injector_scope_changed")
+        windows = set(identity.get("fixture", {}).get("windows", []))
+        if config["pause_seconds"] >= 150 and not config.get("synthetic_no_capacity"):
+            require(config["shard"] == "window-03" and windows == {"window-03", "window-04"}
+                    and identity.get("scenario") == "recovery", "parallel_init_case_not_exact")
+            modes.append("init")
+        else:
+            require(config["pause_seconds"] == 0 and config.get("synthetic_no_capacity") is True
+                    and config["shard"] == "window-01" and windows == {"window-01", "window-02"}
+                    and identity.get("scenario") == "synthetic-no-eligible-capacity", "parallel_synthetic_case_not_exact")
+            modes.append("synthetic")
+        namespaces = [r["name"] for r in value["resources"] if r["kind"] == "Namespace"]
+        require(namespaces == [TENANT + "-" + modes[-1]], "parallel_injector_namespace_not_exact")
+    require(set(modes) == {"init", "synthetic"}, "parallel_cases_not_disjoint")
+
+
+def unchanged_injector_resources(kube, expected):
+    """Re-read a separately running cohort's recorded immutable server identity."""
+    namespaces = [r["name"] for r in expected["resources"] if r["kind"] == "Namespace"]
+    require(len(namespaces) == 1, "parallel_injector_namespace_ambiguous")
+    for row in expected["resources"]:
+        command = ["get", row["kind"], row["name"], "-o", "json"]
+        if row["kind"] not in {"Namespace", "MutatingWebhookConfiguration"}:
+            command += ["-n", namespaces[0]]
+        actual = canonical_observed_resource(kube.json(*command))
+        require(actual["metadata"]["uid"] == row["uid"]
+                and actual["metadata"].get("labels", {}).get("acceptance.fs2.nebius.ai/task") == TENANT,
+                "parallel_injector_owner_changed")
+        require(digest({k: actual[k] for k in ("spec", "data", "webhooks", "automountServiceAccountToken") if k in actual}) == row["sha256"],
+                "parallel_injector_configuration_changed")
+        if row["kind"] == "Deployment":
+            require(actual.get("status", {}).get("readyReplicas") == actual.get("status", {}).get("updatedReplicas") == 1,
+                    "parallel_injector_not_ready")
+    require(age(expected["config"]["expires_at"]) < 0, "parallel_injector_expired")
+    return expected
+
+
+def concurrent_cohorts(paths, expected, status_reader, injector_reader=None):
     """Explicit recorded operations only; authorize by the current ordinary key."""
     require(len(paths) < expected["tenant_policy"]["max_concurrency"], "concurrent_cohorts_exceed_key_limit")
     records, job_operations = {}, {}
@@ -114,8 +161,16 @@ def concurrent_cohorts(paths, expected, status_reader):
         require(path.is_dir() and all(p.is_file() for p in required), "concurrent_cohort_receipts_missing")
         intent, saved, submission = (read(p) for p in required)
         require(intent.get("schema") == SCHEMA, "concurrent_cohort_schema_invalid")
-        for key in ("endpoint", "tenant_policy", "key_id", "release_sha256", "release", "injection_mode", "injector"):
+        for key in ("endpoint", "tenant_policy", "key_id", "release_sha256", "release", "injection_mode"):
             require(intent.get(key) == expected[key], "concurrent_cohort_identity_changed_" + key)
+        if intent.get("injector") != expected["injector"]:
+            require(expected.get("scenario") in {"recovery", "synthetic-no-eligible-capacity"},
+                    "concurrent_cohort_identity_changed_injector")
+            disjoint_parallel_injectors(intent, expected)
+            require(injector_reader is not None and injector_reader(intent["injector"]) == intent["injector"],
+                    "concurrent_cohort_injector_not_verified")
+        else:
+            require(expected.get("scenario", "cancel") == "cancel", "concurrent_same_injector_only_supported_for_cancel")
         operation = accepted_operation(submission, expected["tenant_policy"])
         require(saved.get("operation_id") == operation and intent.get("operation_id") in (None, operation), "concurrent_cohort_operation_disagrees")
         require(operation not in records, "concurrent_cohort_duplicate_operation")
@@ -397,11 +452,13 @@ def compact_snapshot(jobs, pods, workloads, nodes):
             "suspend": job["spec"].get("suspend"), "deletion_timestamp": meta.get("deletionTimestamp")})
     for pod in pods:
         meta, status = pod["metadata"], pod.get("status", {})
+        requested = {c["name"]: c["image"] for field in ("containers", "initContainers") for c in pod["spec"].get(field, [])}
         result["pods"].append({"name": meta["name"], "uid": meta["uid"], "attempt_id": meta["labels"][PREFIX + "attempt-id"],
             "node": pod["spec"].get("nodeName"), "phase": status.get("phase"),
             "init_pause": [{k: c.get(k) for k in ("name", "image", "command")} for c in pod["spec"].get("initContainers", []) if c["name"] == "acceptance-init-pause"],
             "conditions": [{k: c.get(k) for k in ("type", "status", "reason", "lastTransitionTime")} for c in status.get("conditions", [])],
             "containers": [{"name": c["name"], "image": c.get("image"), "image_id": c.get("imageID"),
+                            "requested_image": requested.get(c["name"]),
                             "started": bool(c.get("state", {}).get("running") or c.get("state", {}).get("terminated")),
                             "state": {phase: {k: value.get(k) for k in ("startedAt", "finishedAt", "exitCode")} for phase, value in c.get("state", {}).items()}}
                            for field in ("initContainerStatuses", "containerStatuses") for c in status.get(field, [])]})
@@ -506,6 +563,22 @@ def verify_recovery(status, observations, dead, failure=FAILURE):
     require(recovered, "no_admitted_pool_recovery_exercised")
     require(all(r["resource_released"] for r in rows), "terminal_resources_not_released")
     return recovered
+
+
+def verify_runtime(observations, expected):
+    """CRI status.image may be a config ID; imageID proves executed content."""
+    require(re.fullmatch(r"[^@]+@sha256:[0-9a-f]{64}", expected), "expected_runtime_not_pinned")
+    expected_digest = expected.rsplit("@", 1)[1]
+    started = [c for o in observations for p in o["pods"] for c in p["containers"]
+               if c["name"] == "scientific-stage" and c["started"]]
+    require(started, "executed_runtime_digest_unproven")
+    for container in started:
+        actual = (container.get("image_id") or "").removeprefix("docker-pullable://").removeprefix("containerd://").removeprefix("docker://")
+        require(actual.rsplit("@", 1)[-1] == expected_digest
+                and ("requested_image" not in container or container["requested_image"] == expected),
+                "executed_runtime_digest_unproven")
+    return {"expected": expected, "image_ids": sorted({c["image_id"] for c in started}),
+            "status_images": sorted({c["image"] for c in started}), "observations": len(started)}
 
 
 def verify_init_pause(status, observations, config):
@@ -660,13 +733,15 @@ def run(args):
     require(not injector or bool(injector["config"].get("synthetic_no_capacity")) == synthetic, "synthetic_injector_wrong_scenario")
     require(dead_pool(kube.nodes(), args.dead_pool), "dead_pool_not_confirmed_before_test")
     injection_mode = "task-only-create-webhook" if injector else "guarded-suspended-job-affinity" if args.inject_dead_first_attempt else "observe-natural"
+    parameters, fixture_identity = prepare_parameters(args.fixture, args.windows)
     identity = {"endpoint": args.endpoint, "tenant_policy": policy, "key_id": key["key"]["id"],
-                "release_sha256": digest(release), "release": args.release, "injection_mode": injection_mode, "injector": injector}
+                "release_sha256": digest(release), "release": args.release, "injection_mode": injection_mode, "injector": injector,
+                "scenario": args.scenario, "fixture": fixture_identity}
     concurrent, concurrent_inventory = {}, None
     if args.concurrent_cohort:
-        require(args.scenario == "cancel", "concurrent_cohort_only_supported_for_cancel")
         concurrent, prior_jobs = concurrent_cohorts(args.concurrent_cohort, identity,
-            lambda operation: call(args.endpoint, secret, "get_scientific_status", {"operation_id": operation}))
+            lambda operation: call(args.endpoint, secret, "get_scientific_status", {"operation_id": operation}),
+            lambda saved: unchanged_injector_resources(kube, saved))
         selector = PREFIX + "tenant-id=" + args.tenant
         jobs, pods = (kube.items(kind, "fs2-models", selector) for kind in ("jobs", "pods"))
         concurrent_inventory = validate_concurrent_resources(args.tenant, concurrent, prior_jobs, jobs, pods, kube.items("workloads", "fs2-models"))
@@ -674,7 +749,6 @@ def run(args):
         require(not any(kube.owned(args.tenant)), "prior_task_resources_require_inspection")
     args.output.mkdir(parents=True, exist_ok=False, mode=0o700)
     output = args.output.resolve()
-    parameters, fixture_identity = prepare_parameters(args.fixture, args.windows)
     save(output / "parameters.json", parameters)
     save(output / "release-before.json", release)
     save(output / "fixture.json", fixture_identity)
@@ -801,9 +875,7 @@ def run(args):
                 receipt["recovered_attempts"] = verify_recovery(last_status, observations, args.dead_pool)
                 if injector and injector["config"]["pause_seconds"]:
                     receipt["init_pause"] = verify_init_pause(last_status, observations, injector["config"])
-                started = [c for o in observations for p in o["pods"] for c in p["containers"]
-                           if c["name"] == "scientific-stage" and c["started"]]
-                require(started and all(c["image"] == args.release["runtime_image"] and c["image_id"] for c in started), "executed_runtime_digest_unproven")
+                receipt["executed_runtime"] = verify_runtime(observations, args.release["runtime_image"])
                 require(process.wait(timeout=600) == 0, "customer_artifact_client_failed")
                 receipt["native"] = validate_native(args, output, parameters)
             require(not any(kube.owned(args.tenant, receipt["operation_id"], known_job_uids)), "owned_resources_leaked")
