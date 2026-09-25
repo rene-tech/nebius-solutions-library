@@ -1,7 +1,9 @@
 # Molecular-dynamics starter pack v3
 
-Published image; customer-bucket rollout is still pending. Never distribute a
-draft pack. This extends the qualified v2
+Deployed as the default in Helm revision 230 after the bucket canary passed.
+Both sequential seeded-client cohorts and all-bucket verification passed; see the
+[delivery record](../acceptance/customer-starter-data-md-20260925/README.md).
+Never distribute a draft pack. This extends the qualified v2
 data artifact and preserves its 120 cases and exact unchanged recipe/input bytes.
 The category `molecular-dynamics` matches the live catalog. Five workflow examples
 share **one** canonical molecule; this is not presented as five different systems.

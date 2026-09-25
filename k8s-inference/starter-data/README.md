@@ -1,13 +1,16 @@
 # Customer workspace starter data
 
 This directory builds immutable, versioned `examples/vN/` packs for customer
-workspace buckets. Binary assets are release artifacts, not files in Git. Pack
-Version 2 is model-example-qualified and deployed to all 12 currently eligible
-distinct workspace/demo buckets; version 1 remains immutable and recoverable.
-New eligible workspaces receive the selected qualified pack automatically.
+workspace buckets. Binary assets are release artifacts, not files in Git.
+Version 3 is deployed as the default, with molecular-dynamics examples for
+GROMACS, NAMD, Amber and LAMMPS. It contains 125 cases and 160 typed recipes
+covering 39 Apps across 12 categories, in 53.9 MB. Previous versions remain
+immutable; new eligible workspaces receive the selected pack automatically.
 Do not enable customer backfill with a draft pack. Exact release pins are in
-[`release-v1.json`](release-v1.json) and
-[`release-v2.json`](release-v2.json).
+[`release-v3.json`](release-v3.json); retained releases are
+[`release-v1.json`](release-v1.json) and [`release-v2.json`](release-v2.json).
+See the [MD delivery record](../acceptance/customer-starter-data-md-20260925/README.md)
+for the current deployment and customer-client qualification status.
 
 ## Ownership and scope
 
@@ -58,6 +61,16 @@ capped at 128 proposals, so it is not an exact counter for the densest fields.
 BBBC039v1 is CC0 and is a research microscopy dataset, not patient tissue or
 clinical-validation ground truth.
 
+Version 3 preserves those inputs and adds five molecular-dynamics workflows
+sharing canonical capped alanine dipeptide in explicit ff14SB/TIP3P water.
+Quickstart, full 1 ns, native restart and independent replicas support all four
+engines; a single GROMACS umbrella window is an opt-in fifth workflow. The 17
+new recipes passed two independent native executions. Inputs, commands, seeds,
+provenance, output-export recipes and trajectory analysis are included; large
+reference trajectories and engine binaries are not copied into every bucket.
+Native restart is not GPU snapshotting, and short trajectories do not establish
+scientific convergence. See [MD_EXAMPLES.md](MD_EXAMPLES.md).
+
 Each object has source, license, attribution, transformation, SHA-256, media type,
 byte count, recipe version, compatible model IDs and validation status in the
 manifest. Every example is for research/onboarding; no generated result is
@@ -67,7 +80,7 @@ remains governed by the user's existing API-key grants and model licenses.
 `source-lock.json` pins public downloads. Full approved consultation WAVs are
 losslessly encoded to FLAC and decoded back to PCM for byte-identical sample
 verification; no speech is cut to fit an upload limit. The full pack is about
-45 MB in qualified v2. Use the source manifest for exact release size.
+54 MB in qualified v3 (45 MB in v2). Use the manifest for exact release size.
 
 ## Build and qualification
 
@@ -119,5 +132,6 @@ rollback must retain installed examples, previous versions, customer data and
 the completion ledger. No uninstall/delete behavior is provided.
 
 Live qualification, exact image identities and backfill receipts belong in
-`acceptance/customer-starter-data-20260920/` and
-`acceptance/customer-starter-data-microscopy-20260922/`.
+`acceptance/customer-starter-data-20260920/`,
+`acceptance/customer-starter-data-microscopy-20260922/` and
+`acceptance/customer-starter-data-md-20260925/`.

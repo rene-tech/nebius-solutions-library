@@ -1,0 +1,304 @@
+{
+  "schema": "fs2-md-starter-delivery/v1",
+  "scope": "Immutable seed-only release, bucket-scoped full-byte readback, default new-workspace provisioning and temporary access retirement. No customer payloads or credentials are included.",
+  "canary_deployment": {
+    "previous_revision": 228,
+    "new_revision": 229,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/customer-starter-data@sha256:58a2a15581d4abf7fe661f814bd5c38e5e7a4500ae97db7322e2442c0932b50c",
+    "manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+    "canary_tenant_count": 1,
+    "chart_sha256": "a48985f845d242693833e2c267b1e04d843f31ee8550c9558d529a8cc12e8631",
+    "changed_resources": [
+      [
+        "Deployment",
+        "fs2-system",
+        "fs2-serve-control-plane"
+      ]
+    ],
+    "unrelated_gateway_fields_unchanged": true,
+    "applied": true
+  },
+  "default_deployment": {
+    "previous_revision": 229,
+    "new_revision": 230,
+    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/customer-starter-data@sha256:58a2a15581d4abf7fe661f814bd5c38e5e7a4500ae97db7322e2442c0932b50c",
+    "manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+    "canary_tenant_count": 0,
+    "chart_sha256": "93736b874877d6c095856fb5565104ebd454d9ee29903dc94ea1a9e7bee61e72",
+    "changed_resources": [
+      [
+        "Deployment",
+        "fs2-system",
+        "fs2-serve-control-plane"
+      ]
+    ],
+    "unrelated_gateway_fields_unchanged": true,
+    "applied": true
+  },
+  "canary_readback": {
+    "state": "ready",
+    "examples": {
+      "attempts": 1,
+      "completed_at": "2026-09-25T06:50:07.249362Z",
+      "error_code": null,
+      "manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+      "object_count": 498,
+      "state": "complete",
+      "total_bytes": 53900577,
+      "updated_at": "2026-09-25T06:50:07.249362Z",
+      "version": "v3"
+    },
+    "verified_objects": 498,
+    "verified_bytes": 53900577,
+    "manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+    "quota_bytes": 5000000000
+  },
+  "canary_native_result": {
+    "case_id": "molecular-dynamics/alanine-quickstart",
+    "model_id": "gromacs",
+    "state": "passed",
+    "operation_id": "99b8a609-da51-43cb-88cf-a734d3b75517",
+    "recipe_sha256": "63fafe70f4a37e4ed6e9d21d9c23363574de6fede9c62ee8095290a3f9a94408",
+    "input_sha256": "3e4df01952fa17b879b3ebf0b1b4c48763a0b8124fe35416d26333437a75150f",
+    "jobs": [
+      {
+        "job_id": "canonical-alanine",
+        "stages": [
+          {
+            "stage": "nvt",
+            "frames": 21,
+            "first_ps": 0,
+            "last_ps": 20,
+            "requested_ps": 20,
+            "trajectory_sha256": [
+              "8e95d4bc4f1b3ef654ec744e8110ed84800b63ff74d4e2bafa6ef91e39795b9d"
+            ]
+          },
+          {
+            "stage": "npt",
+            "frames": 21,
+            "first_ps": 0,
+            "last_ps": 20,
+            "requested_ps": 20,
+            "trajectory_sha256": [
+              "aee170bca32488d7151ae78f02e3e14a6f992d7fd84f7242e3303e023aac5cb7"
+            ]
+          },
+          {
+            "stage": "production",
+            "frames": 21,
+            "first_ps": 0,
+            "last_ps": 20,
+            "requested_ps": 20,
+            "trajectory_sha256": [
+              "45d0e33c3784c565168cf783676428db02289cabf0a2b421786da1955de647aa"
+            ]
+          }
+        ],
+        "completed_steps": [
+          "prepare-minimize",
+          "minimize",
+          "prepare-nvt",
+          "nvt",
+          "energies-nvt",
+          "prepare-npt",
+          "npt",
+          "energies-npt",
+          "prepare-production",
+          "production",
+          "energies-production",
+          "trajectory",
+          "check"
+        ],
+        "native_engine_id": "nvcr.io/nvidia/gromacs@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+        "native_recipe_sha256": "a9a887485741695117d6580152808c81b899e81d7e1c7aded0f9d380dde84e56",
+        "native_build": null,
+        "native_gpu_report": null,
+        "density_mean_g_cm3": 0.9730084630376796,
+        "native_restart_used": false,
+        "scientific_convergence_claimed": false,
+        "gpu_snapshot_used": false
+      }
+    ],
+    "checked_artifacts": 54,
+    "observation_seconds": 119.906,
+    "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+    "model_revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+    "parent_operation_runtime": {
+      "gpu_count": 0,
+      "gpu_uuids": [],
+      "node_uid": null,
+      "pod_uid": null,
+      "preemptible": null
+    },
+    "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+    "native_attempts": [
+      {
+        "stage_id": "workflow",
+        "attempt_id": "c275027e-0d5f-5a9f-89d3-12efa4095cfb",
+        "attempt_number": 1,
+        "shard_id": "canonical-alanine",
+        "outcome": "succeeded",
+        "resource_released": true,
+        "workload_name": "fs2-workflow-canonical-al-a1-a36694fe73a1",
+        "workload_namespace": "fs2-models",
+        "workload_uid": "c40900f8-7277-44a2-897a-0c9923f4f233",
+        "scheduling_admission": {
+          "accelerator_count": 1,
+          "accelerator_resource_name": "nvidia.com/gpu",
+          "admitted_at": "2026-09-25T06:51:36Z",
+          "admitted_resource_flavor": "inference-h100-ondemand-1x",
+          "resolved_pool_id": "h100-ondemand-1x"
+        }
+      }
+    ],
+    "cold_start_seconds": null,
+    "lifecycle": {
+      "accepted_at": "2026-09-25T06:51:35.370919Z",
+      "started_at": "2026-09-25T06:51:36.214010Z",
+      "ready_at": null,
+      "completed_at": "2026-09-25T06:52:58.217032Z"
+    },
+    "server_elapsed_seconds": 82.846113
+  },
+  "canary_bucket_exports": [
+    {
+      "bytes": 10779062,
+      "case_id": "molecular-dynamics/alanine-quickstart",
+      "job_id": "canonical-alanine",
+      "model_id": "gromacs",
+      "objects": 55,
+      "operation_id": "99b8a609-da51-43cb-88cf-a734d3b75517",
+      "state": "passed"
+    }
+  ],
+  "new_default_workspace_readback": {
+    "state": "ready",
+    "examples": {
+      "attempts": 1,
+      "completed_at": "2026-09-25T07:00:41.302459Z",
+      "error_code": null,
+      "manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+      "object_count": 498,
+      "state": "complete",
+      "total_bytes": 53900577,
+      "updated_at": "2026-09-25T07:00:41.302459Z",
+      "version": "v3"
+    },
+    "verified_objects": 498,
+    "verified_bytes": 53900577,
+    "manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+    "quota_bytes": 5000000000
+  },
+  "retained_previous_version": {
+    "manifest_sha256": "9387cfd01e71fdfce67e08008ebfccd359082e60485ecf30b4f17a30d4df22b6",
+    "old_version_retained_after_v3": true,
+    "scope": "All immutable v2 objects in existing disposable customer workspace; no customer payload reads.",
+    "state": "passed",
+    "verified_bytes": 45083372,
+    "verified_objects": 425,
+    "version": "v2"
+  },
+  "backfill": {
+    "inventory_started_at": "2026-09-25T07:03:35.108625+00:00",
+    "ready_distinct_buckets": 16,
+    "independently_verified_distinct_buckets": 16,
+    "objects_per_bucket": 498,
+    "bytes_per_bucket": 53900577,
+    "total_verified_objects": 7968,
+    "total_verified_bytes": 862409232,
+    "includes_temporary_workspaces": true,
+    "customer_payloads_read": false
+  },
+  "after_test_identity_retirement": {
+    "inventory_started_at": "2026-09-25T07:15:22.138650+00:00",
+    "active_users": 25,
+    "ready_distinct_buckets": 14,
+    "all_remaining_buckets_in_verified_set": true,
+    "all_remaining_examples_complete": true,
+    "original_disabled_storage_users_preserved": 1
+  },
+  "cleanup": [
+    {
+      "at": "2026-09-25T07:08:46.288798+00:00",
+      "key_rejected": true,
+      "storage_state": "disabled",
+      "bucket_retained": true,
+      "customer_identity_or_quota_changes": false
+    },
+    {
+      "at": "2026-09-25T07:15:26.870234+00:00",
+      "key_rejected": true,
+      "storage_state": "disabled",
+      "bucket_retained": true,
+      "customer_identity_or_quota_changes": false
+    }
+  ],
+  "live_release": {
+    "at": "2026-09-25 07:15:03 UTC",
+    "helm": {
+      "revision": 230,
+      "updated": "2026-09-25T06:54:37.003026512Z",
+      "status": "deployed",
+      "chart": "fs2-serve-control-plane-0.5.0",
+      "app_version": "0.1.0",
+      "description": "Upgrade complete"
+    },
+    "deployments": [
+      {
+        "name": "fs2-serve-control-plane",
+        "generation": 340,
+        "desired": 3,
+        "ready": 3,
+        "available": 3,
+        "containers": [
+          {
+            "name": "control-plane",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:3840f45bf49e5736da009820f374da58897ca94b242fc62a3eb5a3f6121a78fb"
+          }
+        ],
+        "init_containers": [
+          {
+            "name": "install-starter-pack",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/customer-starter-data@sha256:58a2a15581d4abf7fe661f814bd5c38e5e7a4500ae97db7322e2442c0932b50c"
+          },
+          {
+            "name": "wait-schema",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:3840f45bf49e5736da009820f374da58897ca94b242fc62a3eb5a3f6121a78fb"
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller",
+        "generation": 189,
+        "desired": 2,
+        "ready": 2,
+        "available": 2,
+        "containers": [
+          {
+            "name": "model-controller",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:3840f45bf49e5736da009820f374da58897ca94b242fc62a3eb5a3f6121a78fb"
+          }
+        ],
+        "init_containers": []
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console",
+        "generation": 38,
+        "desired": 2,
+        "ready": 2,
+        "available": 2,
+        "containers": [
+          {
+            "name": "admin-console",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4"
+          }
+        ],
+        "init_containers": []
+      }
+    ],
+    "native_jobs_checked": 8,
+    "retained_native_jobs": 0
+  },
+  "known_followup": "fs2-failed-native-diagnostic-upload-identity-r20260925"
+}

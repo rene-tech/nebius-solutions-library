@@ -1,8 +1,9 @@
 # Molecular-dynamics starter examples — 25 September 2026
 
-Status: all 17 new recipes passed two independent native executions; the data
-image is published, but v3 is **not deployed** yet. The live default remains
-immutable `examples/v2/`. Seeded-client release acceptance is still pending.
+Status: **deployed and qualified for the starter-data scope below**. All 17 new
+recipes passed twice. The immutable image is the default `examples/v3/` in Helm
+revision 230. The bucket canary, two sequential seeded-client cohorts, all-bucket
+verification, automatic new-workspace seeding and temporary-access cleanup passed.
 
 ## What is being qualified
 
@@ -68,6 +69,54 @@ scientific workflows, not equilibrium or converged basin populations. Successful
 native execution is not independent proof of cross-engine force-field equality.
 Historical v2 proofs qualify unchanged inputs only, not a new all-model benchmark.
 This work does not qualify a LibreChat browser release.
+
+## Live delivery and customer-client gate
+
+[Deployment and bucket evidence](deployment-backfill-receipt.json) records the
+seed-only canary revision 229 and default revision 230. The exact installed
+chart was recaptured for each apply; strict comparison allowed only the seed
+init container and seed environment changes. Recovery gateway/controller image
+`3840f45...`, native companion image `719ec33...`, admin and model definitions
+were preserved. No cloud, customer storage or concurrency quota was increased.
+
+The existing canary and a newly provisioned default workspace each downloaded
+all **498 objects / 53,900,577 bytes** with their ordinary, bucket-scoped
+credentials and passed every checksum. The new workspace completed seeding on
+its first attempt at 07:00:41 UTC, without manual object copying. All 425 old v2
+objects in the existing workspace remained byte-identical.
+
+Full-byte readback passed for **16 distinct eligible buckets**, including the
+temporary test workspaces: 7,968 object verifications. After the two MD test
+identities were disabled, the 07:15 inventory retained 14 ready buckets, all in
+that verified set and all reporting v3 complete. The original disabled-storage
+policy remained disabled. These are timestamped inventory counts, not a promise
+that the number of active tenants never changes.
+
+[Seeded-client evidence](seeded-client-validation.json) records two consecutive,
+nonoverlapping cohorts on unchanged revision 230:
+
+| Cohort | Customer workspace | Client start → final download complete (UTC) | Result |
+| --- | --- | --- | --- |
+| 1 | Existing workspace, bucket-downloaded v3 | 06:58:32 → 07:05:32 | All four engines passed |
+| 2 | New automatically seeded workspace, separate key/bucket | 07:06:26 → 07:13:22 | All four engines passed |
+
+Each cohort used the published client and inputs with concurrency three, and
+ran minimization plus 20 ps NVT, 20 ps NPT and 20 ps production for each engine.
+All eight native results passed trajectory analysis and actual customer-bucket
+export verification. The complete 1 ns/restart/replica/umbrella recipes were
+already executed twice in the separate 34-run input qualification above; the
+delivery gate does not relabel these short client checks as long simulations.
+
+Completed local replay was tested for all four engines with network-client
+creation forbidden: it verified retained artifact checksums and returned the
+original operation without resubmission or receipt changes. This is a local
+client replay check, not a new server-side idempotency/load benchmark.
+
+Both temporary keys now reject access, their owners and storage are disabled,
+and their buckets/results are retained as evidence. Direct Kubernetes checks
+found none of the eight final-cohort native Jobs remaining. Gateway, controller
+and admin deployments were fully ready; Helm remained at revision 230. The
+parallel recovery worker owns and retires its separate test identities.
 
 ## Retained development failures
 

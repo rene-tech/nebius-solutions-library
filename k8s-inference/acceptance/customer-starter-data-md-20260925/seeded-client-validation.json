@@ -1,0 +1,1064 @@
+{
+  "schema": "fs2-md-seeded-client-validation/v1",
+  "scope": "Two sequential ordinary-customer CLI cohorts using the exact client, analyzer and inputs downloaded from separately owned seeded buckets, on unchanged Helm230. Four 20+20+20ps protocols; full/native restart/batch/umbrella input qualification is separately recorded in native-validation.json. Not a browser, convergence or whole-platform qualification.",
+  "helm_revision": 230,
+  "source_data_commit": "db4b7d9eb03b1b676ae7c90cba9570a02c66a71b",
+  "manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+  "runner_sha256": "989a31bfdf69ad4cc4f53ff3ce7e761ac9c8ccd4516e329b11ff9248117c06b1",
+  "analyzer_sha256": "6a9367a874da7de81303218c05dd31b0c13dc54a6f806eb3bd0ed05c2abfa5b3",
+  "all_eight_native_runs_passed": true,
+  "all_eight_customer_exports_verified": true,
+  "nonoverlapping_cohorts": true,
+  "cohort_client_max_concurrency": 3,
+  "cohorts": [
+    {
+      "cohort": 1,
+      "workspace": "existing_disposable_workspace",
+      "started_at": "2026-09-25T06:58:32.934044+00:00",
+      "completed_at": "2026-09-25T07:05:32.119371+00:00",
+      "results": [
+        {
+          "case_id": "molecular-dynamics/alanine-quickstart",
+          "model_id": "gromacs",
+          "state": "passed",
+          "operation_id": "a5318d02-85bb-4561-a8e3-b5456813ac63",
+          "recipe_sha256": "63fafe70f4a37e4ed6e9d21d9c23363574de6fede9c62ee8095290a3f9a94408",
+          "input_sha256": "3e4df01952fa17b879b3ebf0b1b4c48763a0b8124fe35416d26333437a75150f",
+          "jobs": [
+            {
+              "job_id": "canonical-alanine",
+              "stages": [
+                {
+                  "stage": "nvt",
+                  "frames": 21,
+                  "first_ps": 0,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "7a18f8d6ac96168e50af565954e758cd59dc60419642abf075411645ad473e3a"
+                  ]
+                },
+                {
+                  "stage": "npt",
+                  "frames": 21,
+                  "first_ps": 0,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "ebafe05ac21a45947f3fcea26fb5bc01d9641c4216001a13f6bdff2df2c9b690"
+                  ]
+                },
+                {
+                  "stage": "production",
+                  "frames": 21,
+                  "first_ps": 0,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "7cdeb5c5971d5dcc949b7085ee47af3e563214a0cbf7368abaf5f6ae98fc00f2"
+                  ]
+                }
+              ],
+              "completed_steps": [
+                "prepare-minimize",
+                "minimize",
+                "prepare-nvt",
+                "nvt",
+                "energies-nvt",
+                "prepare-npt",
+                "npt",
+                "energies-npt",
+                "prepare-production",
+                "production",
+                "energies-production",
+                "trajectory",
+                "check"
+              ],
+              "native_engine_id": "nvcr.io/nvidia/gromacs@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+              "native_recipe_sha256": "a9a887485741695117d6580152808c81b899e81d7e1c7aded0f9d380dde84e56",
+              "native_build": null,
+              "native_gpu_report": null,
+              "density_mean_g_cm3": 0.9741993785075574,
+              "native_restart_used": false,
+              "scientific_convergence_claimed": false,
+              "gpu_snapshot_used": false
+            }
+          ],
+          "checked_artifacts": 54,
+          "observation_seconds": 141.809,
+          "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+          "model_revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+          "parent_operation_runtime": {
+            "gpu_count": 0,
+            "gpu_uuids": [],
+            "node_uid": null,
+            "pod_uid": null,
+            "preemptible": null
+          },
+          "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+          "native_attempts": [
+            {
+              "stage_id": "workflow",
+              "attempt_id": "dd92e6db-663a-50de-8d66-24fce33c4aa9",
+              "attempt_number": 1,
+              "shard_id": "canonical-alanine",
+              "outcome": "succeeded",
+              "resource_released": true,
+              "workload_name": "fs2-workflow-canonical-al-a1-5027048d2d0b",
+              "workload_namespace": "fs2-models",
+              "workload_uid": "b7a87b17-74e1-418e-abad-bf1c95fa46a0",
+              "scheduling_admission": {
+                "accelerator_count": 1,
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "admitted_at": "2026-09-25T06:58:53Z",
+                "admitted_resource_flavor": "inference-h100-ondemand-1x",
+                "resolved_pool_id": "h100-ondemand-1x"
+              }
+            }
+          ],
+          "cold_start_seconds": null,
+          "lifecycle": {
+            "accepted_at": "2026-09-25T06:58:52.317765Z",
+            "started_at": "2026-09-25T06:58:53.206169Z",
+            "ready_at": null,
+            "completed_at": "2026-09-25T07:00:22.919035Z"
+          },
+          "server_elapsed_seconds": 90.60127,
+          "customer_client": {
+            "started_at": "2026-09-25T06:58:32.934044+00:00",
+            "completed_at": "2026-09-25T07:00:54.744632+00:00",
+            "artifact_count": 54,
+            "state": "succeeded"
+          },
+          "customer_bucket_output": {
+            "bytes": 10863905,
+            "case_id": "molecular-dynamics/alanine-quickstart",
+            "job_id": "canonical-alanine",
+            "model_id": "gromacs",
+            "objects": 55,
+            "operation_id": "a5318d02-85bb-4561-a8e3-b5456813ac63",
+            "state": "passed"
+          }
+        },
+        {
+          "case_id": "molecular-dynamics/alanine-quickstart",
+          "model_id": "namd",
+          "state": "passed",
+          "operation_id": "60e8626f-7a38-4199-9692-59525ac078c6",
+          "recipe_sha256": "e8d12a426cd54ee2a34f63d60184decc4deadd342d1fdd193fecb26002d95ba9",
+          "input_sha256": "6383f1758f0d0e116cb3d257e3c2678fd168d9be7e3926d5c7f0f46ec486d6e0",
+          "jobs": [
+            {
+              "job_id": "rep-1",
+              "stages": [
+                {
+                  "stage": "nvt",
+                  "frames": 20,
+                  "first_ps": 11.000000032795464,
+                  "last_ps": 30.000000089442175,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "369efdf83866b565d5a9e86b1832b4cc13ce3ff05e5d2cdb68267342bf56241c"
+                  ]
+                },
+                {
+                  "stage": "npt",
+                  "frames": 20,
+                  "first_ps": 31.00000009242358,
+                  "last_ps": 50.00000014907029,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "07462152714a7880300d7c4f1ff02acdd09caec2469c856a1db095dfab0e663a"
+                  ]
+                },
+                {
+                  "stage": "production",
+                  "frames": 20,
+                  "first_ps": 51.0000001520517,
+                  "last_ps": 70.00000020869841,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "12e0893f65d6fee5b3ef876709765b3a786a87ffa499d96e2f27084d37255e99"
+                  ]
+                }
+              ],
+              "completed_steps": [
+                "minimize",
+                "nvt",
+                "npt",
+                "production"
+              ],
+              "native_engine_id": "nvcr.io/nvidia/namd@sha256:e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+              "native_recipe_sha256": "ab0387f446ef8e2e8f4c76e28d9b17daec842c942cde2132eb03efec12ec0fbd",
+              "native_build": null,
+              "native_gpu_report": null,
+              "density_mean_g_cm3": 0.9846835639898941,
+              "native_restart_used": false,
+              "scientific_convergence_claimed": false,
+              "gpu_snapshot_used": false
+            }
+          ],
+          "checked_artifacts": 58,
+          "observation_seconds": 109.783,
+          "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+          "model_revision": "e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+          "parent_operation_runtime": {
+            "gpu_count": 0,
+            "gpu_uuids": [],
+            "node_uid": null,
+            "pod_uid": null,
+            "preemptible": null
+          },
+          "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+          "native_attempts": [
+            {
+              "stage_id": "workflow",
+              "attempt_id": "defbbd77-ad7c-5ee9-93fd-c238abea7107",
+              "attempt_number": 1,
+              "shard_id": "rep-1",
+              "outcome": "succeeded",
+              "resource_released": true,
+              "workload_name": "fs2-workflow-rep-1-a1-e086c960bd19",
+              "workload_namespace": "fs2-models",
+              "workload_uid": "2a8cac39-0c06-411b-ae48-5eabec16d7be",
+              "scheduling_admission": {
+                "accelerator_count": 1,
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "admitted_at": "2026-09-25T06:58:49Z",
+                "admitted_resource_flavor": "inference-h100-ondemand-1x",
+                "resolved_pool_id": "h100-ondemand-1x"
+              }
+            }
+          ],
+          "cold_start_seconds": null,
+          "lifecycle": {
+            "accepted_at": "2026-09-25T06:58:48.510731Z",
+            "started_at": "2026-09-25T06:58:49.152703Z",
+            "ready_at": null,
+            "completed_at": "2026-09-25T06:59:54.656344Z"
+          },
+          "server_elapsed_seconds": 66.145613,
+          "customer_client": {
+            "started_at": "2026-09-25T06:58:32.958627+00:00",
+            "completed_at": "2026-09-25T07:00:22.743579+00:00",
+            "artifact_count": 58,
+            "state": "succeeded"
+          },
+          "customer_bucket_output": {
+            "bytes": 16166293,
+            "case_id": "molecular-dynamics/alanine-quickstart",
+            "job_id": "rep-1",
+            "model_id": "namd",
+            "objects": 77,
+            "operation_id": "60e8626f-7a38-4199-9692-59525ac078c6",
+            "state": "passed"
+          }
+        },
+        {
+          "case_id": "molecular-dynamics/alanine-quickstart",
+          "model_id": "amber",
+          "state": "passed",
+          "operation_id": "45ff0eb1-fb47-4914-96ee-0a61a43f99e9",
+          "recipe_sha256": "3eb7e5345d5677c74a63a06b7bef3f56ffb4b113a77d7cde16201637c5c4f995",
+          "input_sha256": "6c5b852faa8c68248052b90f30a742412aa9dbc8b1c798acc80786a42b3d1c81",
+          "jobs": [
+            {
+              "job_id": "canonical-alanine-tip3p",
+              "stages": [
+                {
+                  "stage": "nvt",
+                  "frames": 20,
+                  "first_ps": 1,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "d12d879479b6fabc880d11116cb31a97a13d02b904fbfec1ee6eee5bb3801220"
+                  ]
+                },
+                {
+                  "stage": "npt",
+                  "frames": 20,
+                  "first_ps": 21,
+                  "last_ps": 40,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "7a328c0fec8e5481e432a1a96b8f94e4c6d0a53ea78f19c69ddacff87530298c"
+                  ]
+                },
+                {
+                  "stage": "production",
+                  "frames": 20,
+                  "first_ps": 41,
+                  "last_ps": 60,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "6ca663432ab05375197fb8345dd648304e0ebdc0a36069ebab574d3bdbd6fc2c"
+                  ]
+                }
+              ],
+              "completed_steps": [
+                "inspect",
+                "minimize",
+                "nvt",
+                "npt",
+                "production-001",
+                "analyze"
+              ],
+              "native_engine_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber26-engine@sha256:cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+              "native_recipe_sha256": "43ae0bdd67fc2699729bf43dbe5d19e52182a33a08691c823b67b856a229c1cd",
+              "native_build": null,
+              "native_gpu_report": "NVIDIA H100 80GB HBM3, GPU-29f70821-37d9-498a-1f0b-b85f37673dda, 580.173.02, 9.0",
+              "density_mean_g_cm3": 0.9601448535161634,
+              "native_restart_used": false,
+              "scientific_convergence_claimed": false,
+              "gpu_snapshot_used": false
+            }
+          ],
+          "checked_artifacts": 40,
+          "observation_seconds": 114.215,
+          "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+          "model_revision": "cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+          "parent_operation_runtime": {
+            "gpu_count": 0,
+            "gpu_uuids": [],
+            "node_uid": null,
+            "pod_uid": null,
+            "preemptible": null
+          },
+          "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+          "native_attempts": [
+            {
+              "stage_id": "workflow",
+              "attempt_id": "e609a0d5-9f6c-57d8-9983-6cd56f89d89c",
+              "attempt_number": 1,
+              "shard_id": "canonical-alanine-tip3p",
+              "outcome": "succeeded",
+              "resource_released": true,
+              "workload_name": "fs2-workflow-canonical-al-a1-819b7e0bf943",
+              "workload_namespace": "fs2-models",
+              "workload_uid": "e4d5a643-e50c-4684-876d-f6b9565ccb4f",
+              "scheduling_admission": {
+                "accelerator_count": 1,
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "admitted_at": "2026-09-25T06:58:50Z",
+                "admitted_resource_flavor": "inference-h100-ondemand-1x",
+                "resolved_pool_id": "h100-ondemand-1x"
+              }
+            }
+          ],
+          "cold_start_seconds": null,
+          "lifecycle": {
+            "accepted_at": "2026-09-25T06:58:49.271345Z",
+            "started_at": "2026-09-25T06:58:49.761218Z",
+            "ready_at": null,
+            "completed_at": "2026-09-25T07:00:04.863581Z"
+          },
+          "server_elapsed_seconds": 75.592236,
+          "customer_client": {
+            "started_at": "2026-09-25T06:58:32.965083+00:00",
+            "completed_at": "2026-09-25T07:00:27.182351+00:00",
+            "artifact_count": 40,
+            "state": "succeeded"
+          },
+          "customer_bucket_output": {
+            "bytes": 12584475,
+            "case_id": "molecular-dynamics/alanine-quickstart",
+            "job_id": "canonical-alanine-tip3p",
+            "model_id": "amber",
+            "objects": 39,
+            "operation_id": "45ff0eb1-fb47-4914-96ee-0a61a43f99e9",
+            "state": "passed"
+          }
+        },
+        {
+          "case_id": "molecular-dynamics/alanine-quickstart",
+          "model_id": "lammps",
+          "state": "passed",
+          "operation_id": "c3837522-11a2-4de0-9992-6f625e97ecd4",
+          "recipe_sha256": "d5a4f59f4f05a7c12d0bdaf9296db984d215bedc0936d359460eada241bf85a0",
+          "input_sha256": "e72743996aa81d429f6acd8da2afc7c231a147b8b788403e30147a280ac5c01b",
+          "jobs": [
+            {
+              "job_id": "alanine-canonical",
+              "stages": [
+                {
+                  "stage": "nvt",
+                  "frames": 21,
+                  "first_ps": 0,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "dd0e407d3533c6088c8c4c8bf7c7a98fd374b6219873b56f9370fe199c56bdbe"
+                  ]
+                },
+                {
+                  "stage": "npt",
+                  "frames": 21,
+                  "first_ps": 20,
+                  "last_ps": 40,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "52fca79576b55a8b18792356c1cef380ecd745e1071814666aaa05517afec770"
+                  ]
+                },
+                {
+                  "stage": "production",
+                  "frames": 21,
+                  "first_ps": 40,
+                  "last_ps": 60,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "4e3568f9584465e6fd1758f5ff258292d9f7309ee9caeb64371600294845c76d"
+                  ]
+                }
+              ],
+              "completed_steps": [
+                "minimize",
+                "nvt",
+                "npt",
+                "production"
+              ],
+              "native_engine_id": "nvcr.io/nvidia/lammps@sha256:d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+              "native_recipe_sha256": "6d98041611ce9a91dfaad23fae4b6183a91d9a72c2a6972272f86a557a94195c",
+              "native_build": "sm90",
+              "native_gpu_report": null,
+              "density_mean_g_cm3": 0.9833109747951425,
+              "native_restart_used": false,
+              "scientific_convergence_claimed": false,
+              "gpu_snapshot_used": false
+            }
+          ],
+          "checked_artifacts": 42,
+          "observation_seconds": 309.367,
+          "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+          "model_revision": "d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+          "parent_operation_runtime": {
+            "gpu_count": 0,
+            "gpu_uuids": [],
+            "node_uid": null,
+            "pod_uid": null,
+            "preemptible": null
+          },
+          "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+          "native_attempts": [
+            {
+              "stage_id": "workflow",
+              "attempt_id": "663ff4fb-753d-5d3e-8862-fc8a064066a3",
+              "attempt_number": 1,
+              "shard_id": "alanine-canonical",
+              "outcome": "succeeded",
+              "resource_released": true,
+              "workload_name": "fs2-workflow-alanine-cano-a1-e491e0dbd1c9",
+              "workload_namespace": "fs2-models",
+              "workload_uid": "982ae98f-bca1-455c-a8d6-af37fa13d11e",
+              "scheduling_admission": {
+                "accelerator_count": 1,
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "admitted_at": "2026-09-25T07:00:42Z",
+                "admitted_resource_flavor": "inference-h100-ondemand-1x",
+                "resolved_pool_id": "h100-ondemand-1x"
+              }
+            }
+          ],
+          "cold_start_seconds": null,
+          "lifecycle": {
+            "accepted_at": "2026-09-25T07:00:41.308956Z",
+            "started_at": "2026-09-25T07:00:41.857012Z",
+            "ready_at": null,
+            "completed_at": "2026-09-25T07:05:05.875354Z"
+          },
+          "server_elapsed_seconds": 264.566398,
+          "customer_client": {
+            "started_at": "2026-09-25T07:00:22.751198+00:00",
+            "completed_at": "2026-09-25T07:05:32.119371+00:00",
+            "artifact_count": 42,
+            "state": "succeeded"
+          },
+          "customer_bucket_output": {
+            "bytes": 56770013,
+            "case_id": "molecular-dynamics/alanine-quickstart",
+            "job_id": "alanine-canonical",
+            "model_id": "lammps",
+            "objects": 38,
+            "operation_id": "c3837522-11a2-4de0-9992-6f625e97ecd4",
+            "state": "passed"
+          }
+        }
+      ]
+    },
+    {
+      "cohort": 2,
+      "workspace": "new_default_workspace",
+      "started_at": "2026-09-25T07:06:26.853244+00:00",
+      "completed_at": "2026-09-25T07:13:22.028560+00:00",
+      "results": [
+        {
+          "case_id": "molecular-dynamics/alanine-quickstart",
+          "model_id": "gromacs",
+          "state": "passed",
+          "operation_id": "1baf1cc6-ba4f-48a2-99a2-fa62ae0ae061",
+          "recipe_sha256": "63fafe70f4a37e4ed6e9d21d9c23363574de6fede9c62ee8095290a3f9a94408",
+          "input_sha256": "3e4df01952fa17b879b3ebf0b1b4c48763a0b8124fe35416d26333437a75150f",
+          "jobs": [
+            {
+              "job_id": "canonical-alanine",
+              "stages": [
+                {
+                  "stage": "nvt",
+                  "frames": 21,
+                  "first_ps": 0,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "31a96a444871949ae5d02eb8cd11f50c35168ee62214bc5a074610ff6cecf084"
+                  ]
+                },
+                {
+                  "stage": "npt",
+                  "frames": 21,
+                  "first_ps": 0,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "7f9df53a0a3525ce51d7fdf1510757a9ce1dd3fa0ee613ed5dbd40148618b097"
+                  ]
+                },
+                {
+                  "stage": "production",
+                  "frames": 21,
+                  "first_ps": 0,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "b21f3afe499d796a3048f0a6350ce4263473779b4d0808c62066110a43bf05aa"
+                  ]
+                }
+              ],
+              "completed_steps": [
+                "prepare-minimize",
+                "minimize",
+                "prepare-nvt",
+                "nvt",
+                "energies-nvt",
+                "prepare-npt",
+                "npt",
+                "energies-npt",
+                "prepare-production",
+                "production",
+                "energies-production",
+                "trajectory",
+                "check"
+              ],
+              "native_engine_id": "nvcr.io/nvidia/gromacs@sha256:0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+              "native_recipe_sha256": "a9a887485741695117d6580152808c81b899e81d7e1c7aded0f9d380dde84e56",
+              "native_build": null,
+              "native_gpu_report": null,
+              "density_mean_g_cm3": 0.9709374539679523,
+              "native_restart_used": false,
+              "scientific_convergence_claimed": false,
+              "gpu_snapshot_used": false
+            }
+          ],
+          "checked_artifacts": 54,
+          "observation_seconds": 155.859,
+          "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+          "model_revision": "0e52e3ae971453898956379952b9ea606f5400cbdb4d439773ecbae4d8f5ad59",
+          "parent_operation_runtime": {
+            "gpu_count": 0,
+            "gpu_uuids": [],
+            "node_uid": null,
+            "pod_uid": null,
+            "preemptible": null
+          },
+          "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+          "native_attempts": [
+            {
+              "stage_id": "workflow",
+              "attempt_id": "2aa30c25-ad52-5cda-b9f2-2cac0462c4d9",
+              "attempt_number": 1,
+              "shard_id": "canonical-alanine",
+              "outcome": "succeeded",
+              "resource_released": true,
+              "workload_name": "fs2-workflow-canonical-al-a1-cd2a70ca0500",
+              "workload_namespace": "fs2-models",
+              "workload_uid": "1ad29cfa-b21d-4831-b50d-7b6f8045b4b3",
+              "scheduling_admission": {
+                "accelerator_count": 1,
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "admitted_at": "2026-09-25T07:06:54Z",
+                "admitted_resource_flavor": "inference-h100-ondemand-1x",
+                "resolved_pool_id": "h100-ondemand-1x"
+              }
+            }
+          ],
+          "cold_start_seconds": null,
+          "lifecycle": {
+            "accepted_at": "2026-09-25T07:06:53.863151Z",
+            "started_at": "2026-09-25T07:06:54.463406Z",
+            "ready_at": null,
+            "completed_at": "2026-09-25T07:08:32.813396Z"
+          },
+          "server_elapsed_seconds": 98.950245,
+          "customer_client": {
+            "started_at": "2026-09-25T07:06:26.853244+00:00",
+            "completed_at": "2026-09-25T07:09:02.714353+00:00",
+            "artifact_count": 54,
+            "state": "succeeded"
+          },
+          "customer_bucket_output": {
+            "bytes": 10770451,
+            "case_id": "molecular-dynamics/alanine-quickstart",
+            "job_id": "canonical-alanine",
+            "model_id": "gromacs",
+            "objects": 55,
+            "operation_id": "1baf1cc6-ba4f-48a2-99a2-fa62ae0ae061",
+            "state": "passed"
+          }
+        },
+        {
+          "case_id": "molecular-dynamics/alanine-quickstart",
+          "model_id": "namd",
+          "state": "passed",
+          "operation_id": "9b99840b-de6f-4042-acee-cd3a580e80fd",
+          "recipe_sha256": "e8d12a426cd54ee2a34f63d60184decc4deadd342d1fdd193fecb26002d95ba9",
+          "input_sha256": "6383f1758f0d0e116cb3d257e3c2678fd168d9be7e3926d5c7f0f46ec486d6e0",
+          "jobs": [
+            {
+              "job_id": "rep-1",
+              "stages": [
+                {
+                  "stage": "nvt",
+                  "frames": 20,
+                  "first_ps": 11.000000032795464,
+                  "last_ps": 30.000000089442175,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "c7c35e8c072e9002a42143b160ae86c86b9bd338909e4534c2b92e6eae0c527b"
+                  ]
+                },
+                {
+                  "stage": "npt",
+                  "frames": 20,
+                  "first_ps": 31.00000009242358,
+                  "last_ps": 50.00000014907029,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "6c2b1f7c5b387da7065f689967001154550a680d1412b9a01b069ee4034857a2"
+                  ]
+                },
+                {
+                  "stage": "production",
+                  "frames": 20,
+                  "first_ps": 51.0000001520517,
+                  "last_ps": 70.00000020869841,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "f7ee77b43a454d933cdac6b47e00615595fd126d8f8603316e9397426b3132fc"
+                  ]
+                }
+              ],
+              "completed_steps": [
+                "minimize",
+                "nvt",
+                "npt",
+                "production"
+              ],
+              "native_engine_id": "nvcr.io/nvidia/namd@sha256:e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+              "native_recipe_sha256": "ab0387f446ef8e2e8f4c76e28d9b17daec842c942cde2132eb03efec12ec0fbd",
+              "native_build": null,
+              "native_gpu_report": null,
+              "density_mean_g_cm3": 0.9831250609996129,
+              "native_restart_used": false,
+              "scientific_convergence_claimed": false,
+              "gpu_snapshot_used": false
+            }
+          ],
+          "checked_artifacts": 58,
+          "observation_seconds": 128.03,
+          "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+          "model_revision": "e1ebab672b968e0b287ba91c3dc19cdad9b693e8b59e74d7782cb753d6a7460f",
+          "parent_operation_runtime": {
+            "gpu_count": 0,
+            "gpu_uuids": [],
+            "node_uid": null,
+            "pod_uid": null,
+            "preemptible": null
+          },
+          "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+          "native_attempts": [
+            {
+              "stage_id": "workflow",
+              "attempt_id": "825141d2-142f-51b0-8265-14eecc9b165a",
+              "attempt_number": 1,
+              "shard_id": "rep-1",
+              "outcome": "succeeded",
+              "resource_released": true,
+              "workload_name": "fs2-workflow-rep-1-a1-2e2306663e94",
+              "workload_namespace": "fs2-models",
+              "workload_uid": "38e4ff78-11ce-4e73-a50b-f2946e087d13",
+              "scheduling_admission": {
+                "accelerator_count": 1,
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "admitted_at": "2026-09-25T07:06:52Z",
+                "admitted_resource_flavor": "inference-h100-ondemand-1x",
+                "resolved_pool_id": "h100-ondemand-1x"
+              }
+            }
+          ],
+          "cold_start_seconds": null,
+          "lifecycle": {
+            "accepted_at": "2026-09-25T07:06:51.518142Z",
+            "started_at": "2026-09-25T07:06:51.997062Z",
+            "ready_at": null,
+            "completed_at": "2026-09-25T07:08:03.370795Z"
+          },
+          "server_elapsed_seconds": 71.852653,
+          "customer_client": {
+            "started_at": "2026-09-25T07:06:26.877627+00:00",
+            "completed_at": "2026-09-25T07:08:34.909743+00:00",
+            "artifact_count": 58,
+            "state": "succeeded"
+          },
+          "customer_bucket_output": {
+            "bytes": 16166125,
+            "case_id": "molecular-dynamics/alanine-quickstart",
+            "job_id": "rep-1",
+            "model_id": "namd",
+            "objects": 77,
+            "operation_id": "9b99840b-de6f-4042-acee-cd3a580e80fd",
+            "state": "passed"
+          }
+        },
+        {
+          "case_id": "molecular-dynamics/alanine-quickstart",
+          "model_id": "amber",
+          "state": "passed",
+          "operation_id": "b6c4ff05-156f-4cbc-80db-97396de41c5e",
+          "recipe_sha256": "3eb7e5345d5677c74a63a06b7bef3f56ffb4b113a77d7cde16201637c5c4f995",
+          "input_sha256": "6c5b852faa8c68248052b90f30a742412aa9dbc8b1c798acc80786a42b3d1c81",
+          "jobs": [
+            {
+              "job_id": "canonical-alanine-tip3p",
+              "stages": [
+                {
+                  "stage": "nvt",
+                  "frames": 20,
+                  "first_ps": 1,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "d12d879479b6fabc880d11116cb31a97a13d02b904fbfec1ee6eee5bb3801220"
+                  ]
+                },
+                {
+                  "stage": "npt",
+                  "frames": 20,
+                  "first_ps": 21,
+                  "last_ps": 40,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "7a328c0fec8e5481e432a1a96b8f94e4c6d0a53ea78f19c69ddacff87530298c"
+                  ]
+                },
+                {
+                  "stage": "production",
+                  "frames": 20,
+                  "first_ps": 41,
+                  "last_ps": 60,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "6ca663432ab05375197fb8345dd648304e0ebdc0a36069ebab574d3bdbd6fc2c"
+                  ]
+                }
+              ],
+              "completed_steps": [
+                "inspect",
+                "minimize",
+                "nvt",
+                "npt",
+                "production-001",
+                "analyze"
+              ],
+              "native_engine_id": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/amber26-engine@sha256:cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+              "native_recipe_sha256": "43ae0bdd67fc2699729bf43dbe5d19e52182a33a08691c823b67b856a229c1cd",
+              "native_build": null,
+              "native_gpu_report": "NVIDIA H100 80GB HBM3, GPU-e8da8985-f0cc-43f6-9a6e-78f4ababcd10, 580.173.02, 9.0",
+              "density_mean_g_cm3": 0.9601448535161634,
+              "native_restart_used": false,
+              "scientific_convergence_claimed": false,
+              "gpu_snapshot_used": false
+            }
+          ],
+          "checked_artifacts": 40,
+          "observation_seconds": 115.944,
+          "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+          "model_revision": "cea619dcb5f8a8577a17edd7ce0fdd70e6718838f9d5af47d7731ca8388fab48",
+          "parent_operation_runtime": {
+            "gpu_count": 0,
+            "gpu_uuids": [],
+            "node_uid": null,
+            "pod_uid": null,
+            "preemptible": null
+          },
+          "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+          "native_attempts": [
+            {
+              "stage_id": "workflow",
+              "attempt_id": "83275a57-4055-5c8c-82da-0462c93082e8",
+              "attempt_number": 1,
+              "shard_id": "canonical-alanine-tip3p",
+              "outcome": "succeeded",
+              "resource_released": true,
+              "workload_name": "fs2-workflow-canonical-al-a1-4c1e6624dec0",
+              "workload_namespace": "fs2-models",
+              "workload_uid": "ea896fab-8b3a-4fc8-9689-adf60d240a4e",
+              "scheduling_admission": {
+                "accelerator_count": 1,
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "admitted_at": "2026-09-25T07:06:50Z",
+                "admitted_resource_flavor": "inference-h100-ondemand-1x",
+                "resolved_pool_id": "h100-ondemand-1x"
+              }
+            }
+          ],
+          "cold_start_seconds": null,
+          "lifecycle": {
+            "accepted_at": "2026-09-25T07:06:47.873032Z",
+            "started_at": "2026-09-25T07:06:48.502026Z",
+            "ready_at": null,
+            "completed_at": "2026-09-25T07:07:58.058679Z"
+          },
+          "server_elapsed_seconds": 70.185647,
+          "customer_client": {
+            "started_at": "2026-09-25T07:06:26.883828+00:00",
+            "completed_at": "2026-09-25T07:08:22.829860+00:00",
+            "artifact_count": 40,
+            "state": "succeeded"
+          },
+          "customer_bucket_output": {
+            "bytes": 12583584,
+            "case_id": "molecular-dynamics/alanine-quickstart",
+            "job_id": "canonical-alanine-tip3p",
+            "model_id": "amber",
+            "objects": 39,
+            "operation_id": "b6c4ff05-156f-4cbc-80db-97396de41c5e",
+            "state": "passed"
+          }
+        },
+        {
+          "case_id": "molecular-dynamics/alanine-quickstart",
+          "model_id": "lammps",
+          "state": "passed",
+          "operation_id": "f5e78fd6-4a21-4113-bbad-3798cf393f34",
+          "recipe_sha256": "d5a4f59f4f05a7c12d0bdaf9296db984d215bedc0936d359460eada241bf85a0",
+          "input_sha256": "e72743996aa81d429f6acd8da2afc7c231a147b8b788403e30147a280ac5c01b",
+          "jobs": [
+            {
+              "job_id": "alanine-canonical",
+              "stages": [
+                {
+                  "stage": "nvt",
+                  "frames": 21,
+                  "first_ps": 0,
+                  "last_ps": 20,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "975975353da5538e5bb65b5ff160b1b3f2847f042189be43e8f2d6615ae851d3"
+                  ]
+                },
+                {
+                  "stage": "npt",
+                  "frames": 21,
+                  "first_ps": 20,
+                  "last_ps": 40,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "8df44c3e55b9071982fbe4dfd9a3d5c1fd4f30a9bdde25eeaacdfb5fd0126856"
+                  ]
+                },
+                {
+                  "stage": "production",
+                  "frames": 21,
+                  "first_ps": 40,
+                  "last_ps": 60,
+                  "requested_ps": 20,
+                  "trajectory_sha256": [
+                    "b291d4fcd1b3b1fc5812a6c0b24460e9b05145862db6c6744c970602e429bf96"
+                  ]
+                }
+              ],
+              "completed_steps": [
+                "minimize",
+                "nvt",
+                "npt",
+                "production"
+              ],
+              "native_engine_id": "nvcr.io/nvidia/lammps@sha256:d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+              "native_recipe_sha256": "6d98041611ce9a91dfaad23fae4b6183a91d9a72c2a6972272f86a557a94195c",
+              "native_build": "sm90",
+              "native_gpu_report": null,
+              "density_mean_g_cm3": 0.9850267263786047,
+              "native_restart_used": false,
+              "scientific_convergence_claimed": false,
+              "gpu_snapshot_used": false
+            }
+          ],
+          "checked_artifacts": 42,
+          "observation_seconds": 299.191,
+          "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
+          "model_revision": "d8a0076dfe84fcbc98db05531993c1cd9deb964050b9c122b92655dc3685d731",
+          "parent_operation_runtime": {
+            "gpu_count": 0,
+            "gpu_uuids": [],
+            "node_uid": null,
+            "pod_uid": null,
+            "preemptible": null
+          },
+          "runtime_scope": "Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+          "native_attempts": [
+            {
+              "stage_id": "workflow",
+              "attempt_id": "179ded68-0426-548b-886c-69036aede2f3",
+              "attempt_number": 1,
+              "shard_id": "alanine-canonical",
+              "outcome": "succeeded",
+              "resource_released": true,
+              "workload_name": "fs2-workflow-alanine-cano-a1-d33cbbfdf542",
+              "workload_namespace": "fs2-models",
+              "workload_uid": "9ccc130c-2c34-493e-b0b3-cb1564fcc4e4",
+              "scheduling_admission": {
+                "accelerator_count": 1,
+                "accelerator_resource_name": "nvidia.com/gpu",
+                "admitted_at": "2026-09-25T07:08:40Z",
+                "admitted_resource_flavor": "inference-h100-ondemand-1x",
+                "resolved_pool_id": "h100-ondemand-1x"
+              }
+            }
+          ],
+          "cold_start_seconds": null,
+          "lifecycle": {
+            "accepted_at": "2026-09-25T07:08:38.847469Z",
+            "started_at": "2026-09-25T07:08:39.549469Z",
+            "ready_at": null,
+            "completed_at": "2026-09-25T07:12:57.853885Z"
+          },
+          "server_elapsed_seconds": 259.006416,
+          "customer_client": {
+            "started_at": "2026-09-25T07:08:22.836430+00:00",
+            "completed_at": "2026-09-25T07:13:22.028560+00:00",
+            "artifact_count": 42,
+            "state": "succeeded"
+          },
+          "customer_bucket_output": {
+            "bytes": 56767419,
+            "case_id": "molecular-dynamics/alanine-quickstart",
+            "job_id": "alanine-canonical",
+            "model_id": "lammps",
+            "objects": 38,
+            "operation_id": "f5e78fd6-4a21-4113-bbad-3798cf393f34",
+            "state": "passed"
+          }
+        }
+      ]
+    }
+  ],
+  "completed_local_replay": {
+    "native_resubmissions": 0,
+    "network_client_prohibited": true,
+    "results": [
+      {
+        "model_id": "gromacs",
+        "operation_id": "a5318d02-85bb-4561-a8e3-b5456813ac63",
+        "state": "passed",
+        "unchanged_receipt_sha256": "1ac7699cebb25e26bf2a16ab2336348d03f799e76d38475293e215c46b2c5a4d"
+      },
+      {
+        "model_id": "namd",
+        "operation_id": "60e8626f-7a38-4199-9692-59525ac078c6",
+        "state": "passed",
+        "unchanged_receipt_sha256": "be76b3fb06b45587878ecfbfc27d321830d9488b8a9ca5ae1c3365813a64137e"
+      },
+      {
+        "model_id": "amber",
+        "operation_id": "45ff0eb1-fb47-4914-96ee-0a61a43f99e9",
+        "state": "passed",
+        "unchanged_receipt_sha256": "853fd4448dc1f72005f48fc4a2bf256c23d30388a723065f1a46d8613801be4c"
+      },
+      {
+        "model_id": "lammps",
+        "operation_id": "c3837522-11a2-4de0-9992-6f625e97ecd4",
+        "state": "passed",
+        "unchanged_receipt_sha256": "b8df5be1c32197cf4624017b814d1430892a8bdd4bc5e9819f112d0d6f4d8049"
+      }
+    ],
+    "run_receipts_unchanged": true,
+    "schema": "fs2-md-completed-local-replay/v1",
+    "scope": "Completed packaged-client replay and artifact checksum verification, not server-side retry/load qualification. Previously revoked temporary key was not sent to any service."
+  },
+  "final_release_and_native_job_cleanup": {
+    "at": "2026-09-25 07:15:03 UTC",
+    "helm": {
+      "revision": 230,
+      "updated": "2026-09-25T06:54:37.003026512Z",
+      "status": "deployed",
+      "chart": "fs2-serve-control-plane-0.5.0",
+      "app_version": "0.1.0",
+      "description": "Upgrade complete"
+    },
+    "deployments": [
+      {
+        "name": "fs2-serve-control-plane",
+        "generation": 340,
+        "desired": 3,
+        "ready": 3,
+        "available": 3,
+        "containers": [
+          {
+            "name": "control-plane",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:3840f45bf49e5736da009820f374da58897ca94b242fc62a3eb5a3f6121a78fb"
+          }
+        ],
+        "init_containers": [
+          {
+            "name": "install-starter-pack",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/customer-starter-data@sha256:58a2a15581d4abf7fe661f814bd5c38e5e7a4500ae97db7322e2442c0932b50c"
+          },
+          {
+            "name": "wait-schema",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:3840f45bf49e5736da009820f374da58897ca94b242fc62a3eb5a3f6121a78fb"
+          }
+        ]
+      },
+      {
+        "name": "fs2-serve-control-plane-model-controller",
+        "generation": 189,
+        "desired": 2,
+        "ready": 2,
+        "available": 2,
+        "containers": [
+          {
+            "name": "model-controller",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:3840f45bf49e5736da009820f374da58897ca94b242fc62a3eb5a3f6121a78fb"
+          }
+        ],
+        "init_containers": []
+      },
+      {
+        "name": "fs2-serve-control-plane-admin-console",
+        "generation": 38,
+        "desired": 2,
+        "ready": 2,
+        "available": 2,
+        "containers": [
+          {
+            "name": "admin-console",
+            "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-admin-console@sha256:d0c75f341328ff06eaae841493039cbd0b29ed251dfc3affdecc686dc7c1b3b4"
+          }
+        ],
+        "init_containers": []
+      }
+    ],
+    "native_jobs_checked": 8,
+    "retained_native_jobs": 0
+  }
+}

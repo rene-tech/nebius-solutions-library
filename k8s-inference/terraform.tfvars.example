@@ -240,7 +240,8 @@ deployment = {
   # }
 
   # Merge into deployment.storage when enabling customer starter examples.
-  # Pin an approved pack from starter-data/release-v1.json. Mirror the data
+  # Pin a deployed, approved pack from starter-data/release-v*.json; check its
+  # deployment_status rather than assuming an older version is current. Mirror the data
   # image into a registry accessible to this cluster when using another project
   # or region; preserve its manifest checksum. Empty tenants means every
   # eligible workspace; existing disabled/excluded storage stays disabled.
