@@ -20,6 +20,102 @@ from botocore.config import Config
 from md_acceptance import TENANTS, checked
 
 
+def verify_exports(s3, bucket, access, runs):
+    """Read the actual customer copies, not merely the platform artifact store."""
+    verified = []
+    for run in runs:
+        receipt = json.loads((run / "receipt.json").read_bytes())
+        identity = receipt["identity"]
+        if (
+            receipt["state"] != "succeeded"
+            or identity["caller_sha256"] != runner.sha(access["secret"].encode())
+            or not identity["case_id"].startswith("molecular-dynamics/")
+        ):
+            raise ValueError("completed_owned_md_run_required")
+        native = []
+        for item in receipt["artifacts"]:
+            if item["media_type"] != "application/json":
+                continue
+            path = run / item["local_path"]
+            if runner.file_sha(path) != item["sha256"]:
+                raise ValueError("native_receipt_changed")
+            value = json.loads(path.read_bytes())
+            if value.get("schema", "").endswith("-workflow-result/v1"):
+                native.append(value)
+        if not native:
+            raise ValueError("native_result_missing")
+        for result in native:
+            prefix = (
+                "runs/starter-md/"
+                + identity["case_id"].split("/")[-1]
+                + "/"
+                + identity["model_id"]
+                + "/"
+                + receipt["operation_id"]
+                + "/"
+                + result["job_id"]
+                + "/"
+            )
+            checkpoints = []
+            for page in s3.get_paginator("list_objects_v2").paginate(
+                Bucket=bucket, Prefix=prefix
+            ):
+                checkpoints.extend(
+                    o["Key"]
+                    for o in page.get("Contents", [])
+                    if "/checkpoint-" in o["Key"] and o["Key"].endswith(".json")
+                )
+            if not checkpoints:
+                raise ValueError("customer_checkpoint_missing")
+            response = s3.get_object(Bucket=bucket, Key=max(checkpoints))
+            try:
+                checkpoint = json.loads(response["Body"].read(16 * 1024**2))
+            finally:
+                response["Body"].close()
+            if checkpoint["state"]["completed_steps"] != result["completed_steps"]:
+                raise ValueError("customer_checkpoint_incomplete")
+            expected = {
+                f["path"]: (f["sha256"], f["size_bytes"]) for f in result["files"]
+            }
+            exported = {
+                f["path"]: (f["sha256"], f["size_bytes"]) for f in checkpoint["files"]
+            }
+            if exported != expected:
+                raise ValueError("customer_export_inventory_differs")
+
+            def check_file(item, operation_prefix=prefix):
+                if item["key"] != operation_prefix + "objects/" + item["sha256"]:
+                    raise ValueError("customer_export_not_operation_scoped")
+                response = s3.get_object(Bucket=bucket, Key=item["key"])
+                digest, size = hashlib.sha256(), 0
+                try:
+                    for chunk in response["Body"].iter_chunks(chunk_size=1024**2):
+                        size += len(chunk)
+                        if size > item["size_bytes"]:
+                            raise ValueError("customer_export_size_mismatch")
+                        digest.update(chunk)
+                finally:
+                    response["Body"].close()
+                if size != item["size_bytes"] or digest.hexdigest() != item["sha256"]:
+                    raise ValueError("customer_export_checksum_mismatch")
+                return size
+
+            with ThreadPoolExecutor(max_workers=4) as pool:
+                sizes = list(pool.map(check_file, checkpoint["files"]))
+            verified.append(
+                {
+                    "case_id": identity["case_id"],
+                    "model_id": identity["model_id"],
+                    "operation_id": receipt["operation_id"],
+                    "job_id": result["job_id"],
+                    "objects": len(sizes),
+                    "bytes": sum(sizes),
+                    "state": "passed",
+                }
+            )
+    return verified
+
+
 def main(args):
     os.umask(0o077)
     access = json.loads(args.access.read_bytes())
@@ -104,6 +200,10 @@ def main(args):
             manifest_sha256=runner.sha(raw),
             downloaded_to=str(args.download) if args.download else None,
         )
+    if args.verify_runs:
+        report["customer_output_verification"] = verify_exports(
+            s3, state["bucket_name"], access, args.verify_runs
+        )
     s3.close()
     runner.save(args.output, report)
     print(json.dumps(report))
@@ -114,5 +214,6 @@ if __name__ == "__main__":
     parser.add_argument("--access", type=Path, required=True)
     parser.add_argument("--pack", type=Path)
     parser.add_argument("--download", type=Path)
+    parser.add_argument("--verify-runs", type=Path, nargs="+")
     parser.add_argument("--output", type=Path, required=True)
     main(parser.parse_args())
