@@ -119,6 +119,17 @@ def test_recovery_needs_both_historical_failure_and_observed_pool_exclusion():
         m.verify_recovery(status, snapshots, "h100-1x")
 
 
+def test_recovery_observer_accepts_null_before_failure_without_losing_backoff_evidence():
+    status, snapshots = recovered_case()
+    before_failure = deepcopy(snapshots[0])
+    before_failure["public_status"]["batch"]["stages"][0]["attempts"][0]["recovery"] = None
+    snapshots.insert(0, before_failure)
+    assert m.verify_recovery(status, snapshots, "h100-1x")[0]["replacement_attempt"] == "two"
+    snapshots[1]["public_status"]["batch"]["stages"][0]["attempts"][0]["recovery"] = None
+    with pytest.raises(m.GateError, match="public_retry_backoff_not_observed"):
+        m.verify_recovery(status, snapshots, "h100-1x")
+
+
 @pytest.mark.parametrize("kind", ["jobs", "pods", "workloads"])
 def test_replacement_cannot_overlap_old_job_pod_or_quota(kind):
     status, snapshots = recovered_case()

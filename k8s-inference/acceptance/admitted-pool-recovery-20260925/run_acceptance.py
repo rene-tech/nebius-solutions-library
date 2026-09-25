@@ -491,7 +491,7 @@ def verify_recovery(status, observations, dead, failure=FAILURE):
         require(replacements, "replacement_manifest_not_observed")
         retry_times = [r["recovery"]["retry_not_before"] for o in observations if o.get("public_status")
                        for r in attempts(o["public_status"]) if r["attempt_id"] == first["attempt_id"]
-                       and r.get("recovery", {}).get("retry_not_before")]
+                       and (r.get("recovery") or {}).get("retry_not_before")]
         require(retry_times, "public_retry_backoff_not_observed")
         for snapshot in replacements:
             replacement = next(j for j in snapshot["jobs"] if j["attempt_id"] == second["attempt_id"])

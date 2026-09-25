@@ -25,28 +25,35 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def bundle(config, server_image, source, ca, cert, key, ingress_cidrs=()):
+def instance_identity(instance):
+    injector.require(instance in ("recovery", "init", "synthetic"), "unknown_injector_instance")
+    suffix = "" if instance == "recovery" else "-" + instance
+    return NAME + suffix, SERVER_NAMESPACE + suffix
+
+
+def bundle(config, server_image, source, ca, cert, key, ingress_cidrs=(), instance="recovery"):
     injector.validate_config(config)
     injector.require(re.fullmatch(injector.IMAGE_PATTERN, server_image), "server_image_unpinned")
-    labels = {"app.kubernetes.io/name": NAME, "app.kubernetes.io/part-of": injector.TENANT, OWNER: injector.TENANT}
+    name, namespace_name = instance_identity(instance)
+    labels = {"app.kubernetes.io/name": name, "app.kubernetes.io/part-of": injector.TENANT, OWNER: injector.TENANT}
 
-    def resource(api, kind, name=NAME, namespaced=True, **fields):
-        meta = {"name": name, "labels": dict(labels)}
+    def resource(api, kind, resource_name=name, namespaced=True, **fields):
+        meta = {"name": resource_name, "labels": dict(labels)}
         if namespaced:
-            meta["namespace"] = SERVER_NAMESPACE
+            meta["namespace"] = namespace_name
         return {"apiVersion": api, "kind": kind, "metadata": meta, **fields}
 
-    namespace = resource("v1", "Namespace", SERVER_NAMESPACE, namespaced=False)
+    namespace = resource("v1", "Namespace", namespace_name, namespaced=False)
     namespace["metadata"]["labels"].update({"pod-security.kubernetes.io/enforce": "restricted"})
-    secret = resource("v1", "Secret", NAME + "-tls", type="kubernetes.io/tls", immutable=True,
+    secret = resource("v1", "Secret", name + "-tls", type="kubernetes.io/tls", immutable=True,
                       data={"tls.crt": base64.b64encode(cert).decode(), "tls.key": base64.b64encode(key).decode()})
     account = resource("v1", "ServiceAccount", automountServiceAccountToken=False)
-    code = resource("v1", "ConfigMap", NAME + "-code", immutable=True,
+    code = resource("v1", "ConfigMap", name + "-code", immutable=True,
                     data={"admission_injector.py": source, "config.json": json.dumps(config, sort_keys=True)})
     service = resource("v1", "Service", spec={"type": "ClusterIP", "selector": labels,
         "ports": [{"name": "https", "port": 443, "targetPort": "https", "protocol": "TCP"}]})
     probe = {"httpGet": {"path": "/healthz", "port": "https", "scheme": "HTTPS"}, "timeoutSeconds": 1}
-    pod = {"serviceAccountName": NAME, "automountServiceAccountToken": False, "enableServiceLinks": False,
+    pod = {"serviceAccountName": name, "automountServiceAccountToken": False, "enableServiceLinks": False,
         "terminationGracePeriodSeconds": 5,
         "securityContext": {"runAsNonRoot": True, "runAsUser": 65532, "runAsGroup": 65532,
                             "fsGroup": 65532, "seccompProfile": {"type": "RuntimeDefault"}},
@@ -63,8 +70,8 @@ def bundle(config, server_image, source, ca, cert, key, ingress_cidrs=()):
             "readinessProbe": {**probe, "periodSeconds": 2, "failureThreshold": 2},
             "livenessProbe": {**probe, "periodSeconds": 10, "failureThreshold": 3},
             "volumeMounts": [{"name": "code", "mountPath": "/injector", "readOnly": True}, {"name": "tls", "mountPath": "/tls", "readOnly": True}]}],
-        "volumes": [{"name": "code", "configMap": {"name": NAME + "-code", "defaultMode": 0o444}},
-                    {"name": "tls", "secret": {"secretName": NAME + "-tls", "defaultMode": 0o440}}]}
+        "volumes": [{"name": "code", "configMap": {"name": name + "-code", "defaultMode": 0o444}},
+                    {"name": "tls", "secret": {"secretName": name + "-tls", "defaultMode": 0o440}}]}
     deployment = resource("apps/v1", "Deployment", spec={"replicas": 1, "revisionHistoryLimit": 0,
         "strategy": {"type": "Recreate"}, "progressDeadlineSeconds": 180,
         "selector": {"matchLabels": labels}, "template": {"metadata": {"labels": labels}, "spec": pod}})
@@ -77,7 +84,7 @@ def bundle(config, server_image, source, ca, cert, key, ingress_cidrs=()):
     network = resource("networking.k8s.io/v1", "NetworkPolicy", spec={"podSelector": {"matchLabels": labels},
         "policyTypes": ["Ingress", "Egress"], "ingress": [ingress], "egress": []})
     webhook = resource("admissionregistration.k8s.io/v1", "MutatingWebhookConfiguration", namespaced=False, webhooks=[{
-        "name": NAME + ".acceptance.fs2.nebius.ai", "admissionReviewVersions": ["v1"], "sideEffects": "None",
+        "name": name + ".acceptance.fs2.nebius.ai", "admissionReviewVersions": ["v1"], "sideEffects": "None",
         "failurePolicy": "Ignore", "timeoutSeconds": 2, "reinvocationPolicy": "IfNeeded", "matchPolicy": "Exact",
         "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": injector.NAMESPACE}},
         "objectSelector": {"matchLabels": {injector.PREFIX + "tenant-id": injector.TENANT,
@@ -85,21 +92,22 @@ def bundle(config, server_image, source, ca, cert, key, ingress_cidrs=()):
         "matchConditions": [{"name": "exact-controller-creator", "expression": "request.userInfo.username in " + json.dumps(list(injector.CONTROLLERS))}],
         "rules": [{"apiGroups": ["batch"], "apiVersions": ["v1"], "resources": ["jobs"], "operations": ["CREATE"], "scope": "Namespaced"}],
         "clientConfig": {"caBundle": base64.b64encode(ca).decode(),
-                         "service": {"namespace": SERVER_NAMESPACE, "name": NAME, "port": 443, "path": "/mutate"}},
+                         "service": {"namespace": namespace_name, "name": name, "port": 443, "path": "/mutate"}},
     }])
     return {"namespace.json": namespace, "tls-secret-private.json": secret,
             "server.json": {"apiVersion": "v1", "kind": "List", "items": [account, code, service, network, deployment]},
             "webhook.json": webhook}
 
 
-def certificates(output):
+def certificates(output, instance="recovery"):
     """Root + service leaf, 24-hour lifetime, keys never emitted to stdout."""
-    dns = NAME + "." + SERVER_NAMESPACE + ".svc"
+    name, namespace = instance_identity(instance)
+    dns = name + "." + namespace + ".svc"
     commands = [
-        ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1", "-subj", "/CN=" + NAME + "-ca",
+        ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-sha256", "-days", "1", "-subj", "/CN=" + name + "-ca",
          "-addext", "basicConstraints=critical,CA:TRUE,pathlen:0", "-addext", "keyUsage=critical,keyCertSign,cRLSign",
          "-keyout", "ca-private.key", "-out", "ca.crt"],
-        ["req", "-new", "-newkey", "rsa:2048", "-nodes", "-sha256", "-subj", "/CN=" + NAME,
+        ["req", "-new", "-newkey", "rsa:2048", "-nodes", "-sha256", "-subj", "/CN=" + name,
          "-addext", "subjectAltName=DNS:" + dns + ",DNS:" + dns + ".cluster.local",
          "-addext", "basicConstraints=critical,CA:FALSE", "-addext", "keyUsage=critical,digitalSignature,keyEncipherment",
          "-addext", "extendedKeyUsage=serverAuth", "-keyout", "tls-private.key", "-out", "tls.csr"],
@@ -118,6 +126,8 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="New private directory; never a repository directory")
     parser.add_argument("--server-image", default=SERVER_IMAGE, help="Approved pinned public Python base; avoids private-registry credentials")
     parser.add_argument("--runtime-image", required=True, help="Exact unchanged GROMACS image digest")
+    parser.add_argument("--instance", choices=["recovery", "init", "synthetic"], default="recovery",
+                        help="Separate exact task-owned server/webhook identities; never updates an existing instance")
     parser.add_argument("--shard", default="window-01")
     parser.add_argument("--pause-seconds", type=int, default=0, help="0 disables; optional second-attempt pause 150..600")
     parser.add_argument("--synthetic-no-eligible-capacity", action="store_true", help="Separate synthetic eligibility test; never fleet exhaustion")
@@ -131,15 +141,22 @@ def main():
               "synthetic_no_capacity": args.synthetic_no_eligible_capacity,
               "expires_at": (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()}
     injector.validate_config(config)
+    if args.instance == "init":
+        injector.require(args.shard == "window-03" and args.pause_seconds >= 150 and not args.synthetic_no_eligible_capacity,
+                         "init_instance_requires_disjoint_window03_pause")
+    if args.instance == "synthetic":
+        injector.require(args.shard == "window-01" and args.synthetic_no_eligible_capacity and args.pause_seconds == 0,
+                         "synthetic_instance_requires_disjoint_window01_wait")
     injector.require(args.server_image == SERVER_IMAGE, "server_image_not_approved_base")
     output.mkdir(parents=True, mode=0o700, exist_ok=False)
-    ca, cert, key = certificates(output)
+    ca, cert, key = certificates(output, args.instance)
     source = Path(__file__).with_name("admission_injector.py").read_text()
-    resources = bundle(config, args.server_image, source, ca, cert, key, args.apiserver_source_cidr)
+    resources = bundle(config, args.server_image, source, ca, cert, key, args.apiserver_source_cidr, args.instance)
     for filename, value in resources.items():
         (output / filename).write_text(json.dumps(value, indent=2) + "\n")
     plan = {"schema": "admitted-pool-recovery-injector/v1", "state": "rendered-not-deployed", "config": config,
-            "server_image": args.server_image, "name": NAME, "namespace": SERVER_NAMESPACE,
+            "server_image": args.server_image, "name": instance_identity(args.instance)[0],
+            "namespace": instance_identity(args.instance)[1], "instance": args.instance,
             "source_sha256": hashlib.sha256(source.encode()).hexdigest(),
             "resource_sha256": {name: digest(value) for name, value in resources.items() if "private" not in name},
             "cleanup_order": ["webhook.json", "server.json", "tls-secret-private.json", "namespace.json"],
