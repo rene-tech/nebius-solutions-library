@@ -157,6 +157,12 @@ scientificBatch:
   leaseSeconds: "30"
   apiTimeoutSeconds: "5"
   tokenExpirationSeconds: 600
+  poolRecovery:
+    # Only confirmed pool loss with zero started Pods takes this fast path.
+    failureConfirmationSeconds: 120
+    admittedUnscheduledTimeoutSeconds: 7200
+    backoffBaseSeconds: 15
+    backoffMaxSeconds: 300
 
 # Canonical artifact service used by scientific controller jobs. Credentials
 # are read only from an existing Secret; signed locations are never persisted.

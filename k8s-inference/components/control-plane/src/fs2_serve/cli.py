@@ -91,10 +91,14 @@ from .scientific_batch.artifact_bridge import ArtifactServiceBridge, SignedArtif
 from .scientific_batch.canary import run_internal_cpu_canary
 from .scientific_batch.capability import ScientificWorkloadCapabilityAuthority
 from .scientific_batch.execution import FileScientificManifestRenderer
-from .scientific_batch.kubernetes import HttpScientificBatchCluster
 from .scientific_batch.lifecycle_bridge import ScientificLifecycleBridge
 from .scientific_batch.placement import execution_resource_envelope
-from .scientific_batch.policy import PolicyAwareScientificBatchController, PostgresScientificModelPolicyRepository
+from .scientific_batch.policy import PostgresScientificModelPolicyRepository
+from .scientific_batch.pool_recovery import (
+    PoolRecoveryPolicy,
+    PoolRecoveryScientificCluster,
+    PoolRecoveryScientificController,
+)
 from .scientific_batch.postgres_repository import PostgresScientificBatchRepository
 from .scientific_batch.profile_catalog import ScientificProfileCatalog
 from .scientific_batch.scheduling import SchedulingContractResolver
@@ -311,7 +315,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
     serving_snapshot_bundles: dict[str, dict[str, Any]] = {}
     scientific_batches: ScientificBatchService | None = None
     scientific_batch_worker: ScientificBatchWorker | None = None
-    scientific_batch_cluster: HttpScientificBatchCluster | AppScientificCluster | None = None
+    scientific_batch_cluster: PoolRecoveryScientificCluster | AppScientificCluster | None = None
     scientific_apps: ScientificAppsInventory | None = None
     scientific_repository: PostgresScientificBatchRepository | None = None
     scientific_capabilities: ScientificWorkloadCapabilityAuthority | None = None
@@ -413,8 +417,16 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         scientific_scheduling = AppScientificScheduling(scientific_scheduling, scientific_apps)
         if scientific_input_uploads is not None:
             scientific_input_uploads.profiles = scientific_profiles
+        pool_recovery = PoolRecoveryPolicy(
+            confirmation_seconds=settings.scientific_pool_failure_confirmation_seconds,
+            unscheduled_timeout_seconds=settings.scientific_admitted_unscheduled_timeout_seconds,
+            backoff_base_seconds=settings.scientific_pool_recovery_backoff_base_seconds,
+            backoff_max_seconds=settings.scientific_pool_recovery_backoff_max_seconds,
+        )
         scientific_batch_cluster = AppScientificCluster(
-            HttpScientificBatchCluster(
+            PoolRecoveryScientificCluster(
+                recovery_repository=scientific_repository,
+                recovery_policy=pool_recovery,
                 base_url=settings.scientific_batch_kubernetes_api_url,
                 token_file=settings.scientific_batch_kubernetes_token_file,
                 ca_file=settings.scientific_batch_kubernetes_ca_file,
@@ -436,7 +448,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
             service=artifact_service,
             lifecycle=lifecycle,
         )
-        scientific_controller = PolicyAwareScientificBatchController(
+        scientific_controller = PoolRecoveryScientificController(
+            recovery_policy=pool_recovery,
             repository=scientific_repository,
             cluster=scientific_batch_cluster,
             controller_id=settings.scientific_batch_controller_id or "scientific-batch-controller",

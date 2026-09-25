@@ -938,7 +938,17 @@
         "pollSeconds": {"type": "string", "pattern": "^(?:0\\.(?:0[5-9]|[1-9][0-9]*)|[1-9](?:\\.[0-9]+)?|[1-5][0-9](?:\\.[0-9]+)?|60(?:\\.0+)?)$"},
         "leaseSeconds": {"type": "string", "pattern": "^(?:[5-9]|[1-9][0-9]|[12][0-9]{2}|300)$"},
         "apiTimeoutSeconds": {"type": "string", "pattern": "^(?:0\\.[5-9][0-9]*|[1-9](?:\\.[0-9]+)?|[12][0-9](?:\\.[0-9]+)?|30(?:\\.0+)?)$"},
-        "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600}
+        "tokenExpirationSeconds": {"type": "integer", "minimum": 600, "maximum": 3600},
+        "poolRecovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "failureConfirmationSeconds": {"type": "integer", "minimum": 30, "maximum": 1800},
+            "admittedUnscheduledTimeoutSeconds": {"type": "integer", "minimum": 30, "maximum": 86400},
+            "backoffBaseSeconds": {"type": "integer", "minimum": 1, "maximum": 1800},
+            "backoffMaxSeconds": {"type": "integer", "minimum": 1, "maximum": 1800}
+          }
+        }
       },
       "additionalProperties": false
     },

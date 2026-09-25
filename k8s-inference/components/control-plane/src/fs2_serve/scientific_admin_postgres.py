@@ -417,6 +417,12 @@ def _attempt(
             "Waiting for a matching node: the Pod's placement or affinity requirements are not satisfied."
         ),
         "NodeProvisioning": "Waiting for a schedulable node in the selected pool; GPU computation has not started.",
+        "AdmittedPoolUnavailable": (
+            "The admitted pool has lost all registered nodes and has no observed scale-up progress. "
+            "The controller is confirming the bounded automatic recovery deadline; no GPU work has started."
+        ),
+        "PoolScaleUpInProgress": "Waiting for the selected pool's observed node scale-up; GPU work has not started.",
+        "PoolHealthUnknown": "Waiting for a node; current pool-health telemetry is unavailable or stale.",
     }
     phase_reason = None
     if attempt.outcome is AttemptOutcome.ACTIVE and attempt.last_phase is LifecyclePhase.NODE_PENDING:
@@ -427,7 +433,16 @@ def _attempt(
         code = _bounded(attempt.failure_code, 64, "scientific_attempt_failed")
         failure = ScientificError(
             code=code,
-            message=f"Scientific attempt failed with code {code}.",
+            message={
+                "admitted_pool_unavailable": (
+                    "The admitted GPU pool lost all registered nodes before this attempt started. "
+                    "Automatic recovery uses only this run's qualified pools and original attempt budget."
+                ),
+                "admitted_scheduling_timeout": (
+                    "The admitted attempt could not schedule before its startup deadline. "
+                    "Inspect the selected pool's capacity and placement constraints."
+                ),
+            }.get(code, f"Scientific attempt failed with code {code}."),
             retryable=attempt.failure_kind.retryable if attempt.failure_kind is not None else False,
         )
     return ScientificAttempt(
@@ -500,10 +515,13 @@ def _stages(
         by_subject[signal.subject_id].append(signal)
 
     def observed_attempt(attempt: ScientificAttemptState, resource_class: ResourceClass) -> ScientificAttempt:
+        from .scientific_batch.recovery_view import recovery_view
+
         observed = by_subject.get(attempt.attempt_id, [])
         joined = [row for row in correlations if row["attempt_id"] == attempt.attempt_id]
         result = _attempt(attempt, tuple(by_attempt.get(attempt.attempt_id, ())), resource_class=resource_class)
         return result.model_copy(update={
+            "recovery": recovery_view(state, attempt),
             "device_activity": activity_summaries(observed),
             "activity_capture_reason": activity_capture_reason(observed),
             "lifecycle_subject_id": str(attempt.attempt_id) if observed else None,

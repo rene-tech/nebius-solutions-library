@@ -171,6 +171,22 @@ def _pending_code(status: Mapping[str, Any], accelerator_resource: str | None) -
     return "NodeProvisioning"
 
 
+def _pods_unstarted(pods: object) -> bool:
+    """Positive evidence for every Pod, including every member of a gang."""
+    return isinstance(pods, list) and bool(pods) and all(
+        isinstance(pod, Mapping)
+        and isinstance(pod.get("spec"), Mapping)
+        and not pod["spec"].get("nodeName")
+        and isinstance(pod.get("status"), Mapping)
+        and pod["status"].get("phase") == "Pending"
+        and _condition(pod["status"], "PodScheduled", "False") is not None
+        and not any(pod["status"].get(key) for key in (
+            "containerStatuses", "initContainerStatuses", "ephemeralContainerStatuses",
+        ))
+        for pod in pods
+    )
+
+
 def _timestamp(condition: Mapping[str, Any], label: str) -> datetime:
     value = condition.get("lastTransitionTime")
     if not isinstance(value, str):
@@ -1482,6 +1498,7 @@ class HttpScientificBatchCluster:
             kueue_workload_uid=kueue_workload_uid,
             pod_uids=tuple(dict.fromkeys(pod_uids)),
             pod_lifecycle=tuple(pod_lifecycle),
+            pods_unstarted=_pods_unstarted(pods),
             pending_code=(
                 next((code for code in pending_codes if code != "NodeProvisioning"), "NodeProvisioning")
                 if LifecyclePhase.NODE_PENDING in phases else None

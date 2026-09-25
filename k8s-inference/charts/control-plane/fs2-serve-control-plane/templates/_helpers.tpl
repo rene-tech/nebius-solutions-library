@@ -409,6 +409,15 @@ app.kubernetes.io/component: model-controller
   value: {{ .Values.scientificBatch.leaseSeconds | quote }}
 - name: FS2_SCIENTIFIC_BATCH_API_TIMEOUT_SECONDS
   value: {{ .Values.scientificBatch.apiTimeoutSeconds | quote }}
+{{- $recovery := .Values.scientificBatch.poolRecovery | default dict }}
+- name: FS2_SCIENTIFIC_POOL_FAILURE_CONFIRMATION_SECONDS
+  value: {{ $recovery.failureConfirmationSeconds | default 120 | quote }}
+- name: FS2_SCIENTIFIC_ADMITTED_UNSCHEDULED_TIMEOUT_SECONDS
+  value: {{ $recovery.admittedUnscheduledTimeoutSeconds | default 7200 | quote }}
+- name: FS2_SCIENTIFIC_POOL_RECOVERY_BACKOFF_BASE_SECONDS
+  value: {{ $recovery.backoffBaseSeconds | default 15 | quote }}
+- name: FS2_SCIENTIFIC_POOL_RECOVERY_BACKOFF_MAX_SECONDS
+  value: {{ $recovery.backoffMaxSeconds | default 300 | quote }}
 {{- end }}
 - name: FS2_ADMIN_ADAPTER_TIMEOUT_SECONDS
   value: {{ .Values.adminReadAdapters.adapterTimeoutSeconds | quote }}

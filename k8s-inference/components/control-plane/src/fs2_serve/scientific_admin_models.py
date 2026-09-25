@@ -9,6 +9,7 @@ from pydantic import AwareDatetime, Field, model_validator
 
 from .models import StrictModel
 from .scientific_activity import DeviceActivitySummary
+from .scientific_batch.recovery_view import ScientificPoolRecovery
 
 
 class ScientificServiceClass(StrEnum):
@@ -274,6 +275,7 @@ class ScientificAttempt(StrictModel):
     observed_gpu_uuids: list[str] = Field(default_factory=list, max_length=1024)
     device_activity: list[DeviceActivitySummary] = Field(default_factory=list, max_length=1024)
     activity_capture_reason: str = "dcgm_not_captured"
+    recovery: ScientificPoolRecovery | None = None
 
 
 class ScientificStage(StrictModel):

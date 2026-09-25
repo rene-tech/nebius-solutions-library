@@ -38,6 +38,7 @@ from .models import (
     WorkloadKind,
     accelerator_admission_projection,
 )
+from .pool_recovery import PoolRecoveryPolicy
 from .postgres_repository import ScientificBatchNotFoundError
 from .profile_catalog import (
     ScientificProfileCatalog,
@@ -46,6 +47,7 @@ from .profile_catalog import (
     profile_has_complete_qualification_evidence,
 )
 from .protocols import BatchRepositoryConflictError
+from .recovery_view import ScientificPoolRecovery, recovery_view
 from .scheduling import SchedulingContractError, SchedulingContractResolver
 
 
@@ -173,6 +175,7 @@ class ScientificAttemptView(StrictModel):
     scheduling_admission: PublicSchedulingAdmission | None
     failure_kind: FailureKind | None
     failure_code: str | None
+    recovery: ScientificPoolRecovery | None = None
 
 
 class ScientificStageView(StrictModel):
@@ -412,7 +415,9 @@ class ScientificBatchService:
         }
 
     @staticmethod
-    def _state_view(operation: OperationView, state: ScientificBatchState) -> dict[str, Any]:
+    def _state_view(
+        operation: OperationView, state: ScientificBatchState, *, recovery_policy: PoolRecoveryPolicy | None = None,
+    ) -> dict[str, Any]:
         # Scientific results are committed to the artifact plane rather than the
         # generic operation response ciphertext.  Project the artifact
         # controller's publication state into the shared Operation view so a
@@ -464,6 +469,7 @@ class ScientificBatchService:
                                 ),
                                 failure_kind=attempt.failure_kind,
                                 failure_code=attempt.failure_code,
+                                recovery=recovery_view(state, attempt, policy=recovery_policy),
                             )
                             for attempt in stage.attempts
                         ),
@@ -695,7 +701,7 @@ class ScientificBatchService:
             # while this original submit was materializing its outbox row.
             current = await self.store.get_operation(operation.id, tenant_id=principal.tenant_id)
             operation = current.model_copy(update={"reused": operation.reused})
-        return self._state_view(operation, state)
+        return self._state_view(operation, state, recovery_policy=getattr(self.controller, "recovery_policy", None))
 
     async def _materialize_pending(self, pending: PendingScientificAdmission) -> ScientificBatchState:
         state = state_from_value(pending.payload)
@@ -773,7 +779,7 @@ class ScientificBatchService:
         if operation.protocol != "scientific-batch-v1":
             raise ScientificBatchNotFoundError("operation is not a scientific batch")
         state = await self.repository.get(operation_id, tenant_id=principal.tenant_id)
-        return self._state_view(operation, state)
+        return self._state_view(operation, state, recovery_policy=getattr(self.controller, "recovery_policy", None))
 
     async def cancel(self, operation_id: UUID, *, principal: Principal) -> dict[str, Any]:
         self._authorize(principal, Scope.OPERATIONS_CANCEL)
@@ -784,7 +790,7 @@ class ScientificBatchService:
         state = await self.repository.request_cancel(
             operation_id, tenant_id=principal.tenant_id, actor=principal.principal_id
         )
-        return self._state_view(operation, state)
+        return self._state_view(operation, state, recovery_policy=getattr(self.controller, "recovery_policy", None))
 
     async def events(
         self,
