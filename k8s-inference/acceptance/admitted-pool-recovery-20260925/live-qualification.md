@@ -1,8 +1,11 @@
 # September 25 admitted-pool recovery qualification
 
-Qualification is in progress. Deployment, two consecutive full native recovery
-cohorts and cancellation are proven. The remaining initialization and synthetic
-capacity-return matrix must pass before completed bounded-path qualification.
+Bounded-path qualification is complete and deployed: two consecutive full native
+recovery cohorts, cancellation, slow initialization and synthetic eligibility
+return passed. All test hooks/resources and the disposable identity are retired.
+`completed-matrix.json` in the private evidence root binds all positive receipts,
+retained failures/corrections, exact releases and cleanup. This is not a claim of
+whole-platform readiness or physical capacity certification.
 
 ## Exact deployed candidate
 
@@ -173,6 +176,39 @@ Cancellation operation `163ba414-b4f7-44a3-be45-955c8e65dec9` passed on the
 same release after actual dead-pool admission, with idempotent replay and zero
 remaining owned resources. It did not manually recover any workload.
 
+`init-01`, operation `bbeeee80-e3ec-47fb-96cf-fd002f7bfcd1`, passed all final
+gates at `07:12:44.334912Z` on revision 230. Its healthy replacement attempt
+`82b8cd96-a2e1-5d7b-8051-1a8ce0f7a0c3`, Pod
+`3a33e1c4-9b8e-4b0e-afc4-f7d4676ab10a`, ran the same-image initialization
+pause from `07:02:05Z` to `07:04:35Z` (**150 seconds**, exit 0). It was not
+evicted or retried again. The original healthy sibling and that replacement
+both completed their unchanged 2 ns windows; complete native artifacts,
+semantic/trajectory checks, accounting, idempotency and resource cleanup passed.
+This is real initialization-progress protection, not physical scale-from-zero.
+
+`synthetic-01`, operation `0c03dc73-4b42-4336-b794-b5ec1d9285b6`, passed all
+final gates at `07:18:44.583977Z`. Its single retry remained unreserved with an
+explicit Kueue affinity/no-fit reason for the measured 130.955826-second hold,
+without another attempt or Job/Workload churn. The incomplete first predicate
+removal and owner-approved second-copy correction are detailed above. After the
+complete synthetic return, Kueue admitted the same Job
+`c06ac05f-b998-48f7-a92a-2faf153c2451` / Workload
+`606d5019-b2cc-4518-82e1-1c4c421b0e74` on healthy capacity at `07:10:39Z`.
+Its unchanged 2 ns native window succeeded; the healthy sibling also succeeded
+on its original attempt. All 244 artifact entries, native semantics/trajectory
+integrity, four accounting clocks, idempotency and zero remaining owned
+resources passed. No third attempt was created.
+
+Both additional cases bind the same revision-230 release/configuration digest
+`2eb1ed1b72c51ca854a7cce2e02b81f8f946bd61ac35a6a12a1ab58e5bfe557d`.
+Their receipt SHA-256s are respectively
+`b65f1928801cf9e8378bb6650353bd4ae71b2f6133b7f8d29a041be5c8e60481`
+and `35cca4a3e89a0074852dbc0f00fb6c311bc9ea7b277d037b638a0d8641da5dc2`.
+The separately retained predicate-copy application receipt is
+`5048fb05db0558c2c6e0d91d7bb0ab2545110db37f5976afa37264a7c77e60be`.
+Across the two primary and two additional cohorts, eight real 2 ns windows
+completed; every native artifact entry was independently downloaded/checked.
+
 ## Local regression evidence
 
 - Focused controller/real disposable PostgreSQL suite: **43 passed**. Covers
@@ -205,10 +241,10 @@ Original attempt budgets, scientific compatibility, priority/lane/fair-share
 policy and accounting remain; a new Kueue Workload receives a new creation time,
 so original equal-priority FIFO position is not promised.
 
-The intended additional cases are cancellation during dead-pool admission,
+The additional cases passed cancellation during dead-pool admission,
 150-second same-runtime initialization without eviction, and task-only
-synthetic eligibility loss/return with 120 seconds of observed queued/no-churn
-state. Synthetic eligibility is explicitly not physical fleet exhaustion, and
+synthetic eligibility loss/return with 130.955826 seconds of observed
+queued/no-churn state. Synthetic eligibility is explicitly not physical fleet exhaustion, and
 the initialization pause is not a real cloud scale-from-zero event. Those two
 physical conditions cannot be safely manufactured by taking customer capacity
 or modifying node groups/quotas and will not be claimed as live-tested.
@@ -218,5 +254,26 @@ The primary injector was removed at `06:48:24.632278Z`, webhook first, followed
 by its verified server/TLS resources and exact disposable namespace. Native
 artifacts were retained. Separate additional-case instances have disjoint
 `-init` and `-synthetic` names/namespaces; actual server dry-runs verified both
-first- and second-attempt mutations without creating GPU Jobs. Final additional
-instance/key retirement will be recorded after the matrix; it is not yet done.
+first- and second-attempt mutations without creating GPU Jobs. They were removed
+at `07:20:56.083708Z` and `07:21:48.952214Z`, respectively: exact webhook first,
+then UID/owner-verified Deployment, Service, NetworkPolicy, ConfigMap, TLS Secret,
+ServiceAccount and namespace. The initialization cleanup recorder encountered an
+exclusive-filename collision after deleting its webhook/server; those absences
+were reverified against the original UIDs and recorded before continuing with
+unique step receipts. It did not cause scientific or shared-resource mutation.
+
+The final absence audit checks all **six** task operations, including failed and
+cancelled tests, and **16** recorded Job UIDs: zero Jobs, Pods or Kueue Workloads
+remain. The disposable key was revoked and its owner disabled at
+`07:21:31.874462Z`; a fresh ordinary `/v1/me` call returned HTTP 401. Artifact
+objects and private receipts remain. The synthetic local PostgreSQL container
+was already stopped/removed at `06:51:48Z`; no platform database was removed.
+Generated ephemeral injector resources can be recreated from the retained private
+bundles. `post-seed-release-230.json` confirms the unchanged exact release and
+all three gateway plus two controller Pods ready, selected by actual Deployment/
+ReplicaSet ownership rather than unrelated completed maintenance Jobs.
+
+The unrelated failed-native diagnostic upload collision remains the separate
+ready Task Deck follow-up `fs2-failed-native-diagnostic-upload-identity-r20260925`.
+Its negative Amber evidence and required scientific helper/profile requalification
+are preserved there. This recovery task does not claim that collector bug fixed.
