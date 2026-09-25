@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import importlib.util
 import json
 import os
 import subprocess
@@ -21,6 +22,7 @@ import httpx2 as httpx
 import run_example as runner
 
 TENANT = "md-starter-acceptance-20260925"
+TENANTS = (TENANT, "md-starter-new-workspace-20260925")
 PRINCIPAL = "seed-canary"
 MODELS = ["gromacs", "namd", "amber", "lammps"]
 SCOPES = [
@@ -87,11 +89,11 @@ async def prepare(args):
     with admin_session(args) as admin:
         if private.exists():
             access = json.loads(private.read_bytes())
-            if access["tenant_id"] != TENANT:
+            if access["tenant_id"] != args.tenant:
                 raise ValueError("wrong_canary_tenant")
         else:
             users = checked(
-                admin.get("/admin/api/v1/users", params={"tenant_id": TENANT})
+                admin.get("/admin/api/v1/users", params={"tenant_id": args.tenant})
             )["data"]["items"]
             if users:
                 raise ValueError("canary_already_exists_without_local_receipt")
@@ -99,7 +101,7 @@ async def prepare(args):
                 admin.post(
                     "/admin/api/v1/users",
                     json={
-                        "tenant_id": TENANT,
+                        "tenant_id": args.tenant,
                         "principal_id": PRINCIPAL,
                         "kind": "service",
                         "display_name": "MD starter-pack acceptance (temporary)",
@@ -114,7 +116,7 @@ async def prepare(args):
                 admin.post(
                     f"/admin/api/v1/users/{user['id']}/keys",
                     json={
-                        "tenant_id": TENANT,
+                        "tenant_id": args.tenant,
                         "principal_id": PRINCIPAL,
                         "name": "md-starter-v3-20260925",
                         "models": MODELS,
@@ -128,7 +130,7 @@ async def prepare(args):
             )["data"]
             access = {
                 "origin": args.origin,
-                "tenant_id": TENANT,
+                "tenant_id": args.tenant,
                 "principal_id": PRINCIPAL,
                 "user_id": user["id"],
                 "key_id": issued["key"]["id"],
@@ -174,7 +176,7 @@ async def prepare(args):
     print(
         json.dumps(
             {
-                "tenant": TENANT,
+                "tenant": args.tenant,
                 "key_id": access["key_id"],
                 "storage_state": storage["state"],
             }
@@ -185,9 +187,19 @@ async def prepare(args):
 
 async def campaign(args):
     access = json.loads(args.access.read_bytes())
-    if access["tenant_id"] != TENANT or not access.get("disposable"):
+    if access["tenant_id"] not in TENANTS or not access.get("disposable"):
         raise ValueError("only_disposable_campaign_access_allowed")
     manifest = json.loads((args.pack / "manifest.json").read_bytes())
+    # Exercise the customer's packaged client, not a potentially newer checkout.
+    packaged_client = args.pack / "run-example.py"
+    entry = next(o for o in manifest["objects"] if o["path"] == "run-example.py")
+    if runner.file_sha(packaged_client) != entry["sha256"]:
+        raise ValueError("packaged_client_checksum_mismatch")
+    spec = importlib.util.spec_from_file_location(
+        "packaged_starter_runner", packaged_client
+    )
+    client = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(client)
     semaphore = asyncio.Semaphore(args.workers)
     results = []
     args.output.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -202,7 +214,7 @@ async def campaign(args):
                 flush=True,
             )
             try:
-                record = await runner.run(
+                record = await client.run(
                     args.pack,
                     case["id"],
                     model,
@@ -216,6 +228,7 @@ async def campaign(args):
                     "model_id": model,
                     "state": record["state"],
                     "operation_id": record.get("operation_id"),
+                    "runner_sha256": entry["sha256"],
                 }
             except Exception as exc:  # noqa: BLE001 -- bounded payload-free campaign evidence
                 result = {
@@ -257,6 +270,7 @@ def main():
     parser.add_argument("--kubeconfig")
     parser.add_argument("--context")
     parser.add_argument("--origin", default="https://89.169.99.188")
+    parser.add_argument("--tenant", choices=TENANTS, default=TENANT)
     parser.add_argument("--pack", type=Path)
     parser.add_argument("--access", type=Path)
     parser.add_argument("--workers", type=int, choices=(1, 2, 3), default=3)

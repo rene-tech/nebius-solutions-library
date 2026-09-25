@@ -268,6 +268,9 @@ def batch_variant(model, files, request):
     bundle, request = {}, copy.deepcopy(request)
     original = request["jobs"][0]
     request["jobs"] = []
+    # PMEMD's printed ig field is fixed-width. Keep its explicit seeds within
+    # eight decimal digits; a wider field is reported as overflow by validation.
+    seed_base = 20261001 if model == "amber" else 202609250
     for index in range(2):
         prefix = f"replica-{index + 1}"
         changed = dict(files)
@@ -278,7 +281,7 @@ def batch_variant(model, files, request):
                 for offset, seed in enumerate((20260923, 20260924, 20260925)):
                     text = re.sub(
                         r"\b" + str(seed) + r"\b",
-                        str(202609250 + 3 * index + offset),
+                        str(seed_base + 3 * index + offset),
                         text,
                     )
                 changed[name] = text.encode()
@@ -299,7 +302,7 @@ def batch_variant(model, files, request):
             "npt_ps": 20,
             "atoms": 6598,
             "jobs": 2,
-            "independent_seeds": [202609250, 202609253],
+            "independent_seeds": [seed_base, seed_base + 3],
         },
     )
 
@@ -437,8 +440,9 @@ class Pack:
         )
         readme = f"# {title}\n\n{description}\n\n" + (
             "Download the whole `examples/v3/` prefix. From its root, use your own API key and public MCP URL:\n\n"
-            f"```sh\npython run-example.py {identifier} --model {next(iter(variants))} --output ../runs/{slug}\n```\n\n"
-            "Use `--model gromacs`, `--model namd`, `--model amber` or `--model lammps` where this case supports it. "
+            f'```sh\nmd_engine={next(iter(variants))}\npython run-example.py {identifier} --model "$md_engine" --output "../runs/{slug}/$md_engine"\n```\n\n'
+            "Set `md_engine` to `gromacs`, `namd`, `amber` or `lammps` where this case supports it. "
+            "Keep a separate output directory for each engine and fresh run; reuse it only to resume the same operation. "
             "No engine is installed on the client: computation runs on the platform. The runner uploads the local archive, polls "
             "the same durable operation, verifies every downloaded artifact and resumes when the same output path is reused. "
             "Results also go to your assigned customer bucket under `runs/starter-md/`. Keep enough bucket quota/headroom for repeated runs; "
@@ -449,6 +453,10 @@ class Pack:
             "Engine-native restart files are not CUDA/GPU snapshots. Stochastic trajectories are not expected to match frame by frame. "
             "Short runs teach operation of the service and do not establish equilibrium, force equivalence or converged free energies. "
             "See `../README.md` for method caveats, attribution and analysis.\n\n"
+            "For local analysis, use a separate Python 3.12 environment with `molecular-dynamics/analysis-requirements.txt`. "
+            f"Then run `python molecular-dynamics/analyze-md.py --case {identifier} --model {next(iter(variants))} "
+            f"--run ../runs/{slug}/{next(iter(variants))} --output ../analysis/{slug}/{next(iter(variants))}` from the pack root. "
+            "This checks native frames and writes actual phi/psi CSVs and a plot; it performs no GPU simulation.\n\n"
             f"LibreChat prompt: **Run the {title.lower()} example from my bucket's examples/v3/{identifier}/ using "
             f"{next(iter(variants)).upper()}. Follow its README and packaged native parameters, save all outputs into my bucket, "
             "and report the operation ID, completion checks and limitations.**\n"

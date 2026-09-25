@@ -52,6 +52,19 @@ a plot and a machine-readable receipt. It never substitutes rendered or
 interpolated frames for native data. No convergence or four-engine force equality
 is inferred from these functional checks.
 
+For the umbrella tutorial, native 0.1 ps phi/psi pull observations must also agree
+with the angles calculated from the 1 ps saved coordinates, using periodic
+angular differences. This does not claim a global PMF or independent compiled
+bias validation. `md_validate_cohort.py` aggregates these exact-input proofs;
+missing or failed recipes cannot qualify the pack. Acceptance executes the
+checksum-verified **bundled** runner and analyzer, not a newer checkout version.
+
+Native files are byte-verified before analysis. The runner streams large outputs
+to temporary files and publishes only complete verified bytes; interrupted GETs
+are retried without repeating model submissions. CLI exit 2 means still pending,
+not success. Reusing a run directory resumes that operation; every fresh run or
+different engine needs a separate directory.
+
 ## Packaging and release
 
 - Reuse `qualify_pack.py` with exact input/recipe hashes and fresh MD validation
@@ -68,6 +81,26 @@ is inferred from these functional checks.
 - Canary first, verify actual seeded objects with bucket-scoped credentials,
   then let the existing create-only reconciler backfill eligible buckets.
 - Keep old versions, customer changes, disabled users and excluded storage intact.
+
+`release_seed.py` reconstructs the installed Helm chart from its release record,
+checks a server-side dry run and rejects unrelated resource/image changes. It
+recaptures each new live revision rather than overwriting parallel deployments.
+`md_workspace.py` verifies actual installed objects using only the disposable
+customer's API key and scoped storage credentials. `md_cleanup.py` retires only
+the campaign's idle identities and retains buckets and evidence.
+
+## Failures retained during development
+
+An initial Amber batch used nine-digit seeds, and native output validation
+reported overflowed fields. Candidate replica seeds now retain the original
+eight-digit width and remain independent; live retesting is required. Never
+disable native finite/overflow checks to turn this failure into a pass.
+
+That failure also exposed a separate shared collector defect: multiple failed
+native diagnostic files reused one upload identity and caused HTTP409. The
+original operation and Loki logs are retained. Fixing that frozen runtime
+requires separate profile/recipe requalification; the starter data release does
+not claim to fix or qualify every failure-diagnostic path.
 
 ## Provenance and access
 

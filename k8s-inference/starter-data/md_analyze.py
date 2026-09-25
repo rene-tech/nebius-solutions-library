@@ -13,6 +13,7 @@ import hashlib
 import json
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 import numpy as np
@@ -162,6 +163,48 @@ def expected_origin(model, stage, expected):
     )
 
 
+def validate_umbrella_observations(root, rows, duration):
+    """Check native pull columns/cadence against actual saved coordinates.
+
+    The source uses non-averaged phi/psi in degrees at 0.1 ps, with XTC at 1 ps.
+    This is a CV correspondence check, not a compiled-bias or WHAM validation.
+    """
+    paths = sorted(root.glob("production.part*_pullx.xvg"))
+    require(paths, "umbrella_pull_observations_missing")
+    values = np.concatenate(
+        [np.loadtxt(p, comments=("#", "@"), ndmin=2) for p in paths]
+    )
+    require(
+        values.shape[1] == 3 and np.isfinite(values).all(),
+        "invalid_umbrella_pull_columns",
+    )
+    values = values[np.r_[True, np.diff(values[:, 0]) != 0]]
+    require(
+        len(values) in (int(duration * 10), int(duration * 10) + 1)
+        and np.allclose(np.diff(values[:, 0]), 0.1, atol=0.00005, rtol=0)
+        and np.isclose(values[-1, 0], duration, atol=0.00005, rtol=0)
+        and np.max(np.abs(values[:, 1:])) <= 180.000001,
+        "invalid_umbrella_pull_schedule_or_units",
+    )
+    sampled = {round(row[0], 5): row[1:] for row in values}
+    errors = []
+    for row in rows:
+        native = sampled[round(row["time_ps"], 5)]
+        observed = np.array([row["phi_degrees"], row["psi_degrees"]])
+        errors.append(np.abs((observed - native + 180) % 360 - 180))
+    maximum = float(np.max(errors))
+    # Conservative 0.01-degree allowance for the high-precision XTC and native
+    # six-significant-digit %g output. Never align/time-shift data to make it fit.
+    require(maximum <= 0.01, "umbrella_coordinate_pull_mismatch")
+    return {
+        "native_pull_samples": len(values),
+        "coordinate_samples_compared": len(rows),
+        "maximum_periodic_error_degrees": maximum,
+        "tolerance_degrees": 0.01,
+        "compiled_bias_or_global_pmf_validated": False,
+    }
+
+
 def analyze(args):
     import matplotlib
     import MDAnalysis as mda
@@ -182,6 +225,15 @@ def analyze(args):
     )
     args.output.mkdir(parents=True, exist_ok=False)
     receipt, jobs = materialize(args.run, args.output / "native")
+    recipe_hash = hashlib.sha256(
+        (json.dumps(recipe, sort_keys=True, indent=2, allow_nan=False) + "\n").encode()
+    ).hexdigest()
+    require(
+        receipt["identity"]["case_id"] == args.case
+        and receipt["identity"]["model_id"] == args.model
+        and receipt["identity"]["recipe_sha256"] == recipe_hash,
+        "receipt_does_not_match_packaged_recipe",
+    )
     require(len(jobs) == expected["jobs"], "native_job_count_mismatch")
     universe = mda.Universe(
         str(args.pack / "molecular-dynamics/canonical/system.prmtop"),
@@ -314,6 +366,10 @@ def analyze(args):
                 "gpu_snapshot_used": result.get("gpu_snapshot_used"),
             }
         )
+        if expected.get("umbrella"):
+            report[-1]["umbrella_observations"] = validate_umbrella_observations(
+                stage_root, rows, expected["production_ps"]
+            )
     axes[-1].set_xlabel("Native simulation time (ps)")
     axes[0].legend()
     figure.tight_layout()
@@ -331,6 +387,27 @@ def analyze(args):
         "observation_seconds": receipt.get("observation_seconds"),
         "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
     }
+    operation = read(args.run / "operation.json")["operation"]
+    require(
+        operation["id"] == receipt["operation_id"]
+        and operation["model_id"] == args.model
+        and operation["status"] == "succeeded",
+        "operation_identity_mismatch",
+    )
+    summary.update(
+        model_revision=operation["model_revision"],
+        runtime=operation["runtime"],
+        cold_start_seconds=operation.get("cold_start_seconds"),
+        lifecycle={
+            key: operation.get(key)
+            for key in ("accepted_at", "started_at", "ready_at", "completed_at")
+        },
+    )
+    if operation.get("accepted_at") and operation.get("completed_at"):
+        summary["server_elapsed_seconds"] = (
+            datetime.fromisoformat(operation["completed_at"])
+            - datetime.fromisoformat(operation["accepted_at"])
+        ).total_seconds()
     write(args.output / "validation.json", summary)
     print(
         json.dumps(

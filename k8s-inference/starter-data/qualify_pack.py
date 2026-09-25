@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import re
 import shutil
 from collections import Counter
 from datetime import UTC, datetime
@@ -159,7 +160,7 @@ async def main(args):
         path = case["id"] + "/README.md"
         original = (
             (args.output / path).read_text().split("Timing: not benchmarked yet;")[0]
-        )
+        ).split("\n## Observed runs\n")[0]
         write(
             path,
             original
@@ -169,6 +170,9 @@ async def main(args):
         )
     write("COVERAGE.md", "\n".join(lines) + "\n")
     readme = (args.output / "README.md").read_text()
+    # A successor pack inherits qualified documentation. Refresh rather than
+    # duplicate this section, preserving any subsequent category introductions.
+    readme = re.sub(r"\n## Run an example\n.*?(?=\n## |\Z)", "", readme, flags=re.DOTALL)
     write(
         "README.md",
         readme

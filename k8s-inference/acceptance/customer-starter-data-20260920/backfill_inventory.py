@@ -87,10 +87,17 @@ def main(args):
             manifest_bytes = (args.pack / "manifest.json").read_bytes()
             manifest = json.loads(manifest_bytes)
             for bucket, record in buckets.items():
-                # The deletion probe intentionally removed an example here.
-                if record["tenant_id"].startswith("fs2-starter-"):
+                # The original v1 deletion probe intentionally removed one file.
+                if manifest["version"] == "v1" and record["tenant_id"].startswith(
+                    "fs2-starter-"
+                ):
                     continue
-                if record["examples"]["state"] != "complete":
+                if (
+                    record["examples"]["state"] != "complete"
+                    or record["examples"].get("version") != manifest["version"]
+                    or record["examples"].get("manifest_sha256")
+                    != hashlib.sha256(manifest_bytes).hexdigest()
+                ):
                     report["verification"].append(
                         {"bucket": bucket, "state": "not-complete"}
                     )
@@ -116,7 +123,8 @@ def main(args):
 
                 def verify(item):
                     response = client.get_object(
-                        Bucket=bucket, Key="examples/v1/" + item["path"]
+                        Bucket=bucket,
+                        Key=f"examples/{manifest['version']}/" + item["path"],
                     )
                     try:
                         digest, size = hashlib.sha256(), 0

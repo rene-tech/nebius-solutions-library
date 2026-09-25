@@ -328,7 +328,7 @@ async def validate_all(root, contracts):
     return results
 
 
-async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=1800):
+async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=None):
     import httpx2
     from mcp import Client
     from mcp.client.streamable_http import streamable_http_client
@@ -350,6 +350,11 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
     if model is None:
         model = recipes[0]["model_id"]
     recipe = next(item for item in recipes if item["model_id"] == model)
+    if observe_seconds is None:
+        observe_seconds = max(
+            1800,
+            recipe["arguments"].get("parameters", {}).get("max_wall_seconds", 1800),
+        )
     download_budget = recipe.get("download_budget_bytes", 128 * 1024 * 1024)
     download_count = recipe.get("download_max_artifacts", 256)
     if not isinstance(download_budget, int) or not 0 < download_budget <= 8 * 1024**3:
@@ -677,7 +682,11 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--contracts", type=Path)
-    parser.add_argument("--observe-seconds", type=int, default=1800)
+    parser.add_argument(
+        "--observe-seconds",
+        type=int,
+        help="Override the recipe's wait budget; rerun the same output path to resume.",
+    )
     args = parser.parse_args()
     if args.validate_only:
         if args.contracts is None:
@@ -712,6 +721,13 @@ def main():
                 if k in result
             }
         )
+    )
+    raise SystemExit(
+        0
+        if result["state"] == "succeeded"
+        else 1
+        if result["state"] in {"failed", "cancelled", "expired", "preempted"}
+        else 2
     )
 
 

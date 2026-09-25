@@ -1,6 +1,8 @@
 """Native science controls and resumable large-file delivery are explicit."""
 
 import asyncio
+import sys
+import time
 from contextlib import asynccontextmanager
 
 import md_examples as md
@@ -83,6 +85,14 @@ def test_batch_has_independent_seed_and_directory_context():
     assert request["jobs"][0]["id"] == "original"
 
 
+def test_amber_replica_seeds_fit_native_printed_integer_field():
+    files = {"nvt.in": b"&cntrl\n ig=20260923, nstlim=10000,\n/\n"}
+    request = {"jobs": [{"id": "original", "steps": [{"id": "nvt"}]}]}
+    bundled, _, _ = md.batch_variant("amber", files, request)
+    assert b"ig=20261001," in bundled["replica-1/nvt.in"]
+    assert b"ig=20261004," in bundled["replica-2/nvt.in"]
+
+
 class Stream:
     def __init__(self, blocks):
         self.blocks = blocks
@@ -138,3 +148,49 @@ def test_bad_download_never_replaces_existing_verified_file(
             )
         )
     assert target.read_bytes() == b"original"
+
+
+def test_transient_stream_failure_retries_only_the_immutable_get(tmp_path, monkeypatch):
+    httpx = pytest.importorskip("httpx2")
+    attempts = []
+
+    async def download(*args):
+        attempts.append(args)
+        if len(attempts) < 3:
+            raise httpx.ReadError("synthetic interrupted read")
+
+    async def no_wait(_seconds):
+        pass
+
+    monkeypatch.setattr(runner, "download_verified", download)
+    monkeypatch.setattr(runner.asyncio, "sleep", no_wait)
+    asyncio.run(
+        runner.download_with_retry(
+            None,
+            "https://example.invalid/result",
+            tmp_path / "result",
+            {},
+            deadline=time.monotonic() + 10,
+        )
+    )
+    assert len(attempts) == 3
+
+
+@pytest.mark.parametrize(
+    "state,exit_code", [("succeeded", 0), ("failed", 1), ("running", 2)]
+)
+def test_cli_does_not_report_pending_work_as_success(
+    tmp_path, monkeypatch, state, exit_code
+):
+    async def fake_run(*_args, **_kwargs):
+        return {"state": state, "operation_id": "test-operation"}
+
+    monkeypatch.setattr(runner, "run", fake_run)
+    monkeypatch.setenv("SCIENTIFIC_MODELS_MCP_URL", "https://example.invalid/mcp")
+    monkeypatch.setenv("SCIENTIFIC_MODELS_API_KEY", "synthetic-test-value")
+    monkeypatch.setattr(
+        sys, "argv", ["run-example.py", "test/case", "--output", str(tmp_path / "run")]
+    )
+    with pytest.raises(SystemExit) as error:
+        runner.main()
+    assert error.value.code == exit_code

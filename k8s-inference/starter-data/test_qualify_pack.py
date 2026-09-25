@@ -93,3 +93,17 @@ def test_uncovered_live_model_blocks_publication(tmp_path):
     (tmp_path / "manifest.json").write_bytes(runner.encoded(manifest))
     with pytest.raises(ValueError, match="live_model_coverage_incomplete"):
         asyncio.run(qualify_pack.coverage(tmp_path, [report]))
+
+
+def test_explicit_five_workflow_category_still_requires_every_recipe(tmp_path):
+    manifest, proofs, report = fixture(tmp_path)
+    manifest["cases"] = manifest["cases"][:5]
+    manifest["categories"][0]["minimum_cases"] = 5
+    (tmp_path / "manifest.json").write_bytes(runner.encoded(manifest))
+    _, selected, missing = asyncio.run(qualify_pack.coverage(tmp_path, [report]))
+    assert len(selected) == 5 and not missing
+    report.write_bytes(runner.encoded({"results": proofs[1:]}))
+    _, selected, missing = asyncio.run(qualify_pack.coverage(tmp_path, [report]))
+    assert len(selected) == 4 and missing == [
+        {"case_id": "test/case-0", "model_id": "test-model"}
+    ]
