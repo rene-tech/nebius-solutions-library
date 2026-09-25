@@ -1,5 +1,11 @@
 # Admitted scientific workload recovery
 
+For this operational-only release, `scientificBatch.toolsImage` is explicitly
+pinned to the preceding qualified control-plane/tools digest. The gateway and
+model-controller image can change without changing scientific CPU-stage or
+companion images. Empty preserves the chart's historical same-image default;
+updating this pin separately requires the affected recipe/profile qualification.
+
 Scientific Jobs and JobSets can hold a Kueue reservation without a usable node.
 The controller distinguishes that state from waiting for admission and from
 loading an image, artifacts or a checkpoint. An ordinary customer keeps one

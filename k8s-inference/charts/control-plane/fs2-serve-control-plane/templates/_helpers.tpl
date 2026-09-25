@@ -396,7 +396,7 @@ app.kubernetes.io/component: model-controller
 - name: FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE
   value: /etc/fs2-scientific-batch/{{ .Values.scientificBatch.executionMapKey }}
 - name: FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE
-  value: {{ include "fs2-serve.image" . }}
+  value: {{ .Values.scientificBatch.toolsImage | default (include "fs2-serve.image" .) | quote }}
 - name: FS2_SCIENTIFIC_BATCH_INTERNAL_API_URL
   value: http://{{ include "fs2-serve.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
 - name: FS2_SCIENTIFIC_BATCH_INTERNAL_FALLBACK_API_URL

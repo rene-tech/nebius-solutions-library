@@ -163,6 +163,9 @@ scientificBatch:
     admittedUnscheduledTimeoutSeconds: 7200
     backoffBaseSeconds: 15
     backoffMaxSeconds: 300
+  # Pin existing qualified CPU/companion code for operational-only gateway upgrades.
+  # Empty retains the historical same-image default.
+  toolsImage: ""
 
 # Canonical artifact service used by scientific controller jobs. Credentials
 # are read only from an existing Secret; signed locations are never persisted.
