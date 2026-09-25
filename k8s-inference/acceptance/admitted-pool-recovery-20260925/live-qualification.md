@@ -1,8 +1,8 @@
 # September 25 admitted-pool recovery qualification
 
-Qualification is in progress. Deployment and the first full native recovery
-cohort are proven. The repeated cohort and remaining matrix must pass before
-this is a completed bounded-path qualification.
+Qualification is in progress. Deployment, two consecutive full native recovery
+cohorts and cancellation are proven. The remaining initialization and synthetic
+capacity-return matrix must pass before completed bounded-path qualification.
 
 ## Exact deployed candidate
 
@@ -137,7 +137,18 @@ sequential primary cohort, started after the first revalidation. It admitted
 window-01 to the dead pool at `06:36:31Z`, detected failure at
 `06:38:31.322424Z`, and readmitted on healthy capacity at `06:38:48Z`:
 **17 seconds after confirmation**, 16.677576 seconds after detection. Its
-unchanged native completion and final checks are pending.
+unchanged native completion and all final checks passed at `06:46:36.316489Z`.
+Both primary cohorts passed under exact release/config digest
+`4e75b4813b6bf33bfa98802bedec0d2333a808a53148c97e7c9cc1ad09dbe9fc`.
+Their separate receipts are bound in `two-cohorts.json`; `timings.json` records
+20-second and 17-second confirmation-to-readmission measurements against the
+predeclared 300-second SLO. Four real 2 ns windows completed in total.
+
+The shared deployment lock was handed back to the concurrent starter-data owner
+only after both primary cohorts passed. Additional cases will bind the final
+data-only successor release separately while preserving this operational image
+and all scientific runtime/tool pins. They do not retroactively change the
+primary cohorts' exact revision 228 evidence.
 
 Cancellation operation `163ba414-b4f7-44a3-be45-955c8e65dec9` passed on the
 same release after actual dead-pool admission, with idempotent replay and zero
@@ -153,7 +164,7 @@ remaining owned resources. It did not manually recover any workload.
 - Helm/chart/starter suite: **142 passed**, including preserved scientific-tools
   pin and exact new read-only RBAC boundaries.
 - Acceptance, real TLS injector, controller reservation-envelope, release-diff
-  SLO timing, runtime image-ID and disjoint-case tests: **128 passed**.
+  SLO timing, runtime image-ID, disjoint-case and revalidation tests: **151 passed**.
 - Broad scientific sweep: **1034 passed**, 15 skipped, five unchanged Amber
   fleet-count fixture failures and 20 pre-existing child-delegation fixture
   registration errors. These were reproduced as baseline issues and were not
@@ -183,5 +194,9 @@ physical conditions cannot be safely manufactured by taking customer capacity
 or modifying node groups/quotas and will not be claimed as live-tested.
 Native semantic/trajectory integrity does not establish PMF convergence.
 
-Final resource/key retirement and the exact remaining limitations must be
-recorded here after the matrix. No cleanup completion is claimed yet.
+The primary injector was removed at `06:48:24.632278Z`, webhook first, followed
+by its verified server/TLS resources and exact disposable namespace. Native
+artifacts were retained. Separate additional-case instances have disjoint
+`-init` and `-synthetic` names/namespaces; actual server dry-runs verified both
+first- and second-attempt mutations without creating GPU Jobs. Final additional
+instance/key retirement will be recorded after the matrix; it is not yet done.
