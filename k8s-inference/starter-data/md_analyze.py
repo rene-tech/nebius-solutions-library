@@ -37,6 +37,31 @@ def write(path, value):
     path.write_text(json.dumps(value, indent=2, allow_nan=False) + "\n")
 
 
+def native_attempts(batch):
+    """The parent operation coordinates work; GPU admission belongs to its jobs."""
+    return [
+        {
+            "stage_id": stage["stage_id"],
+            **{
+                field: attempt.get(field)
+                for field in (
+                    "attempt_id",
+                    "attempt_number",
+                    "shard_id",
+                    "outcome",
+                    "resource_released",
+                    "workload_name",
+                    "workload_namespace",
+                    "workload_uid",
+                    "scheduling_admission",
+                )
+            },
+        }
+        for stage in batch.get("stages", [])
+        for attempt in stage.get("attempts", [])
+    ]
+
+
 def materialize(folder, destination):
     """Native names come only from the hash-verified runtime result inventory."""
     receipt = read(folder / "receipt.json")
@@ -360,6 +385,10 @@ def analyze(args):
                 "job_id": result["job_id"],
                 "stages": stage_reports,
                 "completed_steps": result["completed_steps"],
+                "native_engine_id": result.get("engine_id"),
+                "native_recipe_sha256": result.get("recipe_sha256"),
+                "native_build": result.get("native_build"),
+                "native_gpu_report": result.get("gpu"),
                 "density_mean_g_cm3": float(density.mean()),
                 "native_restart_used": expected.get("native_restart", False),
                 "scientific_convergence_claimed": False,
@@ -387,7 +416,8 @@ def analyze(args):
         "observation_seconds": receipt.get("observation_seconds"),
         "scope": "Native completion, actual trajectory count/cadence, finite coordinates/cells, peptide geometry and analysis. Not force equivalence or statistical convergence.",
     }
-    operation = read(args.run / "operation.json")["operation"]
+    observed = read(args.run / "operation.json")
+    operation = observed["operation"]
     require(
         operation["id"] == receipt["operation_id"]
         and operation["model_id"] == args.model
@@ -396,7 +426,9 @@ def analyze(args):
     )
     summary.update(
         model_revision=operation["model_revision"],
-        runtime=operation["runtime"],
+        parent_operation_runtime=operation["runtime"],
+        runtime_scope="Parent coordination is not GPU execution; native_attempts records job admission. Missing native GPU inventory is unknown, not zero GPUs.",
+        native_attempts=native_attempts(observed.get("batch", {})),
         cold_start_seconds=operation.get("cold_start_seconds"),
         lifecycle={
             key: operation.get(key)

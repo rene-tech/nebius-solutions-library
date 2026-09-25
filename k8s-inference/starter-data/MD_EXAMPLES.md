@@ -93,14 +93,17 @@ the campaign's idle identities and retains buckets and evidence.
 
 An initial Amber batch used nine-digit seeds, and native output validation
 reported overflowed fields. Candidate replica seeds now retain the original
-eight-digit width and remain independent; live retesting is required. Never
-disable native finite/overflow checks to turn this failure into a pass.
+eight-digit width and remain independent. Both corrected replica jobs completed
+and passed native validation in operation
+`0ff4892a-cc90-402a-b542-d1355b6db66d`; the independent repeat is still pending.
+Native finite/overflow checks were not weakened to turn this failure into a pass.
 
 That failure also exposed a separate shared collector defect: multiple failed
 native diagnostic files reused one upload identity and caused HTTP409. The
 original operation and Loki logs are retained. Fixing that frozen runtime
 requires separate profile/recipe requalification; the starter data release does
-not claim to fix or qualify every failure-diagnostic path.
+not claim to fix or qualify every failure-diagnostic path. Follow-up:
+`fs2-failed-native-diagnostic-upload-identity-r20260925`.
 
 ## Provenance and access
 
