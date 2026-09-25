@@ -116,8 +116,15 @@ Use the normal runner with both `--admission-injector-plan PATH/plan.json` and
 Job/Workload/attempt identity and no retry churn continuously for at least 120
 seconds. Only then may it remove the exact added predicate by atomic JSON patch,
 guarded by UID, resourceVersion, name, namespace and suspension, and a fresh check
-for no owned Pod/reservation/admission. It never deletes the Workload. This is the
-explicitly approved task-only capacity-return injection, not controller recovery.
+for no owned Pod/reservation/admission. Remove the predicate from both the Job
+and its existing unreserved Workload's copied Pod template. The pinned Kueue
+v0.17.8 [PodSet equivalence check](https://github.com/kubernetes-sigs/kueue/blob/v0.17.8/pkg/util/equality/podset.go)
+does not compare affinity, so changing only the Job does not update that copy.
+The Workload patch requires the same exact owner/UID, resourceVersion and status,
+unchanged scientific Pod spec, no reservation/admission, and a successful server
+dry-run. It removes only the injected expression; it never deletes the Workload
+or mutates status. This is the explicitly approved task-only eligibility-return
+injection, not controller recovery or physical capacity return.
 
 Natural Kueue admission and the unchanged native workload must then succeed.
 The receipt retains the original reasons, observed wait, exact removal patch

@@ -2,7 +2,7 @@
 """Exact-client GROMACS acceptance for admitted, unscheduled pool recovery.
 
 Optional Kubernetes mutations are ownership-checked affinity patches to a
-never-started suspended Job belonging to this disposable tenant. No Node,
+never-started suspended Job and its unreserved Workload belonging to this tenant. No Node,
 quota, queue, model, Pod, or Workload status is modified. An independently
 reviewed optional CREATE injector is observed, never deployed, by this runner.
 Credentials and native artifacts stay in the caller's private output directory.
@@ -392,6 +392,39 @@ def synthetic_return_patch(job, pods, workloads, tenant, operation, shard):
                 and e.get("values") and set(e["values"]) <= set(preference) for e in expressions), "synthetic_predicate_not_exact")
         path = f"/spec/template/spec/affinity/nodeAffinity/requiredDuringSchedulingIgnoredDuringExecution/nodeSelectorTerms/{index}/matchExpressions/{expressions.index(constraint)}"
         patch.extend([{"op": "test", "path": path, "value": constraint}, {"op": "remove", "path": path}])
+    return patch
+
+
+def synthetic_workload_return_patch(job, pods, workload, tenant, operation, shard):
+    """Remove the copied test predicate; Kueue v0.17.8 ignores affinity-only Job diffs.
+
+    The Job must already contain the restored original template. Neither status,
+    quota nor resource identity is mutated; admission remains Kueue's decision.
+    """
+    meta, podsets = workload["metadata"], workload["spec"]["podSets"]
+    owners = meta.get("ownerReferences", [])
+    require(meta.get("namespace") == "fs2-models" and not meta.get("deletionTimestamp")
+            and len(owners) == 1 and owners[0].get("kind") == "Job" and owners[0].get("controller") is True
+            and owners[0].get("uid") == job["metadata"]["uid"] and owners[0].get("name") == job["metadata"]["name"]
+            and meta.get("labels", {}).get("kueue.x-k8s.io/job-uid") == job["metadata"]["uid"], "synthetic_workload_owner_changed")
+    require(len(podsets) == 1 and podsets[0].get("name") == "main" and podsets[0].get("count") == 1,
+            "synthetic_workload_podsets_changed")
+    labels = podsets[0]["template"]["metadata"]["labels"]
+    require(all(labels.get(key) == value for key, value in job["spec"]["template"]["metadata"]["labels"].items()
+                if key.startswith(PREFIX)), "synthetic_workload_identity_changed")
+    copied_job = copy.deepcopy(job)
+    copied_job["spec"]["template"]["spec"] = copy.deepcopy(podsets[0]["template"]["spec"])
+    job_patch = synthetic_return_patch(copied_job, pods, [workload], tenant, operation, shard)
+    restored = copied_job["spec"]["template"]["spec"]
+    constraint = {"key": POOL, "operator": "In", "values": ["acceptance-no-capacity-20260925"]}
+    for term in restored["affinity"]["nodeAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]["nodeSelectorTerms"]:
+        term["matchExpressions"].remove(constraint)
+    require(restored == job["spec"]["template"]["spec"], "synthetic_workload_not_only_injected_difference")
+    patch = [{"op": "test", "path": "/metadata/" + key, "value": meta[key]} for key in ("uid", "resourceVersion", "name", "namespace")]
+    patch.append({"op": "test", "path": "/status", "value": workload["status"]})
+    for item in job_patch:
+        if item["path"].startswith("/spec/template/spec/affinity/"):
+            patch.append({**item, "path": item["path"].replace("/spec/template/spec/", "/spec/podSets/0/template/spec/", 1)})
     return patch
 
 
@@ -832,6 +865,20 @@ def run(args):
                                         "kind": "synthetic-task-only-eligibility-loss-and-return", "physical_capacity_exhaustion_claimed": False}
                             save(output / "synthetic-return-intent.json", evidence)
                             kube.json("patch", "job", target["metadata"]["name"], "-n", "fs2-models", "--type=json", "--patch-file=/dev/stdin", "-o", "json", stdin=json.dumps(patch))
+                            # This pinned Kueue version does not copy affinity-only
+                            # Job changes into an existing Workload. Retire both
+                            # copies of our test predicate, never its reservation.
+                            restored_job = kube.json("get", "job", target["metadata"]["name"], "-n", "fs2-models", "-o", "json")
+                            waiting_workload = next(w for w in workloads if w["metadata"]["uid"] == candidate["workload_uid"])
+                            current_workload = kube.json("get", "workload", waiting_workload["metadata"]["name"], "-n", "fs2-models", "-o", "json")
+                            require(current_workload["metadata"]["uid"] == candidate["workload_uid"], "synthetic_return_workload_uid_changed")
+                            current_pods = kube.items("pods", "fs2-models", "batch.kubernetes.io/controller-uid=" + target["metadata"]["uid"])
+                            copied_patch = synthetic_workload_return_patch(restored_job, current_pods, current_workload, args.tenant, operation, injector["config"]["shard"])
+                            evidence["workload_patch"] = copied_patch
+                            save(output / "synthetic-workload-return-intent.json", evidence)
+                            command = ["patch", "workload", current_workload["metadata"]["name"], "-n", "fs2-models", "--type=json", "--patch-file=/dev/stdin", "-o", "json"]
+                            kube.json(*command, "--dry-run=server", stdin=json.dumps(copied_patch))
+                            kube.json(*command, stdin=json.dumps(copied_patch))
                             synthetic_returned = True
                             receipt["synthetic_capacity"] = evidence
                     elif synthetic_started:

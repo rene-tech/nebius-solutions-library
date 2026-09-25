@@ -69,6 +69,9 @@ The qualification target is re-admission within five minutes of confirmed pool
 unavailability when another qualified pool has available admission capacity.
 This excludes that destination's model-loading time. It is an acceptance
 target, not a measured guarantee until the exact candidate receipts pass.
+The September 25 candidate subsequently measured 20 and 17 seconds in two
+consecutive native-output-verified cohorts; see the exact release and scope in
+[the live qualification record](../acceptance/admitted-pool-recovery-20260925/live-qualification.md).
 
 Failure is stored as `infrastructure` / `admitted_pool_unavailable`, never
 provider preemption. Generic reservation deletion/recreation similarly reports
@@ -90,6 +93,9 @@ capacity to return. No retry budget is added. If each admitted attempt remains
 unstarted, the run ends with an actionable error rather than an indefinite
 admitted state. A replacement still awaiting admission retains the original
 queue-wait policy/deadline and reports queued capacity, not GPU execution.
+If that original policy has no maximum queue wait, this change does not add one:
+the post-admission deadline is not an end-to-end completion deadline. Waiting
+without admission does not spend additional attempts or GPU execution time.
 
 Timers, attempts and pool exclusions derive from PostgreSQL attempt history and
 Kubernetes condition times; a controller restart does not replenish them. The
@@ -120,3 +126,7 @@ and named autoscaler-status read access, and record the prior Helm revision and
 image digest. Rollback restores the prior image/chart; no state migration or
 quota change is involved. Existing stored attempts remain readable by the prior
 release, although the prior controller lacks this automatic recovery behavior.
+Once a sibling data/configuration release has followed, do not blindly roll
+back the whole historical Helm revision. Re-extract the current release and
+coordinate a scoped operational-image rollback that preserves those sibling
+changes, using the recorded original values and render comparison.

@@ -187,6 +187,44 @@ def test_synthetic_return_cannot_touch_admitted_started_or_other_owned_jobs(chan
         runner.synthetic_return_patch(job, [], [workload], m.TENANT, OPERATION, "window-01")
 
 
+def copied_barrier():
+    job, workload = barrier_job()
+    workload["metadata"].update(name="exact-owned-workload", namespace=m.NAMESPACE, resourceVersion="42",
+        labels={"kueue.x-k8s.io/job-uid": job["metadata"]["uid"]}, ownerReferences=[{
+            "uid": job["metadata"]["uid"], "name": job["metadata"]["name"], "kind": "Job", "controller": True}])
+    workload["spec"] = {"podSets": [{"name": "main", "count": 1, "template": deepcopy(job["spec"]["template"])}]}
+    job = patched(job, runner.synthetic_return_patch(job, [], [workload], m.TENANT, OPERATION, "window-01"))
+    return job, workload
+
+
+def test_copied_workload_predicate_return_changes_no_status_identity_or_native_fields():
+    job, workload = copied_barrier()
+    operations = runner.synthetic_workload_return_patch(job, [], workload, m.TENANT, OPERATION, "window-01")
+    result = patched(workload, operations)
+    assert result["spec"]["podSets"][0]["template"] == job["spec"]["template"]
+    assert result["metadata"] == workload["metadata"] and result["status"] == workload["status"]
+    assert all("matchExpressions" in row["path"] for row in operations if row["op"] == "remove")
+    assert {"op": "test", "path": "/metadata/resourceVersion", "value": "42"} in operations
+    assert {"op": "test", "path": "/status", "value": workload["status"]} in operations
+
+
+@pytest.mark.parametrize("change", [
+    lambda j, w: w["metadata"]["ownerReferences"][0].update(uid="other"),
+    lambda j, w: w["metadata"]["labels"].update({"kueue.x-k8s.io/job-uid": "other"}),
+    lambda j, w: w["spec"]["podSets"][0].update(count=2),
+    lambda j, w: w["spec"]["podSets"][0]["template"]["metadata"]["labels"].update({m.PREFIX + "operation-id": "other"}),
+    lambda j, w: w["spec"]["podSets"][0]["template"]["spec"]["containers"][0].update(image="changed"),
+    lambda j, w: w["status"].update(admission={"clusterQueue": "cq"}),
+    lambda j, w: w["status"]["conditions"].append({"type": "QuotaReserved", "status": "True"}),
+    lambda j, w: j["spec"].update(suspend=False),
+])
+def test_copied_workload_return_refuses_reservations_and_any_unrelated_difference(change):
+    job, workload = copied_barrier()
+    change(job, workload)
+    with pytest.raises(runner.GateError):
+        runner.synthetic_workload_return_patch(job, [], workload, m.TENANT, OPERATION, "window-01")
+
+
 def test_rendered_objects_have_exact_create_scope_fail_open_no_rbac_or_tokens():
     resources = render.bundle(config(150), SERVER_IMAGE, "# code", b"ca", b"cert", b"key")
     hook = resources["webhook.json"]["webhooks"][0]

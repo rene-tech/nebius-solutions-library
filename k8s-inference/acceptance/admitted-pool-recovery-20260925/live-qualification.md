@@ -32,7 +32,10 @@ chart version `0.5.0`, was applied
 `project-e00rene`. Gateway 3/3 and model controller 2/2 became ready. Rollback is
 revision **227**, previous application image `719ec336ef93…`. No schema migration
 is required for this policy. Rollback removes automatic recovery, not persisted
-attempt history.
+attempt history. After the seed-only successor revisions, rollback must be
+scoped against the current release so that it preserves the newer starter seed
+image/configuration; historical revision 227 is no longer a whole-release
+rollback target without sibling coordination.
 
 The scoped release helper extracted the current live chart and caller values,
 rendered the candidate, deep-compared every resource, server-dry-ran it and
@@ -110,6 +113,20 @@ release, key, fixture, client and injection plan.
   separate revalidation at `06:35:39.758813Z`. No physics was rerun and no failed
   receipt was overwritten. The owner explicitly approved this treatment under
   the current customer release policy.
+- `synthetic-01/synthetic-return-intent.json`: after a valid 130.955826-second
+  stable unreserved interval, the first synthetic return removed the injected
+  predicate from its suspended Job only. The pinned Kueue v0.17.8
+  [PodSet equivalence implementation](https://github.com/kubernetes-sigs/kueue/blob/v0.17.8/pkg/util/equality/podset.go)
+  ignores affinity-only changes, so its existing Workload retained the copied
+  test predicate. That return was incomplete and did not demonstrate recovery.
+  The owner explicitly approved removing only the second injected copy from
+  the same unreserved Workload. Exact UID/resourceVersion/status/owner and
+  otherwise identical native Pod-spec checks, then a server dry-run, passed.
+  The separate `synthetic-workload-return-{intent,dry-run,applied}.json`
+  receipts preserve the correction. No Job, Workload, reservation or status was
+  deleted or recreated; no physical node/flavor/quota changed. Kueue then made
+  the actual admission decision. This remains synthetic eligibility-return
+  evidence, not physical fleet exhaustion or operator-assisted primary failover.
 
 ## Live outcomes
 
@@ -145,10 +162,12 @@ Their separate receipts are bound in `two-cohorts.json`; `timings.json` records
 predeclared 300-second SLO. Four real 2 ns windows completed in total.
 
 The shared deployment lock was handed back to the concurrent starter-data owner
-only after both primary cohorts passed. Additional cases will bind the final
-data-only successor release separately while preserving this operational image
-and all scientific runtime/tool pins. They do not retroactively change the
-primary cohorts' exact revision 228 evidence.
+only after both primary cohorts passed. Its seed-only successor revision **230**
+was observed deployed at `06:58:19Z`, preserving this operational image and all
+scientific runtime/tool pins. The separate initialization and synthetic
+eligibility-return cases started after that explicit final handback. They bind
+revision 230 separately and do not retroactively change the primary cohorts'
+exact revision 228 evidence.
 
 Cancellation operation `163ba414-b4f7-44a3-be45-955c8e65dec9` passed on the
 same release after actual dead-pool admission, with idempotent replay and zero
@@ -164,7 +183,8 @@ remaining owned resources. It did not manually recover any workload.
 - Helm/chart/starter suite: **142 passed**, including preserved scientific-tools
   pin and exact new read-only RBAC boundaries.
 - Acceptance, real TLS injector, controller reservation-envelope, release-diff
-  SLO timing, runtime image-ID, disjoint-case and revalidation tests: **151 passed**.
+  SLO timing, runtime image-ID, disjoint-case, copied-predicate and revalidation
+  tests: **160 passed**.
 - Broad scientific sweep: **1034 passed**, 15 skipped, five unchanged Amber
   fleet-count fixture failures and 20 pre-existing child-delegation fixture
   registration errors. These were reproduced as baseline issues and were not
