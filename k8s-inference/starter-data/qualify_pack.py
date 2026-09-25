@@ -36,8 +36,11 @@ async def coverage(root, reports):
                 ] = record
     selected, missing, models = [], [], set()
     counts = Counter(case["category"] for case in manifest["cases"])
-    if set(counts) != {c["id"] for c in manifest["categories"]} or any(
-        n < 10 for n in counts.values()
+    minimums = {c["id"]: c.get("minimum_cases", 10) for c in manifest["categories"]}
+    if (
+        set(counts) != set(minimums)
+        or any(not isinstance(n, int) or n < 1 for n in minimums.values())
+        or any(counts[category] < n for category, n in minimums.items())
     ):
         raise ValueError("category_case_coverage_incomplete")
     for obj in manifest["objects"]:

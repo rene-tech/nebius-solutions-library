@@ -34,6 +34,50 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def file_sha(path):
+    with path.open("rb") as stream:
+        return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+async def download_verified(http, url, target, reference):
+    """Stream a large immutable result, publishing only complete verified bytes."""
+    temporary = target.with_name(target.name + ".partial")
+    digest, size = hashlib.sha256(), 0
+    async with http.stream("GET", url) as response:
+        response.raise_for_status()
+        with temporary.open("wb") as output:
+            async for block in response.aiter_bytes():
+                size += len(block)
+                if size > reference["size_bytes"]:
+                    raise ValueError("download_size_mismatch")
+                digest.update(block)
+                output.write(block)
+            output.flush()
+            os.fsync(output.fileno())
+    if size != reference["size_bytes"] or digest.hexdigest() != reference["sha256"]:
+        raise ValueError("download_checksum_mismatch")
+    os.replace(temporary, target)
+
+
+async def download_with_retry(http, url, target, reference, *, deadline):
+    """Retry only immutable GETs; never duplicate a model submission."""
+    import httpx2
+
+    for attempt in range(6):
+        try:
+            await download_verified(http, url, target, reference)
+            return
+        except httpx2.HTTPStatusError as exc:
+            if exc.response.status_code not in {429, 502, 503, 504}:
+                raise
+            if attempt == 5 or time.monotonic() >= deadline:
+                raise
+        except (httpx2.TransportError, httpx2.TimeoutException):
+            if attempt == 5 or time.monotonic() >= deadline:
+                raise
+        await asyncio.sleep(min(2**attempt, 10))
+
+
 def save(path, value):
     temporary = path.with_name(path.name + ".tmp")
     descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -272,7 +316,7 @@ async def validate_all(root, contracts):
                         "state": "schema-validated",
                     }
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- retain bounded per-recipe validation failure
                 results.append(
                     {
                         "case_id": case["id"],
@@ -306,6 +350,12 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
     if model is None:
         model = recipes[0]["model_id"]
     recipe = next(item for item in recipes if item["model_id"] == model)
+    download_budget = recipe.get("download_budget_bytes", 128 * 1024 * 1024)
+    download_count = recipe.get("download_max_artifacts", 256)
+    if not isinstance(download_budget, int) or not 0 < download_budget <= 8 * 1024**3:
+        raise ValueError("invalid_recipe_download_budget")
+    if not isinstance(download_count, int) or not 0 < download_count <= 4096:
+        raise ValueError("invalid_recipe_artifact_budget")
     offline_arguments = await inputs.materialize(recipe["arguments"])
     input_sha256 = sha(encoded(offline_arguments))
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -351,7 +401,7 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
     if record["state"] in {"succeeded", "failed", "cancelled", "expired", "preempted"}:
         for artifact in record["artifacts"]:
             path = output / artifact["local_path"]
-            if not path.is_file() or sha(path.read_bytes()) != artifact["sha256"]:
+            if not path.is_file() or file_sha(path) != artifact["sha256"]:
                 raise ValueError("retained_result_artifact_missing_or_changed")
         return record
     save(receipt_path, record)
@@ -479,27 +529,21 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
                                 expanded.add(artifact_id)
                             continue
                         if (
-                            total + item["size_bytes"] > 128 * 1024 * 1024
-                            or len(retained) >= 256
+                            total + item["size_bytes"] > download_budget
+                            or len(retained) >= download_count
                         ):
                             raise ValueError("result_download_budget_exceeded")
-                        response = await read_with_retry(
+                        name = artifact_id + ".bin"
+                        await download_with_retry(
                             http,
                             origin + "/v1/artifacts/" + artifact_id + "/content",
+                            output / name,
+                            item,
                             deadline=started + observe_seconds,
                         )
-                        response.raise_for_status()
-                        data = response.content
-                        if (
-                            sha(data) != item["sha256"]
-                            or len(data) != item["size_bytes"]
-                        ):
-                            raise ValueError("download_checksum_mismatch")
-                        name = artifact_id + ".bin"
-                        (output / name).write_bytes(data)
                         record["artifacts"].append({**item, "local_path": name})
                         retained.add(artifact_id)
-                        total += len(data)
+                        total += item["size_bytes"]
                         save(receipt_path, record)
                         if (
                             item["media_type"]
@@ -509,7 +553,7 @@ async def run(root, case_id, model, output, *, endpoint, key, observe_seconds=18
                             }
                             and item.get("compression", "none") == "none"
                         ):
-                            pending.append(json.loads(data))
+                            pending.append(json.loads((output / name).read_bytes()))
                             expanded.add(artifact_id)
                     else:
                         pending.extend(item.values())
