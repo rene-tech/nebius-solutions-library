@@ -207,7 +207,8 @@ def test_rendered_objects_have_exact_create_scope_fail_open_no_rbac_or_tokens():
     assert resources["tls-secret-private.json"]["immutable"] is True
 
 
-def test_tls_chain_hostname_and_actual_https_handler(tmp_path):
+@pytest.mark.parametrize("admission_path", ["/mutate", "/mutate?timeout=2s"])
+def test_tls_chain_hostname_and_actual_https_handler(tmp_path, admission_path):
     mask = os.umask(0o077)
     try:
         ca, cert, key = render.certificates(tmp_path)
@@ -230,7 +231,7 @@ def test_tls_chain_hostname_and_actual_https_handler(tmp_path):
         client.request("GET", "/healthz")
         response = client.getresponse()
         assert response.status == 200 and json.loads(response.read()) == {"ok": True}
-        client.request("POST", "/mutate", body=json.dumps(review()), headers={"Content-Type": "application/json"})
+        client.request("POST", admission_path, body=json.dumps(review()), headers={"Content-Type": "application/json"})
         response = client.getresponse()
         payload = json.loads(response.read())["response"]
         assert response.status == 200 and payload["allowed"] and payload["uid"] == "request-uid"

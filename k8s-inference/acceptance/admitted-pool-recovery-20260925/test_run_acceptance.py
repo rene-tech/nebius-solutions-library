@@ -171,3 +171,15 @@ def test_two_cohorts_require_same_release_and_consecutive_distinct_runs(tmp_path
         m.combine([first, third])
     with pytest.raises(m.GateError, match="duplicate"):
         m.combine([first, first])
+
+
+def test_readback_normalizes_only_kubernetes_empty_egress_omission():
+    desired = {"kind": "NetworkPolicy", "spec": {"policyTypes": ["Ingress", "Egress"], "egress": []}}
+    observed = {"kind": "NetworkPolicy", "spec": {"policyTypes": ["Ingress", "Egress"]}}
+    assert m.contains_subset(m.canonical_observed_resource(observed), desired)
+    assert "egress" not in observed["spec"]
+    observed["spec"]["egress"] = [{}]
+    assert not m.contains_subset(m.canonical_observed_resource(observed), desired)
+    observed["spec"].pop("egress")
+    observed["spec"]["policyTypes"] = ["Ingress"]
+    assert not m.contains_subset(m.canonical_observed_resource(observed), desired)

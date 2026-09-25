@@ -254,6 +254,15 @@ def contains_subset(actual, expected):
     return actual == expected
 
 
+def canonical_observed_resource(actual):
+    actual = copy.deepcopy(actual)
+    # The API omits an empty egress list on read. With policyTypes=Egress,
+    # absence and [] both mean deny all; do not relax any nonempty rule.
+    if actual.get("kind") == "NetworkPolicy" and "Egress" in actual.get("spec", {}).get("policyTypes", []):
+        actual["spec"].setdefault("egress", [])
+    return actual
+
+
 def observe_injector(kube, path, release, windows):
     """Read-only, exact prepared source/config/selector identity and ready server."""
     plan = read(path)
@@ -272,7 +281,7 @@ def observe_injector(kube, path, release, windows):
             command = ["get", item["kind"], item["metadata"]["name"], "-o", "json"]
             if item["metadata"].get("namespace"):
                 command += ["-n", item["metadata"]["namespace"]]
-            actual = kube.json(*command)
+            actual = canonical_observed_resource(kube.json(*command))
             require(contains_subset(actual, item), "injector_live_configuration_changed")
             if item["kind"] == "Deployment":
                 state = actual.get("status", {})

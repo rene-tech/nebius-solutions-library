@@ -17,6 +17,7 @@ import json
 from pathlib import Path
 import re
 import ssl
+from urllib.parse import urlsplit
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 TENANT = "admitted-pool-recovery-20260925"
@@ -200,13 +201,16 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
-        self.send_json(200 if self.path == "/healthz" else 404, {"ok": self.path == "/healthz"})
+        health = urlsplit(self.path).path == "/healthz"
+        self.send_json(200 if health else 404, {"ok": health})
 
     def do_POST(self):
         self.connection.settimeout(2)
         try:
             length = int(self.headers.get("Content-Length", "0"))
-            if self.path != "/mutate" or not 0 < length <= 2_000_000:
+            # client-go appends ?timeout=2s to admission calls. HTTP routing
+            # must compare the URL path, not the complete request target.
+            if urlsplit(self.path).path != "/mutate" or not 0 < length <= 2_000_000:
                 self.send_json(400, {"error": "invalid_admission_request"})
                 return
             review = json.loads(self.rfile.read(length))
