@@ -1,8 +1,8 @@
 # Molecular-dynamics starter examples — 25 September 2026
 
-Status: qualification in progress; v3 is **not deployed** yet. The live default
-remains immutable `examples/v2/`. Do not use this preliminary record as a release
-acceptance receipt.
+Status: all 17 new recipes passed two independent native executions; the data
+image is published, but v3 is **not deployed** yet. The live default remains
+immutable `examples/v2/`. Seeded-client release acceptance is still pending.
 
 ## What is being qualified
 
@@ -20,6 +20,30 @@ outputs to their own bucket and also exposes checksum-addressed downloadable
 artifacts through the platform API.
 
 ## Evidence requirements
+
+[Native input qualification](native-validation.json) contains all 34 successful
+executions, exact hashes, engine identities and GPU job-admission records.
+[Bucket output qualification](bucket-output-validation.json) checks the actual
+customer copies of all four quickstart and full-protocol results. The two native
+cohorts overlapped, and a backend recovery rollout occurred without replacing
+their native runtime images. They are not presented as the separate sequential,
+unchanged-release seeded-client gate.
+
+Measured full-protocol accepted-to-terminal time on H100:
+
+| Engine | First run | Independent repeat |
+| --- | ---: | ---: |
+| GROMACS | 227.0 s | 235.9 s |
+| NAMD | 306.3 s | 322.1 s |
+| Amber | 202.6 s | 205.6 s |
+| LAMMPS | 3765.4 s | 3721.6 s |
+
+These include minimization, equilibration, production, startup and publication
+after admission. They exclude pre-admission client backpressure and download
+time; some requests waited considerably longer while the same concurrency-three
+test key held two long LAMMPS slots. These are not isolated kernel benchmarks,
+cold-start measurements or service-level promises. Cold-start telemetry remains
+unknown where the platform did not record it, not zero.
 
 - Execute all 17 inputs twice with ordinary, four-App-restricted customer
   credentials through the public MCP endpoint. Keep operation IDs, immutable

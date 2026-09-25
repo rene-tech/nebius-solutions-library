@@ -1,0 +1,79 @@
+{
+  "scope": "Actual customer-bucket bytes read through ordinary scoped storage credentials, matched to the checksum-verified native result inventory.",
+  "quickstart": [
+    {
+      "bytes": 10844928,
+      "case_id": "molecular-dynamics/alanine-quickstart",
+      "job_id": "canonical-alanine",
+      "model_id": "gromacs",
+      "objects": 55,
+      "operation_id": "6ed7ab10-723e-45e6-907c-9afd0e30156c",
+      "state": "passed"
+    },
+    {
+      "bytes": 16167913,
+      "case_id": "molecular-dynamics/alanine-quickstart",
+      "job_id": "rep-1",
+      "model_id": "namd",
+      "objects": 77,
+      "operation_id": "069fe7e2-7a07-4842-826b-e5ec1d95cce8",
+      "state": "passed"
+    },
+    {
+      "bytes": 12583155,
+      "case_id": "molecular-dynamics/alanine-quickstart",
+      "job_id": "canonical-alanine-tip3p",
+      "model_id": "amber",
+      "objects": 39,
+      "operation_id": "6b25b6d5-c8c7-4e64-9e6d-37606fd5cb0d",
+      "state": "passed"
+    },
+    {
+      "bytes": 56769037,
+      "case_id": "molecular-dynamics/alanine-quickstart",
+      "job_id": "alanine-canonical",
+      "model_id": "lammps",
+      "objects": 38,
+      "operation_id": "a07cd206-94f2-4582-b7bb-a750dc33d967",
+      "state": "passed"
+    }
+  ],
+  "full_protocol": [
+    {
+      "bytes": 119480733,
+      "case_id": "molecular-dynamics/alanine-1ns",
+      "job_id": "canonical-alanine",
+      "model_id": "gromacs",
+      "objects": 55,
+      "operation_id": "c4e581cc-7c89-45a4-a86b-1b5ecc2d5318",
+      "state": "passed"
+    },
+    {
+      "bytes": 108004028,
+      "case_id": "molecular-dynamics/alanine-1ns",
+      "job_id": "rep-1",
+      "model_id": "namd",
+      "objects": 76,
+      "operation_id": "fbfdd61c-4272-478a-b712-23b170da7e70",
+      "state": "passed"
+    },
+    {
+      "bytes": 193931511,
+      "case_id": "molecular-dynamics/alanine-1ns",
+      "job_id": "canonical-alanine-tip3p",
+      "model_id": "amber",
+      "objects": 38,
+      "operation_id": "9108d654-94c3-4e36-9b0c-52dc31a98133",
+      "state": "passed"
+    },
+    {
+      "bytes": 953371578,
+      "case_id": "molecular-dynamics/alanine-1ns",
+      "job_id": "alanine-canonical",
+      "model_id": "lammps",
+      "objects": 39,
+      "operation_id": "a60f973c-eb62-4f93-b3bb-924ef7c406f6",
+      "state": "passed"
+    }
+  ]
+}

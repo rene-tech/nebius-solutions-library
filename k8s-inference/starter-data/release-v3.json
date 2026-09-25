@@ -1,0 +1,23 @@
+{
+  "version": "v3",
+  "pack_manifest_sha256": "c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709",
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/customer-starter-data@sha256:58a2a15581d4abf7fe661f814bd5c38e5e7a4500ae97db7322e2442c0932b50c",
+  "image_platform_manifest": "sha256:fac836977caeb59216981145abe538532a42d4a86761242e71f4c323fc932c56",
+  "source_commit": "db4b7d9eb03b1b676ae7c90cba9570a02c66a71b",
+  "models": 39,
+  "categories": 12,
+  "cases": 125,
+  "recipes": 160,
+  "objects_including_manifest": 498,
+  "total_bytes": 53900577,
+  "md_cases": 5,
+  "md_unique_recipes": 17,
+  "md_independent_native_executions": 34,
+  "inherited_unchanged_v2_recipe_proofs": 143,
+  "qualification_scope": "Exact starter inputs, typed recipes, native results and bucket delivery. Historical proofs for unchanged v2 inputs are not a new all-model qualification. Not scientific convergence, clinical efficacy, browser readiness or whole-platform performance.",
+  "deployment_status": "published; bucket rollout and seeded-client acceptance pending",
+  "sbom_attestation": "sha256:9155c3fd268f9355eb87715379a60a3ec710c554818d7033a95cc7a1bbdd9ba5",
+  "provenance_attestation": "sha256:fd31b2b601013d73b55f9edc83b76adb430c0999293fe01346eef62f46eec16e",
+  "trivy_result": "No package, secret or misconfiguration result entries; not an independent security review.",
+  "retained_runtime_followup": "fs2-failed-native-diagnostic-upload-identity-r20260925"
+}

@@ -1,6 +1,7 @@
 # Molecular-dynamics starter pack v3
 
-Work in progress; do not distribute a draft pack. This extends the qualified v2
+Published image; customer-bucket rollout is still pending. Never distribute a
+draft pack. This extends the qualified v2
 data artifact and preserves its 120 cases and exact unchanged recipe/input bytes.
 The category `molecular-dynamics` matches the live catalog. Five workflow examples
 share **one** canonical molecule; this is not presented as five different systems.
@@ -95,7 +96,8 @@ An initial Amber batch used nine-digit seeds, and native output validation
 reported overflowed fields. Candidate replica seeds now retain the original
 eight-digit width and remain independent. Both corrected replica jobs completed
 and passed native validation in operation
-`0ff4892a-cc90-402a-b542-d1355b6db66d`; the independent repeat is still pending.
+`0ff4892a-cc90-402a-b542-d1355b6db66d`; independent repeat
+`c62ef226-238d-4d20-afa1-e39d022a40f7` also passed both replicas.
 Native finite/overflow checks were not weakened to turn this failure into a pass.
 
 That failure also exposed a separate shared collector defect: multiple failed
