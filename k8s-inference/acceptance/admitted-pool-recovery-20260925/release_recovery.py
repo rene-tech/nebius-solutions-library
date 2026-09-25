@@ -12,6 +12,7 @@ import json
 import os
 import re
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 import yaml
@@ -189,10 +190,21 @@ def main():
     require(dry.returncode == 0, "helm_server_dry_run_failed")
     if args.apply:
         require(json.loads(subprocess.check_output(history_cmd)) == history, "release_changed_recapture_required")
+        def workload_snapshot():
+            pods = json.loads(subprocess.check_output(kube + ["-n", "fs2-models", "get", "pods", "-o", "json"]))
+            return [{"name": pod["metadata"]["name"], "uid": pod["metadata"]["uid"],
+                     "tenant": pod["metadata"].get("labels", {}).get("fs2.nebius.ai/tenant-id"),
+                     "operation": pod["metadata"].get("labels", {}).get("fs2.nebius.ai/operation-id"),
+                     "phase": pod.get("status", {}).get("phase"), "node": pod["spec"].get("nodeName")}
+                    for pod in pods["items"]]
+        save(args.output / "scientific-pods-before.json", workload_snapshot())
+        receipt["apply_started_at"] = datetime.now(UTC).isoformat()
         applied = subprocess.run(upgrade + ["--wait", "--timeout", "10m", "--rollback-on-failure"], capture_output=True)
         (args.output / "apply-private.txt").write_bytes(applied.stdout + applied.stderr)
         require(applied.returncode == 0, "helm_recovery_rollout_failed")
-        receipt.update(applied=True, new_revision=json.loads(subprocess.check_output(history_cmd))[0]["revision"])
+        receipt.update(applied=True, new_revision=json.loads(subprocess.check_output(history_cmd))[0]["revision"],
+                       apply_finished_at=datetime.now(UTC).isoformat())
+        save(args.output / "scientific-pods-after.json", workload_snapshot())
         save(args.output / "applied-receipt.json", receipt)
     print(json.dumps(receipt))
 

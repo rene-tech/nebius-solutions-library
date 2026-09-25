@@ -1027,7 +1027,8 @@ def test_dynamic_model_controller_is_explicitly_gated_and_least_privilege() -> N
     assert any(rule["ports"] == [{"port": 9090, "protocol": "TCP"}] for rule in egress)
 
 
-def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() -> None:
+@pytest.mark.parametrize("tools_image", ["", "registry.nebius.cloud/unit/qualified-tools@sha256:" + "e" * 64])
+def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped(tools_image: str) -> None:
     academic_model = {
         "model_id": "alphafold3",
         "workload_namespace": "fs2-academic-poc",
@@ -1068,6 +1069,8 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
         "scientificBatch.enabled=true",
         "--set",
         "scientificBatch.writesEnabled=true",
+        "--set",
+        "scientificBatch.toolsImage=" + tools_image,
         "--set",
         "scientificBatch.schedulingContractConfigMapName=scientific-scheduling-a1",
         "--set",
@@ -1121,7 +1124,11 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     )
     assert environment["FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SHA256"]["value"] == "c" * 64
     assert environment["FS2_SCIENTIFIC_BATCH_EXECUTION_MAP_FILE"]["value"].endswith("/execution-map.json")
-    assert environment["FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE"]["value"] == container["image"]
+    assert environment["FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE"]["value"] == (tools_image or container["image"])
+    assert environment["FS2_SCIENTIFIC_POOL_FAILURE_CONFIRMATION_SECONDS"]["value"] == "120"
+    assert environment["FS2_SCIENTIFIC_ADMITTED_UNSCHEDULED_TIMEOUT_SECONDS"]["value"] == "7200"
+    assert environment["FS2_SCIENTIFIC_POOL_RECOVERY_BACKOFF_BASE_SECONDS"]["value"] == "15"
+    assert environment["FS2_SCIENTIFIC_POOL_RECOVERY_BACKOFF_MAX_SECONDS"]["value"] == "300"
     assert environment["FS2_SCIENTIFIC_ARTIFACTS_ENABLED"]["value"] == "true"
     assert environment["FS2_ARTIFACT_STORE_CREDENTIALS_FILE"]["value"] == (
         "/var/run/secrets/fs2-serve/artifact-store/credentials.json"
@@ -1240,11 +1247,20 @@ def test_scientific_batch_consumer_is_explicitly_gated_and_namespace_scoped() ->
     flavor_role = named[("ClusterRole", "fs2-serve-control-plane-scientific-batch-flavors")]
     assert flavor_role["rules"] == [
         {"apiGroups": ["kueue.x-k8s.io"], "resources": ["resourceflavors"], "verbs": ["get"]},
-        {"apiGroups": [""], "resources": ["nodes"], "verbs": ["get"]},
+        {"apiGroups": [""], "resources": ["nodes"], "verbs": ["get", "list"]},
     ]
     assert named[("ClusterRoleBinding", "fs2-serve-control-plane-scientific-batch-flavors")]["subjects"] == [
         {"kind": "ServiceAccount", "name": "fs2-serve-control-plane-runtime", "namespace": "fs2-system"}
     ]
+    pool_health = namespaced[("Role", "fs2-serve-control-plane-scientific-pool-health", "kube-system")]
+    assert pool_health["rules"] == [
+        {
+            "apiGroups": [""], "resources": ["configmaps"],
+            "resourceNames": ["cluster-autoscaler-status"], "verbs": ["get"],
+        }
+    ]
+    health_binding = namespaced[("RoleBinding", "fs2-serve-control-plane-scientific-pool-health", "kube-system")]
+    assert health_binding["subjects"] == binding["subjects"]
     tls_egress = [
         rule
         for rule in named[("NetworkPolicy", "fs2-serve-control-plane-runtime")]["spec"]["egress"]

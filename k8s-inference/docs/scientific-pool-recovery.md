@@ -86,8 +86,10 @@ exclude pools on earlier capacity-failed attempts of the same stage/shard while
 an alternative remains. Full Pod, GPU, topology, snapshot and artifact constraints
 remain in the normal manifest renderer. If every qualified pool has failed,
 the remaining original attempt budget can retest the original set, allowing
-capacity to return. No retry budget is added. With no capacity, the run ends
-with an actionable error rather than an indefinite admitted state.
+capacity to return. No retry budget is added. If each admitted attempt remains
+unstarted, the run ends with an actionable error rather than an indefinite
+admitted state. A replacement still awaiting admission retains the original
+queue-wait policy/deadline and reports queued capacity, not GPU execution.
 
 Timers, attempts and pool exclusions derive from PostgreSQL attempt history and
 Kubernetes condition times; a controller restart does not replenish them. The
