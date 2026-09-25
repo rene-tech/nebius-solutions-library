@@ -92,6 +92,100 @@ def ordinary_policy(policy, tenant):
     return {key: policy[key] for key in ("tenant_id", "principal_id", "scopes", "models", "max_concurrency")}
 
 
+def accepted_operation(document, policy, forbidden=(), *, new=False):
+    operation = document.get("operation", {})
+    require(operation.get("tenant_id") == policy["tenant_id"] and operation.get("principal_id") == policy["principal_id"]
+            and operation.get("model_id") == "gromacs", "submission_wrong_owner_or_model")
+    try:
+        identifier = str(UUID(operation["id"]))
+    except (KeyError, ValueError, TypeError, AttributeError):
+        raise GateError("submission_operation_id_invalid") from None
+    require(identifier not in forbidden, "submission_is_concurrent_cohort")
+    require(not new or operation.get("reused") is False, "submission_reused_existing_operation")
+    return identifier
+
+
+def concurrent_cohorts(paths, expected, status_reader):
+    """Explicit recorded operations only; authorize by the current ordinary key."""
+    require(len(paths) < expected["tenant_policy"]["max_concurrency"], "concurrent_cohorts_exceed_key_limit")
+    records, job_operations = {}, {}
+    for path in paths:
+        required = [path / name for name in ("intent.json", "operation.json", "customer/submission.json")]
+        require(path.is_dir() and all(p.is_file() for p in required), "concurrent_cohort_receipts_missing")
+        intent, saved, submission = (read(p) for p in required)
+        require(intent.get("schema") == SCHEMA, "concurrent_cohort_schema_invalid")
+        for key in ("endpoint", "tenant_policy", "key_id", "release_sha256", "release", "injection_mode", "injector"):
+            require(intent.get(key) == expected[key], "concurrent_cohort_identity_changed_" + key)
+        operation = accepted_operation(submission, expected["tenant_policy"])
+        require(saved.get("operation_id") == operation and intent.get("operation_id") in (None, operation), "concurrent_cohort_operation_disagrees")
+        require(operation not in records, "concurrent_cohort_duplicate_operation")
+        status = status_reader(operation)
+        require(accepted_operation(status, expected["tenant_policy"]) == operation, "concurrent_cohort_public_operation_disagrees")
+        require(status["operation"].get("model_revision") == submission["operation"].get("model_revision")
+                and status["batch"].get("model_id") == submission["batch"].get("model_id") == "gromacs"
+                and status["batch"]["workload_id"] == submission["batch"]["workload_id"], "concurrent_cohort_public_identity_changed")
+        records[operation] = {"operation_id": operation, "directory": str(path.resolve()),
+            "workload_id": status["batch"]["workload_id"], "model_revision": status["operation"]["model_revision"],
+            "receipt_sha256": {p.relative_to(path).as_posix(): sha(p) for p in required}}
+        for attempt in attempts(status):
+            uid = attempt.get("workload_uid")
+            if uid:
+                require(uid not in job_operations or job_operations[uid] == operation, "concurrent_cohort_job_uid_collision")
+                job_operations[uid] = operation
+    return records, job_operations
+
+
+def validate_concurrent_resources(tenant, records, job_operations, jobs, pods, workloads):
+    """Workloads carry tenant identity in podSets, not top-level metadata."""
+    owners = dict(job_operations)
+
+    def label_operation(labels):
+        operation = labels.get(PREFIX + "operation-id")
+        require(labels.get(PREFIX + "tenant-id") == tenant and labels.get(PREFIX + "model-id") == "gromacs"
+                and operation in records, "concurrent_unrecorded_resource")
+        require(labels.get(PREFIX + "workload-id") == records[operation]["workload_id"], "concurrent_resource_workload_mismatch")
+        return operation
+
+    def job_owner(resource):
+        meta = resource["metadata"]
+        refs = meta.get("ownerReferences", [])
+        require(meta.get("namespace") == "fs2-models" and len(refs) == 1 and refs[0].get("apiVersion") == "batch/v1"
+                and refs[0].get("kind") == "Job" and refs[0].get("uid") in owners, "concurrent_unrecorded_job_owner")
+        return refs[0]["uid"]
+
+    for job in jobs:
+        meta = job["metadata"]
+        require(meta.get("namespace") == "fs2-models", "concurrent_resource_wrong_namespace")
+        operation = label_operation(meta.get("labels", {}))
+        require(label_operation(job["spec"]["template"]["metadata"].get("labels", {})) == operation, "concurrent_template_owner_mismatch")
+        require(meta["uid"] not in owners or owners[meta["uid"]] == operation, "concurrent_cohort_job_uid_collision")
+        owners[meta["uid"]] = operation
+    for pod in pods:
+        require(label_operation(pod["metadata"].get("labels", {})) == owners[job_owner(pod)], "concurrent_pod_owner_mismatch")
+    selected_workloads = []
+    for workload in workloads:
+        meta = workload["metadata"]
+        labels = [p.get("template", {}).get("metadata", {}).get("labels", {}) for p in workload.get("spec", {}).get("podSets", [])]
+        root_labels = meta.get("labels", {})
+        owned = any(row.get(PREFIX + "tenant-id") == tenant for row in [root_labels, *labels])
+        owned = owned or root_labels.get("kueue.x-k8s.io/job-uid") in owners or any(o.get("uid") in owners for o in meta.get("ownerReferences", []))
+        if not owned:
+            continue
+        owner = job_owner(workload)
+        require(labels and all(label_operation(row) == owners[owner] for row in labels), "concurrent_workload_owner_mismatch")
+        require(root_labels.get("kueue.x-k8s.io/job-uid") == owner, "concurrent_workload_job_uid_mismatch")
+        for key in ("tenant-id", "operation-id", "model-id", "workload-id"):
+            require(PREFIX + key not in root_labels or root_labels[PREFIX + key] == labels[0][PREFIX + key], "concurrent_workload_label_mismatch")
+        selected_workloads.append(workload)
+    return {"jobs": len(jobs), "pods": len(pods), "workloads": len(selected_workloads)}
+
+
+def current_owned(kube, tenant, operation, known_job_uids=()):
+    # No receipt means no attributable operation. Never collect a concurrent
+    # cohort's resources while waiting for this client's acceptance receipt.
+    return kube.owned(tenant, operation, known_job_uids) if operation else ([], [], [])
+
+
 class Kube:
     def __init__(self, kubeconfig, context):
         self.command = ["kubectl", "--kubeconfig", str(kubeconfig), "--context", context,
@@ -565,7 +659,19 @@ def run(args):
     require(not synthetic or injector and injector["config"].get("synthetic_no_capacity"), "synthetic_injector_required")
     require(not injector or bool(injector["config"].get("synthetic_no_capacity")) == synthetic, "synthetic_injector_wrong_scenario")
     require(dead_pool(kube.nodes(), args.dead_pool), "dead_pool_not_confirmed_before_test")
-    require(not any(kube.owned(args.tenant)), "prior_task_resources_require_inspection")
+    injection_mode = "task-only-create-webhook" if injector else "guarded-suspended-job-affinity" if args.inject_dead_first_attempt else "observe-natural"
+    identity = {"endpoint": args.endpoint, "tenant_policy": policy, "key_id": key["key"]["id"],
+                "release_sha256": digest(release), "release": args.release, "injection_mode": injection_mode, "injector": injector}
+    concurrent, concurrent_inventory = {}, None
+    if args.concurrent_cohort:
+        require(args.scenario == "cancel", "concurrent_cohort_only_supported_for_cancel")
+        concurrent, prior_jobs = concurrent_cohorts(args.concurrent_cohort, identity,
+            lambda operation: call(args.endpoint, secret, "get_scientific_status", {"operation_id": operation}))
+        selector = PREFIX + "tenant-id=" + args.tenant
+        jobs, pods = (kube.items(kind, "fs2-models", selector) for kind in ("jobs", "pods"))
+        concurrent_inventory = validate_concurrent_resources(args.tenant, concurrent, prior_jobs, jobs, pods, kube.items("workloads", "fs2-models"))
+    else:
+        require(not any(kube.owned(args.tenant)), "prior_task_resources_require_inspection")
     args.output.mkdir(parents=True, exist_ok=False, mode=0o700)
     output = args.output.resolve()
     parameters, fixture_identity = prepare_parameters(args.fixture, args.windows)
@@ -575,8 +681,9 @@ def run(args):
     receipt = {"schema": SCHEMA, "scenario": args.scenario, "state": "incomplete", "started_at": now(),
                "customer_ready": False, "endpoint": args.endpoint, "tenant_policy": policy, "key_id": key["key"]["id"],
                "release_sha256": digest(release), "release": args.release, "fixture": fixture_identity,
-               "injection_mode": "task-only-create-webhook" if injector else "guarded-suspended-job-affinity" if args.inject_dead_first_attempt else "observe-natural",
+               "injection_mode": injection_mode,
                "injector": injector,
+               "concurrent_cohorts": list(concurrent.values()), "concurrent_inventory_before": concurrent_inventory,
                "operation_id": None, "errors": [], "observations": 0}
     save(output / "intent.json", receipt)
     environment = {**os.environ, "SCIENTIFIC_MODELS_API_KEY": secret, "SCIENTIFIC_MODELS_MCP_URL": args.endpoint}
@@ -595,12 +702,11 @@ def run(args):
                 submission = output / "customer/submission.json"
                 if not receipt["operation_id"] and submission.is_file():
                     accepted = read(submission)
-                    require(accepted["operation"]["tenant_id"] == args.tenant, "submission_wrong_owner")
-                    receipt["operation_id"] = str(UUID(accepted["operation"]["id"]))
+                    receipt["operation_id"] = accepted_operation(accepted, policy, concurrent, new=True)
                     receipt["model_revision"] = accepted["operation"]["model_revision"]
                     save(output / "operation.json", {"operation_id": receipt["operation_id"], "at": now()})
                 # Check owned suspended Jobs immediately, before slower public reads.
-                jobs, pods, workloads = kube.owned(args.tenant, receipt["operation_id"], known_job_uids)
+                jobs, pods, workloads = current_owned(kube, args.tenant, receipt["operation_id"], known_job_uids)
                 known_job_uids.update(j["metadata"]["uid"] for j in jobs)
                 if args.inject_dead_first_attempt and not injected:
                     candidates = [j for j in jobs if j["metadata"].get("labels", {}).get(PREFIX + "stage-id") == "workflow" and "-a1-" in j["metadata"]["name"]]
@@ -718,9 +824,12 @@ def run(args):
         # A patch race may precede the next receipt read. Recover the exact
         # saved acceptance before attempting cleanup; never guess an operation.
         if not receipt["operation_id"] and (output / "customer/submission.json").is_file():
-            accepted = read(output / "customer/submission.json")
-            if accepted["operation"].get("tenant_id") == args.tenant:
-                receipt["operation_id"] = str(UUID(accepted["operation"]["id"]))
+            try:
+                accepted = read(output / "customer/submission.json")
+                receipt["operation_id"] = accepted_operation(accepted, policy, concurrent, new=True)
+            except (GateError, ValueError, KeyError, TypeError):
+                # Unattributed/reused receipts never authorize cancellation.
+                receipt["errors"].append("cleanup_receipt_not_new_owned_operation")
         # Cancel only the exact accepted operation created by this invocation.
         if receipt["operation_id"] and (not last_status or last_status["operation"]["status"] not in TERMINAL):
             try:
@@ -791,6 +900,8 @@ def main():
     runner.add_argument("--scenario", choices=["recovery", "cancel", "no-spare", "synthetic-no-eligible-capacity"], default="recovery")
     runner.add_argument("--inject-dead-first-attempt", action="store_true")
     runner.add_argument("--admission-injector-plan", type=Path, help="Observe an explicitly reviewed/deployed optional injector; this runner never deploys it")
+    runner.add_argument("--concurrent-cohort", type=Path, action="append", default=[],
+                        help="Cancel scenario only: explicitly allow an existing, receipt-verified same-release task cohort; repeat for each")
     runner.add_argument("--dead-pool", default="h100-1x")
     runner.add_argument("--timeout-seconds", type=float, default=2400)
     runner.add_argument("--poll-seconds", type=float, default=2)

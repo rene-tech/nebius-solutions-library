@@ -183,3 +183,138 @@ def test_readback_normalizes_only_kubernetes_empty_egress_omission():
     observed["spec"].pop("egress")
     observed["spec"]["policyTypes"] = ["Ingress"]
     assert not m.contains_subset(m.canonical_observed_resource(observed), desired)
+
+
+def concurrent_fixture(tmp_path, change_intent=None, change_submission=None):
+    policy = {"tenant_id": m.TENANT, "principal_id": "pool-recovery-test", "max_concurrency": 3}
+    expected = {"endpoint": "https://example.test/mcp", "tenant_policy": policy, "key_id": "same-key",
+                "release_sha256": "same-release-hash", "release": {"source_revision": "same-revision"},
+                "injection_mode": "task-only-create-webhook", "injector": {"plan_sha256": "same-injector"}}
+    intent = {"schema": m.SCHEMA, "operation_id": None, **deepcopy(expected)}
+    submission = {"operation": {"id": OP, "tenant_id": m.TENANT, "principal_id": policy["principal_id"], "model_id": "gromacs",
+                               "model_revision": "same-model", "reused": False},
+                  "batch": {"model_id": "gromacs", "workload_id": "logical-workload", "stages": [
+                      {"stage_id": "workflow", "attempts": [{"workload_uid": "job-uid"}]}]}}
+    if change_intent:
+        change_intent(intent)
+    if change_submission:
+        change_submission(submission)
+    directory = tmp_path / "existing"
+    (directory / "customer").mkdir(parents=True)
+    m.save(directory / "intent.json", intent)
+    m.save(directory / "operation.json", {"operation_id": OP})
+    m.save(directory / "customer/submission.json", submission)
+    return directory, expected, submission
+
+
+def concurrent_resources():
+    labels = {m.PREFIX + key: value for key, value in {"tenant-id": m.TENANT, "model-id": "gromacs", "operation-id": OP,
+                                                     "workload-id": "logical-workload"}.items()}
+    owner = {"apiVersion": "batch/v1", "kind": "Job", "uid": "job-uid"}
+    job = {"metadata": {"uid": "job-uid", "namespace": "fs2-models", "labels": deepcopy(labels)},
+           "spec": {"template": {"metadata": {"labels": deepcopy(labels)}}}}
+    pod = {"metadata": {"uid": "pod-uid", "namespace": "fs2-models", "labels": deepcopy(labels), "ownerReferences": [owner]}}
+    workload = {"metadata": {"uid": "workload-uid", "namespace": "fs2-models", "ownerReferences": [owner],
+                             "labels": {"kueue.x-k8s.io/job-uid": "job-uid"}},
+                "spec": {"podSets": [{"template": {"metadata": {"labels": deepcopy(labels)}}}]}}
+    return [job], [pod], [workload]
+
+
+def test_explicit_existing_receipts_public_owner_and_unlabelled_workload_are_verified(tmp_path):
+    directory, expected, status = concurrent_fixture(tmp_path)
+    reads = []
+
+    def read_status(operation):
+        reads.append(operation)
+        return status
+
+    records, jobs = m.concurrent_cohorts([directory], expected, read_status)
+    assert reads == [OP] and set(records) == {OP} and jobs == {"job-uid": OP}
+    resources = concurrent_resources()
+    assert m.validate_concurrent_resources(m.TENANT, records, jobs, *resources) == {"jobs": 1, "pods": 1, "workloads": 1}
+    # A deleting Job may be gone while its attributed Pod/Workload remain.
+    assert m.validate_concurrent_resources(m.TENANT, records, jobs, [], *resources[1:])["workloads"] == 1
+
+
+@pytest.mark.parametrize("change", [
+    lambda value: value.update(key_id="other-key"),
+    lambda value: value.update(release_sha256="changed-release"),
+    lambda value: value.update(release={"source_revision": "changed"}),
+    lambda value: value.update(injector={"plan_sha256": "changed-injector"}),
+    lambda value: value.update(endpoint="https://other.test/mcp"),
+    lambda value: value["tenant_policy"].update(tenant_id="other-tenant"),
+    lambda value: value["tenant_policy"].update(principal_id="other-principal"),
+])
+def test_concurrent_cohort_rejects_owner_key_release_endpoint_or_injector_change(tmp_path, change):
+    directory, expected, status = concurrent_fixture(tmp_path, change_intent=change)
+    with pytest.raises(m.GateError, match="identity_changed"):
+        m.concurrent_cohorts([directory], expected, lambda _: status)
+
+
+@pytest.mark.parametrize("change", [
+    lambda value: value["operation"].update(tenant_id="customer"),
+    lambda value: value["operation"].update(principal_id="customer-principal"),
+    lambda value: value["operation"].update(model_id="namd"),
+    lambda value: value["operation"].update(id="not-a-uuid"),
+    lambda value: value["operation"].update(id="92f3f692-0d68-45cf-a138-376100000002"),
+])
+def test_concurrent_cohort_rejects_public_operation_owner_model_or_identity(tmp_path, change):
+    directory, expected, status = concurrent_fixture(tmp_path)
+    change(status)
+    with pytest.raises(m.GateError):
+        m.concurrent_cohorts([directory], expected, lambda _: status)
+
+
+def test_concurrent_cohort_requires_all_receipts_and_distinct_operations(tmp_path):
+    directory, expected, status = concurrent_fixture(tmp_path)
+    with pytest.raises(m.GateError, match="duplicate_operation"):
+        m.concurrent_cohorts([directory, directory], expected, lambda _: status)
+    missing = tmp_path / "unrecorded"
+    missing.mkdir()
+    with pytest.raises(m.GateError, match="receipts_missing"):
+        m.concurrent_cohorts([missing], expected, lambda _: status)
+
+
+@pytest.mark.parametrize("change", [
+    lambda jobs, pods, workloads: jobs[0]["metadata"]["labels"].update({m.PREFIX + "operation-id": "unrecorded"}),
+    lambda jobs, pods, workloads: jobs[0]["spec"]["template"]["metadata"]["labels"].update({m.PREFIX + "tenant-id": "customer"}),
+    lambda jobs, pods, workloads: pods[0]["metadata"]["labels"].update({m.PREFIX + "operation-id": "unrecorded"}),
+    lambda jobs, pods, workloads: pods[0]["metadata"]["ownerReferences"][0].update(uid="unrecorded-job"),
+    lambda jobs, pods, workloads: workloads[0]["metadata"]["ownerReferences"][0].update(uid="unrecorded-job"),
+    lambda jobs, pods, workloads: workloads[0]["spec"]["podSets"][0]["template"]["metadata"]["labels"].update({m.PREFIX + "operation-id": "unrecorded"}),
+    lambda jobs, pods, workloads: workloads[0]["metadata"]["labels"].update({m.PREFIX + "operation-id": "unrecorded"}),
+])
+def test_concurrent_inventory_rejects_unknown_or_conflicting_resource_owners(tmp_path, change):
+    directory, expected, status = concurrent_fixture(tmp_path)
+    records, known = m.concurrent_cohorts([directory], expected, lambda _: status)
+    resources = concurrent_resources()
+    change(*resources)
+    with pytest.raises(m.GateError):
+        m.validate_concurrent_resources(m.TENANT, records, known, *resources)
+
+
+def test_before_acceptance_no_other_cohort_resources_are_queried():
+    class Kube:
+        def __init__(self):
+            self.calls = []
+
+        def owned(self, tenant, operation, known):
+            self.calls.append((tenant, operation, known))
+            return ["new-job"], [], []
+
+    kube = Kube()
+    assert m.current_owned(kube, m.TENANT, None, {"unrelated-job"}) == ([], [], []) and kube.calls == []
+    assert m.current_owned(kube, m.TENANT, OP, {"new-job"}) == (["new-job"], [], [])
+    assert kube.calls == [(m.TENANT, OP, {"new-job"})]
+
+
+def test_new_acceptance_and_cleanup_cannot_adopt_or_cancel_existing_operation(tmp_path):
+    _, expected, submission = concurrent_fixture(tmp_path)
+    policy = expected["tenant_policy"]
+    with pytest.raises(m.GateError, match="concurrent_cohort"):
+        m.accepted_operation(submission, policy, {OP}, new=True)
+    submission["operation"]["reused"] = True
+    with pytest.raises(m.GateError, match="reused_existing"):
+        m.accepted_operation(submission, policy, new=True)
+    submission["operation"].update(reused=False, id="92f3f692-0d68-45cf-a138-376100000002")
+    assert m.accepted_operation(submission, policy, {OP}, new=True) != OP

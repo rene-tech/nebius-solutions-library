@@ -118,6 +118,26 @@ idempotency key. Preserve the exact release, identity, native fixture and client
 real admission to the dead pool with an unscheduled owned Pod. It requires a
 cancelled terminal result, released attempts and no remaining owned resources.
 
+For an independently authorized cancellation case while a recorded recovery
+cohort finishes, add
+`--concurrent-cohort /home/tux/secure-handoff/admitted-pool-recovery-20260925/cohort-02`.
+This exception is supported only with `--scenario cancel`; repeat it explicitly
+for each existing cohort, within the ordinary key's unchanged concurrency limit.
+It requires that directory's `intent.json`, `operation.json` and
+`customer/submission.json`, matching tenant/principal/key, endpoint, current
+release and exact injector. Public status under the same ordinary key confirms
+the recorded operation and GROMACS workload. Every existing task Job, Pod and
+Kueue Workload must belong to those exact recorded operations; unknown resources
+fail preflight. Workload ownership is checked through pod-set labels and Job UIDs,
+not an assumed top-level tenant label.
+
+The new runner observes no resources until its own submission is recorded, then
+uses only that new operation ID. It refuses reused/allowlisted operations, even
+during failure cleanup; it never injects or cancels another cohort. Its receipt
+records the explicit allowlist and receipt hashes. Without the flag, the original
+no-existing-work guard is unchanged. This does not relax `combine`: the two clean
+recovery cohorts must still be consecutive, non-overlapping runs on one release.
+
 `--scenario no-spare` requires a real retry waiting with a Kueue
 `QuotaReserved=False` insufficient-quota condition, no admission and no retry
 churn for at least 120 seconds, followed by successful native completion when
