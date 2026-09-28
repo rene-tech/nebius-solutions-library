@@ -884,10 +884,12 @@ class Registry:
 
     @staticmethod
     def _dynamic_permits(model: OperationalModel, principal: Principal, *, surface: str) -> bool:
-        if model.qualification_policy is not None and not model.qualification_policy.permits(
-            principal.tenant_id, principal.principal_id
-        ):
-            return False
+        qualification = model.qualification_policy
+        if qualification is not None and not qualification.permits(principal.tenant_id, principal.principal_id):
+            if surface != "catalog" or (
+                principal.tenant_id, principal.principal_id
+            ) not in qualification.discovery_identities:
+                return False
         policy = model.dynamic_policy
         if policy is None:
             return True

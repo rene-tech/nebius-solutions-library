@@ -147,7 +147,13 @@ class ScientificInputUploadService:
         except (KeyError, RuntimeError):
             if self.registry is None:
                 raise
-            self.registry.get(request.model_id, require_enabled=False)
+            model = self.registry.get(request.model_id, require_enabled=False)
+            if model.qualification_policy is not None:
+                # Catalog-only discovery never grants storage/admission for a
+                # named qualification route, even with a wildcard model key.
+                self.registry.authorize_principal(
+                    model, principal, requested_model_id=request.model_id, surface="native"
+                )
         operation = await self.store.append_operation(
             principal=principal,
             admission=AdmissionRequest(

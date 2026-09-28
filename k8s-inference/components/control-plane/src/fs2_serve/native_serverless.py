@@ -1,7 +1,8 @@
 """Signed native Serverless qualification routes; no customer-ready promotion.
 
 This is deployment configuration, not archival SM90 qualification evidence.
-Only named qualification identities may discover/admit it. The native record,
+Only named qualification identities may admit it; separately named identities
+may receive catalog metadata only. The native record,
 artifact and two-fixture contract must already validate independently. Existing
 Ed25519, route expiry, tenant grants and pinned-TLS federation remain in force.
 """
@@ -125,6 +126,7 @@ class Deployment(_Strict):
     native_fixture_receipt_sha256: str = Field(pattern=_SHA)
     file_live_parity_receipt_sha256: str = Field(pattern=_SHA)
     qualification_access: list[QualificationAccess] = Field(min_length=1, max_length=16)
+    discovery_access: list[QualificationAccess] = Field(default_factory=list, max_length=16)
     mcp_tool_name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     mcp_description: str = Field(min_length=1, max_length=240)
     attestation: dict[str, Any]
@@ -142,6 +144,7 @@ class QualificationPolicy:
     """Private authorization policy, never serialized in customer metadata."""
 
     identities: frozenset[tuple[str, str]]
+    discovery_identities: frozenset[tuple[str, str]] = frozenset()
 
     def permits(self, tenant_id: str, principal_id: str) -> bool:
         return (tenant_id, principal_id) in self.identities
@@ -170,11 +173,16 @@ def validate_worker_checkpoint(model: Any, response: Any, *, file_result: bool =
 
 
 def signed_subject(model_id: str, document: DeploymentSet, entry: Deployment) -> dict[str, Any]:
+    deployment = entry.model_dump(exclude={"attestation"})
+    # Preserve the canonical bytes of pre-discovery signatures, including
+    # explicitly empty access. Nonempty metadata grants are always signed.
+    if not entry.discovery_access:
+        deployment.pop("discovery_access")
     return {
         "schema": ENTRY_SCHEMA,
         "model_id": model_id,
         "gateway_service": document.gateway_service.model_dump(),
-        "deployment": entry.model_dump(exclude={"attestation"}),
+        "deployment": deployment,
     }
 
 
@@ -270,6 +278,9 @@ def bind_native_serverless(
         access = frozenset((row.tenant_id, row.principal_id) for row in entry.qualification_access)
         if len(access) != len(entry.qualification_access):
             raise NativeServerlessError("duplicate qualification identity")
+        discovery_access = frozenset((row.tenant_id, row.principal_id) for row in entry.discovery_access)
+        if len(discovery_access) != len(entry.discovery_access):
+            raise NativeServerlessError("duplicate discovery identity")
         if entry.mcp_tool_name in tool_names or any(
             item in entry.mcp_description.lower() for item in ("http://", "https://", "token", "secret", "credential")
         ):
@@ -346,7 +357,7 @@ def bind_native_serverless(
             federated_qualification_digest=None,
             evidence_session_id=document.session_id,
         )
-        policies[model_id] = QualificationPolicy(access)
+        policies[model_id] = QualificationPolicy(access, discovery_access)
         models[model_id] = replace(
             base,
             binding=binding,
