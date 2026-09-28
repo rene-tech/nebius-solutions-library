@@ -43,6 +43,8 @@ from .request_debug import (
     redact_query,
     redact_text,
 )
+from .runtime_scheduling import RuntimeScheduling
+from .speech_models import MEDICAL_NEMOTRON
 
 
 class RuntimeOperationError(RuntimeError):
@@ -67,6 +69,12 @@ class RouteUnavailableError(RuntimeOperationError):
 
 class RuntimeTransportError(RuntimeOperationError):
     code = "runtime_transport_error"
+
+
+class RuntimeNoReplayError(RuntimeOperationError):
+    """Accepted/uncertain non-idempotent speech work must never be replayed."""
+
+    code = "speech_outcome_uncertain"
 
 
 class RuntimeBusyError(RuntimeOperationError):
@@ -346,6 +354,7 @@ class RuntimeClient:
         metadata_provider: RuntimeMetadataProvider | None = None,
         federation: FederationRouter | None = None,
         debug_store: DebugStore | None = None,
+        speech_scheduling: RuntimeScheduling | None = None,
     ) -> None:
         self.activation_timeout_seconds = activation_timeout_seconds
         self.runtime_timeout_seconds = runtime_timeout_seconds
@@ -355,6 +364,7 @@ class RuntimeClient:
         self.metadata_provider = metadata_provider or NullRuntimeMetadataProvider()
         self.federation = federation or FederationRouter({})
         self.debug_store = debug_store
+        self.speech_scheduling = speech_scheduling
 
     @asynccontextmanager
     async def _debug_stream(
@@ -1096,6 +1106,8 @@ class RuntimeClient:
                       "parakeet-realtime-eou-120m-v1", "diar-streaming-sortformer-4spk-v2-1",
                       "magpie-tts-multilingual-357m",
                   })
+        remote_speech = (model.binding.backend_class == "federated-serverless" and operation.protocol == "native"
+                         and source_model == MEDICAL_NEMOTRON)
         magpie = speech and source_model == "magpie-tts-multilingual-357m"
         ace_step = (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
                     and source_model == "ace-step-1-5")
@@ -1128,6 +1140,19 @@ class RuntimeClient:
                     headers=headers,
                     timeout=self._timeout(operation, self.runtime_timeout_seconds),
                     **request_arguments,
+                )
+                if self.debug_store is not None:
+                    stream = self._debug_stream(stream, operation, endpoint, request_body, headers, 1)
+            elif remote_speech:
+                if operation.max_attempts != 1:
+                    raise RuntimeNoReplayError("speech file requires a non-replayable durable claim")
+                if self.speech_scheduling is None:
+                    raise RuntimeNoReplayError("speech file requires authenticated tenant scheduling")
+                group = self.speech_scheduling.headers(operation)["x-fs2-scheduling-group"]
+                stream = self.federation.speech_file(
+                    model, operation_id=operation.id, timeout_seconds=min(7500, self._timeout(
+                        operation, self.runtime_timeout_seconds)), content_type=operation.request_content_type,
+                    content=request_body, scheduling_group=group,
                 )
                 if self.debug_store is not None:
                     stream = self._debug_stream(stream, operation, endpoint, request_body, headers, 1)
@@ -1164,7 +1189,7 @@ class RuntimeClient:
                         rejected_body = await self._scientific_error_body(response)
                         if rejected_body is not None:
                             scientific_error = self._scientific_error(source_model, response.status_code, rejected_body)
-                    if (speech or paidf_chat) and response.status_code == 429:
+                    if (speech or remote_speech or paidf_chat) and response.status_code == 429:
                         rejected = bytearray()
                         capture = response.extensions.get(_DEBUG_CAPTURE_EXTENSION)
                         if isinstance(capture, _UpstreamCapture):
@@ -1183,6 +1208,8 @@ class RuntimeClient:
                             busy = False
                         if busy:
                             raise RuntimeBusyError("worker capacity is occupied")
+                    if remote_speech and response.status_code >= 500:
+                        raise RuntimeNoReplayError("speech worker failed after possible admission")
                     # Public failures carry only CP-owned wording and validated
                     # aggregate counts for the recognized scientific contracts.
                     # The optional encrypted debug capture owns original bodies.
@@ -1210,6 +1237,12 @@ class RuntimeClient:
                         raise RuntimeProtocolError("runtime response exceeded configured maximum")
                 if isinstance(capture, _UpstreamCapture):
                     capture.finished()
+                if remote_speech:
+                    from .native_serverless import NativeServerlessError, validate_worker_checkpoint
+                    try:
+                        validate_worker_checkpoint(model, json.loads(content), file_result=True)
+                    except (NativeServerlessError, ValueError, UnicodeError):
+                        raise RuntimeProtocolError("speech worker checkpoint identity differs") from None
                 if magpie:
                     usage = self._magpie_wave_usage(bytes(content), content_type)
                     semantic = "protocol_valid"
@@ -1237,7 +1270,7 @@ class RuntimeClient:
                     usage = self._reported_usage("openai-chat", bytes(content))
                 else:
                     semantic = self._semantic_outcome(operation.protocol, bytes(content))
-                    usage = self._reported_usage(operation.protocol, bytes(content), speech=speech)
+                    usage = self._reported_usage(operation.protocol, bytes(content), speech=speech or remote_speech)
                 runtime, lifecycle = await self._trusted_runtime_observation(operation, model, response)
                 return RuntimeResult(
                     status_code=response.status_code,
@@ -1251,15 +1284,27 @@ class RuntimeClient:
                 )
         except asyncio.CancelledError:
             raise
+        except RuntimeBusyError:
+            raise
         except RuntimeOperationError:
+            if remote_speech:
+                raise RuntimeNoReplayError("speech worker outcome is uncertain; automatic replay disabled") from None
             raise
         except FederationTransportError:
+            if remote_speech:
+                raise RuntimeNoReplayError("speech transport failed; automatic replay disabled") from None
             raise RuntimeTransportError("federated transport failed") from None
         except httpx.TimeoutException:
+            if remote_speech:
+                raise RuntimeNoReplayError("speech request timed out; automatic replay disabled") from None
             raise RuntimeTransportError("runtime request timed out") from None
         except (httpx.HTTPError, httpx.InvalidURL, httpx.StreamError):
+            if remote_speech:
+                raise RuntimeNoReplayError("speech transport failed; automatic replay disabled") from None
             raise RuntimeTransportError("runtime transport failed") from None
         except (ValidationError, json.JSONDecodeError, UnicodeError, ValueError, TypeError, RecursionError):
+            if remote_speech:
+                raise RuntimeNoReplayError("speech result invalid; automatic replay disabled") from None
             raise RuntimeProtocolError("runtime response is invalid") from None
 
 

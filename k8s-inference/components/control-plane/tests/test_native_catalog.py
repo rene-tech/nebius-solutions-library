@@ -89,6 +89,7 @@ def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive
         "phenoage",
         "altumage",
         "nemotron-speech-en-0-6b",
+        "nemotron-speech-en-medical-0-6b",
         "nemotron-speech-multilingual-0-6b",
         "parakeet-realtime-eou-120m-v1",
         "magpie-tts-multilingual-357m",

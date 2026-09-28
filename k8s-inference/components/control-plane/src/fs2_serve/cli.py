@@ -286,6 +286,7 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         variant_promotions_file=settings.variant_promotions_file,
         lean_routes_file=settings.lean_routes_file,
         deployment_runtime_records_file=settings.deployment_runtime_records_file,
+        native_serverless_deployments_file=settings.native_serverless_deployments_file,
         repo_root=settings.repo_root,
         evidence_root=settings.evidence_root,
         trusted_attestors_loader=settings.trusted_route_attestors,
@@ -504,6 +505,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         else None
     )
     request_debug_store = PostgresDebugStore(store.pool, store.cipher)
+    from .runtime_scheduling import RuntimeScheduling
+
     runtime_client = RuntimeClient(
         activation_timeout_seconds=settings.activation_timeout_seconds,
         runtime_timeout_seconds=settings.runtime_timeout_seconds,
@@ -511,6 +514,8 @@ async def build_runtime(settings: Settings) -> AppRuntime:
         metadata_provider=runtime_metadata_provider,
         federation=federation,
         debug_store=request_debug_store if settings.request_debug_enabled else None,
+        speech_scheduling=RuntimeScheduling.load(settings.stt_scheduling_group_key_file,
+                                                settings.stt_gateway_token_file),
     )
 
     async def refresh_routes() -> bool:
@@ -741,6 +746,7 @@ def validate(settings: Settings) -> None:
         variant_promotions_file=settings.variant_promotions_file,
         lean_routes_file=settings.lean_routes_file,
         deployment_runtime_records_file=settings.deployment_runtime_records_file,
+        native_serverless_deployments_file=settings.native_serverless_deployments_file,
         repo_root=settings.repo_root,
         evidence_root=settings.evidence_root,
         trusted_attestors_loader=settings.trusted_route_attestors,

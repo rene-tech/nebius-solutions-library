@@ -65,10 +65,13 @@ class Settings(BaseSettings):
     variant_promotions_file: Path = Path("/etc/fs2-serve/bindings/model-variant-promotions.json")
     lean_routes_file: Path | None = None
     deployment_runtime_records_file: Path | None = None
+    native_serverless_deployments_file: Path | None = None
     evidence_root: Path = Path("/etc/fs2-serve/evidence")
     customer_readiness_verdicts_file: Path | None = None
     federation_routes_file: Path = Path("/var/run/secrets/fs2-serve/federation/routes.json")
     federation_secret_dir: Path = Path("/var/run/secrets/fs2-serve/federation")
+    stt_scheduling_group_key_file: Path | None = None
+    stt_gateway_token_file: Path | None = None
     repo_root: Path | None = None
     migrations_dir: Path = _default_migrations_dir()
     token_pepper_file: Path = Path("/var/run/secrets/fs2-serve/token-pepper")

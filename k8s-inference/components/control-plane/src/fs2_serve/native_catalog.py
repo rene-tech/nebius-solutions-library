@@ -16,6 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
+from urllib.parse import urlsplit
 
 from fs2_serve_catalog.artifacts import ArtifactManifest, artifact_manifest_from_value
 from fs2_serve_catalog.loader import (
@@ -40,6 +41,40 @@ from fs2_serve_catalog.loader import (
 from .deployment_runtimes import _record, deployment_runtime_model_schema
 
 NATIVE_SCHEMA = "fs2-serve.nebius.ai/native-catalog-model/v1"
+
+
+def native_model_schema(catalog_dir: Path) -> dict[str, Any]:
+    """Add private, checksum-addressed derivatives without changing the archive."""
+    schema = deployment_runtime_model_schema(catalog_dir)
+    schema["properties"]["model"]["properties"]["source"]["properties"]["kind"]["enum"].append("artifact-store")
+    schema["properties"]["resources"]["properties"]["scaler_owner"] = {
+        "enum": ["nebius-managed-node-group-autoscaler", "nebius-serverless-endpoint"]
+    }
+    return schema
+
+
+def _derivative_source(record: Mapping[str, Any], manifest: ArtifactManifest) -> None:
+    source = record["model"]["source"]
+    if source["kind"] != "artifact-store":
+        return
+    uri = urlsplit(source["repository"] or "")
+    revision = source["revision"]
+    if (
+        uri.scheme != "https" or not uri.hostname or uri.username or uri.password
+        or uri.query or uri.fragment or uri.port not in (None, 443)
+        or not uri.path or any(part in {".", ".."} for part in uri.path.split("/"))
+        or "%" in uri.path or "\\" in uri.path
+        or not isinstance(revision, str) or not revision.startswith("sha256:")
+        or manifest.source_uri != source["repository"]
+        or len(manifest.files) != 1
+        or record["cache"]["owner"] != "runtime-image"
+        or record["cache"]["artifact"]["kind"] != "weights"
+        or not record["interface"]["policy"]["non_clinical"]
+    ):
+        raise CatalogError("native derivative requires a private-safe exact weight source")
+    expected = strong_sha256(revision.removeprefix("sha256:"), "native derivative checksum")
+    if manifest.files[0].sha256 != expected:
+        raise CatalogError("native derivative source revision differs from its weight bytes")
 
 
 def _digest(value: Any) -> str:
@@ -209,7 +244,7 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
     paths = sorted((catalog_dir / "native").glob("*.json"))
     if not paths:
         return catalog
-    schema = deployment_runtime_model_schema(catalog_dir)
+    schema = native_model_schema(catalog_dir)
     records, variants, fallbacks = (
         dict(catalog.records),
         dict(catalog.model_variants),
@@ -290,6 +325,7 @@ def augment_native_catalog(catalog: Catalog, catalog_dir: Path, *, repo_root: Pa
             raise CatalogError("native architecture differs from its declared compute resources")
         _validate_semantic(value["semantic_validator"], repository, catalog_dir)
         artifact = _artifact(path, catalog_dir, declaration["artifact_manifest"], value)
+        _derivative_source(value, artifact)
         record = ModelRecord(model_id, path, _digest(value), value)
         fallback_value = {
             "candidate_id": candidate_id,

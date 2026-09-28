@@ -1,0 +1,183 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "nemotron-speech-en-medical-0-6b",
+      "display_name": "Nemotron Speech English medical fine-tune (engineering demo)",
+      "family": "speech-recognition",
+      "tested_lane": true,
+      "source": {
+        "kind": "artifact-store",
+        "repository": "https://storage.eu-north1.nebius.cloud/clinical-speech-20260925-artifacts/runs/english-balanced-main-20260925-r1/training/nemotron-clinical-en.nemo",
+        "revision": "sha256:2a2b1cae8e96d62e83a82351f7d483df01fc28d1d64793ce45a5de514a6c3b5f",
+        "license": {
+          "id": "NVIDIA-Open-Model-License",
+          "state": "verified",
+          "notes": "Derived from NVIDIA English Nemotron revision ebe59e5a817142986528bbbee5dba8db7b38ed50 under NVIDIA Open Model License. Private retained engineering deployment; no public weights redistribution clearance or clinical safety claim."
+        },
+        "entitlement": {
+          "required": false,
+          "state": "not-required",
+          "credential_contract": null,
+          "notes": "Weights are packaged in the task-owned private runtime image. The object URI is provenance, not a public download or an alternate Hugging Face repository."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "nemo-3.1.0-stt-b193b5c65-medical",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/cs@sha256:d72183182eb0a76a947c02f7f6c107ad60b007ad8171ed5d4e1c5401501dab8a",
+        "digest": "sha256:d72183182eb0a76a947c02f7f6c107ad60b007ad8171ed5d4e1c5401501dab8a",
+        "state": "resolved"
+      },
+      "command": [
+        "python",
+        "-m",
+        "fs2_speech.serverless_entrypoint"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 16000,
+      "memory_bytes": 214748364800,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-serverless-endpoint",
+      "gpu": {
+        "class": "NVIDIA-H200-SXM-141GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/generate"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/readyz",
+        "expected_status": 200,
+        "timeout_seconds": 600
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "transcribe"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "license-dependent"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "runtime-image",
+      "shared_path": "/mnt/fs2-serve-cache/models/nemotron-speech-en-medical-0-6b",
+      "local_path": "/var/lib/fs2-serve/cache/models/nemotron-speech-en-medical-0-6b",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "2fd1b38a8147518190ded4e557a99bcaba7e579c5088a99f9c17295a85bbd9ca",
+        "expanded_bytes": 2473031680,
+        "minimum_bytes": 2473031680,
+        "capacity_bound_bytes": 2473031680,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "nemotron-selected-two-native-files-and-paced-live-parity/v1",
+      "source_path": "k8s-inference/acceptance/nemotron-speech-20260927/verify_native_receipt.py",
+      "source_sha256": "184a84c2dd1e87f54777f7a8dfe0bf07c6b4f240da4169b592d6521a229e399b",
+      "fixture_path": "k8s-inference/acceptance/nemotron-speech-20260916/native_fixtures.py",
+      "fixture_sha256": "f62b91a9c2f31e9ae7e6c4b9439d67acc3248c8b72ae661fb0da80b67e66a019",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Qualified here means only the exact private H200 worker native protocol: two synthetic complete-file requests and playback-paced live parity. Public API/MCP/browser, customer isolation, capacity and scale-out are not qualified by this record.",
+        "Selected balanced English fine-tune, not an NVIDIA-released healthcare model. Frozen critical-meaning gate remains REJECTED: medical terms, dose and negation errors and unresolved meanings remain. No clinician listening validation.",
+        "Known development cohorts, not untouched final testing: expanded clinical WER 7.00666%, general WER 2.60282%, medication lexical errors 9/37. Review original audio and speaker roles before any clinical use.",
+        "Exact measured worker: NVIDIA H200, FP32, greedy_batch, 560 ms, beam setting 4, one session in these protocol probes. Configured 16 sessions and 16 batch size are not measured capacity.",
+        "Private artifact provenance and NVIDIA Open Model License obligations are retained. Do not publish weights/audio or imply HIPAA compliance or private networking from authenticated HTTPS.",
+        "ASR alone does not infer speakers. Optional Sortformer is a separate post-stop workflow with anonymous labels and human role review.",
+        "The Serverless Endpoint is the serving resource owner. Generic inactive catalog scale policy is not evidence of an existing local GPU Deployment or permission for a second scaler."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA H200 / CUDA12.8 / FP32 / native cached RNNT greedy_batch / 560ms",
+        "outcome": "live-qualified",
+        "source_commit": "b193b5c65ed1ae0a11cb9c32b8be88c0c6c02ced",
+        "summary": "Corrected authenticated worker aiendpoint-e02ndsd0g1rr9tdmm5: two distinct files and playback-paced live transcript parity, exact checkpoint and explicit native word boundary metadata. Native receipt SHA256 a2a843ea9288ac608d0936cdf310b5ab76e0824910f6e6d1dcfbca8613ab44e2. Earlier image receipts remain historical; this is not shared customer, sustainable capacity or clinical qualification."
+      }
+    ],
+    "provenance": [
+      {
+        "commit": "b193b5c65ed1ae0a11cb9c32b8be88c0c6c02ced",
+        "tree": "e741927bd7151c34ea6a1f849e7821fc3e761fa3",
+        "path": "k8s-inference/components/speech-runtime",
+        "classification": "measured-handoff"
+      },
+      {
+        "url": "https://huggingface.co/nvidia/nemotron-speech-streaming-en-0.6b/tree/ebe59e5a817142986528bbbee5dba8db7b38ed50",
+        "revision": "ebe59e5a817142986528bbbee5dba8db7b38ed50",
+        "classification": "reviewed-input"
+      }
+    ]
+  },
+  "variant_id": "nemotron-speech-en-medical-0-6b-nemo-cuda-v1",
+  "runtime_architecture": "cuda",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-json-compact-no-newline/v1",
+    "invocation": {
+      "operation": "transcribe",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/generate"
+    },
+    "requests": [
+      {
+        "id": "speech-fixture-observatory",
+        "payload_sha256": "066a47ad3ff907d9542bdbfe6e50bd63ae6f45b0b6b85a218645a3f41715ac52"
+      },
+      {
+        "id": "speech-fixture-workshop",
+        "payload_sha256": "edc8ce864e11317f31af8bdd2472a498cd0a32bb71cdb8a55b95d388303125f3"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "artifacts/nemotron-speech-en-medical-0-6b-2fd1b38a8147518190ded4e557a99bcaba7e579c5088a99f9c17295a85bbd9ca.json",
+    "sha256": "2fd1b38a8147518190ded4e557a99bcaba7e579c5088a99f9c17295a85bbd9ca"
+  }
+}

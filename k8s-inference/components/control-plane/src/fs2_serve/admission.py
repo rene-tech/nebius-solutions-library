@@ -58,6 +58,7 @@ from .runtime import (
     RouteUnavailableError,
     RuntimeBusyError,
     RuntimeClient,
+    RuntimeNoReplayError,
     RuntimeOperationError,
 )
 from .store import ConflictError, StaleLeaseError, Store
@@ -650,6 +651,8 @@ class AdmissionService:
         return datetime.now(UTC) + timedelta(seconds=bounded * jitter)
 
     async def _retry(self, model: OperationalModel, claimed: ClaimedOperation, exc: RuntimeOperationError) -> bool:
+        if isinstance(exc, RuntimeNoReplayError):
+            return False
         if claimed.attempt >= claimed.max_attempts:
             return False
         available_at = self._retry_at(model, claimed)
@@ -1235,4 +1238,9 @@ class AdmissionService:
                 )
             except (KeyError, RuntimeError, ValueError):
                 raise RouteUnavailableError("canonical route evidence is unavailable") from None
+        if model.qualification_policy is not None:
+            try:
+                self.registry.authorize_qualification_dispatch(model, claimed.tenant_id, claimed.principal_id)
+            except (KeyError, RuntimeError, PermissionError):
+                raise RouteUnavailableError("qualification route is outside the current tenant policy") from None
         return model

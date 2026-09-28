@@ -26,6 +26,7 @@ from .scientific_batch.profile_catalog import (
     ScientificProfileCatalog,
     ScientificWorkloadProfile,
 )
+from .speech_models import MEDICAL_NEMOTRON, MEDICAL_NEMOTRON_VARIANT, SPEECH_SCHEMA_BASES
 
 Schema = dict[str, Any]
 _PROTEIN = "ACDEFGHIKLMNPQRSTVWY"
@@ -1676,6 +1677,11 @@ def _check_adapter(model: OperationalModel, model_ref: str) -> None:
         )
         if isinstance(value, str)
     }
+    if model_ref == MEDICAL_NEMOTRON:
+        # This input adapter is staged independently of the not-yet-qualified
+        # catalog record. Never inherit the base model's runtime qualification.
+        if model.gateway.runtime_kind != "custom" or variants != {MEDICAL_NEMOTRON_VARIANT}:
+            raise InputContractUnavailable("medical Nemotron requires its distinct reviewed runtime variant")
     if expected is not None:
         if model.gateway.runtime_kind != expected["runtime_kind"]:
             raise InputContractUnavailable(
@@ -1731,8 +1737,13 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
         return ModelInputContract(
             schema, (), ("k8s-inference/components/voice-runtime/src/fs2_voice/contracts.py",), model_ref, protocol
         )
-    if protocol == "native" and model_ref in _resource("speech.json"):
-        schema = copy.deepcopy(_resource("speech.json")[model_ref])
+    if protocol == "native" and model_ref in SPEECH_SCHEMA_BASES:
+        schema = copy.deepcopy(_resource("speech.json")[SPEECH_SCHEMA_BASES[model_ref]])
+        if model_ref == MEDICAL_NEMOTRON:
+            schema["description"] = (
+                "Domain-adapted English Nemotron transcription. English wire options do not identify its weights; "
+                "the selected App and immutable checkpoint identify the derivative. Not clinical validation."
+            )
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
         return ModelInputContract(
             schema,

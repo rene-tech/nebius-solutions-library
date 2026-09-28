@@ -38,6 +38,7 @@ from .model_deployment import Visibility
 from .model_deployment_publication import DynamicPublicationSnapshot
 from .models import Principal
 from .native_catalog import augment_native_catalog
+from .native_serverless import QualificationPolicy, bind_native_serverless
 
 
 class RegistryError(ValueError):
@@ -69,6 +70,7 @@ class OperationalModel:
     variant_valid_until: str | None = None
     lean_static: bool = False
     dynamic_policy: DynamicRoutePolicy | None = None
+    qualification_policy: QualificationPolicy | None = None
 
     @property
     def id(self) -> str:
@@ -176,6 +178,7 @@ class Registry:
         variant_promotions_file: Path | None
         lean_routes_file: Path | None
         deployment_runtime_records_file: Path | None
+        native_serverless_deployments_file: Path | None
         repo_root: Path | None
         evidence_root: Path | None
         max_attempts: int
@@ -323,6 +326,7 @@ class Registry:
         variant_promotions_file: Path | None,
         lean_routes_file: Path | None,
         deployment_runtime_records_file: Path | None,
+        native_serverless_deployments_file: Path | None,
         repo_root: Path | None,
         evidence_root: Path | None,
         trusted_attestors: Mapping[str, str] | None,
@@ -372,6 +376,10 @@ class Registry:
         lean_model_ids: frozenset[str] = frozenset()
         if lean_routes_file is not None:
             gateway, lean_model_ids = bind_lean_routes(gateway, lean_routes_file, catalog=catalog)
+        gateway, native_policies = bind_native_serverless(
+            gateway, catalog, native_serverless_deployments_file, catalog_dir=catalog_dir,
+            trusted_attestors=trusted_attestors, validation_time=validation_time,
+        )
         models = cls._models_from_gateway(
             gateway,
             max_attempts=max_attempts,
@@ -387,6 +395,10 @@ class Registry:
             )
         for model_id in lean_model_ids:
             models[model_id] = replace(models[model_id], lean_static=True)
+        for model_id, policy in native_policies.items():
+            # A native file accepted by an external worker is not replayable.
+            # Scope the single attempt to these explicit demo routes only.
+            models[model_id] = replace(models[model_id], qualification_policy=policy, max_attempts=1)
         return gateway, models
 
     @classmethod
@@ -400,6 +412,7 @@ class Registry:
         variant_promotions_file: Path | None = None,
         lean_routes_file: Path | None = None,
         deployment_runtime_records_file: Path | None = None,
+        native_serverless_deployments_file: Path | None = None,
         max_attempts: int,
         max_gpu_seconds_per_attempt: float,
         retry_base_seconds: float,
@@ -423,6 +436,9 @@ class Registry:
             deployment_runtime_records_file=(
                 None if deployment_runtime_records_file is None else Path(deployment_runtime_records_file)
             ),
+            native_serverless_deployments_file=(
+                None if native_serverless_deployments_file is None else Path(native_serverless_deployments_file)
+            ),
             repo_root=repo_root,
             evidence_root=evidence_root,
             max_attempts=max_attempts,
@@ -438,6 +454,7 @@ class Registry:
                 variant_promotions_file=source.variant_promotions_file,
                 lean_routes_file=source.lean_routes_file,
                 deployment_runtime_records_file=source.deployment_runtime_records_file,
+                native_serverless_deployments_file=source.native_serverless_deployments_file,
                 repo_root=repo_root,
                 evidence_root=evidence_root,
                 trusted_attestors=trusted_attestors_loader(),
@@ -639,6 +656,7 @@ class Registry:
                 variant_promotions_file=source.variant_promotions_file,
                 lean_routes_file=source.lean_routes_file,
                 deployment_runtime_records_file=source.deployment_runtime_records_file,
+                native_serverless_deployments_file=source.native_serverless_deployments_file,
                 repo_root=source.repo_root,
                 evidence_root=source.evidence_root,
                 trusted_attestors=source.trusted_attestors_loader(),
@@ -866,6 +884,10 @@ class Registry:
 
     @staticmethod
     def _dynamic_permits(model: OperationalModel, principal: Principal, *, surface: str) -> bool:
+        if model.qualification_policy is not None and not model.qualification_policy.permits(
+            principal.tenant_id, principal.principal_id
+        ):
+            return False
         policy = model.dynamic_policy
         if policy is None:
             return True
@@ -915,6 +937,20 @@ class Registry:
             raise PermissionError("model is outside token policy")
         if not self._dynamic_permits(model, principal, surface=surface):
             raise PermissionError("model is outside dynamic route policy")
+
+    def authorize_qualification_dispatch(
+        self, model: OperationalModel, tenant_id: str, principal_id: str
+    ) -> None:
+        """Candidate operations cannot dispatch using a retired/revoked route."""
+        if model.qualification_policy is None:
+            return
+        current = self.get(model.id)
+        if (
+            current.binding.binding_digest != model.binding.binding_digest
+            or current.qualification_policy is None
+            or not current.qualification_policy.permits(tenant_id, principal_id)
+        ):
+            raise PermissionError("qualification route is outside current tenant policy")
 
     def operation_for_protocol(self, model: OperationalModel, protocol: str) -> str:
         """Resolve the canonical protocol/operation relation without inventing policy."""

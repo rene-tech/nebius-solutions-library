@@ -414,9 +414,26 @@ def _model_view(
     pool_accelerator_classes: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
     projection = model.gateway.qualification
-    runtime_origin = None if projection is None else projection["runtime_origin"]
+    runtime_origin = None if projection is None else projection.get("runtime_origin")
     qualification = None
-    if projection is not None:
+    if projection is not None and "native_serverless" in projection:
+        # This signed, identity-scoped test route is not a legacy reviewed
+        # evidence snapshot or a selected-deployment-runtime record. Keep its
+        # explicit unqualified states and never leak its private upstream URL.
+        native = projection["native_serverless"]
+        qualification = {
+            "kind": "signed-native-serverless-qualification",
+            "authority": "signed-native-serverless-deployment",
+            "observed_at": None,
+            "variant_id": projection["variant_id"],
+            "checkpoint_sha256": native["checkpoint_sha256"],
+            "qualification_only": True,
+            "clinical_qualified": False,
+            "measured_capacity": None,
+            "states": dict(projection["states"]),
+            "state_reasons": {},
+        }
+    elif projection is not None:
         states = dict(projection["states"])
         state_reasons: dict[str, str] = {}
         if model.enabled and states.get("route_active") is False:

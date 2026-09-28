@@ -21,6 +21,17 @@
       "additionalProperties": false,
       "required": ["backend", "destination", "credential_mode", "health", "timeouts", "idempotency", "retry", "circuit_breaker"],
       "properties": {
+        "speech": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["stream_path", "max_session_seconds", "file_deadline_seconds", "file_retry"],
+          "properties": {
+            "stream_path": {"enum": ["/v1/audio/stream", "/v1/voice/stream"]},
+            "max_session_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 7500},
+            "file_deadline_seconds": {"type": "number", "exclusiveMinimum": 0, "maximum": 7500},
+            "file_retry": {"const": "never"}
+          }
+        },
         "backend": {
           "type": "object",
           "additionalProperties": false,
