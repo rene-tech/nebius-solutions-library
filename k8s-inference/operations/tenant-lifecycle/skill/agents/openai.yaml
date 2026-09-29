@@ -1,0 +1,4 @@
+interface:
+  display_name: "Scientific AI Tenant Lifecycle"
+  short_description: "Manage users, buckets, demo seeding and retirement"
+  default_prompt: "Use $scientific-ai-tenant-lifecycle to onboard or retire a Scientific AI user while preserving the correct tenant storage and client bindings."
