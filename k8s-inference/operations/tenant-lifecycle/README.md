@@ -15,7 +15,10 @@ PostgreSQL, create model copies, raise cloud limits or deploy a backend image.
   bucket per user**, selected before the first user is provisioned.
 - Each user keeps their **own LibreChat instance**, including users sharing a
   tenant bucket. Do not merge their chat databases or copy customer keys between
-  users. Preserve `/workspace` bucket bindings across client upgrades.
+  users unless the owner explicitly requests a shared tenant deployment.
+  **Lynx is that explicit exception:** one instance, two separate local logins,
+  one shared API key with eight concurrent operations total. Preserve
+  `/workspace` bucket bindings and every login's MongoDB state across upgrades.
 - One **system-owned demo-data source bucket** contains immutable, qualified
   `examples/vN/` packs. It is platform data, not another customer tenant. Customers
   get their own copies, never write access to the canonical source.
@@ -36,6 +39,7 @@ The owner confirmed the following on September 29, 2026:
 | --- | --- | --- | --- |
 | Rene | `rene` — existing | Customer/internal | `rene` |
 | KopraBio | `kopra` — existing | Customer | Existing `kopra` user |
+| Lynx | `lynx` — existing | Molecular-dynamics customer | Shared inference principal `lynx`; one LibreChat instance with separate Gyorgy/Daniel logins |
 | System | `system` — target | Development and QA | `development`, `qa` |
 | Demo | `demo` — target | Showcases | `demo` |
 | Speech to text | `speech-to-text` — target | Current speech workstream | `speech` |
@@ -243,6 +247,9 @@ owners, and 9 storage-only identities. Reinspect before execution; the policy
 does not auto-delete anything outside the five intended tenant groups.
 
 ## Validation
+
+The [Lynx onboarding](LYNX_ONBOARDING_20260929.md) records the explicitly requested
+shared-client exception, model grants, eight-operation cohort and private handover.
 
 The [September 29 LibreChat cleanup](LIBRECHAT_CLEANUP_20260929.md) records the
 owner-requested running-instance consolidation, exact retained clients and
