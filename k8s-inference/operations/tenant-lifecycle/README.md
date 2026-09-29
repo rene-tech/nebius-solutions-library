@@ -244,6 +244,10 @@ does not auto-delete anything outside the five intended tenant groups.
 
 ## Validation
 
+The [September 29 LibreChat cleanup](LIBRECHAT_CLEANUP_20260929.md) records the
+owner-requested running-instance consolidation, exact retained clients and
+private export/release evidence. It does not constitute user or bucket deletion.
+
 See [the exact verification and rollout status](VALIDATION.md). The installed
 skill is a symlink to `skill/` in this versioned directory, so its launchers use
 these implementations rather than independent copies. In another checkout,
