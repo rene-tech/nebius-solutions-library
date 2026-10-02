@@ -24,16 +24,16 @@ export function CustomerActions({ customer }: { customer: Customer }) {
       if (register) {
         const selected = candidates.find(value => value.resource_id === endpoint);
         if (!selected) throw new Error("Choose a fresh observed endpoint belonging to this customer.");
-        await envelopeRequest("/workbenches", { method: "POST", body: JSON.stringify({
+        await envelopeRequest("/workbenches", { method: "POST", body: {
           tenant_id: customer.tenant_id, principal_ids: [principal], name: selected.name,
           project_id: selected.project_id, endpoint_id: selected.resource_id,
           management: "managed", protected: protectedInstance,
           protection_reason: protectedInstance ? "Owner hold: do not modify" : "",
-        }) });
+        } });
         setEndpoint("");
       } else {
         await envelopeRequest(`/customers/${encodeURIComponent(customer.tenant_id)}/profile`, {
-          method: "PUT", body: JSON.stringify({ display_name: name, purpose, archived: customer.profile.archived }),
+          method: "PUT", body: { display_name: name, purpose, archived: customer.profile.archived },
         });
       }
       await client.invalidateQueries({ queryKey: ["customers"] });
@@ -78,10 +78,10 @@ export function WorkbenchUpgrade({ value, releases, enabled }: {
   async function upgrade() {
     setBusy(true); setError(null);
     try {
-      await envelopeRequest(`/workbenches/${value.id}/operations`, { method: "POST", body: JSON.stringify({
+      await envelopeRequest(`/workbenches/${value.id}/operations`, { method: "POST", body: {
         kind: "upgrade", target_release: release, expected_revision: value.revision,
         idempotency_key: crypto.randomUUID(), confirm_interruption: true,
-      }) });
+      } });
       setConfirmed(false);
       await client.invalidateQueries({ queryKey: ["customers"] });
     } catch (caught) { setError(caught instanceof Error ? caught.message : "Upgrade could not be requested"); }

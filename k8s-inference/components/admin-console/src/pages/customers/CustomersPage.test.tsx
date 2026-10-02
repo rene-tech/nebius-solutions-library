@@ -65,7 +65,12 @@ describe("Customer workbenches", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
   it("uses a durable command and explicit interruption acknowledgement", async () => {
-    const request = vi.spyOn(api, "envelopeRequest").mockResolvedValue(testEnvelope({ id: "operation", state: "queued" }));
+    // Exercise the real HTTP serializer: mocking envelopeRequest hid a
+    // double-encoded body that the live server correctly rejected with 422.
+    const request = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(
+      JSON.stringify(testEnvelope({ id: "operation", state: "queued" })),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    ));
     render(<QueryClientProvider client={new QueryClient()}><WorkbenchUpgrade
       value={{ ...workbench, protected: false, state_filesystem_id: "computefilesystem-test" }}
       releases={{ candidate: "image@sha256:abc" }} enabled /></QueryClientProvider>);
