@@ -26,7 +26,7 @@ function WorkbenchCard({ value, releases, enabled, canManage }: { value: Workben
   const observed = value.observation;
   return <article className="panel section-stack">
     <div className="section-heading"><h3>{value.name}</h3>
-      {value.protected && <span className="badge">Protected — no changes</span>}</div>
+      {value.protected && <span className="capability-chip capability-chip--unknown">Protected — no changes</span>}</div>
     <p>{value.management === "managed" ? "Operator managed" : "Customer managed"} · {value.principal_ids.join(", ")}</p>
     <p>{value.observation_state === "available" ? observed?.state : `Status ${value.observation_state}`}
       {observed && <> · observed {formatTimestamp(observed.observed_at)}</>}</p>
@@ -61,11 +61,11 @@ function CustomerDetail({ customer, releases, enabled, canManage }: { customer: 
     <section className="panel section-stack"><h3>Models used in selected window</h3>
       <p>Actual accepted requests, not the access allowlist. Key and user grants are managed under Users.</p>
       {!customer.model_usage.length ? <p>No accepted model requests in this window.</p> :
-        <div className="table-scroll"><table><thead><tr><th>Model</th><th>Requests</th><th>Succeeded</th><th>Failed</th><th>Pending / running</th><th>Last request</th></tr></thead>
+        <div className="table-frame"><table className="resource-table customer-table"><thead><tr><th>Model</th><th>Requests</th><th>Succeeded</th><th>Failed</th><th>Pending / running</th><th>Last request</th></tr></thead>
           <tbody>{customer.model_usage.map(model => <tr key={model.model_id}><td>{model.model_id}</td><td>{model.requests}</td><td>{model.succeeded}</td><td>{model.failed}</td><td>{model.in_progress}</td><td>{formatTimestamp(model.last_request_at)}</td></tr>)}</tbody></table></div>}
     </section>
     <section className="panel section-stack"><h3>Users, keys and usage</h3>
-      <div className="table-scroll"><table><thead><tr><th>User</th><th>Status</th><th>Active keys</th><th>Requests</th><th>GPU occupied</th><th>GPU occupied idle</th></tr></thead>
+      <div className="table-frame"><table className="resource-table customer-table"><thead><tr><th>User</th><th>Status</th><th>Active keys</th><th>Requests</th><th>GPU occupied</th><th>GPU occupied idle</th></tr></thead>
         <tbody>{customer.users.map(user => <tr key={user.id}>
           <td><Link to={`/admin/users/${user.id}?${navigation}`}>{user.display_name}</Link></td>
           <td>{user.enabled ? "Enabled" : "Disabled"}</td><td>{user.active_key_count}</td><td>{user.usage.requests}</td>
@@ -117,7 +117,7 @@ export function CustomersPage() {
     const rows = data.items.filter(customer => (includeLegacy || (!customer.profile.archived &&
       (customer.profile.purpose !== "legacy" || customer.workbenches.length > 0))) &&
       `${customer.tenant_id} ${customer.profile.display_name}`.toLowerCase().includes(search.toLowerCase()));
-    return <div className="page-stack">
+    return <div className="page-stack customer-page">
       <section className="panel section-heading"><div><h2>Customers</h2><p>Model usage, access, storage and Serverless LibreChat in one place.</p></div>
         <div className="button-row"><Link className="button" to={`/admin/customers-inventory?${navigation}`}>Cloud inventory</Link>
           {canManage && <button className="button" disabled={busy || !data.inventory_available} onClick={refresh}>{busy ? "Refreshing…" : "Refresh cloud state"}</button>}</div></section>
@@ -127,7 +127,7 @@ export function CustomersPage() {
       {tenantId && data.customer ? <CustomerDetail customer={data.customer} releases={data.releases ?? {}} enabled={data.lifecycle_executor_available} canManage={canManage} /> : <section className="panel section-stack">
         <label>Find customer <input value={search} onChange={event => setSearch(event.target.value)} placeholder="Name or tenant ID" /></label>
         <label><input type="checkbox" checked={includeLegacy} onChange={event => setIncludeLegacy(event.target.checked)} /> Include legacy and archived identities</label>
-        <div className="table-scroll"><table><thead><tr><th>Customer</th><th>Purpose</th><th>Users / keys</th><th>Requests</th><th>Models used</th><th>Buckets</th><th>LibreChat</th><th>Last request</th></tr></thead>
+        <div className="table-frame"><table className="resource-table"><thead><tr><th>Customer</th><th>Purpose</th><th>Users / keys</th><th>Requests</th><th>Models used</th><th>Buckets</th><th>LibreChat</th><th>Last request</th></tr></thead>
           <tbody>{rows.map(customer => <tr key={customer.tenant_id}>
             <td><Link to={`/admin/customers/${encodeURIComponent(customer.tenant_id)}?${navigation}`}>{customer.profile.display_name}</Link></td>
             <td>{customer.profile.purpose}</td><td>{customer.users.length} / {customer.active_keys}</td><td>{customer.requests}</td>
@@ -151,11 +151,11 @@ export function CustomerInventoryPage() {
     queryFn: ({ signal }) => envelopeRequest<WorkbenchInventory>(`/workbench-inventory?${params}`, { signal }) });
   return <DataBoundary data={query.data} error={query.error} pending={query.isPending}>{({ data }) => {
     const rows = data.items.filter(item => kind === "all" || (kind === "buckets" ? item.kind === "bucket" : item.kind === "endpoint" && item.is_workbench));
-    return <div className="page-stack"><section className="panel section-stack">
+    return <div className="page-stack customer-page"><section className="panel section-stack">
       <Link to={`/admin/customers?${navigation}`}>Customers</Link><h2>Cloud inventory</h2>
       <p>Includes unassigned and stopped resources. Unassigned does not mean safe to delete. Model-serving endpoints and infrastructure storage are separate from customer workbenches.</p>
       <label>Show <select value={kind} onChange={event => setKind(event.target.value)}><option value="workbenches">LibreChat endpoints</option><option value="buckets">Buckets</option><option value="all">All observed resources</option></select></label>
-      <p>{rows.length} resources</p><div className="table-scroll"><table><thead><tr><th>Resource</th><th>Customer</th><th>State</th><th>Mounts / references</th><th>Last observed</th></tr></thead>
+      <p>{rows.length} resources</p><div className="table-frame"><table className="resource-table"><thead><tr><th>Resource</th><th>Customer</th><th>State</th><th>Mounts / references</th><th>Last observed</th></tr></thead>
         <tbody>{rows.map(item => <tr key={item.resource_id}><td>{item.name}<br /><code>{item.resource_id}</code></td>
           <td>{item.tenant_id ?? "Unassigned"}{item.protected && " · Protected"}</td>
           <td>{item.observation_state === "available" ? item.state ?? bytes(item.size_bytes) : item.observation_state}</td>
