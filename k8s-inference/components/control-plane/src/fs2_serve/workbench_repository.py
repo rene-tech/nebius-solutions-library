@@ -168,7 +168,8 @@ class PostgresWorkbenchRepository:
                     actor,
                     json.dumps(specification),
                 )
-        return next(value for value in await self.operations(binding.id) if value.id == operation_id)
+        row = await self.pool.fetchrow("SELECT * FROM fs2_workbench_operations WHERE id=$1", operation_id)
+        return WorkbenchOperation.model_validate({**dict(row), "progress": document(row["progress"])})
 
 
 class MemoryWorkbenchRepository:

@@ -53,7 +53,7 @@ class NebiusWorkbenchRuntime:
         if endpoint_observation(await self.get(endpoint_id)).state != "STOPPED":
             raise RuntimeError("endpoint_not_stopped")
 
-    async def successor(self, source: Any, name: str, image: str, operation_id: str, *, rollback: bool = False) -> str:
+    async def find_successor(self, source: Any, name: str, image: str) -> str | None:
         from grpc import StatusCode
         from nebius.aio.service_error import RequestError
 
@@ -64,12 +64,17 @@ class NebiusWorkbenchRuntime:
         except RequestError as exc:
             if exc.status.code != StatusCode.NOT_FOUND:
                 raise
+            return None
         else:
             if str(existing.spec.image) != image or endpoint_observation(existing).state_filesystem_id != (
                 endpoint_observation(source).state_filesystem_id
             ):
                 raise RuntimeError("successor_identity_conflict")
             return str(existing.metadata.id)
+
+    def create_request(
+        self, source: Any, name: str, image: str, operation_id: str, *, rollback: bool = False, dry_run: bool = False
+    ) -> Any:
         spec = copy.deepcopy(source.spec)
         spec.image = image
         env = [
@@ -91,16 +96,29 @@ class NebiusWorkbenchRuntime:
         prototype.value = operation_id
         env.append(prototype)
         spec.environment_variables = env
-        operation = await self.client.create(
-            self.ai.CreateEndpointRequest(
-                metadata=self.metadata(
-                    parent_id=str(source.metadata.parent_id),
-                    name=name,
-                    labels={"managed-by": "fs2-workbenches", "workbench-operation": operation_id},
-                ),
-                spec=spec,
-            )
+        return self.ai.CreateEndpointRequest(
+            metadata=self.metadata(
+                parent_id=str(source.metadata.parent_id),
+                name=name,
+                labels={"managed-by": "fs2-workbenches", "workbench-operation": operation_id},
+            ),
+            spec=spec,
+            dry_run=dry_run,
         )
+
+    async def preflight(self, source: Any, name: str, image: str, operation_id: str) -> None:
+        # Validate the actual copied specification and permissions before an
+        # interruption. Provider dry-run does not reserve capacity or prove boot.
+        operation = await self.client.create(self.create_request(source, name, image, operation_id, dry_run=True))
+        await operation.wait()
+        if not operation.successful():
+            raise RuntimeError("successor_preflight_failed")
+
+    async def successor(self, source: Any, name: str, image: str, operation_id: str, *, rollback: bool = False) -> str:
+        existing = await self.find_successor(source, name, image)
+        if existing:
+            return existing
+        operation = await self.client.create(self.create_request(source, name, image, operation_id, rollback=rollback))
         await operation.wait()
         if not operation.successful():
             raise RuntimeError("successor_create_failed")
@@ -180,18 +198,71 @@ class WorkbenchExecutor:
                 error,
             )
 
+        async def publish(ready: Any) -> None:
+            # Keep the new URL and the predecessor's stopped state visible in
+            # the same transaction as the binding, without waiting for polling.
+            await connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtextextended($1,43))", binding.project_id
+            )
+            previous = endpoint_observation(await self.provider.get(progress["source_endpoint"]))
+            for observed in (previous, ready):
+                await connection.execute(
+                    """INSERT INTO fs2_workbench_observations(resource_id,project_id,kind,observation)
+                    VALUES($1,$2,'endpoint',$3::jsonb) ON CONFLICT(resource_id) DO UPDATE
+                    SET observation=EXCLUDED.observation,observed_at=now()""",
+                    observed.resource_id,
+                    binding.project_id,
+                    observed.model_dump_json(),
+                )
+
+        async def rollback() -> None:
+            # A crashed worker resumes rollback, never attempts the failed
+            # upgrade again. Resolve the name even if create's reply was lost.
+            progress.update(rollback_requested=True, stage="rolling_back")
+            await record()
+            source = await self.provider.get(progress["source_endpoint"])
+            await self.provider.stop(progress["source_endpoint"])
+            candidate = progress.get("successor_endpoint") or await self.provider.find_successor(
+                source, f"fs2-wb-{identity}", progress["target_image"]
+            )
+            if candidate:
+                await self.provider.stop(candidate)
+            recovery = await self.provider.successor(
+                source, f"fs2-wb-rollback-{identity}", str(source.spec.image), identity, rollback=True
+            )
+            progress.update(recovery_endpoint=recovery, stage="waiting_for_recovery")
+            await record()
+            ready = await self.provider.ready(recovery)
+            async with connection.transaction():
+                await connection.execute(
+                    "UPDATE fs2_workbenches SET endpoint_id=$2,revision=revision+1,updated_at=now() WHERE id=$1",
+                    binding.id,
+                    recovery,
+                )
+                await publish(ready)
+                progress.update(stage="rolled_back", url=ready.url)
+                await record("failed", progress.get("upgrade_error", "interrupted_upgrade"))
+
         try:
             if binding.protected or binding.endpoint_id in self.protected or binding.management != "managed":
                 raise ValueError("protected_or_unmanaged")
             if row["kind"] != "upgrade" or not binding.state_filesystem_id:
                 raise ValueError("legacy_state_requires_migration")
-            image = self.releases[command["target_release"]]
+            image = progress.get("target_image") or self.releases[command["target_release"]]
+            progress["target_image"] = image
+            if progress.get("rollback_requested"):
+                await rollback()
+                return
             source_id = progress.get("source_endpoint", binding.endpoint_id)
             source = await self.provider.get(source_id)
             observed = endpoint_observation(source)
             if observed.state_filesystem_id != binding.state_filesystem_id or not observed.persistent_state:
                 raise ValueError("persistent_state_binding_changed")
-            progress.update(source_endpoint=source_id, stage="stopping_predecessor")
+            progress.update(source_endpoint=source_id)
+            if not progress.get("preflight_verified"):
+                await self.provider.preflight(source, f"fs2-wb-{identity}", image, identity)
+                progress["preflight_verified"] = True
+            progress.update(stage="stopping_predecessor", source_stop_requested=True)
             await record()
             # stop is safe only for the validated independent state filesystem.
             await self.provider.stop(source_id)
@@ -211,30 +282,17 @@ class WorkbenchExecutor:
                     command["target_release"],
                     source_id,
                 )
+                await publish(ready)
                 progress.update(stage="complete", url=ready.url, snapshot_id=identity, predecessor_retained=True)
                 await record("succeeded")
         except asyncio.CancelledError:
             raise  # Durable progress is reconciled by the next process.
         except Exception as exc:
-            if progress.get("source_stopped"):
+            progress.setdefault("upgrade_error", type(exc).__name__)
+            if progress.get("source_stopped") or progress.get("source_stop_requested"):
                 try:
-                    if progress.get("successor_endpoint"):
-                        await self.provider.stop(progress["successor_endpoint"])
-                    source = await self.provider.get(progress["source_endpoint"])
-                    recovery = await self.provider.successor(
-                        source,
-                        f"fs2-wb-rollback-{identity}",
-                        str(source.spec.image),
-                        identity,
-                        rollback=True,
-                    )
-                    ready = await self.provider.ready(recovery)
-                    await connection.execute(
-                        "UPDATE fs2_workbenches SET endpoint_id=$2,revision=revision+1,updated_at=now() WHERE id=$1",
-                        binding.id,
-                        recovery,
-                    )
-                    progress.update(stage="rolled_back", recovery_endpoint=recovery, url=ready.url)
+                    await rollback()
+                    return
                 except Exception as recovery_error:
                     progress.update(stage="recovery_required", recovery_error=type(recovery_error).__name__)
             await record("failed", type(exc).__name__)
