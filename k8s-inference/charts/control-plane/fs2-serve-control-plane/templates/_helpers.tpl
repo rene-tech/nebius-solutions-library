@@ -186,6 +186,12 @@ app.kubernetes.io/component: model-controller
 {{- end -}}
 
 {{- define "fs2-serve.runtimeEnv" -}}
+- name: FS2_WORKBENCH_EXECUTOR_ENABLED
+  value: {{ .Values.workbenches.executorEnabled | quote }}
+- name: FS2_WORKBENCH_RELEASES
+  value: {{ .Values.workbenches.releases | toJson | quote }}
+- name: FS2_WORKBENCH_PROTECTED_ENDPOINTS
+  value: {{ .Values.workbenches.protectedEndpoints | toJson | quote }}
 {{ include "fs2-serve.databaseEnv" . }}
 {{ include "fs2-serve.cryptoEnv" . }}
 {{ include "fs2-serve.payloadEnv" . }}

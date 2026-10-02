@@ -180,6 +180,9 @@ from .user_routes import user_router
 from .user_storage_routes import user_storage_router
 from .users import UserService
 from .voice_routes import voice_router, voice_stream_router
+from .workbench_repository import MemoryWorkbenchRepository, PostgresWorkbenchRepository
+from .workbench_routes import workbench_router
+from .workbenches import WorkbenchService
 
 SCIENTIFIC_LOGGER = logging.getLogger("fs2_serve.scientific_batch")
 IDENTITY_HEADERS = {
@@ -552,6 +555,10 @@ async def _operation_response(runtime: AppRuntime, operation: OperationView) -> 
 def create_app(runtime: AppRuntime) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        if workbenches.inventory is not None:
+            workbenches.inventory.start()
+        if workbench_executor is not None:
+            workbench_executor.start()
         if users_service.storage is not None:
             users_service.storage.start()
         if runtime.route_revalidator is not None:
@@ -566,6 +573,10 @@ def create_app(runtime: AppRuntime) -> FastAPI:
         try:
             yield
         finally:
+            if workbenches.inventory is not None:
+                await workbenches.inventory.close()
+            if workbench_executor is not None:
+                await workbench_executor.close()
             await metrics_reads.close()
             if users_service.storage is not None:
                 await users_service.storage.close()
@@ -671,6 +682,28 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     )
     app.state.apps = apps_service
     app.state.users = users_service
+    workbenches = WorkbenchService(
+        PostgresWorkbenchRepository(pool) if pool is not None else MemoryWorkbenchRepository(), users_service
+    )
+    workbench_executor = None
+    workbenches.releases = runtime.settings.workbench_releases
+    workbenches.protected_endpoints = runtime.settings.workbench_protected_endpoints
+    if users_service.storage is not None:
+        from .workbench_inventory import NebiusWorkbenchInventory, WorkbenchInventoryWorker
+
+        storage_provider = users_service.storage.provider
+        workbenches.inventory = WorkbenchInventoryWorker(
+            workbenches.repository, NebiusWorkbenchInventory(storage_provider.sdk, storage_provider.project_id)
+        )
+        if runtime.settings.workbench_executor_enabled:
+            from .workbench_executor import NebiusWorkbenchRuntime, WorkbenchExecutor
+
+            workbench_executor = WorkbenchExecutor(
+                workbenches.repository, NebiusWorkbenchRuntime(storage_provider.sdk),
+                workbenches.releases, workbenches.protected_endpoints,
+            )
+            workbenches.executor_enabled = True
+    app.state.workbenches = workbenches
     app.state.app_observability = observations
     transport_store = PostgresRequestTelemetryStore(pool) if pool is not None else InMemoryRequestTelemetryStore()
     app.state.request_telemetry = transport_store
@@ -2453,6 +2486,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             envelope=app_envelope,
             problem_responses=admin_problem_responses,
         )
+    )
+    app.include_router(
+        workbench_router(service=workbenches, operator=operator, context=app_context, envelope=app_envelope)
     )
     app.include_router(
         user_router(

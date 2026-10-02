@@ -104,6 +104,7 @@ EXPECTED_MIGRATIONS: Final = (
     ("0034_retired_event_tenants.sql", "87c4f70bf7c84bb3b5b85b3e771866246cc842944a558d1828510ad4c68cdca8"),
     ("0035_benchmark_campaigns.sql", "eb614e35d3091a6ba10eaf150f65b230a755eb17eb9493dc7585bd7a3bd512af"),
     ("0036_model_retirement.sql", "5506eb0d119b6c1fa4f366e36f530a0a6f20808730942579b9cc0c9db2bf7470"),
+    ("0037_customer_workbenches.sql", "8f1c3d4a634894cdb37f3955892224c576d9a04465cc1eb924f13241e29ccbe1"),
 )
 
 NAMESPACE_ROLE_OWNERSHIP: Final[dict[str, Any]] = {

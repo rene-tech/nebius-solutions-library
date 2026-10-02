@@ -18,6 +18,7 @@ import nebiusLogo from "../assets/nebius-logo.svg";
 
 const primaryNavigation = [
   ["Apps", "/admin/apps", "AP"],
+  ["Customers", "/admin/customers", "CU"],
   ["Users", "/admin/users", "US"],
   ["Capacity", "/admin/capacity", "CP"],
 ] as const;
@@ -45,6 +46,8 @@ function titleFor(rawPathname: string, scientificLabel: string) {
   const pathname =
     rawPathname.length > 1 ? rawPathname.replace(/\/+$/, "") : rawPathname;
   if (pathname === "/admin") return "Apps";
+  if (/^\/admin\/customers\//.test(pathname)) return "Customer";
+  if (pathname === "/admin/customers-inventory") return "Cloud inventory";
   if (/^\/admin\/apps\/[^/]+/.test(pathname)) return "App";
   if (/^\/admin\/users\/[^/]+/.test(pathname)) return "User";
   if (pathname === "/admin/model-deployments/new")

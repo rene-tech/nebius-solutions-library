@@ -1,0 +1,11 @@
+# Add the new additive schema manifest to an unchanged existing consumer.
+# This preserves independently deployed controller code while its startup
+# schema check learns the new tables. No model-controller implementation changes.
+ARG CONSUMER_IMAGE
+FROM ${CONSUMER_IMAGE}
+USER 0:0
+COPY --chown=65532:65532 k8s-inference/components/control-plane/migrations/0037_customer_workbenches.sql /workspace/k8s-inference/components/control-plane/.venv/lib/python3.13/site-packages/fs2_serve/migrations/0037_customer_workbenches.sql
+COPY --chown=65532:65532 k8s-inference/components/control-plane/src/fs2_serve/postgresql_release.py /workspace/k8s-inference/components/control-plane/.venv/lib/python3.13/site-packages/fs2_serve/postgresql_release.py
+ARG FS2_SOURCE_COMMIT
+LABEL ai.nebius.fs2-serve.schema-extension-source="$FS2_SOURCE_COMMIT"
+USER 65532:65532

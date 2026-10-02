@@ -82,6 +82,9 @@ class Settings(BaseSettings):
     user_storage_cloud_tenant_id: str = ""
     user_storage_region: str = ""
     user_storage_credentials_file: Path | None = None
+    workbench_releases: dict[str, str] = Field(default_factory=dict)
+    workbench_protected_endpoints: set[str] = Field(default_factory=set)
+    workbench_executor_enabled: bool = False
     user_storage_default_mode: Literal["tenant", "user"] = "tenant"
     user_storage_quota_bytes: int = Field(default=5_000_000_000, gt=0)
     user_storage_excluded_tenants: tuple[str, ...] = ()

@@ -253,3 +253,5 @@
     flex-wrap: wrap;
   }
 }
+/* Long image digests are useful operator data, never a reason to widen the page. */
+.customer-image { overflow-wrap: anywhere; min-width: 0; }
