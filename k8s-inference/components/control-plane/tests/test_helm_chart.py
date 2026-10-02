@@ -169,6 +169,23 @@ def gateway_deployment(documents: list[dict]) -> dict:
     )
 
 
+def test_workbench_lifecycle_is_explicit_and_preserves_owner_holds() -> None:
+    defaults = gateway_deployment(render())["spec"]["template"]["spec"]["containers"][0]["env"]
+    values = {item["name"]: item.get("value") for item in defaults}
+    assert values["FS2_WORKBENCH_EXECUTOR_ENABLED"] == "false"
+    assert json.loads(values["FS2_WORKBENCH_RELEASES"]) == {}
+    assert json.loads(values["FS2_WORKBENCH_PROTECTED_ENDPOINTS"]) == []
+    selected = gateway_deployment(render(
+        "--set", "workbenches.executorEnabled=true",
+        "--set-string", "workbenches.releases.candidate=registry.example/client@" + TEST_DIGEST,
+        "--set", "workbenches.protectedEndpoints[0]=aiendpoint-held",
+    ))["spec"]["template"]["spec"]["containers"][0]["env"]
+    values = {item["name"]: item.get("value") for item in selected}
+    assert values["FS2_WORKBENCH_EXECUTOR_ENABLED"] == "true"
+    assert json.loads(values["FS2_WORKBENCH_RELEASES"]) == {"candidate": "registry.example/client@" + TEST_DIGEST}
+    assert json.loads(values["FS2_WORKBENCH_PROTECTED_ENDPOINTS"]) == ["aiendpoint-held"]
+
+
 def gateway_network_policy(documents: list[dict]) -> dict:
     return next(
         document

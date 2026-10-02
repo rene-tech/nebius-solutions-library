@@ -5,6 +5,10 @@ the fs2-serve platform. It consumes the canonical model catalog through
 `fs2_serve_catalog.consumer.load_gateway_catalog`; it does not define a second
 model authority.
 
+The [Customers and Serverless LibreChat guide](CUSTOMER_WORKBENCHES.md) describes
+the customer overview, existing-resource registration, persistent client state,
+qualified runtime updates and legacy migration requirements.
+
 The service provides revocable scoped PATs, OpenAI-compatible and native
 admission routes, encrypted PostgreSQL operations, Streamable-HTTP MCP tools,
 payload-free Prometheus/OpenTelemetry instrumentation, and an exact-binding

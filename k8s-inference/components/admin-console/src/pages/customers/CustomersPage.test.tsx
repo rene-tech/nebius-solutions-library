@@ -6,7 +6,7 @@ import * as api from "../../api/client";
 import type { CustomerList, Workbench } from "../../api/customerTypes";
 import * as sessions from "../../auth/SessionContext";
 import { testEnvelope, testSession } from "../../test/accessFixtures";
-import { WorkbenchUpgrade } from "./CustomerActions";
+import { CustomerActions, WorkbenchUpgrade } from "./CustomerActions";
 import { CustomersPage, customerWindowKey } from "./CustomersPage";
 
 const workbench: Workbench = {
@@ -83,5 +83,19 @@ describe("Customer workbenches", () => {
     const body = JSON.parse(String(request.mock.calls[0][1]?.body));
     expect(body).toMatchObject({ kind: "upgrade", target_release: "candidate", expected_revision: 1, confirm_interruption: true });
     expect(body.idempotency_key).toBeTruthy();
+  });
+  it("sends customer settings as an object on the wire, not a JSON string", async () => {
+    const request = vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, options) =>
+      new Response(JSON.stringify(testEnvelope(options?.method === "PUT" ? {} : { items: [] })),
+        { status: 200, headers: { "Content-Type": "application/json" } }));
+    render(<QueryClientProvider client={new QueryClient()}><CustomerActions customer={fleet.items[0]} /></QueryClientProvider>);
+    fireEvent.click(screen.getByText("Customer settings and instance registration"));
+    fireEvent.change(screen.getByLabelText("Display name"), { target: { value: "Research customer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save customer" }));
+    await waitFor(() => expect(request.mock.calls.some(call => call[1]?.method === "PUT")).toBe(true));
+    const mutation = request.mock.calls.find(call => call[1]?.method === "PUT");
+    expect(JSON.parse(String(mutation?.[1]?.body))).toEqual({
+      display_name: "Research customer", purpose: "customer", archived: false,
+    });
   });
 });
