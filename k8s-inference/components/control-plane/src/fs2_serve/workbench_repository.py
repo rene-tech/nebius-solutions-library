@@ -168,7 +168,10 @@ class PostgresWorkbenchRepository:
                     actor,
                     json.dumps(specification),
                 )
-        row = await self.pool.fetchrow("SELECT * FROM fs2_workbench_operations WHERE id=$1", operation_id)
+        row = await self.pool.fetchrow(
+            """SELECT id,workbench_id,kind,state,created_at,updated_at,error_code,progress
+            FROM fs2_workbench_operations WHERE id=$1""", operation_id
+        )
         return WorkbenchOperation.model_validate({**dict(row), "progress": document(row["progress"])})
 
 
