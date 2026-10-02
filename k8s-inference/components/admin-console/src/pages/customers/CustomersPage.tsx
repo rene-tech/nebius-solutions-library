@@ -14,6 +14,14 @@ function bytes(value: number | null | undefined): string {
   return value == null ? "Unknown" : `${(value / 1e9).toFixed(2)} GB`;
 }
 
+export function customerWindowKey(params: URLSearchParams, live: boolean, range: string): string {
+  const key = new URLSearchParams(params);
+  if (live) {
+    key.delete("from"); key.delete("to"); key.set("window", range);
+  }
+  return key.toString();
+}
+
 function WorkbenchCard({ value, releases, enabled, canManage }: { value: Workbench; releases: Record<string, string>; enabled: boolean; canManage: boolean }) {
   const observed = value.observation;
   return <article className="panel section-stack">
@@ -84,15 +92,17 @@ function CustomerDetail({ customer, releases, enabled, canManage }: { customer: 
 
 export function CustomersPage() {
   const { tenantId } = useParams();
-  const { params, navigation } = useAdminTimeWindow();
+  const { params, navigation, live, range } = useAdminTimeWindow();
   const { session } = useSession();
   const client = useQueryClient();
   const [search, setSearch] = useState("");
   const [includeLegacy, setIncludeLegacy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const query = useQuery({ queryKey: ["customers", tenantId, params.toString()],
-    refetchInterval: 15000,
+  // The shared live clock advances every 15 seconds. Do not cancel an in-flight
+  // seven-day aggregation by changing its query key on each tick.
+  const query = useQuery({ queryKey: ["customers", tenantId, customerWindowKey(params, live, range)],
+    refetchInterval: live ? 15000 : false,
     queryFn: ({ signal }) => envelopeRequest<CustomerList>(`/customers${tenantId ? `/${encodeURIComponent(tenantId)}` : ""}?${params}`, { signal }) });
   const canManage = Boolean(session && rolePermits(session.principal.role, "operator"));
   async function refresh() {
@@ -134,9 +144,10 @@ export function CustomersPage() {
 }
 
 export function CustomerInventoryPage() {
-  const { params, navigation } = useAdminTimeWindow();
+  const { params, navigation, live, range } = useAdminTimeWindow();
   const [kind, setKind] = useState("workbenches");
-  const query = useQuery({ queryKey: ["workbench-inventory", params.toString()],
+  const query = useQuery({ queryKey: ["workbench-inventory", customerWindowKey(params, live, range)],
+    refetchInterval: live ? 15000 : false,
     queryFn: ({ signal }) => envelopeRequest<WorkbenchInventory>(`/workbench-inventory?${params}`, { signal }) });
   return <DataBoundary data={query.data} error={query.error} pending={query.isPending}>{({ data }) => {
     const rows = data.items.filter(item => kind === "all" || (kind === "buckets" ? item.kind === "bucket" : item.kind === "endpoint" && item.is_workbench));

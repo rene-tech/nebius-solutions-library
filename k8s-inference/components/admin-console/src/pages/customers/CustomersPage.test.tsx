@@ -7,7 +7,7 @@ import type { CustomerList, Workbench } from "../../api/customerTypes";
 import * as sessions from "../../auth/SessionContext";
 import { testEnvelope, testSession } from "../../test/accessFixtures";
 import { WorkbenchUpgrade } from "./CustomerActions";
-import { CustomersPage } from "./CustomersPage";
+import { CustomersPage, customerWindowKey } from "./CustomersPage";
 
 const workbench: Workbench = {
   id: "00000000-0000-0000-0000-000000000001", name: "LynxKite", tenant_id: "lynx", principal_ids: ["lynx"],
@@ -35,6 +35,13 @@ function page(detail = false) {
 }
 
 describe("Customer workbenches", () => {
+  it("does not abandon a slow live request on every shared clock tick", () => {
+    const first = new URLSearchParams("from=first&to=second&project=customer");
+    const next = new URLSearchParams("from=third&to=fourth&project=customer");
+    expect(customerWindowKey(first, true, "168")).toBe(customerWindowKey(next, true, "168"));
+    expect(customerWindowKey(first, false, "custom")).not.toBe(customerWindowKey(next, false, "custom"));
+    expect(customerWindowKey(first, true, "1")).not.toBe(customerWindowKey(next, true, "168"));
+  });
   it("shows actual model usage and unknown cloud state without inventing zero", async () => {
     vi.spyOn(api, "envelopeRequest").mockResolvedValue(testEnvelope(fleet));
     page();
