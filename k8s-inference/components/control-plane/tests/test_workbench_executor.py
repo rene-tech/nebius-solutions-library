@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from fs2_serve.workbench_executor import WorkbenchExecutor
+from fs2_serve.workbench_executor import NebiusWorkbenchRuntime, WorkbenchExecutor
 from fs2_serve.workbench_inventory import endpoint_observation
 from fs2_serve.workbench_models import WorkbenchBinding
 from fs2_serve.workbench_repository import MemoryWorkbenchRepository
@@ -196,3 +196,32 @@ async def test_restart_during_rollback_does_not_relaunch_upgrade():
     assert all(call[2] is True for call in cloud.calls if call[0] == "successor")
     assert ("find_successor", f"fs2-wb-{row['id']}", "previously-pinned-image") in cloud.calls
     assert '"stage": "rolled_back"' in connection.writes[-1][1][2]
+
+
+def test_real_sdk_copy_preserves_secret_refs_and_does_not_mutate_source():
+    from nebius.api.nebius.ai import v1 as ai
+    from nebius.api.nebius.common.v1 import ResourceMetadata
+
+    original = ai.Endpoint(metadata=ResourceMetadata(parent_id="project-test"), spec=ai.EndpointSpec(
+        image="image:old", platform="cpu-d3", container_command="keep-command", args="keep-arguments",
+        environment_variables=[
+            ai.EndpointSpec__EnvironmentVariable(name="SCIENTIFIC_REQUIRE_PERSISTENT_STATE", value="true"),
+            ai.EndpointSpec__EnvironmentVariable(name="SCIENTIFIC_MODELS_API_KEY",
+                mysterybox_secret=ai.EndpointSpec__MysteryBoxSecretRef(secret_id="secret-fixture", version_id="v1")),
+            ai.EndpointSpec__EnvironmentVariable(name="SCIENTIFIC_STATE_SNAPSHOT", value="previous-operation"),
+        ],
+    ))
+    before = original.SerializeToString()
+    runtime = object.__new__(NebiusWorkbenchRuntime)
+    runtime.ai, runtime.metadata = ai, ResourceMetadata
+    request = runtime.create_request(original, "replacement", "image:new", "new-operation", dry_run=True)
+    assert request.dry_run is True
+    assert request.spec.image == "image:new" and request.spec.args == "keep-arguments"
+    env = {item.name: item for item in request.spec.environment_variables}
+    assert env["SCIENTIFIC_MODELS_API_KEY"].mysterybox_secret.secret_id == "secret-fixture"
+    assert env["SCIENTIFIC_STATE_SNAPSHOT"].value == "new-operation"
+    assert original.SerializeToString() == before
+    rollback = runtime.create_request(original, "recovery", "image:old", "new-operation", rollback=True)
+    env = {item.name: item for item in rollback.spec.environment_variables}
+    assert "SCIENTIFIC_STATE_SNAPSHOT" not in env
+    assert env["SCIENTIFIC_STATE_RESTORE_IF_PRESENT"].value == "new-operation"

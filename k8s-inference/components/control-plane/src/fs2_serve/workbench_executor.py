@@ -9,7 +9,6 @@ reconcilable without duplicate endpoints. No buckets, keys or users are deleted.
 from __future__ import annotations
 
 import asyncio
-import copy
 import json
 import logging
 from contextlib import suppress
@@ -75,26 +74,23 @@ class NebiusWorkbenchRuntime:
     def create_request(
         self, source: Any, name: str, image: str, operation_id: str, *, rollback: bool = False, dry_run: bool = False
     ) -> Any:
-        spec = copy.deepcopy(source.spec)
+        # Use the SDK's protobuf copy constructor. Python deepcopy also copies
+        # extension descriptors, which makes the SDK reject the resulting env.
+        spec = self.ai.EndpointSpec(source.spec)
         spec.image = image
         env = [
-            copy.deepcopy(item)
+            self.ai.EndpointSpec__EnvironmentVariable(item)
             for item in source.spec.environment_variables
             if str(item.name)
             not in {"SCIENTIFIC_STATE_SNAPSHOT", "SCIENTIFIC_STATE_RESTORE", "SCIENTIFIC_STATE_RESTORE_IF_PRESENT"}
         ]
-        # Use the existing protobuf field type, not guessed JSON. Secret refs and
-        # unrelated environment entries remain byte-for-byte equivalent.
-        prototype = copy.deepcopy(
-            next(
-                item
-                for item in source.spec.environment_variables
-                if str(item.name) == "SCIENTIFIC_REQUIRE_PERSISTENT_STATE"
+        # Secret refs and unrelated entries remain byte-for-byte equivalent.
+        env.append(
+            self.ai.EndpointSpec__EnvironmentVariable(
+                name="SCIENTIFIC_STATE_RESTORE_IF_PRESENT" if rollback else "SCIENTIFIC_STATE_SNAPSHOT",
+                value=operation_id,
             )
         )
-        prototype.name = "SCIENTIFIC_STATE_RESTORE_IF_PRESENT" if rollback else "SCIENTIFIC_STATE_SNAPSHOT"
-        prototype.value = operation_id
-        env.append(prototype)
         spec.environment_variables = env
         return self.ai.CreateEndpointRequest(
             metadata=self.metadata(
