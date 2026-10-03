@@ -23,7 +23,7 @@ from ..scientific_artifacts import (
 )
 from ..scientific_run_result import ArtifactRef
 from .capability import CapabilityArtifact, ScientificWorkloadCapability, ScientificWorkloadCapabilityAuthority
-from .models import AttemptOutcome, ScientificAttemptState, ScientificBatchState
+from .models import AttemptOutcome, ExecutionMode, ScientificAttemptState, ScientificBatchState
 from .native_workflows import workflow_for_binding
 
 
@@ -64,7 +64,11 @@ async def authorize_workload_capability(
         capability = authority.verify(_bearer(authorization))
         state = await batches.get(capability.operation_id, tenant_id=capability.tenant_id)
         stage = state.stage(capability.stage_id)
-        attempt = stage.latest_attempt(None if capability.shard_id == "gang" else capability.shard_id)
+        # "gang" is also a valid independent job ID, including single-node MPI.
+        # Only a true JobSet has the historical None attempt-shard identity.
+        # Resolve against the immutable admitted plan, never the current catalog.
+        is_gang = state.plan.stage(capability.stage_id).mode is ExecutionMode.TRUE_GANG
+        attempt = stage.latest_attempt(None if is_gang and capability.shard_id == "gang" else capability.shard_id)
     except HTTPException:
         raise
     except Exception:
@@ -114,7 +118,9 @@ def scientific_workload_artifact_router(
     ) -> tuple[ScientificWorkloadCapability, ScientificBatchState, ScientificAttemptState]:
         return await authorize_workload_capability(authority, batches, authorization)
 
-    async def checkpoint_records(capability: ScientificWorkloadCapability) -> list[ArtifactRecord]:
+    async def checkpoint_records(
+        capability: ScientificWorkloadCapability, attempt: ScientificAttemptState
+    ) -> list[ArtifactRecord]:
         # Recovery never widens a worker to another customer's, operation's,
         # stage's, or replica's files. Unrelated Apps retain the old boundary.
         if workflow_for_binding(capability.model_id, capability.stage_id, capability.collector_id) is None:
@@ -125,18 +131,18 @@ def scientific_workload_artifact_router(
         return [
             record
             for record in records
-            if record.shard_id == capability.shard_id and record.direction is ArtifactDirection.OUTPUT
+            if record.shard_id == attempt.shard_id and record.direction is ArtifactDirection.OUTPUT
         ]
 
     @router.get("/checkpoints/latest")
     async def latest_checkpoint(authorization: Annotated[str | None, Header()] = None) -> dict[str, ArtifactRef | None]:
-        capability, _, _ = await authorized(authorization)
+        capability, _, attempt = await authorized(authorization)
         workflow = workflow_for_binding(capability.model_id, capability.stage_id, capability.collector_id)
         if workflow is None:
             raise HTTPException(status_code=403, detail="this workload has no native checkpoint contract")
         records = [
             record
-            for record in await checkpoint_records(capability)
+            for record in await checkpoint_records(capability, attempt)
             if record.media_type == workflow.checkpoint_media_type
         ]
         latest = max(records, key=lambda record: record.created_at) if records else None
@@ -147,13 +153,18 @@ def scientific_workload_artifact_router(
         artifact_id: Annotated[UUID, Path()],
         authorization: Annotated[str | None, Header()] = None,
     ) -> WorkloadDownloadResponse:
-        capability, _, _ = await authorized(authorization)
+        capability, _, attempt = await authorized(authorization)
         binding: CapabilityArtifact | ArtifactRecord | None = next(
             (item for item in capability.artifacts if item.artifact_id == artifact_id), None
         )
         if binding is None:
             binding = next(
-                (record for record in await checkpoint_records(capability) if record.artifact_id == artifact_id), None
+                (
+                    record
+                    for record in await checkpoint_records(capability, attempt)
+                    if record.artifact_id == artifact_id
+                ),
+                None,
             )
             if binding is None:
                 raise HTTPException(

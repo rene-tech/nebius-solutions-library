@@ -2248,10 +2248,12 @@ async def test_kubernetes_writer_creates_real_kueue_job_shape_and_observes_attem
             assert body["metadata"]["annotations"][ACCELERATOR_RESOURCE_ANNOTATION] == "nvidia.com/gpu"
             assert body["metadata"]["annotations"][ACCELERATOR_COUNT_ANNOTATION] == "1"
             assert body["spec"]["suspend"] is True and body["spec"]["backoffLimit"] == 0
-            assert body["spec"]["podFailurePolicy"] == {"rules": [
-                {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [143]}},
-                {"action": "FailJob", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]},
-            ]}
+            assert body["spec"]["podFailurePolicy"] == {
+                "rules": [
+                    {"action": "FailJob", "onExitCodes": {"operator": "NotIn", "values": [143]}},
+                    {"action": "FailJob", "onPodConditions": [{"type": "DisruptionTarget", "status": "True"}]},
+                ]
+            }
             assert body["spec"]["activeDeadlineSeconds"] == 3600
             assert body["spec"]["template"]["metadata"]["labels"][ATTEMPT_LABEL] == str(attempt_id)
             pool_expression = body["spec"]["template"]["spec"]["affinity"]["nodeAffinity"][
@@ -3700,7 +3702,15 @@ async def test_kubernetes_delete_refuses_a_recreated_name_and_a_missing_resource
 
 
 @pytest.mark.asyncio
-async def test_workload_capability_materializes_and_commits_through_single_artifact_port(hasher) -> None:
+@pytest.mark.parametrize(
+    "mode,shard",
+    [
+        (ExecutionMode.FANOUT, "main"),
+        (ExecutionMode.FANOUT, "gang"),
+        (ExecutionMode.TRUE_GANG, "gang"),
+    ],
+)
+async def test_workload_capability_materializes_and_commits_through_single_artifact_port(hasher, mode, shard) -> None:
     now = datetime(2026, 9, 2, 21, tzinfo=UTC)
     repository = FakeScientificBatchRepository()
     cluster = FakeScientificBatchCluster()
@@ -3714,10 +3724,19 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
     operation_id = uuid4()
     input_id = uuid4()
     manifest_id = uuid4()
-    controller_plan = ScientificBatchPlan((ScientificStagePlan(stage_id="design"),))
+    controller_plan = ScientificBatchPlan(
+        (
+            ScientificStagePlan(
+                stage_id="design",
+                mode=mode,
+                shards=(shard,),
+                gang_size=2 if mode is ExecutionMode.TRUE_GANG else None,
+            ),
+        )
+    )
     invocation = StageInvocation(
         stage_id="design",
-        shard_id="main",
+        shard_id=shard,
         argv=("protein-design", "run", "--input", "/mnt/fs2-scientific/work/design/main/input.json"),
         environment=(),
         working_directory="/mnt/fs2-scientific/work/design/main",
@@ -3938,6 +3957,7 @@ async def test_workload_capability_materializes_and_commits_through_single_artif
         stale = await client.get(f"/internal/scientific-workloads/artifacts/{input_id}:download")
         assert stale.status_code == 409
     assert artifacts.upload_attempts == [resource.attempt_id] * 3
+    assert artifacts.attempts[resource.attempt_id].shard_id == (None if mode is ExecutionMode.TRUE_GANG else shard)
     assert repository.records[operation_id].status is BatchStatus.CANCELLED
 
 
