@@ -1,0 +1,61 @@
+# Bounded counterfactual: replace only Open MPI 5.0.8 in the qualified worker.
+# This retained, immutable build stage contains the original verified archive,
+# compiler/toolkit, UCX, GROMACS source, build logs, and CMake cache. See
+# cuda-aware/README.md. Do not promote this image from a successful build alone.
+ARG OPENMPI_BUILD_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs-engine@sha256:7e531c7b97c8dc7c0aea115396ff2f63f04acf9f0ae00593fa0a9a5ed9369945
+ARG MPI_WORKER_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:c6c353e55deade8c8fe7a2f02e68bcdb639c7680c8435b665e72815d0213c9ea
+FROM ${OPENMPI_BUILD_IMAGE} AS mpi_compile
+USER 0:0
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+ARG BUILD_JOBS=8
+ARG OPENMPI_SHA256=f891ddf2dab3b604f2521d0569615bc1c07a1ac86a295ac543e059aecb303621
+RUN mkdir -p /opt/fs2-cuda-aware/provenance/original /src/openmpi-cuda-aware \
+    && cp /src/openmpi-5.0.8/config.log /opt/fs2-cuda-aware/provenance/original/openmpi-config.log \
+    && cp /src/openmpi-5.0.8/opal/include/opal_config.h /opt/fs2-cuda-aware/provenance/original/opal_config.h \
+    && cp /build/gromacs/CMakeCache.txt /opt/fs2-cuda-aware/provenance/original/gromacs-CMakeCache.txt \
+    && /opt/ompi/bin/ompi_info --all --parsable > /opt/fs2-cuda-aware/provenance/original/ompi-info.txt \
+    && printf '%s  /src/openmpi.tar.gz\n' "${OPENMPI_SHA256}" | sha256sum -c - \
+    && tar -xzf /src/openmpi.tar.gz -C /src/openmpi-cuda-aware --strip-components=1 \
+    && test -f /usr/local/cuda/targets/x86_64-linux/lib/stubs/libcuda.so \
+    && cd /src/openmpi-cuda-aware \
+    && { ./configure --prefix=/opt/ompi --with-cuda=/usr/local/cuda \
+         --with-cuda-libdir=/usr/local/cuda/targets/x86_64-linux/lib/stubs \
+         --with-ucx=/opt/ucx --with-pmix=internal --with-prrte=internal \
+         --disable-mpi-fortran CC=gcc-12 CXX=g++-12 \
+         2>&1 | tee /opt/fs2-cuda-aware/provenance/configure.stdout.log; }
+# Fail closed: --with-cuda alone previously succeeded with CUDA support OFF.
+RUN grep -qx '#define OPAL_CUDA_SUPPORT 1' /src/openmpi-cuda-aware/opal/include/opal_config.h \
+    && mv /opt/ompi /opt/ompi-original \
+    && { make -C /src/openmpi-cuda-aware -j"${BUILD_JOBS}" 2>&1 | tee /opt/fs2-cuda-aware/provenance/make.log; } \
+    && { make -C /src/openmpi-cuda-aware install 2>&1 | tee /opt/fs2-cuda-aware/provenance/install.log; } \
+    && cp /src/openmpi-cuda-aware/config.log /opt/fs2-cuda-aware/provenance/openmpi-config.log \
+    && cp /src/openmpi-cuda-aware/opal/include/opal_config.h /opt/fs2-cuda-aware/provenance/opal_config.h \
+    && /opt/ompi/bin/ompi_info --all --parsable > /opt/fs2-cuda-aware/provenance/ompi-info.txt \
+    && grep -q 'opal_built_with_cuda_support:value:true$' /opt/fs2-cuda-aware/provenance/ompi-info.txt
+FROM mpi_compile AS mpi_build
+COPY cuda-aware/verify_build.py cuda-aware/mpi_device_probe.c /opt/fs2-cuda-aware/source/
+COPY --from=mpi_compile /src/openmpi-cuda-aware/LICENSE /opt/fs2-cuda-aware/provenance/LICENSE.openmpi
+RUN /opt/ompi/bin/mpicc -std=c11 -O2 -Wall -Wextra -Werror \
+      -I/usr/local/cuda/include /opt/fs2-cuda-aware/source/mpi_device_probe.c \
+      -L/usr/local/cuda/lib64 -lcudart -o /opt/fs2-cuda-aware/mpi-device-probe \
+    && sha256sum /opt/fs2-cuda-aware/source/* /opt/fs2-cuda-aware/mpi-device-probe \
+      > /opt/fs2-cuda-aware/provenance/probe-source-binary.sha256 \
+    && python3 /opt/fs2-cuda-aware/source/verify_build.py \
+      --provenance /opt/fs2-cuda-aware/provenance --mpi-prefix /opt/ompi \
+      --gromacs-prefix /opt/gromacs-mpi
+
+FROM ${MPI_WORKER_IMAGE} AS candidate
+ARG SOURCE_REVISION=development
+ARG OPENMPI_BUILD_IMAGE
+ARG MPI_WORKER_IMAGE
+USER 0:0
+LABEL org.opencontainers.image.title="Scientific AI GROMACS CUDA-aware MPI candidate (not promoted)" \
+      org.opencontainers.image.revision=${SOURCE_REVISION} \
+      ai.nebius.scientific.cuda-aware-mpi.build-image=${OPENMPI_BUILD_IMAGE} \
+      ai.nebius.scientific.cuda-aware-mpi.baseline-image=${MPI_WORKER_IMAGE}
+# Only this exact image-local MPI installation is replaced. The worker, UCX,
+# GROMACS, Python packages, environment and entrypoint remain inherited.
+RUN rm -rf /opt/ompi
+COPY --from=mpi_build /opt/ompi /opt/ompi
+COPY --from=mpi_build /opt/fs2-cuda-aware /opt/fs2-cuda-aware
+USER 10001:10001

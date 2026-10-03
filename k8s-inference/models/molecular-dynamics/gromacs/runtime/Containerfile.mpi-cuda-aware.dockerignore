@@ -1,0 +1,5 @@
+**
+!Containerfile.mpi-cuda-aware
+!cuda-aware/
+!cuda-aware/verify_build.py
+!cuda-aware/mpi_device_probe.c
