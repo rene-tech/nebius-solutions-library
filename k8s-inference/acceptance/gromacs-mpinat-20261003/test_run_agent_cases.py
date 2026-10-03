@@ -6,7 +6,7 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from run_agent_cases import IMAGE, QA_KEY_ID, gate_state, selected_cases, refresh_browser_session, wait_operator_pause
+from run_agent_cases import IMAGE, R5_IMAGE, R5_REMAINING, QA_KEY_ID, gate_state, selected_cases, refresh_browser_session, wait_operator_pause, admitted_studies
 
 
 class AgentAdmissionTests(unittest.TestCase):
@@ -50,6 +50,25 @@ class AgentAdmissionTests(unittest.TestCase):
             harness.authenticate.assert_called_once_with(client, {'email': 'qa@example.invalid', 'password': 'test-only'})
             harness.save.assert_called_once_with(root / 'session.json', {'token': 'synthetic-browser-session'})
             self.assertFalse(json.loads((root / 'browser-session-refreshes.jsonl').read_text())['inference_key_changed'])
+
+    def test_r5_excludes_completed_mem_and_requires_eighteen(self):
+        cases = [{'case_id': name} for name in sorted(R5_REMAINING)]
+        self.assertEqual(len(selected_cases({'candidate_image': R5_IMAGE, 'cases': cases}, 'benchmarks')), 18)
+        with self.assertRaises(ValueError):
+            selected_cases({'candidate_image': R5_IMAGE, 'cases': cases + [{'case_id': 'mpinat-benchmem'}]}, 'benchmarks')
+        with self.assertRaises(ValueError):
+            selected_cases({'candidate_image': R5_IMAGE, 'cases': cases[:-1]}, 'benchmarks')
+        with self.assertRaises(ValueError):
+            selected_cases({'candidate_image': R5_IMAGE, 'cases': cases[:-1] + [{'case_id': 'mpinat-unknown'}]}, 'benchmarks')
+
+    def test_only_actual_accepted_durable_study_is_observed(self):
+        identifier = '96b89a35-9e48-5986-92ce-5bcdab33dad6'
+        verifier = SimpleNamespace(read_tool_output=json.loads)
+        call = {'name': 'run_scientific_workflow_mcp_environment-execution', 'output': json.dumps({
+            'id': identifier, 'study_admission': 'accepted', 'durable_study': True})}
+        self.assertEqual(admitted_studies([call, call], verifier), [identifier])
+        self.assertEqual(admitted_studies([{'name': 'upload_workspace_files', 'output': call['output']}], verifier), [])
+        self.assertEqual(admitted_studies([dict(call, output='{}')], verifier), [])
 
     def test_operator_pause_waits_without_cancelling_or_mutating_policy(self):
         with tempfile.TemporaryDirectory() as directory:

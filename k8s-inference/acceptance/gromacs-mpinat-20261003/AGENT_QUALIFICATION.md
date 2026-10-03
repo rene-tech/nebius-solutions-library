@@ -187,3 +187,54 @@ before inference. Its subsequent `-upload` identity created operation
 observation it was still transferring; its accepted upload is observed without
 creating a second reservation or replaying simulation. No PEP completion or
 throughput is inferred from this state.
+
+## R5 durable native reporting and the remaining eighteen cases
+
+Client runtime source `61b4c3bf6c3412746e76afc6ce3bdc1521b9a8c6`, image
+`lc@sha256:b948ecca1d7f8d47ede578bbe7733b13714a4625269977014e77f602049ab927`,
+adds a typed `native-md-timing` saved-analysis method, explicit upload compression
+metadata, and non-secret monotonic upload-phase receipts. The retained r4 PEP
+upload eventually succeeded in 688.125 seconds, of which 672.151 seconds was
+inside the PUT-call envelope. Network/body/response contributions are unknown.
+Its wrong `compression=none` metadata is preserved, not relabeled or reused as
+gzip. It never admitted native MD.
+
+Exact r5 first-attempt MEM recovery conversation
+`12eaad5a-6940-539d-8701-2a410a30ce64` took 57.223 seconds and ten tools. It used
+the read-only CLI route instead of a saved study, so qualifies only that route:
+three native repeat measurements, hash-verified sources/logs and working report
+downloads, no replay. The distinct saved-analysis conversation
+`46ba7ce6-a076-55ae-b471-37a0352815e1` created study
+`96b89a35-9e48-5986-92ce-5bcdab33dad6` in 15.077 seconds/seven tools. Its chat
+truthfully acknowledged queued admission; the automatic worker subsequently
+published all Markdown/CSV/JSON deliverables. Independent authenticated readback
+verified nine downloads, three exact native rows and the original MEM source
+hash. See `agent-native-study-candidate-r5-verification-v2.json`. Neither path
+submitted GPU work, and original r4 failed reports remain untouched.
+
+`verify_agent_study.py` independently checks successful native command identity,
+actual repeat set, requested-step provenance, timing values, source/log hashes,
+CSV/JSON consistency and promised download contents. Empty generic tables cannot
+pass. `prepare_agent_continuation.py` stages only the exact 18 unexecuted native
+cases; completed MEM plus the original five are excluded. Original physics and
+public input bytes are preserved; only isolated output/idempotency namespaces
+change. Small input archives go first and PEP/PEP-h last; this ordering is a
+scheduling heuristic, not measured runtime. Seventeen targeted harness tests and
+Ruff pass.
+
+At 14:57 UTC the root-authorized remaining lane started with benchSFC and
+ligand-cmet-eq, after parent MPI/REST drain, restored QA concurrency two, and
+empty live QA inventory. Evidence: `agent-remaining-r5`; staging manifest:
+`agent-staging-r5/remaining-mpinat-r5-manifest.json`. The supervisor follows actual
+saved studies to terminal publication and independently verifies native reports,
+even if the initial chat returns a legitimate asynchronous admission handoff.
+It refreshes only browser login between pairs, never changes inference keys or
+policy, and observes an operator pause only between batches. This is an active
+campaign, not a complete benchmark or customer-ready verdict.
+
+The same task-owned r5 instance was narrowly restarted before admission to add
+two original hash-pinned read-only Lynx fixture mounts for separate CPU checks.
+Its users, both conversations, completed study, agent, `/data`, `/workspace` and
+image were preserved and rechecked. The stopped predecessor and private Docker
+configuration remain recoverable. Receipt: `client-r5-input-binding-restart`.
+No customer instance or default selector changed.

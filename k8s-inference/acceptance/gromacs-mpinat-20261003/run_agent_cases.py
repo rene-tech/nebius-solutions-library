@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 from types import SimpleNamespace
 import uuid
 
@@ -23,8 +24,13 @@ sys.path.insert(0, str(Path(__file__).parents[1] / 'gromacs-concurrency-20261003
 from verify_concurrency import QA_KEY_ID, active_operations, append, load, now, save
 
 IMAGE = 'cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:6d8b2038097b180d5edd997d7346a1b56c879a5f00b4890fcc08b81c2a96b2da'
+R5_IMAGE = 'cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:b948ecca1d7f8d47ede578bbe7733b13714a4625269977014e77f602049ab927'
 COMPLETED = {'mpinat-benchsfi', 'mpinat-benchsnc', 'mpinat-benchsni',
              'mpinat-benchstc', 'mpinat-benchsti'}
+R5_REMAINING = {'mpinat-' + name for name in (
+    'benchpep', 'benchpep-h', 'benchrib', 'cmet-eq', 'cmet-ti', 'hif2a-eq', 'hif2a-ti',
+    'ligand-cmet-eq', 'ligand-cmet-ti', 'shp2-eq', 'shp2-ti', 'benchbfc', 'benchbfi',
+    'benchbnc', 'benchbni', 'benchbtc', 'benchbti', 'benchsfc')}
 
 
 def gate_state(policy, progress):
@@ -34,17 +40,21 @@ def gate_state(policy, progress):
 
 
 def selected_cases(manifest, phase):
-    if manifest.get('candidate_image') != IMAGE:
-        raise ValueError('Manifest is not the exact r4 client candidate')
+    image = manifest.get('candidate_image')
+    if image not in {IMAGE, R5_IMAGE}:
+        raise ValueError('Manifest is not an exact qualified client candidate')
     cases = manifest['cases']
     names = [case['case_id'] for case in cases]
-    if len(set(names)) != len(names) or set(names) & COMPLETED:
+    excluded = COMPLETED | ({'mpinat-benchmem'} if image == R5_IMAGE else set())
+    if len(set(names)) != len(names) or set(names) & excluded:
         raise ValueError('Duplicate or already native-complete benchmark selected')
     if phase == 'alanine':
         if names != ['assumed-hosted-gromacs']:
             raise ValueError('Run the prepared hosted alanine example first')
-    elif len(cases) != 19 or any(not name.startswith('mpinat-') for name in names):
-        raise ValueError('Expected exactly the prepared 19 remaining MPINAT cases')
+    elif len(cases) != (18 if image == R5_IMAGE else 19) or any(not name.startswith('mpinat-') for name in names):
+        raise ValueError('Expected the exact remaining MPINAT case count for this candidate')
+    elif image == R5_IMAGE and set(names) != R5_REMAINING:
+        raise ValueError('Use only the reconciled eighteen unexecuted native cases')
     return cases
 
 
@@ -85,14 +95,63 @@ def refresh_browser_session(harness, client_root, output, base_url):
            {'at': now(), 'reason': 'batch-boundary QA login', 'inference_key_changed': False})
 
 
+def admitted_studies(calls, verifier):
+    ids = set()
+    for call in calls:
+        if not call.get('name', '').startswith('run_scientific_workflow'):
+            continue
+        value = verifier.read_tool_output(call.get('output'))
+        if value.get('study_admission') == 'accepted' and value.get('durable_study'):
+            ids.add(str(uuid.UUID(value['id'])))
+    return sorted(ids)
+
+
+async def verify_durable_outcome(args, calls, verifier, harness, folder):
+    """Observe the actual saved study, not a fabricated synchronous chat result."""
+    from verify_agent_study import verify_study
+    studies = admitted_studies(calls, verifier)
+    if len(studies) != 1:
+        return {'durable_study_delivery_verified': False, 'study_ids': studies,
+                'reason': 'Expected one original saved study; inspect direct/ambiguous paths separately'}
+    identifier = studies[0]
+    deadline = time.monotonic() + args.study_deadline
+    with harness.httpx.Client(base_url=args.base_url, timeout=45,
+                             headers={'Origin': args.base_url, 'User-Agent': harness.UA}) as client:
+        client.headers['Authorization'] = 'Bearer ' + load(args.client / 'session.json')['token']
+        while True:
+            response = client.get('/api/scientific-demos/studies/' + identifier)
+            if response.status_code == 401:
+                harness.authenticate(client, load(args.client / 'login.json'))
+                harness.save(args.client / 'session.json', {'token': client.headers['Authorization'][7:]})
+                response = client.get('/api/scientific-demos/studies/' + identifier)
+            response.raise_for_status()
+            value = response.json()
+            append(folder / 'durable-observations.jsonl', {'at': now(), 'study_id': identifier,
+                   'state': value.get('state'), 'phase': value.get('phase'),
+                   'operation_ids': sorted({s['operation_id'] for s in value.get('steps', {}).values()
+                                            if s.get('operation_id')})})
+            if value.get('state') in {'completed', 'failed', 'cancelled', 'needs_attention'}:
+                save(folder / 'durable-terminal-state.json', value)
+                result = verify_study(client, value)
+                save(folder / 'durable-delivery-verification.json', result)
+                return result
+            if time.monotonic() >= deadline:
+                return {'durable_study_delivery_verified': False, 'study_ids': studies,
+                        'reason': 'Observation deadline; original work retained, not cancelled/replayed'}
+            await asyncio.sleep(args.poll)
+
+
 async def execute(args):
     if args.output.exists():
         raise ValueError('Refusing to overwrite prior agent evidence or replay cases')
     manifest = load(args.manifest)
     cases = selected_cases(manifest, args.phase)
     image = subprocess.check_output(['docker', 'inspect', '--format', '{{.Config.Image}}', args.container], text=True).strip()
-    if image != IMAGE:
-        raise ValueError('QA container is not the exact accepted r4 image')
+    if image != manifest['candidate_image']:
+        raise ValueError('QA container differs from the exact candidate manifest')
+    expected_url = 'http://127.0.0.1:' + ('13208' if image == R5_IMAGE else '13207')
+    if args.base_url != expected_url:
+        raise ValueError('Use the matching isolated candidate browser origin')
     original = load(args.client / 'agent.json')
     if (original.get('model') != 'moonshotai/Kimi-K3'
             or original.get('model_parameters', {}).get('reasoning_effort') != 'high'):
@@ -161,11 +220,21 @@ async def execute(args):
                 tool_errors = verifier.tool_failures(calls)
                 delivered = any(verifier.read_tool_output(call.get('output')).get('schema')
                                 == 'scientific-verified-delivery/v1' for call in calls)
+                durable = None
+                if args.phase == 'benchmarks' and image == R5_IMAGE:
+                    try:
+                        durable = await verify_durable_outcome(args, calls, verifier, harness, path.parent)
+                    except Exception as error:
+                        durable = {'durable_study_delivery_verified': False,
+                                   'error_type': type(error).__name__, 'reason': str(error)[:600]}
+                        save(path.parent / 'durable-verification-error.json', durable)
+                    delivered = durable.get('durable_study_delivery_verified') is True
                 if (result.get('harness_error_type') or result.get('errors') or result.get('unfinished')
                         or result.get('watchdog_aborted') or result.get('empty_answer')
                         or tool_errors or not delivered):
                     failures.append({'case_id': case['case_id'], 'tool_errors': tool_errors,
                                      'delivered_verified_report': delivered,
+                                     'durable_outcome': durable,
                                      'harness_error_type': result.get('harness_error_type')})
             save(args.output / f'batch-{start // args.workers + 1:02}.json',
                  {'at': now(), 'cases': [case['case_id'] for case in batch], 'failures': failures,
@@ -188,13 +257,15 @@ def main():
     parser.add_argument('--origin', default='https://89.169.99.188')
     parser.add_argument('--workers', type=int, choices=[1, 2], default=2)
     parser.add_argument('--deadline', type=int, default=3600)
+    parser.add_argument('--study-deadline', type=int, default=14400,
+                        help='Read-only saved-study observation bound; does not cancel work or raise execution budgets')
     parser.add_argument('--poll', type=int, default=45)
     parser.add_argument('--pause-file', type=Path,
                         help='Operator-owned presence pauses only new batches; no cancellation or policy writes')
     args = parser.parse_args()
     if args.phase == 'alanine' and args.workers != 1:
         parser.error('Qualify the hosted starter alone before the benchmark pairs')
-    if args.base_url != 'http://127.0.0.1:13207' or args.origin != 'https://89.169.99.188' or args.poll < 45:
+    if args.base_url not in {'http://127.0.0.1:13207', 'http://127.0.0.1:13208'} or args.origin != 'https://89.169.99.188' or args.poll < 45:
         parser.error('Use the fixed isolated candidate, public API and bounded observation interval')
     os.umask(0o077)
     raise SystemExit(asyncio.run(execute(args)))
