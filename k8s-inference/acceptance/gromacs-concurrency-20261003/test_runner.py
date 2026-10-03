@@ -17,6 +17,24 @@ SUMMARY_SPEC.loader.exec_module(summary)
 
 
 class IdentityTests(unittest.IsolatedAsyncioTestCase):
+    async def test_paginated_history_preserves_old_active_work(self):
+        from types import SimpleNamespace
+
+        pages = [{"data": [{"id": "finished", "status": "succeeded"}], "next_cursor": "page2"},
+                 {"data": [{"id": "older-active", "status": "running"}], "next_cursor": None}]
+        responses = [SimpleNamespace(raise_for_status=lambda: None, json=lambda page=p: page) for p in pages]
+        http = SimpleNamespace(get=AsyncMock(side_effect=responses))
+        self.assertEqual(await runner.active_operations(http), [{"id": "older-active", "status": "running"}])
+        self.assertEqual(http.get.call_args_list[1].kwargs["params"]["cursor"], "page2")
+
+    async def test_repeating_cursor_is_rejected(self):
+        from types import SimpleNamespace
+
+        response = SimpleNamespace(raise_for_status=lambda: None,
+                                   json=lambda: {"data": [], "next_cursor": "same"})
+        with self.assertRaises(ValueError):
+            await runner.active_operations(SimpleNamespace(get=AsyncMock(return_value=response)))
+
     async def test_policy_read_accepts_only_exact_system_qa(self):
         from types import SimpleNamespace
 

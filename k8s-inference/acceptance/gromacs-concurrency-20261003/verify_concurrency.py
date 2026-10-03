@@ -55,6 +55,25 @@ def emit(**value):
     print(json.dumps({"at": now(), **value}), flush=True)
 
 
+async def active_operations(http):
+    """Read every history page before borrowing the existing QA admission limit."""
+    active, cursor, seen = [], None, set()
+    while True:
+        query = {"limit": 200}
+        if cursor:
+            query["cursor"] = cursor
+        history = await http.get("/v1/operations", params=query)
+        history.raise_for_status()
+        page = history.json()
+        active.extend(o for o in page["data"] if o["status"] not in TERMINAL)
+        cursor = page.get("next_cursor")
+        if not cursor:
+            return active
+        if cursor in seen or len(seen) >= 100:
+            raise ValueError("Operation history pagination did not terminate")
+        seen.add(cursor)
+
+
 def make_input(fixture, seed, production_ps):
     original = (fixture / "input.tar.gz").read_bytes()
     if hashlib.sha256(original).hexdigest() != FIXTURE_SHA:
@@ -128,13 +147,13 @@ class Run:
     async def prepare(self, http, cohort, index):
         run_id = f"cohort-{cohort}/request-{index:02}"
         out = self.args.output / run_id
-        idem = f"{TASK_ID}-c{cohort}-r{index:02}"
+        idem = f"{self.args.campaign_id}-c{cohort}-r{index:02}"
         out.mkdir(parents=True, exist_ok=True)
         receipt = load(out / "receipt.json", {})
         self.jobs[run_id] = {"out": out, "receipt": receipt, "idem": idem}
         if (out / "request.json").exists():
             return
-        content, protocol = make_input(self.args.fixture, 20261003 + cohort * 100 + index * 3,
+        content, protocol = make_input(self.args.fixture, self.args.seed_base + cohort * 100 + index * 3,
                                        self.args.production_ps)
         (out / "input.tar.gz").write_bytes(content)
         save(out / "protocol.json", protocol)
@@ -144,7 +163,7 @@ class Run:
         ref = await self.helper.upload(http, "gromacs", self.helper.canonical(manifest),
                                        "application/vnd.fs2.scientific-manifest+json", "none", idem + "-manifest")
         params = json.loads((self.args.fixture / "parameters.json").read_text())
-        params["output_prefix"] = f"runs/{TASK_ID}/{run_id}"
+        params["output_prefix"] = f"runs/{self.args.campaign_id}/{run_id}"
         request = {"schema": "fs2-serve.nebius.ai/scientific-run-request/v1", "operation": "run-workflow",
                    "service_class": "customer-batch", "input_manifest": ref, "parameters": params,
                    "client_context": {"display_name": f"Internal QA GROMACS {run_id}", "correlation_id": idem}}
@@ -354,11 +373,9 @@ class Run:
             if not backup.exists():
                 save(backup, before)
             original = load(backup)
-            history = await http.get("/v1/operations", params={"limit": 200})
-            history.raise_for_status()
-            active = [o for o in history.json()["data"] if o["status"] not in TERMINAL]
+            active = await active_operations(http)
             previous_ids = {r.get("operation_id") for p in self.args.output.glob("cohort-*/request-*/receipt.json") if (r := load(p))}
-            if any(o["id"] not in previous_ids for o in active) or history.json().get("next_cursor"):
+            if any(o["id"] not in previous_ids for o in active):
                 raise ValueError("QA has unrelated/unresolved work; do not modify its policy")
             for c in range(1, self.args.cohorts + 1):
                 for index in range(1, self.args.requests + 1):
@@ -413,7 +430,11 @@ def main():
     parser.add_argument("--cohorts", type=int, default=2, choices=(1, 2))
     parser.add_argument("--production-ps", type=int, default=1000)
     parser.add_argument("--timeout", type=int, default=1200)
+    parser.add_argument("--campaign-id", default=TASK_ID)
+    parser.add_argument("--seed-base", type=int, default=20261003)
     args = parser.parse_args()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,100}", args.campaign_id):
+        parser.error("campaign-id must be a bounded, path-safe identifier")
     os.umask(0o077)
     args.output.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(args.client_root))

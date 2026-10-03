@@ -60,7 +60,8 @@
         "h100-ondemand-1x",
         "h100-1x",
         "h100-reserved-8x",
-        "l40s-1x"
+        "l40s-1x",
+        "l40s-4x"
       ],
       "required_node_labels": {
         "kubernetes.io/arch": "amd64"
