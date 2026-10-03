@@ -50,6 +50,7 @@ class GromacsCheckpointTransport:
         self.generation = 0
         self.files: dict[str, dict[str, Any]] = {}
         self.final_files: dict[str, dict[str, Any]] = {}
+        self.diagnostic_files: dict[str, dict[str, Any]] = {}
         self.operation = invocation.argv[invocation.argv.index("--operation-id") + 1]
         self.attempt = os.environ.get("FS2_ATTEMPT_ID", "local-companion")
         self.customer = GromacsCustomerStorage(
@@ -203,6 +204,32 @@ class GromacsCheckpointTransport:
                 "customer_storage": customer_storage,
             },
         )
+
+    def diagnostic_file_reference(self, path: Path) -> dict[str, Any] | None:
+        """Retain failed native bytes without declaring recoverable progress.
+
+        A closed failure log may already be an immutable checkpoint artifact.
+        Reuse that artifact only in this attempt, preserving its MIME type.
+        New/changed bytes are uploaded under the native content identity, never
+        committed as a new checkpoint generation or certified as science.
+        """
+        if self.data.resolve() not in path.resolve().parents:
+            return None
+        digest, size = digest_file(path), path.stat().st_size
+        if digest in self.diagnostic_files:
+            return self.diagnostic_files[digest]
+        prior = next((item for item in self.files.values()
+                      if item["sha256"] == digest and item["size_bytes"] == size
+                      and item.get("uploaded_attempt") == self.attempt), None)
+        if prior is not None:
+            ref = cast(dict[str, Any], prior["artifact"])
+        else:
+            ref = self.client.upload_file(
+                identity=f"{self.invocation.produces}:{self.attempt}:native-file",
+                path=path, media_type=media_type(str(path)), compression=None,
+            )
+        self.diagnostic_files[digest] = ref
+        return ref
 
     def final_file_reference(self, path: Path) -> dict[str, Any] | None:
         """Publish native final bytes once per digest in the current attempt.

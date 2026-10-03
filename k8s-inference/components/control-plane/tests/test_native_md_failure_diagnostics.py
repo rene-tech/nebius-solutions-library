@@ -35,6 +35,7 @@ from fs2_serve.scientific_artifacts import (
     ScientificArtifactService,
 )
 from fs2_serve.scientific_batch import companion, native_failures
+from fs2_serve.scientific_batch.gromacs_checkpoints import GromacsCheckpointTransport
 from fs2_serve.scientific_batch.adapters import ScientificAdapterError
 from fs2_serve.scientific_batch.adapters.staged_workspace import wrap_stage_argv
 from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
@@ -251,7 +252,11 @@ def collect(invocation, root, monkeypatch):
         attempt = "test-attempt"
 
         def __init__(self, *args, **kwargs):
-            pass
+            self.client, self.invocation, self.workspace = args[:3]
+            self.data = self.workspace / "data"
+            self.files, self.diagnostic_files = {}, {}
+
+        diagnostic_file_reference = GromacsCheckpointTransport.diagnostic_file_reference
 
         def restore(self):
             pass
@@ -354,7 +359,7 @@ def test_failed_log_reuses_checkpoint_upload_identity_without_certifying_progres
         # attempt/digest; a diagnostic-specific identity used to raise HTTP 409.
         if hashlib.sha256(content).hexdigest() == native_digest:
             assert identity == native_identity, "conflicting upload reservation for checkpointed failure log"
-            assert media_type == "text/plain"
+            assert media_type == "application/octet-stream"
             assert compression in (None, "none")
         return original_upload(self, identity=identity, content=content,
                                media_type=media_type, compression=compression)
@@ -378,6 +383,7 @@ async def test_failed_artifacts_remain_owner_scoped_and_not_committed_science(tm
         object_store=objects,
         allowed_media_types={
             "application/json",
+            "application/octet-stream",
             "text/plain",
             "application/vnd.fs2.scientific-manifest+json",
             "application/vnd.fs2.scientific-validation+json",

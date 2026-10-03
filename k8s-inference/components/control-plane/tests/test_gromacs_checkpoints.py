@@ -38,6 +38,8 @@ class Artifacts:
             previous_identity, artifact = self.addresses[digest]
             if previous_identity != identity:
                 raise ValueError("this content address is already reserved")
+            if (artifact["media_type"], artifact["compression"]) != (media_type, compression or "none"):
+                raise ValueError("upload identity has conflicting immutable metadata")
             return artifact
         artifact = {
             "artifact_id": str(uuid4()),
@@ -115,6 +117,34 @@ def test_checkpoint_commit_and_restore_reuse_closed_segments(tmp_path, monkeypat
     assert resumed.generation == 2
     assert (second / "data/native.cpt").read_bytes() == b"checkpoint two"
     assert (second / "data/md.part0001.xtc").read_bytes() == b"trajectory segment"
+
+
+def test_failed_diagnostic_reuses_exact_committed_artifact_and_keeps_new_bytes_uncommitted(tmp_path, monkeypatch):
+    monkeypatch.setenv("FS2_ATTEMPT_ID", str(uuid4()))
+    client = Artifacts()
+    (tmp_path / "data").mkdir()
+    native = tmp_path / "data/native.log"
+    native.write_bytes(b"original native failure")
+    transport = GromacsCheckpointTransport(client, invocation(), tmp_path)
+    transport.restore()
+    ready(tmp_path, 1)
+    transport.publish_ready()
+    committed = transport.files["native.log"]["artifact"]
+    uploads = client.uploads
+    assert transport.diagnostic_file_reference(native) == committed
+    assert client.uploads == uploads
+    assert committed["media_type"] == "application/octet-stream"
+    native.write_bytes(b"new failure bytes not in checkpoint")
+    new = transport.diagnostic_file_reference(native)
+    assert new["sha256"] != committed["sha256"]
+    assert new["media_type"] == "application/octet-stream"
+    assert transport.generation == 1
+    assert transport.files["native.log"]["artifact"] == committed
+    alias = tmp_path / "data/native.txt"
+    alias.write_bytes(native.read_bytes())
+    assert transport.diagnostic_file_reference(alias) == new
+    assert client.uploads == uploads + 1
+    assert json.loads((tmp_path / ".fs2/checkpoint-ack.json").read_text())["generation"] == 1
 
 
 @pytest.mark.parametrize("engine", ["lammps", "namd", "amber"])

@@ -1149,15 +1149,12 @@ def collect_and_commit(
                 compression=item.compression,
             )
         elif checkpoint_transport is not None:
-            # Uncommitted diagnostic bytes must never pass through checkpoint
-            # reference reuse or create a new recoverable generation. Use the
-            # same content-addressed upload identity as native checkpoints:
-            # a closed failure log can already have been published there. A
-            # different identity for identical bytes conflicts with its upload
-            # reservation and hides the engine's original error behind a 409.
-            # Uploading bytes does not certify them as recoverable progress.
-            refs[item.name] = client.upload_file(
-                identity=f"{upload_prefix}:native-file",
+            # Diagnostic artifact reuse is distinct from successful checkpoint
+            # certification. Preserve native MIME/identity as well as bytes:
+            # text/plain conflicts with a checkpoint's application/octet-stream.
+            previous = checkpoint_transport.diagnostic_file_reference(path)
+            refs[item.name] = previous or client.upload_file(
+                identity=f"{upload_prefix}:{item.name}",
                 path=path,
                 media_type=item.media_type,
                 compression=item.compression,
