@@ -65,3 +65,29 @@ steady-state runs are a separate cohort.
 started after some early REST-A jobs, so missing early samples remain unknown.
 `recover_bucket.py` verifies existing checkpoint/native files without mutating
 the bucket or rotating credentials. No customer key or Pod is used.
+
+`ledger.py` builds `measurements.sqlite`, an ordinary indexed SQLite analytical
+database with operation/attempt/command/checkpoint, lifecycle-event, allocation,
+measurement, observation and source-digest tables. It is rebuildable from the
+raw evidence; platform PostgreSQL remains authoritative. Keep the original files
+with it. This is not an LLM-generated scorecard or a new production billing store.
+Each retained native log version has a hash-addressed local copy. Checkpoint
+generations are indexed separately instead of replacing them with the last one.
+
+HTTP spans omit credentials, headers and URL query strings. `seconds_to_headers`
+is exactly that interval, **not** download completion time. Bucket diagnostic
+recovery separately times full downloads and verifies size/SHA-256. A failed
+network call retains a start span even if no response arrives.
+
+Example (private evidence paths):
+
+```sh
+python3 ledger.py --cohort /path/rest-b/cohort-1 --recovered /path/bucket-b \
+  --telemetry /path/telemetry --database /path/measurements.sqlite
+```
+
+Still not directly instrumented in the original engine: exact GPU device-plugin
+release, native initialization vs integration, and checkpoint/export subspans.
+Their raw lifecycle/container/native observations are retained, but unresolved
+fields remain explicitly unknown. Do not advertise complete exact phase timing
+or billing reconciliation until those gaps are closed and recovery is exercised.

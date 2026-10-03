@@ -119,6 +119,9 @@ class Run:
         self.jobs, self.done = {}, asyncio.Event()
         self.health, self.cluster = [], []
 
+    def prepared_requests(self):
+        return self.args.requests
+
     async def kubectl(self, *arguments):
         process = await asyncio.create_subprocess_exec(
             "kubectl", "--context", self.args.context, "--request-timeout=20s", *arguments,
@@ -374,11 +377,11 @@ class Run:
                 save(backup, before)
             original = load(backup)
             active = await active_operations(http)
-            previous_ids = {r.get("operation_id") for p in self.args.output.glob("cohort-*/request-*/receipt.json") if (r := load(p))}
+            previous_ids = {r.get("operation_id") for p in self.args.output.glob("cohort-*/*/receipt.json") if (r := load(p))}
             if any(o["id"] not in previous_ids for o in active):
                 raise ValueError("QA has unrelated/unresolved work; do not modify its policy")
             for c in range(1, self.args.cohorts + 1):
-                for index in range(1, self.args.requests + 1):
+                for index in range(1, self.prepared_requests() + 1):
                     await self.prepare(http, c, index)
                 emit(cohort=c, phase="inputs_prepared", requests=self.args.requests)
             watchers = []
