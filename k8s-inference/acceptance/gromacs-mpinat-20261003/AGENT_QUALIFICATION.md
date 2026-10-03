@@ -238,3 +238,26 @@ Its users, both conversations, completed study, agent, `/data`, `/workspace` and
 image were preserved and rechecked. The stopped predecessor and private Docker
 configuration remain recoverable. Receipt: `client-r5-input-binding-restart`.
 No customer instance or default selector changed.
+
+### Independent selected-case and physics binding
+
+The report verifier is supplemented by `verify_agent_case.py`, a read-only
+observer of this existing cohort. It verifies each selected case against the
+frozen study plan and input hashes, original staging receipt, batch-helper
+request identity, exact normalized native recipe, original upstream TPR bytes,
+and three requested 10,000-step timing repeats. A valid completed report about
+prior MEM therefore cannot pass another case. The first SFC and ligand-cmet-eq
+studies passed this binding as well as report/download validation:
+
+- SFC: operation `c966e97d-6d68-4a72-8281-d8d2cba1a808`.
+- Ligand CMET equilibration: operation `7c73ac3f-0400-4c41-a472-8d010398e882`.
+
+Receipts are `agent-selected-case-verification-r5-v2/<case>.json`; the independent
+observer watches later terminal studies without changing the running supervisor,
+client, policy or model requests. Eleven combined selected-case/report tests
+and Ruff pass. The first observer version incorrectly treated the intermediate
+`observation_expired` study state as terminal; that observer-only false failure
+is retained in `agent-selected-case-verification-r5`, corrected and regression
+tested. It did not resubmit or cancel native work. Original r4 failures, the r5
+CPU advice error, recovery-only results and this fresh native cohort remain
+separate evidence rather than being relabeled as a clean all-path release.
