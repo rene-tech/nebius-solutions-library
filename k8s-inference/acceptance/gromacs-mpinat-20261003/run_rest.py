@@ -11,11 +11,24 @@ from uuid import uuid4
 sys.path.insert(0, str(Path(__file__).parents[1] / "gromacs-concurrency-20261003"))
 from verify_concurrency import Run, load, save, append, now, emit, TERMINAL
 from prepare import parameters
+from native_timings import verify_native_timings
 
 
 class Campaign(Run):
     def prepared_requests(self):
         return len(self.args.cases)
+
+    async def collect(self, http, run_id, slots):
+        await super().collect(http, run_id, slots)
+        job = self.jobs[run_id]
+        if job["receipt"].get("state") != "verified":
+            return
+        timings = verify_native_timings(load(job["out"] / "request.json"), job["receipt"])
+        save(job["out"] / "native-timings.json", timings)
+        job["receipt"]["benchmark_complete"] = timings["benchmark_complete"]
+        save(job["out"] / "receipt.json", job["receipt"])
+        if not timings["benchmark_complete"]:
+            raise ValueError("Artifacts verified, but requested native benchmark timings are incomplete")
 
     async def trace_request(self, request):
         span = {"span_id": str(uuid4()), "method": request.method,
@@ -133,7 +146,8 @@ class Campaign(Run):
             if isinstance(result, Exception):
                 self.jobs[name]["receipt"]["collection_error_type"] = type(result).__name__
                 save(self.jobs[name]["out"] / "receipt.json", self.jobs[name]["receipt"])
-        return all(self.jobs[n]["receipt"]["state"] == "verified" for n in names)
+        return all(self.jobs[n]["receipt"]["state"] == "verified"
+                   and self.jobs[n]["receipt"].get("benchmark_complete") is True for n in names)
 
     async def collect_existing(self):
         """Read-only recovery: no submissions, key-policy changes or GPU work."""

@@ -20,6 +20,7 @@ class PublicationTests(unittest.IsolatedAsyncioTestCase):
             async def collect(*args):
                 if job["receipt"].get("result_published"):
                     job["receipt"]["state"] = "verified"
+                    job["receipt"]["benchmark_complete"] = True
             campaign.collect = collect
             polls = []
             async def get(path, **kwargs):

@@ -1,7 +1,79 @@
-# MPINAT campaign — partial, storage resolved and runs resumed (2026-10-03)
+# MPINAT campaign — partial, MPI implementation and qualification (2026-10-03)
 
 This is **not** a completed REST/agent/MPI qualification. Never use the successful
 subset to describe the whole suite or a sixteen-GPU MPI execution as working.
+
+## Latest checkpoint — 13:15 UTC
+
+Six native candidate checks passed: single H100/L40S, MPI1x1H100,
+MPI1x2/1x4L40S, and legacy2x1H100. All task-owned native Pods/JobSet were
+released. Final coordinates/cells, energies, checkpoint steps, inventory hashes
+and rank bindings were verified. These direct-Pod checks are not REST/MCP
+qualification or steady-state performance comparisons. Exact summary is
+`runtime-qualification-r1/summary-01.json`, SHA256
+`949e92e4c9770ed2b372a6ef802fb88c7ed879f9a81134e66d8a4e1835898cb7`.
+
+Reader-first rollout is complete on all three production API replicas:
+`fs2-serve-control-plane@sha256:e695551a804f0f2f9b7615c4d8f60282e00861b31f6d5f20afaf97b7bd06dac4`.
+It contains new code with the exact old catalog, so it still publishes zero
+new execution shapes. Old API Pods have exited; authenticated public discovery
+returns200. This avoids mixed-version readers rejecting durable shaped records.
+The final `d789a4b7e3d8a95ca296f25e1498714729def18b70de6a91f63cf70d5aafed68`
+image and narrowly scoped execution/scheduling changes passed server dry-run;
+activation awaits the remaining cross-namespace reader-isolation check.
+No Gateway, customer placement, credentials or limits were changed.
+
+Actual seeded-agent recovery now produced five valid CSVs with15 native timing
+rows, without new GPU submissions. One delivery failed because recovery receipts
+had a different filename; the bridge fix is in exact client candidate
+`lc@sha256:74b578936eb911320e1ddcec733fa9b26c7c9575b4aee586f977c2b0f3d5d1db`,
+source`59789c88d53a5270c7463181f169975b642fb29d`. Exact-image delivery retest is
+running in isolated QA; no customer client/default has changed. Native matched
+CPU/GPU-PME A/B probes are running in parallel on spare L40S capacity.
+
+The approved100GB QA bucket currently contains about10.14GB by provider counters.
+The statements below describe the preceding12:50 checkpoint where superseded.
+
+## Previous checkpoint — 12:50 UTC
+
+REST-C is drained: MEM and RIB verified, both PEP variants failed their frozen
+4 GiB output budget. The largest coordinate files are about862MB each; three
+repeats plus segment/final copies do not fit. Corrected requests use24GiB inside
+the existing48GiB API maximum. Preserve original failed attempts; this does not
+raise provider quotas. New runtime publishes exact inventory failure plus bounded
+native diagnostics instead of losing `result.json` to the inventory exception.
+
+The independent-MPI runtime and per-Pod GPU/resource shapes are implemented;
+backend tests:311 including actual PostgreSQL durable reopening. Runtime source
+`0aecab6bdca3346a74426cea24a4753cd4f54270`. Regional candidate images are
+`gromacs@sha256:dc5d908c64503c4c4cdc3bede10987d49a9acdde5ef2f4f1d0e61f0628739f93`
+(single) and
+`gromacs@sha256:c6c353e55deade8c8fe7a2f02e68bcdb639c7680c8435b665e72815d0213c9ea`
+(MPI). Neither is activated yet; spare-GPU runtime qualification is ongoing.
+
+Saved agent studies now finish their native operations after the check-once MCP
+timeout fix. Their timing analysis incorrectly read the platform envelope instead
+of the native result; empty tables are not benchmark passes. Candidate client
+adds explicit native-result references and updated skill, preserving the current
+default image features. No customer endpoint has changed.
+
+Query ledger:44 REST operations/attempts,303 checkpoints,95 native mdrun records.
+`cost-analysis-01/report-04.json` SHA256
+`66ee981271623ea1e2bca2bc2c349b9e1d0446b2a7cc6d1b6ae7eeb6e81d7176`
+contains per-operation/attempt costs, useful progress, allocation bounds and
+historical comparisons. No saved REST operation is missing from this index.
+Source code is `cost_report.py`; references and tests are adjacent.
+
+The current deployed collector also passed customer-bucket failure reporting:
+operation`4c27cdf3-3090-4e63-835e-dd649a3c431b` intentionally fails on a missing
+XTC. Both platform diagnostics and2 remote checkpoint manifests/3 text files
+were retrieved and hash-verified (`negative-v3`, `negative-v3-bucket`). This is
+an expected failure-path pass, not a successful simulation.
+
+Two full H100 nodes have NVLink but no RDMA network attachment. Other Apps occupy
+15/16 GPUs. No customer Apps have moved; rolling relocation was asked about once.
+8/16GPU performance remains unmeasured until actual whole-node capacity is free.
+The following tables/history predate this checkpoint where explicitly noted.
 
 ## Results retained
 

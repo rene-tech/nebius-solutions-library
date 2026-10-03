@@ -34,6 +34,20 @@ class PreparationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parser.feed('<a title="benchMEM" href="https://unrelated.invalid/test.zip">')
 
+    def test_large_system_output_budget_preserves_three_repeats(self):
+        for case in ("benchpep", "benchpep-h"):
+            request = parameters({"id": case})
+            self.assertEqual(request["max_output_bytes"], 24 * 1024**3)
+            self.assertEqual(len([s for s in request["jobs"][0]["steps"] if s["command"] == "mdrun"]), 3)
+        self.assertEqual(parameters({"id": "benchmem"})["max_output_bytes"], 4 * 1024**3)
+
+    def test_full_node_and_two_node_shapes(self):
+        for nodes, gpus in ((1, 1), (1, 2), (1, 4), (1, 8), (2, 8)):
+            request = parameters({"id": "benchpep-h"}, mpi_nodes=nodes, gpus_per_node=gpus)
+            self.assertEqual((request["nodes"], request["gpus_per_node"]), (nodes, gpus))
+            self.assertEqual(request["schema"], "fs2-serve.nebius.ai/gromacs-mpi-workflow-request/v1")
+            self.assertNotIn("-ntmpi", request["jobs"][0]["steps"][1]["args"])
+
     def test_all_parameters_match_runtime_contract(self):
         runtime = HERE.parents[1] / "models/molecular-dynamics/gromacs/runtime"
         sys.path.insert(0, str(runtime))

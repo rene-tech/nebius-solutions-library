@@ -47,7 +47,7 @@ class Links(HTMLParser):
                               "title": title, "url": url})
 
 
-def parameters(case, steps=10000, repetitions=3, mpi_nodes=None):
+def parameters(case, steps=10000, repetitions=3, mpi_nodes=None, gpus_per_node=1):
     """Repeat identical benchmark states, not independent scientific samples."""
     commands = [{"id": "finite-tpr", "command": "convert-tpr",
                  "args": ["-s", "original.tpr", "-o", "benchmark.tpr", "-nsteps", str(steps)],
@@ -71,14 +71,20 @@ def parameters(case, steps=10000, repetitions=3, mpi_nodes=None):
                      {"id": f"energy-{rep}", "command": "energy",
                       "args": ["-f", f"energy{rep}.edr", "-o", f"energy{rep}.xvg"],
                       "stdin": "Potential\nTemperature\n0\n", "expected_outputs": [f"energy{rep}.xvg"]}]
+    # The 12.5M-particle PEP systems retain several ~0.86 GB coordinate files
+    # plus native checkpoints per timing repeat. A 4 GiB request budget cannot
+    # hold three complete repeats. This changes neither provider quota nor
+    # scientific output cadence; stay inside the existing 48 GiB API envelope.
+    output_budget = (24 if case["id"] in {"benchpep", "benchpep-h"} else 4) * 1024**3
     value = {"schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1",
              "jobs": [{"id": "benchmark", "steps": commands}], "threads": 8,
              "checkpoint_minutes": 5, "segment_minutes": 60, "max_wall_seconds": 21600,
-             "max_output_bytes": 4 * 1024**3, "output_destination": "customer-bucket",
+             "max_output_bytes": output_budget, "output_destination": "customer-bucket",
              "output_prefix": "runs/gromacs-mpinat-20261003"}
-    if mpi_nodes:
+    if mpi_nodes is not None:
         value["schema"] = "fs2-serve.nebius.ai/gromacs-mpi-workflow-request/v1"
         value["nodes"] = mpi_nodes
+        value["gpus_per_node"] = gpus_per_node
         value["jobs"][0]["id"] = "gang"
     return value
 
