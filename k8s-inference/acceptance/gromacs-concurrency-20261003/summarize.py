@@ -109,8 +109,19 @@ def main():
                              "error_type": type(error).__name__, "reason": str(error)[:200]})
     cluster = [json.loads(line) for line in (args.evidence / "cluster-observations.jsonl").read_text().splitlines()]
     health = [json.loads(line) for line in (args.evidence / "api-availability.jsonl").read_text().splitlines()]
-    groups, starts = {}, {}
+    groups, starts, peak_devices_by_pool = {}, {}, {}
     for sample in cluster:
+        node_pools = {node["node"]: node["pool"] for node in sample.get("nodes", [])}
+        pod_pools = {pod["pod"]: node_pools.get(pod["node"]) for pod in sample.get("pods", [])}
+        devices_by_pool = {}
+        for device in sample.get("devices", []):
+            pool = pod_pools.get(device["pod"])
+            if pool is None:
+                continue
+            devices_by_pool.setdefault(pool, set()).update(
+                line.split(",")[0].strip() for line in device.get("compute_processes", []) if "gmx" in line.lower())
+        for pool, devices in devices_by_pool.items():
+            peak_devices_by_pool[pool] = max(peak_devices_by_pool.get(pool, 0), len(devices))
         for pod in sample.get("pods", []):
             started = pod.get("containers", {}).get("scientific-stage", {}).get("running", {}).get("startedAt")
             if started:
@@ -134,6 +145,7 @@ def main():
               "validated_requests": len(results), "validation_failures": failures,
               "peak_running_gpu_claims": max((s.get("running_gpu_claims", 0) for s in cluster), default=0),
               "peak_observed_gromacs_devices": max((s.get("observed_gromacs_devices", 0) for s in cluster), default=0),
+              "peak_observed_gromacs_devices_by_pool": peak_devices_by_pool,
               "api_probes": len(health), "api_probe_errors": [h for h in health if h.get("http_status") != 200],
               "api_probe_p50_seconds": statistics.median(h["seconds"] for h in health),
               "api_probe_max_seconds": max(h["seconds"] for h in health), "observed_pool_scale": groups,

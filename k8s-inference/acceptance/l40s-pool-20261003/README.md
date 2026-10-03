@@ -35,8 +35,8 @@ execution and artifact integrity separately.
 The API image stays `sha256:6a2876b380f43717ea37cb21dd4504af5884c9a305c486562a42ef103420f946`.
 The GROMACS image stays `sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643`.
 New scheduling ConfigMap: `fs2-scientific-scheduling-10e4fbdbd1b6`;
-SHA-256 `10e4fbdbd1b6` is the name prefix, not the full digest (see the activation
-identity receipt). Original ConfigMap is retained for rollback.
+SHA-256 `10e4fbdbd1b66719e391c2a0ee917c27f7d4f48f1b091b39cca1c0bb5e368dcb`.
+Original ConfigMap is retained for rollback.
 
 Private operator input `/home/tux/.local/state/k8s-inference-dual-acceptance/h100/terraform.tfvars`
 now includes the already-provisioned pool, its measured
@@ -103,6 +103,33 @@ concurrency settings, data and clients are untouched. Internal QA concurrency is
 temporarily sixteen and restored to its original two after draining.
 
 Raw receipts: `/home/tux/secure-handoff/fs2-l40s-pool-20261003/`.
-`results.json` and final measured conclusions are added after both cohorts and
-native trajectory/energy/checksum validation finish. Do not infer sixteen
-simultaneous GPU executions from sixteen admitted requests.
+[results.json](results.json) records **32/32 independently validated results**,
+including eight on the newly enabled pool. All four L40S devices on that node
+ran GROMACS simultaneously. Native trajectories, energies, seeds, command exit
+codes, artifact hashes and resource release passed for both cohorts. All 209
+public API probes succeeded. Internal QA concurrency was restored to two after
+all operations drained at 11:04 UTC. No customer identity or limit changed.
+
+The campaign reached **13 actual simultaneous GROMACS devices**, not sixteen.
+The existing L40S single-GPU autoscaler grew from eight to ten Ready nodes within
+its unchanged bounds. [deployment.json](deployment.json) and
+`verify_deployment.py` independently confirm that every old quota and every
+unrelated Deployment setting was preserved, with three Ready API replicas.
+Five activation tests, five concurrency-runner tests and `terraform validate`
+passed. Source activation commit: `e85e00674eff99f3183cf61c298b29b4efdd32ca`.
+
+## Remaining placement limitation
+
+Pool eligibility and GPU availability are different. In this configuration,
+Kueue admits six requests to `h100-ondemand-1x` and two to `h100-reserved-8x`,
+but existing workloads leave only four and one physical GPU slots respectively.
+The three excess requests remain pinned to their admitted H100 flavors while
+spare *potential* L40S scale-out capacity cannot satisfy their selectors. Adding
+the four-L40S pool does not correct that pre-existing quota/occupancy mismatch.
+The warm repeat observed thirteen actual GROMACS GPU processes, not sixteen.
+
+Do not fix this by raising cloud limits, modifying a customer's key, evicting
+other Apps, or describing Kueue admission as actual execution. Follow-up needs
+reconciled admission accounting/placement for the existing non-Kueue GPU
+occupancy and another sixteen-device measurement. This activation leaves those
+other workloads and their quotas unchanged.
