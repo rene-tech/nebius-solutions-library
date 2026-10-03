@@ -13,9 +13,11 @@ import os
 from pathlib import Path, PurePosixPath
 import re
 import subprocess
+from types import SimpleNamespace
 from uuid import UUID
 
-from verify_agent_case import canonical, normalize, runtime_canonical, validate_plan
+from verify_agent_case import (canonical, direct_delivery, normalize, runtime_canonical,
+                               validate_plan, validate_recovery_identity)
 from verify_agent_study import sha, verify_timing_report, workspace_path
 
 SCHEMA = "fs2.gromacs-agent-ledger/v1"
@@ -89,23 +91,34 @@ class Evidence:
         return json.loads(self.fetch(path, expected))
 
 
-def admitted_studies(messages):
-    """Read exact accepted study IDs, not links or prose claiming completion."""
-    result = set()
+def tool_calls(messages):
+    calls = []
     for message in messages:
         for part in message.get("content") or []:
             call = part.get("tool_call") if part.get("type") == "tool_call" else None
-            if not call or not call.get("name", "").startswith("run_scientific_workflow"):
-                continue
-            try:
-                value = json.loads(call.get("output", ""))
-                if isinstance(value, list) and len(value) == 1 and value[0].get("type") == "text":
-                    value = json.loads(value[0]["text"])
-                if (isinstance(value, dict) and value.get("study_admission") == "accepted"
-                        and value.get("durable_study")):
-                    result.add(str(UUID(value["id"])))
-            except (TypeError, ValueError):
-                continue
+            if call:
+                calls.append(call)
+    return calls
+
+
+def read_tool_output(raw):
+    try:
+        value = json.loads(raw)
+        if isinstance(value, list) and len(value) == 1 and value[0].get("type") == "text":
+            value = json.loads(value[0]["text"])
+        return value if isinstance(value, dict) else {}
+    except (TypeError, ValueError):
+        return {}
+
+
+def admitted_studies(messages):
+    """Read exact accepted study IDs, not links or prose claiming completion."""
+    result = set()
+    for call in tool_calls(messages):
+        value = read_tool_output(call.get("output"))
+        if (call.get("name", "").startswith("run_scientific_workflow")
+                and value.get("study_admission") == "accepted" and value.get("durable_study")):
+            result.add(str(UUID(value["id"])))
     return result
 
 
@@ -116,31 +129,51 @@ def duration(value, scope):
             "scope": scope}
 
 
+def customer_outcome(proof, summary):
+    """A successful native result cannot erase earlier customer-path friction."""
+    observed = proof.get("observed_tool_errors")
+    reported_clean = proof.get("customer_path_clean")
+    if reported_clean is not None and type(reported_clean) is not bool:
+        raise ValueError("Clean-path flag must be an explicit boolean or unknown")
+    friction = any((observed, summary.get("errors"), summary.get("transport_warnings"),
+                    summary.get("empty_answer"), summary.get("unfinished"), summary.get("watchdog_aborted")))
+    return {"customer_path_clean": False if friction or reported_clean is False else reported_clean,
+            "proof_reported_clean": reported_clean,
+            "delivery_outcome": proof.get("delivery_outcome"), "observed_tool_errors": observed,
+            "scope": "native/report verification is separate; absent clean-state evidence remains unknown"}
+
+
 def agent_metadata(proof, summary, study, campaign, verification):
-    if (summary["case_id"] != proof["case_id"] or summary.get("output_directory") != study["output_directory"]
+    path = proof.get("agent_path", "saved-study")
+    if (summary["case_id"] != proof["case_id"]
+            or study is not None and summary.get("output_directory") != study["output_directory"]
             or proof["client_image"] != campaign["client_image"]
             or campaign.get("tenant") != "system" or campaign.get("principal") != "qa"):
         raise ValueError("Agent case, workspace or internal client identity differs")
-    start, end = study.get("created_at"), study.get("finished_at")
+    start, end = (study or {}).get("created_at"), (study or {}).get("finished_at")
     elapsed = end - start if type(start) in (int, float) and type(end) in (int, float) else None
     fields = ("conversation_id", "model", "reasoning_effort", "cohort_id", "seeded_agent",
               "instructions_sha256", "core_instructions_sha256", "tool_calls", "tool_names",
               "errors", "transport_warnings", "empty_answer", "unfinished", "watchdog_aborted", "provider_usage")
     return {"schema": SCHEMA, "operation_id": proof["operation_id"], "case_id": proof["case_id"],
-            "interface": "agent-skill-MCP", "study_id": proof["study_id"],
+            "interface": "agent-skill-MCP", "agent_path": path, "study_id": proof["study_id"],
+            "customer_outcome": customer_outcome(proof, summary), "recovery_binding": proof.get("recovery_binding"),
             "native_identity": {key: proof[key] for key in
                                 ("input_sha256", "parameters_sha256", "native_results")},
             "chat": {**{key: summary.get(key) for key in fields}, "client_image": proof["client_image"],
-                     "initial_response_scope": "study admission; not a completed native report",
+                     "initial_response_scope": ("study admission; not a completed native report" if study is not None
+                                                else "direct native/report delivery; no saved study"),
                      "elapsed_seconds": duration(summary.get("seconds"), "initial chat including tools"),
                      "tool_seconds": duration(summary.get("tool_seconds"), "harness sum of tool call durations; may overlap"),
                      "planning_seconds": duration(None, "not separately instrumented; do not subtract tool wall"),
                      "waiting_seconds": duration(None, "no independent active-wait timer"),
                      "delivery_seconds": duration(None, "no independent report/download duration timer"),
                      "token_cost_usd": None},
-            "durable_delivery": {"study_created_at": start, "study_finished_at": end,
-                                 "study_elapsed_seconds": duration(elapsed, "whole saved-study lifetime, not GPU or waiting time"),
+            "durable_delivery": {"kind": path, "study_created_at": start, "study_finished_at": end,
+                                 "study_elapsed_seconds": duration(elapsed, "whole saved-study lifetime, not GPU or waiting time"
+                                                                   if study is not None else "no saved study on direct-MCP path"),
                                  "verified": True, "native_report_verification": verification,
+                                 "delivered_links": proof["report_verification"].get("delivered_links"),
                                  "scientific_convergence_claimed": False},
             "native_replayed": False,
             "accounting": "one original operation in ledger.py/cost_report.py; never cost chat wall as GPU wall"}
@@ -151,20 +184,49 @@ def collect_case(spec, reader, destination, campaign):
     if proof_path.name.endswith("-failure.json"):
         raise ValueError("Failure evidence is history, never a selected-case pass")
     proof, summary = load(proof_path), load(chat / "summary.json")
+    warnings_file = chat / "transport-warnings.json"
+    if warnings_file.exists():
+        # Some harness revisions keep warnings in a separate durable sidecar.
+        # Retain both observations; do not claim a clean path from native proof.
+        warnings = load(warnings_file)
+        if warnings:
+            summary = {**summary, "transport_warnings": {
+                "summary": summary.get("transport_warnings"), "sidecar": warnings}}
     if (proof.get("selected_case_verified") is not True or proof.get("native_replayed") is not False
             or proof.get("repeat_count") != 3 or proof.get("requested_steps_per_repeat") != 10000):
         raise ValueError("Require a verified selected case with three original repeats and no replay")
     operation = str(UUID(proof["operation_id"]))
-    study_id = str(UUID(proof["study_id"]))
-    if admitted_studies(load(chat / "messages.json")) != {study_id}:
-        raise ValueError("Chat does not bind exactly the selected admitted study")
-    study = load(chat / "durable-terminal-state.json")
+    path = proof.get("agent_path", "saved-study")
+    messages = load(chat / "messages.json")
+    study, delivered = None, None
+    source_paths = [proof_path, chat / "summary.json", chat / "messages.json"]
+    if warnings_file.exists():
+        source_paths.append(warnings_file)
     verification = proof["report_verification"]
-    if (study.get("id") != study_id or study.get("state") != "completed"
-            or verification.get("study_id") != study_id or verification.get("operation_id") != operation
-            or verification.get("native_report_verified") is not True
-            or verification.get("durable_study_delivery_verified") is not True):
+    if verification.get("operation_id") != operation or verification.get("native_report_verified") is not True:
         raise ValueError("Admission-only or unrelated delivery does not qualify")
+    if path == "saved-study":
+        study_id = str(UUID(proof["study_id"]))
+        if admitted_studies(messages) != {study_id}:
+            raise ValueError("Chat does not bind exactly the selected admitted study")
+        study = load(chat / "durable-terminal-state.json")
+        source_paths.append(chat / "durable-terminal-state.json")
+        if (study.get("id") != study_id or study.get("state") != "completed"
+                or verification.get("study_id") != study_id
+                or verification.get("durable_study_delivery_verified") is not True):
+            raise ValueError("Admission-only or unrelated delivery does not qualify")
+    elif path == "direct-batch-mcp":
+        if (admitted_studies(messages) or any(proof.get(key) is not None for key in
+                                           ("study_id", "model_step", "plan_identity"))
+                or spec.get("frozen_record") is not None or proof.get("direct_delivery_verified") is not True):
+            raise ValueError("Direct native delivery must not invent an admitted study")
+        delivered = direct_delivery(tool_calls(messages), SimpleNamespace(read_tool_output=read_tool_output))
+        if delivered["report_markdown"] not in summary.get("visible_text", ""):
+            raise ValueError("Direct verified delivery was not present in the final reply")
+        if not PurePosixPath(delivered["receipt_directory"]).is_relative_to(summary["output_directory"]):
+            raise ValueError("Direct receipt is outside the selected chat output")
+    else:
+        raise ValueError("Unsupported actual-agent path")
     evidence = Evidence(reader)
     downloads = {}
     for row in verification["authenticated_downloads"]:
@@ -180,23 +242,52 @@ def collect_case(spec, reader, destination, campaign):
     if len(report_paths) != 1:
         raise ValueError("Require one unambiguous native timing report")
     report_path = PurePosixPath(report_paths[0])
+    if delivered and any(str(report_path.with_name(name)) != delivered["files"][name] for name in
+                         ("native-timing-report.json", "native-timings.csv", "native-timing-report.md")):
+        raise ValueError("Direct proof differs from the actual delivered report")
     report = evidence.json(str(report_path))
     checked = verify_timing_report(report, evidence.fetch(str(report_path.with_name("native-timings.csv"))).decode(),
                                   evidence.fetch(str(report_path.with_name("native-timing-report.md"))).decode(), evidence.fetch)
     if any(checked[key] != verification.get(key) for key in checked):
         raise ValueError("Selected-case report verification changed")
     receipt_path = report["receipt_file"]
+    if delivered and (PurePosixPath(receipt_path).parent != PurePosixPath(delivered["receipt_directory"])
+                      or PurePosixPath(receipt_path).name not in {"receipt.json", "recovery-receipt.json"}):
+        raise ValueError("Direct report differs from the actual delivered receipt")
     if receipt_path not in downloads:
         raise ValueError("Native receipt lacks authenticated hash evidence")
     native_root = PurePosixPath(receipt_path).parent
     receipt = evidence.json(receipt_path)
-    request = evidence.json(str(native_root / "request.json"))
+    submission = receipt
+    request_root = native_root
+    recovery = proof.get("recovery_binding")
+    if PurePosixPath(receipt_path).name == "recovery-receipt.json":
+        if (not delivered or not isinstance(recovery, dict) or recovery.get("same_operation_verified") is not True
+                or recovery.get("operation_id") != operation or recovery.get("recovery_receipt_file") != receipt_path):
+            raise ValueError("Recovery requires the verified original-operation binding")
+        original_path = recovery["submission_receipt_file"]
+        request_root = PurePosixPath(original_path).parent
+        if (original_path not in downloads or PurePosixPath(original_path).name != "receipt.json"
+                or not request_root.is_relative_to(summary["output_directory"])
+                or downloads[original_path]["sha256"] != recovery["submission_receipt_sha256"]):
+            raise ValueError("Original submission receipt lacks exact authenticated hash evidence")
+        submission = evidence.json(original_path, downloads[original_path])
+        validate_recovery_identity(submission, receipt)
+    elif recovery is not None:
+        raise ValueError("Recovery binding does not match a delivered recovery receipt")
+    request = evidence.json(str(request_root / "request.json"))
     status = evidence.json(str(native_root / "status.json"))
     if status.get("operation", {}).get("id") != operation or status["operation"].get("status") != "succeeded":
         raise ValueError("Native status differs from the verified operation")
-    record = evidence.json(spec["frozen_record"])
-    plan = evidence.json(str(PurePosixPath(spec["frozen_record"]).with_name("plan.json")))
-    step = next(row for row in plan["steps"] if row["id"] == proof["model_step"])
+    if study is not None:
+        record = evidence.json(spec["frozen_record"])
+        plan = evidence.json(str(PurePosixPath(spec["frozen_record"]).with_name("plan.json")))
+        step = next(row for row in plan["steps"] if row["id"] == proof["model_step"])
+    else:
+        parameter_paths = [p for p in downloads if PurePosixPath(p).name == "parameters-candidate.json"]
+        if parameter_paths != ["/workspace/inputs/mpinat/" + proof["case_id"].removeprefix("mpinat-") + "/parameters-candidate.json"]:
+            raise ValueError("Direct parameters are not the exact authenticated selected-case file")
+        step = {"parameters": parameter_paths[0], "source": str(PurePosixPath(parameter_paths[0]).with_name("input.tar.gz"))}
     parameter_bytes = evidence.fetch(step["parameters"])
     parameters = json.loads(parameter_bytes)
     provenance = evidence.json(str(PurePosixPath(step["source"]).with_name("provenance.json")))
@@ -208,14 +299,16 @@ def collect_case(spec, reader, destination, campaign):
     expected = {"source": {"path": step["source"], "sha256": proof["input_sha256"], "size_bytes": provenance["bundle_bytes"]},
                 "parameter_path": step["parameters"], "parameter_file_sha256": sha(parameter_bytes),
                 "parameter_size_bytes": len(parameter_bytes), "idempotency_key": request["idempotency_key"]}
-    binding = validate_plan(expected, {"record": record, "plan": plan}, study)
-    if any(binding[key] != proof[key] for key in binding):
-        raise ValueError("Selected immutable study plan identity changed")
-    identity = receipt["identity"]
+    if study is not None:
+        binding = validate_plan(expected, {"record": record, "plan": plan}, study)
+        if any(binding[key] != proof[key] for key in binding):
+            raise ValueError("Selected immutable study plan identity changed")
+    identity = submission["identity"]
     if (identity.get("model_id") != "gromacs" or identity.get("source_sha256") != proof["input_sha256"]
             or identity.get("parameters_sha256") != proof["parameters_sha256"]
             or identity.get("idempotency_key") != request["idempotency_key"]
-            or receipt.get("request_descriptor", {}).get("compression") != "gzip"):
+            or submission.get("operation_id") != operation
+            or submission.get("request_descriptor", {}).get("compression") != "gzip"):
         raise ValueError("Native receipt identity differs from the selected input/parameters")
     natives = {row["source_sha256"]: row for row in proof["native_results"]}
     if set(natives) != set(checked["source_result_hashes"]):
@@ -251,8 +344,7 @@ def collect_case(spec, reader, destination, campaign):
                             ("provenance.json", provenance), ("selected-case-proof.json", proof)):
         save(destination / filename, value)
     metadata = agent_metadata(proof, summary, study, campaign, checked)
-    metadata["source_evidence"] = [reference(p) for p in
-        (proof_path, chat / "summary.json", chat / "messages.json", chat / "durable-terminal-state.json")]
+    metadata["source_evidence"] = [reference(p) for p in source_paths]
     metadata["history_evidence"] = [reference(Path(p)) for p in spec.get("history", [])]
     metadata["retention"] = {"source_artifacts": len(artifacts), "locally_rehashed_artifacts": sum(
         row["retention"] == "rehashed-local" for row in artifacts), "trajectories_copied": False,
