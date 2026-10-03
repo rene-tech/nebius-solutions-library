@@ -146,10 +146,18 @@ def customer_outcome(proof, summary):
 def agent_metadata(proof, summary, study, campaign, verification):
     path = proof.get("agent_path", "saved-study")
     if (summary["case_id"] != proof["case_id"]
-            or study is not None and summary.get("output_directory") != study["output_directory"]
             or proof["client_image"] != campaign["client_image"]
             or campaign.get("tenant") != "system" or campaign.get("principal") != "qa"):
         raise ValueError("Agent case, workspace or internal client identity differs")
+    if study is not None:
+        # An agent may place its immutable study in a child such as case/final.
+        # The exact study plan is bound separately; the chat owns the enclosing
+        # workspace, not necessarily that identical directory. Validate both
+        # paths before containment so ../ and sibling-prefix tricks fail.
+        chat_output = PurePosixPath(workspace_path(summary["output_directory"]))
+        study_output = PurePosixPath(workspace_path(study["output_directory"]))
+        if not study_output.is_relative_to(chat_output):
+            raise ValueError("Saved study output is outside the selected chat workspace")
     start, end = (study or {}).get("created_at"), (study or {}).get("finished_at")
     elapsed = end - start if type(start) in (int, float) and type(end) in (int, float) else None
     fields = ("conversation_id", "model", "reasoning_effort", "cohort_id", "seeded_agent",
@@ -161,6 +169,7 @@ def agent_metadata(proof, summary, study, campaign, verification):
             "native_identity": {key: proof[key] for key in
                                 ("input_sha256", "parameters_sha256", "native_results")},
             "chat": {**{key: summary.get(key) for key in fields}, "client_image": proof["client_image"],
+                     "output_directory": summary["output_directory"],
                      "initial_response_scope": ("study admission; not a completed native report" if study is not None
                                                 else "direct native/report delivery; no saved study"),
                      "elapsed_seconds": duration(summary.get("seconds"), "initial chat including tools"),
@@ -170,6 +179,7 @@ def agent_metadata(proof, summary, study, campaign, verification):
                      "delivery_seconds": duration(None, "no independent report/download duration timer"),
                      "token_cost_usd": None},
             "durable_delivery": {"kind": path, "study_created_at": start, "study_finished_at": end,
+                                 "study_output_directory": (study or {}).get("output_directory"),
                                  "study_elapsed_seconds": duration(elapsed, "whole saved-study lifetime, not GPU or waiting time"
                                                                    if study is not None else "no saved study on direct-MCP path"),
                                  "verified": True, "native_report_verification": verification,

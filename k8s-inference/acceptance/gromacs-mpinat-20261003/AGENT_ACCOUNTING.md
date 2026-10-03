@@ -25,6 +25,13 @@ It rejects failure proofs, admission-only/nonterminal studies, unrelated
 operations, changed recipes/parameters, hash drift and duplicate native charges.
 It does not search a live campaign and treat whichever outputs exist as passes.
 
+A saved study may use the chat's output directory or a validated descendant
+(for example `case/final`). Exact frozen study-plan/native/report bindings still
+apply; siblings, non-workspace paths and traversal are rejected. The adapter
+retains chat and study output paths separately. The final collection exposed
+and corrected an equality-only metadata check for real ligand-cmet-ti; that
+failed local projection is collector history, not a native/model failure.
+
 Only metadata, native result JSON and logs are copied. Large trajectory, TPR,
 checkpoint and energy payloads remain original SDK references; each projected
 artifact explicitly says `rehashed-local` or `original-SDK-reference-only`.

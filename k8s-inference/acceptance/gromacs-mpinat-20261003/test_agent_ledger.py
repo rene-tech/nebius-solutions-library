@@ -344,6 +344,22 @@ class AgentLedgerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "different native physics"):
                 unique_operations([first, recovery])
 
+    def test_saved_study_output_can_be_a_validated_chat_descendant(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, _, campaign, proof, summary, study = self.fixture(Path(directory))
+            nested = {**study, "output_directory": study["output_directory"] + "/final"}
+            metadata = agent_metadata(proof, summary, nested, campaign, {})
+            self.assertEqual(metadata["chat"]["output_directory"], summary["output_directory"])
+            self.assertEqual(metadata["durable_delivery"]["study_output_directory"], nested["output_directory"])
+            for bad in (study["output_directory"] + "-sibling/final",
+                        study["output_directory"] + "/../other",
+                        "/workspace/replays/other-case", "/tmp/final"):
+                with self.subTest(output=bad), self.assertRaises(ValueError):
+                    agent_metadata(proof, summary, {**study, "output_directory": bad}, campaign, {})
+            with self.assertRaises(ValueError):
+                agent_metadata(proof, {**summary, "output_directory": "/workspace/../outside"},
+                               nested, campaign, {})
+
     def test_boundaries_and_unknown_times(self):
         with self.assertRaises(ValueError):
             duration(-1, "invalid")
