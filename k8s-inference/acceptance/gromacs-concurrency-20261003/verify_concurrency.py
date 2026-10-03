@@ -16,7 +16,6 @@ import io
 import json
 import os
 import re
-import signal
 import sys
 import tarfile
 import time
@@ -25,6 +24,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx2
+
+from acceptance_subprocess import read_command
 
 QA_KEY_ID = "56130b22-ae09-42fc-a0f0-48012f22fb71"
 TASK_ID = "fs2-gromacs-internal-api-concurrency-r20261003"
@@ -54,37 +55,6 @@ def append(path, value):
 
 def emit(**value):
     print(json.dumps({"at": now(), **value}), flush=True)
-
-
-async def read_command(arguments, *, timeout=30):
-    """Bound a local reader without abandoning its pipe-draining coroutine.
-
-    Cancelling communicate() on timeout, then waiting for the killed child,
-    can deadlock while its buffered stdout is paused. Shield the reader and
-    drain it after terminating this command's isolated process group (including
-    credential-plugin children). No Kubernetes workload is terminated here.
-    """
-    process = await asyncio.create_subprocess_exec(
-        *arguments, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-        start_new_session=True,
-    )
-    communication = asyncio.create_task(process.communicate())
-    try:
-        stdout, _ = await asyncio.wait_for(asyncio.shield(communication), timeout=timeout)
-    except (TimeoutError, asyncio.CancelledError):
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        try:
-            await asyncio.wait_for(asyncio.shield(communication), timeout=5)
-        except TimeoutError:
-            communication.cancel()
-            await asyncio.gather(communication, return_exceptions=True)
-        raise
-    if process.returncode:
-        raise RuntimeError("Local read/observation command failed")
-    return stdout
 
 
 async def active_operations(http):

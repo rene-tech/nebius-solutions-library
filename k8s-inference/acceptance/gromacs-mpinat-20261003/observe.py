@@ -10,11 +10,24 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import sys
 import time
+
+sys.path.insert(0, str(Path(__file__).parents[1] / "gromacs-concurrency-20261003"))
+from acceptance_subprocess import read_command_result
 
 
 def now():
     return datetime.now(timezone.utc).isoformat()
+
+
+async def read_observation(arguments, *, timeout=25):
+    try:
+        result = await read_command_result(arguments, timeout=timeout)
+    except TimeoutError:
+        return {"error": "observation_timeout"}
+    return {"returncode": result.returncode, "stdout": result.stdout.decode(errors="replace"),
+            "stderr": result.stderr.decode(errors="replace")}
 
 
 async def main(args):
@@ -27,16 +40,8 @@ async def main(args):
             file.write(json.dumps({"observed_at": now(), **data}) + "\n")
 
     async def kubectl(*command):
-        process = await asyncio.create_subprocess_exec("kubectl", "--context", args.context,
-            "--request-timeout=15s", *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        try:
-            out, err = await asyncio.wait_for(process.communicate(), timeout=25)
-            return {"returncode": process.returncode, "stdout": out.decode(errors="replace"),
-                    "stderr": err.decode(errors="replace")}
-        except TimeoutError:
-            process.kill()
-            await process.wait()
-            return {"error": "observation_timeout"}
+        return await read_observation(["kubectl", "--context", args.context,
+            "--request-timeout=15s", *command])
 
     async def sample(pod):
         meta, spec = pod["metadata"], pod["spec"]
@@ -100,7 +105,7 @@ async def main(args):
             names = {p["metadata"]["name"] for p in pods}
             node_names = {p["spec"].get("nodeName") for p in pods}
             for name, result in (("metrics", metrics), ("nodes", nodes), ("events", events)):
-                if result.get("returncode"):
+                if result.get("returncode") != 0:
                     save("errors.jsonl", {"kind": name, **result})
                     continue
                 items = json.loads(result.get("stdout", "{}" )).get("items", [])
