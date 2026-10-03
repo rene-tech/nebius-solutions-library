@@ -3,7 +3,41 @@
 This is **not** a completed REST/agent/MPI qualification. Never use the successful
 subset to describe the whole suite or a sixteen-GPU MPI execution as working.
 
-## Latest checkpoint — 14:42 UTC
+## Latest checkpoint — 15:00 UTC
+
+All three fresh hosted CUDA-aware cases passed: REST 2×1 H100
+`59d0ffc8-9ee2-4553-ae19-1269466115fa`, MCP 1×2 L40S
+`8cc8ab55-647a-47a3-9422-211618ac7220`, and MCP 1×4 L40S
+`dee8315b-24d4-45ce-937b-17fdf2318cb9`. Each delivered three native timings
+and 36 verified artifacts. Both quota edges correctly count the two-node gang's
+two GPUs. API/runtime and QA limit two remain unchanged.
+[BENCHMARK_DELTA.md](BENCHMARK_DELTA.md) adds a fixed 14:51 snapshot: all 24
+corrected REST inputs, eight baseline MPI cases and three candidate cases,
+with 58 retained successful/failed/cancelled attempts and durable cost clocks.
+Its different protocols are not conflated into a runtime-speedup claim.
+
+Exact client r5 `b948ecca…ab927` (runtime source `61b4c3b`) has passed both
+read-only MEM recovery and a separate durable native-timing analysis study,
+`96b89a35-9e48-5986-92ce-5bcdab33dad6`. All three native repeats, original
+source/log identities and Markdown/CSV/JSON downloads were verified without
+resubmitting MD. The original r4 report failure remains a failure.
+
+The remaining 18 actual-agent cases now run under the saved-study supervisor,
+small inputs first and PEP/PEP-h last. The original five completed cases and
+completed MEM are excluded. First studies: benchSFC
+`063c8ece-afe1-544c-b086-526ad76d4667`, ligand-cmet-eq
+`62240db9-49fd-575c-8963-5af5c6c2bd25`. Their asynchronous admissions are not
+completion verdicts. Evidence: `agent-staging-r5`, `agent-remaining-r5` and
+`agent-native-study-candidate-r5-verification.json` under the private campaign
+root. The task-owned r5 fixture restart preserved its persistent state and exact
+image while adding the original hash-verified read-only Lynx input bindings.
+All nine CPU cases are also being rechecked on r5; the r4 results below are not
+silently transferred to this image. No customer/default client was replaced.
+
+Whole-node 8/16-GPU tests still require free whole-node capacity. The v4 starter
+analysis correction remains a qualified draft, not a published seed pack.
+
+## Previous checkpoint — 14:42 UTC
 
 CUDA-aware MPI and the gang quota-accounting correction are deployed from source
 `4ce21e085`, API/tools image `57c35229…862da`; all three exact readers are Ready,

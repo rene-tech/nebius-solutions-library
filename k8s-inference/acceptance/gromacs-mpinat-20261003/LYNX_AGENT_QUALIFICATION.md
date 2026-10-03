@@ -82,7 +82,7 @@ Private root: `/home/tux/secure-handoff/fs2-gromacs-mpinat-20261003`.
 - `lynx-agent-r4-cpu-evidence.json`: per-case timings and original input/measurement hashes.
 - `client/mpinat-candidate-r4-20261003`: exact image, separate state, readonly bindings and native output files.
 
-The hosted alanine starter example and 19 remaining MPINAT cases still need
+At this r4 CPU checkpoint, the hosted alanine starter example and 19 remaining MPINAT cases still needed
 coordinated GPU admission. The five already native-complete benchmarks are
 excluded from new work and have passed analysis-only recovery. The actual
 customer production pipeline remains unqualified until its native input bundle
@@ -108,3 +108,35 @@ This is not the original four-engine 1 ns study or a converged sampling claim.
 Dispatch only the separate `hosted-alanine-r4-manifest.json` and
 `remaining-mpinat-r4-manifest.json` after the parent grants a GPU lane. Do not
 start another admission-policy owner or reuse the old 73a3340a run identifiers.
+
+## Follow-up: hosted example and r5 continuation
+
+The separately assumed hosted alanine study subsequently executed on r4:
+operation `bc1bb480-4536-4147-aae1-bbb59504d841`, conversation
+`6461656a-2978-570c-bf83-c31679bff792`. It completed 13 native commands and
+55 hash-verified files in a 150.4-second, eight-tool interaction. The original
+6598-particle protocol remained 20 ps NVT + 20 ps NPT + 20 ps production,
+with 21 production frames. It is a representative integration exercise, not
+the customer's missing production pipeline or converged sampling.
+
+Artifact inspection caught an invalid NVT `Density` selection despite the
+analysis command returning zero. The original diagnostic is retained. A
+separate versioned correction removes only that unavailable NVT observable;
+an exact-image CPU replay verifies all 21 frames and unchanged values of the
+four valid observables. NPT/production and physical inputs are unchanged.
+See [STARTER_NVT_V4.md](STARTER_NVT_V4.md). This fixes the prepared next pack,
+not the already published v3 data; no new GPU run or seed promotion is claimed.
+
+The first remaining r4 benchmark pair exposed two further client defects:
+MEM completed but its report lacked native timings, and PEP's completed upload
+lost gzip metadata without ever submitting native work. R5
+`b948ecca…ab927`, runtime source `61b4c3b`, adds durable native timing reports,
+explicit encoding and measured transfer phases. Fresh analysis-only study
+`96b89a35-9e48-5986-92ce-5bcdab33dad6` verified MEM's original three timing
+rows and nine authenticated downloads without rerunning simulation. This is
+successful recovery, not a rewritten first-attempt pass.
+
+At 15:00 UTC, all nine CPU cases are being replayed once on that exact r5
+candidate, while the 18 unexecuted public MD cases run separately. Current
+progress lives in [STATUS.md](STATUS.md). Neither the older CPU passes nor
+asynchronous admissions alone qualify the entire current customer release.
