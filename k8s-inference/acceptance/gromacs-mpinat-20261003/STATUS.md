@@ -3,7 +3,41 @@
 This is **not** a completed REST/agent/MPI qualification. Never use the successful
 subset to describe the whole suite or a sixteen-GPU MPI execution as working.
 
-## Latest checkpoint — 13:38 UTC
+## Latest checkpoint — 13:56 UTC
+
+The deployed API remains `368a020e…bbe9`; no customer keys, instances or hot
+Apps were changed. The bounded MPI continuation has now completed REST 1×1,
+1×2 and two-node 2×1, plus MCP 1×1 and 1×2. Each retained three native timing
+records and 36 verified artifacts. MCP 2×1 is running; the 1×4 cases are still
+pending. These are concurrent functional measurements, not isolated scaling
+comparisons. The corrected large PEP-h operation succeeded; PEP continues.
+
+Actual Lynx requests and assumed controls are documented separately in
+[LYNX_WORKLOADS.md](LYNX_WORKLOADS.md) and
+[LYNX_AGENT_QUALIFICATION.md](LYNX_AGENT_QUALIFICATION.md). The three actual
+CPU requests and six assumed CPU controls passed. The exact-image seeded-agent
+supervisor is waiting for both current benchmark owners to drain before one
+hosted alanine case and nineteen remaining MPINAT cases, at most two at once.
+Five completed agent studies will not be resubmitted merely for reporting.
+
+A CUDA-aware Open MPI candidate has passed a real two-GPU L40S device-buffer
+probe. Matched 1×1 GROMACS repeats also completed: candidate mean 193.452 versus
+baseline 190.934 ns/day, with overlapping repeat spread, **not an established
+speedup**. Strict printed-energy equality did not pass; bounded numerical and
+cross-node application checks remain in progress. This candidate is not live.
+MPI-only release binding now preserves the single-GPU App's runtime identity
+and prior receipts; its additive build sources receive a separate fingerprint.
+The acceptance helper suite currently passes 177 tests. Two pre-existing Ruff
+findings in the legacy activation script (E402/E731) are unchanged.
+
+Phase accounting now retains 52 operation/attempt records and 107 native mdrun
+commands in a separate rebuildable evidence snapshot. Measured native counter
+wall time, init-container process time, MPI staging, analysis and bounded
+collector tail remain distinct; missing exact checkpoint/export/initialization
+spans are null, not inferred. Full-node 8/16-GPU tests still need free whole-node
+capacity; no customer Apps have been evicted or relocated.
+
+## Previous checkpoint — 13:38 UTC
 
 The final shape-aware API `d789a4b7…fed68` and native single/MPI images below
 were activated; all three readers passed exact-image/public-discovery checks.

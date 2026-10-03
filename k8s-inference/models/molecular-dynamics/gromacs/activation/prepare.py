@@ -100,7 +100,7 @@ def validate_profile_qualifications(profiles, execution_map):
             raise ValueError("release would invalidate an App's qualification membership")
 
 
-def source_recipe(root):
+def source_recipe(root, *, mpi_cuda_aware=False):
     sys.path.insert(0, str(root / "components/control-plane/src"))
     from fs2_serve.scientific_batch.adapters.common import _RECIPE_SHARED_PATHS
 
@@ -123,6 +123,17 @@ def source_recipe(root):
         "models/molecular-dynamics/gromacs/runtime/requirements.lock",
     }
     paths.update(str(path.relative_to(root)) for path in (HERE.parent / "runtime/fs2_gromacs").glob("*.py"))
+    if mpi_cuda_aware:
+        # This successor changes only Open MPI in the immutable worker. Bind
+        # its build recipe and probe sources without changing the single-GPU
+        # App's already-qualified identity.
+        prefix = "models/molecular-dynamics/gromacs/runtime/"
+        paths.update(prefix + path for path in (
+            "Containerfile.mpi-cuda-aware",
+            "Containerfile.mpi-cuda-aware.dockerignore",
+            "cuda-aware/verify_build.py",
+            "cuda-aware/mpi_device_probe.c",
+        ))
     return {
         "schema": "fs2-serve.nebius.ai/gromacs-runtime-recipe/v1",
         "files": [

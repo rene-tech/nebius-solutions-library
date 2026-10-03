@@ -55,12 +55,19 @@ def evidence(directories, *, mpi):
             "scope": "Only the listed native shapes; new REST/MCP/agent qualification remains separate"}
 
 
-def bind(catalog, execution, proofs, recipe_sha):
+def bind(catalog, execution, proofs, recipe_shas):
+    models = set(proofs)
+    if not models or not models.issubset({"gromacs", "gromacs-mpi"}):
+        raise ValueError("Select one or both GROMACS Apps explicitly")
+    if set(recipe_shas) != models:
+        raise ValueError("Each selected App needs its own exact source recipe")
     before = copy.deepcopy(execution)
     result = copy.deepcopy(catalog)
     desired = copy.deepcopy(execution)
-    models = {"gromacs", "gromacs-mpi"}
     rows = {row["model_id"]: row for row in desired["models"]}
+    if (not models.issubset(rows)
+            or not models.issubset({profile["model_id"] for profile in result["profiles"]})):
+        raise ValueError("Selected App is missing from the catalog or execution map")
     for profile in result["profiles"]:
         model = profile["model_id"]
         if model not in models:
@@ -68,7 +75,7 @@ def bind(catalog, execution, proofs, recipe_sha):
         proof = proofs[model]
         identity = profile["execution_identity"]
         identity.update(runtime_image_digest=proof["runtime_image"].rsplit("@", 1)[1],
-                        runtime_recipe_sha256=recipe_sha,
+                        runtime_recipe_sha256=recipe_shas[model],
                         workload_recipe_sha256=activation.digest(profile["workload"]))
         identity["execution_identity_sha256"] = activation.digest(
             {key: value for key, value in identity.items() if key != "execution_identity_sha256"})
@@ -89,19 +96,28 @@ def bind(catalog, execution, proofs, recipe_sha):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--single", type=Path, action="append", required=True)
-    parser.add_argument("--mpi", type=Path, action="append", required=True)
+    parser.add_argument("--single", type=Path, action="append")
+    parser.add_argument("--mpi", type=Path, action="append")
+    parser.add_argument("--mpi-cuda-aware", action="store_true",
+                        help="Include the additive CUDA-aware Open MPI build recipe for the MPI App only")
     parser.add_argument("--evidence-output", type=Path, required=True)
     args = parser.parse_args()
-    proofs = {"gromacs": evidence(args.single, mpi=False), "gromacs-mpi": evidence(args.mpi, mpi=True)}
-    recipe = activation.source_recipe(SOLUTION)
+    if not args.single and not args.mpi:
+        parser.error("select --single, --mpi, or both")
+    if args.mpi_cuda_aware and not args.mpi:
+        parser.error("--mpi-cuda-aware requires --mpi qualification evidence")
+    proofs, recipes = {}, {}
+    for model, directories, mpi in (("gromacs", args.single, False), ("gromacs-mpi", args.mpi, True)):
+        if directories:
+            proofs[model] = evidence(directories, mpi=mpi)
+            recipes[model] = activation.source_recipe(SOLUTION, mpi_cuda_aware=mpi and args.mpi_cuda_aware)
     contracts = SOLUTION / "catalog/runtime/contracts"
     catalog_path, map_path = (contracts / name for name in (
         "scientific-workload-profiles.json", "scientific-execution-map.json"))
     catalog, execution = bind(json.loads(catalog_path.read_text()), json.loads(map_path.read_text()),
-                              proofs, activation.digest(recipe))
+                              proofs, {model: activation.digest(recipe) for model, recipe in recipes.items()})
     args.evidence_output.mkdir(parents=True, exist_ok=False)
-    for name, value in (("runtime-proofs.json", proofs), ("source-recipe.json", recipe)):
+    for name, value in (("runtime-proofs.json", proofs), ("source-recipes.json", recipes)):
         (args.evidence_output / name).write_text(json.dumps(value, indent=2) + "\n")
     catalog_path.write_text(json.dumps(catalog, indent=2) + "\n")
     map_path.write_text(json.dumps(execution, indent=2) + "\n")
