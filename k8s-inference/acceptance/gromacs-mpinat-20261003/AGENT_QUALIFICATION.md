@@ -298,3 +298,34 @@ healthy container had no restart or OOM. The precise readiness branch is
 unknown. Neither final native success nor this acceptance fix relabels the
 entire cohort as warning-free. Final joined accounting waits for all eighteen
 terminal outcomes and keeps the six older native operations/recoveries distinct.
+
+### SHP2-TI: correct delivered result with retained customer friction
+
+SHP2-TI conversation `466f822a-7776-5266-95ca-fc93fe0da885` completed operation
+`b7d84d7b-d2cd-46cd-9e53-0b75e4055450` and delivered the correct native report
+on its first chat, after 259.370 seconds and 26 tool calls. Its three measured
+rates are 60.773, 56.154 and 58.150 ns/day. This is **not a clean customer-path
+pass**: the agent selected a short helper observation window (exit 75), then
+passed unsupported wait/poll options to read-only recovery (exit 2), then tried
+to recover into the original nonempty receipt directory (exit 1). It finally
+used a new recovery directory, reported the original operation and delivered
+the verified files. No explicit tool-budget abort occurred and no native work
+was replayed. The full trace and failed `batch-07.json` remain unchanged.
+
+The independent verifier now binds the original submission receipt to the
+separate verified recovery receipt by the same operation, endpoint and caller;
+it checks original request/bundle/parameters, exact native recipe and upstream
+TPR, logs, timing rows, final report text and authenticated downloads. It does
+not copy or invent request metadata in a recovery receipt. The proof records
+`recovery_binding`, all three `observed_tool_errors`, `customer_path_clean=false`
+and `delivery_outcome=verified_after_tool_errors`. Scientific-result verification
+and friction-free client qualification are explicitly different outcomes.
+Twenty-two focused tests and Ruff pass, including wrong-operation/caller and
+changed-input recovery rejection.
+
+At 15:48 UTC, fourteen native cases had verified selected-case results. Only the
+four never-admitted cases resumed: SHP2-EQ, RIB, PEP and PEP-h. Supervisor
+PID 3229213 and read-only verifier PID 3223363 retain the same r5 release and
+QA concurrency two. SHP2-EQ/RIB are the active pair; no new client candidate is
+substituted into this cohort. Avoiding the short-wait/direct-recovery detour is
+an outstanding client UX improvement, not a reason to rerun the completed MD.

@@ -100,16 +100,19 @@ def validate_plan(expected, frozen, study):
     return {'model_step': step['id'], 'operation_id': operation, 'plan_identity': identity}
 
 
-def validate_native(expected, binding, report, receipt, mapping, fetch):
-    identity = receipt['identity']
+def validate_native(expected, binding, report, receipt, mapping, fetch, request_receipt=None):
+    request_receipt = request_receipt or receipt
+    identity = request_receipt['identity']
     if report['operation_id'] != binding['operation_id'] or receipt.get('operation_id') != binding['operation_id']:
         raise ValueError('Timing report belongs to another operation')
+    if request_receipt.get('operation_id') != binding['operation_id']:
+        raise ValueError('Original submission receipt belongs to another operation')
     for key, value in {'model_id': 'gromacs', 'source_sha256': expected['source']['sha256'],
                        'parameters_sha256': expected['parameters_sha256'],
                        'idempotency_key': expected['idempotency_key']}.items():
         if identity.get(key) != value:
             raise ValueError('Native receipt identity differs from selected case: ' + key)
-    if receipt.get('request_descriptor', {}).get('compression') != 'gzip':
+    if request_receipt.get('request_descriptor', {}).get('compression') != 'gzip':
         raise ValueError('Native upload did not use the requested gzip encoding')
     if len(report['timing_rows']) != 3 or any(row.get('requested_steps') != 10000 for row in report['timing_rows']):
         raise ValueError('Expected exactly three original 10000-step timing repeats')
@@ -134,6 +137,19 @@ def validate_native(expected, binding, report, receipt, mapping, fetch):
             'parameter_file_sha256': expected['parameter_file_sha256'],
             'parameters_sha256': expected['parameters_sha256'], 'native_results': native_results,
             'repeat_count': 3, 'requested_steps_per_repeat': 10000, 'selected_case_verified': True}
+
+
+def validate_recovery_identity(submission, recovery):
+    """Join two real receipts; never copy request identity into a recovery file."""
+    operation = submission.get('operation_id')
+    if (not operation or recovery.get('operation_id') != operation
+            or recovery.get('identity', {}).get('operation_id') != operation
+            or recovery.get('state') != 'verified'):
+        raise ValueError('Recovery is not verified for the original submitted operation')
+    for key in ('endpoint', 'caller_fingerprint'):
+        expected = submission.get('identity', {}).get(key)
+        if not expected or recovery.get('identity', {}).get(key) != expected:
+            raise ValueError('Recovery changed the original caller or endpoint')
 
 
 def verify_case(client, container, case_id, staging, study):
@@ -178,7 +194,8 @@ def direct_delivery(calls, verifier):
 def verify_direct_case(client, case_id, staging, messages, verifier, harness):
     calls = [p['tool_call'] for m in messages for p in m.get('content', []) if p.get('type') == 'tool_call']
     summary = harness.summarize(messages)
-    if verifier.tool_failures(calls) or summary['errors'] or summary['empty_answer'] or summary['unfinished']:
+    tool_errors = verifier.tool_failures(calls)
+    if summary['errors'] or summary['empty_answer'] or summary['unfinished']:
         raise ValueError('Direct scientific path contains an unresolved tool/chat failure')
     delivered = direct_delivery(calls, verifier)
     if delivered['report_markdown'] not in summary['visible_text']:
@@ -196,16 +213,31 @@ def verify_direct_case(client, case_id, staging, messages, verifier, harness):
 
     expected = expected_case(case_id, staging, fetch)
     report = json.loads(fetch(delivered['files']['native-timing-report.json']))
-    receipt_path = str(Path(delivered['receipt_directory']) / 'receipt.json')
-    if report['receipt_file'] != receipt_path:
+    receipt_path = report['receipt_file']
+    receipt_file = Path(receipt_path)
+    if (receipt_file.parent != Path(delivered['receipt_directory'])
+            or receipt_file.name not in {'receipt.json', 'recovery-receipt.json'}):
         raise ValueError('Delivered report is not bound to the delivered original native receipt')
     receipt = json.loads(fetch(receipt_path))
+    request_receipt = receipt
+    recovery_binding = None
+    if receipt_file.name == 'recovery-receipt.json':
+        # The direct benchmark fixture preserves its original submission in
+        # <case>/receipt; the separate recovery is never allowed to replace it.
+        original_path = str(receipt_file.parent.parent / 'receipt' / 'receipt.json')
+        original_bytes = fetch(original_path)
+        request_receipt = json.loads(original_bytes)
+        validate_recovery_identity(request_receipt, receipt)
+        recovery_binding = {'submission_receipt_file': original_path,
+                            'submission_receipt_sha256': sha(original_bytes),
+                            'recovery_receipt_file': receipt_path,
+                            'operation_id': receipt['operation_id'], 'same_operation_verified': True}
     mapping = json.loads(fetch(str(Path(delivered['receipt_directory']) / 'native-files.json')))
     rows = fetch(delivered['files']['native-timings.csv']).decode()
     markdown = fetch(delivered['files']['native-timing-report.md']).decode()
     verification = verify_timing_report(report, rows, markdown, fetch)
     binding = {'model_step': None, 'operation_id': receipt['operation_id'], 'plan_identity': None}
-    result = validate_native(expected, binding, report, receipt, mapping, fetch)
+    result = validate_native(expected, binding, report, receipt, mapping, fetch, request_receipt)
     links = []
     for url in sorted(set(re.findall(r'\]\((/demos\?[^)]+)\)', summary['visible_text']))):
         directory, file = verifier.workspace_selection(url)
@@ -217,7 +249,10 @@ def verify_direct_case(client, case_id, staging, messages, verifier, harness):
         raise ValueError('Direct completed result omitted usable customer links')
     return {**result, 'study_id': None, 'report_verification': {**verification,
             'authenticated_downloads': downloads, 'delivered_links': links}, 'client_image': R5_IMAGE,
-            'native_replayed': False, 'agent_path': 'direct-batch-mcp', 'direct_delivery_verified': True}
+            'native_replayed': False, 'agent_path': 'direct-batch-mcp', 'direct_delivery_verified': True,
+            'recovery_binding': recovery_binding, 'observed_tool_errors': tool_errors,
+            'customer_path_clean': not tool_errors,
+            'delivery_outcome': 'verified_after_tool_errors' if tool_errors else 'verified'}
 
 
 def main():

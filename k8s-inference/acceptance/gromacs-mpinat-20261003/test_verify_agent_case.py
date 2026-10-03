@@ -3,7 +3,7 @@ import json
 from types import SimpleNamespace
 import unittest
 
-from verify_agent_case import canonical, direct_delivery, is_terminal, normalize, runtime_canonical, sha, validate_native, validate_plan
+from verify_agent_case import canonical, direct_delivery, is_terminal, normalize, runtime_canonical, sha, validate_native, validate_plan, validate_recovery_identity
 
 
 class SelectedCaseTests(unittest.TestCase):
@@ -100,6 +100,35 @@ class SelectedCaseTests(unittest.TestCase):
     def test_exact_native_recipe_and_original_tpr_pass(self):
         args = self.native_fixture()
         self.assertTrue(validate_native(*args[:-1])['selected_case_verified'])
+
+    def test_recovery_preserves_original_submission_identity_without_mutation(self):
+        expected, binding, report, receipt, mapping, fetch, files = self.native_fixture()
+        submission = copy.deepcopy(receipt)
+        submission['identity'].update(endpoint='https://example.test/mcp', caller_fingerprint='qa')
+        recovery = copy.deepcopy(receipt)
+        recovery['identity'] = {'operation_id': 'op', 'endpoint': 'https://example.test/mcp',
+                                'caller_fingerprint': 'qa'}
+        recovery.pop('request_descriptor')
+        recovery['state'] = 'verified'
+        untouched = copy.deepcopy(recovery)
+        validate_recovery_identity(submission, recovery)
+        self.assertTrue(validate_native(expected, binding, report, recovery, mapping, fetch,
+                                       submission)['selected_case_verified'])
+        self.assertEqual(recovery, untouched)
+        for key, value in (('operation_id', 'other-op'), ('endpoint', 'https://other.test'),
+                           ('caller_fingerprint', 'customer')):
+            altered = copy.deepcopy(recovery)
+            altered['identity'][key] = value
+            with self.assertRaises(ValueError):
+                validate_recovery_identity(submission, altered)
+        for field, value in (('operation_id', 'other-op'), ('state', 'running')):
+            altered = dict(recovery, **{field: value})
+            with self.assertRaises(ValueError):
+                validate_recovery_identity(submission, altered)
+        altered = copy.deepcopy(submission)
+        altered['identity']['source_sha256'] = 'other-bundle'
+        with self.assertRaisesRegex(ValueError, 'source_sha256'):
+            validate_native(expected, binding, report, recovery, mapping, fetch, altered)
 
     def test_wrong_operation_input_parameters_steps_or_tpr_fail(self):
         for kind in ('operation', 'input', 'parameters', 'steps', 'tpr', 'recipe'):
