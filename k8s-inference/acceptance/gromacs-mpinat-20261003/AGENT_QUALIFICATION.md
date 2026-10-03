@@ -381,3 +381,42 @@ contract correction tested with synthetic segmented reports, not a claim that
 PEP or PEP-h has resumed. Their original operations and immutable images remain
 unchanged; successful native logs, recipe/input hashes and downloads must still
 pass the existing independent report checks.
+
+### All eighteen fresh r5 cases verified — 17:57 UTC
+
+The supervisor and independent selected-case verifier both exited zero. All
+eighteen fresh cases now bind their original uploaded bytes, exact normalized
+native recipe and upstream TPR, three requested 10000-step repeats, successful
+native/log measurements, nonempty deterministic reports and authenticated
+downloads. The last two cases each verified eleven downloads:
+
+| Case / original native operation | Three native ns/day measurements | Saved study elapsed |
+| --- | --- | ---: |
+| PEP-h / `4e41fae6-fc50-4fce-a18f-fd2eb3860672` | 2.891, 2.888, 2.940 | 3116.474 s |
+| PEP / `7ba11493-fdac-4267-8df5-b7c888407ac6` | 2.075, 2.026, 2.099 | 6331.017 s |
+
+Both used one L40S and one native segment per repeat. Saved-study elapsed
+includes queueing, upload, native work, collection and reporting; it is **not**
+GPU occupancy or a phase decomposition. PEP waited behind PEP-h under the
+documented r5 whole-study serialization. Neither case was shortened or replayed.
+The final native PEP operation was already successful while the client was still
+collecting its large output set; backend completion alone was not counted as
+customer-facing delivery. These finite timing repeats do not establish ensemble
+convergence, sixteen-GPU throughput, a native checkpoint-resume trial or a
+friction-free customer path.
+
+Evidence: `agent-selected-case-verification-r5-v2` and unchanged actual chats
+under `agent-remaining-r5` in the task's private handoff. The two direct-MCP
+cases remain distinct from sixteen saved-study cases; SHP2-TI's three errors,
+BTI's recovered503 and all false acceptance-observer failures remain retained.
+The six older native operations and their later report recoveries are **not**
+renamed as r5 admissions, repeated, or double-counted as new GPU work.
+
+The explicit final accounting gate opened at17:57:10UTC. Revalidation checked
+234 metadata files and all eighteen exact identities; ready manifest SHA-256
+is `740e99977963833132eca5be2ec95184cb480263b906190853251bc1629936ca`.
+One combined snapshot is being collected using the existing ledger/cost model,
+with old failures and original-image/recovery associations retained. Task-owned
+QA containers and telemetry stay available until that join completes and local
+state exports verify. Customer/default image promotion remains held, and the
+source-only bounded-study successor still requires immutable-image/live gates.
