@@ -1,11 +1,25 @@
 import copy
 import json
+from types import SimpleNamespace
 import unittest
 
-from verify_agent_case import canonical, is_terminal, normalize, runtime_canonical, sha, validate_native, validate_plan
+from verify_agent_case import canonical, direct_delivery, is_terminal, normalize, runtime_canonical, sha, validate_native, validate_plan
 
 
 class SelectedCaseTests(unittest.TestCase):
+    def test_direct_delivery_is_distinct_from_saved_study_and_admission(self):
+        verifier = SimpleNamespace(read_tool_output=json.loads)
+        payload = {'results': [{'kind': 'native-md', 'path': '/workspace/receipt'},
+            *[{'kind': 'file', 'path': '/workspace/report/' + name} for name in
+              ('native-timing-report.json', 'native-timing-report.md', 'native-timings.csv')]]}
+        call = {'args': json.dumps(payload), 'output': json.dumps({
+            'schema': 'scientific-verified-delivery/v1', 'status': 'completed', 'report_markdown': 'actual report'})}
+        self.assertEqual(direct_delivery([call], verifier)['receipt_directory'], '/workspace/receipt')
+        for invalid in ([], [call, call], [dict(call, output=json.dumps({'state': 'accepted'}))],
+                        [dict(call, args=json.dumps({'results': payload['results'][:-1]}))]):
+            with self.assertRaises(ValueError):
+                direct_delivery(invalid, verifier)
+
     def test_observation_expiry_is_not_terminal_native_failure(self):
         for state in ('queued', 'running', 'observation_expired', 'cancelling'):
             self.assertFalse(is_terminal(state))

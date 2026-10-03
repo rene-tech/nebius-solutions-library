@@ -9,6 +9,7 @@ import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import importlib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -110,6 +111,15 @@ async def verify_durable_outcome(args, calls, verifier, harness, folder):
     """Observe the actual saved study, not a fabricated synchronous chat result."""
     from verify_agent_study import verify_study
     studies = admitted_studies(calls, verifier)
+    if not studies:
+        from verify_agent_case import verify_direct_case
+        with harness.httpx.Client(base_url=args.base_url, timeout=90,
+                                 headers={'Origin': args.base_url, 'User-Agent': harness.UA}) as client:
+            client.headers['Authorization'] = 'Bearer ' + load(args.client / 'session.json')['token']
+            result = verify_direct_case(client, folder.name, load(args.manifest.parent / 'staging.json'),
+                                        load(folder / 'messages.json'), verifier, harness)
+        save(folder / 'direct-delivery-verification.json', result)
+        return result
     if len(studies) != 1:
         return {'durable_study_delivery_verified': False, 'study_ids': studies,
                 'reason': 'Expected one original saved study; inspect direct/ambiguous paths separately'}
@@ -141,8 +151,40 @@ async def verify_durable_outcome(args, calls, verifier, harness, folder):
             await asyncio.sleep(args.poll)
 
 
+def resume_prefix(output, cases, proofs, image):
+    """Skip only an already admitted, independently verified contiguous prefix."""
+    plan = load(output / 'plan.json')
+    if (plan['client_image'] != image or plan['case_ids'] != [case['case_id'] for case in cases]
+            or plan['tenant'] != 'system' or plan['principal'] != 'qa' or plan['maximum_operations'] != 2):
+        raise ValueError('Prior supervisor identity differs; never reuse its admissions')
+    prefix, records, missing = 0, [], False
+    for case in cases:
+        proof = proofs / (case['case_id'] + '.json')
+        folder = output / 'moonshotai_Kimi-K3' / case['case_id']
+        if not proof.exists():
+            missing = True
+            if folder.exists():
+                raise ValueError('An existing case lacks terminal independent proof; do not replay it')
+            continue
+        if missing:
+            raise ValueError('Only a contiguous verified prefix can be safely resumed')
+        record = load(proof)
+        summary = load(folder / 'summary.json')
+        if (record.get('case_id') != case['case_id'] or record.get('selected_case_verified') is not True
+                or record.get('client_image') != image or record.get('native_replayed') is not False
+                or summary.get('case_id') != case['case_id'] or not summary.get('conversation_id')):
+            raise ValueError('Prior admission/verification identity differs')
+        str(uuid.UUID(record['operation_id']))
+        records.append({'case_id': case['case_id'], 'operation_id': record['operation_id'],
+                        'verification_file': str(proof), 'verification_sha256': hashlib.sha256(proof.read_bytes()).hexdigest()})
+        prefix += 1
+    if not prefix:
+        raise ValueError('Resume requires already verified work; use a fresh admission instead')
+    return prefix, records
+
+
 async def execute(args):
-    if args.output.exists():
+    if args.output.exists() and not args.resume_verified_cases:
         raise ValueError('Refusing to overwrite prior agent evidence or replay cases')
     manifest = load(args.manifest)
     cases = selected_cases(manifest, args.phase)
@@ -160,8 +202,18 @@ async def execute(args):
     key = values['SCIENTIFIC_MODELS_API_KEY']
     if not key.startswith('fs2_pat_' + QA_KEY_ID.replace('-', '')[:12]):
         raise ValueError('Only the existing system/qa inference identity is permitted')
-    args.output.mkdir(parents=True, mode=0o700)
-    save(args.output / 'plan.json', {'started_at': now(), 'phase': args.phase, 'client_image': image,
+    start_index, resume_records = (resume_prefix(args.output, cases, args.resume_verified_cases, image)
+                                   if args.resume_verified_cases else (0, []))
+    if start_index % args.workers:
+        raise ValueError('Resume at a drained batch boundary only')
+    args.output.mkdir(parents=True, mode=0o700, exist_ok=bool(args.resume_verified_cases))
+    if args.resume_verified_cases:
+        resume_id = uuid.uuid4().hex
+        save(args.output / ('summary-before-resume-' + resume_id + '.json'), load(args.output / 'summary.json'))
+        save(args.output / ('resume-' + resume_id + '.json'), {'at': now(), 'skip_verified': resume_records,
+              'new_case_ids': [case['case_id'] for case in cases[start_index:]], 'prior_failures_preserved': True})
+    else:
+        save(args.output / 'plan.json', {'started_at': now(), 'phase': args.phase, 'client_image': image,
         'source_manifest': str(args.manifest), 'case_ids': [case['case_id'] for case in cases],
         'maximum_chats': args.workers, 'maximum_operations': 2, 'policy_written': False,
         'tenant': 'system', 'principal': 'qa', 'new_gpu_admissions': 'parent-authorized after recorded gates'})
@@ -179,14 +231,15 @@ async def execute(args):
     sys.path.insert(0, str(args.client_source / 'templates/hcls-librechat/scripts/qualification'))
     harness = importlib.import_module('replay_agent_instructions')
     verifier = importlib.import_module('verify_agent_delivery')
+    results = load(args.output / 'summary.json', []) if args.resume_verified_cases else []
     replay = SimpleNamespace(base_url=args.base_url, output=args.output,
         session=args.client / 'session.json', login=args.client / 'login.json',
         reasoning_effort=None, use_seeded_agent=True, deadline=args.deadline,
-        instruction_text=(args.client / 'instructions.md').read_text().strip(), cohort_id=uuid.uuid4().hex)
-    results = []
+        instruction_text=(args.client / 'instructions.md').read_text().strip(),
+        cohort_id=results[0]['cohort_id'] if results else uuid.uuid4().hex)
     async with httpx2.AsyncClient(base_url=args.origin, headers={'Authorization': 'Bearer ' + key},
                                  timeout=90, trust_env=False) as http:
-        for start in range(0, len(cases), args.workers):
+        for start in range(start_index, len(cases), args.workers):
             await wait_operator_pause(args.pause_file, args.output, args.poll)
             await wait_empty(http, args.output, args.poll)
             # Recheck after draining in case the operator reserved the lane
@@ -228,7 +281,8 @@ async def execute(args):
                         durable = {'durable_study_delivery_verified': False,
                                    'error_type': type(error).__name__, 'reason': str(error)[:600]}
                         save(path.parent / 'durable-verification-error.json', durable)
-                    delivered = durable.get('durable_study_delivery_verified') is True
+                    delivered = (durable.get('durable_study_delivery_verified') is True
+                                 or durable.get('direct_delivery_verified') is True)
                 if (result.get('harness_error_type') or result.get('errors') or result.get('unfinished')
                         or result.get('watchdog_aborted') or result.get('empty_answer')
                         or tool_errors or not delivered):
@@ -262,6 +316,8 @@ def main():
     parser.add_argument('--poll', type=int, default=45)
     parser.add_argument('--pause-file', type=Path,
                         help='Operator-owned presence pauses only new batches; no cancellation or policy writes')
+    parser.add_argument('--resume-verified-cases', type=Path,
+                        help='Preserve prior evidence; skip only independently verified prior admissions, never retry an existing case')
     args = parser.parse_args()
     if args.phase == 'alanine' and args.workers != 1:
         parser.error('Qualify the hosted starter alone before the benchmark pairs')

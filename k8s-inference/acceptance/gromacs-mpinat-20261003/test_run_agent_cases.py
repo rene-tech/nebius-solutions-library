@@ -6,7 +6,7 @@ import tempfile
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from run_agent_cases import IMAGE, R5_IMAGE, R5_REMAINING, QA_KEY_ID, gate_state, selected_cases, refresh_browser_session, wait_operator_pause, admitted_studies
+from run_agent_cases import IMAGE, R5_IMAGE, R5_REMAINING, QA_KEY_ID, gate_state, selected_cases, refresh_browser_session, wait_operator_pause, admitted_studies, resume_prefix
 
 
 class AgentAdmissionTests(unittest.TestCase):
@@ -82,6 +82,32 @@ class AgentAdmissionTests(unittest.TestCase):
             sleeping.assert_called_once_with(45)
             self.assertEqual([json.loads(line)['state'] for line in
                               (root / 'operator-pauses.jsonl').read_text().splitlines()], ['paused', 'resumed'])
+
+    def test_resume_skips_only_proven_original_admissions_and_retains_gap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            proofs = root / 'proofs'
+            proofs.mkdir()
+            cases = [{'case_id': 'mpinat-' + str(i)} for i in range(4)]
+            (root / 'plan.json').write_text(json.dumps({'client_image': R5_IMAGE,
+                'case_ids': [c['case_id'] for c in cases], 'tenant': 'system', 'principal': 'qa',
+                'maximum_operations': 2}))
+            for case in cases[:2]:
+                folder = root / 'moonshotai_Kimi-K3' / case['case_id']
+                folder.mkdir(parents=True)
+                (folder / 'summary.json').write_text(json.dumps(case | {'conversation_id': 'original'}))
+                (proofs / (case['case_id'] + '.json')).write_text(json.dumps(case | {
+                    'selected_case_verified': True, 'client_image': R5_IMAGE, 'native_replayed': False,
+                    'operation_id': 'cb68970e-f515-4047-87a0-83a3b05c704f'}))
+            count, records = resume_prefix(root, cases, proofs, R5_IMAGE)
+            self.assertEqual(count, 2)
+            self.assertEqual(len(records), 2)
+            self.assertTrue(all(row['verification_sha256'] for row in records))
+            (root / 'moonshotai_Kimi-K3' / cases[2]['case_id']).mkdir()
+            with self.assertRaisesRegex(ValueError, 'existing case lacks terminal'):
+                resume_prefix(root, cases, proofs, R5_IMAGE)
+            with self.assertRaisesRegex(ValueError, 'Prior supervisor identity'):
+                resume_prefix(root, cases, proofs, IMAGE)
 
 
 if __name__ == '__main__':

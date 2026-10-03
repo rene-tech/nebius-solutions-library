@@ -261,3 +261,40 @@ is retained in `agent-selected-case-verification-r5`, corrected and regression
 tested. It did not resubmit or cancel native work. Original r4 failures, the r5
 CPU advice error, recovery-only results and this fresh native cohort remain
 separate evidence rather than being relabeled as a clean all-path release.
+
+### Supported direct MCP delivery and safe campaign continuation
+
+At 15:43 UTC, thirteen of the eighteen fresh cases were independently verified.
+CMET-TI conversation `7883b04e-1088-5321-b146-b0940a0258dc` used the installed
+batch helper, hosted MCP and deterministic timing reporter directly rather than
+creating a saved Runs study. Its original operation
+`cb68970e-f515-4047-87a0-83a3b05c704f` completed and delivered the native files,
+Markdown, CSV and JSON. Three exact 10,000-step repeat rates were 73.570, 72.144
+and 79.251 ns/day. The final Markdown and authenticated downloads matched the
+verified native report. The proof truthfully has `agent_path=direct-batch-mcp`
+and `study_id=null`; it does not invent a saved-study record.
+
+The first supervisor stopped because it incorrectly required a Runs study for
+every successful delivery. Its original `batch-06.json`, summary and traces are
+retained. This was an acceptance-path assumption, not a failed simulation.
+`verify_agent_case.py` now recognizes the actual verified delivery tool output,
+downloads and report text, then applies the same original bundle, parameter,
+recipe, TPR, native timing and log-hash checks as the saved-study path.
+
+`run_agent_cases.py --resume-verified-cases` resumes only after a contiguous
+prefix of exact-image, exact-case, no-replay proofs with the original chat and
+native operation identities. Existing unverified case directories, mismatched
+images or proofs after a gap are rejected rather than accidentally resubmitted.
+It preserves the original cohort and failure snapshot and appends only never-
+admitted cases. Twenty-one focused regressions and Ruff pass. Supervisor
+PID 3133305 and independent verifier PID 3133716 resumed the six remaining
+cases; CMET-EQ subsequently passed as operation
+`70540e7b-9955-407f-998d-252e491b9ee1`. Client image, system/qa concurrency two,
+agent, physics and customer/default deployments are unchanged.
+
+The earlier BTI chat had one recovered GET status 503 (`SERVER_NOT_READY`,
+Retry-After 1). It remains in the original transport-warning evidence; the
+healthy container had no restart or OOM. The precise readiness branch is
+unknown. Neither final native success nor this acceptance fix relabels the
+entire cohort as warning-free. Final joined accounting waits for all eighteen
+terminal outcomes and keeps the six older native operations/recoveries distinct.

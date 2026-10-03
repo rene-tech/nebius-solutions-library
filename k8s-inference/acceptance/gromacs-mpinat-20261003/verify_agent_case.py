@@ -6,6 +6,7 @@ replays work, and a completed report about another case cannot pass.
 import argparse
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import time
@@ -14,7 +15,7 @@ import uuid
 import httpx
 
 from run_agent_cases import R5_IMAGE, selected_cases
-from verify_agent_study import sha, verify_study, workspace_path
+from verify_agent_study import sha, verify_study, verify_timing_report, workspace_path
 
 sys.path.insert(0, str(Path(__file__).parents[2] / 'models/molecular-dynamics/gromacs/runtime'))
 from fs2_gromacs.contracts import normalize, canonical as runtime_canonical
@@ -153,7 +154,70 @@ def verify_case(client, container, case_id, staging, study):
     mapping = json.loads(fetch(str(Path(report['receipt_file']).parent / 'native-files.json')))
     result = validate_native(expected, binding, report, receipt, mapping, fetch)
     return {**result, 'study_id': study['id'], 'report_verification': verification,
-            'client_image': R5_IMAGE, 'native_replayed': False}
+            'client_image': R5_IMAGE, 'native_replayed': False, 'agent_path': 'saved-study'}
+
+
+def direct_delivery(calls, verifier):
+    """Require an actual terminal native-MD delivery, not an admission or text claim."""
+    deliveries = [call for call in calls if verifier.read_tool_output(call.get('output')).get('schema')
+                  == 'scientific-verified-delivery/v1']
+    if len(deliveries) != 1:
+        raise ValueError('Expected one actual direct native-MD/report delivery')
+    call = deliveries[0]
+    output = verifier.read_tool_output(call.get('output'))
+    results = verifier.read_tool_output(call.get('args'))['results']
+    native = [item for item in results if item.get('kind') == 'native-md']
+    files = {Path(item['path']).name: item['path'] for item in results if item.get('kind') == 'file'}
+    required = {'native-timing-report.json', 'native-timings.csv', 'native-timing-report.md'}
+    if output.get('status') != 'completed' or len(native) != 1 or not required <= files.keys():
+        raise ValueError('Direct path did not deliver the original native result and all requested timing reports')
+    return {'receipt_directory': native[0]['path'], 'files': files,
+            'report_markdown': output['report_markdown']}
+
+
+def verify_direct_case(client, case_id, staging, messages, verifier, harness):
+    calls = [p['tool_call'] for m in messages for p in m.get('content', []) if p.get('type') == 'tool_call']
+    summary = harness.summarize(messages)
+    if verifier.tool_failures(calls) or summary['errors'] or summary['empty_answer'] or summary['unfinished']:
+        raise ValueError('Direct scientific path contains an unresolved tool/chat failure')
+    delivered = direct_delivery(calls, verifier)
+    if delivered['report_markdown'] not in summary['visible_text']:
+        raise ValueError('Verified scientific delivery was altered or omitted from the final reply')
+    downloads = []
+
+    def fetch(path, expected=None):
+        response = client.get('/api/scientific-demos/workspace/file', params={'path': workspace_path(path)})
+        response.raise_for_status()
+        value = response.content
+        if expected and (len(value) != expected['size_bytes'] or sha(value) != expected['sha256']):
+            raise ValueError('Direct-case download differs from its recorded bytes')
+        downloads.append({'path': path, 'size_bytes': len(value), 'sha256': sha(value)})
+        return value
+
+    expected = expected_case(case_id, staging, fetch)
+    report = json.loads(fetch(delivered['files']['native-timing-report.json']))
+    receipt_path = str(Path(delivered['receipt_directory']) / 'receipt.json')
+    if report['receipt_file'] != receipt_path:
+        raise ValueError('Delivered report is not bound to the delivered original native receipt')
+    receipt = json.loads(fetch(receipt_path))
+    mapping = json.loads(fetch(str(Path(delivered['receipt_directory']) / 'native-files.json')))
+    rows = fetch(delivered['files']['native-timings.csv']).decode()
+    markdown = fetch(delivered['files']['native-timing-report.md']).decode()
+    verification = verify_timing_report(report, rows, markdown, fetch)
+    binding = {'model_step': None, 'operation_id': receipt['operation_id'], 'plan_identity': None}
+    result = validate_native(expected, binding, report, receipt, mapping, fetch)
+    links = []
+    for url in sorted(set(re.findall(r'\]\((/demos\?[^)]+)\)', summary['visible_text']))):
+        directory, file = verifier.workspace_selection(url)
+        route = '/api/scientific-demos/workspace' + ('/file' if file else '')
+        response = client.get(route, params={'path': file or directory})
+        response.raise_for_status()
+        links.append({'path': file or directory, 'http_status': response.status_code})
+    if not links:
+        raise ValueError('Direct completed result omitted usable customer links')
+    return {**result, 'study_id': None, 'report_verification': {**verification,
+            'authenticated_downloads': downloads, 'delivered_links': links}, 'client_image': R5_IMAGE,
+            'native_replayed': False, 'agent_path': 'direct-batch-mcp', 'direct_delivery_verified': True}
 
 
 def main():
@@ -163,6 +227,7 @@ def main():
     parser.add_argument('--container', required=True)
     parser.add_argument('--base-url', default='http://127.0.0.1:13208')
     parser.add_argument('--watch', action='store_true')
+    parser.add_argument('--resume', action='store_true', help='Continue read-only verification without overwriting prior proofs')
     args = parser.parse_args()
     if args.base_url != 'http://127.0.0.1:13208':
         raise ValueError('Use only the isolated exact r5 candidate')
@@ -171,13 +236,24 @@ def main():
         raise ValueError('Candidate image differs')
     cases = selected_cases(load(args.manifest), 'benchmarks')
     staging = load(args.staging)
-    args.output.mkdir(mode=0o700, parents=True, exist_ok=False)
+    args.output.mkdir(mode=0o700, parents=True, exist_ok=args.resume)
     sys.path.insert(0, '/home/tux/worktrees/scientific-ai-workbench-lifecycle-20261002/templates/hcls-librechat/scripts/qualification')
+    import replay_agent_instructions as harness
+    import verify_agent_delivery as verifier
     from replay_agent_instructions import UA, authenticate
     from verify_agent_delivery import read_tool_output
     from run_agent_cases import admitted_studies
     from types import SimpleNamespace
     verified = set()
+    if args.resume:
+        for case in cases:
+            proof = args.output / (case['case_id'] + '.json')
+            if proof.exists():
+                record = load(proof)
+                if (record.get('case_id') != case['case_id'] or record.get('client_image') != R5_IMAGE
+                        or record.get('selected_case_verified') is not True):
+                    raise ValueError('Existing case proof differs from the exact cohort')
+                verified.add(case['case_id'])
     with httpx.Client(base_url=args.base_url, headers={'Origin': args.base_url, 'User-Agent': UA}, timeout=90) as client:
         client.headers['Authorization'] = 'Bearer ' + load(args.client / 'session.json')['token']
         while True:
@@ -188,6 +264,14 @@ def main():
                     continue
                 calls = [p['tool_call'] for m in load(messages) for p in m.get('content', []) if p.get('type') == 'tool_call']
                 ids = admitted_studies(calls, SimpleNamespace(read_tool_output=read_tool_output))
+                if not ids:
+                    result = verify_direct_case(client, case_id, staging, load(messages), verifier, harness)
+                    save_new(args.output / (case_id + '.json'), result)
+                    verified.add(case_id)
+                    print(json.dumps({'case_id': case_id, 'operation_id': result['operation_id'],
+                        'selected_case_verified': True, 'agent_path': 'direct-batch-mcp',
+                        'total_verified': len(verified)}), flush=True)
+                    continue
                 if len(ids) != 1:
                     raise ValueError('Actual chat did not bind exactly one durable study')
                 response = client.get('/api/scientific-demos/studies/' + ids[0])
