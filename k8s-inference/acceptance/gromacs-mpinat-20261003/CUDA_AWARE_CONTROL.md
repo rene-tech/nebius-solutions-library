@@ -37,6 +37,18 @@ an application speedup. Both GPUs were released before hosted acceptance.
 Original failed context/build-verifier attempts and the expected baseline
 compile-time rejection remain in `summary-01.json` and its referenced logs.
 
+The retained original builder is
+`gromacs-engine@sha256:7e531c7b97c8dc7c0aea115396ff2f63f04acf9f0ae00593fa0a9a5ed9369945`
+in the same platform registry. Original Open MPI archive SHA256 is
+`f891ddf2dab3b604f2521d0569615bc1c07a1ac86a295ac543e059aecb303621`.
+Original configure log SHA256 is
+`9eb39316133533e3768a521e240fab4c826ce1788ea6431e45cbd9b6a252e080`;
+the old build records `OPAL_CUDA_SUPPORT=0`, extension macro zero and actual
+initialized query zero. The probe correctly fails compilation against that
+old header (`negative-baseline-compile.log`, SHA256
+`7b1b92e30739dcb12e334851c7272ddb22dc28b0172c1b9b6c29e02ce72e54b9`).
+This expected negative is separate from the new positive build and device tests.
+
 Primary methods, accessed 2026-10-03:
 
 - [Open MPI 5.0.8 CUDA build instructions](https://docs.open-mpi.org/en/v5.0.8/tuning-apps/networking/cuda.html).
@@ -170,9 +182,109 @@ relevant context, not proof of the cause of this individual difference. The
 0.002 bar envelope miss alone establishes neither a runtime defect nor ensemble
 validity. [Official reproducibility discussion, accessed 2026-10-03](https://manual.gromacs.org/2026.2/user-guide/managing-simulations.html#reproducibility).
 
-The matched 1×2 L40S application control is queued behind existing whole-node
-hosted jobs; no GPUs are held while waiting. New 1×4, 8/16-GPU, actual native
-interruption/recovery and hosted candidate claims remain unqualified.
+## Matched two-L40S control and four-GPU native gate
+
+The 1×2 application control started only after existing whole-node hosted jobs
+drained and a fresh all-namespace check showed four free GPUs. Both images used
+the same physical UUID pair (`734895f7…` and `0a65d910…`), PHB connection,
+driver, node, rank/thread binding policy, kernels, native flags and TPR bytes.
+The baseline log reports missing GPU-aware MPI; the candidate reports CUDA-aware
+MPI and enabled direct GPU communication, without a force override.
+
+| Image, two L40S GPUs | Repeat 1 | Repeat 2 | Repeat 3 | Mean | Sample SD |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baseline | 80.762 | 77.367 | 74.001 | 77.377 | 3.381 |
+| Candidate | 100.714 | 96.567 | 98.926 | 98.736 | 2.080 |
+
+The observed warm-up-inclusive sample-mean ratio is 1.2760 (+27.6%). This is a
+bounded MEM comparison, not a general speedup promise, confidence interval,
+steady-state rate, GPU-utilization measurement or benefit over using one GPU.
+Both native and independent CPU checkpoint/finite-state gates passed.
+
+Strict printed equality remains failed. The unchanged descriptive range screen
+is also outside bounds for one constraint residual: baseline values are all
+1.53807e−5, giving 1.53806e−5–1.53808e−5; candidate values are
+1.53806e−5/1.53809e−5/1.53808e−5. Repeat 2 is one 1e−10 printed unit beyond
+the upper bound. All other initial terms are inside their separate bounds.
+No threshold was widened or extra simulation run to obtain a passing screen.
+
+- Strict report: `mem2-comparison-01/summary.json`, SHA256
+  `c281915c256d8bd1b73cc450b9abc93fcbd48372d44e8885678511ca66f899b3`.
+- Supplement: `mem2-printed-range-01/printed-range-supplement.json`, SHA256
+  `04f278dbdd9039a667e41f28a8785c54792e5d995cb3cd9d113668b27a1b08c0`.
+
+After that pair was released, one approved 1×4 L40S candidate cohort passed
+three native 10,000-step runs with the same fixed-input GPU-PME protocol and one
+PME-only rank. All four actual rank/UUID bindings are complete; every final
+checkpoint and finite 81,743-atom state passed independent readback. Native
+rates were 176.740/160.215/173.016 ns/day (mean 169.990, sample SD 8.668).
+These four-GPU values are functional context, **not a matched speedup**: the
+older four-GPU baseline used another PME protocol and remains historical.
+Readback: `mem4-independent-readback-01/summary.json`, SHA256
+`e7f07d75ab0339eaec1d602089df967bbce1e617cc8b7caa2264f513be859f8a`.
+
+All owned native Pods/JobSets are deleted; individual absence receipts and a
+final task-label check confirm release. No GPUs remain held by this lane.
+8/16-GPU, external interruption/preemption, statistical ensemble validity and
+hosted candidate acceptance remain separate/unqualified here.
+
+## Real native checkpoint continuation on one H100
+
+The existing worker's closed-segment mechanism passed on the exact candidate,
+using a separately frozen request whose only normalized change is
+`segment_minutes: 60 → 0.1`. TPRs, physical settings, native flags, random seeds,
+checkpoint cadence and each repeat's 10,000 total steps are unchanged. New
+request SHA256:
+`df74ffa6615dc02289659852360e4f5c0a6f920b6fd303e1b47f117b7fcdbb53`.
+
+| Repeat | First native process | Second native process | Retained intermediate checkpoint |
+| --- | --- | --- | --- |
+| 1 | 0 → 9,200 | 9,200 → 10,000 | `fs2-repeat-1_prev.cpt` at 9,200 |
+| 2 | 0 → 8,900 | 8,900 → 10,000 | `fs2-repeat-2_prev.cpt` at 8,900 |
+| 3 | 0 → 8,600 | 8,600 → 10,000 | `fs2-repeat-3_prev.cpt` at 8,600 |
+
+Each second process uses the actual `-cpi` file and reports the exact previous
+step as its native continuation origin, not zero. All original invocations,
+part logs, intermediate/final checkpoints and final coordinate hashes are
+retained. All 47 native inventory files rehash correctly. Independent CPU-only
+exact-image checkpoint reads verify those three intermediate steps and all
+three final steps, scanning the complete dumps for nonfinite state. The finite
+81,743-atom final coordinates and native energies at 20 ps also pass.
+
+Native receipt: `mem1-h100-continuation-01/receipt.json`, SHA256
+`18795e35efdbc688f0d4d132d5ad6aad55c26f20f352846d0be53041c5c292d1`.
+Independent readback: `mem1-h100-continuation-readback-01/summary.json`, SHA256
+`46d5df11a25b195cd31943bad38d1cc4cc77a0206b76a483e696d12e3053f66b`.
+Each readback record includes its exact CPU Docker command for reproduction.
+The H100 Pod was deleted and its absence observed before the L40S pair was
+allocated. No performance comparison is drawn from these short split segments.
+
+This adds actual native `.cpt` continuation coverage only: the worker stayed
+alive, no Pod/node was preempted, no external artifact service was used, and no
+CUDA process snapshot was taken. Interrupted-worker or hosted recovery remains
+a separate untested candidate capability.
+
+## Exact native evidence handoff
+
+The following directories under the evidence base each contain `receipt.json`,
+the complete native `workspace/result.json` and rehashed output inventory.
+They all bind candidate digest `5884569e…`; the read-only release adapter accepts
+all five, without changing a catalog or deployment:
+
+| Actual shape/pool | Receipt directory | Receipt SHA256 |
+| --- | --- | --- |
+| 1×1 L40S / `l40s-4x` | `mem1-candidate-01` | `c8154ea86887c8129f6493d6f8d610c85398f346b72545ec6858ecf70fe80b5a` |
+| 1×1 H100 continuation / `h100-ondemand-1x` | `mem1-h100-continuation-01` | `18795e35efdbc688f0d4d132d5ad6aad55c26f20f352846d0be53041c5c292d1` |
+| 2×1 H100 / `h100-ondemand-1x` | `mem2x1-candidate-01` | `a5a48e8fc3b9ad8256d47b98a980e1efb1c14d267c2f87b7a1c8ec9df334e467` |
+| 1×2 L40S / `l40s-4x` | `mem2-candidate-01` | `f4c1a120d461493018f5ba043ac999e29bdf33f415570a085677b3954cde832b` |
+| 1×4 L40S / `l40s-4x` | `mem4-candidate-01` | `fab906326e847fcc170ce6021e3ecf011542ac4fb4eb37f1938db0f93fc5a28f` |
+
+The derived native proof is `native-application-proof-01.json`, SHA256
+`bbda045fc4b3673aa0e4f9d92b46777362029a9399172e9315e2958cace715ca`.
+It certifies only these native functional cases, not the failed numerical
+equality screens or unknown ensemble validity. Baseline/candidate scientific
+inputs, unsuccessful diagnostics and independent communication facts remain
+separate, as do root-owned hosted application qualification and promotion.
 
 ## Reproduction and tests
 
@@ -187,7 +299,10 @@ python3 -m unittest -v test_cuda_mpi_control_report.py test_qualify_cuda_two_nod
   test_qualify_candidate.py test_candidate_report.py test_pme_control.py
 ```
 
-45 focused tests pass. The new tests cover native statistics parsing, nonfinite
+48 focused tests pass. The new tests cover native statistics parsing, nonfinite
 values, changed inputs/kernels, per-term resolution including zero/small terms,
 the original failed strict criterion, guarded two-node placement, unchanged
-science inputs and the independent mandatory device-buffer gate.
+science inputs and the independent mandatory device-buffer gate. Additional
+continuation tests reject restart-from-zero, missing checkpoint linkage and a
+wrong expected intermediate native step. The unchanged MPI/runtime/CUDA-build
+suite also passes 59 tests using the control-plane pytest environment.

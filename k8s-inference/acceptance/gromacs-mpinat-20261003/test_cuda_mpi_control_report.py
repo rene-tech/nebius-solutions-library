@@ -1,7 +1,11 @@
 import copy
+import io
+from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
-from cuda_mpi_control_report import compare, energy_blocks, printed_range_screen
+from cuda_mpi_control_report import checkpoint_dump, compare, energy_blocks, printed_range_screen
 
 
 def record(step):
@@ -94,6 +98,21 @@ class NativeNumericalTests(unittest.TestCase):
                         [{"step": 0, "printed_tokens": {"term": "NaN"}}] * 3):
             with self.assertRaises(ValueError):
                 printed_range_screen(blocks, changed)
+
+    def test_intermediate_checkpoint_read_requires_its_actual_expected_step(self):
+        class Process:
+            def __init__(self):
+                self.stdout = io.BytesIO(b"checkpoint\nstep = 4000\nx[0] = 1.5\n")
+
+            def wait(self, timeout):
+                return 0
+
+        with tempfile.TemporaryDirectory() as tmp, patch("cuda_mpi_control_report.subprocess.Popen", side_effect=lambda *args, **kwargs: Process()):
+            root = Path(tmp)
+            checkpoint = root / "state.cpt"
+            checkpoint.write_bytes(b"retained intermediate native file")
+            self.assertEqual(checkpoint_dump("exact-image", checkpoint, root / "header-1", expected_step=4000)["status"], "passed")
+            self.assertEqual(checkpoint_dump("exact-image", checkpoint, root / "header-2")["status"], "failed")
 
 
 if __name__ == "__main__":

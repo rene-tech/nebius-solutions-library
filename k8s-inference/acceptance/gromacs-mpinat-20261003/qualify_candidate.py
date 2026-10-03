@@ -119,7 +119,45 @@ def validate_gro(path, expected_atoms):
     return {"atoms": atoms, "cell_nm": cell, "sha256": sha(path), "finite": True}
 
 
-def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit):
+def continuation_checks(workspace, commands):
+    """Check the unchanged worker's closed-segment .cpt invocation chain."""
+    chains, errors = [], []
+    for repeat in (1, 2, 3):
+        runs = [c for c in commands if c.get("step_id") == f"repeat-{repeat}"]
+        previous, segments = 0, []
+        if len(runs) < 2:
+            errors.append(f"repeat {repeat}: no intermediate native segment")
+        for index, command in enumerate(runs):
+            argv = command["command"]
+            current = command.get("checkpoint_step")
+            log_path = workspace / "data" / command["log"]
+            text = log_path.read_text(errors="replace")
+            starts = [int(value) for value in re.findall(r"continuing from step\s+(\d+)", text, re.I)]
+            expected_checkpoint = f"fs2-repeat-{repeat}.cpt"
+            linked = ("-cpi" in argv and argv[argv.index("-cpi") + 1] == expected_checkpoint)
+            if current is None or not previous < current <= 10000 or command.get("exit_code") != 0:
+                errors.append(f"repeat {repeat}: non-increasing or failed native segment")
+            if index and (not linked or starts != [previous]):
+                errors.append(f"repeat {repeat}: native resume does not start at previous checkpoint")
+            if not index and ("-cpi" in argv or starts):
+                errors.append(f"repeat {repeat}: first invocation did not start normally")
+            segments.append({"start_step": previous, "end_step": current, "native_reported_restart_steps": starts,
+                             "checkpoint_input": expected_checkpoint if linked else None,
+                             "command": argv, "log": command["log"], "log_sha256": sha(log_path)})
+            previous = current if current is not None else previous
+        if previous != 10000:
+            errors.append(f"repeat {repeat}: did not finish at step 10000")
+        checkpoint = workspace / "data" / f"fs2-repeat-{repeat}_prev.cpt"
+        if not checkpoint.is_file():
+            errors.append(f"repeat {repeat}: intermediate checkpoint file not retained")
+        chains.append({"repeat": repeat, "segments": segments,
+                       "intermediate_checkpoint": checkpoint.name,
+                       "intermediate_checkpoint_sha256": sha(checkpoint) if checkpoint.is_file() else None})
+    return {"status": "failed" if errors else "passed", "errors": errors, "chains": chains,
+            "scope": "native closed-segment continuation; not worker/Pod interruption, hosted preemption or CUDA process snapshot"}
+
+
+def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit, *, continuation=False):
     result = json.loads((workspace / "result.json").read_text())
     checks = {}
     errors = []
@@ -144,8 +182,14 @@ def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit):
                       all_requested_steps=result["completed_steps"] == [s["id"] for s in request["jobs"][0]["steps"]],
                       inventory_complete=result["inventory_complete"] is True)
         runs = [c for c in result["commands"] if "mdrun" in c["command"]]
-        checks["three_native_repeats"] = len(runs) == 3
-        checks["all_checkpoint_steps_10000"] = all(c.get("checkpoint_step") == 10000 for c in runs)
+        if continuation:
+            linked = continuation_checks(workspace, runs)
+            checks["native_continuation"] = linked
+            checks["all_native_continuation_chains_complete"] = linked["status"] == "passed"
+            errors += linked["errors"]
+        else:
+            checks["three_native_repeats"] = len(runs) == 3
+            checks["all_checkpoint_steps_10000"] = all(c.get("checkpoint_step") == 10000 for c in runs)
         checks["all_native_rates_positive"] = all((c.get("performance_ns_per_day") or 0) > 0 for c in runs)
         if mpi:
             checks["all_rank_bindings_complete"] = all(c.get("rank_binding_evidence_complete") is True and len(c.get("rank_bindings", [])) == gpu_count for c in runs)
@@ -315,7 +359,8 @@ def run(args):
                                                          (args.output / "gpu.txt").read_text(), args.gpus, process.returncode)
         else:
             call(["-n", NS, "cp", args.name + ":" + remote, str(args.output / "workspace")])
-            record["validation"] = validate(args.output / "workspace", request, args.gpus, mpi, args.expect_failure, process.returncode)
+            record["validation"] = validate(args.output / "workspace", request, args.gpus, mpi, args.expect_failure, process.returncode,
+                                            continuation=args.native_continuation)
     except Exception as exc:
         record["qualification_error"] = str(exc)
         record.setdefault("validation", {"status": "failed", "scope": "qualification did not complete"})
@@ -421,12 +466,14 @@ def parse_args(argv=None):
     p.add_argument("--gpus", type=int, choices=(1, 2, 4, 8), required=True)
     p.add_argument("--expect-failure", action="store_true")
     p.add_argument("--device-probe-only", action="store_true", help="test CUDA MPI buffers only; do not execute the referenced scientific fixture")
+    p.add_argument("--native-continuation", action="store_true", help="require real closed-segment checkpoint/resume chains instead of exactly three native invocations")
     p = sub.add_parser("validate")
     p.add_argument("--workspace", type=Path, required=True)
     p.add_argument("--request", type=Path, required=True)
     p.add_argument("--gpus", type=int, required=True)
     p.add_argument("--worker-exit", type=int, required=True)
     p.add_argument("--expect-failure", action="store_true")
+    p.add_argument("--native-continuation", action="store_true")
     p.add_argument("--output", type=Path, required=True)
     return parser.parse_args(argv)
 
@@ -438,7 +485,8 @@ def main(argv=None):
         return 0
     if args.action == "validate":
         request = json.loads(args.request.read_text())
-        record = validate(args.workspace, request, args.gpus, "mpi-workflow" in request["schema"], args.expect_failure, args.worker_exit)
+        record = validate(args.workspace, request, args.gpus, "mpi-workflow" in request["schema"], args.expect_failure, args.worker_exit,
+                          continuation=args.native_continuation)
         save(args.output, record)
         print(json.dumps({"output": str(args.output), "status": record["status"], "errors": record["errors"]}))
         return 0 if record["status"] == "passed" else 1

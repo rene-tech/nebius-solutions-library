@@ -49,7 +49,7 @@ def energy_blocks(text, include_statistics=False):
     return result
 
 
-def checkpoint_dump(image, checkpoint, output):
+def checkpoint_dump(image, checkpoint, output, *, expected_step=10000):
     """Native CPU readback, with full stream hash and bounded retained text."""
     command = ["docker", "run", "--rm", "--network", "none", "--cpus", "1", "--memory", "512m",
                "--entrypoint", "timeout", "-v", str(checkpoint.parent.resolve()) + ":/data:ro",
@@ -69,9 +69,9 @@ def checkpoint_dump(image, checkpoint, output):
         nonfinite += bool(re.search(r"(?<![A-Za-z])(?:nan|[+-]?inf)(?![A-Za-z])", text, re.I))
     code = process.wait(timeout=60)
     output.write_text("".join(prefix))
-    return {"command": command, "checkpoint_sha256": sha(checkpoint), "exit_code": code, "step": step,
+    return {"command": command, "checkpoint_sha256": sha(checkpoint), "exit_code": code, "step": step, "expected_step": expected_step,
             "full_dump_lines": count, "full_dump_sha256": digest.hexdigest(), "nonfinite_lines": nonfinite,
-            "retained_header_sha256": sha(output), "status": "passed" if code == 0 and step == 10000 and nonfinite == 0 else "failed"}
+            "retained_header_sha256": sha(output), "status": "passed" if code == 0 and step == expected_step and nonfinite == 0 else "failed"}
 
 
 def observation(directory, fixture, ranks, output):

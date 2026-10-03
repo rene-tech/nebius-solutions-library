@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from qualify_candidate import free_capacity, make_fixture, parse_args, sha, validate, validate_gro
+from qualify_candidate import continuation_checks, free_capacity, make_fixture, parse_args, sha, validate, validate_gro
 
 
 class CapacityTests(unittest.TestCase):
@@ -172,6 +172,38 @@ class DeviceProbeTests(unittest.TestCase):
                 "--source-revision", "revision", "--input", "/input", "--output", "/output", "--gpus", "2"]
         self.assertFalse(parse_args(args).device_probe_only)
         self.assertTrue(parse_args(args + ["--device-probe-only"]).device_probe_only)
+
+
+class ContinuationTests(unittest.TestCase):
+    def fixture(self, root):
+        (root / "data").mkdir()
+        commands = []
+        for repeat in (1, 2, 3):
+            (root / "data" / f"fs2-repeat-{repeat}_prev.cpt").write_bytes(b"native checkpoint")
+            for segment, step in enumerate((4000, 10000)):
+                log = f"segment-{repeat}-{segment}.log"
+                (root / "data" / log).write_text("continuing from step 4000, 8.000 ps\n" if segment else "starting mdrun\n")
+                commands.append({"step_id": f"repeat-{repeat}", "command": ["gmx_mpi", "mdrun"] +
+                                 (["-cpi", f"fs2-repeat-{repeat}.cpt"] if segment else []),
+                                 "checkpoint_step": step, "exit_code": 0, "log": log})
+        return commands
+
+    def test_native_reported_checkpoint_chain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            result = continuation_checks(root, self.fixture(root))
+            self.assertEqual(result["status"], "passed")
+            self.assertEqual(result["chains"][0]["segments"][-1]["start_step"], 4000)
+
+    def test_restart_from_zero_or_missing_link_fails(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            commands = self.fixture(root)
+            commands[1]["command"] = ["gmx_mpi", "mdrun"]
+            self.assertEqual(continuation_checks(root, commands)["status"], "failed")
+            commands[1]["command"] += ["-cpi", "fs2-repeat-1.cpt"]
+            (root / "data" / commands[1]["log"]).write_text("continuing from step 0\n")
+            self.assertEqual(continuation_checks(root, commands)["status"], "failed")
 
 
 if __name__ == "__main__":
