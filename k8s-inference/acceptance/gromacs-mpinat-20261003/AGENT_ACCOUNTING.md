@@ -6,6 +6,13 @@ format with interface `agent-skill-MCP`. `ledger.py` and `cost_report.py` remain
 the owners of work, phase, allocation and efficiency calculations. Raw REST,
 raw MCP and actual-agent execution remain separate cohorts.
 
+The one final augmentation is complete at **18:05:31.665361 UTC, 3 October
+2026**: [actual-agent benchmark delta](AGENT_BENCHMARK_DELTA.md). It adds the 18
+R5 native completions, six original completions, fourteen zero-additional-GPU
+recovery/report associations and preserved historical failures. The preparation
+and first-pair sections below remain historical evidence; they were not rerun
+or rewritten as the final snapshot.
+
 The first-pair check below is preparation for **one** final bounded snapshot
 after the remaining R5 native work is terminal. It is not a claim that all agent
 cases passed. Current release/delivery qualification remains in
