@@ -3,7 +3,46 @@
 This is **not** a completed REST/agent/MPI qualification. Never use the successful
 subset to describe the whole suite or a sixteen-GPU MPI execution as working.
 
-## Latest checkpoint — 13:56 UTC
+## Latest checkpoint — 14:18 UTC
+
+All 24 public inputs now have complete corrected single-GPU REST evidence,
+including both large PEP retries (38 artifacts each). The separate MPI borrower
+completed all eight REST/raw-MCP cases at 1×1, 1×2, 1×4 and 2×1; each has three
+native timing records and 36 verified artifacts. The original failed MPI attempt
+and the original matrix's unsuccessful overall verdict remain unchanged. Their
+successful continuation is explicit, not a rewritten historical pass.
+
+The 1×4 REST case queued at 14:00:01 and was admitted at 14:05:40 after PEP
+released the node, without manual scheduling intervention. Native computation,
+reserved-but-noncomputing time, output publication and client downloads remain
+separate measurements. [BENCHMARK_FINDINGS.md](BENCHMARK_FINDINGS.md) retains a
+fixed 14:01:36 snapshot (23/24 at that earlier cutoff), public-reference/input
+caveats, costs, retry waste and Lynx's actual versus assumed workloads. Its
+additive production PostgreSQL lifecycle comparison agrees with the offline
+occupancy bounds. Generic operation reservation zeros are not measured usage.
+
+The local matrix supervisor stalled **after** both large outputs were verified:
+an observation timeout cancelled `communicate()`, killed the local child and
+then waited indefinitely with undrained subprocess pipes. The task-owned local
+PID was interrupted after all GPU work drained; exceptional cleanup verified
+zero active QA operations and restored its recorded concurrency of two, with
+no expiration/customer changes. Receipts are `qa-policy-restored.json` and
+`exceptional-cleanup.json` in `mpi-matrix-r1`. Future observation readers shield
+pipe drainage, terminate only their own isolated local process group on timeout,
+and cancel their watchers before cleanup; a fresh admin session avoids expiry
+during long runs. Twelve targeted cleanup/runner tests pass. This was a benchmark
+supervisor defect, not a failed molecular simulation or customer Pod deletion.
+
+The exact r4 seeded agent is now executing the assumed hosted alanine workflow.
+Nineteen remaining agent benchmark cases wait for verification and a short
+uncontended L40S runtime-comparison window. CUDA-aware candidate H100 device and
+native 2×1 checks passed; numerical screen differences are retained rather than
+relabeled as scientific equivalence. Real closed-segment native `.cpt`
+continuation passed on one H100; local two-GPU comparison continues. No new
+candidate/default client promotion, whole-node 8/16-GPU measurement or CUDA
+process snapshot claim follows from these results.
+
+## Previous checkpoint — 13:56 UTC
 
 The deployed API remains `368a020e…bbe9`; no customer keys, instances or hot
 Apps were changed. The bounded MPI continuation has now completed REST 1×1,

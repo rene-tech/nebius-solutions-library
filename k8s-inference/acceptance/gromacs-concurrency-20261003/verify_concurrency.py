@@ -16,6 +16,7 @@ import io
 import json
 import os
 import re
+import signal
 import sys
 import tarfile
 import time
@@ -53,6 +54,37 @@ def append(path, value):
 
 def emit(**value):
     print(json.dumps({"at": now(), **value}), flush=True)
+
+
+async def read_command(arguments, *, timeout=30):
+    """Bound a local reader without abandoning its pipe-draining coroutine.
+
+    Cancelling communicate() on timeout, then waiting for the killed child,
+    can deadlock while its buffered stdout is paused. Shield the reader and
+    drain it after terminating this command's isolated process group (including
+    credential-plugin children). No Kubernetes workload is terminated here.
+    """
+    process = await asyncio.create_subprocess_exec(
+        *arguments, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,
+    )
+    communication = asyncio.create_task(process.communicate())
+    try:
+        stdout, _ = await asyncio.wait_for(asyncio.shield(communication), timeout=timeout)
+    except (TimeoutError, asyncio.CancelledError):
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            await asyncio.wait_for(asyncio.shield(communication), timeout=5)
+        except TimeoutError:
+            communication.cancel()
+            await asyncio.gather(communication, return_exceptions=True)
+        raise
+    if process.returncode:
+        raise RuntimeError("Local read/observation command failed")
+    return stdout
 
 
 async def active_operations(http):
@@ -123,18 +155,8 @@ class Run:
         return self.args.requests
 
     async def kubectl(self, *arguments):
-        process = await asyncio.create_subprocess_exec(
-            "kubectl", "--context", self.args.context, "--request-timeout=20s", *arguments,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        try:
-            stdout, _ = await asyncio.wait_for(process.communicate(), timeout=30)
-        except TimeoutError:
-            process.kill()
-            await process.wait()
-            raise
-        if process.returncode:
-            raise RuntimeError("kubectl read/observation failed")
-        return stdout
+        return await read_command([
+            "kubectl", "--context", self.args.context, "--request-timeout=20s", *arguments])
 
     async def kjson(self, *arguments):
         return json.loads(await self.kubectl(*arguments, "-o", "json"))
@@ -411,7 +433,13 @@ class Run:
                 finally:
                     self.done.set()
                     if watchers:
+                        for watcher in watchers:
+                            watcher.cancel()
                         await asyncio.gather(*watchers, return_exceptions=True)
+                    # Long benchmarks may outlive the browser session. Reuse
+                    # the existing admin credential; never rotate the QA key.
+                    response = await admin.post("/admin/api/v1/session", headers={"Authorization": "Bearer " + admin_token})
+                    response.raise_for_status()
                     current = await self.key_metadata(admin)
                     if current["max_concurrency"] not in (self.args.requests, original["max_concurrency"]):
                         raise RuntimeError("Concurrent policy edit detected; do not overwrite it")
