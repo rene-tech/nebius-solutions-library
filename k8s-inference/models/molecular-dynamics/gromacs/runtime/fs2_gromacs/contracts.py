@@ -205,12 +205,14 @@ def request_schema(*, mpi: bool = False) -> dict[str, Any]:
         step["properties"].pop("plumed_input")
         schema["description"] = (
             "Distributed upstream GROMACS 2026.2 CUDA/Open MPI workflows. "
-            "One GPU/rank per admitted node; preparation and analysis run on rank zero. "
-            "Portable TCP baseline, not the NVIDIA NGC binary. PLUMED, CP2K, Torch NNPot "
+            "One MPI rank per GPU, with one to eight GPUs per admitted node and at most "
+            "sixteen GPUs total; preparation and analysis run on rank zero. "
+            "Operator-selected local CUDA-aware MPI or cross-node TCP, not the NVIDIA NGC binary. "
+            "RDMA is not claimed. PLUMED, CP2K, Torch NNPot "
             "and coupled replica exchange are not exposed by this execution shape."
         )
         schema["properties"]["threads"]["description"] = (
-            "OpenMP threads per MPI rank/node, within the eight-vCPU execution shape."
+            "OpenMP threads per MPI rank/GPU, up to eight per rank within the admitted CPU envelope."
         )
         schema["properties"]["output_prefix"]["default"] = "runs/gromacs-mpi"
         schema["$id"] = (
@@ -226,11 +228,29 @@ def request_schema(*, mpi: bool = False) -> dict[str, Any]:
         )
         schema["properties"]["nodes"] = {
             "type": "integer",
-            "minimum": 2,
+            "minimum": 1,
             "maximum": 8,
             "default": 2,
-            "description": "Gang-admitted nodes, one GPU and one MPI rank per node.",
+            "description": "Distinct admitted nodes. One node uses a single multi-GPU Pod; multiple nodes use a gang. The product of nodes and gpus_per_node must not exceed sixteen.",
         }
+        schema["properties"]["gpus_per_node"] = {
+            "type": "integer",
+            "enum": [1, 2, 4, 8],
+            "default": 1,
+            "description": "GPUs and MPI ranks per node. Defaults to the legacy one-GPU-per-node layout. All ranks are part of one simulation, not independent replicas.",
+        }
+        # JSON Schema consumers enforce the same aggregate bound as the runtime.
+        # Defaults need not be materialized for either conditional to be valid.
+        schema["allOf"] = [
+            {
+                "if": {
+                    "required": ["gpus_per_node"],
+                    "properties": {"gpus_per_node": {"const": count}},
+                },
+                "then": {"properties": {"nodes": {"maximum": maximum}}},
+            }
+            for count, maximum in ((4, 4), (8, 2))
+        ]
     return schema
 
 
@@ -258,6 +278,10 @@ def normalize(value: object, *, mpi: bool = False) -> dict[str, Any]:
     for name, spec in request_schema(mpi=mpi)["properties"].items():
         if "default" in spec:
             result.setdefault(name, spec["default"])
+    if mpi and result["gpus_per_node"] == 1:
+        # Keep legacy checkpoint recipe hashes unchanged. Explicit default and
+        # omitted default are the same shape; non-default counts stay frozen.
+        result.pop("gpus_per_node")
     relative_path(result["output_prefix"])
     ids = [job["id"] for job in result["jobs"]]
     if len(set(ids)) != len(ids):
@@ -298,6 +322,14 @@ def normalize(value: object, *, mpi: bool = False) -> dict[str, Any]:
                 if step["command"] == "mdrun" and token in MANAGED_MDRUN:
                     raise ValueError(
                         f"{token} is platform-managed or requires a different execution shape"
+                    )
+                if (
+                    mpi
+                    and step["command"] == "mdrun"
+                    and token in {"-gpu_id", "-gputasks"}
+                ):
+                    raise ValueError(
+                        f"{token} is platform-managed by the MPI local-rank GPU binding"
                     )
     return result
 

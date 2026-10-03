@@ -235,3 +235,71 @@ def test_pod_termination_does_not_wait_for_the_terminated_companion(
         result = worker.run()
         assert result["status"] == "interrupted"
         assert result["completed_steps"] == []
+
+
+@pytest.mark.parametrize("failure_phase", ["checkpoint", "final-inventory"])
+def test_output_budget_exhaustion_publishes_failed_result_and_keeps_checkpoint(
+    tmp_path, monkeypatch, failure_phase
+):
+    body = request()
+    body["max_output_bytes"] = 1024**2
+    worker = Workflow(body, job_id="replica", operation_id="one", workspace=tmp_path)
+    worker.data.mkdir()
+    checkpoint = worker.data / "previous.cpt"
+    checkpoint.write_bytes(b"last successfully committed checkpoint")
+    worker.checkpoint()
+    prior_state = (worker.meta / "gromacs-state.json").read_bytes()
+    monkeypatch.setattr(
+        worker, "initialize", lambda: setattr(worker, "version", "test-engine")
+    )
+
+    def execute_step(step):
+        (worker.data / "large-final.gro").write_bytes(b"x" * (1024**2 + 1))
+        (worker.data / "native.log").write_text(
+            "Native integration completed 10000 steps; output budget exceeded.\n"
+        )
+        worker.state["commands"].append(
+            {"step_id": "md", "log": "native.log", "exit_code": 0}
+        )
+        if failure_phase == "checkpoint":
+            worker.checkpoint()
+
+    monkeypatch.setattr(worker, "run_step", execute_step)
+    result = worker.run()
+    assert json.loads((tmp_path / "result.json").read_text()) == result
+    assert result["status"] == "failed"
+    assert "workflow exceeds the workspace file/byte budget" in result["error"]
+    assert result["inventory_complete"] is False
+    assert result["inventory_scope"] == "bounded-failure-logs-only"
+    assert result["scientific_outputs_omitted_from_result"] is True
+    assert result["committed_checkpoint_generation"] == 1
+    assert result["native_checkpoint_generation"] == 1
+    assert result["files"][0]["path"] == "native.log"
+    assert (worker.meta / "gromacs-state.json").read_bytes() == prior_state
+    assert checkpoint.read_bytes() == b"last successfully committed checkpoint"
+    assert (worker.data / "large-final.gro").stat().st_size == 1024**2 + 1
+
+
+def test_failed_inventory_handles_unreadable_failure_log_without_losing_result(
+    tmp_path, monkeypatch
+):
+    worker = Workflow(
+        request(), job_id="replica", operation_id="one", workspace=tmp_path
+    )
+    monkeypatch.setattr(
+        worker, "initialize", lambda: setattr(worker, "version", "test-engine")
+    )
+    monkeypatch.setattr(
+        worker,
+        "run_step",
+        lambda _: worker.state["commands"].append({"log": "missing.log"}),
+    )
+    monkeypatch.setattr(
+        "fs2_gromacs.worker.inventory",
+        lambda *a, **kw: (_ for _ in ()).throw(OSError("workspace unreadable")),
+    )
+    result = worker.run()
+    assert (tmp_path / "result.json").is_file()
+    assert result["status"] == "failed" and result["files"] == []
+    assert result["inventory_error"] == "workspace unreadable"
+    assert result["committed_checkpoint_generation"] == 0

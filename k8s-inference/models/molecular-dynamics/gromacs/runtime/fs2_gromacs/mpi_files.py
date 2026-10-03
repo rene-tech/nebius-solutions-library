@@ -157,8 +157,11 @@ class InputStager:
                 "bytes_transferred": total,
             }
 
-        with ThreadPoolExecutor(max_workers=min(7, len(peers()) - 1)) as executor:
-            transfers = list(executor.map(send, peers()[1:]))
+        remote_hosts = peers()[1:]
+        if not remote_hosts:
+            return {"wall_seconds": time.monotonic() - started, "peers": []}
+        with ThreadPoolExecutor(max_workers=min(7, len(remote_hosts))) as executor:
+            transfers = list(executor.map(send, remote_hosts))
         return {"wall_seconds": time.monotonic() - started, "peers": transfers}
 
 

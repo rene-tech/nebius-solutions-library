@@ -1,8 +1,10 @@
 """JobSet-local Open MPI launch and rank lifecycle; no new job scheduler.
 
 The controller supplies a fresh attempt-scoped SSH seed and fixed JobSet DNS
-names. MPI processes have no platform/bucket credential. Only rank zero publishes native
-checkpoints and results. SSH is internal to the gang, never a customer endpoint.
+names for multi-node runs. Single-node runs do not start SSH. Each Pod owns one
+node's GPU allocation and starts one MPI process per GPU. MPI processes have no
+platform/bucket credential. Only rank zero publishes native checkpoints and
+results. SSH is internal to the gang, never a customer endpoint.
 """
 
 from __future__ import annotations
@@ -21,13 +23,14 @@ from .files import atomic_json, extract_inputs
 
 
 def rank() -> int:
+    """Controller Pod/node index, not the MPI process rank within a node."""
     return int(os.environ["FS2_MPI_RANK"])
 
 
 def peers() -> list[str]:
     values = os.environ["FS2_MPI_HOSTS"].split(",")
-    if not 2 <= len(values) <= 8 or len(set(values)) != len(values):
-        raise ValueError("MPI requires two to eight distinct fixed JobSet peer names")
+    if not 1 <= len(values) <= 8 or len(set(values)) != len(values):
+        raise ValueError("MPI requires one to eight distinct fixed peer names")
     import re
 
     if any(not re.fullmatch(r"[a-z0-9][a-z0-9.-]{0,252}", value) for value in values):
@@ -124,26 +127,78 @@ def ssh_options(directory: Path) -> list[str]:
     ]
 
 
-def configure_launcher(workspace: Path, directory: Path, threads: int) -> None:
+def validate_shape(request: dict) -> None:
+    """Do not launch a different process shape than the controller reserved."""
+    nodes, gpus = request["nodes"], request.get("gpus_per_node", 1)
+    expected = {
+        "FS2_GROMACS_MPI_NODES": nodes,
+        "FS2_GROMACS_MPI_GPUS_PER_NODE": gpus,
+        "FS2_GROMACS_MPI_RANKS_PER_NODE": gpus,
+        "FS2_GROMACS_MPI_TOTAL_RANKS": nodes * gpus,
+    }
+    for name, count in expected.items():
+        if name in os.environ and os.environ[name] != str(count):
+            raise ValueError(f"{name} differs from the frozen request shape")
+    if nodes != len(peers()):
+        raise ValueError("Requested nodes differ from the admitted peer set")
+
+
+def configure_transport(nodes: int) -> dict:
+    """Bounded operator policy; never label a TCP job as RDMA or CUDA-aware."""
+    transport = os.environ.get(
+        "FS2_GROMACS_MPI_TRANSPORT", "ucx-local" if nodes == 1 else "tcp-host-staged"
+    )
+    if transport == "ucx-local":
+        if nodes != 1:
+            raise ValueError("ucx-local is only supported within one admitted node")
+        os.environ["OMPI_MCA_pml"] = "ucx"
+        # UCX normally prefers RDMA devices when selected by Open MPI. Explicit
+        # any permits the CUDA IPC/shared-memory path on nodes without RDMA.
+        os.environ["OMPI_MCA_pml_ucx_tls"] = "any"
+        os.environ["OMPI_MCA_pml_ucx_devices"] = "any"
+        os.environ["UCX_TLS"] = "self,sm,cuda_copy,cuda_ipc"
+        os.environ.pop("OMPI_MCA_btl", None)
+        os.environ.pop("GMX_DISABLE_DIRECT_GPU_COMM", None)
+    elif transport == "tcp-host-staged":
+        os.environ["OMPI_MCA_pml"] = "ob1"
+        os.environ["OMPI_MCA_btl"] = "self,sm,tcp"
+        os.environ["GMX_DISABLE_DIRECT_GPU_COMM"] = "1"
+        for name in ("OMPI_MCA_pml_ucx_tls", "OMPI_MCA_pml_ucx_devices", "UCX_TLS"):
+            os.environ.pop(name, None)
+    else:
+        raise ValueError("Unsupported operator MPI transport profile")
+    os.environ["FS2_GROMACS_MPI_TRANSPORT"] = transport
+    return {
+        "transport": transport,
+        "transport_observed": None,
+        "rdma": False,
+        "direct_gpu_communication": "autodetect"
+        if transport == "ucx-local"
+        else "disabled",
+        "ucx_tls": os.environ.get("UCX_TLS"),
+    }
+
+
+def configure_launcher(
+    workspace: Path, directory: Path, threads: int, gpus_per_node: int = 1
+) -> None:
     hosts = peers()
+    directory.mkdir(parents=True, exist_ok=True)
     hostfile = directory / "hosts"
-    hostfile.write_text("".join(f"{host} slots=1\n" for host in hosts))
+    hostfile.write_text("".join(f"{host} slots={gpus_per_node}\n" for host in hosts))
     # Open MPI parses its agent into argv; the path is platform-generated and
     # contains no shell interpolation. Workload inputs never choose the agent.
-    os.environ["PRTE_MCA_plm_ssh_agent"] = " ".join(ssh_options(directory))
+    if len(hosts) > 1:
+        os.environ["PRTE_MCA_plm_ssh_agent"] = " ".join(ssh_options(directory))
     # Only the coordinator has a client private key. Do not ask remote peers
     # to fan out SSH launches when gangs grow beyond two ranks.
     os.environ["PRTE_MCA_plm_ssh_no_tree_spawn"] = "1"
     os.environ["FS2_GROMACS_MPI_HOSTFILE"] = str(hostfile)
-    os.environ["FS2_GROMACS_MPI_RANKS"] = str(len(hosts))
-    # Staged TCP is the portable correctness baseline. RDMA/CUDA-aware direct
-    # communication must be separately qualified for the selected node pool.
-    os.environ.setdefault("OMPI_MCA_pml", "ob1")
-    os.environ.setdefault("OMPI_MCA_btl", "self,tcp")
-    os.environ.setdefault("GMX_DISABLE_DIRECT_GPU_COMM", "1")
+    os.environ["FS2_GROMACS_MPI_RANKS"] = str(len(hosts) * gpus_per_node)
+    transport = configure_transport(len(hosts))
     os.environ["OMP_NUM_THREADS"] = str(threads)
     deadline = time.monotonic() + 300
-    for host in hosts:
+    for host in hosts if len(hosts) > 1 else []:
         while True:
             result = subprocess.run(
                 [
@@ -167,13 +222,65 @@ def configure_launcher(workspace: Path, directory: Path, threads: int) -> None:
     atomic_json(
         workspace / ".fs2" / "mpi-topology.json",
         {
-            "ranks": len(hosts),
+            "ranks": len(hosts) * gpus_per_node,
+            "nodes": len(hosts),
             "hosts": hosts,
-            "rank_per_node": 1,
-            "transport": "tcp-host-staged",
+            "rank_per_node": gpus_per_node,
+            "gpus_per_node": gpus_per_node,
+            "gpu_count": len(hosts) * gpus_per_node,
+            "gpu_binding": "one-GMX_GPU_ID-per-local-rank",
+            "cpu_binding": "unbound-within-admitted-pod-cpuset",
+            **transport,
             "threads_per_rank": threads,
         },
     )
+
+
+def launch_command(request: dict, command: list[str]) -> list[str]:
+    gpus = request.get("gpus_per_node", 1)
+    arguments = [
+        "mpirun",
+        "--prefix",
+        "/opt/ompi",
+        "--hostfile",
+        os.environ["FS2_GROMACS_MPI_HOSTFILE"],
+        "-np",
+        str(request["nodes"] * gpus),
+        "--map-by",
+        f"ppr:{gpus}:node",
+        "--bind-to",
+        "none",
+    ]
+    for name in (
+        "OMP_NUM_THREADS",
+        "LD_LIBRARY_PATH",
+        "PATH",
+        "PYTHONPATH",
+        "OMPI_MCA_pml",
+        "OMPI_MCA_btl",
+        "OMPI_MCA_pml_ucx_tls",
+        "OMPI_MCA_pml_ucx_devices",
+        "UCX_TLS",
+        "GMX_DISABLE_DIRECT_GPU_COMM",
+    ):
+        if name in os.environ:
+            arguments.extend(("-x", name))
+    # Device visibility is deliberately NOT forwarded from rank zero. Each
+    # Pod may own entirely different UUIDs/ordinals; bind on its own host.
+    arguments.extend(
+        [
+            "python3",
+            "-m",
+            "fs2_gromacs.mpi_rank",
+            "--nodes",
+            str(request["nodes"]),
+            "--gpus-per-node",
+            str(gpus),
+            "--",
+            *command,
+        ]
+    )
+    return arguments
 
 
 def peer_complete(workspace: Path, status: str) -> None:
@@ -220,8 +327,28 @@ def main():
     if args.request is None or args.operation_id is None:
         parser.error("MPI workflows require request and operation ID")
     request = normalize(json.loads(args.request.read_text()), mpi=True)
-    if request["nodes"] != len(peers()):
-        raise ValueError("Requested nodes differ from the admitted JobSet")
+    if request["nodes"] == 1:
+        os.environ.setdefault("FS2_MPI_RANK", "0")
+        os.environ.setdefault("FS2_MPI_HOSTS", "localhost")
+    validate_shape(request)
+    if request["nodes"] == 1:
+        # No SSH identity/server is needed for a one-Pod MPI application.
+        configure_launcher(
+            args.workspace,
+            args.workspace / ".fs2" / "mpi",
+            request["threads"],
+            request.get("gpus_per_node", 1),
+        )
+        result = run_coordinator(args, request)
+        print(
+            json.dumps(
+                {
+                    key: result[key]
+                    for key in ("operation_id", "job_id", "status", "error")
+                }
+            )
+        )
+        raise SystemExit(result_exit_code(result))
     directory = prepare_keys(args.workspace)
     ssh_log = (directory / "sshd.log").open("wb")
     server = subprocess.Popen(
@@ -244,21 +371,14 @@ def main():
             (directory / "ready").touch()
             code = wait_peer(args.workspace, request["max_wall_seconds"] + 600)
         else:
-            from .worker import Workflow
-
             (directory / "ready").touch()
-            configure_launcher(args.workspace, directory, request["threads"])
-            worker = Workflow(
-                request,
-                job_id=args.job_id,
-                operation_id=args.operation_id,
-                workspace=args.workspace,
-                checkpoint_mode=args.checkpoint_mode,
-                mpi=True,
+            configure_launcher(
+                args.workspace,
+                directory,
+                request["threads"],
+                request.get("gpus_per_node", 1),
             )
-            signal.signal(signal.SIGTERM, worker.stop)
-            signal.signal(signal.SIGINT, worker.stop)
-            result = worker.run()
+            result = run_coordinator(args, request)
             for host in peers()[1:]:
                 subprocess.run(
                     [
@@ -277,13 +397,7 @@ def main():
                     check=True,
                     timeout=15,
                 )
-            code = (
-                0
-                if result["status"] == "succeeded"
-                else 143
-                if result["status"] == "interrupted"
-                else 1
-            )
+            code = result_exit_code(result)
             print(
                 json.dumps(
                     {
@@ -297,6 +411,32 @@ def main():
         server.wait(timeout=10)
         ssh_log.close()
     raise SystemExit(code)
+
+
+def run_coordinator(args, request):
+    from .worker import Workflow
+
+    worker = Workflow(
+        request,
+        job_id=args.job_id,
+        operation_id=args.operation_id,
+        workspace=args.workspace,
+        checkpoint_mode=args.checkpoint_mode,
+        mpi=True,
+    )
+    signal.signal(signal.SIGTERM, worker.stop)
+    signal.signal(signal.SIGINT, worker.stop)
+    return worker.run()
+
+
+def result_exit_code(result):
+    return (
+        0
+        if result["status"] == "succeeded"
+        else 143
+        if result["status"] == "interrupted"
+        else 1
+    )
 
 
 if __name__ == "__main__":

@@ -144,6 +144,7 @@ class Workflow:
             "active_step": None,
             "elapsed_seconds": 0,
         }
+        self.committed_generation = 0
 
     def stop(self, signum, frame):
         self.stopped = True
@@ -199,6 +200,7 @@ class Workflow:
                     "checkpoint belongs to another workflow, job or engine recipe"
                 )
             self.state = state
+            self.committed_generation = int(state["generation"])
             self.deadline -= float(state["elapsed_seconds"])
         archive = self.root / "input.tar.gz"
         if not self.data.exists() and archive.is_file():
@@ -213,12 +215,19 @@ class Workflow:
             self.meta / "engine.json",
             {"image": self.engine_id, "version": self.version},
         )
+        topology = self.meta / "mpi-topology.json"
+        if self.mpi and topology.is_file():
+            # Export the configured topology with native files. Actual rank/GPU
+            # bindings are measured for each launch and retained separately.
+            atomic_json(
+                self.data / "fs2-mpi-topology.json", json.loads(topology.read_text())
+            )
 
     def checkpoint(self):
+        files = inventory(self.data, max_bytes=self.request["max_output_bytes"])
         self.state["generation"] += 1
         self.state["elapsed_seconds"] += time.monotonic() - self.started
         self.started = time.monotonic()
-        files = inventory(self.data, max_bytes=self.request["max_output_bytes"])
         atomic_json(self.meta / "gromacs-state.json", self.state)
         marker = {
             "schema": "fs2-serve.nebius.ai/gromacs-checkpoint-ready/v1",
@@ -233,6 +242,7 @@ class Workflow:
                 lambda value: value.get("generation") == generation
                 and value.get("status") == "committed",
             )
+        self.committed_generation = self.state["generation"]
 
     def execute(self, argv, *, cwd, log, stdin="", timeout=None):
         remaining = self.deadline - time.monotonic()
@@ -386,31 +396,12 @@ class Workflow:
                 if segmented:
                     command += ["-maxh", str(self.request["segment_minutes"] / 60)]
             if is_md and self.mpi:
+                from .mpi import launch_command
+
                 staging = self.mpi_stager.stage(
                     cwd, command[2:], timeout=self.deadline - time.monotonic()
                 )
-                command = [
-                    "mpirun",
-                    "--prefix",
-                    "/opt/ompi",
-                    "--hostfile",
-                    os.environ["FS2_GROMACS_MPI_HOSTFILE"],
-                    "-np",
-                    str(self.request["nodes"]),
-                    "--map-by",
-                    "ppr:1:node",
-                    "--bind-to",
-                    "none",
-                    "-x",
-                    "OMP_NUM_THREADS",
-                    "-x",
-                    "LD_LIBRARY_PATH",
-                    "-x",
-                    "PATH",
-                    "-x",
-                    "GMX_DISABLE_DIRECT_GPU_COMM",
-                    *command,
-                ]
+                command = launch_command(self.request, command)
             log = self.data / f"fs2-{step['id']}-segment-{segment:06d}.log"
             code, wall = self.execute(command, cwd=cwd, log=log, stdin=step["stdin"])
             # Log parsing is bounded; logs themselves are retained in full.
@@ -434,6 +425,15 @@ class Workflow:
             self.state["commands"].append(item)
             if staging is not None:
                 item["mpi_input_staging"] = staging
+                from .mpi_rank import read_rank_bindings
+
+                item.update(
+                    read_rank_bindings(
+                        log,
+                        expected_ranks=self.request["nodes"]
+                        * self.request.get("gpus_per_node", 1),
+                    )
+                )
             if code != 0:
                 self.checkpoint()
                 raise RuntimeError(
@@ -486,6 +486,19 @@ class Workflow:
                 else "failed",
                 str(exc),
             )
+        inventory_error = None
+        try:
+            files = inventory(self.data, max_bytes=self.request["max_output_bytes"])
+        except Exception as exc:
+            # Inventory failure must itself have a terminal result. Never turn
+            # completed integration with undeliverable output into success, and
+            # never delete outputs/checkpoints to make them fit the budget.
+            inventory_error = str(exc)
+            status = "failed"
+            error = "; ".join(
+                filter(None, (error, "output inventory failed: " + inventory_error))
+            )
+            files = self.failure_log_inventory()
         result = {
             "schema": RESULT_SCHEMA,
             "operation_id": self.operation_id,
@@ -496,16 +509,69 @@ class Workflow:
             "engine": self.version,
             "nvidia_image": NVIDIA_IMAGE if self.engine_id == NVIDIA_IMAGE else None,
             "engine_id": self.engine_id,
-            "mpi_ranks": self.request.get("nodes", 1),
+            "mpi_ranks": self.request.get("nodes", 1)
+            * self.request.get("gpus_per_node", 1),
+            "nodes": self.request.get("nodes", 1),
+            "gpus_per_node": self.request.get("gpus_per_node", 1),
             "completed_steps": self.state["completed_steps"],
             "commands": self.state["commands"],
             "native_checkpoint_generation": self.state["generation"],
+            "committed_checkpoint_generation": self.committed_generation,
+            "checkpoint_commit_scope": "remote-companion"
+            if self.checkpoint_mode == "companion"
+            else "local-only",
             "gpu_snapshot_used": False,
             "finished_at": utc(),
-            "files": inventory(self.data, max_bytes=self.request["max_output_bytes"]),
+            "files": files,
+            "inventory_complete": inventory_error is None,
+            "inventory_error": inventory_error,
+            "inventory_scope": "all-native-files"
+            if inventory_error is None
+            else "bounded-failure-logs-only",
+            "scientific_outputs_omitted_from_result": inventory_error is not None,
         }
         atomic_json(self.root / "result.json", result)
         return result
+
+    def failure_log_inventory(self):
+        """Best-effort bounded diagnostics, never an incomplete science inventory."""
+        import stat
+
+        paths = [item.get("log") for item in reversed(self.state["commands"])]
+        files, seen, total = [], set(), 0
+        for name in paths:
+            if not isinstance(name, str) or name in seen:
+                continue
+            seen.add(name)
+            try:
+                path = self.data / name
+                before = path.lstat()
+                if (
+                    self.data.resolve() not in path.resolve().parents
+                    or not stat.S_ISREG(before.st_mode)
+                ):
+                    continue
+                if total + before.st_size > min(
+                    self.request["max_output_bytes"], 64 * 1024**2
+                ):
+                    continue
+                digest = digest_file(path)
+                after = path.lstat()
+                if (before.st_ino, before.st_size, before.st_mtime_ns) != (
+                    after.st_ino,
+                    after.st_size,
+                    after.st_mtime_ns,
+                ):
+                    continue
+                files.append(
+                    {"path": name, "size_bytes": after.st_size, "sha256": digest}
+                )
+                total += after.st_size
+            except (OSError, ValueError):
+                continue
+            if len(files) >= 128:
+                break
+        return files
 
 
 def main():

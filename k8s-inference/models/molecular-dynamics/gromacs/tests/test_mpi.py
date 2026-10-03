@@ -51,7 +51,12 @@ def test_mpi_peer_identity_is_attempt_scoped_and_not_a_platform_credential(
 def test_mpi_discovery_rejects_duplicate_or_non_dns_peers(monkeypatch):
     environment(monkeypatch)
     assert len(peers()) == 2
-    for hosts in ["same,same", "a,other;bad", "only-one"]:
+    for hosts in [
+        "same,same",
+        "a,other;bad",
+        "",
+        ",".join(f"host-{i}" for i in range(9)),
+    ]:
         monkeypatch.setenv("FS2_MPI_HOSTS", hosts)
         with pytest.raises(ValueError):
             peers()
