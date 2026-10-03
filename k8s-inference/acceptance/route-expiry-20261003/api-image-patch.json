@@ -1,0 +1,22 @@
+[
+  {
+    "op": "test",
+    "path": "/spec/template/spec/containers/0/name",
+    "value": "control-plane"
+  },
+  {
+    "op": "test",
+    "path": "/spec/template/spec/containers/0/image",
+    "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:f8e30440c7296e7d0d36ffd8b6763b06109b05722371a77b757a3f8eea82f053"
+  },
+  {
+    "op": "replace",
+    "path": "/spec/template/spec/containers/0/image",
+    "value": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:6a2876b380f43717ea37cb21dd4504af5884c9a305c486562a42ef103420f946"
+  },
+  {
+    "op": "add",
+    "path": "/spec/template/metadata/annotations/fs2.nebius.ai~1image-digest",
+    "value": "sha256:6a2876b380f43717ea37cb21dd4504af5884c9a305c486562a42ef103420f946"
+  }
+]

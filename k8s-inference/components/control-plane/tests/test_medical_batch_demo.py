@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from types import MappingProxyType, SimpleNamespace
 from unittest.mock import AsyncMock
@@ -263,6 +264,27 @@ def test_invalid_second_registration_does_not_hide_valid_first_registration(medi
     assert medical.registry.revalidate()
     assert medical.registry.get(MODEL).enabled
     assert medical.registry.validation_health()["healthy"] is True
+
+
+def test_instant_expiry_withdraws_only_the_affected_model(medical):
+    """The read-time fallback must not repeat the old whole-registry withdrawal."""
+    from test_lean_routes import _route
+
+    from fs2_serve.lean_routes import bind_lean_routes
+
+    lean = medical.route.with_name("lean-qwen.json")
+    lean.write_text(json.dumps(_route()))
+    base, _ = bind_lean_routes(medical.gateway, lean, catalog=medical.catalog)
+    model = medical.registry.get(MODEL)
+    expired = replace(
+        model, durable_registration=False,
+        gateway=replace(model.gateway, binding=replace(model.binding, valid_until="2020-01-01T00:00:00Z")),
+    )
+    qwen = replace(model, gateway=base.model("qwen3-8b"), qualification_policy=None, lean_static=True)
+    registry = Registry(base, {MODEL: expired, "qwen3-8b": qwen}, source=medical.registry._source)
+    assert registry.get("qwen3-8b").enabled
+    assert not registry.get(MODEL, require_enabled=False).enabled
+    assert registry.validation_health()["healthy"] is True
 
 
 def test_worker_response_checkpoint_is_checked_not_inferred_from_catalog(medical):
