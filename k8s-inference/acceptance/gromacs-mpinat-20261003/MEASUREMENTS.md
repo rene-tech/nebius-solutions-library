@@ -1,5 +1,9 @@
 # MPINAT campaign measurement contract
 
+Current results, deployment identity, blockers and resume instructions are in
+[STATUS.md](STATUS.md). The measurement contract is broader than the currently
+instrumented coverage; unknown fields are explicitly retained as such.
+
 The authoritative operation/attempt state remains in the platform's PostgreSQL
 API. This campaign retains raw API documents, native logs, committed checkpoint
 manifests and checksums, Kubernetes observations and sampled counters alongside

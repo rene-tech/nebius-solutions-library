@@ -19,10 +19,12 @@ OLD = REPO + "@sha256:719ec336ef93e582f3031735dba974b61ea97f1c4ce47e630fe18eae9e
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
+    parser.add_argument("--expected-current", default=OLD)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--apply", action="store_true")
     a = parser.parse_args()
-    if not re.fullmatch(re.escape(REPO) + r"@sha256:[a-f0-9]{64}", a.image):
+    if not all(re.fullmatch(re.escape(REPO) + r"@sha256:[a-f0-9]{64}", image)
+               for image in (a.image, a.expected_current)):
         raise ValueError("Require exact digest in the existing regional repository")
     os.umask(0o077)
     a.output.mkdir(parents=True, exist_ok=True)
@@ -36,7 +38,7 @@ def main():
         template = value["spec"]["template"]
         ci, ei = next((i, j) for i, c in enumerate(template["spec"]["containers"])
                       for j, e in enumerate(c["env"]) if e["name"] == "FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE")
-        if template["spec"]["containers"][ci]["env"][ei]["value"] != OLD:
+        if template["spec"]["containers"][ci]["env"][ei]["value"] != a.expected_current:
             raise ValueError("Collector baseline changed; review it before activation")
         path = f"/spec/template/spec/containers/{ci}/env/{ei}/value"
         patch = [{"op": "test", "path": "/spec/template", "value": template},
@@ -44,7 +46,7 @@ def main():
         save("before.json", value)
         save("patch.json", patch)
         save("rollback.json", [{"op": "test", "path": path, "value": a.image},
-                               {"op": "replace", "path": path, "value": OLD}])
+                               {"op": "replace", "path": path, "value": a.expected_current}])
         save("helm-overlay.json", {"scientificBatch": {"toolsImage": a.image}})
         result = subprocess.check_output(kube + ["patch", "deployment", NAME, "--type=json",
             "--patch-file", str(a.output / "patch.json"), "--dry-run=server", "-o", "json"])

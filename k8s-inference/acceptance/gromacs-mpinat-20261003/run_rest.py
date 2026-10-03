@@ -71,7 +71,7 @@ class Campaign(Run):
         await super().observe(http, run_id)
         job = self.jobs[run_id]
         operation = job["receipt"].get("operation_id")
-        if not operation or job.get("events_complete"):
+        if not operation:
             return
         events = load(job["out"] / "events.json", {"data": []})
         after = max((e["sequence"] for e in events["data"]), default=0)
@@ -91,8 +91,6 @@ class Campaign(Run):
         else:
             raise ValueError("Event history exceeds pagination bound")
         save(job["out"] / "events.json", events)
-        if job["receipt"]["state"] in ("succeeded", "failed", "cancelled", "verified", "collected_failure"):
-            job["events_complete"] = True
 
     async def cohort(self, http, cohort):
         """Refill bounded slots as cases finish; large systems need not block smaller cases."""
@@ -110,8 +108,9 @@ class Campaign(Run):
                 if isinstance(result, Exception):
                     append(self.jobs[name]["out"] / "submission-errors.jsonl",
                            {"at": now(), "error_type": type(result).__name__})
-            pending = [n for n in names if self.jobs[n]["receipt"].get("operation_id")
-                       and not self.jobs[n].get("events_complete")]
+            # Terminal operation state may precede artifact publication. Keep
+            # polling status/events until the cohort's delivery condition holds.
+            pending = [n for n in names if self.jobs[n]["receipt"].get("operation_id")]
             results = await asyncio.gather(*(self.observe(http, n) for n in pending), return_exceptions=True)
             for name, result in zip(pending, results):
                 if isinstance(result, Exception):
@@ -136,6 +135,35 @@ class Campaign(Run):
                 save(self.jobs[name]["out"] / "receipt.json", self.jobs[name]["receipt"])
         return all(self.jobs[n]["receipt"]["state"] == "verified" for n in names)
 
+    async def collect_existing(self):
+        """Read-only recovery: no submissions, key-policy changes or GPU work."""
+        import httpx2
+        key = dict(line.split("=", 1) for line in self.args.qa_env.read_text().splitlines()
+                   if "=" in line)["SCIENTIFIC_MODELS_API_KEY"]
+        if not key.startswith("fs2_pat_56130b22ae09"):
+            raise ValueError("Only existing system/qa")
+        for case in self.args.cases:
+            root = self.args.output / "cohort-1" / case
+            if not (root / "request.json").exists() or not load(root / "receipt.json", {}).get("operation_id"):
+                raise ValueError("Collect-only requires an existing request and operation for every case")
+        async with httpx2.AsyncClient(base_url=self.args.origin, headers={"Authorization": "Bearer " + key},
+                                     timeout=90, trust_env=False) as http:
+            for index in range(1, len(self.args.cases) + 1):
+                await self.prepare(http, 1, index)
+            await asyncio.gather(*(self.observe(http, name) for name in self.jobs))
+            if any(j["receipt"]["state"] not in TERMINAL | {"verified", "collected_failure"} for j in self.jobs.values()):
+                raise ValueError("Collect-only does not cancel or wait for active operations")
+            slots = asyncio.Semaphore(2)
+            results = await asyncio.gather(*(self.collect(http, n, slots) for n in self.jobs), return_exceptions=True)
+            for (name, job), result in zip(self.jobs.items(), results):
+                if isinstance(result, Exception):
+                    job["receipt"]["collection_error_type"] = type(result).__name__
+                    save(job["out"] / "receipt.json", job["receipt"])
+            save(self.args.output / "collection-summary.json", {"at": now(), "read_only_recovery": True,
+                 "requests": {name: {"operation_id": j["receipt"]["operation_id"],
+                     "state": j["receipt"]["state"], "result_published": j["receipt"].get("result_published"),
+                     "collection_error_type": j["receipt"].get("collection_error_type")} for name, j in self.jobs.items()}})
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -147,6 +175,7 @@ def main():
     parser.add_argument("--origin", default="https://89.169.99.188")
     parser.add_argument("--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a")
     parser.add_argument("--timeout", type=int, default=10800)
+    parser.add_argument("--collect-only", action="store_true", help="Read existing terminal results; never submit or change policy")
     args = parser.parse_args()
     args.cases = args.cases.split(",")
     if not 1 <= len(args.cases) <= 24 or len(set(args.cases)) != len(args.cases):
@@ -161,7 +190,8 @@ def main():
     spec = importlib.util.spec_from_file_location("scientific_acceptance", args.client_root / "scripts/scientific-batch-acceptance.py")
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
-    asyncio.run(Campaign(args, helper).execute())
+    campaign = Campaign(args, helper)
+    asyncio.run(campaign.collect_existing() if args.collect_only else campaign.execute())
 
 
 if __name__ == "__main__":
