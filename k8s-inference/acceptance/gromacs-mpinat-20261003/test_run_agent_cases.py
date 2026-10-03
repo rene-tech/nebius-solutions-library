@@ -1,6 +1,12 @@
 import unittest
+import asyncio
+import json
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
-from run_agent_cases import IMAGE, QA_KEY_ID, gate_state, selected_cases
+from run_agent_cases import IMAGE, QA_KEY_ID, gate_state, selected_cases, refresh_browser_session, wait_operator_pause
 
 
 class AgentAdmissionTests(unittest.TestCase):
@@ -29,6 +35,34 @@ class AgentAdmissionTests(unittest.TestCase):
             invalid = cases[:-1] + [{'case_id': replacement}]
             with self.assertRaises(ValueError):
                 selected_cases({'candidate_image': IMAGE, 'cases': invalid}, 'benchmarks')
+
+    def test_browser_refresh_only_uses_account_login(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'login.json').write_text(json.dumps({'email': 'qa@example.invalid', 'password': 'test-only'}))
+            client = MagicMock()
+            client.headers = {'Authorization': 'Bearer synthetic-browser-session'}
+            constructor = MagicMock()
+            constructor.return_value.__enter__.return_value = client
+            harness = SimpleNamespace(httpx=SimpleNamespace(Client=constructor), UA='qa',
+                                      authenticate=MagicMock(), save=MagicMock())
+            refresh_browser_session(harness, root, root, 'http://127.0.0.1:13207')
+            harness.authenticate.assert_called_once_with(client, {'email': 'qa@example.invalid', 'password': 'test-only'})
+            harness.save.assert_called_once_with(root / 'session.json', {'token': 'synthetic-browser-session'})
+            self.assertFalse(json.loads((root / 'browser-session-refreshes.jsonl').read_text())['inference_key_changed'])
+
+    def test_operator_pause_waits_without_cancelling_or_mutating_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            flag = root / 'pause.json'
+            flag.write_text('{}')
+            async def release(_seconds):
+                flag.unlink()  # Represents the operator's explicit release.
+            with patch('run_agent_cases.asyncio.sleep', side_effect=release) as sleeping:
+                asyncio.run(wait_operator_pause(flag, root, 45))
+            sleeping.assert_called_once_with(45)
+            self.assertEqual([json.loads(line)['state'] for line in
+                              (root / 'operator-pauses.jsonl').read_text().splitlines()], ['paused', 'resumed'])
 
 
 if __name__ == '__main__':

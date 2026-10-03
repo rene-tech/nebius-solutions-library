@@ -63,6 +63,28 @@ async def wait_empty(http, output, poll):
         await asyncio.sleep(poll)
 
 
+async def wait_operator_pause(path, output, poll):
+    """Only a batch boundary: never interrupt accepted work or modify policy."""
+    if path is None or not path.exists():
+        return
+    print(json.dumps({'phase': 'operator_pause', 'pause_file': str(path)}), flush=True)
+    append(output / 'operator-pauses.jsonl', {'at': now(), 'state': 'paused', 'path': str(path)})
+    while path.exists():
+        await asyncio.sleep(poll)
+    append(output / 'operator-pauses.jsonl', {'at': now(), 'state': 'resumed', 'path': str(path)})
+    print(json.dumps({'phase': 'operator_resumed'}), flush=True)
+
+
+def refresh_browser_session(harness, client_root, output, base_url):
+    """One normal isolated-account login per pair; inference keys never change."""
+    with harness.httpx.Client(base_url=base_url,
+                              headers={'Origin': base_url, 'User-Agent': harness.UA}, timeout=45) as client:
+        harness.authenticate(client, load(client_root / 'login.json'))
+        harness.save(client_root / 'session.json', {'token': client.headers['Authorization'][7:]})
+    append(output / 'browser-session-refreshes.jsonl',
+           {'at': now(), 'reason': 'batch-boundary QA login', 'inference_key_changed': False})
+
+
 async def execute(args):
     if args.output.exists():
         raise ValueError('Refusing to overwrite prior agent evidence or replay cases')
@@ -105,8 +127,14 @@ async def execute(args):
     results = []
     async with httpx2.AsyncClient(base_url=args.origin, headers={'Authorization': 'Bearer ' + key},
                                  timeout=90, trust_env=False) as http:
-        await wait_empty(http, args.output, args.poll)
         for start in range(0, len(cases), args.workers):
+            await wait_operator_pause(args.pause_file, args.output, args.poll)
+            await wait_empty(http, args.output, args.poll)
+            # Recheck after draining in case the operator reserved the lane
+            # while a previously accepted native operation was still running.
+            await wait_operator_pause(args.pause_file, args.output, args.poll)
+            await wait_empty(http, args.output, args.poll)
+            refresh_browser_session(harness, args.client, args.output, args.base_url)
             batch = cases[start:start + args.workers]
             # Preserve the real seeded instructions and prompt; no synthetic
             # agent completion, GPU retry or corrective follow-up is injected.
@@ -161,6 +189,8 @@ def main():
     parser.add_argument('--workers', type=int, choices=[1, 2], default=2)
     parser.add_argument('--deadline', type=int, default=3600)
     parser.add_argument('--poll', type=int, default=45)
+    parser.add_argument('--pause-file', type=Path,
+                        help='Operator-owned presence pauses only new batches; no cancellation or policy writes')
     args = parser.parse_args()
     if args.phase == 'alanine' and args.workers != 1:
         parser.error('Qualify the hosted starter alone before the benchmark pairs')

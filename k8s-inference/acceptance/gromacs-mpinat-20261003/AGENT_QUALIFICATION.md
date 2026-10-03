@@ -161,3 +161,29 @@ The local r4 instance `fs2-default-release-mpinat-candidate-r4-20261003` uses po
 parent-authorized actual/assumed Lynx CPU acceptance. No customer endpoint or
 default release selector has changed. Remaining hosted scientific cases and
 multi-GPU shape qualification belong to the coordinated parent benchmark.
+
+## Hosted r4 continuation: admission is not report completion
+
+The restored QA limit remained two. The coordinator waited for the parent REST
+and MPI lanes to drain, then ran the separate hosted alanine example and started
+the remaining MPINAT cases in pairs. Ordinary isolated-browser login is refreshed
+between pairs; an operator-owned pause file holds only new batches and never
+cancels accepted work or changes the inference key/policy.
+
+The first MPINAT pair exposed a real report-integration gap. benchMEM operation
+`7c59f87a-d62c-46aa-bd1c-14cb1a5cf0e6` and durable study
+`eed9d37a-4a03-5040-8275-cdcbb1a3f316` completed, but the agent planned the generic
+`operation-timing` report against the platform envelope instead of the native
+MD timing helper. Its initial chat truthfully acknowledged admission only.
+The benchmark is not considered delivered merely because Runs says completed.
+The original plan, report, files and trace remain unchanged in
+`agent-remaining-r4`; the next pair is held pending exact report verification and
+a generic durable-study integration fix.
+
+benchPEP initially failed local study validation (missing a declared report)
+before inference. Its subsequent `-upload` identity created operation
+`bf43bdec-b64b-47a0-b55e-b2f3423c47cb`, protocol
+`scientific-artifact-upload-v1`, not a native MD job. As of the retained first
+observation it was still transferring; its accepted upload is observed without
+creating a second reservation or replaying simulation. No PEP completion or
+throughput is inferred from this state.
