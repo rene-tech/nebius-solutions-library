@@ -3,7 +3,48 @@
 This is **not** a completed REST/agent/MPI qualification. Never use the successful
 subset to describe the whole suite or a sixteen-GPU MPI execution as working.
 
-## Latest checkpoint — 14:18 UTC
+## Latest checkpoint — 14:42 UTC
+
+CUDA-aware MPI and the gang quota-accounting correction are deployed from source
+`4ce21e085`, API/tools image `57c35229…862da`; all three exact readers are Ready,
+public authenticated discovery returns 200, and all eight shapes remain listed.
+Only the MPI worker changed to `5884569e…65e23`; the single-GPU identity is
+unchanged. Native 1×1 H100/L40S, 1×2/1×4 L40S and 2×1 H100 gates passed. The
+matched two-L40S control observed 98.736 versus 77.377 ns/day mean (~28% higher),
+not a general speedup or ensemble-equivalence claim. Strict numerical equality
+diagnostics and small descriptive-envelope misses remain in
+[CUDA_AWARE_CONTROL.md](CUDA_AWARE_CONTROL.md).
+
+The first fresh hosted REST 2×1 case, `59d0ffc8-9ee2-4553-ae19-1269466115fa`,
+completed three 10,000-step repeats and 36 verified artifacts. Its actual Kueue
+PodSet requests two GPUs, and the new durable quota START records two, fixing
+the previous per-Pod undercount without rewriting old intervals. MCP 1×2 is
+running. No QA limit/key change was made. Release receipts are
+`cuda-api-release-r1`, `cuda-api-activation-r1`, `cuda-api-ready-r1`,
+`cuda-hosted-rest-2x1-r1` and `quota-candidate-r1` under the private campaign root.
+
+The Lynx assumed alanine case completed native MD and verified 55 delivered
+files, but its NVT example selected unavailable Density. The separately versioned
+v4 analysis-only correction passes an exact-image CPU replay; original physics,
+v3 bytes and its diagnostic are retained. It is not yet a default seed release.
+
+The first pair of the remaining actual-agent cases exposed more client work:
+MEM ran successfully but its durable report contained only unavailable generic
+timing fields, not the requested native repeats. PEP stopped with a truthful
+incomplete handoff before native submission. Its standalone upload eventually
+succeeded after 688.125 seconds for 223,219,412 bytes, but returned compression
+`none` for the gzip source. Neither is an end-to-end benchmark pass. Remaining
+admissions are paused while generic durable native-MD reporting, explicit upload
+compression and transfer-phase measurement are corrected; original chats,
+receipts and native work are not silently replayed. No new default client has
+been promoted. Full-node 8/16-GPU tests still need available whole nodes.
+
+The fixed read-only telemetry observer now writes `telemetry-d`; the old
+`telemetry-c` exited naturally on its STOP marker after overlapping new samples.
+Both histories and the handoff receipt are retained; no remote workload was
+terminated. The fixed 14:01 findings snapshot below remains unchanged.
+
+## Previous checkpoint — 14:18 UTC
 
 All 24 public inputs now have complete corrected single-GPU REST evidence,
 including both large PEP retries (38 artifacts each). The separate MPI borrower
