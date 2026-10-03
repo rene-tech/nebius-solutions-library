@@ -32,6 +32,7 @@ from .models import (
     BatchEvent,
     BatchEventKind,
     CheckpointMode,
+    ExecutionMode,
     LifecyclePhase,
     PodLifecycleObservation,
     ScientificAttemptState,
@@ -389,6 +390,14 @@ class ScientificLifecycleBridge:
             and admission.accelerator_count > 0
             and attempt.kueue_workload_uid is not None
         ):
+            # Kueue resourceUsage is checked against the rendered aggregate
+            # PodSet envelope before SchedulingAdmission stores its per-Pod
+            # quantity. This interval belongs to the whole attempt/JobSet,
+            # not one Pod. Independent fanout shards are separate attempts.
+            stage = state.plan.stage(attempt.stage_id)
+            replicas = stage.gang_size if stage.mode is ExecutionMode.TRUE_GANG else 1
+            assert replicas is not None
+            quota_gpu_count = admission.accelerator_count * replicas
             interval = f"{prefix}:quota:{attempt.kueue_workload_uid}"
             signals.append(
                 self._signal(
@@ -403,7 +412,7 @@ class ScientificLifecycleBridge:
                     source=LifecycleSource.KUEUE,
                     quality=MeasurementQuality.MEASURED,
                     source_resolution_seconds=self.source_resolution_seconds,
-                    gpu_count=admission.accelerator_count,
+                    gpu_count=quota_gpu_count,
                     cluster=self.cluster,
                     queue_name=scheduling.resolved_local_queue,
                     kueue_workload_uid=attempt.kueue_workload_uid,
@@ -423,7 +432,7 @@ class ScientificLifecycleBridge:
                         source=LifecycleSource.KUEUE,
                         quality=MeasurementQuality.MEASURED,
                         source_resolution_seconds=self.source_resolution_seconds,
-                        gpu_count=admission.accelerator_count,
+                        gpu_count=quota_gpu_count,
                         cluster=self.cluster,
                         queue_name=scheduling.resolved_local_queue,
                         kueue_workload_uid=attempt.kueue_workload_uid,
@@ -929,7 +938,7 @@ class ScientificLifecycleBridge:
         attempt: ScientificAttemptState,
         signals: Sequence[LifecycleSignal],
     ) -> None:
-        """Keep a pre-apply event replay stable after its Job UID is known.
+        """Keep pre-apply and legacy quota event replays append-only.
 
         The first controller sync happens before Kubernetes creation and
         therefore persists durable batch-event signals without a Job UID. A
@@ -937,9 +946,14 @@ class ScientificLifecycleBridge:
         correlation. Replaying those same event keys must retain their
         original facts; the separate correlation carries the enrichment.
 
-        Only the exact NULL-to-one-correlated-UID enrichment is normalized.
-        Any other field change, or more than one Job UID for the attempt,
-        reaches the repository unchanged and retains its strict conflict.
+        The legacy bridge counted only the admitted per-Pod GPUs for a gang.
+        Retain that known historical limitation if its exact start
+        already exists, including closing an in-flight legacy interval using
+        its original count. Fresh intervals use the aggregate count; no
+        historical edge is replaced and no second quota interval is added.
+
+        Only that exact count correction and NULL-to-one-correlated-UID
+        enrichment are normalized. Other changed facts retain strict conflicts.
         """
 
         if not signals:
@@ -952,9 +966,8 @@ class ScientificLifecycleBridge:
         correlated_job_uids = {
             correlation.job_uid for correlation in detail.correlations if correlation.job_uid is not None
         }
-        replay: list[LifecycleSignal] = []
-        for signal in signals:
-            existing = persisted.get(signal.event_key)
+
+        def retain_job_uid(signal: LifecycleSignal, existing: LifecycleSignal | None) -> LifecycleSignal:
             without_enrichment = signal.model_copy(update={"job_uid": None})
             if (
                 existing is not None
@@ -963,9 +976,30 @@ class ScientificLifecycleBridge:
                 and without_enrichment == existing
                 and correlated_job_uids == {signal.job_uid}
             ):
-                replay.append(without_enrichment)
-            else:
-                replay.append(signal)
+                return without_enrichment
+            return signal
+
+        legacy_quota_intervals: set[str] = set()
+        admission = attempt.scheduling_admission
+        if admission is not None and state.plan.stage(attempt.stage_id).mode is ExecutionMode.TRUE_GANG:
+            for signal in signals:
+                if (
+                    signal.clock is LifecycleClock.QUOTA_RESERVED
+                    and signal.edge is LifecycleEdge.START
+                    and signal.interval_key is not None
+                    and signal.gpu_count > admission.accelerator_count
+                ):
+                    existing = persisted.get(signal.event_key)
+                    legacy = signal.model_copy(update={"gpu_count": admission.accelerator_count})
+                    if retain_job_uid(legacy, existing) == existing:
+                        legacy_quota_intervals.add(signal.interval_key)
+
+        replay: list[LifecycleSignal] = []
+        for signal in signals:
+            if signal.clock is LifecycleClock.QUOTA_RESERVED and signal.interval_key in legacy_quota_intervals:
+                assert admission is not None
+                signal = signal.model_copy(update={"gpu_count": admission.accelerator_count})
+            replay.append(retain_job_uid(signal, persisted.get(signal.event_key)))
         await self.lifecycle.append_signals(replay)
 
     async def sync(self, state: ScientificBatchState) -> None:

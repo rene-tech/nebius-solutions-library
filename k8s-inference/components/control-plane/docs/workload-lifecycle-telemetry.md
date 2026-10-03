@@ -249,6 +249,58 @@ GPU-second rollups.
 These calls are additive and do not give the telemetry lane ownership of
 controller, artifact or scientific-admin state.
 
+### Scientific gang quota-count correction (2026-10-03)
+
+`SchedulingAdmission.accelerator_count` is **per Pod**, not the total JobSet
+reservation. The Kubernetes adapter compares each Kueue PodSet's aggregate
+`resourceUsage` and replica count against its frozen rendered envelope before
+recording that per-Pod quantity. A scientific quota interval belongs to one
+attempt: its GPU count is now the admitted per-Pod count multiplied by the
+frozen stage's `gang_size` for `TRUE_GANG` (`gang-jobset`), or by one for an
+independent Job. Fanout shard count, MPI thread count and the number of Pods
+observed in a particular poll are not quota multipliers.
+
+| Frozen shape | Per-Pod admission | Quota interval GPU count |
+| --- | ---: | ---: |
+| 1 node × 1 GPU | 1 | 1 |
+| 1 node × 4 GPUs | 4 | 4 |
+| 2 nodes × 1 GPU | 1 | 2 |
+| 2 nodes × 8 GPUs | 8 | 16 |
+
+The legacy bridge omitted the gang multiplier on both quota edges. Two completed
+internal QA operations (`b453cad7-9526-4c7b-a2b7-904e21c13ffe` and
+`6c2459a2-abc6-462a-a363-1367b43f2276`) independently establish the defect:
+their frozen stages have `gang_size=2`; their verified admissions record one
+GPU per Pod; retained API-server Pod snapshots show two distinct one-GPU Pods
+on distinct nodes in the `gang` PodSet with replica count two; and their four
+persisted quota edges each record only one GPU. The original Kueue Workloads
+were deleted after release and their raw `podSetAssignments` were not retained.
+Thus the evidence is the frozen contract, admission validator, actual PodSet
+membership/resource requests and durable quota signals—not a timing ratio.
+The private bounded read-only receipt is
+`secure-handoff/fs2-gromacs-mpinat-20261003/quota-count-r1/evidence.json`,
+SHA-256 `4dba71b1e2a7a35b33ba6836e482d261d1d55a8cd2ef4ce094b5d3b72ab35082`.
+
+This is a future-interval correction, not a ledger migration or billing
+adjustment. Existing signals and rollups remain immutable. If an exact legacy
+quota start already exists, replay preserves it and closes that same interval
+with its original per-Pod count; it neither substitutes a total nor appends a
+second reservation. Only the known per-Pod-to-total difference is tolerated;
+changes to timestamps, counts outside that exact legacy case or other event
+facts still fail closed. This also keeps in-flight old attempts replayable.
+Historical gang quota GPU-seconds therefore remain undercounted by the gang
+size for these intervals. A historical correction requires a separately
+reviewed, explicitly labelled derived report; it must not rewrite stored rows.
+
+Scheduler occupancy still sums exact per-Pod requests, and device allocation
+still counts observed device identities. Neither clock changes in this fix.
+The generic scientific operation `reserved_gpu_seconds=0` is a separate,
+intentional admission-accounting field, not measured zero allocation cost.
+Complete the controller-image rollout before admitting new gangs that could
+be reconciled by an older writer: that older writer cannot replay new total-count
+quota edges. Deployment and live qualification are separate gates; these
+source tests do not establish that the running release includes this fix.
+
 ## Security, retention and cardinality
 
 Raw prompts, sequences, images, request/response values, credentials, bearer
