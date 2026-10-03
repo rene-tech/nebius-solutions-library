@@ -51,9 +51,13 @@ from the customer contract.
 The release owner must preserve a machine-readable receipt proving all of the
 following against the exact candidate release:
 
-1. **Customer identity:** use a disposable canary principal in the real customer
-   tenant with the same grants, scopes, concurrency and budget policy. An
-   internal operator or administrator key is not equivalent.
+1. **Customer-shaped identity:** internal qualification uses the existing
+   `system/qa` or `system/development` inference identity, with an explicitly
+   recorded grants, scopes, concurrency and budget profile. Never use an actual
+   customer's key, change their limits, or create a canary in their tenant just
+   to run an internal test. Testing a customer's exact identity/storage binding
+   needs specific owner approval; without it, report that binding as untested.
+   An internal operator or administrator key is not an inference test identity.
 2. **Customer client:** exercise every supported customer client and integration
    that is part of the handoff, including the actual MCP client, installed
    skills, configuration and tool refresh behavior. A raw MCP client alone does
