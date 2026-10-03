@@ -17,7 +17,7 @@ import time
 
 from run_rest import Campaign
 from prepare import parameters
-from verify_concurrency import load, save, now, emit
+from verify_concurrency import QA_KEY_ID, active_operations, load, save, now, emit
 
 
 PROTOCOLS = ("auto", "fixed-cpu-pme", "fixed-gpu-pme")
@@ -53,6 +53,54 @@ def shape_parameters(case, nodes, gpus_per_node, steps=10000, repetitions=3, pro
 
 
 class MPICampaign(Campaign):
+    async def guard_existing_policy(self, http):
+        """Borrow one of QA's existing two slots beside an explicitly owned peer.
+
+        This path never reads admin credentials or changes admission policy.
+        Peer IDs must be supplied by their supervisor; arbitrary active work
+        is not permission to borrow its identity or cancel it.
+        """
+        own = {job["receipt"].get("operation_id") for job in self.jobs.values()} - {None}
+        peers = set(self.args.peer_operation)
+        active = {row["id"] for row in await active_operations(http)}
+        if len(peers) > 1 or active - own - peers or len(active & own) > 1 or len(active) > 2:
+            raise ValueError("QA work exceeds one explicit peer and one owned MPI operation")
+        save(self.args.output / "existing-policy-observation.json",
+             {"at": now(), "peer_operation_ids": sorted(peers), "active_ids": sorted(active),
+              "policy_written": False, "maximum_owned_operations": 1})
+
+    async def execute_existing_policy(self):
+        import httpx2
+        values = dict(line.split("=", 1) for line in self.args.qa_env.read_text().splitlines() if "=" in line)
+        key = values["SCIENTIFIC_MODELS_API_KEY"]
+        if not key.startswith("fs2_pat_" + QA_KEY_ID.replace("-", "")[:12]):
+            raise ValueError("Only the existing system/qa identity may be used")
+        if self.args.requests != 1 or len(self.args.cases) != 1 or self.args.cohorts != 1:
+            raise ValueError("Existing-policy qualification runs one MPI case at a time")
+        async with httpx2.AsyncClient(base_url=self.args.origin, headers={"Authorization": "Bearer " + key},
+                                     timeout=90, trust_env=False) as http:
+            # Preparation adopts only the exact same campaign's retained ID.
+            # It stages bytes but does not submit a GPU operation.
+            await self.prepare(http, 1, 1)
+            await self.guard_existing_policy(http)
+            watchers = [asyncio.create_task(self.health_loop(http)), asyncio.create_task(self.cluster_loop())]
+            try:
+                verified = await self.cohort(http, 1)
+                save(self.args.output / "summary.json", {"at": now(), "tenant": "system", "principal": "qa",
+                     "key_id": QA_KEY_ID, "cohorts_verified": [verified], "policy_written": False,
+                     "peer_operation_ids": self.args.peer_operation,
+                     "api_probe_count": len(self.health),
+                     "api_probe_failures": sum(row.get("http_status") != 200 for row in self.health)})
+                return verified
+            finally:
+                try:
+                    await self.drain(http, list(self.jobs))
+                finally:
+                    self.done.set()
+                    for watcher in watchers:
+                        watcher.cancel()
+                    await asyncio.gather(*watchers, return_exceptions=True)
+
     async def prepare(self, http, cohort, index):
         if not getattr(self, "tracing_installed", False):
             http.event_hooks["request"].append(self.trace_request)
@@ -120,6 +168,8 @@ class MPICampaign(Campaign):
         return result
 
     async def submit(self, http, run_id):
+        if getattr(self.args, "existing_policy", False):
+            await self.guard_existing_policy(http)
         job = self.jobs[run_id]
         out, receipt = job["out"], job["receipt"]
         if receipt.get("operation_id"):
@@ -199,6 +249,9 @@ def main():
     p.add_argument("--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a")
     p.add_argument("--timeout", type=int, default=21600)
     p.add_argument("--collect-only", action="store_true")
+    p.add_argument("--existing-policy", action="store_true", help="Use one existing QA slot; no admin or policy writes")
+    p.add_argument("--peer-operation", action="append", default=[],
+                   help="One exact operation owned by a coordinated peer; never cancel or adopt it")
     a = p.parse_args()
     a.cases = a.cases.split(",")
     if (not 1 <= len(a.cases) <= 24 or len(set(a.cases)) != len(a.cases)
@@ -207,6 +260,12 @@ def main():
         p.error("Select unique path-safe case and campaign IDs")
     shape_parameters({"id": a.cases[0]}, a.nodes, a.gpus_per_node, a.steps, a.repetitions, a.protocol)
     a.cohorts, a.requests = 1, 1
+    if a.peer_operation and not a.existing_policy:
+        p.error("--peer-operation requires --existing-policy")
+    if len(a.peer_operation) > 1 or any(not re.fullmatch(r"[a-f0-9-]{36}", value) for value in a.peer_operation):
+        p.error("Specify at most one exact peer operation UUID")
+    if a.existing_policy and len(a.cases) != 1:
+        p.error("--existing-policy runs exactly one case")
     os.umask(0o077)
     a.output.mkdir(parents=True, exist_ok=True)
     sys.path.insert(0, str(a.client_root))
@@ -216,7 +275,18 @@ def main():
     campaign = MPICampaign(a, helper)
     emit(interface=a.interface, shape=f"{a.nodes}x{a.gpus_per_node}",
          agent_qualification_claimed=False)
-    asyncio.run(campaign.collect_existing() if a.collect_only else campaign.execute())
+    if a.collect_only:
+        asyncio.run(campaign.collect_existing())
+    elif a.existing_policy:
+        # Share the existing matrix lock; the actual-agent supervisor is
+        # separately paused at its batch boundary while this lane borrows.
+        import fcntl
+        with (a.qa_env.resolve().parent / "gromacs-matrix-system-qa.lock").open("a") as lease:
+            fcntl.flock(lease.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if not asyncio.run(campaign.execute_existing_policy()):
+                raise SystemExit(2)
+    else:
+        asyncio.run(campaign.execute())
 
 
 if __name__ == "__main__":

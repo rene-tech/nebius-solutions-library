@@ -2333,7 +2333,7 @@
         "h100_semantic_receipt_sha256": "5f9ae682dbb65c424d5521e6abc1e2bf2a9d676cee93ee29d1fa580beaaf95ce",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "1b92050db22039233a8e2e4b8cae6e63a15f174c9964358b5688c4d0fc421fef",
+        "execution_map_sha256": "2bb66983b030c094e5004e44fe5cf0d4b7d954a7a54093eda44b1cc818b9b381",
         "qualified_at": "2026-10-03T12:50:37.339461+00:00"
       }
     },
@@ -2353,11 +2353,11 @@
       },
       "execution_identity": {
         "model_revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
-        "runtime_image_digest": "sha256:c6c353e55deade8c8fe7a2f02e68bcdb639c7680c8435b665e72815d0213c9ea",
-        "runtime_recipe_sha256": "24edfc1c102bc677752a39b8f37258e259f994e4c9b32c8be8f5b812daa83b58",
+        "runtime_image_digest": "sha256:5884569e80a4d8dd5cc04b05fe7700165139874cde00b2774cba7c7c96965e23",
+        "runtime_recipe_sha256": "be654a5ba01304410d2eea2768b12331c5c3b0cbaeab381623400e0f549996d7",
         "workload_recipe_sha256": "9f014f868e5cc5767a48c5d57016601c03d500e635c7422c50d20df1d2c4a51e",
         "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "execution_identity_sha256": "59b8ee0be1ddabad1b524465956886d8b2b4981eabb5317fcd946ac9b6a9637d"
+        "execution_identity_sha256": "62c8a407d0cd340bd83538eaf4452a700fc92292ae847cd5976c028725d7acac"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -2683,11 +2683,11 @@
         ]
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "9073e80d12ad29c09873cf6c329c0245f90c27e2e3e92ee0dd352dc4483f9d96",
+        "h100_semantic_receipt_sha256": "58b7a5dc27da1fdc92c1b73ddc28d5b9440a5e386e1ca8b14faeb3c08cafa2c0",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "1b92050db22039233a8e2e4b8cae6e63a15f174c9964358b5688c4d0fc421fef",
-        "qualified_at": "2026-10-03T12:53:56.195368+00:00"
+        "execution_map_sha256": "38241cd9d7ba2c63cad0d56d4d12ed67b3397f23c30e226fd7b216f95b0c51b0",
+        "qualified_at": "2026-10-03T14:23:41.172586+00:00"
       }
     },
     {

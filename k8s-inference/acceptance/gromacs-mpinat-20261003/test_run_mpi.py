@@ -2,7 +2,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import tempfile
 import unittest
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from run_mpi import MPICampaign, shape_parameters
 from verify_concurrency import save, load
@@ -44,6 +44,58 @@ class Shapes(unittest.TestCase):
 
 
 class Submission(unittest.IsolatedAsyncioTestCase):
+    async def test_existing_policy_allows_only_one_explicit_peer_and_owned_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run = MPICampaign(SimpleNamespace(output=Path(directory), peer_operation=["peer"]), None)
+            run.jobs = {"case": {"receipt": {"operation_id": "own"}}}
+            for ids in ([], ["peer"], ["own"], ["own", "peer"]):
+                with patch("run_mpi.active_operations", new=AsyncMock(return_value=[{"id": value} for value in ids])):
+                    await run.guard_existing_policy(None)
+            with patch("run_mpi.active_operations", new=AsyncMock(return_value=[{"id": "unrelated"}])):
+                with self.assertRaisesRegex(ValueError, "explicit peer"):
+                    await run.guard_existing_policy(None)
+            run.jobs["second"] = {"receipt": {"operation_id": "second"}}
+            with patch("run_mpi.active_operations", new=AsyncMock(return_value=[{"id": "own"}, {"id": "second"}])):
+                with self.assertRaisesRegex(ValueError, "explicit peer"):
+                    await run.guard_existing_policy(None)
+
+    async def test_existing_policy_never_enters_admin_or_writes_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = root / "runtime.env"
+            env.write_text("SCIENTIFIC_MODELS_API_KEY=fs2_pat_56130b22ae09_test\n")
+            args = SimpleNamespace(output=root, qa_env=env, origin="https://example.invalid",
+                                   requests=1, cases=["benchmem"], cohorts=1, peer_operation=[])
+            run = MPICampaign(args, None)
+            for name in ("prepare", "guard_existing_policy", "health_loop", "cluster_loop", "drain"):
+                setattr(run, name, AsyncMock())
+            run.cohort = AsyncMock(return_value=True)
+            run.kjson = AsyncMock(side_effect=AssertionError("No admin secret read"))
+            transport = AsyncMock()
+            with patch("httpx2.AsyncClient", return_value=transport) as client:
+                self.assertTrue(await run.execute_existing_policy())
+            self.assertEqual(client.call_count, 1)
+            self.assertEqual(transport.__aenter__.return_value.method_calls, [])
+            self.assertFalse(load(root / "summary.json")["policy_written"])
+            run.drain.assert_awaited_once()
+            run.kjson.assert_not_awaited()
+
+    async def test_existing_policy_cleans_up_owned_watchers_on_error(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            env = root / "runtime.env"
+            env.write_text("SCIENTIFIC_MODELS_API_KEY=fs2_pat_56130b22ae09_test\n")
+            run = MPICampaign(SimpleNamespace(output=root, qa_env=env, origin="https://example.invalid",
+                              requests=1, cases=["benchmem"], cohorts=1, peer_operation=[]), None)
+            for name in ("prepare", "guard_existing_policy", "health_loop", "cluster_loop", "drain"):
+                setattr(run, name, AsyncMock())
+            run.cohort = AsyncMock(side_effect=RuntimeError("retained failure"))
+            with patch("httpx2.AsyncClient", return_value=AsyncMock()):
+                with self.assertRaisesRegex(RuntimeError, "retained failure"):
+                    await run.execute_existing_policy()
+            self.assertTrue(run.done.is_set())
+            run.drain.assert_awaited_once()
+
     async def test_rest_targets_mpi_and_reuses_the_same_operation(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
