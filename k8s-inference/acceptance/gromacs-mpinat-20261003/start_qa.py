@@ -25,6 +25,8 @@ def main():
     parser.add_argument("--image", default=IMAGE)
     parser.add_argument("--label", default="mpinat-20261003")
     parser.add_argument("--port", type=int, default=13203)
+    parser.add_argument("--input-bindings", type=Path,
+                        help="Explicit private dispatch plan for hash-pinned read-only local QA input files")
     args = parser.parse_args()
     if (not re.fullmatch(r"cr\.eu-north1\.nebius\.cloud/e00akg9ndpx77eaexh/lc@sha256:[a-f0-9]{64}", args.image)
             or not re.fullmatch(r"mpinat-[a-z0-9-]{1,60}", args.label)
@@ -41,7 +43,8 @@ def main():
         subprocess.run([sys.executable, str(args.client_root / "scripts/qualification/prepare_default_release.py"),
                         "--root", str(args.output), "--source-env", str(args.qa_env),
                         "--platform-key", str(path), "--image", args.image,
-                        "--label", args.label, "--port", str(args.port)], check=True)
+                        "--label", args.label, "--port", str(args.port),
+                        *(["--input-bindings", str(args.input_bindings)] if args.input_bindings else [])], check=True)
     print(json.dumps({"owner": "fs2-gromacs-mpinat-api-mcp-mpi-r20261003", "tenant": "system",
                       "principal": "qa", "image": args.image, "customer_state_used": False,
                       "cleanup": f"Stop fs2-default-release-{args.label} after terminal evidence; retain local state"}))
