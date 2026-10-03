@@ -73,6 +73,17 @@ class SelectedCaseTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Study changed'):
                 validate_plan(expected, altered, study)
 
+    def test_omitted_encoding_uses_contract_binding_but_native_must_be_gzip(self):
+        expected, frozen, study = self.fixture()
+        del frozen['plan']['steps'][0]['compression']
+        frozen['record']['identity'] = sha(canonical({'plan': frozen['plan'],
+            'output': '/workspace/out', 'owner': 'qa'}))
+        self.assertEqual(validate_plan(expected, frozen, study)['operation_id'], 'op')
+        args = self.native_fixture()
+        args[3]['request_descriptor']['compression'] = 'none'
+        with self.assertRaisesRegex(ValueError, 'requested gzip'):
+            validate_native(*args[:-1])
+
     def native_fixture(self):
         expected, frozen, study = self.fixture()
         binding = validate_plan(expected, frozen, study)

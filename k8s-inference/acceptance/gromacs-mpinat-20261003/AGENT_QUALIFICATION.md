@@ -329,3 +329,37 @@ PID 3229213 and read-only verifier PID 3223363 retain the same r5 release and
 QA concurrency two. SHP2-EQ/RIB are the active pair; no new client candidate is
 substituted into this cohort. Avoiding the short-wait/direct-recovery detour is
 an outstanding client UX improvement, not a reason to rerun the completed MD.
+
+### Sixteen verified; final large pair admitted — 16:12 UTC
+
+RIB operation `88bb0e31-2e28-478b-bee4-cba3c2f2eab6` and SHP2-EQ operation
+`76083dd7-1fbc-4118-b500-ec73fdfcedeb` passed selected-input/physics, native report
+and authenticated-download checks. SHP2-EQ's frozen plan omitted the optional
+`compression` field. The installed schema explicitly permits contract-and-source-
+magic binding; its actual request descriptor and artifact manifest are `gzip`
+with the original SHA. The verifier's first explicit-field requirement was too
+strict. Omission now receives the same semantic validation while an explicitly
+wrong encoding, or a native request that is not gzip, still fails. The original
+`mpinat-shp2-eq-failure.json` remains beside the successful proof; no receipt or
+request was rewritten. Thirty-two combined verifier/supervisor/accounting tests
+and Ruff pass.
+
+The actual PEP and PEP-h chats admitted studies
+`f25a69fa-b4e7-5340-9e89-08a9fd90ec3e` and
+`187b5a78-eab7-5c39-b1a7-574f11c4d6bb`, respectively. They took 42.211 and
+39.193 seconds with 10 and 9 tools, truthfully returning asynchronous admission.
+They are not yet native/report completion claims. Supervisor PID 3229213 and
+read-only verifier PID 3519854 continue unchanged r5/QA2. A temporary observer
+pause marker was removed after the SHP2-EQ semantic check; its diagnosis is
+retained in `agent-remaining-r5/observer-compression-pause.json`. The final chats
+were already admitted before that marker; no cancellation occurred.
+
+Actual native concurrency is more limited than chat concurrency: the current
+one-owner saved-study worker repeatedly selects the oldest nonfinal study until
+it has also finished analysis/publication. During RIB, SHP2-EQ stayed queued.
+This healthy but serial behavior is not advertised as parallel native execution.
+Prepared follow-up TaskDeck card
+`fs2-librechat-bounded-study-interleaving-r20261003` specifies a bounded fair
+cohort under the same owner, complete ambiguity/cancellation barriers and
+exact-candidate overlap/restart tests. It is not implemented or deployed, and
+the active benchmark is not modified to conceal the limitation.

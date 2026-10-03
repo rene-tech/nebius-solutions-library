@@ -85,9 +85,13 @@ def validate_plan(expected, frozen, study):
     step = model_steps[0]
     required = {'kind': 'batch', 'model': 'gromacs', 'tool': 'submit_gromacs_workflow',
                 'operation': 'run-workflow', 'source': expected['source']['path'],
-                'parameters': expected['parameter_path'], 'compression': 'gzip',
+                'parameters': expected['parameter_path'],
                 'idempotency_key': expected['idempotency_key']}
-    if any(step.get(key) != value for key, value in required.items()):
+    # The installed public schema permits omission: its helper binds encoding
+    # from the contract plus actual source magic. validate_native still requires
+    # the resulting immutable request descriptor to be gzip for these fixtures.
+    if (any(step.get(key) != value for key, value in required.items())
+            or ('compression' in step and step['compression'] != 'gzip')):
         raise ValueError('Study changed the requested source, model, parameters or native request identity')
     for path, digest, size in ((expected['source']['path'], expected['source']['sha256'], expected['source']['size_bytes']),
                               (expected['parameter_path'], expected['parameter_file_sha256'], expected['parameter_size_bytes'])):
