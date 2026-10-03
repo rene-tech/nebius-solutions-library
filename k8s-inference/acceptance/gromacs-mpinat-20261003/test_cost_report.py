@@ -10,7 +10,7 @@ from ledger import Ledger
 from cost_report import (REFERENCES, allocation_bounds, build_report, canonical,
                          command_metrics, hourly_price, interval_union,
                          logical_operation_costs, logical_work, preset_shape, public_comparison,
-                         ratio_bounds, read_cohorts, sha256, work_accounting, write_summary_csv)
+                         ratio_bounds, read_cohorts, reviewed_retry_map, sha256, staging_measurements, work_accounting, write_summary_csv)
 
 
 REFS = json.loads(REFERENCES.read_text())
@@ -113,6 +113,84 @@ class WorkTests(unittest.TestCase):
         self.assertEqual(cost[0]["occupancy_gpu_seconds"]["lower"], 200)
 
 
+class ReviewedLineageTests(unittest.TestCase):
+    def fixture(self, root):
+        cohorts = [root / name for name in ("B", "C", "D")]
+        fixtures = root / "fixtures"
+        for case in ("benchmem", "benchrib", "benchpep", "benchpep-h"):
+            fixture = fixtures / case
+            fixture.mkdir(parents=True)
+            (fixture / "original.tpr").write_bytes(case.encode())
+            (fixture / "input.tar.gz").write_bytes(b"test bundle " + case.encode())
+            prov = {"tpr_sha256": sha256(fixture / "original.tpr"), "bundle_sha256": sha256(fixture / "input.tar.gz")}
+            for cohort in cohorts:
+                path = cohort / case
+                path.mkdir(parents=True)
+                request = {"schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1", "threads": 8,
+                    "output_prefix": str(cohort), "max_output_bytes": 4 if cohort.name != "D" else 24,
+                    "jobs": [{"id": "benchmark", "steps": [{"id": f"repeat-{i}", "command": "mdrun", "args": ["-s", "benchmark.tpr", "-nb", "gpu"]}
+                                                              for i in (1, 2, 3)]}]}
+                receipt = {"operation_id": cohort.name + case, "input_sha256": prov["bundle_sha256"],
+                    "steps": 10000, "repetitions": 3, "state": "cancelled" if cohort.name == "B" else "running"}
+                for name, value in (("request.json", {"parameters": request}), ("receipt.json", receipt), ("provenance.json", prov)):
+                    (path / name).write_text(json.dumps(value))
+        return (*cohorts, fixtures)
+
+    def test_only_authorized_cases_and_distinct_repeats_are_mapped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.fixture(Path(directory))
+            groups = reviewed_retry_map(*args)
+            self.assertEqual(len(groups), 12)
+            self.assertEqual(sum(len(group["members"]) for group in groups), 30)
+            self.assertTrue(all(len({row["replica_id"] for row in group["members"]}) == 1 for group in groups))
+            self.assertTrue(all(group["input_evidence"]["native_input_sha256"] for group in groups))
+
+    def test_shape_physics_or_original_tpr_drift_is_not_a_retry(self):
+        for change in ("mpi", "physics", "tpr"):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                args = self.fixture(Path(directory))
+                if change == "tpr":
+                    (args[-1] / "benchmem/original.tpr").write_bytes(b"different input")
+                else:
+                    path = args[1] / "benchmem/request.json"
+                    request = json.loads(path.read_text())
+                    if change == "mpi":
+                        request["parameters"]["schema"] = "fs2-serve.nebius.ai/gromacs-mpi-workflow-request/v1"
+                    else:
+                        request["parameters"]["jobs"][0]["steps"][0]["args"] += ["-pme", "cpu"]
+                    path.write_text(json.dumps(request))
+                with self.assertRaises(ValueError):
+                    reviewed_retry_map(*args)
+
+    def test_explicit_tpr_proof_resolves_only_static_metadata_not_failed_execution(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.fixture(Path(directory))
+            mapping = reviewed_retry_map(*args)[:1]
+            proof = mapping[0]["input_evidence"]
+            rows = [replica(member["operation_id"], "repeat-1", original=proof["native_input_sha256"])
+                    for member in mapping[0]["members"]]
+            for row in rows:
+                row["shard_id"] = "benchmark"
+                row["science_identity"]["requested_steps"] = 10000
+                row["requested_domain"] = [0, 10000]
+                row["attempt_intervals"] = [[0, 10000]]
+                row["work"] = work_accounting([[0, 10000]], [0, 10000])
+            failed = rows[0]
+            failed["science_identity"].update(particle_count=None, timestep_ps=None, initial_step=None)
+            failed["requested_domain"], failed["attempt_intervals"] = None, [None]
+            failed["work"] = work_accounting([None])
+            result = logical_work(rows, mapping)[0]
+            self.assertEqual(result["work"]["durable_steps"]["value"], 10000)
+            self.assertIsNone(result["work"]["executed_steps"]["value"])
+            self.assertIsNone(failed["science_identity"]["particle_count"])
+            self.assertEqual(result["science_identity"]["particle_count"], 1000)
+            self.assertEqual(result["science_identity_resolution"]["filled_fields"][0]["operation_id"], failed["operation_id"])
+            source = Path(proof["sources"][0]["receipt"]).with_name("request.json")
+            source.write_text("{}")
+            with self.assertRaisesRegex(ValueError, "source request/provenance changed"):
+                logical_work(rows, mapping)
+
+
 class PricingTests(unittest.TestCase):
     def price(self, platform, preset, count, date="2026-10-03", region="eu-north1"):
         return hourly_price(preset_shape(platform, preset, region), count, REFS, date)
@@ -179,6 +257,15 @@ class MetricTests(unittest.TestCase):
         for rate in (-1, float("nan"), float("inf")):
             with self.assertRaises(ValueError):
                 command_metrics(rate, .002, 1000, 1, 1, 1)
+
+    def test_peer_staging_zero_is_measured_but_missing_is_unknown(self):
+        self.assertEqual(staging_measurements({}), (None, None))
+        self.assertEqual(staging_measurements({"mpi_input_staging": {"wall_seconds": .01, "peers": []}}), (.01, 0))
+        self.assertEqual(staging_measurements({"mpi_input_staging": {"wall_seconds": .2, "peers": [
+            {"bytes_transferred": 100, "host": "DO_NOT_EXPORT"}, {"bytes_transferred": 200}]}}), (.2, 300))
+        for staging in ({"wall_seconds": -1}, {"wall_seconds": 1, "peers": [{"bytes_transferred": -1}]}):
+            with self.assertRaises(ValueError):
+                staging_measurements({"mpi_input_staging": staging})
 
     def test_release_bounds_not_a_single_exact_time(self):
         result = allocation_bounds({"scheduled_at": "2026-10-03T10:00:00Z",
@@ -304,6 +391,39 @@ class IntegrationTests(unittest.TestCase):
             self.assertEqual(row["public_gtx1080_ns_day"], "6.7")
             with self.assertRaises(FileExistsError):
                 write_summary_csv(report, output)
+
+    def test_measured_phase_fields_have_gpu_occupancy_but_no_fake_compute_or_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            p = self.fixture(Path(directory))
+            ledger = Ledger(p)
+            ledger.measure("op", "a1", "", "pod:pod", "init_container_process_seconds", {
+                "total_seconds": 3, "containers": [{"name": "materialize-0", "seconds": 3}]}, "seconds", "measured", "pods")
+            ledger.measure("op", "a1", "", "pod:pod", "post_stage_collector_tail_bounds", {
+                "lower": 2, "upper": 5}, "seconds", "bounded", "pods")
+            detail = {"command": ["gmx", "mdrun"], "native_mdrun_counter_wall_seconds": 40,
+                      "native_mdrun_counter_source": "verified-native.log", "ledger_source": "checkpoint.json",
+                      "mpi_input_staging": {"wall_seconds": 2, "peers": [{"bytes_transferred": 100, "host": "DO_NOT_EXPORT"}]}}
+            ledger.db.execute("UPDATE commands SET raw_json=?", (canonical(detail),))
+            ledger.db.execute("INSERT INTO commands VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                "op", "job", "a1", "energy-1", 1, "analysis", "2026-10-03T10:01:02Z", "2026-10-03T10:01:00Z",
+                2, 0, None, None, canonical({"command": ["gmx", "energy"], "ledger_source": "checkpoint.json"})))
+            ledger.db.commit()
+            ledger.db.close()
+            report = build_report(p, REFS)
+            phase = report["operations"][0]["phase_accounting"]
+            self.assertEqual(phase["init_container_process_seconds"]["seconds"]["value"], 3)
+            self.assertEqual(phase["native_mdrun_counter_wall_seconds"]["seconds"]["value"], 40)
+            self.assertEqual(phase["native_mdrun_counter_wall_seconds"]["gpu_occupancy_seconds"]["value"], 40)
+            self.assertEqual(phase["mpi_input_staging_seconds"]["seconds"]["value"], 2)
+            self.assertEqual(phase["mpi_input_staging_bytes"]["value"], 100)
+            self.assertEqual(phase["analysis_command_seconds"]["seconds"]["value"], 2)
+            self.assertEqual(phase["post_stage_collector_tail_bounds"]["gpu_occupancy_seconds"]["upper"], 5)
+            self.assertEqual(report["commands"][0]["metrics"]["mdrun_wall_seconds"]["value"], 50)
+            for name in ("initialization_seconds", "checkpoint_seconds", "export_seconds", "simulation_only_seconds"):
+                self.assertIsNone(phase[name]["value"])
+            self.assertNotIn("DO_NOT_EXPORT", canonical(report))
+            self.assertEqual(len(report["commands"]), 1)
+            self.assertEqual(len(report["command_phases"]), 2)
 
 
 if __name__ == "__main__":

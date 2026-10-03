@@ -230,6 +230,66 @@ def command_metrics(rate, dt, atoms, gpu_count, wall, steps):
     }
 
 
+def measured_phase(seconds, gpu_count, hourly, source, scope):
+    if seconds is not None and (type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0):
+        raise ValueError("Invalid retained phase duration")
+    return {"seconds": metric(seconds, "seconds", "measured", scope),
+            "gpu_occupancy_seconds": metric(seconds * gpu_count if seconds is not None and gpu_count else None,
+                                             "GPU-seconds", "allocation_model",
+                                             "reserved GPU shape during CPU/native work; not GPU utilization"),
+            "allocated_cost": metric(seconds * hourly / 3600 if seconds is not None and hourly is not None else None,
+                                     "USD", "modelled", "dated allocation-share scenario, not invoice"),
+            "source": source}
+
+
+def staging_measurements(detail):
+    staging = detail.get("mpi_input_staging")
+    if not isinstance(staging, dict):
+        return None, None
+    seconds, peers = staging.get("wall_seconds"), staging.get("peers")
+    if seconds is not None and (type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0):
+        raise ValueError("Invalid measured MPI staging time")
+    sizes = [peer.get("bytes_transferred") for peer in peers] if isinstance(peers, list) else None
+    if sizes is not None and any(type(size) is not int or size < 0 for size in sizes):
+        raise ValueError("Invalid measured MPI staging byte count")
+    # Empty peer list is a real single-node zero, unlike missing measurement.
+    return seconds, sum(sizes) if sizes is not None else None
+
+
+def phase_summary(allocation_phases, command_phases):
+    """Observed sums only. These nested scopes must not be summed as a partition."""
+    result = {"scope": "observed records only, not a complete non-overlapping timeline; native counter is inside mdrun wall"}
+    for name, records in (
+        ("init_container_process_seconds", allocation_phases),
+        ("native_mdrun_counter_wall_seconds", command_phases),
+        ("mpi_input_staging_seconds", command_phases),
+        ("analysis_command_seconds", command_phases),
+    ):
+        selected = [row[name] for row in records if name in row]
+        entry = {"observed_record_count": len(selected)}
+        for column, unit in (("seconds", "seconds"), ("gpu_occupancy_seconds", "GPU-seconds"), ("allocated_cost", "USD")):
+            known = [row[column]["value"] for row in selected if row[column]["value"] is not None]
+            entry[column] = metric(sum(known) if known else None, unit, "observed_sum",
+                                   "partial coverage possible; no inference for missing records")
+            entry[column]["known_records"] = len(known)
+            entry[column]["unknown_records"] = len(selected) - len(known)
+        result[name] = entry
+    byte_rows = [row["mpi_input_staging_bytes"]["value"] for row in command_phases
+                 if "mpi_input_staging_bytes" in row]
+    known = [value for value in byte_rows if value is not None]
+    result["mpi_input_staging_bytes"] = metric(sum(known) if known else None, "bytes", "observed_sum",
+                                               "sum of recorded peer transfer bytes, not shared input size")
+    tails = [row["post_stage_collector_tail_bounds"] for row in allocation_phases]
+    result["post_stage_collector_tail_bounds"] = {
+        "seconds": sum_bounds(tails, "seconds"),
+        "gpu_occupancy_seconds": sum_bounds(tails, "gpu_occupancy_seconds"),
+        "allocated_cost": sum_bounds(tails, "allocated_cost"),
+        "scope": "post-worker collector only; earlier overlapping checkpoint and export excluded"}
+    for name in ("initialization_seconds", "checkpoint_seconds", "export_seconds", "simulation_only_seconds"):
+        result[name] = metric(None, "seconds", reason="separate phase timer absent; do not assign gaps or active_compute")
+    return result
+
+
 def read_cohorts(paths):
     """Allowlist saved receipt facts; do not propagate URLs, keys, or raw JSON."""
     result = {}
@@ -299,6 +359,127 @@ def measurement_index(db):
     return index
 
 
+def reviewed_retry_map(rest_b, rest_c, matrix_d, fixtures):
+    """Only the explicitly authorized B→C MEM/RIB and B→C→D PEP retries.
+
+    This verifies original TPR bytes and complete request parameters except the
+    new output namespace/budget. It never groups MPI shapes, controls, REST-A
+    forced-reset runs or intentional repeat-1/2/3 with each other. Generating a
+    map does not bypass logical_work's evidence completeness checks.
+    """
+    groups = []
+    for case in ("benchmem", "benchrib", "benchpep", "benchpep-h"):
+        roots = [Path(rest_b) / case, Path(rest_c) / case]
+        if case in {"benchpep", "benchpep-h"}:
+            roots.append(Path(matrix_d) / case)
+        fixture = Path(fixtures) / case
+        original_sha = sha256(fixture / "original.tpr")
+        bundle_sha = sha256(fixture / "input.tar.gz")
+        operations, identities, sources = [], [], []
+        for index, root in enumerate(roots):
+            receipt = json.loads((root / "receipt.json").read_text())
+            request = json.loads((root / "request.json").read_text())["parameters"]
+            provenance = json.loads((root / "provenance.json").read_text())
+            if (provenance.get("tpr_sha256") != original_sha or provenance.get("bundle_sha256") != bundle_sha
+                    or receipt.get("input_sha256") != bundle_sha or not receipt.get("operation_id")
+                    or request.get("schema") != "fs2-serve.nebius.ai/gromacs-workflow-request/v1"
+                    or receipt.get("steps") != 10000 or receipt.get("repetitions") != 3
+                    or index == 0 and receipt.get("state") not in {"failed", "collected_failure", "cancelled", "expired", "preempted"}):
+                raise ValueError("Reviewed retry lineage input, failed predecessor or single-GPU protocol differs")
+            if (len(request["jobs"]) != 1 or request["jobs"][0]["id"] != "benchmark"
+                    or [step["id"] for step in request["jobs"][0]["steps"] if step["command"] == "mdrun"]
+                    != ["repeat-1", "repeat-2", "repeat-3"]):
+                raise ValueError("Reviewed retry lineage must retain all three distinct repeats")
+            validate_repeat_input(request)
+            identities.append(canonical({k: v for k, v in request.items() if k not in {"output_prefix", "max_output_bytes"}}))
+            operations.append(receipt["operation_id"])
+            sources.append({"receipt": str(root / "receipt.json"), "request_sha256": sha256(root / "request.json"),
+                            "provenance_sha256": sha256(root / "provenance.json"), "retained_state": receipt.get("state")})
+        if len(set(identities)) != 1 or len(set(operations)) != len(operations):
+            raise ValueError("Retry request physics/protocol changed or an operation was repeated")
+        for repeat in (1, 2, 3):
+            groups.append({"logical_id": f"reviewed-{case}-repeat-{repeat}",
+                "reason": f"explicit system/qa retry lineage: unsuccessful REST-B ({sources[0]['retained_state']}) → REST-C" +
+                          (" → matrix REST-D; larger output envelope" if len(roots) == 3 else ""),
+                "members": [{"operation_id": op, "shard_id": "benchmark", "replica_id": f"repeat-{repeat}"}
+                            for op in operations],
+                "input_evidence": {"native_input_sha256": original_sha, "bundle_sha256": bundle_sha,
+                    "request_parameters_sha256": hashlib.sha256(identities[0].encode()).hexdigest(),
+                    "original_tpr": str(fixture / "original.tpr"), "sources": sources}})
+    return groups
+
+
+def validate_repeat_input(request):
+    for step in request["jobs"][0]["steps"]:
+        if step["command"] != "mdrun":
+            continue
+        args = step["args"]
+        if (args.count("-s") != 1 or args.index("-s") + 1 >= len(args)
+                or args[args.index("-s") + 1] != "benchmark.tpr"
+                or "-cpi" in args or step.get("restart_checkpoint")):
+            raise ValueError("Reviewed repeats must each start from the same unchanged finite TPR")
+
+
+def resolved_retry_science(rows, entry, all_replicas=()):
+    """Transfer only immutable TPR metadata through explicit reverified proof.
+
+    A before-start failure can lack its own log forever. Matching original bytes
+    AND native request parameters allows static atom/dt/initial-step metadata
+    from another member, but never fabricated execution, checkpoint or timing.
+    Individual attempt/replica measurements remain untouched and unknown.
+    """
+    science = [row["science_identity"] for row in rows]
+    proof = entry.get("input_evidence")
+    if proof is None:
+        if len({canonical(value) for value in science}) != 1 or any(v is None for v in science[0].values()):
+            raise ValueError("retry group science/step identity mismatch or missing evidence")
+        return science[0], None
+    source_tpr = Path(proof["original_tpr"])
+    if (sha256(source_tpr) != proof["native_input_sha256"]
+            or sha256(source_tpr.with_name("input.tar.gz")) != proof["bundle_sha256"]
+            or any(value.get("native_input_sha256") != proof["native_input_sha256"] for value in science)):
+        raise ValueError("Retry group's original TPR/bundle bytes differ")
+    source_ops, source_steps = [], set()
+    for source in proof["sources"]:
+        receipt_path = Path(source["receipt"])
+        request_path, provenance_path = receipt_path.with_name("request.json"), receipt_path.with_name("provenance.json")
+        if sha256(request_path) != source["request_sha256"] or sha256(provenance_path) != source["provenance_sha256"]:
+            raise ValueError("Retry source request/provenance changed")
+        receipt = json.loads(receipt_path.read_text())
+        request = json.loads(request_path.read_text())["parameters"]
+        validate_repeat_input(request)
+        identity = canonical({k: v for k, v in request.items() if k not in {"output_prefix", "max_output_bytes"}})
+        if (hashlib.sha256(identity.encode()).hexdigest() != proof["request_parameters_sha256"]
+                or receipt.get("input_sha256") != proof["bundle_sha256"]):
+            raise ValueError("Retry request parameters or input bundle differ")
+        source_ops.append(receipt["operation_id"])
+        source_steps.add(receipt.get("steps"))
+    if sorted(source_ops) != sorted(row["operation_id"] for row in rows):
+        raise ValueError("Retry proof does not cover exactly these members")
+    # The retained request proves each timing repeat starts from benchmark.tpr.
+    # Its static input metadata can therefore come from another repeat of these
+    # exact operations. No step interval, rate or time is transferred or merged.
+    donors = [row for row in all_replicas if row["operation_id"] in source_ops
+              and row["science_identity"]["native_input_sha256"] == proof["native_input_sha256"]]
+    metadata = science + [row["science_identity"] for row in donors]
+    resolved = {}
+    for field in ("native_input_sha256", "particle_count", "timestep_ps", "initial_step", "requested_steps"):
+        known = {value[field] for value in metadata if value[field] is not None}
+        if len(known) != 1:
+            raise ValueError("Conflicting or absent immutable native-input metadata")
+        resolved[field] = next(iter(known))
+    if source_steps != {resolved["requested_steps"]}:
+        raise ValueError("Retry requested step domain differs from its retained receipts")
+    return resolved, {"method": "explicit original TPR and native request hash equivalence",
+                      "native_input_sha256": proof["native_input_sha256"],
+                      "scope": "static input metadata only; attempt progress/timing remain original",
+                      "metadata_donors": [{key: row[key] for key in ("operation_id", "shard_id", "replica_id")}
+                                          for row in donors if all(value is not None for value in row["science_identity"].values())],
+                      "filled_fields": [{"operation_id": row["operation_id"],
+                                         "fields": [field for field, value in row["science_identity"].items() if value is None]}
+                                        for row in rows if any(value is None for value in row["science_identity"].values())]}
+
+
 def logical_work(replica_rows, retry_map):
     lookup = {tuple(row[k] for k in ("operation_id", "shard_id", "replica_id")): row
               for row in replica_rows}
@@ -314,29 +495,28 @@ def logical_work(replica_rows, retry_map):
         if len(set(keys)) != len(keys) or consumed.intersection(keys):
             raise ValueError("logical retry membership is not unique")
         rows = [lookup[k] for k in keys]
-        # Missing identity is never evidence of equivalence.
-        science = [canonical(r["science_identity"]) for r in rows]
-        if (len(set(science)) != 1 or any(v is None for v in rows[0]["science_identity"].values())):
-            raise ValueError("retry group science/step identity mismatch or missing evidence")
+        science, resolution = resolved_retry_science(rows, entry, replica_rows)
         # Repeat identifiers separate intended work even when their TPR matches.
         if len({r["replica_id"] for r in rows}) != 1:
             raise ValueError("intentional timing repeats cannot be collapsed as retries")
         consumed.update(keys)
-        groups.append((entry["logical_id"], entry["reason"], rows))
+        groups.append((entry["logical_id"], entry["reason"], rows, science, resolution))
     for key, row in lookup.items():
         if key not in consumed:
-            groups.append(("/".join(key), "operation-local default; no cross-operation inference", [row]))
+            groups.append(("/".join(key), "operation-local default; no cross-operation inference", [row], row["science_identity"], None))
     result = []
-    for identity, reason, rows in groups:
+    for identity, reason, rows, science, resolution in groups:
         intervals = [value for row in rows for value in row["attempt_intervals"]]
         executed = [r["work"]["executed_steps"]["value"] for r in rows]
-        work = work_accounting(intervals, rows[0]["requested_domain"],
+        domain = ([science["initial_step"], science["initial_step"] + science["requested_steps"]]
+                  if science["initial_step"] is not None and science["requested_steps"] is not None else None)
+        work = work_accounting(intervals, domain,
                                sum(executed) if all(x is not None for x in executed) else None)
-        dt = rows[0]["science_identity"]["timestep_ps"]
+        dt = science["timestep_ps"]
         steps = work["durable_steps"]["value"]
         result.append({"logical_id": identity, "reason": reason,
                        "members": [{k: row[k] for k in ("operation_id", "shard_id", "replica_id")} for row in rows],
-                       "science_identity": rows[0]["science_identity"], "work": work,
+                       "science_identity": science, "science_identity_resolution": resolution, "work": work,
                        "useful_ns": metric(steps * dt / 1000 if steps is not None and dt else None, "ns")})
     return result
 
@@ -447,6 +627,30 @@ def build_report(database, references, cohorts=(), retry_map=(), pricing_date="2
                             "allocated_occupancy_cost": {**cost, "unit": "USD", "status": "modelled_bounds"},
                             "images": json.loads(raw["images_json"] or "{}")})
 
+    allocation_phases = []
+    for row in allocations:
+        prefix = (row["operation_id"], row["attempt_id"], "", "pod:" + row["pod_uid"])
+        init = measurements.get((*prefix, "init_container_process_seconds"), {})
+        tail = measurements.get((*prefix, "post_stage_collector_tail_bounds"), {})
+        init_value, tail_value = init.get("value") or {}, tail.get("value") or {}
+        hourly = row["price"]["allocated_share_per_hour"]
+        low, high = tail_value.get("lower"), tail_value.get("upper")
+        bounds = {"lower": low, "upper": high}
+        allocation_phases.append({"operation_id": row["operation_id"], "attempt_id": row["attempt_id"],
+            "pod_uid": row["pod_uid"], "gpu_count": row["gpu_count"],
+            "init_container_process_seconds": measured_phase(init_value.get("total_seconds"), row["gpu_count"],
+                hourly, init.get("source"), "Kubernetes init process lifetime, not transfer-only"),
+            "init_containers": [{key: item.get(key) for key in ("name", "seconds", "started_at", "finished_at", "exit_code")}
+                                for item in init_value.get("containers", [])],
+            "post_stage_collector_tail_bounds": {
+                "seconds": bounds,
+                "gpu_occupancy_seconds": {side: value * row["gpu_count"] if value is not None and row["gpu_count"] else None
+                                           for side, value in bounds.items()},
+                "allocated_cost": {side: value * hourly / 3600 if value is not None and hourly is not None else None
+                                   for side, value in bounds.items()},
+                "source": tail.get("source"),
+                "scope": "post-worker collector process tail; observation-bounded unless termination captured; not total export"}})
+
     def value(op, attempt, shard, replica, name):
         return measurements.get((op, attempt, shard, replica, name), {}).get("value")
 
@@ -470,8 +674,8 @@ def build_report(database, references, cohorts=(), retry_map=(), pricing_date="2
                              "science_identity": science, "requested_domain": domain,
                              "attempt_intervals": ranges, "work": work})
     replica_lookup = {(r["operation_id"], r["shard_id"], r["replica_id"]): r for r in replica_rows}
-    command_rows = []
-    for raw in db.execute("SELECT * FROM commands WHERE phase='simulation_and_native_initialization' ORDER BY operation_id,finished_at"):
+    command_rows, command_phases = [], []
+    for raw in db.execute("SELECT * FROM commands ORDER BY operation_id,finished_at"):
         row = dict(raw)
         detail = json.loads(row.pop("raw_json"))
         argv = detail["command"]
@@ -482,6 +686,33 @@ def build_report(database, references, cohorts=(), retry_map=(), pricing_date="2
         covering = [x for x in a if timestamp(x["scheduled_at"]) and timestamp(x["release_upper_bound"])
                     and timestamp(x["scheduled_at"]) <= start and timestamp(x["release_upper_bound"]) >= end]
         ngpu = sum(x["gpu_count"] for x in covering) if covering and all(x["gpu_count"] > 0 for x in covering) else None
+        prices = [x["price"]["allocated_share_per_hour"] for x in covering]
+        hourly = sum(prices) if prices and all(p is not None for p in prices) else None
+        phases = {key: row[key] for key in ("operation_id", "attempt_id", "shard_id", "command_id", "segment", "phase")}
+        phases.update(gpu_allocation_count=ngpu, pod_uids=[x["pod_uid"] for x in covering])
+        source = detail.get("ledger_source")
+        if row["phase"] == "analysis":
+            phases["analysis_command_seconds"] = measured_phase(row["wall_seconds"], ngpu, hourly, source,
+                "measured energy/eneconv command process wall; CPU work while GPUs remain reserved")
+        if row["phase"] != "simulation_and_native_initialization":
+            command_phases.append(phases)
+            continue
+        phases["native_mdrun_counter_wall_seconds"] = measured_phase(
+            detail.get("native_mdrun_counter_wall_seconds"), ngpu, hourly,
+            detail.get("native_mdrun_counter_source"),
+            "GROMACS Wall t counter, nested inside process wall; includes native counter scope, not pure GPU computation")
+        stage_seconds, stage_bytes = staging_measurements(detail)
+        if "mpi_input_staging" in detail:
+            # Staging occurs BEFORE the mdrun process timer. Require the same
+            # observed Pod allocation to cover that preceding derived interval.
+            staging_cover = [x for x in covering if stage_seconds is not None
+                             and (start - timestamp(x["scheduled_at"])).total_seconds() >= stage_seconds]
+            sgpu = sum(x["gpu_count"] for x in staging_cover) if staging_cover and len(staging_cover) == len(covering) else None
+            phases["mpi_input_staging_seconds"] = measured_phase(stage_seconds, sgpu, hourly if sgpu else None, source,
+                "coordinator peer-staging wall before mdrun; parallel peers are not summed; UTC boundaries derived")
+            phases["mpi_input_staging_bytes"] = metric(stage_bytes, "bytes", "measured",
+                                                        "sum of recorded peer transferred bytes; empty peer list means zero")
+        command_phases.append(phases)
         replica = replica_lookup.get((row["operation_id"], row["shard_id"], row["command_id"]), {})
         science = replica.get("science_identity", {})
         # Per-command work is not inferred from terminal checkpoint alone after
@@ -496,7 +727,6 @@ def build_report(database, references, cohorts=(), retry_map=(), pricing_date="2
                  if flag in argv and argv.index(flag) + 1 < len(argv)}
         metrics = command_metrics(row["ns_per_day"], science.get("timestep_ps"),
                                   science.get("particle_count"), ngpu, row["wall_seconds"], steps)
-        prices = [x["price"]["allocated_share_per_hour"] for x in covering]
         metrics["mdrun_wall_cost"] = metric(row["wall_seconds"] / 3600 * sum(prices)
             if prices and all(p is not None for p in prices) else None, "USD", "modelled",
             "command wall includes native initialization; allocation share, not invoice")
@@ -520,6 +750,9 @@ def build_report(database, references, cohorts=(), retry_map=(), pricing_date="2
                        occupancy_gpu_seconds={**sum_bounds(a, "occupancy_seconds", lambda x: x["gpu_count"]), "unit": "GPU-seconds"},
                        allocated_occupancy_cost={**sum_bounds(a, "allocated_occupancy_cost"), "unit": "USD"},
                        simulation_only_cost=metric(None, "USD", reason="native phase timer not measured"))
+        attempt["phase_accounting"] = phase_summary(
+            [row for row in allocation_phases if row["operation_id"] == op and row["attempt_id"] == aid],
+            [row for row in command_phases if row["operation_id"] == op and row["attempt_id"] == aid])
     comparisons = []
     for operation in operations:
         op = operation["operation_id"]
@@ -548,6 +781,9 @@ def build_report(database, references, cohorts=(), retry_map=(), pricing_date="2
                          allocated_occupancy_cost={**cost, "unit": "USD"},
                          simulation_only_cost=metric(None, "USD", reason="native phase timer not measured"))
         comparisons.append(public_comparison(operation, r, c, references))
+        operation["phase_accounting"] = phase_summary(
+            [row for row in allocation_phases if row["operation_id"] == op],
+            [row for row in command_phases if row["operation_id"] == op])
     examples = []
     for count in (1, 2, 4, 8, 16):
         per_node = 1 if count == 1 else min(8, count)
@@ -571,13 +807,15 @@ def build_report(database, references, cohorts=(), retry_map=(), pricing_date="2
             "limitations": ["No GPU utilization or invoice derived from allocation. VM lifetime outside Pod scope excluded.",
                             "Pod lifetime release bounds are not exact device-plugin release times.",
                             "Missing attempt telemetry prevents a complete operation cost; observed rows are retained.",
-                            "Native simulation-only, initialization, checkpoint/export phase costs and uncommitted retry work remain unknown.",
+                            "Native counter wall, init-container process, MPI peer staging, analysis and post-stage collector tail are separate observed scopes, not a timeline partition.",
+                            "Lifecycle active_compute is the worker-container phase, never relabelled pure native GPU compute. Exact simulation-only, initialization and checkpoint/export remain unknown.",
                             "Native rates are warmup-policy-specific; do not pool corrected and forced-reset runs.",
                             "Ledger progress is durable evidence, not proof of scientific equilibrium or independent replicas.",
                             "Cross-operation retries are separate unless explicitly mapped; a case-name match is insufficient."],
             "price_reference": references["pricing"], "public_sources": references["sources"],
             "shape_examples": examples, "operations": operations, "attempts": attempts,
             "allocations": allocations, "replicas": replica_rows, "commands": command_rows,
+            "allocation_phases": allocation_phases, "command_phases": command_phases,
             "logical_work": logical, "logical_operation_costs": logical_operation_costs(logical, operations),
             "public_comparisons": comparisons}
 

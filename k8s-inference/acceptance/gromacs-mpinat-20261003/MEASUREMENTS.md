@@ -95,3 +95,83 @@ release, native initialization vs integration, and checkpoint/export subspans.
 Their raw lifecycle/container/native observations are retained, but unresolved
 fields remain explicitly unknown. Do not advertise complete exact phase timing
 or billing reconciliation until those gaps are closed and recovery is exercised.
+
+## Retained phase measurements now indexed
+
+The offline parser/report adds these explicitly named fields without changing
+the deployed runtime or relabelling lifecycle `active_compute`:
+
+| Field | Evidence and limits |
+| --- | --- |
+| `init_container_process_seconds` | Kubernetes init-container `startedAt`/`finishedAt`, at its recorded timestamp resolution. Includes interpreter startup, downloading, validation and extraction; not transfer-only. |
+| `native_mdrun_counter_wall_seconds` | One unambiguous GROMACS `Core t (s) / Wall t (s)` table in the hash-verified command log. Uses Wall t, not summed CPU core seconds or rank times. Native counter scope, **not pure GPU compute**. |
+| `mpi_input_staging_seconds` / `mpi_input_staging_bytes` | Retained coordinator stager monotonic wall and sum of per-peer transferred bytes. The timer precedes mdrun; parallel peer durations are not added. An explicit empty peer list is measured zero bytes; absent instrumentation is unknown. |
+| `analysis_command_seconds` | Monotonic process wall for retained `energy` and `eneconv` commands. Usually CPU work while GPUs remain reserved. |
+| `post_stage_collector_tail_bounds` | Worker exit to collector termination when captured; otherwise last collector-running observation is a lower bound and first Pod disappearance is an upper bound. This excludes overlapping checkpoint/export before worker exit and is not total export time. |
+
+`allocation_phases` and `command_phases` retain the per-Pod/per-command rows;
+attempts and operations contain `phase_accounting` observed sums, known/unknown
+record counts, modelled reserved GPU-seconds and dated allocation-share costs.
+These are **not a complete, mutually exclusive timeline**. Native counter time
+is nested inside mdrun process wall; do not sum both. No utilization or invoice
+is inferred from GPU reservation. Unknown initialization/integration-only,
+checkpoint and total-export durations remain null. Incomplete attempt telemetry
+still prevents a complete operation occupancy cost.
+
+Completed native result artifacts can fill gaps when checkpoint recovery has
+not run yet. The parser rechecks result/log hashes and input-operation identity.
+With multiple attempts, commands copied into the final result are not simply
+assigned to the latest attempt. Missing attribution remains unknown.
+
+For MPI, save case-local `frozen-plan.json` from the exact admitted plan:
+
+```json
+{"operation_id":"UUID","tenant_id":"system","model_id":"gromacs-mpi",
+ "plan":{"stages":[{"stage_id":"workflow","mode":"gang-jobset"}]},
+ "captured_at":"UTC timestamp","source":"postgresql-admitted-plan"}
+```
+
+The capture helper uses a bounded read-only PostgreSQL selection of task receipt
+IDs; no credentials or whole durable state are needed. Only frozen
+`mode=gang-jobset` permits mapping public attempt `shard_id=null` to the sole
+native job ID. The original public shard stays in raw attempt evidence.
+An independent job literally named `gang` remains literal. Missing/ambiguous
+frozen mode is not guessed from the job name or GPU shape.
+
+## Explicit cross-operation retry lineage
+
+`cost_report.reviewed_retry_map` constructs only the reviewed REST-B→C MEM/RIB
+and REST-B→C→matrix REST-D PEP chains. REST-B PEP was cancelled, not failed;
+its actual state is retained. It streams hashes of the original TPR and bundle,
+compares every request parameter except output namespace and output byte budget,
+and creates twelve separate groups (`repeat-1/2/3` for four systems). It rejects
+MPI shapes, changed protocols, missing inputs and duplicate operation identities.
+Neither REST-A forced-reset experiments nor purposeful PME/shape controls are
+merged. Intentional timing repeats remain separate logical work.
+
+Apply the saved map explicitly with `cost_report.py --retry-map PATH`. A
+before-start failure may have no native log forever. Only with this reverified
+original-TPR/request proof can a logical group obtain static atom count, dt and
+initial step from another retained repeat of those exact operations, all proved
+to start from the same finite TPR. Donor IDs and filled fields are reported;
+individual measured rows stay unknown. No executed steps, checkpoint interval,
+native time or rate is transferred. Conflicting or wholly absent input metadata
+still fails closed. Each operation's allocation cost is counted once across its
+three logical repeats.
+
+## Smallest remaining instrumentation hooks (not deployed)
+
+1. Record bounded UTC start/end plus monotonic duration around worker setup,
+   checkpoint inventory/ack waiting and final inventory; attach operation,
+   attempt, native job, generation and an allowlisted phase name.
+2. In the companion, separately time restore download/verification, native
+   checkpoint publication, customer-object transfer and final manifest commit;
+   retain byte counts and success/failure, never keys or signed URLs.
+3. Correlate nested/parallel spans by generation and attempt; do not add peer
+   staging or overlapping checkpoint/export spans as if serial. Distinguish
+   coordinator and peer Pod reservation.
+4. Test retries, partial failures, cancellation, zero-byte reuse and duplicate
+   observation. Requalify the exact modified runtime before changing live images.
+
+Until those hooks exist, subtracting native Wall t from process wall does not
+measure initialization; assigning all post-worker time to export is also wrong.
