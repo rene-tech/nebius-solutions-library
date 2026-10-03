@@ -341,6 +341,32 @@ def test_failed_upload_never_acknowledges_diagnostic_publication(tmp_path, monke
     assert not (tmp_path / ".fs2/checkpoint-ack.json").exists()
 
 
+@pytest.mark.parametrize("collector", [item.collector_id for item in WORKFLOWS])
+def test_failed_log_reuses_checkpoint_upload_identity_without_certifying_progress(tmp_path, monkeypatch, collector):
+    invocation, _, _ = fixture(tmp_path, collector)
+    native_identity = f"{invocation.produces}:test-attempt:native-file"
+    native_digest = hashlib.sha256(NATIVE_ERROR).hexdigest()
+    original_upload = Client.upload
+
+    def content_addressed_upload(self, *, identity, content, media_type, compression):
+        # The checkpoint transport may have uploaded this closed native log
+        # before the engine exited. Production reserves one upload identity per
+        # attempt/digest; a diagnostic-specific identity used to raise HTTP 409.
+        if hashlib.sha256(content).hexdigest() == native_digest:
+            assert identity == native_identity, "conflicting upload reservation for checkpointed failure log"
+            assert media_type == "text/plain"
+            assert compression in (None, "none")
+        return original_upload(self, identity=identity, content=content,
+                               media_type=media_type, compression=compression)
+
+    monkeypatch.setattr(Client, "upload", content_addressed_upload)
+    client = collect(invocation, tmp_path, monkeypatch)
+    assert any(content == NATIVE_ERROR and identity == native_identity for _, content, identity in client.uploads)
+    assert (tmp_path / ".fs2/failed-diagnostics-ack.json").exists()
+    assert not (tmp_path / ".fs2/checkpoint-ack.json").exists()
+    assert not (tmp_path / ".fs2/stage-complete.json").exists()
+
+
 @pytest.mark.asyncio
 async def test_failed_artifacts_remain_owner_scoped_and_not_committed_science(tmp_path, monkeypatch):
     invocation, _, _ = fixture(tmp_path)

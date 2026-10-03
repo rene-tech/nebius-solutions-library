@@ -17,7 +17,8 @@ class PreparationTests(unittest.TestCase):
         md = [step for step in steps if step["command"] == "mdrun"]
         self.assertEqual(len(md), 3)
         for step in md:
-            self.assertIn("-resethway", step["args"])
+            self.assertNotIn("-resethway", step["args"])
+            self.assertNotIn("-resetstep", step["args"])
             self.assertEqual(step["args"][step["args"].index("-update") + 1], "cpu")
 
     def test_peph_offload_is_not_copied_to_mpi(self):

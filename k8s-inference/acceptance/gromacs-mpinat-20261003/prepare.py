@@ -55,7 +55,11 @@ def parameters(case, steps=10000, repetitions=3, mpi_nodes=None):
     for rep in range(1, repetitions + 1):
         # Leave native automatic dispatch for free-energy systems. For standard
         # all-bonds inputs explicitly retain CPU update; PEP-h may use GPU update.
-        args = ["-s", "benchmark.tpr", "-deffnm", f"repeat{rep}", "-resethway", "-nb", "gpu"]
+        # The upstream short-run example resets at step 5000. With current
+        # GPU PME tuning this aborts otherwise valid MD (observed REST-A).
+        # Keep tuning enabled and retain whole-run timing, including warmup.
+        # Never label this inclusive timing as post-tuning steady state.
+        args = ["-s", "benchmark.tpr", "-deffnm", f"repeat{rep}", "-nb", "gpu"]
         if case["id"] in {"benchmem", "benchpep", "benchrib"}:
             args += ["-update", "cpu"]
         if case["id"] == "benchpep-h" and not mpi_nodes:
@@ -130,7 +134,7 @@ def main():
     with ThreadPoolExecutor(max_workers=4) as executor:
         rows = list(executor.map(lambda row: prepare(row, args.output), parser.rows))
     save(args.output / "suite.json", {"source": SOURCE, "cases": rows, "steps": 10000,
-                                     "warmup": "reset halfway", "repetitions": 3,
+                                     "warmup": "included; no forced reset during PME tuning", "repetitions": 3,
                                      "scientific_convergence_claimed": False})
 
 
