@@ -420,3 +420,55 @@ with old failures and original-image/recovery associations retained. Task-owned
 QA containers and telemetry stay available until that join completes and local
 state exports verify. Customer/default image promotion remains held, and the
 source-only bounded-study successor still requires immutable-image/live gates.
+
+### Final evidence join and stop-only QA closeout — 18:13 UTC
+
+The [actual-agent benchmark delta](AGENT_BENCHMARK_DELTA.md) now joins all 24
+completed actual-agent operations: eighteen fresh r5 admissions plus six older
+native completions with their original-image and later report-recovery history.
+The immutable 18:05:31.665361 UTC snapshot retains the unchanged 58 baseline
+rows, those 24 successes, six historical scientific failures and one expected
+negative: 89 operations/attempts in total, 72 successful agent logical repeats,
+679 checkpoint/command records, 208 mdrun records and 85 observed allocations.
+Independent validation rehashed 1,027 retained files, checked SQLite integrity
+and foreign keys, and verified that every earlier baseline row stayed unchanged.
+The 594 referenced binary/artifact payloads were intentionally not recopied.
+
+Private evidence is under `agent-accounting-final-r1` in the task handoff:
+
+- `report.json`: `624108cf89c4b4f4f8a7d22afb3b58962288a2cc97fa4c53b9c52cef970233d4`.
+- `durable-lifecycle-sidecar.json`: `3a2a99a1610a7a4f60a6ed3a3a97ae8cdb86c7152225d3018081b8251da63180`.
+- `independent-validation.json`: `c58896f4887633fc5bb7371c35196ca9744ead40870e796003c5e6d826aabbeb`.
+
+Final actual-agent production occupancy totals 8,284 GPU-s for the 24 successful
+operations. This is distinct from chat/study wall time and the dated cost
+scenario in the delta; it is not an invoice. Missing native phase values,
+production classification gaps and historical estimated failure clocks remain
+explicit. During PEP-h, the public runtime projection had missing Pod/node/GPU
+identities and a `gpu_count` of zero despite the observed live L40S Pod. That
+projection is not authoritative allocation evidence and needs a separate
+unknown-versus-zero correction; final accounting uses retained lifecycle/Pod
+evidence instead of concealing the gap.
+
+After the accounting owner released all live dependencies, a fresh paginated
+system/qa GET found zero active operations. Four exact task-owned local Docker
+clients (original MPINAT, r1b, r4 and r5) passed fresh drain, database document/
+index and export-hash checks. At 18:12:43 UTC all four stopped with exit zero;
+their containers, writable layers, bind mounts and verified DB/files exports
+remain intact. The original unbound `/data` is also preserved in its stopped
+container plus exports. No deletion or restore rehearsal was performed.
+One pre-stop check rejected Docker's reordered mount list; an exact comparison
+by destination verified unchanged sources/types/RW values before any stop.
+
+Telemetry-d PID 2400760 exited naturally using its exact STOP marker at
+18:12:36 UTC, after recording no remaining observed benchmark Pods. Its immutable
+evidence is retained. Closeout receipt: `qa-client-closeout/final-closeout.json`
+in the task handoff. No customer/default/Serverless instance, API key, bucket,
+limit or hot App changed. Both benchmark supervisors were already terminal.
+
+This closes background execution and evidence collection, not the full release.
+Client error/advisory history remains visible. The fair-study successor is
+source-only at `75461cad5bfda0dfab175199a8c1b05e4fe558e1` (117 offline tests),
+with packaging and actual overlap/restart/delivery qualification still pending.
+Eight/sixteen-GPU capacity qualification and default/customer promotion remain
+explicit unmet gates; no remaining worker is silently pursuing them.
