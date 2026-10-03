@@ -3,7 +3,61 @@
 This is **not** a completed REST/agent/MPI qualification. Never use the successful
 subset to describe the whole suite or a sixteen-GPU MPI execution as working.
 
-## Latest checkpoint — 13:15 UTC
+## Latest checkpoint — 13:38 UTC
+
+The final shape-aware API `d789a4b7…fed68` and native single/MPI images below
+were activated; all three readers passed exact-image/public-discovery checks.
+The first hosted MPI1×1 attempt then failed **before engine startup**: an
+independent job named `gang` was mistaken for a true multi-node JobSet's null
+shard. Operation `0a828a8f-a743-4055-b605-efe24dba9a1f` and its 43 retained Loki
+lines establish the input-download409 failure; native-Pod success had not
+covered this hosted artifact boundary.
+
+Fix `ccd8482bec7087b55b6958ca1d18980b4a5fa2af` resolves the shard from the
+immutable admitted execution mode and uses the authorized attempt's actual
+shard for checkpoint recovery. It preserves stale/cancelled-attempt rejection
+and cross-shard isolation.119 backend tests pass, including independent literal
+`gang`, true JobSet and ordinary fanout. Exact API image
+`368a020e0789f3b2f28d16095f8f5430117388722fdc2a8bee7c9f3532a9bbe9`
+is deployed on all three API readers; exact image/catalog verification and
+public discovery200 are retained in `mpi-capability-verification-r2b`.
+Hosted1x1 retry `d22706c0-c87a-4c57-962d-8f41b0367b4c` passed all three
+timings and36 verified artifacts. The bounded continuation `mpi-lane-r2` now
+runs1x2, then2x1 and MCP equivalents; it never writes policy or cancels PEPs.
+Two large PEP jobs continue under the existing matrix supervisor. Original
+failure evidence remains unchanged. Admitted plans are captured read-only
+from PostgreSQL for exact Job/JobSet measurement attribution.
+
+Actual seeded-agent candidate r3 completed all five first-attempt recoveries:
+15 independently verified timing rows and working native-MD delivery, no GPU
+resubmission. The previous r2 reasoning/tool-budget failure is retained.
+The narrow recovery-help/example improvement also passed on r4: one unchanged
+first-attempt prompt completed in51.2s/12 tool calls versus78.4s/20 on r3,
+with three exact timing rows and working delivery. Image
+`lc@sha256:6d8b2038097b180d5edd997d7346a1b56c879a5f00b4890fcc08b81c2a96b2da`
+comes from `a09a40c1a099bcb2e99c7e03caa644b30f78e86b`. No customer/default
+client changed; this is isolated seeded-agent qualification.
+
+Matched native PME controls completed: on the tested L40S/MEM case, GPU PME
+gave5.97× (one rank) /2.70× (two ranks) the mean CPU-PME rate. Two GPUs still
+performed worse than one. These are fixed-grid warmup-inclusive controls, not
+universal speedups. Open MPI's actual CUDA-awareness is disabled; a separate
+candidate build/correctness investigation is underway, never a forced override.
+
+The requested Lynx extension is prepared in [LYNX_WORKLOADS.md](LYNX_WORKLOADS.md):
+three recorded customer requests, six assumed CPU controls and a packaged
+alanine/MD path, plus MPINAT performance/scaling. Exact private prompts and
+public-equivalent controls are kept separate; tests use only internal QA.
+Complete customer GPCR/production inputs have not been supplied. Current-image
+CPU replay passed3/3 actual and6/6 assumed cases on r4. Original molecule
+parameterization took99.4s (89.1s CPU AM1-BCC phase); all30 exported file hashes,
+requested chemical identities, charges and atom counts were checked. Intentional
+missing-input/stereochemistry requests are expected rejections, not MD success.
+Hosted alanine and19 remaining MPINAT agent executions are still pending;
+CPU passes do not close those gaps.8/16GPU whole-node tests still await free
+capacity without evicting customer Apps.
+
+## Previous checkpoint — 13:15 UTC
 
 Six native candidate checks passed: single H100/L40S, MPI1x1H100,
 MPI1x2/1x4L40S, and legacy2x1H100. All task-owned native Pods/JobSet were
