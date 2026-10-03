@@ -148,8 +148,14 @@ def verify_signed_attestation(
     expected_digest: str,
     expected_model_id: str,
     validation_time: datetime | None = None,
+    enforce_expiry: bool = True,
 ) -> dict[str, Any]:
-    """Verify trust, signature, freshness, session, and the exact payload subject."""
+    """Verify trust, signature, session, and the exact payload subject.
+
+    Evidence leases retain expiry enforcement by default. A durable deployment
+    registration may verify historical signing evidence without treating its
+    evidence window as the lifetime of the configured service.
+    """
 
     item = _exact(
         value,
@@ -195,7 +201,7 @@ def verify_signed_attestation(
     if now.tzinfo is None:
         raise CatalogError("attestation validation time must be timezone-aware")
     now = now.astimezone(timezone.utc).replace(microsecond=0)
-    if issued > now + MAX_CLOCK_SKEW or expires <= now:
+    if issued > now + MAX_CLOCK_SKEW or (enforce_expiry and expires <= now):
         raise CatalogError("signed attestation is not fresh at validation time")
 
     key_id = _text(item["key_id"], "attestation key ID")

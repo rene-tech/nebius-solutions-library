@@ -184,13 +184,14 @@ def test_cross_pair_and_missing_grant_are_not_discoverable_or_admissible(medical
 def test_current_route_revocation_blocks_previously_selected_dispatch(medical):
     old = medical.registry.get(MODEL)
     medical.route.write_text("{}")
-    assert not medical.registry.revalidate()
+    assert medical.registry.revalidate()  # Optional route revocation is not a platform outage.
+    assert medical.registry.validation_health()["healthy"] is True
     with pytest.raises(RuntimeError):
         medical.registry.authorize_qualification_dispatch(old, "demo-a", "presenter-a")
 
 
-@pytest.mark.parametrize("changed", ["checkpoint", "image", "expired", "tampered"])
-def test_signed_identity_and_expiry_fail_closed(medical, changed):
+@pytest.mark.parametrize("changed", ["checkpoint", "image", "tampered"])
+def test_signed_identity_fail_closed(medical, changed):
     doc = copy.deepcopy(medical.document)
     item = doc["models"][MODEL]
     if changed == "checkpoint":
@@ -205,8 +206,63 @@ def test_signed_identity_and_expiry_fail_closed(medical, changed):
         bind_native_serverless(
             medical.gateway, medical.catalog, medical.route, catalog_dir=CATALOG_ROOT,
             trusted_attestors=medical.trust,
-            validation_time=NOW + timedelta(hours=1) if changed == "expired" else NOW,
+            validation_time=NOW,
         )
+
+
+def test_durable_registration_does_not_expire_with_signing_evidence(medical):
+    for when in (NOW + timedelta(hours=1), NOW + timedelta(days=3650)):
+        assert medical.registry.revalidate(validation_time=when)
+        model = medical.registry.get(MODEL)
+        assert model.valid_at(when)
+        assert model.binding.valid_until is None
+        assert medical.registry.validation_health()["healthy"] is True
+
+
+@pytest.mark.parametrize("failure", ["tampered", "missing", "malformed", "revoked-attestor"])
+def test_optional_route_failure_preserves_unrelated_routes_and_recovers(medical, tmp_path, failure):
+    from test_lean_routes import _route
+
+    lean = tmp_path / "lean.json"
+    lean.write_text(json.dumps(_route()))
+    kwargs = dict(
+        catalog_dir=CATALOG_ROOT, bindings_file=tmp_path / "empty-archive-bindings.json",
+        repo_root=REPO_ROOT, evidence_root=None, lean_routes_file=lean,
+        native_serverless_deployments_file=medical.route, trusted_attestors_loader=lambda: medical.trust,
+        validation_time=NOW, max_attempts=2, max_gpu_seconds_per_attempt=60, retry_base_seconds=0.01,
+    )
+    registry = Registry.load(**kwargs)
+    original = medical.route.read_text()
+    trust = dict(medical.trust)
+    if failure == "tampered":
+        doc = json.loads(original)
+        doc["models"][MODEL]["mcp_description"] += " unsigned change"
+        medical.route.write_text(json.dumps(doc))
+    elif failure == "missing":
+        medical.route.unlink()
+    elif failure == "malformed":
+        medical.route.write_text("{}")
+    else:
+        medical.trust.clear()
+    assert registry.revalidate()
+    assert registry.get("qwen3-8b").enabled
+    assert not registry.get(MODEL, require_enabled=False).enabled
+    assert registry.validation_health()["healthy"] is True
+    # Cold process startup must have the same isolation as periodic reload.
+    assert Registry.load(**kwargs).get("qwen3-8b").enabled
+    medical.route.write_text(original)
+    medical.trust.update(trust)
+    assert registry.revalidate()
+    assert registry.get(MODEL).enabled
+
+
+def test_invalid_second_registration_does_not_hide_valid_first_registration(medical):
+    doc = json.loads(medical.route.read_text())
+    doc["models"][BASE] = {"malformed": True}
+    medical.route.write_text(json.dumps(doc))
+    assert medical.registry.revalidate()
+    assert medical.registry.get(MODEL).enabled
+    assert medical.registry.validation_health()["healthy"] is True
 
 
 def test_worker_response_checkpoint_is_checked_not_inferred_from_catalog(medical):

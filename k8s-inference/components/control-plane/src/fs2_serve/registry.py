@@ -38,7 +38,7 @@ from .model_deployment import Visibility
 from .model_deployment_publication import DynamicPublicationSnapshot
 from .models import Principal
 from .native_catalog import augment_native_catalog
-from .native_serverless import QualificationPolicy, bind_native_serverless
+from .native_serverless import QualificationPolicy, bind_native_serverless_isolated
 
 
 class RegistryError(ValueError):
@@ -69,6 +69,7 @@ class OperationalModel:
     variant_digest: str | None = None
     variant_valid_until: str | None = None
     lean_static: bool = False
+    durable_registration: bool = False
     dynamic_policy: DynamicRoutePolicy | None = None
     qualification_policy: QualificationPolicy | None = None
 
@@ -141,7 +142,7 @@ class OperationalModel:
         return self.gateway.model_revision
 
     def valid_at(self, when: datetime) -> bool:
-        if self.lean_static:
+        if self.lean_static or self.durable_registration:
             return True
         if self.variant_valid_until is None:
             return self.binding.valid_at(when)
@@ -376,7 +377,7 @@ class Registry:
         lean_model_ids: frozenset[str] = frozenset()
         if lean_routes_file is not None:
             gateway, lean_model_ids = bind_lean_routes(gateway, lean_routes_file, catalog=catalog)
-        gateway, native_policies = bind_native_serverless(
+        gateway, native_policies = bind_native_serverless_isolated(
             gateway, catalog, native_serverless_deployments_file, catalog_dir=catalog_dir,
             trusted_attestors=trusted_attestors, validation_time=validation_time,
         )
@@ -398,7 +399,9 @@ class Registry:
         for model_id, policy in native_policies.items():
             # A native file accepted by an external worker is not replayable.
             # Scope the single attempt to these explicit demo routes only.
-            models[model_id] = replace(models[model_id], qualification_policy=policy, max_attempts=1)
+            models[model_id] = replace(
+                models[model_id], qualification_policy=policy, max_attempts=1, durable_registration=True,
+            )
         return gateway, models
 
     @classmethod
@@ -728,11 +731,26 @@ class Registry:
                 return self._snapshot
             if source is None:
                 return snapshot
-            if any(model.enabled and not model.valid_at(now) for model in snapshot.models.values()):
-                self._snapshot = self._without_routes(snapshot)
+            expired = {model.id for model in snapshot.models.values() if model.enabled and not model.valid_at(now)}
+            if expired:
+                models = {
+                    model_id: replace(
+                        model, gateway=replace(model.gateway, routable=False, mcp_invocable=False, binding=None),
+                    ) if model_id in expired else model
+                    for model_id, model in snapshot.models.items()
+                }
+                self._snapshot = self._Snapshot(
+                    replace(
+                        snapshot.catalog,
+                        models=MappingProxyType({key: value.gateway for key, value in models.items()}),
+                    ),
+                    MappingProxyType(models),
+                    MappingProxyType({
+                        alias: target for alias, target in snapshot.aliases.items() if target not in expired
+                    }),
+                )
                 self._generation += 1
                 self._checked_at = now
-                self._healthy = False
                 return self._snapshot
             return snapshot
 

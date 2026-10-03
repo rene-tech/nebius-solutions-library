@@ -3,6 +3,23 @@
 This policy is mandatory for every customer, event, proof of concept, and
 hackathon deployment of `k8s-inference`.
 
+## Durable access and availability
+
+Customer API keys are non-expiring by default. Do not add automatic expiry,
+rotation deadlines, or short-lived route-registration windows without an
+explicit operator requirement. Explicit revocation and model grants remain
+effective. A signing-evidence timestamp is not the service lifetime of an
+operator-configured deployment: native Serverless registrations remain active
+until removed or revoked, with their signatures and exact identities verified
+on every reload. Controller leadership leases and signed download URLs are
+separate operational mechanisms, not customer API-key lifetime policies.
+
+Optional App registration failures must not make unrelated Apps or the public
+API unready. Test both process startup and periodic reload with expired signing
+evidence, a missing registration file, a malformed entry, and revoked trust.
+Include a clock-advance regression and real public-API execution; a successful
+catalog listing alone does not establish availability.
+
 ## Governing rule
 
 **A capability may be described as customer-ready only after it succeeds

@@ -4,13 +4,15 @@ This is deployment configuration, not archival SM90 qualification evidence.
 Only named qualification identities may admit it; separately named identities
 may receive catalog metadata only. The native record,
 artifact and two-fixture contract must already validate independently. Existing
-Ed25519, route expiry, tenant grants and pinned-TLS federation remain in force.
+Ed25519, tenant grants and pinned-TLS federation remain in force. Registrations
+persist until removed or revoked; signing-evidence expiry is not service expiry.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -31,6 +33,7 @@ from .lean_routes import _disabled_activation
 from .native_catalog import _artifact
 
 SCHEMA = "fs2-serve.nebius.ai/native-serverless-deployments/v1"
+logger = logging.getLogger(__name__)
 ENTRY_SCHEMA = "fs2-serve.nebius.ai/native-serverless-deployment/v1"
 _DNS = r"^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$"
 _SHA = r"^[a-f0-9]{64}$"
@@ -186,7 +189,7 @@ def signed_subject(model_id: str, document: DeploymentSet, entry: Deployment) ->
     }
 
 
-def _load(path: Path) -> DeploymentSet:
+def _read_document(path: Path) -> dict[str, Any]:
     raw = path.read_bytes()
     if not raw or len(raw) > 4 * 1024 * 1024:
         raise NativeServerlessError("native Serverless deployment file size is invalid")
@@ -202,7 +205,10 @@ def _load(path: Path) -> DeploymentSet:
     def reject_constant(_value: str) -> NoReturn:
         raise NativeServerlessError("nonfinite deployment JSON constant")
 
-    return DeploymentSet.model_validate(json.loads(raw, object_pairs_hook=pairs, parse_constant=reject_constant))
+    value = json.loads(raw, object_pairs_hook=pairs, parse_constant=reject_constant)
+    if not isinstance(value, dict):
+        raise NativeServerlessError("native Serverless deployment document must be an object")
+    return value
 
 
 def bind_native_serverless(
@@ -216,9 +222,77 @@ def bind_native_serverless(
 ) -> tuple[GatewayCatalog, Mapping[str, QualificationPolicy]]:
     if path is None:
         return gateway, MappingProxyType({})
+    return _bind_deployment_set(
+        gateway, catalog, DeploymentSet.model_validate(_read_document(path)),
+        catalog_dir=catalog_dir, trusted_attestors=trusted_attestors, validation_time=validation_time,
+    )
+
+
+def bind_native_serverless_isolated(
+    gateway: GatewayCatalog,
+    catalog: Catalog,
+    path: Path | None,
+    *,
+    catalog_dir: Path,
+    trusted_attestors: Mapping[str, str] | None,
+    validation_time: datetime | None,
+) -> tuple[GatewayCatalog, Mapping[str, QualificationPolicy]]:
+    """Reject only invalid optional registrations, never unrelated serving routes.
+
+    Rebuild from the base gateway on every reload: removed, tampered or revoked
+    registrations cannot survive via a last-known-good route. Log bounded model
+    identities and exception types, not deployment documents or credentials.
+    """
+    if path is None:
+        return gateway, MappingProxyType({})
+    try:
+        raw = _read_document(path)
+        entries = raw.get("models")
+        if not isinstance(entries, dict) or not 1 <= len(entries) <= 32:
+            raise NativeServerlessError("native deployment model inventory is invalid")
+    except (OSError, ValueError) as exc:
+        logger.error("native registration inventory unavailable; other routes retained (%s)", type(exc).__name__)
+        return gateway, MappingProxyType({})
+    policies: dict[str, QualificationPolicy] = {}
+    identities: set[tuple[str, str]] = set()
+    for model_id, entry in entries.items():
+        try:
+            document = DeploymentSet.model_validate({**raw, "models": {model_id: entry}})
+            typed = document.models[model_id]
+            claimed = {
+                ("endpoint", typed.endpoint.endpoint_id),
+                ("service", typed.discovery_service.service_uid),
+                ("nonce", str(typed.attestation.get("nonce"))),
+            }
+            if identities & claimed:
+                raise NativeServerlessError("native registration aliases another deployment")
+            candidate, accepted = _bind_deployment_set(
+                gateway, catalog, document, catalog_dir=catalog_dir,
+                trusted_attestors=trusted_attestors, validation_time=validation_time,
+            )
+        except (OSError, ValueError, KeyError) as exc:
+            logger.error(
+                "native registration rejected; other routes retained: model=%s error=%s",
+                model_id[:128] if re.fullmatch(_DNS, model_id) else "invalid-id", type(exc).__name__,
+            )
+            continue
+        gateway = candidate
+        policies.update(accepted)
+        identities.update(claimed)
+    return gateway, MappingProxyType(policies)
+
+
+def _bind_deployment_set(
+    gateway: GatewayCatalog,
+    catalog: Catalog,
+    document: DeploymentSet,
+    *,
+    catalog_dir: Path,
+    trusted_attestors: Mapping[str, str] | None,
+    validation_time: datetime | None,
+) -> tuple[GatewayCatalog, Mapping[str, QualificationPolicy]]:
     if not trusted_attestors:
         raise NativeServerlessError("native Serverless deployment requires trusted signing authority")
-    document = _load(path)
     if document.gateway_service.port != 8080:
         raise NativeServerlessError("native gateway Service must identify control-plane port8080")
     models, policies = dict(gateway.models), {}
@@ -296,6 +370,7 @@ def bind_native_serverless(
             expected_digest=digest,
             expected_model_id=model_id,
             validation_time=validation_time,
+            enforce_expiry=False,
         )
         claims = {
             "deployment_sha256": digest,
@@ -314,7 +389,7 @@ def bind_native_serverless(
             model_digest=record.digest,
             enabled=True,
             ready=False,
-            valid_until=attestation["expires_at"],
+            valid_until=None,
             execution_mode="http",
             backend_namespace=service.namespace,
             backend_service_name=service.service_name,
