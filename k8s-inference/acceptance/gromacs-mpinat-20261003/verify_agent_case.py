@@ -118,7 +118,17 @@ def validate_native(expected, binding, report, receipt, mapping, fetch, request_
             raise ValueError('Native receipt identity differs from selected case: ' + key)
     if request_receipt.get('request_descriptor', {}).get('compression') != 'gzip':
         raise ValueError('Native upload did not use the requested gzip encoding')
-    if len(report['timing_rows']) != 3 or any(row.get('requested_steps') != 10000 for row in report['timing_rows']):
+    expected_repeats = {(job['id'], step['id']) for job in expected['parameters']['jobs']
+                        for step in job['steps'] if step['command'] == 'mdrun'}
+    rows = report['timing_rows']
+    observed_repeats = {(row.get('job_id'), row.get('step_id')) for row in rows}
+    segments = {(row.get('job_id'), row.get('step_id'), row.get('segment')) for row in rows}
+    # One original repeat may contain several native checkpoint segments. The
+    # report verifier checks each segment's successful command, log and hashes;
+    # selected-case identity must match logical repeats, not a fixed row count.
+    if (len(expected_repeats) != 3 or observed_repeats != expected_repeats
+            or len(segments) != len(rows)
+            or any(row.get('requested_steps') != 10000 for row in rows)):
         raise ValueError('Expected exactly three original 10000-step timing repeats')
     native_results = []
     for source in report['sources']:

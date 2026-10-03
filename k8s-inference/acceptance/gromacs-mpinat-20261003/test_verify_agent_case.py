@@ -93,7 +93,9 @@ class SelectedCaseTests(unittest.TestCase):
                                                        'job': 'benchmark', 'image': 'exact-engine'}))
         body = canonical(native)
         source = {'path': '/workspace/native.json', 'size_bytes': len(body), 'sha256': sha(body)}
-        report = {'operation_id': 'op', 'timing_rows': [{'requested_steps': 10000}] * 3,
+        report = {'operation_id': 'op', 'timing_rows': [
+                  {'job_id': 'benchmark', 'step_id': 'repeat-' + str(i),
+                   'segment': 0, 'requested_steps': 10000} for i in range(1, 4)],
                   'sources': [source]}
         receipt = {'operation_id': 'op', 'identity': {'model_id': 'gromacs', 'source_sha256': 'bundle',
                    'parameters_sha256': expected['parameters_sha256'], 'idempotency_key': 'qa-case'},
@@ -111,6 +113,34 @@ class SelectedCaseTests(unittest.TestCase):
     def test_exact_native_recipe_and_original_tpr_pass(self):
         args = self.native_fixture()
         self.assertTrue(validate_native(*args[:-1])['selected_case_verified'])
+
+    def test_checkpoint_segments_preserve_original_repeat_identity(self):
+        args = self.native_fixture()
+        args[2]['timing_rows'].append(dict(args[2]['timing_rows'][0], segment=1))
+        result = validate_native(*args[:-1])
+        self.assertTrue(result['selected_case_verified'])
+        self.assertEqual(result['repeat_count'], 3)
+        self.assertEqual(result['requested_steps_per_repeat'], 10000)
+
+    def test_checkpoint_rows_cannot_replace_duplicate_or_add_repeats(self):
+        for change in ('duplicate-segment', 'missing-repeat', 'extra-repeat',
+                       'other-job', 'other-step', 'changed-steps'):
+            args = self.native_fixture()
+            rows = args[2]['timing_rows']
+            if change == 'duplicate-segment':
+                rows.append(dict(rows[0]))
+            elif change == 'missing-repeat':
+                rows[2] = dict(rows[0], segment=1)
+            elif change == 'extra-repeat':
+                rows.append(dict(rows[0], step_id='repeat-4'))
+            elif change == 'other-job':
+                rows[0]['job_id'] = 'another-benchmark'
+            elif change == 'other-step':
+                rows[0]['step_id'] = 'another-repeat'
+            else:
+                rows.append(dict(rows[0], segment=1, requested_steps=5000))
+            with self.assertRaisesRegex(ValueError, 'three original', msg=change):
+                validate_native(*args[:-1])
 
     def test_recovery_preserves_original_submission_identity_without_mutation(self):
         expected, binding, report, receipt, mapping, fetch, files = self.native_fixture()

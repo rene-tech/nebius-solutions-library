@@ -361,5 +361,23 @@ This healthy but serial behavior is not advertised as parallel native execution.
 Prepared follow-up TaskDeck card
 `fs2-librechat-bounded-study-interleaving-r20261003` specifies a bounded fair
 cohort under the same owner, complete ambiguity/cancellation barriers and
-exact-candidate overlap/restart tests. It is not implemented or deployed, and
-the active benchmark is not modified to conceal the limitation.
+exact-candidate overlap/restart tests. Its source-only successor is now committed
+as client `75461cad5bfda0dfab175199a8c1b05e4fe558e1`: default cohort one, explicit
+opt-in two, one owner, global receipt ambiguity/cancellation barriers, and 117
+passing offline tests. It is not packaged or deployed. The release recipe still
+needs to overlay/hash the changed worker as well as its study module, and actual
+two-study overlap/restart remains unqualified. The active r5 benchmark is not
+modified to conceal the limitation.
+
+### Checkpoint segment identity in selected-case acceptance
+
+The report verifier already validates each actual native segment independently
+and counts distinct logical repeats. The selected-case verifier now uses the
+exact requested `(job_id, step_id)` set rather than requiring exactly three
+timing rows. Multiple unique checkpoint segments remain one original repeat;
+duplicate segments, missing/extra repeats, changed job/step identities and any
+row not bound to the original 10000 requested steps fail. This is an acceptance
+contract correction tested with synthetic segmented reports, not a claim that
+PEP or PEP-h has resumed. Their original operations and immutable images remain
+unchanged; successful native logs, recipe/input hashes and downloads must still
+pass the existing independent report checks.
