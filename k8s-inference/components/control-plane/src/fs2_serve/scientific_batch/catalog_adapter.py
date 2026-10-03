@@ -17,6 +17,7 @@ from .models import (
     ResourceClass,
     ScientificBatchPlan,
     ScientificStagePlan,
+    StageExecutionShape,
     StagePlacementClass,
     StageResourceEnvelope,
 )
@@ -34,6 +35,7 @@ class ScientificStageExpansion:
     gang_size: int | None = None
     enabled: bool = True
     depends_on: tuple[str, ...] | None = None
+    execution_shape_id: str | None = None
 
 
 def _mapping(value: object, path: str) -> Mapping[str, object]:
@@ -91,6 +93,35 @@ def _stage_contract(
     return placement_class, envelope
 
 
+def select_stage_shape(stage: Mapping[str, object], shape_id: str | None) -> Mapping[str, object]:
+    """Select a catalog shape; never accept request-supplied execution fields."""
+    if shape_id is None:
+        return stage
+    shapes = stage.get("execution_shapes")
+    if not isinstance(shapes, list) or not 1 <= len(shapes) <= 32:
+        raise CatalogProfileAdapterError("stage has no bounded execution shapes")
+    matches = [item for item in shapes if isinstance(item, Mapping) and item.get("id") == shape_id]
+    if len(matches) != 1:
+        raise CatalogProfileAdapterError("execution shape is absent or duplicated in the catalog stage")
+    shape = _mapping(matches[0], "execution shape")
+    if set(shape) != {"id", "admission_mode", "min_parallelism", "max_parallelism", "placement", "resources"}:
+        raise CatalogProfileAdapterError("execution shape fields differ from the catalog contract")
+    return {**stage, **{key: value for key, value in shape.items() if key != "id"}}
+
+
+def stage_execution_shape(stage: Mapping[str, object], shape_id: str | None) -> StageExecutionShape | None:
+    if shape_id is None:
+        return None
+    placement = _mapping(stage.get("placement"), "execution shape placement")
+    accelerator = _mapping(placement.get("accelerator"), "execution shape accelerator")
+    return StageExecutionShape(
+        shape_id=shape_id,
+        accelerator_resource_name=_string(accelerator.get("resource_name"), "execution shape accelerator resource"),
+        accelerator_count=_integer(accelerator.get("count"), "execution shape accelerator count"),
+        pool_ids=_string_tuple(accelerator.get("pool_ids"), "execution shape pools"),
+    )
+
+
 def scientific_plan_from_catalog_profile(
     profile: Mapping[str, object],
     *,
@@ -116,6 +147,9 @@ def scientific_plan_from_catalog_profile(
         path = f"profile.workload.stages[{index}]"
         stage = _mapping(raw_stage, path)
         stage_id = _string(stage.get("id"), f"{path}.id")
+        expansion = selected.pop(stage_id, None)
+        shape_id = None if expansion is None else expansion.execution_shape_id
+        stage = select_stage_shape(stage, shape_id)
         try:
             mode = ExecutionMode(_string(stage.get("admission_mode"), f"{path}.admission_mode"))
             resource_class = ResourceClass(_string(stage.get("resource_class"), f"{path}.resource_class"))
@@ -125,10 +159,9 @@ def scientific_plan_from_catalog_profile(
             raise CatalogProfileAdapterError(f"{path} contains an unsupported catalog enum") from error
         minimum = _integer(stage.get("min_parallelism"), f"{path}.min_parallelism")
         maximum = _integer(stage.get("max_parallelism"), f"{path}.max_parallelism")
-        expansion = selected.pop(stage_id, None)
 
         if expansion is not None and not expansion.enabled:
-            if expansion.gang_size is not None or expansion.depends_on is not None:
+            if expansion.gang_size is not None or expansion.depends_on is not None or shape_id is not None:
                 raise CatalogProfileAdapterError(f"{path} disabled expansion cannot supply execution fields")
             continue
 
@@ -172,6 +205,7 @@ def scientific_plan_from_catalog_profile(
                     preemption_mode=preemption_mode,
                     placement_class=placement_class,
                     resources=resources,
+                    execution_shape=stage_execution_shape(stage, shape_id),
                 )
             )
         except ValueError as error:

@@ -18,8 +18,8 @@
     "execution_identity": {
       "model_revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
       "runtime_image_digest": null,
-      "runtime_recipe_sha256": "d9180aa0a73989a455b27a6c55158e22f7ba8a544beb18914e4dbf02e79a97af",
-      "workload_recipe_sha256": "dc1bfdd87c33685b658c975b934f031547852fd0c3d43ae17b8f4bfd2b131b50",
+      "runtime_recipe_sha256": "7f1ca9df7574e48ddd8db6d454115d5f7958bed8c74e9d87f5bba14985b28edd",
+      "workload_recipe_sha256": "9f014f868e5cc5767a48c5d57016601c03d500e635c7422c50d20df1d2c4a51e",
       "artifact_manifest_digest": null,
       "execution_identity_sha256": null
     },
@@ -41,7 +41,7 @@
         "discoverable": true,
         "invocable": false,
         "tool_name": "submit_gromacs_mpi_workflow",
-        "description": "Run one distributed GROMACS workflow across gang-admitted GPU nodes. Preparation and analysis run on rank zero; MD uses one MPI rank/GPU per node. Returns durable native checkpoints and customer-bucket results."
+        "description": "Run one external-MPI GROMACS workflow on one to eight nodes with one, two, four or eight GPUs per node, up to sixteen total. Each GPU has one MPI rank. Returns durable native checkpoints and customer-bucket results."
       }
     },
     "access": {
@@ -76,7 +76,15 @@
           "checkpoint_mode": "resume",
           "preemption_mode": "checkpointable",
           "placement": {
-            "class": "accelerator"
+            "class": "accelerator",
+            "accelerator": {
+              "resource_name": "nvidia.com/gpu",
+              "count": 1,
+              "pool_ids": [
+                "h100-ondemand-1x",
+                "h100-reserved-8x"
+              ]
+            }
           },
           "resources": {
             "cpu_millis": 8000,
@@ -87,7 +95,227 @@
               "memory_bytes": 17179869184,
               "ephemeral_storage_bytes": 68719476736
             }
-          }
+          },
+          "execution_shapes": [
+            {
+              "id": "single-node-1gpu",
+              "admission_mode": "independent-jobs",
+              "min_parallelism": 1,
+              "max_parallelism": 1,
+              "placement": {
+                "class": "accelerator",
+                "accelerator": {
+                  "resource_name": "nvidia.com/gpu",
+                  "count": 1,
+                  "pool_ids": [
+                    "h100-ondemand-1x",
+                    "h100-reserved-8x",
+                    "l40s-1x",
+                    "l40s-4x"
+                  ]
+                }
+              },
+              "resources": {
+                "cpu_millis": 8000,
+                "memory_bytes": 17179869184,
+                "ephemeral_storage_bytes": 68719476736,
+                "limits": {
+                  "cpu_millis": 8000,
+                  "memory_bytes": 17179869184,
+                  "ephemeral_storage_bytes": 68719476736
+                }
+              }
+            },
+            {
+              "id": "single-node-2gpu",
+              "admission_mode": "independent-jobs",
+              "min_parallelism": 1,
+              "max_parallelism": 1,
+              "placement": {
+                "class": "accelerator",
+                "accelerator": {
+                  "resource_name": "nvidia.com/gpu",
+                  "count": 2,
+                  "pool_ids": [
+                    "h100-reserved-8x",
+                    "l40s-4x"
+                  ]
+                }
+              },
+              "resources": {
+                "cpu_millis": 16000,
+                "memory_bytes": 34359738368,
+                "ephemeral_storage_bytes": 68719476736,
+                "limits": {
+                  "cpu_millis": 16000,
+                  "memory_bytes": 34359738368,
+                  "ephemeral_storage_bytes": 68719476736
+                }
+              }
+            },
+            {
+              "id": "single-node-4gpu",
+              "admission_mode": "independent-jobs",
+              "min_parallelism": 1,
+              "max_parallelism": 1,
+              "placement": {
+                "class": "accelerator",
+                "accelerator": {
+                  "resource_name": "nvidia.com/gpu",
+                  "count": 4,
+                  "pool_ids": [
+                    "h100-reserved-8x",
+                    "l40s-4x"
+                  ]
+                }
+              },
+              "resources": {
+                "cpu_millis": 32000,
+                "memory_bytes": 68719476736,
+                "ephemeral_storage_bytes": 68719476736,
+                "limits": {
+                  "cpu_millis": 32000,
+                  "memory_bytes": 68719476736,
+                  "ephemeral_storage_bytes": 68719476736
+                }
+              }
+            },
+            {
+              "id": "single-node-8gpu",
+              "admission_mode": "independent-jobs",
+              "min_parallelism": 1,
+              "max_parallelism": 1,
+              "placement": {
+                "class": "accelerator",
+                "accelerator": {
+                  "resource_name": "nvidia.com/gpu",
+                  "count": 8,
+                  "pool_ids": [
+                    "h100-reserved-8x"
+                  ]
+                }
+              },
+              "resources": {
+                "cpu_millis": 64000,
+                "memory_bytes": 137438953472,
+                "ephemeral_storage_bytes": 68719476736,
+                "limits": {
+                  "cpu_millis": 64000,
+                  "memory_bytes": 137438953472,
+                  "ephemeral_storage_bytes": 68719476736
+                }
+              }
+            },
+            {
+              "id": "multi-node-1gpu",
+              "admission_mode": "gang-jobset",
+              "min_parallelism": 2,
+              "max_parallelism": 8,
+              "placement": {
+                "class": "accelerator",
+                "accelerator": {
+                  "resource_name": "nvidia.com/gpu",
+                  "count": 1,
+                  "pool_ids": [
+                    "h100-ondemand-1x",
+                    "h100-reserved-8x",
+                    "l40s-1x",
+                    "l40s-4x"
+                  ]
+                }
+              },
+              "resources": {
+                "cpu_millis": 8000,
+                "memory_bytes": 17179869184,
+                "ephemeral_storage_bytes": 68719476736,
+                "limits": {
+                  "cpu_millis": 8000,
+                  "memory_bytes": 17179869184,
+                  "ephemeral_storage_bytes": 68719476736
+                }
+              }
+            },
+            {
+              "id": "multi-node-2gpu",
+              "admission_mode": "gang-jobset",
+              "min_parallelism": 2,
+              "max_parallelism": 8,
+              "placement": {
+                "class": "accelerator",
+                "accelerator": {
+                  "resource_name": "nvidia.com/gpu",
+                  "count": 2,
+                  "pool_ids": [
+                    "h100-reserved-8x",
+                    "l40s-4x"
+                  ]
+                }
+              },
+              "resources": {
+                "cpu_millis": 16000,
+                "memory_bytes": 34359738368,
+                "ephemeral_storage_bytes": 68719476736,
+                "limits": {
+                  "cpu_millis": 16000,
+                  "memory_bytes": 34359738368,
+                  "ephemeral_storage_bytes": 68719476736
+                }
+              }
+            },
+            {
+              "id": "multi-node-4gpu",
+              "admission_mode": "gang-jobset",
+              "min_parallelism": 2,
+              "max_parallelism": 4,
+              "placement": {
+                "class": "accelerator",
+                "accelerator": {
+                  "resource_name": "nvidia.com/gpu",
+                  "count": 4,
+                  "pool_ids": [
+                    "h100-reserved-8x",
+                    "l40s-4x"
+                  ]
+                }
+              },
+              "resources": {
+                "cpu_millis": 32000,
+                "memory_bytes": 68719476736,
+                "ephemeral_storage_bytes": 68719476736,
+                "limits": {
+                  "cpu_millis": 32000,
+                  "memory_bytes": 68719476736,
+                  "ephemeral_storage_bytes": 68719476736
+                }
+              }
+            },
+            {
+              "id": "multi-node-8gpu",
+              "admission_mode": "gang-jobset",
+              "min_parallelism": 2,
+              "max_parallelism": 2,
+              "placement": {
+                "class": "accelerator",
+                "accelerator": {
+                  "resource_name": "nvidia.com/gpu",
+                  "count": 8,
+                  "pool_ids": [
+                    "h100-reserved-8x"
+                  ]
+                }
+              },
+              "resources": {
+                "cpu_millis": 64000,
+                "memory_bytes": 137438953472,
+                "ephemeral_storage_bytes": 68719476736,
+                "limits": {
+                  "cpu_millis": 64000,
+                  "memory_bytes": 137438953472,
+                  "ephemeral_storage_bytes": 68719476736
+                }
+              }
+            }
+          ]
         }
       ],
       "retry": {
@@ -113,7 +341,8 @@
       "limitations": [
         "Unrouted candidate. Distributed runtime probes do not qualify customer execution or recovery.",
         "Separate upstream GROMACS 2026.2 CUDA/Open MPI build, not the NVIDIA NGC engine binary.",
-        "Two to eight gang-admitted nodes, one GPU/rank and up to eight CPU threads per node. No coupled replica exchange in this shape.",
+        "One to eight nodes, one/two/four/eight GPUs per node and at most sixteen GPUs total. One external MPI rank per GPU and up to eight CPU threads per rank. Multi-node work is gang-admitted; one-node work uses one Pod. No coupled replica exchange in these shapes.",
+        "Execution shape allowlists describe candidate hardware capability, not completed qualification. Every shape, including L40S external MPI, needs evidence for the exact runtime digest before a supported-performance claim.",
         "Portable TCP host-staged MPI baseline. RDMA/direct GPU communication requires a separately qualified network profile.",
         "Native .cpt recovery is distinct from persistent GPU-process snapshots. Scientific convergence is not inferred from execution success."
       ]

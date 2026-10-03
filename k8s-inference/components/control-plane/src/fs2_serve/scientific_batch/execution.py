@@ -21,7 +21,7 @@ from uuid import UUID
 
 from .adapters.primitives import ScientificParameterError
 from .capability import ScientificWorkloadCapabilityAuthority
-from .catalog_adapter import CatalogProfileAdapterError
+from .catalog_adapter import CatalogProfileAdapterError, _stage_contract, select_stage_shape
 from .companion import RUNTIME_LOCALIZATION_SCHEMA
 from .models import (
     COLLECTION_DEADLINE_MARGIN_SECONDS,
@@ -35,12 +35,14 @@ from .models import (
     RuntimeArtifactMount,
     RuntimeArtifactTreeKind,
     ScientificInputArtifact,
+    ScientificStagePlan,
     StageExecutionBinding,
     StageInvocation,
     StageVolumeBinding,
     WorkloadKind,
     WorkloadResource,
 )
+from .placement import execution_resource_envelope
 from .profile_catalog import ScientificProfileCatalog, ScientificRequestError, ScientificWorkloadProfile
 from .startup import StageStartupPolicy, apply_startup_policy, select_startup_policy, validate_bundle
 
@@ -158,6 +160,24 @@ def _quantity_bytes(value: str) -> int:
         if value.endswith(suffix):
             return int(value[: -len(suffix)]) * multiplier
     raise ScientificExecutionMapError("scientific byte quantity is invalid")
+
+
+def _execution_resources(raw: object) -> dict[str, str]:
+    resources = _object(raw, "scientific execution resources")
+    if set(resources) != {"requests", "limits"}:
+        raise ScientificExecutionMapError("scientific execution resource fields differ")
+    parsed: dict[str, str] = {}
+    for kind, prefix in (("requests", "request"), ("limits", "limit")):
+        values = _object(resources[kind], f"scientific execution resource {kind}")
+        if set(values) != {"cpu", "memory", "ephemeral_storage"}:
+            raise ScientificExecutionMapError(f"scientific execution resource {kind} fields differ")
+        for name in ("cpu", "memory", "ephemeral_storage"):
+            value = _bounded_string(values[name], f"scientific {kind} {name}", maximum=32)
+            pattern = r"[1-9][0-9]*(?:m)?" if name == "cpu" else r"[1-9][0-9]*(?:Ki|Mi|Gi|Ti)"
+            if re.fullmatch(pattern, value) is None:
+                raise ScientificExecutionMapError(f"scientific {kind} {name} quantity is invalid")
+            parsed[f"{prefix}_{name}"] = value
+    return parsed
 
 
 @dataclass(frozen=True, slots=True)
@@ -356,6 +376,7 @@ class FileScientificManifestRenderer:
             baseline_models[f"sha256:{digest}"] = frozenset(ids)
         self.qualification_baselines = MappingProxyType(baseline_models)
         executions: dict[tuple[str, str], StageExecution] = {}
+        execution_shapes: dict[tuple[str, str, str], StageExecution] = {}
         runtime_artifacts: dict[tuple[str, str], RuntimeArtifactLocalization] = {}
         variants: dict[str, str] = {}
         workload_namespaces: dict[str, str] = {}
@@ -545,7 +566,11 @@ class FileScientificManifestRenderer:
                     "environment",
                     "required_node_labels",
                 }
-                if not allowed.issubset(stage) or set(stage) - allowed - {"image_role", "startup_policy"}:
+                if not allowed.issubset(stage) or set(stage) - allowed - {
+                    "image_role",
+                    "startup_policy",
+                    "execution_shapes",
+                }:
                     raise ScientificExecutionMapError("scientific execution stage fields differ")
                 stage_id = stage["stage_id"]
                 if not isinstance(stage_id, str) or (model_id, stage_id) in executions:
@@ -808,6 +833,37 @@ class FileScientificManifestRenderer:
                     required_node_labels=cast(Mapping[str, str], required_node_labels),
                     startup_policy=self._select_startup_policy(profile, stage_id, image, stage.get("startup_policy")),
                 )
+                shapes = stage.get("execution_shapes", [])
+                if not isinstance(shapes, list) or len(shapes) > 32:
+                    raise ScientificExecutionMapError("execution-map shapes are not a bounded array")
+                for raw_shape in shapes:
+                    shape = _object(raw_shape, "execution-map shape")
+                    if set(shape) != {"id", "resources"}:
+                        raise ScientificExecutionMapError("execution-map shape fields differ")
+                    shape_id = _bounded_string(shape["id"], "execution-map shape ID", maximum=63)
+                    shape_key = (model_id, stage_id, shape_id)
+                    if shape_key in execution_shapes:
+                        raise ScientificExecutionMapError("execution-map shape is duplicated")
+                    profile_stage = next(item for item in profile.value["workload"]["stages"] if item["id"] == stage_id)
+                    selected_shape = select_stage_shape(profile_stage, shape_id)
+                    _, envelope = _stage_contract(selected_shape, "execution-map shape")
+                    shape_resources = _execution_resources(shape["resources"])
+                    shape_execution = replace(
+                        executions[(model_id, stage_id)],
+                        request_cpu=shape_resources["request_cpu"],
+                        request_memory=shape_resources["request_memory"],
+                        request_ephemeral_storage=shape_resources["request_ephemeral_storage"],
+                        limit_cpu=shape_resources["limit_cpu"],
+                        limit_memory=shape_resources["limit_memory"],
+                        limit_ephemeral_storage=shape_resources["limit_ephemeral_storage"],
+                        environment={
+                            **executions[(model_id, stage_id)].environment,
+                            "FS2_EXECUTION_SHAPE_ID": shape_id,
+                        },
+                    )
+                    if execution_resource_envelope(shape_execution) != envelope:
+                        raise ScientificExecutionMapError("execution-map shape resources differ from the catalog")
+                    execution_shapes[shape_key] = shape_execution
         # Every serialized model, including a fail-closed candidate, must cover
         # its own profile DAG exactly.  Separately, every runnable profile must
         # be serialized.  This permits pre-promotion Job validation without
@@ -843,6 +899,7 @@ class FileScientificManifestRenderer:
             if len(declared) != len(stages) or serialized != declared:
                 raise ScientificExecutionMapError("execution map must cover each serialized profile stage exactly")
         self.executions = executions
+        self.execution_shapes = execution_shapes
         self._startup_profiles = profiles
         self.variants = MappingProxyType(variants)
         self.workload_namespaces = MappingProxyType(workload_namespaces)
@@ -981,7 +1038,7 @@ class FileScientificManifestRenderer:
                 )
             )
         stage_bindings = tuple(
-            self._freeze_stage_execution(stage.stage_id, self.executions[(profile.model_id, stage.stage_id)])
+            self._freeze_stage_execution(stage.stage_id, self._execution_for_stage(profile.model_id, stage))
             for stage in plan.controller_plan.stages
         )
         bound_plan = replace(
@@ -993,7 +1050,7 @@ class FileScientificManifestRenderer:
         for stage in bound_plan.controller_plan.stages:
             if stage.resources is None:
                 continue
-            execution = self.executions[(profile.model_id, stage.stage_id)]
+            execution = self._execution_for_stage(profile.model_id, stage)
             rendered_requests = (
                 _cpu_millis(execution.request_cpu),
                 _quantity_bytes(execution.request_memory),
@@ -1034,6 +1091,17 @@ class FileScientificManifestRenderer:
                 if pythonpath is not None and pythonpath.split(":", 1)[0] != BINDCRAFT_PYROSETTA_PATH:
                     raise ScientificExecutionMapError("BindCraft PYTHONPATH bypasses the reviewed PyRosetta tree")
         return bound_plan
+
+    def _execution_for_stage(self, model_id: str, stage: ScientificStagePlan) -> StageExecution:
+        if stage.execution_shape is None:
+            return self.executions[(model_id, stage.stage_id)]
+        key = (model_id, stage.stage_id, stage.execution_shape.shape_id)
+        execution = self.execution_shapes.get(key)
+        if execution is None:
+            raise ScientificExecutionMapError("execution shape is absent from the immutable execution map")
+        if execution_resource_envelope(execution) != stage.resources:
+            raise ScientificExecutionMapError("execution shape resources differ from the frozen plan")
+        return execution
 
     def _freeze_stage_execution(self, stage_id: str, execution: StageExecution) -> StageExecutionBinding:
         image = execution.image
@@ -1473,7 +1541,7 @@ class FileScientificManifestRenderer:
             # the verified mounts so the durable v8 state is self-contained.
             invocations.append(replace(invocation, runtime_mounts=tuple(mounted), runtime_trees=()))
         stage_bindings = execution_plan.stage_bindings or tuple(
-            self._freeze_stage_execution(stage.stage_id, self.executions[(profile.model_id, stage.stage_id)])
+            self._freeze_stage_execution(stage.stage_id, self._execution_for_stage(profile.model_id, stage))
             for stage in execution_plan.controller_plan.stages
         )
         bound = replace(
@@ -1585,7 +1653,7 @@ class FileScientificManifestRenderer:
         # from a potentially changed profile or tools-image setting.
         stage_image_digest = execution.image.rsplit("@", 1)[1]
         runtime_image_digest = execution.model_runtime_image_digest or stage_image_digest
-        env = [
+        env: list[dict[str, Any]] = [
             {"name": key, "value": value}
             for key, value in sorted(
                 {
@@ -1706,26 +1774,36 @@ class FileScientificManifestRenderer:
             raise ScientificExecutionMapError("scientific artifact companion runtime is not configured")
         capability = self.capability_authority.issue(resource)
         if resource.model_id == "gromacs-mpi":
-            if resource.kind is not WorkloadKind.JOB_SET or resource.gang_size is None:
-                raise ScientificExecutionMapError("GROMACS MPI requires its admitted JobSet gang")
-            # An independent secret derived from the existing attempt capability;
-            # the MPI process receives no reusable platform API credential.
-            seed = hashlib.sha256(b"fs2-mpi-ssh-v1\0" + capability.encode()).hexdigest()
-            env.extend(
-                [
-                    {"name": "FS2_MPI_SSH_SEED", "value": seed},
-                    {
-                        "name": "FS2_MPI_RANK",
-                        "valueFrom": {"fieldRef": {"fieldPath": "metadata.labels['jobset.sigs.k8s.io/job-index']"}},
-                    },
-                    {
-                        "name": "FS2_MPI_HOSTS",
-                        "value": ",".join(
-                            f"{resource.name}-gang-{index}-0.{resource.name}" for index in range(resource.gang_size)
-                        ),
-                    },
-                ]
+            # UCX/Open MPI intra-Pod traffic needs more than the container
+            # runtime's default 64Mi shm. tmpfs remains charged to this Pod's
+            # frozen memory limit; no host IPC or extra device is exposed.
+            volumes.append({"name": "mpi-shared-memory", "emptyDir": {"medium": "Memory", "sizeLimit": "1Gi"}})
+            volume_mounts.append({"name": "mpi-shared-memory", "mountPath": "/dev/shm"})  # noqa: S108 - private Pod tmpfs
+            nodes = resource.gang_size if resource.kind is WorkloadKind.JOB_SET else 1
+            if nodes is None or gpu_count not in {1, 2, 4, 8} or nodes * gpu_count > 16:
+                raise ScientificExecutionMapError("GROMACS MPI shape exceeds its admitted GPU bound")
+            request_document = next(
+                (item for item in invocation.workspace_documents if item.relative_path == ".fs2/request.json"), None
             )
+            if request_document is None:
+                raise ScientificExecutionMapError("GROMACS MPI lacks its frozen request")
+            request_shape = json.loads(request_document.canonical_json)
+            if request_shape.get("nodes", 2) != nodes or request_shape.get("gpus_per_node", 1) != gpu_count:
+                raise ScientificExecutionMapError("GROMACS MPI request differs from its frozen allocation")
+            shape_env = {
+                "FS2_GROMACS_MPI_NODES": str(nodes),
+                "FS2_GROMACS_MPI_GPUS_PER_NODE": str(gpu_count),
+                "FS2_GROMACS_MPI_RANKS_PER_NODE": str(gpu_count),
+                "FS2_GROMACS_MPI_TOTAL_RANKS": str(nodes * gpu_count),
+                "FS2_GROMACS_MPI_TRANSPORT": "ucx-local" if nodes == 1 else "tcp-host-staged",
+            }
+            if any(item["name"] in shape_env or item["name"].startswith("FS2_MPI_") for item in env):
+                raise ScientificExecutionMapError("GROMACS MPI allocation environment cannot be overridden")
+            env.extend({"name": name, "value": value} for name, value in shape_env.items())
+            if nodes == 1:
+                env.extend([{"name": "FS2_MPI_RANK", "value": "0"}, {"name": "FS2_MPI_HOSTS", "value": "localhost"}])
+            else:
+                env.extend(self._mpi_gang_environment(resource, capability))
         if (resource.model_id, invocation.stage_id, invocation.collector_id) in {
             ("cosmos3-lerobot-augmentation", "augment-dataset", "cosmos3-lerobot-v3-0-6-1"),
             ("physical-ai-video-augmentation", "augment-videos", "paidf-video-v1"),
@@ -2070,8 +2148,27 @@ class FileScientificManifestRenderer:
         }
 
     @staticmethod
+    def _mpi_gang_environment(resource: WorkloadResource, capability: str) -> list[dict[str, Any]]:
+        assert resource.gang_size is not None
+        # The MPI process receives no reusable platform API credential.
+        seed = hashlib.sha256(b"fs2-mpi-ssh-v1\0" + capability.encode()).hexdigest()
+        return [
+            {"name": "FS2_MPI_SSH_SEED", "value": seed},
+            {
+                "name": "FS2_MPI_RANK",
+                "valueFrom": {"fieldRef": {"fieldPath": "metadata.labels['jobset.sigs.k8s.io/job-index']"}},
+            },
+            {
+                "name": "FS2_MPI_HOSTS",
+                "value": ",".join(
+                    f"{resource.name}-gang-{index}-0.{resource.name}" for index in range(resource.gang_size)
+                ),
+            },
+        ]
+
+    @staticmethod
     def _configure_mpi_pod(pod: dict[str, Any], resource: WorkloadResource) -> None:
-        """Configure one rank per node, with a single output/checkpoint owner."""
+        """Configure one Pod per node, with a single output/checkpoint owner."""
         assert resource.invocation is not None
         spec = pod["spec"]
         spec.setdefault("affinity", {})["podAntiAffinity"] = {

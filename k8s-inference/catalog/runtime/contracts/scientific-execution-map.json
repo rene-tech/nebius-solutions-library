@@ -2309,7 +2309,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "fff893e55730bd6805aed88fd9e27f21e841c059c3a5d7160be1159907c67b2b",
+      "execution_identity_sha256": "f68c89d44e6979bc314cfe9e1d2779c4f508cfbe8a3701db3787e2ef0e62e02a",
       "model_id": "gromacs",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2321,7 +2321,7 @@
           "active_deadline_seconds": 261000,
           "collector_id": "gromacs-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:14ffdae0f0389c7771bae8791c56a5e21736ece630bd11dfb0f3b6a78f8cd643",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:dc5d908c64503c4c4cdc3bede10987d49a9acdde5ef2f4f1d0e61f0628739f93",
           "mounts": [
             {
               "claim_name": null,
@@ -2361,7 +2361,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "442e41e4855976e0f3060405c93817eb6df0337980d17f99a9f4a916b34f957b",
+      "execution_identity_sha256": "59b8ee0be1ddabad1b524465956886d8b2b4981eabb5317fcd946ac9b6a9637d",
       "model_id": "gromacs-mpi",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2373,7 +2373,7 @@
           "active_deadline_seconds": 261000,
           "collector_id": "gromacs-mpi-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:d9d287c858b377b9f22a1ac484ee9ef12ce02389839363ee67f1e835fabfeb64",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:c6c353e55deade8c8fe7a2f02e68bcdb639c7680c8435b665e72815d0213c9ea",
           "mounts": [
             {
               "claim_name": null,
@@ -2405,7 +2405,129 @@
           "termination_grace_seconds": 120,
           "validator_id": "gromacs-mpi-workflow-v1",
           "workspace_gid": 10001,
-          "workspace_uid": 10001
+          "workspace_uid": 10001,
+          "execution_shapes": [
+            {
+              "id": "single-node-1gpu",
+              "resources": {
+                "requests": {
+                  "cpu": "8000m",
+                  "memory": "16Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "8000m",
+                  "memory": "16Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              }
+            },
+            {
+              "id": "single-node-2gpu",
+              "resources": {
+                "requests": {
+                  "cpu": "16000m",
+                  "memory": "32Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "16000m",
+                  "memory": "32Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              }
+            },
+            {
+              "id": "single-node-4gpu",
+              "resources": {
+                "requests": {
+                  "cpu": "32000m",
+                  "memory": "64Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "32000m",
+                  "memory": "64Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              }
+            },
+            {
+              "id": "single-node-8gpu",
+              "resources": {
+                "requests": {
+                  "cpu": "64000m",
+                  "memory": "128Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "64000m",
+                  "memory": "128Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              }
+            },
+            {
+              "id": "multi-node-1gpu",
+              "resources": {
+                "requests": {
+                  "cpu": "8000m",
+                  "memory": "16Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "8000m",
+                  "memory": "16Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              }
+            },
+            {
+              "id": "multi-node-2gpu",
+              "resources": {
+                "requests": {
+                  "cpu": "16000m",
+                  "memory": "32Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "16000m",
+                  "memory": "32Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              }
+            },
+            {
+              "id": "multi-node-4gpu",
+              "resources": {
+                "requests": {
+                  "cpu": "32000m",
+                  "memory": "64Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "32000m",
+                  "memory": "64Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              }
+            },
+            {
+              "id": "multi-node-8gpu",
+              "resources": {
+                "requests": {
+                  "cpu": "64000m",
+                  "memory": "128Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "64000m",
+                  "memory": "128Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              }
+            }
+          ]
         }
       ],
       "variant_id": "upstream-2026-2-mpi-v1",
@@ -2582,21 +2704,6 @@
       "alphafold3",
       "cosmos3-lerobot-augmentation"
     ],
-    "4f1137927e29085a6aa555430c636abe473618bc5a80c840ba151ce15b66c744": [
-      "boltzgen",
-      "proteina-complexa",
-      "bindcraft",
-      "mosaic",
-      "rfdiffusion",
-      "esmfold2",
-      "esmfold2-fast",
-      "openfold3-openbind",
-      "protenix-v2",
-      "alphafold3",
-      "cosmos3-lerobot-augmentation",
-      "gromacs",
-      "gromacs-mpi"
-    ],
     "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45": [
       "boltzgen",
       "proteina-complexa",
@@ -2609,7 +2716,7 @@
       "protenix-v2",
       "alphafold3"
     ],
-    "4bb0fb355345db44a2d054804d6aab86dc961b88284a34e541413c34039e6205": [
+    "eb5181270f85da17272ad3006991663c5dc5b9ab18993255a45be57a97061dee": [
       "boltzgen",
       "proteina-complexa",
       "bindcraft",
@@ -2621,11 +2728,9 @@
       "protenix-v2",
       "alphafold3",
       "cosmos3-lerobot-augmentation",
-      "gromacs",
-      "gromacs-mpi",
       "lammps"
     ],
-    "7fe9e29a1dde2be2d9ebf06c6abe3eb4e6a604b07b9e9cc91f6b73057dae8e7a": [
+    "b5e7e261ede9b9cfcc8f051d440bd9a5633e4ae6e7dea9deb3f1db15a1b8f08c": [
       "boltzgen",
       "proteina-complexa",
       "bindcraft",
@@ -2637,10 +2742,24 @@
       "protenix-v2",
       "alphafold3",
       "cosmos3-lerobot-augmentation",
-      "gromacs",
-      "gromacs-mpi",
       "namd",
       "lammps"
+    ],
+    "3878384303f45df9743a1ac3658b35239f4de714727795b26853cf77d68a1669": [
+      "boltzgen",
+      "proteina-complexa",
+      "bindcraft",
+      "mosaic",
+      "rfdiffusion",
+      "esmfold2",
+      "esmfold2-fast",
+      "openfold3-openbind",
+      "protenix-v2",
+      "alphafold3",
+      "cosmos3-lerobot-augmentation",
+      "namd",
+      "lammps",
+      "amber"
     ]
   },
   "schema": "fs2-serve.nebius.ai/scientific-execution-map/v3"

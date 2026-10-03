@@ -116,6 +116,7 @@ def source_recipe(root):
         "models/molecular-dynamics/gromacs/runtime/Containerfile",
         "models/molecular-dynamics/gromacs/runtime/Containerfile.mpi",
         "models/molecular-dynamics/gromacs/runtime/Containerfile.plumed",
+        "models/molecular-dynamics/gromacs/runtime/Containerfile.worker-release",
         "models/molecular-dynamics/gromacs/runtime/requirements-mpi.lock",
         "components/control-plane/src/fs2_serve/scientific_batch/adapters/gromacs_mpi.py",
         "catalog/runtime/schema/gromacs-mpi-workflow-request.schema.json",

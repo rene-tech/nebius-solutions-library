@@ -116,11 +116,11 @@ def test_mpi_compiles_one_gang_with_one_gpu_per_rank(nodes):
     assert stage.checkpoint_mode.value == "resume"
 
 
-def test_mpi_rejects_ambiguous_shards_and_single_node():
+def test_mpi_rejects_ambiguous_shards_and_out_of_range_nodes():
     candidate = json.loads(
         (ROOT / "models/molecular-dynamics/gromacs/activation/mpi-workload-profile.json").read_text()
     )["profile"]
-    for nodes, job_id in [(1, "gang"), (9, "gang"), (2, "replica-1")]:
+    for nodes, job_id in [(0, "gang"), (9, "gang"), (2, "replica-1")]:
         body = request()
         body["parameters"].update(schema=gromacs.MPI_PARAMETER_SCHEMA, nodes=nodes)
         body["parameters"]["jobs"][0]["id"] = job_id

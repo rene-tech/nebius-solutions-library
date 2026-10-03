@@ -84,6 +84,9 @@ def compile_run(
         request=request,
         gpu_topology="multi-node" if mpi else "single-gpu",
     )
+    has_shapes = bool(profile["workload"]["stages"][0].get("execution_shapes")) if mpi else False
+    if mpi and not has_shapes and (value["nodes"] == 1 or value.get("gpus_per_node", 1) != 1):
+        raise ScientificAdapterError("GROMACS MPI resource shape is not declared by the operator profile")
     entries = input_artifacts or ()
     if len(entries) != 1:
         raise ScientificAdapterError("GROMACS needs one verified gromacs-inputs bundle")
@@ -136,7 +139,7 @@ def compile_run(
                 workspace_documents=(StageWorkspaceDocument(".fs2/request.json", canonical(value).decode()),),
             )
         )
-    return build_execution_plan(
+    plan = build_execution_plan(
         model_id=model_id,
         variant_id=variant_id,
         source_revision=source_revision,
@@ -144,12 +147,26 @@ def compile_run(
         profile=profile,
         expansions={
             "workflow": ScientificStageExpansion(
-                shard_ids=tuple(job["id"] for job in value["jobs"]), gang_size=value["nodes"] if mpi else None
+                shard_ids=tuple(job["id"] for job in value["jobs"]),
+                gang_size=value["nodes"] if mpi and value["nodes"] > 1 else None,
+                execution_shape_id=(
+                    f"{'single-node' if value['nodes'] == 1 else 'multi-node'}-{value.get('gpus_per_node', 1)}gpu"
+                    if mpi and has_shapes and (value["nodes"] == 1 or value.get("gpus_per_node", 1) != 1)
+                    else None
+                ),
             )
         },
         invocations=tuple(invocations),
         required_model_artifacts=(),
     )
+    if mpi:
+        stage = plan.controller_plan.stages[0]
+        gpus = value.get("gpus_per_node", 1)
+        if stage.execution_shape is not None and stage.execution_shape.accelerator_count != gpus:
+            raise ScientificAdapterError("GROMACS MPI requested GPUs differ from the catalog execution shape")
+        if stage.resources is None or stage.resources.cpu_millis < value["threads"] * gpus * 1000:
+            raise ScientificAdapterError("GROMACS MPI threads exceed the catalog CPU envelope")
+    return plan
 
 
 def collect_companion_output(

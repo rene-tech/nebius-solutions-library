@@ -294,6 +294,31 @@ class StageResourceEnvelope:
 
 
 @dataclass(frozen=True, slots=True)
+class StageExecutionShape:
+    """Operator-selected accelerator envelope, frozen with the stage resources."""
+
+    shape_id: str
+    accelerator_resource_name: str
+    accelerator_count: int
+    pool_ids: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        _check_name(self.shape_id, "execution shape ID")
+        if (
+            not isinstance(self.accelerator_count, int)
+            or isinstance(self.accelerator_count, bool)
+            or not 1 <= self.accelerator_count <= 8
+            or _RESOURCE_NAME_RE.fullmatch(self.accelerator_resource_name) is None
+        ):
+            raise ValueError("execution shape accelerator resource/count is invalid")
+        if not self.pool_ids or len(set(self.pool_ids)) != len(self.pool_ids):
+            raise ValueError("execution shape pools must be non-empty and unique")
+        for pool in self.pool_ids:
+            if len(pool) > 128 or _POOL_RE.fullmatch(pool) is None:
+                raise ValueError("execution shape pool ID is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class ScientificStagePlan:
     stage_id: str
     depends_on: tuple[str, ...] = ()
@@ -308,6 +333,7 @@ class ScientificStagePlan:
     preemption_mode: PreemptionMode = PreemptionMode.RESTARTABLE
     placement_class: StagePlacementClass | None = None
     resources: StageResourceEnvelope | None = None
+    execution_shape: StageExecutionShape | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage_id")
@@ -342,6 +368,10 @@ class ScientificStagePlan:
                 raise ValueError("CPU stages require a CPU placement class")
         if (self.placement_class is None) != (self.resources is None):
             raise ValueError("stage placement and resources must be frozen together")
+        if self.execution_shape is not None and (
+            self.resource_class is not ResourceClass.GPU or self.resources is None
+        ):
+            raise ValueError("execution shapes require frozen accelerator placement and resources")
 
     @property
     def workload_units(self) -> tuple[str | None, ...]:
@@ -1046,6 +1076,16 @@ class AdapterExecutionPlan:
             raise ValueError("execution-map stage bindings must cover the controller plan exactly")
         if bool(self.stage_bindings) != (self.execution_map_sha256 is not None):
             raise ValueError("execution-map digest and stage bindings must be frozen together")
+        for stage in self.controller_plan.stages:
+            if stage.execution_shape is not None and self.stage_bindings:
+                from .placement import execution_resource_envelope
+
+                shape_binding = self.execution_binding(stage.stage_id)
+                if (
+                    execution_resource_envelope(shape_binding) != stage.resources
+                    or dict(shape_binding.environment).get("FS2_EXECUTION_SHAPE_ID") != stage.execution_shape.shape_id
+                ):
+                    raise ValueError("execution binding changed the frozen execution shape")
 
     def assert_controller_bound(self) -> None:
         """Reject an adapter plan that still lacks trusted execution evidence."""
@@ -1591,6 +1631,12 @@ class ScientificBatchState:
                 raise ValueError("GPU stages require a positive accelerator count")
             if plan.placement_class is not None and scheduling.placement_class is not plan.placement_class:
                 raise ValueError("the scheduling snapshot changed the frozen stage placement class")
+            if plan.execution_shape is not None and (
+                scheduling.accelerator_count != plan.execution_shape.accelerator_count
+                or scheduling.accelerator_resource_name != plan.execution_shape.accelerator_resource_name
+                or not set(scheduling.resolved_pool_preference).issubset(plan.execution_shape.pool_ids)
+            ):
+                raise ValueError("the scheduling snapshot changed the frozen execution shape")
 
     @classmethod
     def admit(
@@ -1814,7 +1860,8 @@ class PodPhaseInterval:
 
     def __post_init__(self) -> None:
         if self.source_event_uids and (
-            self.phase is not LifecyclePhase.IMAGE_LOADING or len(self.source_event_uids) != 2
+            self.phase is not LifecyclePhase.IMAGE_LOADING
+            or len(self.source_event_uids) != 2
             or any(not uid or len(uid) > 128 for uid in self.source_event_uids)
         ):
             raise ValueError("image-pull evidence requires the exact start/end event UIDs")
@@ -1878,8 +1925,7 @@ class PodLifecycleObservation:
         ):
             raise ValueError("Pod scheduling time must be timezone-aware")
         if self.device_allocation_observed_at is not None and (
-            self.device_allocation_observed_at.tzinfo is None
-            or self.device_allocation_observed_at.utcoffset() is None
+            self.device_allocation_observed_at.tzinfo is None or self.device_allocation_observed_at.utcoffset() is None
         ):
             raise ValueError("device allocation observation time must be timezone-aware")
         if not 0 <= self.device_observation_resolution_seconds <= 300:
@@ -1890,11 +1936,7 @@ class PodLifecycleObservation:
             raise ValueError("Pod completion time must be timezone-aware")
         if self.completed_at is not None and self.completed_at < self.created_at:
             raise ValueError("Pod completion precedes Pod creation")
-        if (
-            self.completed_at is not None
-            and self.scheduled_at is not None
-            and self.completed_at < self.scheduled_at
-        ):
+        if self.completed_at is not None and self.scheduled_at is not None and self.completed_at < self.scheduled_at:
             raise ValueError("Pod completion precedes Pod scheduling")
         if not 0 <= self.gpu_count <= 1024:
             raise ValueError("observed Pod GPU count is outside the bound")

@@ -759,6 +759,30 @@
             "checkpointable"
           ]
         },
+        "execution_shapes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "description": "Operator-owned execution alternatives. The adapter selects an ID and freezes its admission mode, node bounds, accelerator placement and per-Pod resources. These declarations are not live qualification evidence.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "admission_mode", "min_parallelism", "max_parallelism", "placement", "resources"],
+            "properties": {
+              "id": {"$ref": "#/$defs/stage_id"},
+              "admission_mode": {"$ref": "#/$defs/stage/properties/admission_mode"},
+              "min_parallelism": {"$ref": "#/$defs/stage/properties/min_parallelism"},
+              "max_parallelism": {"$ref": "#/$defs/stage/properties/max_parallelism"},
+              "placement": {
+                "allOf": [
+                  {"$ref": "#/$defs/stage/properties/placement"},
+                  {"required": ["accelerator"], "properties": {"class": {"const": "accelerator"}}}
+                ]
+              },
+              "resources": {"$ref": "#/$defs/stage/properties/resources"}
+            }
+          }
+        },
         "placement": {
           "type": "object",
           "additionalProperties": false,
@@ -795,6 +819,22 @@
               "type": "string",
               "minLength": 1,
               "maxLength": 253
+            },
+            "accelerator": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["resource_name", "count", "pool_ids"],
+              "properties": {
+                "resource_name": {"type": "string", "minLength": 3, "maxLength": 317},
+                "count": {"type": "integer", "minimum": 1, "maximum": 8},
+                "pool_ids": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 128,
+                  "uniqueItems": true,
+                  "items": {"type": "string", "pattern": "^[a-z0-9](?:[-_a-z0-9.]*[a-z0-9])?$", "maxLength": 128}
+                }
+              }
             }
           }
         },

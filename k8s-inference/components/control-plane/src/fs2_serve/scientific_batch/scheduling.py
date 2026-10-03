@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
+from .catalog_adapter import CatalogProfileAdapterError, _stage_contract, select_stage_shape, stage_execution_shape
 from .models import (
     PreemptionMode,
     ResourceClass,
@@ -58,9 +59,11 @@ class SchedulingContractResolver:
         *,
         raw_contract_sha256: str | None = None,
         stage_resources: Mapping[tuple[str, str], StageResourceEnvelope] | None = None,
+        stage_shape_resources: Mapping[tuple[str, str, str], StageResourceEnvelope] | None = None,
     ) -> None:
         self.contract = dict(contract)
         self.stage_resources = dict(stage_resources or {})
+        self.stage_shape_resources = dict(stage_shape_resources or {})
         if self.contract.get("schema") != SCHEDULING_SCHEMA:
             raise SchedulingContractError("Kueue scheduling contract schema is unsupported")
         canonical = json.dumps(self.contract, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
@@ -112,9 +115,15 @@ class SchedulingContractResolver:
         *,
         expected_sha256: str | None = None,
         stage_resources: Mapping[tuple[str, str], StageResourceEnvelope] | None = None,
+        stage_shape_resources: Mapping[tuple[str, str, str], StageResourceEnvelope] | None = None,
     ) -> SchedulingContractResolver:
         contract, digest = _read(path, expected_sha256=expected_sha256)
-        return cls(contract, raw_contract_sha256=digest, stage_resources=stage_resources)
+        return cls(
+            contract,
+            raw_contract_sha256=digest,
+            stage_resources=stage_resources,
+            stage_shape_resources=stage_shape_resources,
+        )
 
     def freeze(
         self,
@@ -183,6 +192,23 @@ class SchedulingContractResolver:
         decisions: list[StageSchedulingDecision] = []
         for stage in plan.stages:
             raw_stage = _object(profile_stages.get(stage.stage_id), "scientific profile stage")
+            if stage.execution_shape is not None:
+                if self.pod_placement.legacy_unverified:
+                    raise SchedulingContractError("execution shapes require verified per-node accelerator capacity")
+                try:
+                    raw_stage = select_stage_shape(raw_stage, stage.execution_shape.shape_id)
+                    placement_contract, resource_contract = _stage_contract(raw_stage, "execution shape")
+                    if (
+                        stage_execution_shape(raw_stage, stage.execution_shape.shape_id) != stage.execution_shape
+                        or placement_contract != stage.placement_class
+                        or resource_contract != stage.resources
+                        or raw_stage["admission_mode"] != stage.mode.value
+                        or raw_stage["min_parallelism"] != stage.min_parallelism
+                        or raw_stage["max_parallelism"] != stage.max_parallelism
+                    ):
+                        raise CatalogProfileAdapterError("frozen execution shape differs from the catalog")
+                except (ValueError, KeyError) as error:
+                    raise SchedulingContractError("frozen execution shape differs from the catalog") from error
             raw_placement = raw_stage.get("placement")
             placement = None if raw_placement is None else _object(raw_placement, "scientific stage placement")
             desired_queue = None if placement is None else placement.get("local_queue")
@@ -362,7 +388,13 @@ class SchedulingContractResolver:
                     raise SchedulingContractError("profile stage accelerator resource differs from Kueue")
                 accelerator_count = stage_gpu_count
                 if not self.pod_placement.legacy_unverified:
-                    execution_resources = self.stage_resources.get((model_id, stage.stage_id))
+                    execution_resources = (
+                        self.stage_resources.get((model_id, stage.stage_id))
+                        if stage.execution_shape is None
+                        else self.stage_shape_resources.get((model_id, stage.stage_id, stage.execution_shape.shape_id))
+                    )
+                    if stage.execution_shape is not None and execution_resources is None:
+                        raise SchedulingContractError("execution shape is absent from the qualified execution map")
                     if (
                         stage.resources is not None
                         and execution_resources is not None

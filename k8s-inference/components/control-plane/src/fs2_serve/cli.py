@@ -410,6 +410,10 @@ async def build_runtime(settings: Settings) -> AppRuntime:
                 identity: execution_resource_envelope(execution)
                 for identity, execution in scientific_renderer.executions.items()
             },
+            stage_shape_resources={
+                identity: execution_resource_envelope(execution)
+                for identity, execution in scientific_renderer.execution_shapes.items()
+            },
         )
         scientific_apps = ScientificAppsInventory(PostgresAppsRepository(store.pool))
         await scientific_apps.refresh()

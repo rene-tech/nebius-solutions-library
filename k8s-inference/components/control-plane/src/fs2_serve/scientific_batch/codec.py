@@ -47,6 +47,7 @@ from .models import (
     ScientificStageState,
     ServiceClass,
     StageExecutionBinding,
+    StageExecutionShape,
     StageInvocation,
     StagePlacementClass,
     StageResourceEnvelope,
@@ -350,6 +351,18 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                             "limit_ephemeral_storage_bytes": stage.resources.limit_ephemeral_storage_bytes,
                         }
                     ),
+                    **(
+                        {}
+                        if stage.execution_shape is None
+                        else {
+                            "execution_shape": {
+                                "shape_id": stage.execution_shape.shape_id,
+                                "accelerator_resource_name": stage.execution_shape.accelerator_resource_name,
+                                "accelerator_count": stage.execution_shape.accelerator_count,
+                                "pool_ids": list(stage.execution_shape.pool_ids),
+                            }
+                        }
+                    ),
                 }
                 for stage in state.plan.stages
             ]
@@ -532,9 +545,25 @@ def state_from_value(raw: object) -> ScientificBatchState:
     if not legacy_before_v8:
         stage_plan_keys.update({"placement_class", "resources"})
     for raw_stage in _items(plan_value["stages"], "scientific-batch plan stages", maximum=64):
-        stage = _object(raw_stage, stage_plan_keys, "scientific-batch plan stage")
+        has_shape = isinstance(raw_stage, Mapping) and "execution_shape" in raw_stage
+        stage = _object(
+            raw_stage, stage_plan_keys | ({"execution_shape"} if has_shape else set()), "scientific-batch plan stage"
+        )
         resources = None
         placement_class = None
+        execution_shape = None
+        if has_shape:
+            shape = _object(
+                stage["execution_shape"],
+                {"shape_id", "accelerator_resource_name", "accelerator_count", "pool_ids"},
+                "stage execution shape",
+            )
+            execution_shape = StageExecutionShape(
+                shape_id=_string(shape["shape_id"], "execution shape ID"),
+                accelerator_resource_name=_string(shape["accelerator_resource_name"], "execution shape resource"),
+                accelerator_count=_integer(shape["accelerator_count"], "execution shape count"),
+                pool_ids=_string_items(shape["pool_ids"], "execution shape pools", maximum=128),
+            )
         if not legacy_before_v8:
             placement_class = (
                 None
@@ -581,6 +610,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 preemption_mode=PreemptionMode(_string(stage["preemption_mode"], "stage preemption mode")),
                 placement_class=placement_class,
                 resources=resources,
+                execution_shape=execution_shape,
             )
         )
     plan = ScientificBatchPlan(tuple(plan_stages))
