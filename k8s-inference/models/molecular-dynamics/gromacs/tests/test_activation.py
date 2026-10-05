@@ -126,6 +126,18 @@ def test_source_recipe_binds_storage_and_native_worker():
         in paths
     )
     assert "models/molecular-dynamics/gromacs/runtime/fs2_gromacs/worker.py" in paths
+    prefix = "components/control-plane/src/fs2_serve/"
+    for path in (
+        "scientific_companion_cli.py",
+        "scientific_run_result.py",
+        "scientific_artifact_routes.py",
+        "scientific_batch/companion.py",
+        "scientific_batch/codec.py",
+        "scientific_batch/models.py",
+        "scientific_batch/stage_descriptor.py",
+        "scientific_batch/workload_routes.py",
+    ):
+        assert prefix + path in paths
 
 
 def test_paired_successor_requalifies_both_apps_without_stale_intermediate_proof(monkeypatch):

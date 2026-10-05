@@ -238,7 +238,7 @@ class CommitStageRequest(StrictModel):
     operation_id: UUID
     stage_id: str = Field(max_length=63)
     attempt_ids: tuple[UUID, ...] = Field(min_length=1, max_length=10240)
-    entries: tuple[ManifestEntryInput, ...] = Field(min_length=1, max_length=10000)
+    entries: tuple[ManifestEntryInput, ...] = Field(min_length=1, max_length=32768)
     validation_digest: RawSha256
     semantic_valid: bool
     committed_at: datetime

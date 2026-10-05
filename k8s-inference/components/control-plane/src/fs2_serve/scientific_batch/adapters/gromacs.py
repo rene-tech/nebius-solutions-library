@@ -168,7 +168,7 @@ def compile_run(
                 produces=logical_stage_artifact(operation_id, "workflow", job["id"]),
                 collector_id=collector_id,
                 validator_id=collector_id,
-                max_output_artifacts=10000,
+                max_output_artifacts=32768,
                 max_output_bytes=value["max_output_bytes"] + 16 * 1024**2,
                 materializations=continuation_materializations(value, entries, workspace)
                 if "continuation_files" in value

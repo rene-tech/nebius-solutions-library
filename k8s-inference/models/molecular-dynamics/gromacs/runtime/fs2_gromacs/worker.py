@@ -22,7 +22,7 @@ from pathlib import Path
 
 from . import NVIDIA_IMAGE, RESULT_SCHEMA
 from .contracts import canonical, normalize
-from .files import atomic_json, digest_file, extract_inputs, inventory
+from .files import FileDigestCache, atomic_json, digest_file, extract_inputs, inventory
 
 DEFAULT_GMX = "/usr/local/gromacs/avx2_256/bin/gmx"
 DYNAMICS = {"md", "sd", "bd", "md-vv", "md-vv-avek"}
@@ -70,7 +70,14 @@ def expand_args(tokens, cwd):
                     "input file pattern must select contained regular files"
                 )
             args.append(str(path.relative_to(cwd)))
-    if len(args) > 4096 or sum(len(arg.encode()) + 1 for arg in args) > 128 * 1024:
+    # Fourteen days of five-minute segments exceed 4096 trajectory parts once
+    # a previous run is continued. Keep each token below Linux MAX_ARG_STRLEN
+    # and the total below a conservative exec budget, leaving space for env and
+    # argv pointers. This is explicit file expansion, never a shell command.
+    encoded = [len(arg.encode()) + 1 for arg in args]
+    environment_bytes = sum(len(key.encode()) + len(value.encode()) + 2 for key, value in os.environ.items())
+    argument_budget = min(1024 * 1024, max(0, os.sysconf("SC_ARG_MAX") - environment_bytes - 256 * 1024))
+    if len(args) > 32768 or any(size > 128 * 1024 for size in encoded) or sum(encoded) > argument_budget:
         raise ValueError("expanded native command exceeds the argument budget")
     return args
 
@@ -142,6 +149,7 @@ class Workflow:
         self.deadline = self.started + self.request["max_wall_seconds"]
         self.engine_id = os.environ.get("FS2_GROMACS_ENGINE_ID", NVIDIA_IMAGE)
         self.mpi_stager = None
+        self.file_digests = FileDigestCache()
         if mpi:
             from .mpi_files import InputStager
 
@@ -250,7 +258,7 @@ class Workflow:
             )
 
     def checkpoint(self):
-        files = inventory(self.data, max_bytes=self.request["max_output_bytes"])
+        files = inventory(self.data, max_bytes=self.request["max_output_bytes"], digest_cache=self.file_digests)
         self.state["generation"] += 1
         self.state["elapsed_seconds"] += time.monotonic() - self.started
         self.started = time.monotonic()
@@ -527,7 +535,7 @@ class Workflow:
             )
         inventory_error = None
         try:
-            files = inventory(self.data, max_bytes=self.request["max_output_bytes"])
+            files = inventory(self.data, max_bytes=self.request["max_output_bytes"], digest_cache=self.file_digests)
         except Exception as exc:
             # Inventory failure must itself have a terminal result. Never turn
             # completed integration with undeliverable output into success, and

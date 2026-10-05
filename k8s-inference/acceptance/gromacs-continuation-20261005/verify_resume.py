@@ -100,7 +100,7 @@ async def run(args):
 
             if "source_operation" not in state:
                 input_path = args.fixture / "input.tar.gz"
-                if args.padding_files:
+                if args.padding_files or args.prebuilt_tpr:
                     padded = args.output / "input-with-many-files.tar.gz"
                     if not padded.exists():
                         with (
@@ -114,6 +114,8 @@ async def run(args):
                                     if member.isfile()
                                     else None,
                                 )
+                            if args.prebuilt_tpr:
+                                output.add(args.prebuilt_tpr, arcname="benchmark.tpr")
                             for index in range(args.padding_files):
                                 content_bytes = (
                                     f"Internal QA continuation file {index}\n".encode()
@@ -161,7 +163,7 @@ async def run(args):
                 args_list = converter["args"]
                 args_list[args_list.index("-nsteps") + 1] = str(args.steps)
                 production = next(step for step in steps if step["command"] == "mdrun")
-                params["jobs"][0]["steps"] = [converter, production]
+                params["jobs"][0]["steps"] = [production] if args.prebuilt_tpr else [converter, production]
                 params.update(
                     max_wall_seconds=args.source_seconds,
                     segment_minutes=0.2,
@@ -226,7 +228,7 @@ async def run(args):
             arguments = {
                 "operation_id": source,
                 "idempotency_key": identity + "-resume",
-                "max_wall_seconds": 604800,
+                "max_wall_seconds": args.resume_seconds,
             }
 
             async def resume():
@@ -234,7 +236,7 @@ async def run(args):
                     return await call("resume_gromacs_workflow", arguments)
                 response = await http.post(
                     f"/v1/operations/{source}:resume",
-                    json={"max_wall_seconds": 604800},
+                    json={"max_wall_seconds": args.resume_seconds},
                     headers={"Idempotency-Key": arguments["idempotency_key"]},
                 )
                 if response.status_code != 202:
@@ -333,8 +335,10 @@ async def run(args):
                 "preserved_files": preserved,
                 "customer_bucket_export": final_checkpoint["customer_storage"],
                 "idempotent_replay": True,
-                "budget_seconds": 604800,
-                "seven_day_soak_tested": False,
+                "budget_seconds": args.resume_seconds,
+                "full_budget_soak_tested": False,
+                "synthetic_retained_files": args.padding_files,
+                "prebuilt_finite_tpr": args.prebuilt_tpr is not None,
                 "customer_key_used": False,
             }
             save(args.output / "receipt.json", receipt)
@@ -353,13 +357,17 @@ def main():
     parser.add_argument("--steps", type=int, default=60000)
     parser.add_argument("--source-seconds", type=int, default=60)
     parser.add_argument("--padding-files", type=int, default=0)
+    parser.add_argument("--prebuilt-tpr", type=Path)
+    parser.add_argument("--resume-seconds", type=int, default=1209600)
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--origin", default="https://89.169.99.188")
     args = parser.parse_args()
     if not re.fullmatch(r"[a-z0-9-]{1,48}", args.label):
         parser.error("label must be a bounded task-owned identifier")
-    if not 0 <= args.padding_files <= 1000:
-        parser.error("padding-files must be between 0 and 1000")
+    if not 0 <= args.padding_files <= 30000:
+        parser.error("padding-files must be between 0 and 30000")
+    if not 60 <= args.resume_seconds <= 1209600:
+        parser.error("resume-seconds must be between 60 and 1209600")
     if not 60 <= args.source_seconds <= 600:
         parser.error("source-seconds must be between 60 and 600 for bounded internal QA")
     os.umask(0o077)

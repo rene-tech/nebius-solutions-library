@@ -53,7 +53,7 @@ from .profile_catalog import ScientificProfileCatalog, ScientificProfileError, S
 from .worker_errors import worker_error_detail
 
 _ERROR = re.compile(r"[^A-Z0-9_]+")
-_MAX_MANIFEST_BYTES = 8 * 1024 * 1024
+_MAX_MANIFEST_BYTES = 32 * 1024 * 1024
 
 
 def _raw_digest(value: str | None) -> str | None:

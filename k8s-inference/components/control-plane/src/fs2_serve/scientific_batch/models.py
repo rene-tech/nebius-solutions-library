@@ -732,7 +732,7 @@ class StageWorkspaceDocument:
         ):
             raise ValueError("stage workspace document must be a safe .fs2 JSON path")
         encoded = self.canonical_json.encode()
-        if not encoded or len(encoded) > 1024 * 1024:
+        if not encoded or len(encoded) > 4 * 1024 * 1024:
             raise ValueError("stage workspace document exceeds the bound")
         try:
             value = json.loads(encoded)
@@ -901,7 +901,7 @@ class StageInvocation:
                 raise ValueError(f"{label} must be a stable bounded identity")
         if self.handoff_name is not None and _ARTIFACT_ID_RE.fullmatch(self.handoff_name) is None:
             raise ValueError("handoff_name must be a canonical manifest entry name")
-        if not 1 <= self.max_output_artifacts <= 10_000:
+        if not 1 <= self.max_output_artifacts <= 32_768:
             raise ValueError("max_output_artifacts is outside the manifest bound")
         if not 1 <= self.max_output_bytes <= 128 * 1024 * 1024 * 1024:
             raise ValueError("max_output_bytes is outside the artifact bound")
@@ -996,7 +996,7 @@ class StageExecutionBinding:
         ):
             raise ValueError("stage execution maps must have unique keys")
         # Seven days of execution plus bounded checkpoint/export grace.
-        if not 1 <= self.active_deadline_seconds <= 7 * 24 * 3600 + 1800:
+        if not 1 <= self.active_deadline_seconds <= 14 * 24 * 3600 + 1800:
             raise ValueError("stage active deadline is outside the bound")
         if not 1 <= self.termination_grace_seconds <= 24 * 3600:
             raise ValueError("stage termination grace is outside the bound")

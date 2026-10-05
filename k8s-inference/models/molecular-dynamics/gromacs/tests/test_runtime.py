@@ -39,14 +39,30 @@ def test_defaults_do_not_change_physics_or_assume_snapshot_support():
         and actual["checkpoint_minutes"] == actual["segment_minutes"] == 5
     )
     assert "threads" not in original
-    assert actual["max_wall_seconds"] == 7 * 24 * 3600
+    assert actual["max_wall_seconds"] == 14 * 24 * 3600
 
 
-def test_seven_days_is_the_maximum_execution_budget():
+def test_fourteen_days_is_the_maximum_execution_budget():
     body = request()
-    body["max_wall_seconds"] = 604801
+    body["max_wall_seconds"] = 1209601
     with pytest.raises(ValidationError):
         normalize(body)
+
+
+def test_late_trajectory_join_allows_fourteen_days_of_five_minute_parts(tmp_path):
+    for index in range(4200):
+        (tmp_path / f"trajectory.part{index:05d}.xtc").write_bytes(b"closed synthetic segment")
+    args = expand_args(["-f", {"files": "trajectory.part*.xtc"}, "-o", "complete.xtc"], tmp_path)
+    assert len(args) == 4203
+    assert args[1] == "trajectory.part00000.xtc"
+    assert args[-3] == "trajectory.part04199.xtc"
+
+
+def test_native_argument_expansion_keeps_per_argument_and_total_exec_bounds(tmp_path):
+    with pytest.raises(ValueError, match="argument budget"):
+        expand_args(["x" * (128 * 1024)], tmp_path)
+    with pytest.raises(ValueError, match="argument budget"):
+        expand_args(["x" * 4096] * 257, tmp_path)
 
 
 def test_continuation_materializations_become_writable_and_restore_native_aliases(tmp_path, monkeypatch):

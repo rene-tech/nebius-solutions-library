@@ -59,6 +59,9 @@ class Artifacts:
     def upload_file(self, *, path, **kwargs):
         return self.upload(content=path.read_bytes(), **kwargs)
 
+    def upload_files(self, *, paths, **kwargs):
+        return [self.upload_file(path=path, **kwargs) for path in paths]
+
     def download(self, artifact_id, **kwargs):
         return self.objects[str(artifact_id)]
 

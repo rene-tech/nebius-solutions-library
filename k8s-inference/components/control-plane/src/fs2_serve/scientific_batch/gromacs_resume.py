@@ -31,8 +31,8 @@ from ..store import ConflictError
 from .profile_catalog import ScientificRequestError
 from .service import ScientificBatchService
 
-MAX_WALL_SECONDS = 7 * 24 * 3600
-MAX_CHECKPOINT_BYTES = 16 * 1024**2
+MAX_WALL_SECONDS = 14 * 24 * 3600
+MAX_CHECKPOINT_BYTES = 32 * 1024**2
 CHECKPOINT_MEDIA = "application/vnd.fs2.gromacs-checkpoint+json"
 
 
@@ -57,7 +57,7 @@ def continuation_parameters(
 ) -> dict[str, Any]:
     """Preserve physics/TPR and skip already completed preparation/analysis."""
     if type(max_wall_seconds) is not int or not 60 <= max_wall_seconds <= MAX_WALL_SECONDS:
-        raise ContinuationError("max_wall_seconds must be between 60 and 604800 (seven days)")
+        raise ContinuationError("max_wall_seconds must be between 60 and 1209600 (fourteen days)")
     value = normalize(copy.deepcopy(parameters), mpi=model_id == "gromacs-mpi")
     value.pop("continuation_files", None)
     state = checkpoint["state"]
@@ -160,7 +160,7 @@ def continuation_inputs(
     """
     files = checkpoint["files"]
     names = [relative_path(item["path"]) for item in files]
-    if len(names) != len(set(names)) or len(names) > 9997:
+    if len(names) != len(set(names)) or len(names) > 32765:
         raise ContinuationError("checkpoint has duplicate paths or too many files")
     by_id = {str(row.artifact_id): row for row in records}
     entries: dict[str, dict[str, Any]] = {}

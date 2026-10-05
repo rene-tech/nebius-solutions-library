@@ -1087,14 +1087,14 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         operation_id: UUID,
         idempotency_key: str,
         job_id: str | None = None,
-        max_wall_seconds: int = 604800,
+        max_wall_seconds: int = 1209600,
     ) -> dict[str, Any]:
         """Continue a failed/cancelled GROMACS or GROMACS-MPI job from its last committed checkpoint.
 
         Reuses the exact TPR, native checkpoint and earlier scientific outputs;
         skips completed commands without regenerating velocities. Select job_id
         when the source contains multiple jobs. The new run has a fresh budget
-        of up to seven days and uses normal tenant admission and billing. Reuse
+        of up to fourteen days and uses normal tenant admission and billing. Reuse
         idempotency_key on retries. Original results remain untouched. Returns
         the NEW operation_id to poll with get_scientific_status, not final output.
         """

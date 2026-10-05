@@ -1,7 +1,7 @@
 # Long-running GROMACS jobs and checkpoint continuation
 
-The GROMACS and GROMACS-MPI request default and maximum are **604800 seconds
-(seven days) per job**. Explicit smaller budgets remain supported. Infrastructure
+The GROMACS and GROMACS-MPI request default and maximum are **1209600 seconds
+(fourteen days) per job**. Explicit smaller budgets remain supported. Infrastructure
 retries share the original accumulated runtime budget. A user-requested
 continuation is a new operation with a new budget and ordinary tenant admission;
 it is not an unlimited automatic retry loop.
@@ -38,7 +38,7 @@ Authorization: Bearer <platform-key>
 Idempotency-Key: continue-my-run-01
 Content-Type: application/json
 
-{"job_id":"production","max_wall_seconds":604800}
+{"job_id":"production","max_wall_seconds":1209600}
 ```
 
 The MCP equivalents are `get_scientific_checkpoints` and
@@ -60,15 +60,34 @@ workspace byte/file bounds and customer storage quotas still apply. Native
 trajectory/log parts are retained; old wrapper segment logs stay with the source
 operation. `_fs2-continuation.json` records immutable source/checkpoint lineage.
 
-The incident fix qualifies the observed multi-part customer case and bounded
-native REST/MCP tests, not arbitrarily large restart inventories. Very large
-file lists remain subject to the durable admission and Kubernetes launch-envelope
-bounds. See the [exact release evidence and remaining limits](../../../acceptance/gromacs-continuation-20261005/README.md)
-before treating a metadata-only test as proof of a thousands-of-files launch.
+Late restarts use a SHA-256-bound, attempt-authorized descriptor fetched from
+durable state into the private workspace. Neither the file inventory nor the
+materialization commands travel in process environment/argv. Downloads use
+128-file authorization batches and at most eight streamed transfers; checkpoint
+uploads use 64-file/1-GiB cohorts (one larger file may be a cohort by itself) and
+at most eight streamed transfers. Each file keeps its immutable digest and byte
+count. Any failed transfer prevents the checkpoint-generation acknowledgement.
+
+The bounded inventory allows 32,766 native workspace files plus result/manifest
+slots. Fourteen days at the default five-minute interval imply 4,032 segments;
+the envelope reserves four files per segment plus initial-input headroom. This
+is not an unlimited file count, and extra customer outputs still count against
+it. Large immutable input/execution subdocuments use deterministic,
+SHA-256-verified Zstandard encoding inside the existing 4-MiB durable state/outbox
+envelope. Expanded metadata is bounded at 32 MiB per subdocument; descriptors
+and checkpoint manifests are bounded at 32 MiB. Large incompressible requests
+can still be rejected at admission. Scheduling/status/attempt fields remain
+ordinary queryable PostgreSQL JSON. Existing small admitted plans retain their
+original representation.
+
+See [current long-run release evidence](../../../acceptance/longrun-restarts-20261005/README.md)
+for the exact tested inventory, interfaces and deployed identities. The
+[earlier incident record](../../../acceptance/gromacs-continuation-20261005/README.md)
+is retained as historical evidence, not current large-inventory qualification.
 
 ## Release qualification
 
-Changing a seven-day bound does not constitute a seven-day soak test. Qualify the
+Changing a fourteen-day bound does not constitute a fourteen-day soak test. Qualify the
 exact engine wrapper and backend images using bounded real timeout → committed
 remote checkpoint → new-operation resume → native completion tests. Check the
 native resume step against the saved checkpoint, complete output inventories,
@@ -77,8 +96,15 @@ Keep failures and untested execution shapes explicit in the release record.
 
 The infrastructure deadline allows an additional 30 minutes for staging and
 final export; it is not an additional simulation budget. Roll out readers that
-understand this deadline before admitting plans containing it. Preserve frozen
-plans for existing runs and never change a customer's original terminal record.
+understand this deadline and compressed metadata before admitting plans
+containing them. Preserve frozen plans for existing runs and never change a
+customer's original terminal record. Do not roll back to pre-compatible readers
+while such plans exist, even if no workload is currently running.
+
+Changing the new-job default does not extend an existing worker's frozen budget.
+The already-running Lynx recovery retains seven days; its checkpoint can be
+continued with a fresh fourteen-day budget if it reaches that boundary. Patching
+only a Kubernetes Job deadline would not extend its native runtime budget.
 
 ## Lynx incident motivating this fix
 
@@ -86,5 +112,6 @@ Operation `aa502153-3c75-422c-8040-82461fdbfcaa` reached the old default six-hou
 budget on 2026-10-05. The last committed generation was 71 at step 13,963,440
 (27.92688 ns), with 70 completed trajectory segments. The intended run was
 500,000,000 steps / 1 µs. At the observed roughly 116 ns/day it needs about
-8.6 days in total, so a seven-day continuation may still need a final explicit
-continuation. These are observed/estimated facts, not a completed recovery claim.
+8.6 days in total before platform overhead. The existing seven-day continuation
+may still need a final explicit continuation. These are observed/estimated facts,
+not a completed recovery claim.

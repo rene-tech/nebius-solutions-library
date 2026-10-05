@@ -20,7 +20,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from .adapters.primitives import ScientificParameterError
-from .capability import ScientificWorkloadCapabilityAuthority
+from .capability import CapabilityArtifact, ScientificWorkloadCapabilityAuthority
 from .catalog_adapter import CatalogProfileAdapterError, _stage_contract, select_stage_shape
 from .companion import RUNTIME_LOCALIZATION_SCHEMA
 from .models import (
@@ -44,6 +44,8 @@ from .models import (
 )
 from .placement import execution_resource_envelope
 from .profile_catalog import ScientificProfileCatalog, ScientificRequestError, ScientificWorkloadProfile
+from .stage_descriptor import RELATIVE_PATH as STAGE_DESCRIPTOR_PATH
+from .stage_descriptor import descriptor_bytes
 from .startup import StageStartupPolicy, apply_startup_policy, select_startup_policy, validate_bundle
 
 EXECUTION_SCHEMA = "fs2-serve.nebius.ai/scientific-execution-map/v3"
@@ -822,7 +824,7 @@ class FileScientificManifestRenderer:
                     limit_memory=limit_memory,
                     limit_ephemeral_storage=limit_ephemeral_storage,
                     active_deadline_seconds=_positive_integer(
-                        stage["active_deadline_seconds"], "scientific active deadline", maximum=7 * 24 * 3600 + 1800
+                        stage["active_deadline_seconds"], "scientific active deadline", maximum=14 * 24 * 3600 + 1800
                     ),
                     termination_grace_seconds=_positive_integer(
                         stage["termination_grace_seconds"],
@@ -1832,11 +1834,38 @@ class FileScientificManifestRenderer:
                 }
             )
         workspace_mount = next(mount for mount in volume_mounts if mount["mountPath"] == "/mnt/fs2-scientific")
+        # GROMACS continuations accumulate thousands of native segments. Both
+        # a single environment value and the total exec argv have OS limits;
+        # fetch this exact admitted descriptor once and use a private file.
+        remote_descriptor = resource.model_id in {"gromacs", "gromacs-mpi"}
+        descriptor_env = [{"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)}]
+        if remote_descriptor:
+            content = descriptor_bytes(
+                invocation,
+                tuple(
+                    CapabilityArtifact(
+                        logical_artifact_id=item.logical_artifact_id,
+                        artifact_id=item.artifact_id,
+                        digest=item.digest,
+                        size_bytes=item.size_bytes,
+                        media_type=item.media_type,
+                        compression=item.compression,
+                    )
+                    for item in resource.materializations
+                ),
+            )
+            descriptor_env = [
+                {
+                    "name": "FS2_STAGE_DESCRIPTOR_FILE",
+                    "value": f"{invocation.working_directory}/{STAGE_DESCRIPTOR_PATH}",
+                },
+                {"name": "FS2_STAGE_DESCRIPTOR_SHA256", "value": hashlib.sha256(content).hexdigest()},
+            ]
         companion_env = [
             {"name": "FS2_ATTEMPT_ID", "value": str(resource.attempt_id)},
             {"name": "FS2_SCIENTIFIC_INTERNAL_API_URL", "value": self.internal_api_url},
             {"name": "FS2_SCIENTIFIC_WORKLOAD_CAPABILITY", "value": capability},
-            {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
+            *descriptor_env,
             {"name": "FS2_RUNTIME_IMAGE_DIGEST", "value": runtime_image_digest},
             {"name": "FS2_STAGE_IMAGE_DIGEST", "value": stage_image_digest},
             # Helm binds tools_image to this same immutable control-plane
@@ -1871,7 +1900,7 @@ class FileScientificManifestRenderer:
                 ],
                 "env": [
                     {"name": "FS2_RUNTIME_ARTIFACTS_JSON", "value": runtime_marker_json},
-                    {"name": "FS2_STAGE_INVOCATION_JSON", "value": _invocation_json(invocation)},
+                    *(companion_env if remote_descriptor else descriptor_env),
                 ],
                 "volumeMounts": [workspace_mount],
                 "resources": {
@@ -1942,7 +1971,12 @@ class FileScientificManifestRenderer:
                     "securityContext": companion_security,
                 }
             )
-        if len(materializer_containers) > 1:
+        if remote_descriptor and materializer_containers:
+            materializer = materializer_containers[0]
+            materializer["name"] = "materialize-inputs"
+            materializer["command"] = ["fs2-serve", "scientific-materialize-many"]
+            init_containers.append(materializer)
+        elif len(materializer_containers) > 1:
             materializer = materializer_containers[0]
             materializer["name"] = "materialize-inputs"
             # Keep each argument small. A batch must not turn previously valid

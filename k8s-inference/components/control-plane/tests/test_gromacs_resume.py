@@ -134,7 +134,7 @@ def test_resume_rejects_missing_or_incompatible_scientific_state(damage):
         continuation_parameters(original(), checkpoint, model_id="gromacs", max_wall_seconds=604800)
 
 
-@pytest.mark.parametrize("budget", [0, 59, True, 604801])
+@pytest.mark.parametrize("budget", [0, 59, True, 1209601])
 def test_invalid_resume_budget_is_rejected(budget):
     _, checkpoint = fixture()
     with pytest.raises(ScientificRequestError):
@@ -222,7 +222,7 @@ async def test_resume_full_path_preserves_inputs_new_budget_and_idempotency(gang
     assert first == second
     assert len(submitted) == 1
     request = next(iter(submitted.values()))
-    assert request["parameters"]["max_wall_seconds"] == 604800
+    assert request["parameters"]["max_wall_seconds"] == 1209600
     assert request["parameters"]["jobs"][0]["steps"][0]["restart_checkpoint"] == "fs2-production.cpt"
     assert not request.get("parent_operation_id")
     assert request["client_context"]["correlation_id"] == str(operation_id)
@@ -344,10 +344,10 @@ def test_resume_rest_requires_auth_idempotency_and_bounded_budget(registry, ciph
         headers = {"Authorization": "Bearer " + token, "Idempotency-Key": "test-resume-contract"}
         assert client.post(path, json={}).status_code == 401
         assert client.post(path, json={}, headers={"Authorization": headers["Authorization"]}).status_code == 400
-        assert client.post(path, json={"max_wall_seconds": 604801}, headers=headers).status_code == 422
+        assert client.post(path, json={"max_wall_seconds": 1209601}, headers=headers).status_code == 422
         response = client.post(path, json={}, headers=headers)
         assert response.status_code == 202
-        assert calls[-1]["request"].max_wall_seconds == 604800
+        assert calls[-1]["request"].max_wall_seconds == 1209600
         assert calls[-1]["principal"].tenant_id == "system"
         assert response.headers["location"].endswith(response.json()["operation"]["id"])
         error = client.post(path, json={"job_id": "absent"}, headers=headers)

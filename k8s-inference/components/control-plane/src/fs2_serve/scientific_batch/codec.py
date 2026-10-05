@@ -7,11 +7,15 @@ when reopening them.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
+
+import zstandard
 
 from .models import (
     LEGACY_STATE_SCHEMA,
@@ -63,6 +67,50 @@ from .models import (
 from .startup import StageStartupPolicy
 
 MAX_STATE_BYTES = 4 * 1024 * 1024
+MAX_IMMUTABLE_METADATA_BYTES = 32 * 1024 * 1024
+COMPACT_METADATA_SCHEMA = "fs2-serve.nebius.ai/scientific-immutable-metadata/zstd-v1"
+
+
+def _canonical_metadata(value: object) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+
+
+def _pack_metadata(value: object) -> dict[str, Any]:
+    content = _canonical_metadata(value)
+    if len(content) > MAX_IMMUTABLE_METADATA_BYTES:
+        raise ValueError("scientific immutable metadata exceeds its expanded byte bound")
+    compressed = zstandard.ZstdCompressor(level=3, write_content_size=False).compress(content)
+    return {
+        "encoding": COMPACT_METADATA_SCHEMA,
+        "size_bytes": len(content),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "data": base64.b64encode(compressed).decode("ascii"),
+    }
+
+
+def _unpack_metadata(value: object) -> object:
+    if not isinstance(value, dict) or value.get("encoding") != COMPACT_METADATA_SCHEMA:
+        return value
+    if (
+        set(value) != {"encoding", "size_bytes", "sha256", "data"}
+        or type(value["size_bytes"]) is not int
+        or not 0 < value["size_bytes"] <= MAX_IMMUTABLE_METADATA_BYTES
+        or not isinstance(value["data"], str)
+        or len(value["data"]) > MAX_STATE_BYTES
+    ):
+        raise ValueError("scientific immutable metadata envelope is invalid")
+    try:
+        compressed = base64.b64decode(value["data"], validate=True)
+        # Unknown-content-size frames plus a hard output limit keep decoding
+        # bounded even when an internal row is damaged.
+        if zstandard.get_frame_parameters(compressed).content_size != zstandard.CONTENTSIZE_UNKNOWN:
+            raise ValueError("scientific immutable metadata frame is invalid")
+        content = zstandard.ZstdDecompressor().decompress(compressed, max_output_size=MAX_IMMUTABLE_METADATA_BYTES)
+    except (ValueError, zstandard.ZstdError) as error:
+        raise ValueError("scientific immutable metadata cannot be decoded") from error
+    if len(content) != value["size_bytes"] or hashlib.sha256(content).hexdigest() != value["sha256"]:
+        raise ValueError("scientific immutable metadata identity changed")
+    return json.loads(content)
 
 
 def _object(value: object, keys: set[str], label: str) -> Mapping[str, Any]:
@@ -128,7 +176,7 @@ def _string_items(value: object, label: str, *, maximum: int) -> tuple[str, ...]
     return tuple(_string(item, label) for item in _items(value, label, maximum=maximum))
 
 
-def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
+def _expanded_state_to_value(state: ScientificBatchState) -> dict[str, Any]:
     """Return canonical, payload-free internal state."""
 
     return {
@@ -481,6 +529,25 @@ def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
     }
 
 
+def state_to_value(state: ScientificBatchState) -> dict[str, Any]:
+    value = _expanded_state_to_value(state)
+    # Immutable metadata can dominate a late native restart. Keep controller
+    # status, scheduling, attempts and SQL identity/immutability checks visible;
+    # compress only the two frozen subdocuments and retain the 4 MiB durable
+    # transport bound. Existing admitted plans (<4 MiB total) never cross this
+    # immutable-size threshold and therefore serialize byte-for-byte as before.
+    names = ("input_manifest", "adapter_execution")
+    if (
+        state.model_id in {"gromacs", "gromacs-mpi"}
+        and sum(len(_canonical_metadata(value[name])) for name in names) > MAX_STATE_BYTES
+    ):
+        for name in names:
+            value[name] = _pack_metadata(value[name])
+    if len(_canonical_metadata(value)) > MAX_STATE_BYTES:
+        raise ValueError("scientific-batch state exceeds the durable bound")
+    return value
+
+
 def state_to_json(state: ScientificBatchState) -> str:
     value = json.dumps(state_to_value(state), sort_keys=True, separators=(",", ":"), allow_nan=False)
     if len(value.encode("utf-8")) > MAX_STATE_BYTES:
@@ -495,6 +562,8 @@ def state_from_value(raw: object) -> ScientificBatchState:
         if len(raw.encode("utf-8")) > MAX_STATE_BYTES:
             raise ValueError("stored scientific-batch state exceeds the durable bound")
         raw = json.loads(raw)
+    if isinstance(raw, Mapping) and raw.get("model_id") in {"gromacs", "gromacs-mpi"}:
+        raw = {**raw, **{name: _unpack_metadata(raw.get(name)) for name in ("input_manifest", "adapter_execution")}}
     value = _object(
         raw,
         {
@@ -632,7 +701,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
             "verified input manifest",
         )
         entries: list[ScientificInputArtifact] = []
-        for raw_entry in _items(manifest["entries"], "verified input entries", maximum=10_000):
+        for raw_entry in _items(manifest["entries"], "verified input entries", maximum=32_768):
             entry = _object(
                 raw_entry,
                 {
@@ -793,7 +862,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
             # Per-file native checkpoint continuations use the already-bounded
             # verified input manifest, not an arbitrary 64-file subset of it.
             for raw_materialization in _items(
-                invocation["materializations"], "artifact materializations", maximum=10_000
+                invocation["materializations"], "artifact materializations", maximum=32_768
             ):
                 materialization = _object(
                     raw_materialization,
@@ -911,7 +980,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     argv=_string_items(invocation["argv"], "invocation argv", maximum=64),
                     environment=tuple(environment),
                     working_directory=_string(invocation["working_directory"], "invocation working directory"),
-                    consumes=_string_items(invocation["consumes"], "logical input", maximum=10_000),
+                    consumes=_string_items(invocation["consumes"], "logical input", maximum=32_768),
                     produces=_string(invocation["produces"], "logical output"),
                     collector_id=_string(invocation["collector_id"], "collector ID"),
                     validator_id=_string(invocation["validator_id"], "validator ID"),

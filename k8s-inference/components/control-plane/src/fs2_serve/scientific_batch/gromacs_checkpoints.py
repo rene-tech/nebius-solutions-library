@@ -16,7 +16,7 @@ from uuid import UUID
 
 import httpx
 from fs2_gromacs.contracts import relative_path
-from fs2_gromacs.files import atomic_json, digest_file, media_type
+from fs2_gromacs.files import FileDigestCache, atomic_json, digest_file, media_type
 
 from .gromacs_storage import GromacsCustomerStorage
 from .models import StageInvocation
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
 CHECKPOINT_MEDIA = "application/vnd.fs2.gromacs-checkpoint+json"
 COLLECTOR = "gromacs-workflow-v1"
-MAX_MANIFEST_BYTES = 16 * 1024**2
+MAX_MANIFEST_BYTES = 32 * 1024**2
 
 
 class GromacsCheckpointTransport:
@@ -41,9 +41,10 @@ class GromacsCheckpointTransport:
         *,
         workflow: NativeWorkflow | None = None,
     ) -> None:
-        self.workflow = workflow or workflow_for_collector(COLLECTOR)
-        if self.workflow is None:
+        selected = workflow or workflow_for_collector(COLLECTOR)
+        if selected is None:
             raise ValueError("native checkpoint workflow is not registered")
+        self.workflow: NativeWorkflow = selected
         self.client, self.invocation, self.workspace = client, invocation, workspace
         self.data = workspace / "data"
         self.meta = workspace / ".fs2"
@@ -51,6 +52,7 @@ class GromacsCheckpointTransport:
         self.files: dict[str, dict[str, Any]] = {}
         self.final_files: dict[str, dict[str, Any]] = {}
         self.diagnostic_files: dict[str, dict[str, Any]] = {}
+        self.file_digests = FileDigestCache()
         self.operation = invocation.argv[invocation.argv.index("--operation-id") + 1]
         self.attempt = os.environ.get("FS2_ATTEMPT_ID", "local-companion")
         self.customer = GromacsCustomerStorage(
@@ -71,7 +73,8 @@ class GromacsCheckpointTransport:
             or state["generation"] < 1
         ):
             raise ValueError("checkpoint belongs to another workflow or shard")
-        if not isinstance(files, list) or len(files) > 9998:
+        maximum_files = 32766 if self.workflow.model_id in {"gromacs", "gromacs-mpi"} else 9998
+        if not isinstance(files, list) or len(files) > maximum_files:
             raise ValueError("checkpoint file count exceeds the invocation")
         names = [relative_path(item["path"]) for item in files]
         if (
@@ -157,31 +160,64 @@ class GromacsCheckpointTransport:
             return
         published = []
         known = {item["sha256"]: item for item in self.files.values()}
+        missing: dict[str, dict[str, Any]] = {}
         for item in files:
             source = self.data / item["path"]
             root = self.data.resolve(strict=True)
             if source.is_symlink() or root not in source.resolve(strict=True).parents or not source.is_file():
                 raise ValueError("checkpoint file escaped its workspace")
-            if source.stat().st_size != item["size_bytes"] or digest_file(source) != item["sha256"]:
+            if source.stat().st_size != item["size_bytes"] or self.file_digests.digest(source) != item["sha256"]:
                 raise ValueError("checkpoint file changed after the engine stopped")
             # Native GROMACS routinely emits byte-identical aliases, e.g.
             # md.gro and md.part0001.gro, or shared lambda-window topologies.
             # The platform reserves content addresses, not filenames.
             prior = known.get(item["sha256"])
-            if prior and (prior["sha256"], prior["size_bytes"]) == (item["sha256"], item["size_bytes"]):
-                ref = prior["artifact"]
-                uploaded_attempt = prior.get("uploaded_attempt")
-            else:
-                ref = self.client.upload_file(
+            if not prior or (prior["sha256"], prior["size_bytes"]) != (item["sha256"], item["size_bytes"]):
+                missing.setdefault(item["sha256"], item)
+
+        def upload(item: dict[str, Any]) -> dict[str, Any]:
+            return {
+                **item,
+                "artifact": self.client.upload_file(
                     identity=f"{self.invocation.produces}:{self.attempt}:native-file",
-                    path=source,
+                    path=self.data / item["path"],
                     media_type=media_type(item["path"]),
                     compression=None,
+                ),
+                "uploaded_attempt": self.attempt,
+            }
+
+        pending = list(missing.values())
+        index = 0
+        while index < len(pending):
+            group: list[dict[str, Any]] = []
+            group_bytes = 0
+            # Cap both queued requests and signed-handle residence time for
+            # large trajectories. One large file may occupy a batch by itself.
+            while index < len(pending) and len(group) < 64:
+                item = pending[index]
+                if group and group_bytes + item["size_bytes"] > 1024**3:
+                    break
+                group.append(item)
+                group_bytes += item["size_bytes"]
+                index += 1
+            if self.workflow.model_id in {"gromacs", "gromacs-mpi"}:
+                refs = self.client.upload_files(
+                    identity=f"{self.invocation.produces}:{self.attempt}:native-file",
+                    paths=tuple(self.data / item["path"] for item in group),
+                    media_type="application/octet-stream",
+                    compression=None,
                 )
-                uploaded_attempt = self.attempt
-            entry = {**item, "artifact": ref, "uploaded_attempt": uploaded_attempt}
+                for item, ref in zip(group, refs, strict=True):
+                    known[item["sha256"]] = {**item, "artifact": ref, "uploaded_attempt": self.attempt}
+            else:
+                for item in group:
+                    entry = upload(item)
+                    known[entry["sha256"]] = entry
+        for item in files:
+            prior = known[item["sha256"]]
+            entry = {**item, "artifact": prior["artifact"], "uploaded_attempt": prior.get("uploaded_attempt")}
             published.append(entry)
-            known[item["sha256"]] = entry
         customer_storage = self.customer.publish(state, files)
         manifest = {"state": state, "files": published, "customer_storage": customer_storage}
         raw = json.dumps(manifest, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
@@ -218,15 +254,24 @@ class GromacsCheckpointTransport:
         digest, size = digest_file(path), path.stat().st_size
         if digest in self.diagnostic_files:
             return self.diagnostic_files[digest]
-        prior = next((item for item in self.files.values()
-                      if item["sha256"] == digest and item["size_bytes"] == size
-                      and item.get("uploaded_attempt") == self.attempt), None)
+        prior = next(
+            (
+                item
+                for item in self.files.values()
+                if item["sha256"] == digest
+                and item["size_bytes"] == size
+                and item.get("uploaded_attempt") == self.attempt
+            ),
+            None,
+        )
         if prior is not None:
             ref = cast(dict[str, Any], prior["artifact"])
         else:
             ref = self.client.upload_file(
                 identity=f"{self.invocation.produces}:{self.attempt}:native-file",
-                path=path, media_type=media_type(str(path)), compression=None,
+                path=path,
+                media_type=media_type(str(path)),
+                compression=None,
             )
         self.diagnostic_files[digest] = ref
         return ref
@@ -241,7 +286,10 @@ class GromacsCheckpointTransport:
         if self.data.resolve() not in path.resolve().parents:
             return None
         prior = self.files.get(str(path.relative_to(self.data)))
-        if prior is None or (path.stat().st_size, digest_file(path)) != (prior["size_bytes"], prior["sha256"]):
+        if prior is None or (path.stat().st_size, self.file_digests.digest(path)) != (
+            prior["size_bytes"],
+            prior["sha256"],
+        ):
             raise ValueError("final native file differs from its committed checkpoint")
         digest = prior["sha256"]
         if digest in self.final_files:

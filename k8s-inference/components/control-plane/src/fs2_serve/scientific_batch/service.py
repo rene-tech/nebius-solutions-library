@@ -650,25 +650,25 @@ class ScientificBatchService:
                     raise ScientificProfileError("scientific runtime binding changed during admission") from error
             else:
                 execution_plan = None
-            payload = state_to_value(
-                ScientificBatchState.admit(
-                    operation_id=operation.id,
-                    tenant_id=principal.tenant_id,
-                    model_id=model_id,
-                    variant_id=variant_id,
-                    input_artifact_id=UUID(validated["input_manifest"]["artifact_id"]),
-                    plan=plan,
-                    scheduling=snapshot,
-                    execution_plan=execution_plan,
-                    access_context=access_context,
-                    input_manifest=input_admission.manifest,
-                    runtime_artifacts=runtime_artifacts,
-                )
-            )
             # Validate with the actual durable reader before the enclosing
             # transaction commits. A writer/reader contract mismatch must reject
             # this request, not leave a poison outbox row in every worker loop.
             try:
+                payload = state_to_value(
+                    ScientificBatchState.admit(
+                        operation_id=operation.id,
+                        tenant_id=principal.tenant_id,
+                        model_id=model_id,
+                        variant_id=variant_id,
+                        input_artifact_id=UUID(validated["input_manifest"]["artifact_id"]),
+                        plan=plan,
+                        scheduling=snapshot,
+                        execution_plan=execution_plan,
+                        access_context=access_context,
+                        input_manifest=input_admission.manifest,
+                        runtime_artifacts=runtime_artifacts,
+                    )
+                )
                 state_from_value(payload)
             except (KeyError, TypeError, ValueError) as error:
                 raise ScientificProfileError("scientific execution plan cannot be durably restored") from error

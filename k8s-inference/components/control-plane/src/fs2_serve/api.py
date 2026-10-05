@@ -1419,7 +1419,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             payload = GromacsResumeRequest.model_validate_json(await request.body())
         except ValueError:
             raise HTTPException(
-                status_code=422, detail="provide job_id (optional) and max_wall_seconds from 60 to 604800"
+                status_code=422, detail="provide job_id (optional) and max_wall_seconds from 60 to 1209600"
             ) from None
         result = await resume_gromacs(
             batches=runtime.scientific_batches,

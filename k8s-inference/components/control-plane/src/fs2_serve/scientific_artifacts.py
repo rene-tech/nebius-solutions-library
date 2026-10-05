@@ -452,7 +452,7 @@ class CommitStageResult(ScientificArtifactModel):
     tenant_id: TenantId
     stage_id: StageId
     attempt_ids: tuple[UUID, ...] = Field(min_length=1, max_length=10240)
-    entries: tuple[ManifestEntryDraft, ...] = Field(min_length=1, max_length=10000)
+    entries: tuple[ManifestEntryDraft, ...] = Field(min_length=1, max_length=32768)
     validation_digest: Sha256Digest
     semantic_valid: bool
     committed_at: AwareDatetime

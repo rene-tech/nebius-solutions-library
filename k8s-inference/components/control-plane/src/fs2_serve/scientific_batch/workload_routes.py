@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import hmac
 from dataclasses import replace
 from typing import Annotated, Literal, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Header, HTTPException, Path, status
+from fastapi.responses import Response
 from pydantic import Field
 
 from ..models import StrictModel
@@ -32,6 +34,7 @@ from .capability import (
 )
 from .models import AttemptOutcome, ExecutionMode, ScientificAttemptState, ScientificBatchState
 from .native_workflows import workflow_for_binding
+from .stage_descriptor import descriptor_bytes
 
 
 class WorkloadBatchRepository(Protocol):
@@ -54,6 +57,18 @@ class WorkloadUploadResponse(StrictModel):
 class WorkloadDownloadResponse(StrictModel):
     artifact: ArtifactRef
     handle: EphemeralHandleResponse
+
+
+class WorkloadDownloadsRequest(StrictModel):
+    artifact_ids: tuple[UUID, ...] = Field(min_length=1, max_length=128)
+
+
+class WorkloadUploadsRequest(StrictModel):
+    uploads: tuple[WorkloadUploadRequest, ...] = Field(min_length=1, max_length=64)
+
+
+class WorkloadFinalizationsRequest(StrictModel):
+    upload_ids: tuple[UUID, ...] = Field(min_length=1, max_length=64)
 
 
 def _bearer(value: str | None) -> str:
@@ -162,6 +177,52 @@ def scientific_workload_artifact_router(
             if record.shard_id == attempt.shard_id and record.direction is ArtifactDirection.OUTPUT
         ]
 
+    @router.get("/stage-descriptor")
+    async def stage_descriptor(authorization: Annotated[str | None, Header()] = None) -> Response:
+        capability, state, attempt = await authorized(authorization)
+        if capability.model_id not in {"gromacs", "gromacs-mpi"} or state.execution_plan is None:
+            raise HTTPException(status_code=403, detail="this workload has no remote stage descriptor")
+        invocation = state.execution_plan.invocation(capability.stage_id, attempt.shard_id)
+        return Response(
+            content=descriptor_bytes(invocation, capability.artifacts),
+            media_type="application/json",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @router.post("/artifacts:download", response_model=list[WorkloadDownloadResponse])
+    async def download_inputs(
+        request: WorkloadDownloadsRequest,
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> list[WorkloadDownloadResponse]:
+        capability, _, _ = await authorized(authorization)
+        if capability.model_id not in {"gromacs", "gromacs-mpi"}:
+            raise HTTPException(status_code=403, detail="this workload has no bulk input contract")
+        bindings = {item.artifact_id: item for item in capability.artifacts}
+        if (
+            len(set(request.artifact_ids)) != len(request.artifact_ids)
+            or not set(request.artifact_ids) <= bindings.keys()
+        ):
+            raise HTTPException(status_code=403, detail="artifact is outside workload capability")
+        semaphore = asyncio.Semaphore(8)
+
+        async def resolve(artifact_id: UUID) -> WorkloadDownloadResponse:
+            async with semaphore:
+                result = await artifacts.download(artifact_id, tenant_id=capability.tenant_id)
+            binding = bindings[artifact_id]
+            if (
+                result.artifact.digest != binding.digest
+                or result.artifact.size_bytes != binding.size_bytes
+                or result.artifact.media_type != binding.media_type
+                or (None if result.artifact.compression is None else result.artifact.compression.value)
+                != binding.compression
+            ):
+                raise HTTPException(status_code=409, detail="artifact metadata changed")
+            return WorkloadDownloadResponse(
+                artifact=result.artifact.to_public_ref(), handle=EphemeralHandleResponse.of(result.handle)
+            )
+
+        return list(await asyncio.gather(*(resolve(artifact_id) for artifact_id in request.artifact_ids)))
+
     @router.get("/checkpoints/latest")
     async def latest_checkpoint(authorization: Annotated[str | None, Header()] = None) -> dict[str, ArtifactRef | None]:
         capability, _, attempt = await authorized(authorization)
@@ -229,6 +290,11 @@ def scientific_workload_artifact_router(
                 started_at=attempt.started_at or state.scheduling.captured_at,
             )
         )
+        return await reserve_upload(request, capability)
+
+    async def reserve_upload(
+        request: WorkloadUploadRequest, capability: ScientificWorkloadCapability
+    ) -> WorkloadUploadResponse:
         compression = request.compression if isinstance(request.compression, ArtifactCompression) else None
         result = await artifacts.begin_upload(
             BeginArtifactUpload(
@@ -251,6 +317,60 @@ def scientific_workload_artifact_router(
             upload_id=result.upload.upload_id,
             handle=EphemeralHandleResponse.of(result.handle),
         )
+
+    @router.post("/uploads:batch", response_model=list[WorkloadUploadResponse], status_code=status.HTTP_201_CREATED)
+    async def begin_uploads(
+        request: WorkloadUploadsRequest,
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> list[WorkloadUploadResponse]:
+        capability, state, attempt = await authorized(authorization)
+        if capability.model_id not in {"gromacs", "gromacs-mpi"}:
+            raise HTTPException(status_code=403, detail="this workload has no bulk upload contract")
+        if len({item.upload_id for item in request.uploads}) != len(request.uploads):
+            raise HTTPException(status_code=422, detail="upload identities must be distinct")
+        await artifacts.open_attempt(
+            OpenStageAttempt(
+                attempt_id=capability.attempt_id,
+                operation_id=capability.operation_id,
+                tenant_id=capability.tenant_id,
+                stage_id=capability.stage_id,
+                shard_id=attempt.shard_id,
+                attempt_number=capability.attempt_number,
+                started_at=attempt.started_at or state.scheduling.captured_at,
+            )
+        )
+        semaphore = asyncio.Semaphore(8)
+
+        async def reserve(item: WorkloadUploadRequest) -> WorkloadUploadResponse:
+            async with semaphore:
+                return await reserve_upload(item, capability)
+
+        return list(await asyncio.gather(*(reserve(item) for item in request.uploads)))
+
+    @router.post("/uploads:finalize", response_model=list[ArtifactRef])
+    async def finalize_uploads(
+        request: WorkloadFinalizationsRequest,
+        authorization: Annotated[str | None, Header()] = None,
+    ) -> list[ArtifactRef]:
+        capability, _, _ = await authorized(authorization)
+        if capability.model_id not in {"gromacs", "gromacs-mpi"}:
+            raise HTTPException(status_code=403, detail="this workload has no bulk upload contract")
+        if len(set(request.upload_ids)) != len(request.upload_ids):
+            raise HTTPException(status_code=422, detail="upload identities must be distinct")
+        semaphore = asyncio.Semaphore(8)
+
+        async def finalize(upload_id: UUID) -> ArtifactRef:
+            async with semaphore:
+                record = await artifacts.finalize_upload(
+                    FinalizeArtifactUpload(
+                        upload_id=upload_id,
+                        operation_id=capability.operation_id,
+                        tenant_id=capability.tenant_id,
+                    )
+                )
+            return record.to_public_ref()
+
+        return list(await asyncio.gather(*(finalize(item) for item in request.upload_ids)))
 
     @router.post("/uploads/{upload_id}:finalize", response_model=ArtifactRef)
     async def finalize_upload(

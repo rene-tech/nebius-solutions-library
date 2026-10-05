@@ -1314,7 +1314,10 @@ async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cip
 
 
 @pytest.mark.asyncio
-async def test_unreadable_execution_plan_is_rejected_before_durable_admission(cipher, hasher, monkeypatch):
+@pytest.mark.parametrize("failing_boundary", ["state_from_value", "state_to_value"])
+async def test_unreadable_execution_plan_is_rejected_before_durable_admission(
+    cipher, hasher, monkeypatch, failing_boundary
+):
     from fs2_serve.scientific_batch.profile_catalog import ScientificProfileError
 
     store = MemoryStore(cipher, hasher)
@@ -1347,7 +1350,7 @@ async def test_unreadable_execution_plan_is_rejected_before_durable_admission(ci
     def incompatible_reader(payload):
         raise ValueError("injected writer/reader mismatch")
 
-    monkeypatch.setattr("fs2_serve.scientific_batch.service.state_from_value", incompatible_reader)
+    monkeypatch.setattr(f"fs2_serve.scientific_batch.service.{failing_boundary}", incompatible_reader)
     with pytest.raises(ScientificProfileError, match="cannot be durably restored"):
         await service.submit(
             principal=identity,
