@@ -63,6 +63,13 @@ The reviewed root-file SHA-256 was
 Re-read the block before editing if the parent has since updated other release
 inputs; do not replay a complete older file.
 
+Parent applied exactly this nested-block correction at 18:41 UTC after a fresh
+read of live generation43 confirmed the same image and two Ready replicas.
+Terraform formatting passed. No apply, state import, replica or live UI change
+was needed: this records the already-deployed release in the authoritative
+private root input. The API191e, zero hot floors and managed RDMA declarations
+were preserved.
+
 ## Explicit persistence boundary
 
 Parent has separately refreshed the API image, zero hot defaults and approved

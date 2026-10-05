@@ -344,3 +344,60 @@ At 18:13 UTC the original Lynx Pod retained UID
 All tests use the existing internal QA identity; no customer key or limit was
 changed. Migration 38/all-reader activation, large MCP terminal validation,
 peer-loss recovery and public RDMA performance remain open.
+
+## 18:41 UTC integration checkpoint — schema38 deployed, acceptance still failing
+
+The coordinated release completed at 18:30 UTC. API, startup schema readers,
+model controller, future scientific-tools and scheduled maintenance now use
+`sha256:191e2c2be4c131c78fd190d620f71dc2b6cfff285c21ab1af4acfb452684c195`,
+built from `7a37a741c86330d25f74eff3fb4c3c6df9e3dabe`. The guarded migration
+verified the prebuilt claim index and advanced the ledger from37 to38 at
+18:30:10. Every old API reader exited before release verification. The eight
+existing public MPI shapes, execution map and native worker images are unchanged;
+no unqualified RDMA shape was published.
+
+This release also bounds outbox recovery to one fleet owner and moves large
+outbox decoding off the request event loop. The already-described historical
+metrics repair is deployed: live queue counts remain fresh, historical samples
+have explicit freshness/unavailability. Ten concurrent scrape cohorts across
+all three readers passed, with at least two successful historical refreshes per
+reader. Final scrape durations were0.282–0.443s. Two new scheduled maintenance
+Jobs completed at18:35:17 and18:36:17. No new database permission was needed.
+
+REST r4's full final artifact verification has now completed: all20,031 files,
+23,042,709 bytes, verified by size and SHA-256. Its earlier readiness failures
+still make it a failed overall availability test. Earlier raw MCP operation
+`c9d6195b-8b69-4296-b1a3-c5596083f050` completed native work and published its
+result at18:26; its Pod was absent by18:26:48. Full artifact verification is
+continuing. Three extra GET attempts occurred during the compatible reader
+rollout and are retained rather than reported as zero retries.
+
+The new concurrent20k cohort uses191e throughout admission and future tools:
+REST `7fb06cae-0eb6-44ab-8f5d-772d2fb3ae86` and raw MCP
+`c2d128a9-80f5-418f-82a6-0372b4fdb7a7`. Initial/replayed admissions reused each
+operation, taking33.882/30.778s and25.576/21.975s respectively. Complete pre-armed
+body capture still found `database_unavailable` readiness503s during admission.
+These are new acceptance failures, not a pass. The database observer showed
+roughly478–494m CPU and no active application query at the sampled failure
+times; the earlier database saturation is not sufficient to explain them.
+A separate worker is diagnosing the remaining application/pool boundary while
+both native continuations proceed without runtime modification.
+
+On InfiniBand, the exact16-rank CUDA-buffer probe passes, but a byte-checked
+9MB host broadcast fails with `ibv_reg_mr Cannot allocate memory` and the
+existing8192kB memlock limit. The actual GROMACS attempt stopped before step0.
+A separate TCP control and narrowly scoped RDMA-only IPC_LOCK executable
+candidate are being tested. There is no native RDMA performance result yet.
+
+Fresh sibling verification retained the original Lynx Pod UID, both containers
+Ready, zero restarts, all31 managed App floors atzero, no idle App Pods, and the
+unchanged workshop/admin images. The private authoritative root input now records
+the deployed API/admin images, zero hot defaults and installed RDMA pool. No
+whole-stack apply was run; the existing H200 ownership/input residual remains
+documented in `../idle-scale-zero-20261005/PERSISTENCE.md`.
+
+Private evidence: `schema38-stage-191e-r2.json`,
+`schema38-restore-api-191e.json`, `schema38-restore-maintenance-191e.json`,
+`release/outbox38-verification/`, `outbox38-metrics/`,
+`outbox38-database-load.jsonl` and `concurrent-20k-r1/` under the private parent
+root. No customer key, scientific input protocol, timeout or cloud quota changed.

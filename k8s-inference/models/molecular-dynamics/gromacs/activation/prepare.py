@@ -100,7 +100,7 @@ def validate_profile_qualifications(profiles, execution_map):
             raise ValueError("release would invalidate an App's qualification membership")
 
 
-def source_recipe(root, *, mpi_cuda_aware=False):
+def source_recipe(root, *, mpi_cuda_aware=False, mpi_rdma=False):
     sys.path.insert(0, str(root / "components/control-plane/src"))
     from fs2_serve.scientific_batch.adapters.common import _RECIPE_SHARED_PATHS
 
@@ -137,7 +137,7 @@ def source_recipe(root, *, mpi_cuda_aware=False):
         "models/molecular-dynamics/gromacs/runtime/requirements.lock",
     }
     paths.update(str(path.relative_to(root)) for path in (HERE.parent / "runtime/fs2_gromacs").glob("*.py"))
-    if mpi_cuda_aware:
+    if mpi_cuda_aware or mpi_rdma:
         # This successor changes only Open MPI in the immutable worker. Bind
         # its build recipe and probe sources without changing the single-GPU
         # App's already-qualified identity.
@@ -147,6 +147,17 @@ def source_recipe(root, *, mpi_cuda_aware=False):
             "Containerfile.mpi-cuda-aware.dockerignore",
             "cuda-aware/verify_build.py",
             "cuda-aware/mpi_device_probe.c",
+        ))
+    if mpi_rdma:
+        # The RDMA image extends the CUDA-aware worker. Its provider layer,
+        # fixed capability-bearing executables and trusted loader paths are
+        # part of the exact runtime identity, never inferred from a base image.
+        prefix = "models/molecular-dynamics/gromacs/runtime/"
+        paths.update(prefix + path for path in (
+            "Containerfile.mpi-rdma",
+            "rdma/host_collectives.c",
+            "rdma/memlock_probe.c",
+            "rdma/ld.so.conf",
         ))
     return {
         "schema": "fs2-serve.nebius.ai/gromacs-runtime-recipe/v1",

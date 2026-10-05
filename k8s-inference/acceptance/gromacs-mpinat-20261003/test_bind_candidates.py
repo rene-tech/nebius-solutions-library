@@ -70,3 +70,16 @@ class BindingTests(unittest.TestCase):
             "cuda-aware/verify_build.py", "cuda-aware/mpi_device_probe.c")})
         self.assertTrue(all(new[path] == row for path, row in old.items()))
         self.assertNotEqual(activation.digest(original), activation.digest(candidate))
+
+    def test_rdma_recipe_includes_exact_capability_and_loader_sources(self):
+        cuda = activation.source_recipe(SOLUTION, mpi_cuda_aware=True)
+        rdma = activation.source_recipe(SOLUTION, mpi_rdma=True)
+        old = {row["path"]: row for row in cuda["files"]}
+        new = {row["path"]: row for row in rdma["files"]}
+        prefix = "models/molecular-dynamics/gromacs/runtime/"
+        self.assertEqual(set(new) - set(old), {prefix + path for path in (
+            "Containerfile.mpi-rdma", "rdma/host_collectives.c",
+            "rdma/memlock_probe.c", "rdma/ld.so.conf")})
+        self.assertTrue(all(new[path] == row for path, row in old.items()))
+        self.assertNotEqual(activation.digest(cuda), activation.digest(rdma))
+        self.assertEqual(rdma, activation.source_recipe(SOLUTION, mpi_cuda_aware=True, mpi_rdma=True))

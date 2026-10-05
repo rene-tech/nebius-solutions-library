@@ -104,6 +104,8 @@ def main():
     parser.add_argument("--mpi", type=Path, action="append")
     parser.add_argument("--mpi-cuda-aware", action="store_true",
                         help="Include the additive CUDA-aware Open MPI build recipe for the MPI App only")
+    parser.add_argument("--mpi-rdma", action="store_true",
+                        help="Bind the RDMA layer and its CUDA-aware base recipe for the MPI App only")
     parser.add_argument("--evidence-output", type=Path, required=True)
     parser.add_argument("--active-deadline-seconds", type=int)
     args = parser.parse_args()
@@ -111,11 +113,14 @@ def main():
         parser.error("select --single, --mpi, or both")
     if args.mpi_cuda_aware and not args.mpi:
         parser.error("--mpi-cuda-aware requires --mpi qualification evidence")
+    if args.mpi_rdma and not args.mpi:
+        parser.error("--mpi-rdma requires --mpi qualification evidence")
     proofs, recipes = {}, {}
     for model, directories, mpi in (("gromacs", args.single, False), ("gromacs-mpi", args.mpi, True)):
         if directories:
             proofs[model] = evidence(directories, mpi=mpi)
-            recipes[model] = activation.source_recipe(SOLUTION, mpi_cuda_aware=mpi and args.mpi_cuda_aware)
+            recipes[model] = activation.source_recipe(
+                SOLUTION, mpi_cuda_aware=mpi and args.mpi_cuda_aware, mpi_rdma=mpi and args.mpi_rdma)
     contracts = SOLUTION / "catalog/runtime/contracts"
     catalog_path, map_path = (contracts / name for name in (
         "scientific-workload-profiles.json", "scientific-execution-map.json"))
