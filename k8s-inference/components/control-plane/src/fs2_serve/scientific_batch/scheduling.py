@@ -387,7 +387,31 @@ class SchedulingContractResolver:
                 if stage_accelerator is not None and stage_accelerator.get("resource_name") != accelerator_resource:
                     raise SchedulingContractError("profile stage accelerator resource differs from Kueue")
                 accelerator_count = stage_gpu_count
-                if not self.pod_placement.legacy_unverified:
+                rdma = None if stage.execution_shape is None else stage.execution_shape.rdma
+                if rdma is not None:
+                    node_selector = tuple(sorted(rdma.node_labels.items()))
+                    queue = _object(self.cluster_queues.get(cluster_queue_name), "RDMA ClusterQueue")
+                    groups = _object(queue.get("spec"), "RDMA ClusterQueue spec").get("resourceGroups", [])
+                    # GPU and HCA must share the same flavor assignment, not
+                    # independent flavors that could refer to different nodes.
+                    budgeted = set()
+                    for group in groups:
+                        if not isinstance(group, Mapping) or not {accelerator_resource, rdma.resource_name}.issubset(
+                            group.get("coveredResources", [])
+                        ):
+                            continue
+                        for flavor in group.get("flavors", []):
+                            for amount in flavor.get("resources", []):
+                                quantity = str(amount.get("nominalQuota", ""))
+                                if (amount.get("name") == rdma.resource_name
+                                        and quantity.isdecimal() and int(quantity) >= 2):
+                                    budgeted.add(flavor.get("name"))
+                    resolved_pools = tuple(
+                        pool for pool in resolved_pools if self.pools[pool]["resource_flavor"] in budgeted
+                    )
+                    if not resolved_pools:
+                        raise SchedulingContractError("RDMA requires a joint GPU/HCA flavor reservation for both nodes")
+                if not self.pod_placement.legacy_unverified or rdma is not None:
                     execution_resources = (
                         self.stage_resources.get((model_id, stage.stage_id))
                         if stage.execution_shape is None
@@ -410,9 +434,11 @@ class SchedulingContractResolver:
                         requested_resources,
                         accelerator_resource=accelerator_resource,
                         accelerator_count=accelerator_count,
+                        extended_resources=() if rdma is None else ((rdma.resource_name, rdma.count),),
                     )
                     resolved_pools = self.pod_placement.eligible_pools(
-                        resolved_pools, pod_request, accelerator_resource
+                        resolved_pools, pod_request, accelerator_resource,
+                        required_labels=None if rdma is None else rdma.node_labels,
                     )
                     if not resolved_pools:
                         raise SchedulingContractError(

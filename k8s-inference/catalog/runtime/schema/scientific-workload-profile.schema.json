@@ -779,7 +779,17 @@
                   {"required": ["accelerator"], "properties": {"class": {"const": "accelerator"}}}
                 ]
               },
-              "resources": {"$ref": "#/$defs/stage/properties/resources"}
+              "resources": {"$ref": "#/$defs/stage/properties/resources"},
+              "rdma": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["resource_name", "count", "gpu_cluster_id"],
+                "properties": {
+                  "resource_name": {"type": "string", "pattern": "^rdma\\.[a-z0-9.-]+/[A-Za-z0-9_.-]+$", "maxLength": 317},
+                  "count": {"const": 1},
+                  "gpu_cluster_id": {"type": "string", "pattern": "^computegpucluster-[a-z0-9]+$"}
+                }
+              }
             }
           }
         },

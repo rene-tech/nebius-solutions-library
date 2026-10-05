@@ -59,12 +59,20 @@ class AcceleratorNodeCapacity:
     memory_mib: int
     accelerator_count: int
     ephemeral_storage_mib: int | None = None
+    extended_resources: tuple[tuple[str, int], ...] = ()
+    node_labels: tuple[tuple[str, str], ...] = ()
 
-    def fits(self, request: ResourceVector, accelerator_resource: str) -> bool:
+    def fits(self, request: ResourceVector, accelerator_resource: str, required_labels: Mapping[str, str]) -> bool:
         return (
             request.cpu_millis <= self.cpu_millicores
+            and all(dict(self.node_labels).get(key) == value for key, value in required_labels.items())
             and request.memory_bytes <= self.memory_mib * 1024**2
             and dict(request.accelerators).get(accelerator_resource, 0) <= self.accelerator_count
+            and all(
+                count <= dict(self.extended_resources).get(name, 0)
+                for name, count in request.accelerators
+                if name != accelerator_resource
+            )
             and (
                 self.ephemeral_storage_mib is None
                 or request.ephemeral_storage_bytes <= self.ephemeral_storage_mib * 1024**2
@@ -73,7 +81,8 @@ class AcceleratorNodeCapacity:
 
 
 def stage_pod_request(
-    stage: StageResourceEnvelope, *, accelerator_resource: str, accelerator_count: int
+    stage: StageResourceEnvelope, *, accelerator_resource: str, accelerator_count: int,
+    extended_resources: tuple[tuple[str, int], ...] = (),
 ) -> ResourceVector:
     """Preflight the canonical stage+collector Pod without rendering secrets.
 
@@ -88,6 +97,7 @@ def stage_pod_request(
         "memory": str(stage.memory_bytes),
         "ephemeral-storage": str(stage.ephemeral_storage_bytes),
         accelerator_resource: str(accelerator_count),
+        **{name: str(count) for name, count in extended_resources},
     }
     companion = {"cpu": "100m", "memory": "256Mi"}
     manifest: dict[str, Any] = {
@@ -138,22 +148,41 @@ class AcceleratorPodPlacement:
                     raise PodPlacementError(f"accelerator pool {pool_id} has invalid {field}")
                 else:
                     fields[field] = amount
+            extended = value.get("extended_resources", {})
+            if not isinstance(extended, Mapping) or len(extended) > 8 or any(
+                not isinstance(name, str) or not name.startswith("rdma.") or "/" not in name
+                or type(count) is not int or count < 1
+                for name, count in extended.items()
+            ):
+                raise PodPlacementError(f"accelerator pool {pool_id} has invalid extended resources")
+            labels = value.get("node_labels", {})
+            if not isinstance(labels, Mapping) or len(labels) > 32 or any(
+                not isinstance(key, str) or not isinstance(label, str) for key, label in labels.items()
+            ):
+                raise PodPlacementError(f"accelerator pool {pool_id} has invalid node labels")
             self.capacities[pool_id] = AcceleratorNodeCapacity(
                 cpu_millicores=cast(int, fields["cpu_millicores"]),
                 memory_mib=cast(int, fields["memory_mib"]),
                 accelerator_count=cast(int, fields["accelerator_count"]),
                 ephemeral_storage_mib=fields["ephemeral_storage_mib"],
+                extended_resources=tuple(sorted(extended.items())),
+                node_labels=tuple(sorted(labels.items())),
             )
 
     def eligible_pools(
-        self, pools: tuple[str, ...], request: ResourceVector, accelerator_resource: str
+        self, pools: tuple[str, ...], request: ResourceVector, accelerator_resource: str,
+        *, required_labels: Mapping[str, str] | None = None,
     ) -> tuple[str, ...]:
         if self.legacy_unverified:
-            return pools
+            # Old GPU-only contracts remain readable; a new RDMA claim must
+            # never inherit their unverified per-node resource assumptions.
+            return () if any(name != accelerator_resource for name, _ in request.accelerators) else pools
         return tuple(
             pool_id
             for pool_id in pools
-            if pool_id in self.capacities and self.capacities[pool_id].fits(request, accelerator_resource)
+            if pool_id in self.capacities and self.capacities[pool_id].fits(
+                request, accelerator_resource, required_labels or {}
+            )
         )
 
     def validate_rendered(self, envelope: WorkloadEnvelope, pools: tuple[str, ...], accelerator_resource: str) -> None:

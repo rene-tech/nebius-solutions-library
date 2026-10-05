@@ -19,6 +19,7 @@ from .models import (
     ScientificStagePlan,
     StageExecutionShape,
     StagePlacementClass,
+    StageRdmaBinding,
     StageResourceEnvelope,
 )
 
@@ -104,7 +105,9 @@ def select_stage_shape(stage: Mapping[str, object], shape_id: str | None) -> Map
     if len(matches) != 1:
         raise CatalogProfileAdapterError("execution shape is absent or duplicated in the catalog stage")
     shape = _mapping(matches[0], "execution shape")
-    if set(shape) != {"id", "admission_mode", "min_parallelism", "max_parallelism", "placement", "resources"}:
+    if set(shape) - {"rdma"} != {
+        "id", "admission_mode", "min_parallelism", "max_parallelism", "placement", "resources"
+    }:
         raise CatalogProfileAdapterError("execution shape fields differ from the catalog contract")
     return {**stage, **{key: value for key, value in shape.items() if key != "id"}}
 
@@ -119,6 +122,7 @@ def stage_execution_shape(stage: Mapping[str, object], shape_id: str | None) -> 
         accelerator_resource_name=_string(accelerator.get("resource_name"), "execution shape accelerator resource"),
         accelerator_count=_integer(accelerator.get("count"), "execution shape accelerator count"),
         pool_ids=_string_tuple(accelerator.get("pool_ids"), "execution shape pools"),
+        rdma=None if "rdma" not in stage else StageRdmaBinding.from_value(stage["rdma"]),
     )
 
 

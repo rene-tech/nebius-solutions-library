@@ -58,6 +58,7 @@ from .models import (
     StageExecutionShape,
     StageInvocation,
     StagePlacementClass,
+    StageRdmaBinding,
     StageResourceEnvelope,
     StageSchedulingDecision,
     StageStatus,
@@ -375,6 +376,7 @@ def _expanded_state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                         "termination_grace_seconds": binding.termination_grace_seconds,
                         "environment": [list(item) for item in binding.environment],
                         "required_node_labels": [list(item) for item in binding.required_node_labels],
+                        **({} if binding.rdma is None else {"rdma": binding.rdma.to_value()}),
                         **(
                             {}
                             if binding.startup_policy.backend == "normal-load"
@@ -494,6 +496,9 @@ def _expanded_state_to_value(state: ScientificBatchState) -> dict[str, Any]:
                                 "accelerator_resource_name": stage.execution_shape.accelerator_resource_name,
                                 "accelerator_count": stage.execution_shape.accelerator_count,
                                 "pool_ids": list(stage.execution_shape.pool_ids),
+                                **({} if stage.execution_shape.rdma is None else {
+                                    "rdma": stage.execution_shape.rdma.to_value()
+                                }),
                             }
                         }
                     ),
@@ -718,7 +723,9 @@ def state_from_value(raw: object) -> ScientificBatchState:
         if has_shape:
             shape = _object(
                 stage["execution_shape"],
-                {"shape_id", "accelerator_resource_name", "accelerator_count", "pool_ids"},
+                {"shape_id", "accelerator_resource_name", "accelerator_count", "pool_ids"}
+                | ({"rdma"} if isinstance(stage["execution_shape"], Mapping)
+                   and "rdma" in stage["execution_shape"] else set()),
                 "stage execution shape",
             )
             execution_shape = StageExecutionShape(
@@ -726,6 +733,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 accelerator_resource_name=_string(shape["accelerator_resource_name"], "execution shape resource"),
                 accelerator_count=_integer(shape["accelerator_count"], "execution shape count"),
                 pool_ids=_string_items(shape["pool_ids"], "execution shape pools", maximum=128),
+                rdma=None if "rdma" not in shape else StageRdmaBinding.from_value(shape["rdma"]),
             )
         if not legacy_before_v8:
             placement_class = (
@@ -1115,7 +1123,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                 # remain readable but cannot be rendered; a missing identity
                 # is never inferred from a mutable image default.
                 legacy_identity_fields = expected_binding_fields - {"workspace_uid", "workspace_gid"}
-                if not isinstance(raw_binding, dict) or frozenset(raw_binding) not in {
+                if not isinstance(raw_binding, dict) or frozenset(set(raw_binding) - {"rdma"}) not in {
                     frozenset(expected_binding_fields),
                     frozenset(legacy_identity_fields),
                     frozenset(expected_binding_fields | {"model_runtime_image_digest"}),
@@ -1199,6 +1207,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                         ),
                         environment=pairs(binding["environment"], "stage execution environment"),
                         required_node_labels=pairs(binding["required_node_labels"], "stage execution node label"),
+                        rdma=None if "rdma" not in binding else StageRdmaBinding.from_value(binding["rdma"]),
                         startup_policy=(
                             StageStartupPolicy()
                             if "startup_policy" not in binding

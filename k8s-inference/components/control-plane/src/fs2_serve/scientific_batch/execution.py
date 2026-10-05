@@ -38,6 +38,7 @@ from .models import (
     ScientificStagePlan,
     StageExecutionBinding,
     StageInvocation,
+    StageRdmaBinding,
     StageVolumeBinding,
     WorkloadKind,
     WorkloadResource,
@@ -215,6 +216,7 @@ class StageExecution:
     image_role: str = "model-runtime"
     model_runtime_image_digest: str | None = None
     startup_policy: StageStartupPolicy = StageStartupPolicy()
+    rdma: StageRdmaBinding | None = None
 
 
 def _invocation_json(invocation: StageInvocation) -> str:
@@ -840,7 +842,7 @@ class FileScientificManifestRenderer:
                     raise ScientificExecutionMapError("execution-map shapes are not a bounded array")
                 for raw_shape in shapes:
                     shape = _object(raw_shape, "execution-map shape")
-                    if set(shape) != {"id", "resources"}:
+                    if set(shape) - {"rdma"} != {"id", "resources"}:
                         raise ScientificExecutionMapError("execution-map shape fields differ")
                     shape_id = _bounded_string(shape["id"], "execution-map shape ID", maximum=63)
                     shape_key = (model_id, stage_id, shape_id)
@@ -850,6 +852,18 @@ class FileScientificManifestRenderer:
                     selected_shape = select_stage_shape(profile_stage, shape_id)
                     _, envelope = _stage_contract(selected_shape, "execution-map shape")
                     shape_resources = _execution_resources(shape["resources"])
+                    try:
+                        rdma = None if "rdma" not in shape else StageRdmaBinding.from_value(shape["rdma"])
+                        profile_rdma = (
+                            None if "rdma" not in selected_shape
+                            else StageRdmaBinding.from_value(selected_shape["rdma"])
+                        )
+                    except ValueError as exc:
+                        raise ScientificExecutionMapError("invalid execution shape RDMA binding") from exc
+                    if rdma != profile_rdma or (rdma is not None and model_id != "gromacs-mpi"):
+                        raise ScientificExecutionMapError(
+                            "execution-map RDMA binding differs from the qualified catalog"
+                        )
                     shape_execution = replace(
                         executions[(model_id, stage_id)],
                         request_cpu=shape_resources["request_cpu"],
@@ -861,6 +875,11 @@ class FileScientificManifestRenderer:
                         environment={
                             **executions[(model_id, stage_id)].environment,
                             "FS2_EXECUTION_SHAPE_ID": shape_id,
+                        },
+                        rdma=rdma,
+                        required_node_labels={
+                            **executions[(model_id, stage_id)].required_node_labels,
+                            **({} if rdma is None else rdma.node_labels),
                         },
                     )
                     if execution_resource_envelope(shape_execution) != envelope:
@@ -1101,7 +1120,7 @@ class FileScientificManifestRenderer:
         execution = self.execution_shapes.get(key)
         if execution is None:
             raise ScientificExecutionMapError("execution shape is absent from the immutable execution map")
-        if execution_resource_envelope(execution) != stage.resources:
+        if execution_resource_envelope(execution) != stage.resources or execution.rdma != stage.execution_shape.rdma:
             raise ScientificExecutionMapError("execution shape resources differ from the frozen plan")
         return execution
 
@@ -1118,6 +1137,7 @@ class FileScientificManifestRenderer:
             image=image,
             model_runtime_image_digest=model_runtime_image_digest,
             startup_policy=execution.startup_policy,
+            rdma=execution.rdma,
             collector_id=execution.collector_id,
             validator_id=execution.validator_id,
             mounts=tuple(
@@ -1157,6 +1177,7 @@ class FileScientificManifestRenderer:
             image=binding.image,
             model_runtime_image_digest=binding.model_runtime_image_digest,
             startup_policy=binding.startup_policy,
+            rdma=binding.rdma,
             collector_id=binding.collector_id,
             validator_id=binding.validator_id,
             mounts=tuple(
@@ -1601,6 +1622,11 @@ class FileScientificManifestRenderer:
                 raise ScientificExecutionMapError("GPU scheduling has no accelerator resource")
             limits[accelerator_resource] = str(gpu_count)
             requests[accelerator_resource] = str(gpu_count)
+        if execution.rdma is not None:
+            if resource.model_id != "gromacs-mpi" or gpu_count != 8 or resource.gang_size != 2:
+                raise ScientificExecutionMapError("RDMA execution requires its qualified two full-node gang")
+            requests[execution.rdma.resource_name] = str(execution.rdma.count)
+            limits[execution.rdma.resource_name] = str(execution.rdma.count)
         runtime_marker = {
             "schema": RUNTIME_LOCALIZATION_SCHEMA,
             "operation_id": str(resource.operation_id),
@@ -1797,7 +1823,9 @@ class FileScientificManifestRenderer:
                 "FS2_GROMACS_MPI_GPUS_PER_NODE": str(gpu_count),
                 "FS2_GROMACS_MPI_RANKS_PER_NODE": str(gpu_count),
                 "FS2_GROMACS_MPI_TOTAL_RANKS": str(nodes * gpu_count),
-                "FS2_GROMACS_MPI_TRANSPORT": "ucx-local" if nodes == 1 else "tcp-host-staged",
+                "FS2_GROMACS_MPI_TRANSPORT": (
+                    "ucx-rdma" if execution.rdma is not None else "ucx-local" if nodes == 1 else "tcp-host-staged"
+                ),
             }
             if any(item["name"] in shape_env or item["name"].startswith("FS2_MPI_") for item in env):
                 raise ScientificExecutionMapError("GROMACS MPI allocation environment cannot be overridden")

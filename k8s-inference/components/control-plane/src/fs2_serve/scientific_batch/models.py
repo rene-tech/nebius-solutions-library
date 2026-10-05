@@ -9,7 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -294,6 +294,45 @@ class StageResourceEnvelope:
 
 
 @dataclass(frozen=True, slots=True)
+class StageRdmaBinding:
+    """Operator-qualified exclusive HCA bundle; never inferred from a GPU SKU."""
+
+    resource_name: str
+    count: int
+    gpu_cluster_id: str
+
+    def __post_init__(self) -> None:
+        if (
+            _RESOURCE_NAME_RE.fullmatch(self.resource_name) is None
+            or not self.resource_name.startswith("rdma.")
+            or type(self.count) is not int
+            or self.count != 1
+            or re.fullmatch(r"computegpucluster-[a-z0-9]+", self.gpu_cluster_id) is None
+        ):
+            raise ValueError("RDMA binding requires one exclusive resource and an exact GPU cluster")
+
+    def to_value(self) -> dict[str, object]:
+        return {"resource_name": self.resource_name, "count": self.count, "gpu_cluster_id": self.gpu_cluster_id}
+
+    @classmethod
+    def from_value(cls, value: object) -> StageRdmaBinding:
+        if not isinstance(value, Mapping) or set(value) != {"resource_name", "count", "gpu_cluster_id"}:
+            raise ValueError("RDMA binding fields differ")
+        if not isinstance(value["resource_name"], str) or not isinstance(value["gpu_cluster_id"], str):
+            raise ValueError("RDMA binding identities must be strings")
+        if type(value["count"]) is not int:
+            raise ValueError("RDMA binding count must be an integer")
+        return cls(value["resource_name"], value["count"], value["gpu_cluster_id"])
+
+    @property
+    def node_labels(self) -> dict[str, str]:
+        return {
+            "topology.fs2.nebius/scope": "gpu_cluster",
+            "topology.nebius.com/gpu-cluster-id": self.gpu_cluster_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class StageExecutionShape:
     """Operator-selected accelerator envelope, frozen with the stage resources."""
 
@@ -301,6 +340,7 @@ class StageExecutionShape:
     accelerator_resource_name: str
     accelerator_count: int
     pool_ids: tuple[str, ...]
+    rdma: StageRdmaBinding | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.shape_id, "execution shape ID")
@@ -316,6 +356,8 @@ class StageExecutionShape:
         for pool in self.pool_ids:
             if len(pool) > 128 or _POOL_RE.fullmatch(pool) is None:
                 raise ValueError("execution shape pool ID is invalid")
+        if self.rdma is not None and self.accelerator_count != 8:
+            raise ValueError("RDMA shapes require a qualified whole eight-GPU node")
 
 
 @dataclass(frozen=True, slots=True)
@@ -372,6 +414,10 @@ class ScientificStagePlan:
             self.resource_class is not ResourceClass.GPU or self.resources is None
         ):
             raise ValueError("execution shapes require frozen accelerator placement and resources")
+        if self.execution_shape is not None and self.execution_shape.rdma is not None and (
+            self.mode is not ExecutionMode.TRUE_GANG or self.gang_size != 2
+        ):
+            raise ValueError("RDMA shapes currently require the qualified two-node gang")
 
     @property
     def workload_units(self) -> tuple[str | None, ...]:
@@ -975,6 +1021,7 @@ class StageExecutionBinding:
     required_node_labels: tuple[tuple[str, str], ...]
     model_runtime_image_digest: str | None = None
     startup_policy: StageStartupPolicy = StageStartupPolicy()
+    rdma: StageRdmaBinding | None = None
 
     def __post_init__(self) -> None:
         _check_name(self.stage_id, "stage execution binding ID")
@@ -1000,6 +1047,10 @@ class StageExecutionBinding:
             raise ValueError("stage active deadline is outside the bound")
         if not 1 <= self.termination_grace_seconds <= 24 * 3600:
             raise ValueError("stage termination grace is outside the bound")
+        if self.rdma is not None and any(
+            dict(self.required_node_labels).get(key) != value for key, value in self.rdma.node_labels.items()
+        ):
+            raise ValueError("RDMA binding lacks its frozen GPU-cluster labels")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1085,6 +1136,7 @@ class AdapterExecutionPlan:
                 if (
                     execution_resource_envelope(shape_binding) != stage.resources
                     or dict(shape_binding.environment).get("FS2_EXECUTION_SHAPE_ID") != stage.execution_shape.shape_id
+                    or shape_binding.rdma != stage.execution_shape.rdma
                 ):
                     raise ValueError("execution binding changed the frozen execution shape")
 
@@ -1638,6 +1690,11 @@ class ScientificBatchState:
                 or not set(scheduling.resolved_pool_preference).issubset(plan.execution_shape.pool_ids)
             ):
                 raise ValueError("the scheduling snapshot changed the frozen execution shape")
+            if plan.execution_shape is not None and plan.execution_shape.rdma is not None and any(
+                dict(scheduling.node_selector).get(key) != value
+                for key, value in plan.execution_shape.rdma.node_labels.items()
+            ):
+                raise ValueError("the scheduling snapshot changed the frozen RDMA GPU-cluster binding")
 
     @classmethod
     def admit(

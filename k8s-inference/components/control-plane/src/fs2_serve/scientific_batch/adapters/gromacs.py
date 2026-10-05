@@ -119,6 +119,17 @@ def compile_run(
         gpu_topology="multi-node" if mpi else "single-gpu",
     )
     has_shapes = bool(profile["workload"]["stages"][0].get("execution_shapes")) if mpi else False
+    shape_id = None
+    if mpi and has_shapes and (value["nodes"] == 1 or value.get("gpus_per_node", 1) != 1):
+        shape_id = f"{'single-node' if value['nodes'] == 1 else 'multi-node'}-{value.get('gpus_per_node', 1)}gpu"
+        # An operator-qualified fabric shape is additive. An older profile
+        # still selects its existing TCP shape; public inputs choose neither
+        # transport, provider placement nor extended resources.
+        if value["nodes"] == 2 and value.get("gpus_per_node", 1) == 8 and any(
+            shape.get("id") == "multi-node-8gpu-rdma"
+            for shape in profile["workload"]["stages"][0]["execution_shapes"]
+        ):
+            shape_id = "multi-node-8gpu-rdma"
     if mpi and not has_shapes and (value["nodes"] == 1 or value.get("gpus_per_node", 1) != 1):
         raise ScientificAdapterError("GROMACS MPI resource shape is not declared by the operator profile")
     entries = input_artifacts or ()
@@ -190,11 +201,7 @@ def compile_run(
             "workflow": ScientificStageExpansion(
                 shard_ids=tuple(job["id"] for job in value["jobs"]),
                 gang_size=value["nodes"] if mpi and value["nodes"] > 1 else None,
-                execution_shape_id=(
-                    f"{'single-node' if value['nodes'] == 1 else 'multi-node'}-{value.get('gpus_per_node', 1)}gpu"
-                    if mpi and has_shapes and (value["nodes"] == 1 or value.get("gpus_per_node", 1) != 1)
-                    else None
-                ),
+                execution_shape_id=shape_id,
             )
         },
         invocations=tuple(invocations),
