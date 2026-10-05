@@ -1,0 +1,83 @@
+# Exact-input MD performance qualification — 2026-10-05
+
+This task benchmarks an operator-approved private copy of the actual Lynx
+185486-atom CHARMM membrane TPR. The input and all molecular outputs stay outside
+Git. Immutable TPR SHA256:
+`e2ee73571f0dd9855709d2a957e41e5ad52316b3f1d2b1808e65476f4bd8ef10`.
+
+The running customer continuation is never stopped or changed. The private
+source copy was made read-only from its exact TPR; QA uploads and execution use
+the existing `system/qa` identity and its existing bucket. No customer key,
+customer output prefix, admission-policy change or pool override is used.
+
+## Protocol and claim boundaries
+
+- The original 2fs timestep, 310K protocol, force field, constraints, PME accuracy,
+  output cadence and initial coordinates/velocities are retained. Only
+  `convert-tpr -nsteps` creates an explicitly finite benchmark copy. Repeats
+  restart the same state: they measure timing variability, not independent
+  molecular ensembles.
+- Screen 50000 steps (100ps); confirm promising candidates with three 500000-step
+  (1ns) repeats, reaching the original trajectory-output interval. No forced counter reset:
+  native counters include tuning and are not a pure GPU-compute clock.
+- Single-GPU control: eight requested vCPUs, native auto offload. Change one
+  factor at a time: bonded task placement, thread count, explicit affinity,
+  neighbour-list construction. A list-frequency screen must retain the positive
+  original Verlet-buffer tolerance and native automatic buffer-adjustment proof.
+  Never change physical cutoffs or energy/trajectory output frequencies for speed.
+- MPI comparisons explicitly use CPU update: this TPR's nonconsecutive update
+  groups do not support domain-decomposed GPU update. CPU/GPU PME fixed controls
+  disable PME tuning and remain separate from auto-tuned controls. GPU PME uses
+  one PME rank at multi-rank shapes; the current runtime has no multi-GPU FFT.
+- Test 1/2/4/8 local ranks and 2x8 if the exact free-node check passes. Cross-node
+  transport is host-staged TCP; these nodes have no allocated RDMA fabric.
+  More GPUs is not assumed to reduce time or cost.
+- Native Pod probes test only the pinned engine/resource recipe. REST and raw
+  MCP terminal success, downloaded hash-verified native output, replay identity,
+  frozen plan and durable allocation evidence are separate gates. Raw MCP is not
+  an actual-agent/LibreChat qualification.
+
+## Helpers
+
+`recipes.py` prepares deterministic private bundles and bounded public request
+parameters. `native_probe.py` reuses the retained native Pod supervisor's fresh
+capacity check, immutable image resolution, actual UID ownership and exact Pod
+cleanup; adds Lynx-specific finite energy/coordinate/repeat continuity checks.
+`observe_native.py` samples only this task's labelled native Pods, never the
+customer Pod. `run_public.py` uses the prior durable campaign/transport verifier
+without its policy-changing path. One owned API operation at a time, optionally
+beside one explicitly coordinated peer; the two-slot QA limit remains unchanged.
+
+Example preparation (private paths intentionally supplied by the operator):
+
+```bash
+components/control-plane/.venv/bin/python acceptance/lynx-performance-20261005/recipes.py \
+  --tpr "$LYNX_PRIVATE_INPUT" --output "$LYNX_PRIVATE_FIXTURE" \
+  --steps 500000 --repetitions 3 --bonded gpu
+```
+
+Private evidence root:
+`/home/tux/secure-handoff/fs2-lynx-performance-20261005`.
+Native workers are initially pinned to the existing single digest `f633539e…`
+and MPI digest `938cc612…`; actual manifest/image IDs are in each receipt.
+API release identity may change only through the parent release owner; never
+roll back a reader that understands the longer continuation plans.
+
+Report native and operation-delivered ns/day separately, actual GPU allocation
+seconds, failed allocation, CPU throttling, sampled utilization, transfer bytes
+and known phase clocks. Missing checkpoint/export phase clocks remain null;
+do not subtract presumed compute from wall time and invent a phase duration.
+Three repeat energy/coordinate checks are not ensemble convergence evidence.
+
+## Primary references checked 2026-10-05
+
+[GROMACS performance guidance](https://manual.gromacs.org/2026.2/user-guide/mdrun-performance.html)
+supports measuring bonded offload on CPU-constrained/lipid-heavy systems,
+explicit affinity and neighbour-list tuning while keeping Verlet accuracy.
+[Native mdrun options](https://manual.gromacs.org/2026.2/onlinehelp/gmx-mdrun.html)
+document the exact placement/affinity controls. The installed engine's own
+version/help and actual dispatch logs remain the compatibility authority.
+[Nebius pricing](https://nebius.com/prices) lists H100 on-demand $4.50/GPU-hour
+effective October 1, 2026, and L40S starting prices that vary by CPU/RAM preset.
+Use the actual node's full preset allocation share in final costs; these are
+dated estimates, not an invoice, reservation consumption or pure GPU time.
