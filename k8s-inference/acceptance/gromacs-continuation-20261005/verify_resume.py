@@ -7,9 +7,11 @@ saved operation IDs and idempotency keys. Never use a customer key here.
 import argparse
 import asyncio
 import importlib.util
+import io
 import json
 import os
 import re
+import tarfile
 import time
 from pathlib import Path
 
@@ -97,7 +99,33 @@ async def run(args):
                 )
 
             if "source_operation" not in state:
-                payload = helper.FileSource(args.fixture / "input.tar.gz")
+                input_path = args.fixture / "input.tar.gz"
+                if args.padding_files:
+                    padded = args.output / "input-with-many-files.tar.gz"
+                    if not padded.exists():
+                        with (
+                            tarfile.open(input_path, "r:gz") as original,
+                            tarfile.open(padded, "w:gz") as output,
+                        ):
+                            for member in original:
+                                output.addfile(
+                                    member,
+                                    original.extractfile(member)
+                                    if member.isfile()
+                                    else None,
+                                )
+                            for index in range(args.padding_files):
+                                content_bytes = (
+                                    f"Internal QA continuation file {index}\n".encode()
+                                )
+                                info = tarfile.TarInfo(
+                                    f"continuation-padding/file-{index:05d}.txt"
+                                )
+                                info.size = len(content_bytes)
+                                info.mode = 0o644
+                                output.addfile(info, io.BytesIO(content_bytes))
+                    input_path = padded
+                payload = helper.FileSource(input_path)
                 ref = await helper.upload(
                     http,
                     args.model,
@@ -277,9 +305,11 @@ async def run(args):
                 )
             preserved = 0
             for old in checkpoint["files"]:
-                if re.search(
-                    r"\.part\d+\.(?:xtc|trr|edr|gro|log)$", old["path"]
-                ) or old["path"].endswith(".tpr"):
+                if (
+                    re.search(r"\.part\d+\.(?:xtc|trr|edr|gro|log)$", old["path"])
+                    or old["path"].endswith(".tpr")
+                    or old["path"].startswith("continuation-padding/")
+                ):
                     new = files.get(old["path"], {})
                     if (old["sha256"], old["size_bytes"]) != (
                         new.get("sha256"),
@@ -321,11 +351,14 @@ def main():
     parser.add_argument("--interface", choices=("rest", "mcp"), required=True)
     parser.add_argument("--label", required=True)
     parser.add_argument("--steps", type=int, default=60000)
+    parser.add_argument("--padding-files", type=int, default=0)
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--origin", default="https://89.169.99.188")
     args = parser.parse_args()
     if not re.fullmatch(r"[a-z0-9-]{1,48}", args.label):
         parser.error("label must be a bounded task-owned identifier")
+    if not 0 <= args.padding_files <= 1000:
+        parser.error("padding-files must be between 0 and 1000")
     os.umask(0o077)
     asyncio.run(run(args))
 

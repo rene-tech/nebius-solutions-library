@@ -112,12 +112,70 @@ def test_direct_continuation_materializes_large_files_once_and_keeps_aliases():
     assert "retained/md.part0001.xtc" in invocation.workspace_documents[0].canonical_json
 
 
+@pytest.mark.parametrize("count", [65, 305, 1000])
+def test_many_file_continuation_survives_durable_execution_plan_roundtrip(count):
+    from dataclasses import replace
+    from uuid import uuid4
+
+    from test_scientific_batch_execution_handoff import scheduling
+
+    from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
+    from fs2_serve.scientific_batch.models import ArtifactAccessContext, ScientificBatchState, VerifiedInputManifest
+
+    body = request()
+    body["parameters"]["continuation_files"] = [
+        {"input_id": f"resume-{i:05d}", "path": f"md.part{i:05d}.xtc"} for i in range(count)
+    ]
+    entries = tuple(
+        replace(
+            source(),
+            logical_artifact_id=f"resume-{i:05d}",
+            artifact_id=uuid4(),
+            semantic_type="gromacs-continuation-file/v1",
+            media_type="application/octet-stream",
+            compression=None,
+        )
+        for i in range(count)
+    )
+    plan = gromacs.compile_run(profile(), body, operation_id=OP, input_artifacts=entries)
+    manifest = VerifiedInputManifest(
+        manifest_id="native-parts", manifest_artifact_id=uuid4(), manifest_digest="sha256:" + "a" * 64, entries=entries
+    )
+    snapshot = scheduling(plan.controller_plan)
+    snapshot = replace(
+        snapshot,
+        model_lane="gromacs",
+        stages=tuple(
+            replace(stage, placement_class=plan.controller_plan.stage(stage.stage_id).placement_class)
+            for stage in snapshot.stages
+        ),
+    )
+    state = ScientificBatchState.admit(
+        operation_id=UUID(OP),
+        tenant_id="system",
+        model_id=plan.model_id,
+        variant_id=plan.variant_id,
+        input_artifact_id=manifest.manifest_artifact_id,
+        plan=plan.controller_plan,
+        scheduling=snapshot,
+        execution_plan=plan,
+        input_manifest=manifest,
+        access_context=ArtifactAccessContext(profile="public", tenant_id="system", receipt_digest=None),
+    )
+    decoded = state_from_value(state_to_value(state))
+    assert decoded == state
+    assert len(decoded.execution_plan.invocations[0].materializations) == count
+    assert len(decoded.execution_plan.invocations[0].consumes) == count
+
+
 @pytest.mark.parametrize("path", ["../escape.cpt", "/absolute.cpt", ".fs2/state.json"])
 def test_continuation_paths_cannot_escape_native_workspace(path):
     body = request()
     body["parameters"]["continuation_files"] = [{"input_id": "resume-00000", "path": path}]
     with pytest.raises(ValueError):
         gromacs.compile_run(profile(), body, operation_id=OP, input_artifacts=(source(),))
+
+
 def test_bundle_contract_is_discoverable_and_verified_before_admission():
     assert public_input_contract("gromacs")["entry"]["name"] == "gromacs-inputs"
     validate_input_roles("gromacs", request(), (source(),))

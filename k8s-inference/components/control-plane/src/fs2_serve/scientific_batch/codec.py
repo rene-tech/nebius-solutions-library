@@ -790,7 +790,11 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     raise ValueError("stored adapter environment item fields differ")
                 environment.append((_string(items[0], "environment key"), _string(items[1], "environment value")))
             materializations: list[ArtifactMaterialization] = []
-            for raw_materialization in _items(invocation["materializations"], "artifact materializations", maximum=64):
+            # Per-file native checkpoint continuations use the already-bounded
+            # verified input manifest, not an arbitrary 64-file subset of it.
+            for raw_materialization in _items(
+                invocation["materializations"], "artifact materializations", maximum=10_000
+            ):
                 materialization = _object(
                     raw_materialization,
                     {"artifact_id", "destination", "mode", "compression", "yaml_name", "reuse_prefix"},
@@ -907,7 +911,7 @@ def state_from_value(raw: object) -> ScientificBatchState:
                     argv=_string_items(invocation["argv"], "invocation argv", maximum=64),
                     environment=tuple(environment),
                     working_directory=_string(invocation["working_directory"], "invocation working directory"),
-                    consumes=_string_items(invocation["consumes"], "logical input", maximum=64),
+                    consumes=_string_items(invocation["consumes"], "logical input", maximum=10_000),
                     produces=_string(invocation["produces"], "logical output"),
                     collector_id=_string(invocation["collector_id"], "collector ID"),
                     validator_id=_string(invocation["validator_id"], "validator ID"),
