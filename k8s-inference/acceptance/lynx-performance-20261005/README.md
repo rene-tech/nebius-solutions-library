@@ -98,6 +98,15 @@ remain null. Server accepted-to-completed throughput excludes input upload and
 client artifact download; the latter is unknown unless separately timed. No
 generic top-level reserved-GPU zero is interpreted as zero cost.
 
+`summarize_samples.py` reports observed per-device utilization/power/memory
+distributions and per-container CPU counter deltas from that same frozen
+observer prefix. Irregular sample means include preparation and analysis;
+they are not a utilization integral or native-only time. Counter resets and
+unavailable readings remain explicit, and aggregate cgroup throttling is not
+converted to a lost-work percentage. Retained S3 object bytes, input bytes and
+SDK-verified artifact bytes remain distinct from unknown total transferred
+checkpoint/export bytes.
+
 Example preparation (private paths intentionally supplied by the operator):
 
 ```bash

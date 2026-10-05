@@ -18,6 +18,7 @@ import sys
 from uuid import UUID
 
 from recipes import TPR_SHA256, save, sha
+from summarize_samples import summarize as summarize_samples
 from validate_public import check as check_public
 
 LEGACY = Path(__file__).resolve().parents[1] / "gromacs-mpinat-20261003"
@@ -287,6 +288,11 @@ def main():
         index.correlate_allocations()
     integrity = index.db.execute("PRAGMA integrity_check").fetchall()
     foreign_keys = index.db.execute("PRAGMA foreign_key_check").fetchall()
+    storage = [{"operation_id": row[0], "name": row[1], "value": json.loads(row[2]),
+                "unit": row[3], "quality": row[4], "source": row[5]}
+               for row in index.db.execute("SELECT operation_id,name,value_json,unit,quality,source FROM measurements "
+                                           "WHERE name IN ('input_bundle_bytes','retained_customer_objects_bytes') "
+                                           "ORDER BY operation_id,name")]
     index.db.close()
     if integrity != [("ok",)] or foreign_keys:
         raise ValueError("New offline evidence index failed integrity checks")
@@ -298,6 +304,11 @@ def main():
     report["comparison_scope"] = "Private exact TPR; no matched published benchmark or generic application-capacity claim."
     report["input_tpr_sha256"] = TPR_SHA256
     report["cutoff"] = cutoff.isoformat()
+    report["sampled_cpu_gpu"] = summarize_samples(args.output / "telemetry" / "container-samples.jsonl")
+    report["io_evidence"] = {"existing_ledger_measurements": storage,
+                             "total_checkpoint_upload_bytes": None, "total_export_transfer_bytes": None,
+                             "scope": "Retained object inventory and input bundle size are not network transfer sums; "
+                                      "SDK verified artifact bytes remain in each operation saved_delivery."}
     report["native_probe_evidence"] = [{"receipt": reference(row["receipt"]),
                                         "data": json.loads(Path(row["receipt"]).read_text()),
                                         "fixture": reference(row["fixture"]), "notes": row.get("notes")}
@@ -314,7 +325,8 @@ def main():
     save(args.output / "validation.json", {"cutoff": cutoff.isoformat(), "report": reference(args.output / "report.json"),
          "lifecycle": reference(args.output / "durable-lifecycle.json"), "metadata": metadata, "telemetry": frozen,
          "integrity": "ok", "foreign_key_errors": 0, "operation_ids": sorted(ids),
-         "code": [reference(path) for path in (Path(__file__), LEGACY / "ledger.py", LEGACY / "cost_report.py")]})
+         "code": [reference(path) for path in (Path(__file__), Path(__file__).with_name("summarize_samples.py"),
+                                                LEGACY / "ledger.py", LEGACY / "cost_report.py")]})
     print(json.dumps({"report": reference(args.output / "report.json"), "coverage": report["coverage"]}))
 
 
