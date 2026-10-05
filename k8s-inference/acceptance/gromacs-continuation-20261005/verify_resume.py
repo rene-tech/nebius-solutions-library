@@ -45,6 +45,11 @@ async def run(args):
     args.output.mkdir(parents=True, exist_ok=True)
     state_path = args.output / "state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    if args.source_receipt and not state:
+        historical = json.loads(args.source_receipt.read_text())
+        state = {key: historical[key] for key in ("source_operation", "input_sha256")}
+        state["adopted_internal_source_receipt"] = str(args.source_receipt)
+        save(state_path, state)
     identity = "fs2-continuation-20261005-" + args.label
     headers = {"authorization": "Bearer " + key, "origin": args.origin}
     async with httpx2.AsyncClient(
@@ -163,7 +168,9 @@ async def run(args):
                 args_list = converter["args"]
                 args_list[args_list.index("-nsteps") + 1] = str(args.steps)
                 production = next(step for step in steps if step["command"] == "mdrun")
-                params["jobs"][0]["steps"] = [production] if args.prebuilt_tpr else [converter, production]
+                params["jobs"][0]["steps"] = (
+                    [production] if args.prebuilt_tpr else [converter, production]
+                )
                 params.update(
                     max_wall_seconds=args.source_seconds,
                     segment_minutes=0.2,
@@ -198,6 +205,7 @@ async def run(args):
             failed = await poll(source, "source")
             if (
                 failed["batch"]["status"] != "failed"
+                or failed["batch"]["model_id"] != args.model
                 or failed["batch"]["failure_code"] != "WORKFLOW_TIME_LIMIT_EXCEEDED"
             ):
                 raise ValueError(
@@ -339,10 +347,14 @@ async def run(args):
                 async def verify_file(item):
                     relative = Path(item["path"])
                     if relative.is_absolute() or ".." in relative.parts:
-                        raise ValueError("Checkpoint path is not a contained relative file")
+                        raise ValueError(
+                            "Checkpoint path is not a contained relative file"
+                        )
                     async with semaphore:
                         await helper.download(
-                            http, item["artifact"], args.output / "verified-files" / relative
+                            http,
+                            item["artifact"],
+                            args.output / "verified-files" / relative,
                         )
                     return item["size_bytes"]
 
@@ -353,12 +365,17 @@ async def run(args):
                     verified_bytes += sum(sizes)
                     verified_files += len(sizes)
                     if verified_files % 1024 == 0 or verified_files == len(pending):
-                        print(json.dumps({
-                            "label": args.label,
-                            "phase": "verify-retained-bytes",
-                            "files": verified_files,
-                            "total_files": len(pending),
-                        }), flush=True)
+                        print(
+                            json.dumps(
+                                {
+                                    "label": args.label,
+                                    "phase": "verify-retained-bytes",
+                                    "files": verified_files,
+                                    "total_files": len(pending),
+                                }
+                            ),
+                            flush=True,
+                        )
                 byte_verification = {
                     "files": verified_files,
                     "bytes": verified_bytes,
@@ -400,6 +417,11 @@ def main():
     parser.add_argument("--source-seconds", type=int, default=60)
     parser.add_argument("--padding-files", type=int, default=0)
     parser.add_argument("--prebuilt-tpr", type=Path)
+    parser.add_argument(
+        "--source-receipt",
+        type=Path,
+        help="Reuse a prior internal-QA failed source without resubmitting it",
+    )
     parser.add_argument("--verify-retained-bytes", action="store_true")
     parser.add_argument("--resume-seconds", type=int, default=1209600)
     parser.add_argument("--timeout", type=int, default=1200)
@@ -412,7 +434,9 @@ def main():
     if not 60 <= args.resume_seconds <= 1209600:
         parser.error("resume-seconds must be between 60 and 1209600")
     if not 60 <= args.source_seconds <= 600:
-        parser.error("source-seconds must be between 60 and 600 for bounded internal QA")
+        parser.error(
+            "source-seconds must be between 60 and 600 for bounded internal QA"
+        )
     os.umask(0o077)
     asyncio.run(run(args))
 

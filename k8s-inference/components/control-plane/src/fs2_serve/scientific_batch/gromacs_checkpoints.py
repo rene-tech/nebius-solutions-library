@@ -86,6 +86,8 @@ class GromacsCheckpointTransport:
         if completed_files is not None:
             self.transfer_progress["completed_files"] = completed_files
         atomic_json(self.meta / "transfer-progress.json", self.transfer_progress)
+        if phase in {"committed", "restored"}:
+            print(json.dumps({"event": "native_checkpoint_transfer", **self.transfer_progress}), flush=True)
 
     def _state(self, value: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         state = value.get("state", {})
