@@ -1,9 +1,9 @@
 # Real late-state demo continuation — 2026-10-05
 
-Status: the authorized customer checkpoint has been copied and byte-verified;
-local fixture/runner tests pass. No demo GPU operation has been admitted yet.
-The signed-handle renewal and explicit nonempty-file-selection release, plus the
-measured L40S recipe, are prerequisites.
+Status: the short demo-owned API continuation has passed its native, history,
+postprocessing and full platform/customer-bucket byte checks on the exact deployed
+release. The separately measured sustained 65-ns cohort is now admitted; its
+six-hour/native and 200-ns/day delivered gates have not yet passed.
 This directory is acceptance tooling, not a customer-specific serving service.
 
 ## Exact test scope
@@ -104,13 +104,76 @@ selector joined all 28 nonempty parts and `gmx check` verified 185,486 atoms,
 bytes, SHA-256 `e836ed0dc4daf5b3f35e8d8fc6eac674190a83ed01449d7b1ac12752f1a5ef2e`.
 All 305 source files were rehashed unchanged. Detailed retained evidence:
 `/home/tux/secure-handoff/fs2-lynx-demo-resume-20261005/nonempty-native-r1/`.
-The short public fixture is prepared with 2 ns, list 200, pin auto, 8 threads;
+The short public fixture uses 2 ns, list 200, pin auto, 8 threads;
 its measured delivery rate is reported without the long cohort's 200-ns/day
-or six-hour threshold. No public demo admission has happened yet.
+or six-hour threshold.
 
-27 focused fixture/science/owner/export tests and Ruff pass. Tests reject changed
+33 focused fixture/science/owner/export tests and Ruff pass. Tests reject changed
 bytes, duplicate/unsafe paths, wrong source state, missing topology comparisons,
 unapproved TPR differences, incorrect start step, customer-key substitution and
 corrupted/missing/foreign-bucket output objects. The full native comparison parser
 also consumed the independent exact-runtime L40S comparison log successfully.
-Actual final-release public runs and their sustained performance remain pending.
+## Exact deployed release and public evidence
+
+Deployment source `2f7c2d1e3`; API/tools/controllers/maintenance:
+`sha256:1c22336993e588408c069b5a8f93e550ea60829f167099f55acdc1f3918fd0d9`.
+The single-GPU worker is `ca863f44…` above; the MPI wrapper is
+`sha256:c10a9b2edfab1678153ca45c05c00e4649979065ef2ecadfb69a17b83483f662`.
+Execution ConfigMap `fs2-r927c465c6d-scientific-execution-045f5a4de9ee`;
+scheduling remains the unchanged `d45` revision. The deployment owner retained
+these immutable digests in the current Terraform tfvars and verified formatting;
+no unrelated Terraform apply was performed. All three API readers, both
+controllers and a new maintenance Job passed before admission; nine MPI shapes
+were advertised. Release evidence is under the private root's
+`nonempty-reader-verification/`.
+
+Short bootstrap `bbfce68c-e9d9-4bea-a655-97a13fffddb6` was accepted at
+20:23:48 UTC; initial/replay latency was 0.321/0.288 seconds. The compressed
+48,461,740-byte input upload took 4.634 seconds. Actual default placement is one
+L40S on the AMD four-GPU pool, node `computeinstance-e00xwjv9khjp8fhp3v`;
+the customer workload on that node was not modified. This is a separate hardware
+measurement from the final native-only Intel L40S confirmation.
+
+The deliberately exhausted 300-second bootstrap budget saved native step
+14,312,400, advancing 0.69792 ns from the copied checkpoint. Its native process
+reported 216.351 ns/day over 283.518 seconds and exited 1 at the intentional
+budget stop. This is expected fixture setup, not a failed sustained segment.
+All 305 source-history identities remained present. The first validation pass
+stopped because stderr's closing quotation interrupted the word `comparing`;
+the strict harness parser was corrected to reconstruct only that exact block.
+The real TPR comparison then passed every required section with the sole `nsteps`
+difference. No scientific tolerance was relaxed and no bootstrap was resubmitted.
+
+Literal same-owner `:resume` accepted
+`fcee676b-63d9-41c6-9248-3e30f0c5d557` at 20:32:07 UTC; initial/replay latency
+was 0.770/0.512 seconds. It succeeded durably at 20:41:35.398 UTC, reaching step
+14,963,440 with both native segment exits zero and all requested postprocessing
+successful. The two segments reported 222.320 and 216.142 native ns/day. Only
+newly resumed work counts: 1.30208 ns over 521.286 native process seconds and
+567.684 seconds from API acceptance to durable completion, or **198.173 ns/day
+delivered**. This short run does not meet the long run's 200-ns/day threshold;
+its real startup/export overhead is included rather than discarded.
+
+All 331 final platform files (131,295,291 bytes) passed independent SHA/size
+verification in 24.103 seconds. The customer export independently passed all
+331 paths / 288 unique objects (118,496,704 bytes) in 10.413 seconds. There were
+zero extra download attempts, all 305 original source files remain preserved,
+and final three-reader readiness capture found no non-200 probes or coverage
+gaps. The first 318-file checkpoint handoff took 7.499 seconds, well below the
+unchanged 600-second bound. Receipts are in `short-r1/`, including a separate
+strict accounting recheck that rejects imported/bootstrap timing history.
+
+The subsequent 65-ns fixture targets step 46,463,440, with unchanged science and
+explicit nonempty postprocessing. Its bootstrap operation
+`01954a58-69b4-4375-8133-4358e85ee48b` was admitted around 20:46 UTC using the
+same demo-owned API; input upload took 5.226 seconds. The six-hour/native and
+200-ns/day delivered gates count only the new resumed operation after the
+expected bootstrap stop, not bootstrap time or work. Timestamps and operation
+identity reject imported timing history. Sustained results remain pending.
+
+Read-only attempt, hardware and exact-reader readiness observations are retained
+under `short-r1/` and `short-r1-readiness/`. The long run uses the same bounded
+observers under `long-r1/`, with consecutive windows of the existing readiness
+sampler in `long-r1-readiness/` throughout the cohort. Native five-minute
+segments are not reported as retries. There is no sustained-readiness claim
+from the short functional result alone.
