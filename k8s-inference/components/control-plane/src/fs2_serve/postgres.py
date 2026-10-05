@@ -85,6 +85,7 @@ from .models import (
 from .postgres_retry import retry_serialization
 from .postgresql_release import validate_migration_set
 from .runtime import sanitize_error_detail
+from .scientific_cpu import run_scientific_cpu
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -2828,10 +2829,19 @@ class PostgresStore:
             # Exact request-HMAC replay keeps the original accepted payload,
             # including when a process stopped before batch materialization.
             return
-        payload = factory(operation)
-        payload_json = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        if len(payload_json.encode("utf-8")) > 4 * 1024 * 1024:
-            raise ConflictError("scientific admission outbox exceeds the durable bound")
+        admission_factory = factory
+
+        def freeze_payload() -> tuple[dict[str, object], str]:
+            payload = admission_factory(operation)
+            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            if len(encoded.encode("utf-8")) > 4 * 1024 * 1024:
+                raise ConflictError("scientific admission outbox exceeds the durable bound")
+            return payload, encoded
+
+        # The worker performs only CPU work on request-local values. The
+        # transaction, token/activation locks and every database read/write
+        # stay here. Cancellation drains the worker before leaving this scope.
+        payload, payload_json = await run_scientific_cpu(freeze_payload)
         await connection.execute(
             """
             INSERT INTO fs2_scientific_admission_outbox(operation_id,payload)
@@ -2845,7 +2855,9 @@ class PostgresStore:
             "SELECT payload FROM fs2_scientific_admission_outbox WHERE operation_id=$1 FOR SHARE",
             operation.id,
         )
-        if stored is None or _decode_configuration_json(stored, "scientific admission outbox") != payload:
+        if stored is None or await run_scientific_cpu(
+            _decode_configuration_json, stored, "scientific admission outbox"
+        ) != payload:
             raise ConflictError("scientific admission outbox already contains another frozen request")
 
     async def get_scientific_admission(self, operation_id: UUID) -> PendingScientificAdmission | None:

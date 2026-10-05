@@ -82,6 +82,7 @@ from .models import (
     TokenView,
 )
 from .runtime import sanitize_error_detail
+from .scientific_cpu import run_scientific_cpu
 from .store import (
     BudgetExceededError,
     ConcurrencyExceededError,
@@ -1439,7 +1440,7 @@ class MemoryStore:
                 ):
                     raise ConflictError("idempotency key is already bound to a different request")
                 operation = self._metadata(existing_row, reused=True)
-                self._stage_scientific_admission(operation, scientific_admission_factory)
+                await self._stage_scientific_admission(operation, scientific_admission_factory)
                 return operation
             if (dynamic_fence is None) != (dispatch_snapshot is None):
                 raise ConflictError("dynamic admission fence and dispatch snapshot must be supplied together")
@@ -1511,7 +1512,7 @@ class MemoryStore:
                 traceparent=admission.traceparent,
                 dispatch_snapshot=dispatch_snapshot,
             )
-            self._stage_scientific_admission(view, scientific_admission_factory)
+            await self._stage_scientific_admission(view, scientific_admission_factory)
             self.operations[operation_id] = row
             self.idempotency[key] = operation_id
             token.view = token.view.model_copy(
@@ -1535,7 +1536,7 @@ class MemoryStore:
             )
             return self._metadata(row)
 
-    def _stage_scientific_admission(
+    async def _stage_scientific_admission(
         self,
         operation: OperationView,
         factory: Callable[[OperationView], dict[str, object]] | None,
@@ -1550,7 +1551,10 @@ class MemoryStore:
             # The request identity has already matched. Preserve the accepted
             # payload across policy changes and pre-materialization restarts.
             return
-        payload = factory(operation)
+        # Freeze pure scientific metadata without monopolizing the API loop.
+        # The existing activation and admission locks remain held until this
+        # completes, including cancellation; no store state enters the worker.
+        payload = await run_scientific_cpu(factory, operation)
         pending = PendingScientificAdmission(
             operation_id=operation.id,
             payload=payload,
