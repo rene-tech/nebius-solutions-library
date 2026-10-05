@@ -168,13 +168,16 @@ locals {
     for name in fileset("${local.fs2_root}/catalog/runtime/deployment-runtimes", "*.json") :
     jsondecode(file("${local.fs2_root}/catalog/runtime/deployment-runtimes/${name}"))
   ]
-  deployment_runtime_records = {
+  selected_deployment_runtime_records = {
     for candidate in local.deployment_runtime_candidates : candidate.model_id => candidate
     if contains(local.selected_model_ids, candidate.model_id) && try(
       split("@", var.model_image_overrides[candidate.model_id])[1] == candidate.record.runtime.image.digest,
       false,
     )
   }
+  deployment_runtime_records = merge(
+    local.selected_deployment_runtime_records, local.model_controller_retained_deployment_runtimes,
+  )
   cpu_deployment_runtime_records = {
     for model_id, candidate in local.deployment_runtime_records : model_id => candidate
     if try(
@@ -897,7 +900,10 @@ locals {
   selected_routes = { for model_id in local.selected_model_ids : model_id => local.inventory.routes[model_id] }
   selected_runtime_ports = [
     for port in sort(tolist(toset([
-      for model_id in sort(keys(local.selected_routes)) : format("%05d", local.selected_routes[model_id].service.port)
+      for port in concat(
+        [for model_id in sort(keys(local.selected_routes)) : local.selected_routes[model_id].service.port],
+        [for bundle in local.model_controller_retained_bundles : bundle.primaryServicePort],
+      ) : format("%05d", port)
     ]))) : tonumber(port)
   ]
   retained_qualification_projection = jsondecode(file("${local.fs2_root}/components/control-plane/contracts/model-qualification-projection.json"))
@@ -928,7 +934,7 @@ locals {
       }
       }) if(
       var.model_controller.workload_owner == "terraform" ||
-      !contains(local.model_controller_dynamic_model_ids, model_id)
+      !contains(local.model_controller_registered_ids, model_id)
     )]
   }
   lean_routes_config_map_data = {

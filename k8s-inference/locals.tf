@@ -1251,6 +1251,7 @@ locals {
       handoff_receipt                            = var.deployment.dynamic_models.handoff_receipt
       gpu_snapshots                              = local.normalized_snapshot_settings.serving
       fast_start_evidence_file                   = var.deployment.dynamic_models.fast_start_evidence_file
+      retained_registration_file                 = var.deployment.dynamic_models.retained_registration_file
       fast_start_environment_qualifications_file = var.deployment.dynamic_models.fast_start_environment_qualifications_file
       fast_start_measurement_contracts_file      = var.deployment.dynamic_models.fast_start_measurement_contracts_file
       fast_start_mechanisms_file                 = var.deployment.dynamic_models.fast_start_mechanisms_file

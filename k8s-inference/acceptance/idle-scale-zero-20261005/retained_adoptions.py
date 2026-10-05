@@ -22,6 +22,33 @@ from fs2_serve.model_deployment import (
 )
 
 SOURCE = Path(__file__).with_name("managed-runtime-adoptions.json")
+ROOT = SOURCE.parents[2]
+
+
+def retained_runtimes(source: dict) -> dict:
+    """Resolve versioned catalog files; never invent deployment qualification."""
+    expected = set(source["modelIds"])
+    assert set(source["requiredPoolRefs"]) == set(source["runtimeSources"]) == expected
+    runtimes = {}
+    for model, reference in source["runtimeSources"].items():
+        path = (ROOT / reference["path"]).resolve()
+        if not path.is_relative_to(ROOT / "catalog/runtime") or path.name != model + ".json":
+            raise ValueError("unexpected runtime source path: " + model)
+        content = path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != reference["sha256"]:
+            raise ValueError("changed runtime source digest: " + model)
+        runtime = json.loads(content)
+        qualification = source["qualifications"][model]
+        record = runtime["record"]
+        assert record["model"]["id"] == model
+        assert "sha256:" + record["cache"]["artifact"]["manifest_digest"] in qualification["artifactManifestDigests"]
+        assert all(image.endswith("@" + record["runtime"]["image"]["digest"])
+                   for image in qualification["runtimeImages"])
+        if runtime["schema"] == "fs2-serve.nebius.ai/deployment-runtime/v1":
+            runtimes[model] = runtime
+        else:
+            assert runtime["schema"] == "fs2-serve.nebius.ai/native-catalog-model/v1"
+    return runtimes
 
 
 def merge_registration(envelope: dict, bundles: list, source: dict) -> tuple[dict, list]:
@@ -31,6 +58,7 @@ def merge_registration(envelope: dict, bundles: list, source: dict) -> tuple[dic
     assert set(source["qualifications"]) == expected
     assert {row["modelRef"] for row in source["bundles"]} == expected
     assert len(source["bundles"]) == len(expected)
+    retained_runtimes(source)
     envelope, bundles = copy.deepcopy((envelope, bundles))
     for row in source["bundles"]:
         typed = LegacyTemplateBundle.model_validate(row)
@@ -44,8 +72,12 @@ def merge_registration(envelope: dict, bundles: list, source: dict) -> tuple[dic
         current = envelope["qualifications"].get(model)
         if current is not None and current != qualification:
             raise ValueError("different existing model qualification: " + model)
-        available = {p["acceleratorClass"] for p in envelope["pools"].values()}
-        if not set(qualification["acceleratorClasses"]).issubset(available):
+        pool_refs = source["requiredPoolRefs"][model]
+        if not pool_refs or not all(
+            pool_ref in envelope["pools"] and
+            envelope["pools"][pool_ref]["acceleratorClass"] in qualification["acceleratorClasses"]
+            for pool_ref in pool_refs
+        ):
             raise ValueError("missing declared compatible pool: " + model)
         envelope["qualifications"][model] = copy.deepcopy(qualification)
     envelope.pop("revision", None)

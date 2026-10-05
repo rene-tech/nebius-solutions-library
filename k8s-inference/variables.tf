@@ -207,7 +207,9 @@ variable "deployment" {
         }), {})
         adopt_existing = optional(bool, false)
       }), {})
-      fast_start_evidence_file                   = optional(string)
+      fast_start_evidence_file = optional(string)
+      # Exact registrations for existing admin-owned Apps; never seeds replicas.
+      retained_registration_file                 = optional(string)
       fast_start_environment_qualifications_file = optional(string)
       fast_start_measurement_contracts_file      = optional(string)
       fast_start_mechanisms_file                 = optional(string)
@@ -1572,11 +1574,16 @@ variable "deployment" {
       ) &&
       alltrue([
         for path in [
+          var.deployment.dynamic_models.retained_registration_file,
           var.deployment.dynamic_models.fast_start_environment_qualifications_file,
           var.deployment.dynamic_models.fast_start_measurement_contracts_file,
           var.deployment.dynamic_models.fast_start_mechanisms_file,
         ] : path == null ? true : startswith(pathexpand(path), "/") && can(jsondecode(file(pathexpand(path))))
       ]) &&
+      (var.deployment.dynamic_models.retained_registration_file == null ? true : (
+        var.deployment.dynamic_models.enabled &&
+        var.deployment.dynamic_models.workload_owner == "controller"
+      )) &&
       var.deployment.dynamic_models.fast_start_wait_second_value >= 0 &&
       var.deployment.dynamic_models.fast_start_wait_second_value <= 1000000 &&
       length(var.deployment.dynamic_models.fast_start_mechanism_hourly_costs) <= 128 &&
@@ -1586,7 +1593,7 @@ variable "deployment" {
       ]),
       false,
     )
-    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; fast-start evidence, qualification, measurement, and mechanism contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
+    error_message = "models.selection must be profile or explicit; explicit IDs must belong to the profile; evidence and retained-registration contracts must be readable JSON at absolute paths; retained registrations require controller ownership; and bounded economic inputs must be valid."
   }
 
   validation {

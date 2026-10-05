@@ -1,5 +1,65 @@
 {
   "schema": "fs2-serve.nebius.ai/retained-managed-adoptions/v1",
+  "requiredPoolRefs": {
+    "scvi-scanvi": [
+      "h100-ondemand-1x"
+    ],
+    "cellpose-cpsam-v2": [
+      "h100-ondemand-1x"
+    ],
+    "sam2-1-hiera-large": [
+      "h100-ondemand-1x"
+    ],
+    "ace-step-1-5": [
+      "l40s-1x"
+    ],
+    "wan2-2-t2v-nim": [
+      "wan2-h200-1x"
+    ],
+    "wan2-2-i2v-nim": [
+      "wan2-h200-1x"
+    ],
+    "mindguard-4b": [
+      "l40s-1x"
+    ],
+    "mindguard-8b": [
+      "l40s-1x"
+    ]
+  },
+  "runtimeSources": {
+    "scvi-scanvi": {
+      "path": "catalog/runtime/deployment-runtimes/scvi-scanvi.json",
+      "sha256": "22aa85cb18e7441a61815483d6638604660441be56da3f35e2c0cba15466892d"
+    },
+    "cellpose-cpsam-v2": {
+      "path": "catalog/runtime/deployment-runtimes/cellpose-cpsam-v2.json",
+      "sha256": "d30ff38e9a06fa29fd7199aaccb025ad6747888b712dc97e96000831a4eec655"
+    },
+    "sam2-1-hiera-large": {
+      "path": "catalog/runtime/deployment-runtimes/sam2-1-hiera-large.json",
+      "sha256": "679f1568de4b143d0402a1eeab530c5ae3fb2c51585669694d787cca5db942bd"
+    },
+    "ace-step-1-5": {
+      "path": "catalog/runtime/deployment-runtimes/ace-step-1-5.json",
+      "sha256": "f5278b250a543c78ec6e0d05524342499a7aa9fbed8eb3f0f85d9225e94afefd"
+    },
+    "wan2-2-t2v-nim": {
+      "path": "catalog/runtime/deployment-runtimes/wan2-2-t2v-nim.json",
+      "sha256": "ed5274062b4f4bfe1a90e9f5e9a23f731ad092554a286d6af2572424287006b2"
+    },
+    "wan2-2-i2v-nim": {
+      "path": "catalog/runtime/deployment-runtimes/wan2-2-i2v-nim.json",
+      "sha256": "816576b0e3f9838b7be115025f20e0409eb8af05b67c4dc443dbb3e02aab0f25"
+    },
+    "mindguard-4b": {
+      "path": "catalog/runtime/native/mindguard-4b.json",
+      "sha256": "a4dda603a3b9cb51b38883161e6d8a01167fc64fbec7ee44a805c01823f148f6"
+    },
+    "mindguard-8b": {
+      "path": "catalog/runtime/native/mindguard-8b.json",
+      "sha256": "d924cf1321e2db6ee70413191e0415ac1b19f3016f36857af2ac1ca49f312efc"
+    }
+  },
   "modelIds": [
     "scvi-scanvi",
     "cellpose-cpsam-v2",

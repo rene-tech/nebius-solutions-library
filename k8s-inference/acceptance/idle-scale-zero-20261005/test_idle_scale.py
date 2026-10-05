@@ -9,7 +9,7 @@ from fs2_serve.model_deployment import InfrastructureEnvelope, ModelDeploymentSp
 from fs2_serve.model_deployment_controller import ControllerFiles
 from prepare_managed import MODELS, ROOT, TOOLS, append_models, source_resources
 from remove_hot_floors import proposal_for
-from retained_adoptions import SOURCE, configmaps, merge_registration
+from retained_adoptions import SOURCE, configmaps, merge_registration, retained_runtimes
 
 
 def inputs():
@@ -134,4 +134,30 @@ def test_retained_registration_refuses_missing_pool_or_changed_model():
     envelope, bundles, *_ = all_pool_inputs()
     envelope["qualifications"]["mindguard-4b"] = {"different": True}
     with pytest.raises(ValueError, match="different existing model qualification"):
+        merge_registration(envelope, bundles, source)
+
+
+def test_retained_runtime_records_are_exact_and_native_rows_are_not_fabricated():
+    source = json.loads(SOURCE.read_text())
+    runtimes = retained_runtimes(source)
+    assert len(runtimes) == 6
+    assert {"mindguard-4b", "mindguard-8b"}.isdisjoint(runtimes)
+    source["runtimeSources"]["scvi-scanvi"]["sha256"] = "a" * 64
+    with pytest.raises(ValueError, match="changed runtime source digest"):
+        retained_runtimes(source)
+
+
+def test_retained_registration_requires_exact_pool_not_just_same_gpu_class():
+    envelope, bundles, *_ = all_pool_inputs()
+    source = json.loads(SOURCE.read_text())
+    source["requiredPoolRefs"]["wan2-2-i2v-nim"] = ["undeclared-h200"]
+    with pytest.raises(ValueError, match="missing declared compatible pool"):
+        merge_registration(envelope, bundles, source)
+
+
+def test_retained_registration_rejects_changed_bundle_digest():
+    envelope, bundles, *_ = all_pool_inputs()
+    source = json.loads(SOURCE.read_text())
+    source["bundles"][0]["resources"][0]["metadata"]["annotations"] = {"changed": "true"}
+    with pytest.raises(AssertionError):
         merge_registration(envelope, bundles, source)

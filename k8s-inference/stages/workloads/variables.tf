@@ -945,6 +945,7 @@ variable "model_controller" {
       adopt_existing = optional(bool, false)
     }), {})
     fast_start_evidence_file                   = optional(string)
+    retained_registration_file                 = optional(string)
     fast_start_environment_qualifications_file = optional(string)
     fast_start_measurement_contracts_file      = optional(string)
     fast_start_mechanisms_file                 = optional(string)
@@ -1003,11 +1004,15 @@ variable "model_controller" {
       ) &&
       alltrue([
         for path in [
+          var.model_controller.retained_registration_file,
           var.model_controller.fast_start_environment_qualifications_file,
           var.model_controller.fast_start_measurement_contracts_file,
           var.model_controller.fast_start_mechanisms_file,
         ] : path == null ? true : startswith(pathexpand(path), "/") && can(jsondecode(file(pathexpand(path))))
       ]) &&
+      (var.model_controller.retained_registration_file == null ? true : (
+        var.model_controller.enabled && var.model_controller.workload_owner == "controller"
+      )) &&
       var.model_controller.fast_start_wait_second_value >= 0 &&
       var.model_controller.fast_start_wait_second_value <= 1000000 &&
       length(var.model_controller.fast_start_mechanism_hourly_costs) <= 128 &&
@@ -1025,7 +1030,7 @@ variable "model_controller" {
       ]),
       false,
     )
-    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; fast-start evidence, qualification, measurement, and mechanism contracts must be readable JSON at absolute paths; and bounded economic inputs must be valid."
+    error_message = "model_controller must preserve one owner; controller mode requires writes, KEDA, a valid bootstrap/handoff; evidence and retained-registration contracts must be readable JSON at absolute paths; retained registrations require controller ownership; and bounded economic inputs must be valid."
   }
 
   validation {

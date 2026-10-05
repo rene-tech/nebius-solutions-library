@@ -310,6 +310,7 @@ class DeploymentContractTests(unittest.TestCase):
                     "adopt_existing": False,
                 },
                 "fast_start_evidence_file": None,
+                "retained_registration_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
                 "fast_start_mechanisms_file": None,
@@ -1836,6 +1837,7 @@ class DeploymentContractTests(unittest.TestCase):
                     "adopt_existing": False,
                 },
                 "fast_start_evidence_file": None,
+                "retained_registration_file": None,
                 "fast_start_environment_qualifications_file": None,
                 "fast_start_measurement_contracts_file": None,
                 "fast_start_mechanisms_file": None,
@@ -2088,6 +2090,7 @@ class DeploymentContractTests(unittest.TestCase):
     def test_fast_start_inputs_propagate_to_the_workload_stage(self) -> None:
         evidence_file = self.run_root / "fast-start-evidence.json"
         evidence_file.write_text("{}\n", encoding="utf-8")
+        retained_file = DEPLOY_ROOT / "acceptance/idle-scale-zero-20261005/managed-runtime-adoptions.json"
         snapshot = json.loads((DEPLOY_ROOT / "acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json").read_text())
         deployment = {
             "schema_version": 1,
@@ -2106,6 +2109,7 @@ class DeploymentContractTests(unittest.TestCase):
                 "bootstrap_model_ids": ["qwen3-8b"],
                 "fresh_install": True,
                 "fast_start_evidence_file": str(evidence_file),
+                "retained_registration_file": str(retained_file),
                 "gpu_snapshots": {
                     "bundle_files": ["acceptance/h100-fleet/snapshots/qwen3-8b-bundle.json"],
                     "cache": {"claim_name": snapshot["pvc"], "manage_claim": False},
@@ -2128,6 +2132,7 @@ class DeploymentContractTests(unittest.TestCase):
         ]
 
         self.assertEqual(dynamic["fast_start_evidence_file"], str(evidence_file))
+        self.assertEqual(dynamic["retained_registration_file"], str(retained_file))
         self.assertEqual(dynamic["gpu_snapshots"]["bundles"], {snapshot["bundle_id"]: snapshot})
         self.assertFalse(dynamic["gpu_snapshots"]["cache"]["manage_claim"])
         self.assertTrue(dynamic["gpu_snapshots"]["adopt_existing"])
@@ -2198,7 +2203,7 @@ class DeploymentContractTests(unittest.TestCase):
         self.assertIn('"compatibilityTupleComplete"', controller_source)
         self.assertNotIn("sha256(jsonencode({ source = model.model.source", controller_source)
         self.assertIn(
-            "!contains(local.model_controller_dynamic_model_ids, model_id)",
+            "!contains(local.model_controller_registered_ids, model_id)",
             workload_locals,
         )
         self.assertIn(
@@ -2212,7 +2217,7 @@ class DeploymentContractTests(unittest.TestCase):
             controller_source,
         )
         self.assertIn(
-            '!contains(local.model_controller_dynamic_model_ids, document.model_id)',
+            '!contains(local.model_controller_registered_ids, document.model_id)',
             controller_source,
         )
         self.assertIn(

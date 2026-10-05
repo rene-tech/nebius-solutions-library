@@ -224,6 +224,88 @@ variables {
   nvcrio_dockerconfigjson = "{\"auths\":{}}"
 }
 
+run "retained_admin_apps_survive_render_without_bootstrap_or_static_owners" {
+  command = plan
+
+  variables {
+    model_controller = merge(var.model_controller, {
+      retained_registration_file = abspath("../../acceptance/idle-scale-zero-20261005/managed-runtime-adoptions.json")
+    })
+    # Synthetic render-only pools. These fixtures do not provision capacity or
+    # assert that the current provider offers these shapes in this test region.
+    accelerator_pool_contract = merge(var.accelerator_pool_contract, {
+      pools = merge(var.accelerator_pool_contract.pools, {
+        for pool_id, accelerator_class in {
+          h100-ondemand-1x = "nvidia-h100-sxm5-80gb"
+          l40s-1x          = "nvidia-l40s-48gb"
+          wan2-h200-1x     = "nvidia-h200-sxm5-141gb"
+          } : pool_id => merge(var.accelerator_pool_contract.pools["nebius-b300-preemptible-1x"], {
+            id                = pool_id
+            accelerator_class = accelerator_class
+            scheduling = merge(var.accelerator_pool_contract.pools["nebius-b300-preemptible-1x"].scheduling, {
+              resource_flavor_name = pool_id
+              stable_node_labels = merge(var.accelerator_pool_contract.pools["nebius-b300-preemptible-1x"].scheduling.stable_node_labels, {
+                "accelerator.fs2.nebius/class"   = accelerator_class
+                "accelerator.fs2.nebius/pool-id" = pool_id
+              })
+            })
+        })
+      })
+    })
+    accelerator_node_schedulable_capacity = merge(var.accelerator_node_schedulable_capacity, {
+      for pool_id in ["h100-ondemand-1x", "l40s-1x", "wan2-h200-1x"] : pool_id => {
+        cpu_millicores = 15900
+        memory_mib     = 190072
+      }
+    })
+  }
+
+  plan_options { target = [terraform_data.model_controller_contract] }
+
+  assert {
+    condition = (
+      length(local.model_controller_retained_ids) == 8 &&
+      length(local.model_controller_bundles) == 9 &&
+      length(local.model_controller_qualifications) == 9 &&
+      length(local.model_controller_retained_deployment_runtimes) == 6 &&
+      local.model_controller_retained_shapes_valid &&
+      local.model_controller_retained_pools_valid &&
+      local.model_controller_retained_conflicts_absent &&
+      alltrue([for bundle in local.model_controller_retained_bundles : contains(local.model_controller_bundles, bundle)]) &&
+      alltrue([for model_id in local.model_controller_retained_ids :
+        jsonencode(local.model_controller_qualifications[model_id]) == jsonencode(local.model_controller_retained.qualifications[model_id])
+      ])
+    )
+    error_message = "All eight exact existing registrations and six deployment-selected runtimes must survive next to the ordinary selected App. Native MindGuard records remain hash-bound image contracts."
+  }
+  assert {
+    condition = (
+      keys(local.model_controller_bootstrap_proposals) == ["qwen3-8b"] &&
+      length(setintersection(toset(keys(local.terraform_owned_model_scalers)), local.model_controller_retained_ids)) == 0 &&
+      alltrue([for document in values(local.terraform_owned_model_manifests) : !contains(local.model_controller_retained_ids, document.model_id)]) &&
+      alltrue([for route in local.lean_routes.routes : !contains(local.model_controller_retained_ids, route.model_id)]) &&
+      contains(local.selected_runtime_ports, 8000) &&
+      toset(keys(local.model_controller_pool_envelope)) == toset(keys(var.accelerator_pool_contract.pools))
+    )
+    error_message = "Retaining an App must not bootstrap it again, create static owners/routes, or invent accelerator pools; its Service port must remain reachable."
+  }
+}
+
+run "retained_registration_refuses_missing_declared_h200_and_other_pools" {
+  command = plan
+  variables {
+    model_controller = merge(var.model_controller, {
+      retained_registration_file = abspath("../../acceptance/idle-scale-zero-20261005/managed-runtime-adoptions.json")
+    })
+  }
+  plan_options { target = [terraform_data.model_controller_contract] }
+  expect_failures = [terraform_data.model_controller_contract]
+  assert {
+    condition     = local.model_controller_retained_shapes_valid && !local.model_controller_retained_pools_valid
+    error_message = "Exact retained models cannot silently add missing infrastructure or be reinterpreted as running on the baseline B300 pool."
+  }
+}
+
 run "deployment_runtime_settings_reach_gpu_requests_and_cache_paths" {
   command = plan
 

@@ -1071,7 +1071,7 @@ locals {
       })
     ]
   }
-  model_controller_bundles = [
+  model_controller_core_bundles = [
     for model_id in local.model_controller_dynamic_model_ids : {
       modelRef             = model_id
       runtimeProfile       = local.catalog_models[model_id].runtime.kind
@@ -1083,6 +1083,10 @@ locals {
       resources            = local.model_controller_bundle_resources[model_id]
     }
   ]
+  model_controller_bundles = concat(local.model_controller_core_bundles, [
+    for bundle in local.model_controller_retained_bundles : bundle
+    if !contains(local.model_controller_dynamic_model_ids, bundle.modelRef)
+  ])
   model_controller_cpu_configuration = {
     for model_id in local.managed_cpu_model_ids : model_id => {
       cpuResources = {
@@ -1099,7 +1103,7 @@ locals {
       local.model_controller_bundle_requires_shared_cache[model_id] ? "SharedFilesystem" : "NodeLocal"
     )
   }
-  model_controller_qualifications = {
+  model_controller_core_qualifications = {
     for model_id in local.model_controller_dynamic_model_ids : model_id => merge({
       modelRef                = model_id
       runtimeProfile          = local.catalog_models[model_id].runtime.kind
@@ -1150,6 +1154,9 @@ locals {
       try(local.model_controller_cpu_configuration[model_id], {}),
     )
   }
+  model_controller_qualifications = merge(
+    local.model_controller_core_qualifications, local.model_controller_retained_qualifications,
+  )
   model_controller_accelerator_pool_envelope = {
     for pool_id, pool in local.selected_queue_pools : pool_id => {
       poolId                       = pool_id
@@ -1245,7 +1252,7 @@ locals {
     for key, document in local.model_manifests : key => document
     if(
       var.model_controller.workload_owner == "terraform" ||
-      !contains(local.model_controller_dynamic_model_ids, document.model_id) ||
+      !contains(local.model_controller_registered_ids, document.model_id) ||
       !contains(
         local.model_controller_supported_template_gvks,
         "${document.manifest.apiVersion}/${document.manifest.kind}",
@@ -1254,7 +1261,7 @@ locals {
   }
   terraform_owned_model_scalers = {
     for model_id, scaler in local.model_scalers : model_id => scaler
-    if var.model_controller.workload_owner == "terraform" || !contains(local.model_controller_dynamic_model_ids, model_id)
+    if var.model_controller.workload_owner == "terraform" || !contains(local.model_controller_registered_ids, model_id)
   }
 
   model_controller_bootstrap_proposals = {
@@ -1351,18 +1358,28 @@ locals {
 
 resource "terraform_data" "model_controller_contract" {
   input = {
-    enabled                  = var.model_controller.enabled
-    writes_enabled           = var.model_controller.writes_enabled
-    workload_owner           = var.model_controller.workload_owner
-    envelope_sha256          = sha256(local.model_controller_envelope_json)
-    renderer_bundles_sha256  = sha256(local.model_controller_bundles_json)
-    bootstrap_model_ids      = sort(tolist(var.model_controller.bootstrap_model_ids))
-    expected_handoff_receipt = local.model_controller_expected_handoff_receipt
-    accepted_handoff_receipt = var.model_controller.handoff_receipt
-    modelexpress_resources   = local.modelexpress_resource_counts
+    enabled                      = var.model_controller.enabled
+    writes_enabled               = var.model_controller.writes_enabled
+    workload_owner               = var.model_controller.workload_owner
+    envelope_sha256              = sha256(local.model_controller_envelope_json)
+    renderer_bundles_sha256      = sha256(local.model_controller_bundles_json)
+    retained_registration_sha256 = sha256(jsonencode(local.model_controller_retained))
+    bootstrap_model_ids          = sort(tolist(var.model_controller.bootstrap_model_ids))
+    expected_handoff_receipt     = local.model_controller_expected_handoff_receipt
+    accepted_handoff_receipt     = var.model_controller.handoff_receipt
+    modelexpress_resources       = local.modelexpress_resource_counts
   }
 
   lifecycle {
+    precondition {
+      condition = (
+        local.model_controller_retained_shapes_valid &&
+        local.model_controller_retained_pools_valid &&
+        local.model_controller_retained_conflicts_absent &&
+        local.model_controller_retained_ownership_valid
+      )
+      error_message = "Retained App registrations must preserve exact bundle/runtime digests, reference declared compatible pools, and not conflict with generated registrations or bootstrap identities. This input does not create capacity."
+    }
     precondition {
       condition     = local.model_controller_fast_start_evidence_valid
       error_message = "Fast-start evidence must map only controller-qualified model IDs to the exact bounded wire shape emitted by project_fast_start_evidence.py."
@@ -1389,7 +1406,7 @@ resource "terraform_data" "model_controller_contract" {
 
     precondition {
       condition = !var.model_controller.enabled || (
-        length(local.model_controller_dynamic_model_ids) > 0 &&
+        length(local.model_controller_registered_ids) > 0 &&
         length(local.model_controller_envelope_json) <= 900000 &&
         length(local.model_controller_bundles_json) <= 900000 &&
         alltrue([for resources in values(local.model_controller_bundle_resources) : length(resources) > 0]) &&
