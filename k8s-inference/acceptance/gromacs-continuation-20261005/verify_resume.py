@@ -1,0 +1,334 @@
+"""Real public timeout/checkpoint/resume acceptance, only existing system/qa.
+
+One operation at a time per invocation; no key/pool/quota changes. Reruns reuse
+saved operation IDs and idempotency keys. Never use a customer key here.
+"""
+
+import argparse
+import asyncio
+import importlib.util
+import json
+import os
+import re
+import time
+from pathlib import Path
+
+import httpx2
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
+
+from fs2_serve.live_acceptance import _mcp_result
+
+
+def save(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, indent=2) + "\n")
+
+
+async def run(args):
+    values = dict(
+        line.split("=", 1)
+        for line in args.qa_env.read_text().splitlines()
+        if "=" in line
+    )
+    key = values["SCIENTIFIC_MODELS_API_KEY"]
+    if not key.startswith("fs2_pat_56130b22ae09"):
+        raise ValueError("Only existing system/qa is permitted")
+    spec = importlib.util.spec_from_file_location(
+        "scientific_acceptance",
+        args.client_root / "scripts/scientific-batch-acceptance.py",
+    )
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    args.output.mkdir(parents=True, exist_ok=True)
+    state_path = args.output / "state.json"
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    identity = "fs2-continuation-20261005-" + args.label
+    headers = {"authorization": "Bearer " + key, "origin": args.origin}
+    async with httpx2.AsyncClient(
+        base_url=args.origin, headers=headers, timeout=120, trust_env=False
+    ) as http:
+        async with Client(
+            streamable_http_client(args.origin + "/mcp", http_client=http),
+            mode="2026-07-28",
+        ) as mcp:
+
+            async def call(tool, arguments):
+                return _mcp_result(await mcp.call_tool(tool, arguments))
+
+            async def get(path):
+                response = await http.get(path)
+                response.raise_for_status()
+                return response.json()
+
+            async def content(pointer, name):
+                path = args.output / name
+                await helper.download(http, pointer, path)
+                return path
+
+            async def poll(operation, label):
+                deadline = time.monotonic() + args.timeout
+                previous = None
+                while time.monotonic() < deadline:
+                    value = await get(f"/v1/operations/{operation}")
+                    save(args.output / (label + "-status.json"), value)
+                    status = value["batch"]["status"]
+                    if status != previous:
+                        print(
+                            json.dumps(
+                                {
+                                    "label": args.label,
+                                    "phase": label,
+                                    "operation": operation,
+                                    "status": status,
+                                }
+                            ),
+                            flush=True,
+                        )
+                        previous = status
+                    if (
+                        status in {"succeeded", "failed", "cancelled"}
+                        and value["batch"]["result_published"]
+                    ):
+                        return value
+                    await asyncio.sleep(5)
+                raise TimeoutError(
+                    "Operation remains recorded; rerun this receipt, do not submit a new study"
+                )
+
+            if "source_operation" not in state:
+                payload = helper.FileSource(args.fixture / "input.tar.gz")
+                ref = await helper.upload(
+                    http,
+                    args.model,
+                    payload,
+                    "application/x-tar",
+                    "gzip",
+                    identity + "-input",
+                )
+                manifest = {
+                    "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+                    "manifest_id": identity,
+                    "entries": [
+                        {
+                            "name": "gromacs-inputs",
+                            "semantic_type": "gromacs-input-bundle/v1",
+                            "artifact": ref,
+                        }
+                    ],
+                }
+                pointer = await helper.upload(
+                    http,
+                    args.model,
+                    helper.canonical(manifest),
+                    "application/vnd.fs2.scientific-manifest+json",
+                    "none",
+                    identity + "-manifest",
+                )
+                params = json.loads((args.fixture / "request.json").read_text())
+                steps = params["jobs"][0]["steps"]
+                converter = next(
+                    step for step in steps if step["command"] == "convert-tpr"
+                )
+                args_list = converter["args"]
+                args_list[args_list.index("-nsteps") + 1] = str(args.steps)
+                production = next(step for step in steps if step["command"] == "mdrun")
+                params["jobs"][0]["steps"] = [converter, production]
+                params.update(
+                    max_wall_seconds=60,
+                    segment_minutes=0.2,
+                    output_destination="customer-bucket",
+                    output_prefix="runs/" + identity,
+                )
+                body = {
+                    "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+                    "operation": "run-workflow",
+                    "service_class": "customer-batch",
+                    "input_manifest": pointer,
+                    "parameters": params,
+                    "client_context": {
+                        "display_name": "Internal checkpoint continuation "
+                        + args.label,
+                        "correlation_id": identity,
+                    },
+                }
+                save(args.output / "source-request.json", body)
+                response = await http.post(
+                    f"/v1/models/{args.model}:submit",
+                    json=body,
+                    headers={"Idempotency-Key": identity + "-source"},
+                )
+                response.raise_for_status()
+                state.update(
+                    source_operation=response.json()["operation"]["id"],
+                    input_sha256=payload.sha256,
+                )
+                save(state_path, state)
+            source = state["source_operation"]
+            failed = await poll(source, "source")
+            if (
+                failed["batch"]["status"] != "failed"
+                or failed["batch"]["failure_code"] != "WORKFLOW_TIME_LIMIT_EXCEEDED"
+            ):
+                raise ValueError(
+                    "Source must fail specifically at the requested execution budget"
+                )
+            choices = await get(f"/v1/operations/{source}/checkpoints")
+            save(args.output / "source-checkpoints.json", choices)
+            checkpoint = json.loads(
+                (
+                    await content(
+                        choices["jobs"][0]["checkpoint"], "source-checkpoint.json"
+                    )
+                ).read_text()
+            )
+            completed = max(
+                (
+                    c.get("checkpoint_step") or 0
+                    for c in checkpoint["state"]["commands"]
+                ),
+                default=0,
+            )
+            if not 0 < completed < args.steps or not checkpoint.get("customer_storage"):
+                raise ValueError(
+                    "Source has no committed, customer-exported partial native checkpoint"
+                )
+            state["saved_step"] = completed
+            save(state_path, state)
+            arguments = {
+                "operation_id": source,
+                "idempotency_key": identity + "-resume",
+                "max_wall_seconds": 604800,
+            }
+
+            async def resume():
+                if args.interface == "mcp":
+                    return await call("resume_gromacs_workflow", arguments)
+                response = await http.post(
+                    f"/v1/operations/{source}:resume",
+                    json={"max_wall_seconds": 604800},
+                    headers={"Idempotency-Key": arguments["idempotency_key"]},
+                )
+                if response.status_code != 202:
+                    save(
+                        args.output / "resume-error.json",
+                        {"status": response.status_code, "body": response.json()},
+                    )
+                response.raise_for_status()
+                return response.json()
+
+            accepted = await resume()
+            resumed = accepted["operation"]["id"]
+            if "resume_operation" in state and state["resume_operation"] != resumed:
+                raise ValueError("Replay created duplicate work")
+            state["resume_operation"] = resumed
+            save(state_path, state)
+            save(args.output / "resume-response.json", accepted)
+            replay = await resume()
+            if (
+                replay["operation"]["id"] != resumed
+                or not replay["operation"]["reused"]
+            ):
+                raise ValueError(
+                    "Idempotent resume replay did not reuse the existing operation"
+                )
+            final = await poll(resumed, "resumed")
+            if final["batch"]["status"] != "succeeded":
+                raise ValueError(
+                    "Resumed scientific operation failed; inspect retained evidence"
+                )
+            result = await get(f"/v1/operations/{resumed}/result")
+            save(args.output / "result.json", result)
+            if result["semantic_validation"]["status"] != "passed":
+                raise ValueError("Final artifact validation did not pass")
+            final_choices = await call(
+                "get_scientific_checkpoints", {"operation_id": resumed}
+            )
+            final_checkpoint = json.loads(
+                (
+                    await content(
+                        final_choices["jobs"][0]["checkpoint"], "final-checkpoint.json"
+                    )
+                ).read_text()
+            )
+            commands = final_checkpoint["state"]["commands"]
+            native = [c for c in commands if "mdrun" in c["command"]]
+            if (
+                not native
+                or native[-1]["checkpoint_step"] != args.steps
+                or "-cpi" not in native[0]["command"]
+            ):
+                raise ValueError(
+                    "Native execution did not resume and reach the original target"
+                )
+            files = {f["path"]: f for f in final_checkpoint["files"]}
+            log = await content(
+                files[native[0]["log"]]["artifact"], "resumed-first-native.log"
+            )
+            starts = [
+                int(n)
+                for n in re.findall(
+                    r"continuing from step\s+(\d+)", log.read_text(), re.I
+                )
+            ]
+            if starts != [completed]:
+                raise ValueError(
+                    "Native restart did not start exactly at the saved step"
+                )
+            preserved = 0
+            for old in checkpoint["files"]:
+                if re.search(
+                    r"\.part\d+\.(?:xtc|trr|edr|gro|log)$", old["path"]
+                ) or old["path"].endswith(".tpr"):
+                    new = files.get(old["path"], {})
+                    if (old["sha256"], old["size_bytes"]) != (
+                        new.get("sha256"),
+                        new.get("size_bytes"),
+                    ):
+                        raise ValueError(
+                            "Continuation lost or changed an earlier native output/TPR"
+                        )
+                    preserved += 1
+            if not preserved or any(c["step_id"] == "finite-tpr" for c in commands):
+                raise ValueError(
+                    "Preparation was rerun or prior outputs were not preserved"
+                )
+            receipt = {
+                **state,
+                "status": "passed",
+                "model": args.model,
+                "interface": args.interface,
+                "finished_step": args.steps,
+                "native_resume_step": starts[0],
+                "preserved_files": preserved,
+                "customer_bucket_export": final_checkpoint["customer_storage"],
+                "idempotent_replay": True,
+                "budget_seconds": 604800,
+                "seven_day_soak_tested": False,
+                "customer_key_used": False,
+            }
+            save(args.output / "receipt.json", receipt)
+            print(json.dumps(receipt), flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    for name in ("qa-env", "client-root", "fixture", "output"):
+        parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument(
+        "--model", choices=("gromacs", "gromacs-mpi"), default="gromacs"
+    )
+    parser.add_argument("--interface", choices=("rest", "mcp"), required=True)
+    parser.add_argument("--label", required=True)
+    parser.add_argument("--steps", type=int, default=60000)
+    parser.add_argument("--timeout", type=int, default=1200)
+    parser.add_argument("--origin", default="https://89.169.99.188")
+    args = parser.parse_args()
+    if not re.fullmatch(r"[a-z0-9-]{1,48}", args.label):
+        parser.error("label must be a bounded task-owned identifier")
+    os.umask(0o077)
+    asyncio.run(run(args))
+
+
+if __name__ == "__main__":
+    main()

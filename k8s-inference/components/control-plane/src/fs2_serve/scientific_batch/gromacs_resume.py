@@ -19,7 +19,12 @@ from fs2_gromacs.contracts import canonical, normalize, relative_path
 from pydantic import Field
 
 from ..models import Principal, Scope, StrictModel
-from ..scientific_artifacts import ArtifactDirection, ArtifactRecord, ScientificArtifactControllerPort
+from ..scientific_artifacts import (
+    ArtifactConflictError,
+    ArtifactDirection,
+    ArtifactRecord,
+    ScientificArtifactControllerPort,
+)
 from ..scientific_input_uploads import ScientificInputUploadRequest, ScientificInputUploadService
 from ..scientific_run_result import ArtifactRef
 from ..store import ConflictError
@@ -198,12 +203,25 @@ async def _upload_json(
             media_type=media_type,
         ),
     )
-    await uploads.store_content(
-        principal=principal, operation_id=reservation.operation_id, upload_id=reservation.upload_id, content=content
-    )
-    return await uploads.finalize(
+    try:
+        await uploads.store_content(
+            principal=principal, operation_id=reservation.operation_id, upload_id=reservation.upload_id, content=content
+        )
+    except ArtifactConflictError:
+        # An idempotent replay (or concurrent caller) may already have finalized
+        # these write-once bytes. Never overwrite them. Finalization is itself
+        # idempotent and verifies the existing upload before returning its ref.
+        pass
+    reference = await uploads.finalize(
         principal=principal, operation_id=reservation.operation_id, upload_id=reservation.upload_id
     )
+    if (reference.sha256, reference.size_bytes, reference.media_type) != (
+        hashlib.sha256(content).hexdigest(),
+        len(content),
+        media_type,
+    ):
+        raise ContinuationError("continuation metadata differs from its immutable upload")
+    return reference
 
 
 async def resume_gromacs(

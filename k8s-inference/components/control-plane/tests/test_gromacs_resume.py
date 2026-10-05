@@ -8,7 +8,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 import pytest
 from fs2_gromacs.contracts import normalize
 
-from fs2_serve.scientific_artifacts import ArtifactDirection
+from fs2_serve.scientific_artifacts import ArtifactConflictError, ArtifactDirection
 from fs2_serve.scientific_batch.gromacs_resume import (
     CHECKPOINT_MEDIA,
     GromacsResumeRequest,
@@ -234,6 +234,7 @@ async def test_resume_full_path_preserves_inputs_new_budget_and_idempotency(gang
 class FakeUploads:
     def __init__(self):
         self.contents, self.requests = {}, {}
+        self.finalized = set()
 
     async def begin(self, *, request, idempotency_key, principal):
         identity = uuid5(NAMESPACE_URL, idempotency_key)
@@ -241,18 +242,48 @@ class FakeUploads:
         return SimpleNamespace(operation_id=identity, upload_id=identity)
 
     async def store_content(self, *, principal, operation_id, upload_id, content):
+        if upload_id in self.finalized:
+            raise ArtifactConflictError("a finalized upload cannot accept new bytes")
         if upload_id in self.contents:
             assert self.contents[upload_id] == content
         self.contents[upload_id] = content
 
     async def finalize(self, *, principal, operation_id, upload_id):
         request = self.requests[upload_id]
+        self.finalized.add(upload_id)
         return ArtifactRef(
             artifact_id=str(upload_id),
             sha256=request.sha256,
             size_bytes=request.size_bytes,
             media_type=request.media_type,
         )
+
+
+@pytest.mark.asyncio
+async def test_resume_metadata_replay_uses_real_write_once_upload_service(registry, cipher, hasher):
+    from test_scientific_artifact_public_bytes import _artifact_plane, _token
+    from test_scientific_batch_production import scientific_runtime
+
+    from fs2_serve.scientific_batch.gromacs_resume import _upload_json
+    from fs2_serve.store import ConflictError
+
+    runtime, _, _, _, _ = scientific_runtime(registry, cipher, hasher)
+    objects, _ = _artifact_plane(runtime)
+    token = await _token(runtime, principal_id="qa", tenant_id="system")
+    principal = await runtime.tokens.verify(token)
+    arguments = dict(
+        principal=principal,
+        content=b'{"source":"checkpoint"}',
+        model_id="protein-design",
+        key="resume-real-upload-replay",
+        media_type="application/json",
+    )
+    first = await _upload_json(runtime.scientific_input_uploads, **arguments)
+    second = await _upload_json(runtime.scientific_input_uploads, **arguments)
+    assert first == second
+    assert len(objects.written) == 1
+    with pytest.raises(ConflictError):
+        await _upload_json(runtime.scientific_input_uploads, **{**arguments, "content": b"{}"})
 
 
 @pytest.mark.asyncio
