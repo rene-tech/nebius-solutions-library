@@ -119,6 +119,9 @@ class ArtifactRecords:
             raise KeyError(artifact_id)
         return record
 
+    async def get_artifacts(self, artifact_ids: tuple[UUID, ...], *, tenant_id: str) -> list[ArtifactRecord]:
+        return [await self.get_artifact(artifact_id, tenant_id=tenant_id) for artifact_id in artifact_ids]
+
 
 class BytesReader:
     def __init__(self, values: dict[UUID, bytes]) -> None:

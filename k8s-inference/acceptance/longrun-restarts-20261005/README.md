@@ -139,6 +139,17 @@ phase totals also appear in the collector stdout, without file paths, payloads,
 signed URLs or credentials. A terminal failed source stops the acceptance runner
 and is retained as a failure rather than silently retried under a passing label.
 
+The subsequent read-side successor also batches128 metadata records for input
+admission, signed-download lookup and final stage publication. Every pointer,
+access receipt, tenant/operation/stage and successful-attempt check is retained;
+the change removes round trips, not verification. Aliases retain request order.
+Actual restricted-runtime PostgreSQL qualification published20,000 unique
+artifacts, concurrently committed/replayed a20,001-entry manifest including an
+alias, and rejected foreign-tenant reads. The artifact/read/batch suite passed
+52tests on the isolated disposable database. A separate59-test manifest/handoff
+suite passed with its two database cases initially skipped; the52-test database
+suite subsequently covered both. Strict typing and Ruff passed.
+
 `verify_resume.py --source-receipt <historical-private-state.json>` can qualify
 an earlier internal failed operation against a newer continuation release
 without rerunning or changing the source. The source must still be owned by

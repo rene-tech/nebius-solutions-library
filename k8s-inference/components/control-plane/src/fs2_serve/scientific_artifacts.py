@@ -812,6 +812,8 @@ class ArtifactRepository(Protocol):
 
     async def get_artifact(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactRecord: ...
 
+    async def get_artifacts(self, artifact_ids: tuple[UUID, ...], *, tenant_id: str) -> list[ArtifactRecord]: ...
+
     async def list_artifacts(
         self,
         operation_id: UUID,
@@ -880,6 +882,10 @@ class ScientificArtifactControllerPort(Protocol):
     async def download(
         self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
     ) -> ArtifactDownload: ...
+
+    async def downloads(
+        self, artifact_ids: tuple[UUID, ...], *, tenant_id: str, handle_ttl: timedelta | None = None
+    ) -> list[ArtifactDownload]: ...
 
     async def open_content(self, artifact_id: UUID, *, tenant_id: str) -> ArtifactContentStream: ...
 
@@ -1071,11 +1077,21 @@ class ScientificArtifactService:
             raise ArtifactNotFoundError("attempt not found")
         if attempt.status.terminal:
             raise StaleArtifactAttemptError("a closed attempt cannot accept new artifacts")
-        reservations = tuple((request, artifact_storage_key(
-            tenant_id=request.tenant_id, operation_id=request.operation_id,
-            stage_id=attempt.stage_id, shard_id=attempt.shard_id,
-            attempt_id=request.attempt_id, direction=request.direction, digest=request.expected_digest,
-        )) for request in requests)
+        reservations = tuple(
+            (
+                request,
+                artifact_storage_key(
+                    tenant_id=request.tenant_id,
+                    operation_id=request.operation_id,
+                    stage_id=attempt.stage_id,
+                    shard_id=attempt.shard_id,
+                    attempt_id=request.attempt_id,
+                    direction=request.direction,
+                    digest=request.expected_digest,
+                ),
+            )
+            for request in requests
+        )
         intents = await self._repository.begin_uploads(reservations, retention=self._retention)
         if len(intents) != len(reservations):
             raise ArtifactConflictError("upload cohort differs from its reserved identities")
@@ -1087,8 +1103,10 @@ class ScientificArtifactService:
         async def sign(intent: UploadIntent) -> BeginUploadResult:
             async with semaphore:
                 handle = await self._store.presign_upload(
-                    storage_key=intent.storage_key, media_type=intent.media_type,
-                    compression=intent.compression, ttl=lifetime,
+                    storage_key=intent.storage_key,
+                    media_type=intent.media_type,
+                    compression=intent.compression,
+                    ttl=lifetime,
                 )
             _validate_handle(handle, method="PUT", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
             return BeginUploadResult(upload=intent, handle=handle)
@@ -1108,8 +1126,10 @@ class ScientificArtifactService:
                 # An already finalized immutable identity needs no second S3
                 # read, matching the single-artifact replay contract.
                 return VerifiedStoredObject(
-                    storage_key=intent.storage_key, digest=intent.expected_digest,
-                    size_bytes=intent.expected_size_bytes, media_type=intent.media_type,
+                    storage_key=intent.storage_key,
+                    digest=intent.expected_digest,
+                    size_bytes=intent.expected_size_bytes,
+                    media_type=intent.media_type,
                     compression=intent.compression,
                 )
             async with semaphore:
@@ -1121,9 +1141,9 @@ class ScientificArtifactService:
             return verified
 
         verified = await asyncio.gather(*(inspect(intent) for intent in intents))
-        return await self._repository.finalize_uploads(tuple(
-            (request, measured, uuid4()) for request, measured in zip(requests, verified, strict=True)
-        ))
+        return await self._repository.finalize_uploads(
+            tuple((request, measured, uuid4()) for request, measured in zip(requests, verified, strict=True))
+        )
 
     async def store_upload_content(
         self,
@@ -1248,6 +1268,21 @@ class ScientificArtifactService:
         _validate_handle(handle, method="GET", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
         return ArtifactDownload(artifact=record, handle=handle)
 
+    async def downloads(
+        self, artifact_ids: tuple[UUID, ...], *, tenant_id: str, handle_ttl: timedelta | None = None
+    ) -> list[ArtifactDownload]:
+        records = await self._repository.get_artifacts(artifact_ids, tenant_id=tenant_id)
+        lifetime = self._ttl(handle_ttl)
+        semaphore = asyncio.Semaphore(8)
+
+        async def sign(record: ArtifactRecord) -> ArtifactDownload:
+            async with semaphore:
+                handle = await self._store.presign_download(storage_key=record.storage_key, ttl=lifetime)
+            _validate_handle(handle, method="GET", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
+            return ArtifactDownload(artifact=record, handle=handle)
+
+        return list(await asyncio.gather(*(sign(record) for record in records)))
+
     async def list_artifacts(
         self,
         operation_id: UUID,
@@ -1299,10 +1334,16 @@ class ScientificArtifactService:
         scientific_attempts = []
         for attempt in terminal:
             if attempt.attempt_id == publication_id and attempt.stage_id == "result-publication":
-                if (attempt.status is not AttemptStatus.SUCCEEDED or attempt.admission is None
-                        or attempt.admission.accelerator_count != 0 or attempt.k8s_job_uid is not None
-                        or attempt.kueue_workload_uid is not None or attempt.pod_uids
-                        or attempt.node_uids or attempt.gpu_uuids):
+                if (
+                    attempt.status is not AttemptStatus.SUCCEEDED
+                    or attempt.admission is None
+                    or attempt.admission.accelerator_count != 0
+                    or attempt.k8s_job_uid is not None
+                    or attempt.kueue_workload_uid is not None
+                    or attempt.pod_uids
+                    or attempt.node_uids
+                    or attempt.gpu_uuids
+                ):
                     raise ArtifactConflictError("controller manifest publication has a workload allocation")
                 continue
             scientific_attempts.append(attempt)
@@ -1446,8 +1487,10 @@ class MemoryArtifactRepository:
         from .scientific_artifact_batches import validate_cohort
 
         validate_cohort(tuple(request for request, _, _ in requests))
-        return [await self.finalize_upload(request, verified, artifact_id=identity)
-                for request, verified, identity in requests]
+        return [
+            await self.finalize_upload(request, verified, artifact_id=identity)
+            for request, verified, identity in requests
+        ]
 
     async def register_operation(self, operation_id: UUID, *, tenant_id: str) -> None:
         async with self._lock:
@@ -1714,6 +1757,18 @@ class MemoryArtifactRepository:
             if record is None or record.tenant_id != tenant_id:
                 raise ArtifactNotFoundError("artifact not found")
             return record
+
+    async def get_artifacts(self, artifact_ids: tuple[UUID, ...], *, tenant_id: str) -> list[ArtifactRecord]:
+        if not 1 <= len(artifact_ids) <= 128:
+            raise ArtifactPolicyError("artifact read batches require1..128 identities")
+        async with self._lock:
+            records = []
+            for artifact_id in artifact_ids:
+                record = self._artifacts.get(artifact_id)
+                if record is None or record.tenant_id != tenant_id:
+                    raise ArtifactNotFoundError("artifact not found")
+                records.append(record)
+            return records
 
     async def list_artifacts(
         self,
@@ -2392,6 +2447,19 @@ class PostgresArtifactRepository:
             raise ArtifactNotFoundError("artifact not found")
         return _artifact_from_row(row)
 
+    async def get_artifacts(self, artifact_ids: tuple[UUID, ...], *, tenant_id: str) -> list[ArtifactRecord]:
+        if not 1 <= len(artifact_ids) <= 128:
+            raise ArtifactPolicyError("artifact read batches require1..128 identities")
+        rows = await self.pool.fetch(
+            f"SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts WHERE id=ANY($1::uuid[]) AND tenant_id=$2",  # noqa: S608
+            list(artifact_ids),
+            tenant_id,
+        )
+        indexed = {row["id"]: _artifact_from_row(row) for row in rows}
+        if set(artifact_ids) != indexed.keys():
+            raise ArtifactNotFoundError("artifact not found")
+        return [indexed[artifact_id] for artifact_id in artifact_ids]
+
     async def list_artifacts(
         self,
         operation_id: UUID,
@@ -2430,18 +2498,21 @@ class PostgresArtifactRepository:
                 if succeeded != set(request.attempt_ids):
                     raise ArtifactConflictError("the commit does not name the stage's succeeded attempts")
                 pairs: list[tuple[ManifestEntryDraft, ArtifactRecord]] = []
-                for entry in request.entries:
-                    row = await connection.fetchrow(
+                indexed: dict[UUID, ArtifactRecord] = {}
+                for offset in range(0, len(request.entries), 128):
+                    rows = await connection.fetch(
                         f"SELECT {_ARTIFACT_COLUMNS} FROM fs2_scientific_artifacts "  # noqa: S608
-                        "WHERE id=$1 AND tenant_id=$2 AND operation_id=$3 AND stage_id=$4",
-                        entry.artifact_id,
+                        "WHERE id=ANY($1::uuid[]) AND tenant_id=$2 AND operation_id=$3 AND stage_id=$4",
+                        [entry.artifact_id for entry in request.entries[offset : offset + 128]],
                         request.tenant_id,
                         request.operation_id,
                         request.stage_id,
                     )
-                    if row is None:
+                    indexed.update((row["id"], _artifact_from_row(row)) for row in rows)
+                for entry in request.entries:
+                    record = indexed.get(entry.artifact_id)
+                    if record is None:
                         raise ArtifactNotFoundError("artifact not found")
-                    record = _artifact_from_row(row)
                     if record.direction is not ArtifactDirection.OUTPUT:
                         raise ArtifactConflictError("only output artifacts can be committed to a stage manifest")
                     if record.attempt_id not in succeeded:

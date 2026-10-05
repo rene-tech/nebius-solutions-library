@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hmac
 from dataclasses import replace
 from typing import Annotated, Literal, Protocol
@@ -201,14 +200,12 @@ def scientific_workload_artifact_router(
         bindings = {item.artifact_id: item for item in capability.artifacts}
         if len(set(request.artifact_ids)) != len(request.artifact_ids):
             raise HTTPException(status_code=403, detail="artifact is outside workload capability")
-        semaphore = asyncio.Semaphore(8)
-
-        async def resolve(artifact_id: UUID) -> WorkloadDownloadResponse:
-            async with semaphore:
-                try:
-                    result = await artifacts.download(artifact_id, tenant_id=capability.tenant_id)
-                except ArtifactNotFoundError:
-                    raise HTTPException(status_code=403, detail="artifact is outside workload capability") from None
+        try:
+            results = await artifacts.downloads(request.artifact_ids, tenant_id=capability.tenant_id)
+        except ArtifactNotFoundError:
+            raise HTTPException(status_code=403, detail="artifact is outside workload capability") from None
+        responses = []
+        for artifact_id, result in zip(request.artifact_ids, results, strict=True):
             binding: CapabilityArtifact | ArtifactRecord | None = bindings.get(artifact_id)
             if binding is None:
                 record = result.artifact
@@ -232,11 +229,13 @@ def scientific_workload_artifact_router(
                 != binding.compression
             ):
                 raise HTTPException(status_code=409, detail="artifact metadata changed")
-            return WorkloadDownloadResponse(
-                artifact=result.artifact.to_public_ref(), handle=EphemeralHandleResponse.of(result.handle)
+            responses.append(
+                WorkloadDownloadResponse(
+                    artifact=result.artifact.to_public_ref(), handle=EphemeralHandleResponse.of(result.handle)
+                )
             )
 
-        return list(await asyncio.gather(*(resolve(artifact_id) for artifact_id in request.artifact_ids)))
+        return responses
 
     @router.get("/checkpoints/latest")
     async def latest_checkpoint(authorization: Annotated[str | None, Header()] = None) -> dict[str, ArtifactRef | None]:

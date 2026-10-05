@@ -318,10 +318,19 @@ async def test_batch_input_handles_preserve_exact_capability_scope_with_bounded_
             ),
         )
 
+    async def downloads(artifact_ids, *, tenant_id):
+        semaphore = asyncio.Semaphore(8)
+
+        async def resolve(artifact_id):
+            async with semaphore:
+                return await download(artifact_id, tenant_id=tenant_id)
+
+        return await asyncio.gather(*(resolve(item) for item in artifact_ids))
+
     app = FastAPI()
     app.include_router(
         scientific_workload_artifact_router(
-            authority=authority, artifacts=SimpleNamespace(download=download), batches=repository
+            authority=authority, artifacts=SimpleNamespace(downloads=downloads), batches=repository
         )
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
@@ -388,6 +397,9 @@ async def test_bulk_checkpoint_handles_preserve_same_operation_recovery_scope(ha
             ),
         )
 
+    async def downloads(artifact_ids, *, tenant_id):
+        return [await download(artifact_id, tenant_id=tenant_id) for artifact_id in artifact_ids]
+
     if mismatch == "cancel":
         repository.records[state.operation_id] = replace(state, cancel_requested=True)
     if mismatch == "attempt":
@@ -400,7 +412,7 @@ async def test_bulk_checkpoint_handles_preserve_same_operation_recovery_scope(ha
     app.include_router(
         scientific_workload_artifact_router(
             authority=authority,
-            artifacts=SimpleNamespace(download=download),
+            artifacts=SimpleNamespace(downloads=downloads),
             batches=repository,
         )
     )

@@ -19,6 +19,7 @@ from ..scientific_artifacts import (
     ArtifactAccessProfile,
     ArtifactDirection,
     ArtifactNotFoundError,
+    ArtifactRecord,
     ArtifactRepository,
     BeginArtifactUpload,
     CloseStageAttempt,
@@ -188,13 +189,26 @@ class ArtifactServiceBridge:
                 "Upload a corrected scientific artifact manifest; the source artifact can be reused.",
             ) from error
         entries: list[ScientificInputArtifact] = []
-        for raw_entry in cast(list[Mapping[str, Any]], manifest["entries"]):
+        raw_entries = cast(list[Mapping[str, Any]], manifest["entries"])
+        records: dict[UUID, ArtifactRecord] = {}
+        for offset in range(0, len(raw_entries), 128):
+            try:
+                ids = tuple(
+                    UUID(str(cast(Mapping[str, Any], entry["artifact"])["artifact_id"]))
+                    for entry in raw_entries[offset : offset + 128]
+                )
+            except ValueError:
+                raise ArtifactNotFoundError("input manifest entry artifact ID is not canonical") from None
+            records.update(
+                (entry.artifact_id, entry) for entry in await self.artifacts.get_artifacts(ids, tenant_id=tenant_id)
+            )
+        for raw_entry in raw_entries:
             ref = cast(Mapping[str, Any], raw_entry["artifact"])
             try:
                 entry_id = UUID(str(ref["artifact_id"]))
             except ValueError:
                 raise ArtifactNotFoundError("input manifest entry artifact ID is not canonical") from None
-            entry = await self.artifacts.get_artifact(entry_id, tenant_id=tenant_id)
+            entry = records[entry_id]
             if not _pointer_matches(entry, ref) or entry.access != artifact.access:
                 raise ArtifactNotFoundError("input manifest entry metadata or access admission differs")
             entries.append(
@@ -554,9 +568,7 @@ class ArtifactServiceBridge:
             raise ScientificProfileError("scientific batch terminal event is absent or ambiguous")
         return terminal[0]
 
-    async def _terminal_manifest(
-        self, state: ScientificBatchState, commits: tuple[AttemptArtifactCommit, ...]
-    ) -> UUID:
+    async def _terminal_manifest(self, state: ScientificBatchState, commits: tuple[AttemptArtifactCommit, ...]) -> UUID:
         """Flatten validated terminal shards without copying native result bytes.
 
         The metadata-only publication attempt uses the existing artifact
@@ -574,18 +586,27 @@ class ArtifactServiceBridge:
             raise ScientificProfileError("terminal manifest reader is unavailable")
         entries = []
         for index, manifest_id in enumerate(manifests):
-            manifest = self.profiles.validate_artifact_manifest(json.loads(await self.content_reader.read(
-                manifest_id, tenant_id=state.tenant_id, maximum_bytes=_MAX_MANIFEST_BYTES,
-            )))
+            manifest = self.profiles.validate_artifact_manifest(
+                json.loads(
+                    await self.content_reader.read(
+                        manifest_id,
+                        tenant_id=state.tenant_id,
+                        maximum_bytes=_MAX_MANIFEST_BYTES,
+                    )
+                )
+            )
             for entry in cast(list[dict[str, Any]], manifest["entries"]):
                 # Index prefixes keep repeated native names distinct and stable;
                 # each GROMACS result document retains its original job/file IDs.
                 name = f"shard-{index:04d}.{entry['name']}"
                 if len(name) > 128:
-                    name = f"shard-{index:04d}." + hashlib.sha256(entry['name'].encode()).hexdigest()
+                    name = f"shard-{index:04d}." + hashlib.sha256(entry["name"].encode()).hexdigest()
                 entries.append({**entry, "name": name})
-        document = {"schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
-                    "manifest_id": f"result-{state.operation_id.hex}", "entries": entries}
+        document = {
+            "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+            "manifest_id": f"result-{state.operation_id.hex}",
+            "entries": entries,
+        }
         self.profiles.validate_artifact_manifest(document)
         payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
         if len(payload) > _MAX_MANIFEST_BYTES:
@@ -597,36 +618,57 @@ class ArtifactServiceBridge:
         try:
             attempt = await self.artifacts.get_attempt(attempt_id, tenant_id=state.tenant_id)
         except ArtifactNotFoundError:
-            attempt = await service.open_attempt(OpenStageAttempt(
-                attempt_id=attempt_id, operation_id=state.operation_id, tenant_id=state.tenant_id,
-                stage_id=stage, attempt_number=1, started_at=datetime.now(UTC),
-            ))
-        existing = await service.list_artifacts(state.operation_id, tenant_id=state.tenant_id,
-                                                stage_id=stage, attempt_id=attempt_id)
+            attempt = await service.open_attempt(
+                OpenStageAttempt(
+                    attempt_id=attempt_id,
+                    operation_id=state.operation_id,
+                    tenant_id=state.tenant_id,
+                    stage_id=stage,
+                    attempt_number=1,
+                    started_at=datetime.now(UTC),
+                )
+            )
+        existing = await service.list_artifacts(
+            state.operation_id, tenant_id=state.tenant_id, stage_id=stage, attempt_id=attempt_id
+        )
         if len(existing) > 1 or existing and existing[0].digest != digest:
             raise ScientificProfileError("terminal publication identity changed")
         if existing:
             artifact = existing[0]
         else:
             upload_id = uuid5(NAMESPACE_URL, f"fs2-result-publication:{state.operation_id}:{digest}")
-            await service.begin_upload(BeginArtifactUpload(
-                upload_id=upload_id, attempt_id=attempt_id, operation_id=state.operation_id,
-                tenant_id=state.tenant_id, direction=ArtifactDirection.OUTPUT,
-                expected_digest=digest, expected_size_bytes=len(payload),
-                media_type="application/vnd.fs2.scientific-manifest+json",
-                access=ArtifactAccess(profile=ArtifactAccessProfile(state.access_context.profile),
-                                      receipt_digest=state.access_context.receipt_digest),
-            ))
-            request = FinalizeArtifactUpload(upload_id=upload_id, operation_id=state.operation_id,
-                                             tenant_id=state.tenant_id)
+            await service.begin_upload(
+                BeginArtifactUpload(
+                    upload_id=upload_id,
+                    attempt_id=attempt_id,
+                    operation_id=state.operation_id,
+                    tenant_id=state.tenant_id,
+                    direction=ArtifactDirection.OUTPUT,
+                    expected_digest=digest,
+                    expected_size_bytes=len(payload),
+                    media_type="application/vnd.fs2.scientific-manifest+json",
+                    access=ArtifactAccess(
+                        profile=ArtifactAccessProfile(state.access_context.profile),
+                        receipt_digest=state.access_context.receipt_digest,
+                    ),
+                )
+            )
+            request = FinalizeArtifactUpload(
+                upload_id=upload_id, operation_id=state.operation_id, tenant_id=state.tenant_id
+            )
             await service.store_trusted_upload_content(request, content=payload)
             artifact = await service.finalize_upload(request)
         if not attempt.status.terminal:
-            await service.close_attempt(CloseStageAttempt(
-                attempt_id=attempt_id, operation_id=state.operation_id, tenant_id=state.tenant_id,
-                status=ArtifactAttemptStatus.SUCCEEDED, completed_at=datetime.now(UTC),
-                admission=KueueAdmission(accelerator_count=0, admitted_at=attempt.started_at),
-            ))
+            await service.close_attempt(
+                CloseStageAttempt(
+                    attempt_id=attempt_id,
+                    operation_id=state.operation_id,
+                    tenant_id=state.tenant_id,
+                    status=ArtifactAttemptStatus.SUCCEEDED,
+                    completed_at=datetime.now(UTC),
+                    admission=KueueAdmission(accelerator_count=0, admitted_at=attempt.started_at),
+                )
+            )
         elif attempt.status is not ArtifactAttemptStatus.SUCCEEDED:
             raise ScientificProfileError("terminal publication attempt did not succeed")
         return artifact.artifact_id
@@ -652,55 +694,84 @@ class ArtifactServiceBridge:
                 if workflow is None:
                     continue
                 records = await self._require_service().list_artifacts(
-                    state.operation_id, tenant_id=state.tenant_id,
-                    stage_id=attempt.stage_id, attempt_id=attempt.attempt_id,
+                    state.operation_id,
+                    tenant_id=state.tenant_id,
+                    stage_id=attempt.stage_id,
+                    attempt_id=attempt.attempt_id,
                 )
-                documents = [item for item in records
-                             if item.media_type == "application/vnd.fs2.scientific-manifest+json"]
-                validations = [item for item in records
-                               if item.media_type == "application/vnd.fs2.scientific-validation+json"]
+                documents = [
+                    item for item in records if item.media_type == "application/vnd.fs2.scientific-manifest+json"
+                ]
+                validations = [
+                    item for item in records if item.media_type == "application/vnd.fs2.scientific-validation+json"
+                ]
                 if len(documents) != 1 or len(validations) != 1:
                     continue
                 document, validation_record = documents[0], validations[0]
-                validation = json.loads(await self.content_reader.read(
-                    validation_record.artifact_id, tenant_id=state.tenant_id, maximum_bytes=_MAX_MANIFEST_BYTES,
-                ))
+                validation = json.loads(
+                    await self.content_reader.read(
+                        validation_record.artifact_id,
+                        tenant_id=state.tenant_id,
+                        maximum_bytes=_MAX_MANIFEST_BYTES,
+                    )
+                )
                 if not isinstance(validation, dict) or validation.get("artifact_role") != "failed-attempt-diagnostics":
                     # A gang can fail after its head published a successful
                     # local result. That is not a failed-diagnostic manifest.
                     continue
                 expected = {
-                    "status": "failed", "artifact_role": "failed-attempt-diagnostics",
-                    "collector_id": invocation.collector_id, "validator_id": invocation.validator_id,
-                    "stage_id": invocation.stage_id, "shard_id": invocation.shard_id,
-                    "logical_output_id": invocation.produces, "operation_id": str(state.operation_id),
-                    "job_id": invocation.shard_id, "scientific_validation_passed": False,
+                    "status": "failed",
+                    "artifact_role": "failed-attempt-diagnostics",
+                    "collector_id": invocation.collector_id,
+                    "validator_id": invocation.validator_id,
+                    "stage_id": invocation.stage_id,
+                    "shard_id": invocation.shard_id,
+                    "logical_output_id": invocation.produces,
+                    "operation_id": str(state.operation_id),
+                    "job_id": invocation.shard_id,
+                    "scientific_validation_passed": False,
                     "checkpoint_generation_created": False,
                     "diagnostic_manifest_sha256": document.digest.removeprefix("sha256:"),
                 }
                 if any(validation.get(key) != value for key, value in expected.items()):
                     raise ScientificProfileError("failed diagnostic receipt differs from its frozen attempt")
-                manifest = self.profiles.validate_artifact_manifest(json.loads(await self.content_reader.read(
-                    document.artifact_id, tenant_id=state.tenant_id, maximum_bytes=_MAX_MANIFEST_BYTES,
-                )))
+                manifest = self.profiles.validate_artifact_manifest(
+                    json.loads(
+                        await self.content_reader.read(
+                            document.artifact_id,
+                            tenant_id=state.tenant_id,
+                            maximum_bytes=_MAX_MANIFEST_BYTES,
+                        )
+                    )
+                )
                 if manifest["manifest_id"] != invocation.produces:
                     raise ScientificProfileError("failed diagnostic manifest differs from its frozen attempt")
-                allowed = {f"{workflow.engine}-failed-result/v1", f"{workflow.engine}-failed-log/v1",
-                           "native-failed-diagnostics/v1"}
+                allowed = {
+                    f"{workflow.engine}-failed-result/v1",
+                    f"{workflow.engine}-failed-log/v1",
+                    "native-failed-diagnostics/v1",
+                }
                 by_id = {str(item.artifact_id): item for item in records if item.direction is ArtifactDirection.OUTPUT}
                 entries = manifest["entries"]
                 for entry in entries:
                     record = by_id.get(entry["artifact"]["artifact_id"])
-                    if (entry["semantic_type"] not in allowed or record is None
-                            or not _pointer_matches(record, entry["artifact"])):
+                    if (
+                        entry["semantic_type"] not in allowed
+                        or record is None
+                        or not _pointer_matches(record, entry["artifact"])
+                    ):
                         raise ScientificProfileError(
                             "failed diagnostic manifest references another or changed artifact"
                         )
-                results = [entry for entry in entries
-                           if entry["semantic_type"] == f"{workflow.engine}-failed-result/v1"]
+                results = [
+                    entry for entry in entries if entry["semantic_type"] == f"{workflow.engine}-failed-result/v1"
+                ]
                 receipts = [entry for entry in entries if entry["semantic_type"] == "native-failed-diagnostics/v1"]
-                if (len(results) != 1 or len(receipts) != 1
-                        or results[0]["artifact"]["sha256"] != validation.get("result_sha256")):
+                if (
+                    len(results) != 1
+                    or len(receipts) != 1
+                    or results[0]["artifact"]["sha256"] != validation.get("result_sha256")
+                ):
                     raise ScientificProfileError("failed diagnostic result inventory is incomplete")
                 manifests.append(document.artifact_id)
         return await self._combine_terminal_manifests(state, tuple(manifests)) if manifests else None
@@ -774,7 +845,8 @@ class ArtifactServiceBridge:
                 validation_receipt_digest=validation_receipt,
                 error_code=error_code,
                 error_message=(worker_error_detail(state.model_id, error_code) or "scientific run did not succeed")
-                if error_code is not None else None,
+                if error_code is not None
+                else None,
                 error_retryable=False if error_code is not None else None,
             )
         )
