@@ -11,6 +11,7 @@ from typing import Any, cast
 
 from .catalog_adapter import CatalogProfileAdapterError, _stage_contract, select_stage_shape, stage_execution_shape
 from .models import (
+    ExecutionMode,
     PreemptionMode,
     ResourceClass,
     SchedulingSnapshot,
@@ -450,6 +451,18 @@ class SchedulingContractResolver:
                         self.pools[pool_id]["resource_flavor"] == requested_flavor for pool_id in resolved_pools
                     ):
                         raise SchedulingContractError("requested ResourceFlavor cannot fit the whole scientific Pod")
+                if model_id == "gromacs-mpi" and stage.mode is ExecutionMode.TRUE_GANG:
+                    # The MPI renderer requires one Pod per distinct hostname.
+                    # GPU quota and per-Pod fit alone cannot prove that a pool
+                    # has enough configured hosts (two 1-GPU Pods cannot share a
+                    # single 4-GPU host). Do not impose this on other gangs whose
+                    # renderer does not require distinct hosts.
+                    assert stage.gang_size is not None
+                    resolved_pools = self._pools_with_distinct_hosts(resolved_pools, stage.gang_size)
+                    if requested_flavor is not None and not any(
+                        self.pools[pool_id]["resource_flavor"] == requested_flavor for pool_id in resolved_pools
+                    ):
+                        raise SchedulingContractError("requested ResourceFlavor cannot fit the MPI distinct-host gang")
 
             decisions.append(
                 StageSchedulingDecision(
@@ -492,6 +505,29 @@ class SchedulingContractResolver:
             stages=tuple(decisions),
             raw_contract_sha256=self.raw_contract_sha256,
         )
+
+    def _pools_with_distinct_hosts(self, pools: tuple[str, ...], count: int) -> tuple[str, ...]:
+        """Use configured maximum hosts, not live availability or queue quota.
+
+        The workloads Terraform producer defines pool.capacity as
+        gpus_per_node * max_nodes. Its independently verified per-node GPU
+        count therefore recovers the configured host maximum. A zero hot
+        floor or temporarily unavailable/preempted hosts do not change it.
+        """
+        if self.pod_placement.legacy_unverified:
+            raise SchedulingContractError("MPI distinct-host gangs require verified per-node accelerator capacity")
+        eligible = []
+        for pool_id in pools:
+            capacity = self.pools[pool_id].get("capacity")
+            node = self.pod_placement.capacities.get(pool_id)
+            if (type(capacity) is not int or capacity < 0 or node is None
+                    or capacity % node.accelerator_count):
+                raise SchedulingContractError("MPI distinct-host gang has invalid configured maximum pool capacity")
+            if capacity // node.accelerator_count >= count:
+                eligible.append(pool_id)
+        if not eligible:
+            raise SchedulingContractError(f"MPI gang requires {count} distinct hosts beyond compatible pool maxima")
+        return tuple(eligible)
 
     def _resolve_route(
         self,

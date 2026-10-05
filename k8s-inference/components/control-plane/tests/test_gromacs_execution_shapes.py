@@ -79,9 +79,13 @@ def resolver(runtime):
     capacities = {"h100-ondemand-1x": 1, "h100-reserved-8x": 8, "l40s-1x": 1, "l40s-4x": 4}
     contract["model_eligible_pool_ids"] = {"gromacs-mpi": list(capacities)}
     contract["service_classes"]["customer-batch"]["pool_preference"] = list(capacities)
+    # These portable shape-conservation fixtures declare eight maximum hosts
+    # in each pool, independently of the requested GPUs per host. Live pool
+    # maxima are verified separately; this fixture does not change live quota.
     contract["pools"] = {
-        pool: {"resource_flavor": pool + "-flavor", "accelerator_resource_name": "nvidia.com/gpu", "capacity": 16}
-        for pool in capacities
+        pool: {"resource_flavor": pool + "-flavor", "accelerator_resource_name": "nvidia.com/gpu",
+               "capacity": count * 8}
+        for pool, count in capacities.items()
     }
     contract["cluster_queues"]["inference"]["spec"]["resourceGroups"][0]["flavors"] = [
         {"name": pool + "-flavor"} for pool in capacities
