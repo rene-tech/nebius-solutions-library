@@ -1,6 +1,8 @@
 import importlib.util
-from pathlib import Path
+import json
+import subprocess
 import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -45,3 +47,42 @@ def test_mps_queries_record_only_real_numeric_client_pids(monkeypatch):
     replies = {"get_server_list": "123\n", "get_client_list 123": "234\n235\n"}
     monkeypatch.setattr(module, "mps_control", lambda command, env: replies[command])
     assert module.mps_clients({}) == {"123": [234, 235]}
+
+
+def test_export_retry_retains_failure_and_uses_new_destination(tmp_path, monkeypatch):
+    module = load("launch")
+    calls = []
+
+    def copy(command):
+        calls.append(command)
+        if len(calls) == 1:
+            raise subprocess.CalledProcessError(1, command, output=b"observer connection lost")
+
+    monkeypatch.setattr(module.native, "call", copy)
+    monkeypatch.setattr(module.time, "sleep", lambda _: None)
+    record = {}
+    result = module.copy_results(SimpleNamespace(name="owned-pod", output=tmp_path), record)
+    assert result == tmp_path / "results-copy-2"
+    assert len(calls) == 2 and calls[0][-1] != calls[1][-1]
+    attempts = json.loads((tmp_path / "copy-attempts.json").read_text())
+    assert attempts[0]["detail"] == "observer connection lost"
+    assert attempts[1]["passed"]
+    assert record["results_directory"] == "results-copy-2"
+
+
+def test_export_retries_are_bounded_and_preserve_all_failures(tmp_path, monkeypatch):
+    module = load("launch")
+    calls = []
+
+    def copy(command):
+        calls.append(command)
+        raise subprocess.CalledProcessError(1, command, output=b"copy failed")
+
+    monkeypatch.setattr(module.native, "call", copy)
+    monkeypatch.setattr(module.time, "sleep", lambda _: None)
+    with pytest.raises(subprocess.CalledProcessError):
+        module.copy_results(SimpleNamespace(name="owned-pod", output=tmp_path), {})
+    attempts = json.loads((tmp_path / "copy-attempts.json").read_text())
+    assert len(calls) == len(attempts) == 3
+    assert len({command[-1] for command in calls}) == 3
+    assert not any(attempt["passed"] for attempt in attempts)

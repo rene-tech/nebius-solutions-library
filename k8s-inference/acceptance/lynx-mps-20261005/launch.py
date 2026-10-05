@@ -5,16 +5,16 @@ customer API key, node mode change, shared MPS service or public shape change.
 """
 
 import argparse
-from datetime import datetime, timezone
 import json
-from pathlib import Path
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "lynx-performance-20261005"))
-import native_cpu_probe as helper  # noqa: E402
+import native_cpu_probe as helper
 
 native = helper.native
 TASK = "lynx-mps-20261005"
@@ -30,6 +30,33 @@ def pod_spec(args):
     # This is one whole GPU, not advertised virtual shares. The private MPS
     # daemon and all client processes run within that exact reservation.
     return pod
+
+
+def copy_results(args, record):
+    """Retry bounded observer transfers to new paths, retaining failure details."""
+    attempts = []
+    for attempt in range(1, 4):
+        name = "results" if attempt == 1 else f"results-copy-{attempt}"
+        try:
+            native.call(["-n", native.NS, "cp", args.name + ":" + REMOTE + "/results", str(args.output / name)])
+        except subprocess.SubprocessError as error:
+            detail = getattr(error, "output", b"") or b""
+            if isinstance(detail, bytes):
+                detail = detail.decode(errors="replace")
+            attempts.append({"attempt": attempt, "passed": False, "error": str(error), "detail": detail[-8192:]})
+            helper.save(args.output / f"copy-attempt-{attempt}.json", attempts[-1])
+            if attempt == 3:
+                helper.save(args.output / "copy-attempts.json", attempts)
+                raise
+            time.sleep(2)
+        else:
+            attempts.append({"attempt": attempt, "passed": True, "directory": name})
+            helper.save(args.output / f"copy-attempt-{attempt}.json", attempts[-1])
+            helper.save(args.output / "copy-attempts.json", attempts)
+            record["results_directory"] = name
+            record["observer_copy_attempts"] = attempts
+            return args.output / name
+    raise AssertionError("bounded observer transfer did not return")
 
 
 def main(args):
@@ -84,13 +111,13 @@ def main(args):
         helper.save(args.output / "started.json", record)
         with (args.output / "worker.log").open("xb") as stream:
             completed = subprocess.run([*native.KUBE, "-n", native.NS, "exec", args.name, "--", *command],
-                                       stdout=stream, stderr=subprocess.STDOUT, timeout=5100)
+                                       stdout=stream, stderr=subprocess.STDOUT, timeout=5100, check=False)
         record["exit_code"] = completed.returncode
-        native.call(["-n", native.NS, "cp", args.name + ":" + REMOTE + "/results", str(args.output / "results")])
-        if (args.output / "results/summary.json").exists():
-            record["summary"] = json.loads((args.output / "results/summary.json").read_text())
+        results = copy_results(args, record)
+        if (results / "summary.json").exists():
+            record["summary"] = json.loads((results / "summary.json").read_text())
         record["passed"] = completed.returncode == 0 and record.get("summary", {}).get("passed", False)
-    except Exception as error:
+    except Exception as error:  # noqa: BLE001 - retain failed qualification evidence before exact owned-Pod cleanup.
         record.update(passed=False, error=str(error))
         if uid:
             # Retain failed benchmark evidence before deleting only our Pod.

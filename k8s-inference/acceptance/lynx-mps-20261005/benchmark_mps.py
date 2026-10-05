@@ -8,13 +8,13 @@ Each cohort owns exactly eight CPU threads and one GPU, including MPS overhead.
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import shutil
 import signal
 import statistics
 import subprocess
 import time
+from pathlib import Path
 
 from benchmark_sm89 import cpu_stat, expected_trajectories, run_logged, sha256, validate
 

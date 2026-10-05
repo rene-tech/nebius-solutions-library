@@ -175,15 +175,75 @@ inside the unchanged 600-second limit. The intentionally short native run stoppe
 at step 7,800/60,000 with the expected workflow time-limit outcome, not a transport
 timeout. This qualifies checkpoint publication, not yet completed continuation.
 
-Its explicit continuation `5dfc4c25-8747-403f-8ec6-07525a1ade98` was admitted and
-is running. Initial HTTP delivery failed while admission took 65.8 seconds;
+Its explicit continuation `5dfc4c25-8747-403f-8ec6-07525a1ade98` was admitted.
+Initial HTTP delivery failed while admission took 65.8 seconds;
 read-only operation/idempotency checks prevented duplicate work. This latency
 defect remains an acceptance failure until fixed and retested. Final-attempt
 publication after same-operation recovery was also changed to bounded batches
 (`3dd88de96`), with 70 targeted tests, and built from bound source `8f70f3025`.
-That image is not yet an accepted recovery release.
+That image was deployed as `06e2edce49dd2c432142d5975daf2b4b0f5aa5efa31abd9ea89add8a6c7248ba`,
+with exact three-reader/public/maintenance verification. It did not itself
+qualify a successful large-history continuation.
+
+The continuation later failed the unchanged 600-second checkpoint handoff
+limit: only 8,256 of 20,011 files were published after 604.6 seconds. Input
+restore had taken 333 seconds. Repeated decoding of the same immutable 20,000-
+file execution plan on metadata requests caused substantial avoidable CPU
+work; the valid source checkpoint remained available. Resource release was
+observed, and this failed attempt remains part of the acceptance evidence.
+
+Source `046337b19` replaced quadratic materialization lookups with a linear
+index and cooperative scheduling. Source `d3d670475` added an explicitly
+bounded cache only for verified immutable compressed scientific documents:
+four entries, at most 64 MiB of retained Python object graphs. Live attempt,
+cancellation, identity and access checks still read current state. Real
+20,000-file tests verified cancellation/supersession fences and malformed or
+mutated document rejection; this is not a credentials or authorization cache.
+
+The bound release source `8a4123ac61cc2bbcc2c09934bae248e03a2c2df9` produced
+API/tools/maintenance image
+`ea48e96625af79e91a2ebf8fda2403207c637ba3cb35cc0328c1d08a0bdfa622`.
+Execution ConfigMap: `fs2-r927c465c6d-scientific-execution-5802297e094c`.
+All three exact readers, no older/terminating readers, public discovery HTTP
+200 and eight MPI shapes were verified. Scheduled maintenance Jobs completed
+on this image at 17:05:16 and 17:06:16 UTC. Native worker images and the latest
+idle-model envelope/bundle/route bindings were preserved.
+
+REST continuation r3 (`59ae91d5-be0b-4e29-a7b6-151c7b7a4631`) is running from
+the same safe source, with a new idempotency key. Initial admission and replay
+returned valid 202 responses in 29.280 and 15.029 seconds, respectively, and
+reused one operation. This is an improvement over the gateway failure, but
+admission is still slow and one API readiness probe returned 503 during it;
+shared-service availability is therefore not yet qualified. Input restore
+improved from 333 to 132 seconds. Large REST/MCP completion, peer-loss recovery and the
+legacy seven-day-source continuation are not yet signed off.
 
 The added NVIDIA MPS/MIG article is tracked in
 `../lynx-mps-20261005/README.md` and its linked Task Deck child. Isolated H100 and
-L40S comparisons run in parallel. No customer sharing mode or MIG geometry is
-being enabled from a native performance screen.
+L40S comparisons completed 84 native trajectories with all native outputs
+verified. Aggregate MPS throughput improved, but individual trajectory latency
+did not. No customer sharing mode or MIG geometry was enabled from the screen.
+
+## Authorized H100 InfiniBand reprovision — in progress
+
+The user explicitly authorized reprovisioning the two full H100 nodes with a
+GPU cluster and InfiniBand. The child task is
+`fs2-h100-infiniband-reprovision-r20261005`. Only pool `h100-reserved-8x`, old
+node group `mk8snodegroup-e00zswm0km7v78tp2m`, is in scope. Preserve its existing
+16-GPU capacity block `capacityblockgroup-e00hfp6svlho8hsoywvzx`, STRICT
+allocation and the compatible `eu-north1/fabric-2` placement. No quota change,
+new reservation or unrelated node-pool modification is authorized here.
+
+The two old nodes have no GPU-cluster attachment and no exposed RDMA capacity.
+Both compute-instance and managed-node-group GPU-cluster membership are
+creation-time settings; changing MPI flags cannot create InfiniBand hardware.
+Their completed TCP baseline remains useful: the latest 2×8 public REST run
+delivered native 58.008 ns/day, slower than the single-node results. New MPI
+admissions are held during replacement; Lynx's running L40S job is excluded.
+
+The existing infrastructure state/backend must remain authoritative. Initial
+planning exposed stale unrelated inputs and a provider/state schema mismatch;
+the broad plan was rejected without mutation. Only a reviewed explicit
+replacement plan may be applied. Provider-managed H100 images must not acquire
+a second competing MOFED/network-operator stack. Real device, cross-node RDMA
+and public-workflow checks are required before claiming 16-GPU acceleration.
