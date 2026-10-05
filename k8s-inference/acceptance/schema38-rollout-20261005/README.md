@@ -137,3 +137,24 @@ Live checks here are read-only. Applying migration 38, observing the actual
 rolling update, recurrent historical metrics, public paths, active-job continuity
 and final RDMA publication are parent-owned acceptance gates, not completed by
 these unit tests.
+
+## Reader-release sibling check, 18:33–18:34 UTC
+
+After the parent applied candidate `191e2c2be4c1…` and signaled rollout complete,
+the bounded read-only preservation check passed. All 31 managed Apps retained
+minimum zero, Cold state, zero Deployment replicas and no App Pods. One active
+GROMACS operation remained; its original Lynx Pod UID was unchanged, both
+containers Ready with zero restarts and the same frozen images.
+
+All three live API Pods were Ready on `191e2c2be4c1…`, including their
+`wait-schema` init images, with zero restarts and no old/terminating API readers.
+The controller had two updated Ready replicas on that image; all controller and
+API ConfigMap refs exactly matched the parent's stage proposal, including idle
+envelope `21ef2f1eac8f` and bundles `37bb372fe37d`. Workshop remained on
+`ee6eea4a…`, generation10, two desired/updated/Ready replicas.
+
+Private receipts: `schema38-lifecycle-preservation.json` (existing lifecycle
+collector) and `schema38-sibling-preservation.json`, under the parent's
+`secure-handoff/fs2-lynx-longrun-20261005/`. No inference or production mutation
+was performed by this check. Historical-metrics qualification, maintenance
+restoration and subsequent RDMA/customer-path acceptance remain parent gates.
