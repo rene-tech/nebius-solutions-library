@@ -1,5 +1,12 @@
 # Read-only root persistence check, 2026-10-05
 
+Later bounded follow-up: [ADMIN_RELEASE_INPUTS.md](ADMIN_RELEASE_INPUTS.md)
+verifies the current admin repository/digest and actual source/tree/CycloneDX
+provenance and prepares an exact nested-block correction. Parent has separately
+updated the API/zero-floor/RDMA inputs. The older capture below remains dated
+evidence, not the current values for those fields. No private input was changed
+by the admin follow-up; retained-App/H200 ownership remains a distinct residual.
+
 ## Outcome
 
 The retention seam is source-tested in `84dd01ac0`, but the **current saved root
