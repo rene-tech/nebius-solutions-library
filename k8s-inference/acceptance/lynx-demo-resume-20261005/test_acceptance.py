@@ -145,6 +145,20 @@ def test_native_empty_part_probe_inventory_preserves_zeros_and_rejects_links(tmp
         inventory(tmp_path)
 
 
+@pytest.mark.parametrize("changed", [None, "tenant-id", "model-id", "operation-id"])
+def test_hardware_observer_can_only_read_the_exact_demo_operation(changed):
+    from observe_demo import owned_pods
+    labels = {"fs2.nebius.ai/operation-id": "task-owned", "fs2.nebius.ai/tenant-id": "demo-user",
+              "fs2.nebius.ai/model-id": "gromacs"}
+    pod = {"metadata": {"labels": labels}}
+    if changed:
+        labels["fs2.nebius.ai/" + changed] = "not-this-task"
+        with pytest.raises(ValueError, match="outside this exact demo operation"):
+            owned_pods({"items": [pod]}, "task-owned")
+    else:
+        assert owned_pods({"items": [pod]}, "task-owned") == [pod]
+
+
 def test_history_and_late_resume_are_checked_independently():
     fixture = {"source_files": [{"path": "one.xtc", "sha256": "a", "size_bytes": 10}]}
     checkpoint = {"files": [{"path": "source-history/one.xtc", "sha256": "a", "size_bytes": 10}]}
