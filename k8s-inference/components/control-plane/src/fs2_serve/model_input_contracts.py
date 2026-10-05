@@ -2090,6 +2090,21 @@ def scientific_contract_for(
         "Example artifact references describe source fixtures, not uploads available to the caller."
     )
     _describe(schema)
+    if model_ref in {"gromacs", "gromacs-mpi", "namd", "lammps", "amber"}:
+        md_descriptions = {
+            "jobs": "Independent workflow jobs; each job executes its declared native stages in order.",
+            "threads": "CPU execution threads requested for each native worker within its allocated CPU limit.",
+            "max_wall_seconds": "Maximum wall-clock seconds for this workflow, within the selected profile's bound.",
+            "max_output_bytes": "Maximum total retained output bytes permitted for the workflow result.",
+            "output_destination": (
+                "Publish outputs to the authenticated customer's bucket or to platform-managed immutable artifacts."
+            ),
+            "output_prefix": "Relative output key prefix in the authorized workspace; never a different tenant's bucket.",
+            "backend": "Native execution backend and precision; CPU execution must be explicitly selected.",
+        }
+        for name, field in schema["properties"]["parameters"]["properties"].items():
+            if name in md_descriptions and not field.get("description"):
+                field["description"] = md_descriptions[name]
     if model_ref == "cosmos3-lerobot-augmentation":
         descriptions = {
             "source": (
