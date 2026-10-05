@@ -209,14 +209,34 @@ All three exact readers, no older/terminating readers, public discovery HTTP
 on this image at 17:05:16 and 17:06:16 UTC. Native worker images and the latest
 idle-model envelope/bundle/route bindings were preserved.
 
-REST continuation r3 (`59ae91d5-be0b-4e29-a7b6-151c7b7a4631`) is running from
+REST continuation r3 (`59ae91d5-be0b-4e29-a7b6-151c7b7a4631`) ran from
 the same safe source, with a new idempotency key. Initial admission and replay
 returned valid 202 responses in 29.280 and 15.029 seconds, respectively, and
 reused one operation. This is an improvement over the gateway failure, but
-admission is still slow and one API readiness probe returned 503 during it;
-shared-service availability is therefore not yet qualified. Input restore
-improved from 333 to 132 seconds. Large REST/MCP completion, peer-loss recovery and the
-legacy seven-day-source continuation are not yet signed off.
+admission was still slow. Capture across all readers found four readiness 503
+responses, not just the first observed failure. Input restore improved from
+333 to 132 seconds, but publication of all 20,011 platform files took 599.69
+seconds, leaving no time for customer export inside the unchanged 600-second
+handoff deadline. The operation failed, its result was published, resources
+were released, and the source checkpoint remained safe. This is retained as an
+acceptance failure; successful artifact upload alone does not qualify restart.
+
+The successor isolates pure metadata computation from the API event loop in a
+bounded two-worker executor. Raw/repeated task cancellation drains a running
+worker before releasing its database/lock scope. Set-based admission preserves
+transaction ordering and replay checks. An additional bounded memo retains only
+derived immutable artifact bindings; current tenant/key access, attempt,
+cancellation and ownership are never memoized. Actual PostgreSQL, heartbeat,
+replay, cancellation and immutable-binding mutation tests passed. The exact
+source is `e718ccb71900c9dd9aaa7f2c56e77b8bd1a0574a`, image
+`64c5c77d4eb6cac4b4ecf58d16766b2aa0423f836c1b9adee5a2034abd3e3644`.
+This image is deployed with execution ConfigMap
+`fs2-r927c465c6d-scientific-execution-64d5416c8f6d`. All three exact readers,
+absence of old/terminating readers, eight MPI shapes and authenticated public
+discovery HTTP 200 passed. Maintenance Jobs completed at 17:40:16 and 17:41:16
+UTC. The latest idle envelope/bundles/routes and native workers were preserved.
+Large REST/MCP completion, peer-loss recovery, concurrent ordinary requests
+and the legacy seven-day-source continuation still require live acceptance.
 
 The added NVIDIA MPS/MIG article is tracked in
 `../lynx-mps-20261005/README.md` and its linked Task Deck child. Isolated H100 and
@@ -224,7 +244,7 @@ L40S comparisons completed 84 native trajectories with all native outputs
 verified. Aggregate MPS throughput improved, but individual trajectory latency
 did not. No customer sharing mode or MIG geometry was enabled from the screen.
 
-## Authorized H100 InfiniBand reprovision — in progress
+## Authorized H100 InfiniBand reprovision — hardware complete
 
 The user explicitly authorized reprovisioning the two full H100 nodes with a
 GPU cluster and InfiniBand. The child task is
@@ -234,7 +254,7 @@ node group `mk8snodegroup-e00zswm0km7v78tp2m`, is in scope. Preserve its existin
 allocation and the compatible `eu-north1/fabric-2` placement. No quota change,
 new reservation or unrelated node-pool modification is authorized here.
 
-The two old nodes have no GPU-cluster attachment and no exposed RDMA capacity.
+The two old nodes had no GPU-cluster attachment and no exposed RDMA capacity.
 Both compute-instance and managed-node-group GPU-cluster membership are
 creation-time settings; changing MPI flags cannot create InfiniBand hardware.
 Their completed TCP baseline remains useful: the latest 2×8 public REST run
@@ -247,3 +267,20 @@ the broad plan was rejected without mutation. Only a reviewed explicit
 replacement plan may be applied. Provider-managed H100 images must not acquire
 a second competing MOFED/network-operator stack. Real device, cross-node RDMA
 and public-workflow checks are required before claiming 16-GPU acceleration.
+
+The approved targeted replacement completed using provider `0.5.276` and the
+original Terraform state. New group `mk8snodegroup-e00twzfv2vh6gs8j4p` belongs to
+`computegpucluster-e00p8hjysxfyk1n58x` on `fabric-2`. Both new nodes were Ready
+at 17:28:36 UTC, with eight allocatable H100s and eight active 400 Gb/s
+InfiniBand ports each. Shared filesystems and all other pools were preserved;
+the original Lynx L40S Pod UID and zero restarts were unchanged. The provider
+selected node patch `1.35.7-nebius-node.75` under the existing `1.35` setting;
+CUDA 13.0/driver 580.173.02 remain unchanged. This patch change is not hidden.
+
+A separate reviewed refresh-only Terraform plan updated outputs to the new
+group ID/topology and retained the existing L40S-4x output, with zero cloud
+resource actions. The provider image supplies the RDMA drivers but no Kubernetes
+RDMA allocator. A scoped, driver-free device plugin and explicitly qualified
+RDMA execution shape are being added; hardware readiness is not yet a public
+16-GPU workflow or performance qualification. Private plans, hashes and live
+receipts: `/home/tux/secure-handoff/fs2-h100-infiniband-reprovision-20261005/`.
