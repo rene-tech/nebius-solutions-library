@@ -99,9 +99,15 @@ async def main(args):
                     headers={"idempotency-key": prefix, "x-fs2-wait-seconds": "0"})
                 repeated.raise_for_status()
                 replay = repeated.json()
+                # A warm operation may complete between idempotent POSTs. The
+                # compatibility route returns the unchanged classification at
+                # 200 and keeps operation identity in the response header.
+                replay_id = (replay.get("id") if repeated.status_code == 202 else
+                             repeated.headers.get("x-fs2-operation-id"))
             else:
                 replay = VISUAL.data(await mcp.call_tool(tool, arguments))
-            assert replay["id"] == accepted["id"]
+                replay_id = replay["id"]
+            assert replay_id == accepted["id"]
             operation, states = await VISUAL.poll(mcp, accepted["id"], args.timeout)
             receipt.update(operation=operation, states=states, elapsed_seconds=time.monotonic()-started)
             if operation["status"] != "succeeded":

@@ -23,6 +23,23 @@ def main(args):
     token = env["SCIENTIFIC_MODELS_API_KEY"].strip().strip('"').strip("'")
     before = json.loads(kubectl(args.context, "-n", "fs2-system", "get", "deployment",
                                 "fs2-mindeval-workshop", "-o", "json"))
+    if args.verify_only:
+        assert before["spec"]["template"]["spec"]["containers"][0]["image"] == desired
+        assert before["status"]["updatedReplicas"] == before["spec"]["replicas"] == 2
+        assert before["status"]["readyReplicas"] == 2
+        with httpx.Client(base_url="https://89.169.99.188", headers={"authorization": "Bearer " + token},
+                          trust_env=False, timeout=60) as client:
+            identity = client.get("/v1/me").json()
+            assert (identity["tenant_id"], identity["principal_id"]) == ("system", "qa")
+            response = client.get("/v1/workshop/catalog")
+            response.raise_for_status()
+        receipt = {"desired": desired, "ready_replicas": 2,
+                   "public_catalog_after_status": response.status_code,
+                   "catalog_top_level_keys": sorted(response.json()),
+                   "generation": before["metadata"]["generation"]}
+        (args.directory / "workshop-after.json").write_text(json.dumps(receipt, indent=2) + "\n")
+        print(json.dumps(receipt))
+        return
     if before["spec"]["template"]["spec"]["containers"][0]["image"] != expected:
         raise RuntimeError("live workshop changed; inspect it before rebuilding")
     with httpx.Client(base_url="https://89.169.99.188", headers={"authorization": "Bearer " + token},
@@ -54,4 +71,5 @@ if __name__ == "__main__":
     parser.add_argument("--context", required=True)
     parser.add_argument("--directory", type=Path, required=True)
     parser.add_argument("--env-file", type=Path, required=True)
+    parser.add_argument("--verify-only", action="store_true")
     main(parser.parse_args())

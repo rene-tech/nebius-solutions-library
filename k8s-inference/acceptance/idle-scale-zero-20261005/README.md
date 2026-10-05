@@ -40,14 +40,30 @@ end-to-end observations**, not measured sustainable capacity or snapshot times.
 | SAM2 | `d1b45c94-6280-4b5a-9187-690549f4128f` | 38.472 | Prompted-image mask, overlay, manifest and exact checkpoint |
 | Cellpose | `8175aa3e-07ff-4bcf-9473-1c9da103bc4d` | 42.507 | Mask, overlay and object-count result |
 | ACE-Step | `0f3ba8a0-6576-4268-b245-c235a1786f71` | 623.363 | Downloaded WAV, channels/sample rate/duration, idempotency and natural return to zero |
+| Wan2 T2V | `e80a7325-669a-4bb9-9583-8154aeaf3999` | 1219.992 | Downloaded MP4, 832x480/61 frames, 50 inference steps and idempotency replay |
 
 ACE-Step completed at 15:52:32 UTC. Its original runtime spent most startup time
 loading DiT and its 4B LM, then compiling TorchInductor kernels; no Pod restart.
 scVI, Cellpose, SAM2 and ACE-Step were all subsequently observed Cold with zero
-Pods. Their ordinary cooldown remained300seconds.
-Wan2 requests, remaining workflow variants and MindGuard lifecycle are not yet
-claimed. MindGuard's old direct endpoint bypasses admission; it must enter the
-normal durable operation lane before removing those two static hot replicas.
+Pods. Their ordinary cooldown remained 300 seconds.
+Wan2 T2V read 72.6 GB from its existing PVC while NIM materialized the workspace
+(approximately 715 seconds), then spent 223.29 seconds initializing the pipeline.
+The actual requested generation took 195.26 seconds; the response reported
+201.25 seconds including encoding. The observed cold path is usable but slow;
+this is not snapshot acceleration. Its natural drain remains to be observed.
+Wan2 I2V, remaining workflow variants and MindGuard lifecycle are not yet claimed.
+
+MindGuard now enters the ordinary durable operation lane once actual managed
+desired state exists. Merely including its catalog entry does not take over the
+old direct preview during reader-first deployment. The updated existing
+MindEval worker polls 202, preserves terminal failures/cancellation/timeouts and
+validates large result digests without sending API credentials to signed URLs.
+It is deployed as `sha256:ee6eea4a54749a75510b4c9362b271c3261c08793dbf0c8f11a813ddd5f09553`;
+both replicas and authenticated public workshop catalog passed after rollout.
+Its local full suite passed 63 tests with one optional real-Silero fixture
+skipped; the production build separately loaded that pinned model. Removing
+the final two static MindGuard hot replicas still awaits the coordinated
+API successor and public inference qualification.
 
 ## Reproducibility and rollback
 
@@ -72,10 +88,33 @@ operator configuration and are intentionally excluded from Git. Restore a floor
 through the admin desired-state API, preserving the current revision; do not
 restore an old generated Deployment over the controller's ownership.
 
-The existing QA key temporarily received nine explicitly named model grants for
+The existing QA key temporarily received ten explicitly named model grants for
 this cohort. Its original seven grants, owner, limits and non-expiring lifetime
 were preserved. `qa_grants.py --restore` removes only this task's additions after
-the corresponding requests finish. No customer API key is used.
+the corresponding requests finish. The tenth grant is `mindeval`, used only to
+verify the already-existing caller. No customer API key is used.
+
+## Public website metadata follow-through
+
+The two Sword model metadata entries were added to the exact live public-site
+source, not the dirty canonical checkout. Runtime commit `c45eeab` and evidence
+commit `cd97b5b` are in the website repository's existing
+`scientific-ai-medical-catalog-20260928` worktree. Image
+`sha256:af757125d4da9361f0510e9249642f6caf4e227d310e1b0e2261ea0e3ec8ee9b`
+replaced only the website image; two replicas, routes, runtime configuration and
+prior medical speech metadata were preserved. Both Sword models use the
+existing General-purpose AI category, source links and no NVIDIA attribution.
+
+Website tests: 112 unit/integration, 62 actual-MCP-config desktop/mobile tests
+(two opposite-configuration tests skipped), and the opt-in live catalog check
+passed. The public metadata verifier covered all 47 expected IDs. Live
+desktop/mobile inspection retained 45 currently published cards, 26 NVIDIA
+marks and zero Other-category sections or horizontal overflow. One **pre-patch**
+catalog semantic failure occurred among 978 observed public requests: HTTP 200
+after 5.1 seconds did not satisfy fresh catalog semantics. Subsequent checks
+passed; the receipt retains that finding rather than claiming uninterrupted
+catalog freshness. No unsolicited lead-form email was sent in this scoped
+metadata-only release.
 
 ## Outstanding acceptance
 
