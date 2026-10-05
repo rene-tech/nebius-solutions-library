@@ -402,3 +402,55 @@ Private evidence: `schema38-stage-191e-r2.json`,
 `outbox38-database-load.jsonl` under the private parent root. The live cohort is
 under `/home/tux/secure-handoff/fs2-longrun-restarts-20261005/concurrent-20k-r1/`.
 No customer key, scientific input protocol, timeout or cloud quota changed.
+
+## 19:26 UTC integration checkpoint — native RDMA passed, restart successor live
+
+Both full H100 nodes are now members of GPU cluster
+`computegpucluster-e00p8hjysxfyk1n58x`, with the scoped allocator exposing one
+whole-node eight-HCA bundle per node. Exact worker
+`sha256:c8321a27df6490e3ca33d7f2d80ee5d5a4917b787c612e98c1704346f1cbdece`
+passed local H100/L40S and cross-node TCP compatibility, byte-checked host/CUDA
+collectives, and real sixteen-rank InfiniBand GROMACS. The fixed, non-root
+RDMA executables use only IPC_LOCK; host limits were not changed. Three matched
+1 ns Lynx runs gave348.839/363.609/350.896ns/day (median350.896); all46 retained
+native output files were independently rehashed. Owned test Pods were removed.
+See `../lynx-performance-20261005/RDMA.md` for distinct native/process/occupancy
+clocks, cost scope and the modest gain over the earlier eight-GPU result.
+
+The concurrent191e REST/MCP trials both failed the unchanged600-second checkpoint
+handoff, with first platform publication alone taking551.456/456.154s. Their
+source checkpoint remains intact. Earlier MCPc9d6195b completed all20,031
+artifact byte checks, with six extra GET attempts recorded during the compatible
+rollout; its earlier availability failures are not erased.
+
+Bridge`872b7d58cf275f2bc7e7d396e626fd1418285e65f25047ed8fbd35ab7af9f6dd`,
+from`dbcb4b994`, is now live on3API/2controller/all future tools, schema init and
+successful maintenance. It keeps the eight-shape catalog while preparing all
+readers for the eventual RDMA execution plan. New changes move large artifact
+inventory decoding off the event loop and overlap two bounded metadata cohorts
+with a global eight-PUT-stream collector budget. Whole-node MPI admission also
+checks configured maximum distinct hosts. The mounted scheduling contract now
+correctly records the existing eight single-H100 nodes; no live GPU quota was
+increased. Original customer Pod UID and unrelated configuration remain unchanged.
+
+Fresh REST`2da99333-e473-4025-8230-edf67d49c62b` and raw MCP
+`ba3e658b-6355-418b-b7fd-d4bd8c2b1067` share the existing internal QA limit of two.
+Initial/replayed admission took15.077/11.883s and19.515/18.251s, preserving one
+operation per idempotency key. Materialization took114/107s. First platform
+publication completed20,011 files in170.320/191.073s; customer export is still
+running. First252 body-readiness samples and periodic complete-reader logs were
+clean. These are intermediate measurements, not a terminal acceptance pass.
+
+One45-second historical-metrics observation during admission did not observe
+two completed refreshes on one reader (a roughly65-second sampled-history gap).
+It retained fresh queue series and correctly omitted stale historical values;
+all scrapes returned. Preserve this failed freshness observation separately from
+request availability and durable accounting. Final-release observation remains
+required; no metric zero or successful refresh was fabricated.
+
+The final publication candidate adds only the qualified MPI shape and immutable
+worker, the HCA queue resource and full-node topology selectors. All old shapes
+and unrelated Apps are preserved. A guarded all-reader barrier and Kubernetes
+server dry-run passed. The top-level generated MPI request description was also
+corrected to describe operator-qualified RDMA; validation rules are unchanged.
+No final catalog rollout or public RDMA/peer-loss success is claimed here.
