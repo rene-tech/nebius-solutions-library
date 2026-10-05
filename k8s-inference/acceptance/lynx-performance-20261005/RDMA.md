@@ -69,8 +69,31 @@ stage alone permits that capability; original executable paths, old local/TCP
 shapes and all companion/init containers remain drop-ALL with escalation
 disabled. Trusted image library directories support secure executable loading;
 the probe checks actual effective/permitted/bounding IPC_LOCK, UID 10001 and a
-64 MiB `mlock`, without changing any limit. This is a candidate, not yet native
-qualification or permission to publish the RDMA profile.
+64 MiB `mlock`, without changing any limit.
+
+Exact image `c8321a27df6490e3ca33d7f2d80ee5d5a4917b787c612e98c1704346f1cbdece`
+(source `33349d2489685487260457d3d90fcd743dd61817`) subsequently passed
+`native-memlock-r12`: both probes and all sixteen actual GROMACS processes had
+UID 10001 and only effective/permitted/bounding IPC_LOCK. The 8 MiB limit stayed
+unchanged, the fixed 64 MiB mlock succeeded and the secure loader removed
+`LD_LIBRARY_PATH`. All nine large host collectives and actual CUDA-buffer
+zero-copy verbs checks passed, with no TCP data fallback. Three unchanged
+50,000-step Lynx repeats then passed 37 inventory hashes, finite energies and
+coordinates, original TPR identity and monotonic native steps. Native-inclusive
+rates were 345.117, 327.223 and 349.147 ns/day (median 345.117); the separate
+workflow wall was 163.384 seconds for 0.3 ns, including native preparation and
+analysis. These are short native measurements, not public delivered throughput.
+
+Same-image `compat-local-h100-r12`, `compat-local-l40s-r12` and
+`compat-tcp-2x1-r12` passed their three-repeat original MPINAT controls with
+legacy drop-ALL execution paths. Every task Pod was UID-fenced and confirmed
+absent. The longer unchanged three-by-1ns RDMA confirmation is separate; its
+explicit `--native-timeout 1800` extends only the acceptance harness lifetime,
+not production limits. Public REST/MCP and performance publication remain gated.
+
+Short native receipt SHA256:
+`9dc228adeb944cd3a241dd2e3cca61cba028ff3cbab0dcfee53e0a4667b80897`.
+The original failed builds, timeouts and controls remain alongside it.
 
 `qualify_rdma.py` owns only exact labelled test JobSets, verifies image digests,
 GPU/RDMA resources and current free capacity, and deletes only its retained UID
