@@ -10,7 +10,11 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import sys
+import threading
+from collections import OrderedDict
 from collections.abc import Mapping
+from dataclasses import fields, is_dataclass
 from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
@@ -69,6 +73,88 @@ from .startup import StageStartupPolicy
 MAX_STATE_BYTES = 4 * 1024 * 1024
 MAX_IMMUTABLE_METADATA_BYTES = 32 * 1024 * 1024
 COMPACT_METADATA_SCHEMA = "fs2-serve.nebius.ai/scientific-immutable-metadata/zstd-v1"
+_DecodedMetadata = tuple[VerifiedInputManifest | None, AdapterExecutionPlan | None]
+
+
+def _retained_metadata_bytes(value: object) -> int:
+    """Account for the retained immutable object graph, not compressed JSON size."""
+    pending = [value]
+    seen: set[int] = set()
+    total = 0
+    while pending:
+        item = pending.pop()
+        if id(item) in seen:
+            continue
+        seen.add(id(item))
+        total += sys.getsizeof(item)
+        if is_dataclass(item) and not isinstance(item, type):
+            if not cast(Any, item).__dataclass_params__.frozen:
+                raise ValueError("mutable metadata cannot be cached")
+            pending.extend(getattr(item, field.name) for field in fields(item))
+        elif isinstance(item, tuple):
+            pending.extend(item)
+        elif isinstance(item, UUID):
+            pending.append(item.int)
+        elif not (item is None or isinstance(item, str | bytes | int | float | bool)):
+            raise ValueError("unsupported mutable metadata cannot be cached")
+    return total
+
+
+class _ImmutableMetadataCache:
+    """Process-local decoded payload cache; never contains live authorization state."""
+
+    def __init__(self, *, max_bytes: int = 64 * 1024**2, max_entries: int = 4) -> None:
+        self.max_bytes, self.max_entries = max_bytes, max_entries
+        self.retained_bytes = 0
+        self.entries: OrderedDict[str, tuple[_DecodedMetadata, int]] = OrderedDict()
+        self.lock = threading.Lock()
+
+    def get(self, key: str) -> _DecodedMetadata | None:
+        with self.lock:
+            item = self.entries.get(key)
+            if item is None:
+                return None
+            self.entries.move_to_end(key)
+            return item[0]
+
+    def put(self, key: str, value: _DecodedMetadata) -> None:
+        try:
+            weight = _retained_metadata_bytes((key, value))
+        except ValueError:
+            # A future valid type outside this immutable cache contract still
+            # uses the ordinary decoder; caching never changes acceptance.
+            return
+        if weight > self.max_bytes or self.max_entries < 1:
+            return
+        with self.lock:
+            previous = self.entries.pop(key, None)
+            if previous is not None:
+                self.retained_bytes -= previous[1]
+            while self.entries and (
+                len(self.entries) >= self.max_entries or self.retained_bytes + weight > self.max_bytes
+            ):
+                _, (_, removed_bytes) = self.entries.popitem(last=False)
+                self.retained_bytes -= removed_bytes
+            self.entries[key] = (value, weight)
+            self.retained_bytes += weight
+
+
+_IMMUTABLE_METADATA_CACHE = _ImmutableMetadataCache()
+
+
+def _metadata_cache_key(value: Mapping[str, Any]) -> str | None:
+    if value.get("model_id") not in {"gromacs", "gromacs-mpi"}:
+        return None
+    names = ("input_manifest", "adapter_execution")
+    if not all(
+        isinstance(value.get(name), dict) and value[name].get("encoding") == COMPACT_METADATA_SCHEMA for name in names
+    ):
+        return None
+    # Include every encoded byte and the decoder context, not just a claimed
+    # SHA field: corruption cannot hit a previously verified cache entry.
+    return hashlib.sha256(
+        _canonical_metadata({name: value.get(name) for name in (*names, "schema_version", "model_id", "plan")})
+    ).hexdigest()
 
 
 def _canonical_metadata(value: object) -> bytes:
@@ -562,8 +648,16 @@ def state_from_value(raw: object) -> ScientificBatchState:
         if len(raw.encode("utf-8")) > MAX_STATE_BYTES:
             raise ValueError("stored scientific-batch state exceeds the durable bound")
         raw = json.loads(raw)
+    cache_key = _metadata_cache_key(raw) if isinstance(raw, Mapping) else None
+    cached = _IMMUTABLE_METADATA_CACHE.get(cache_key) if cache_key is not None else None
     if isinstance(raw, Mapping) and raw.get("model_id") in {"gromacs", "gromacs-mpi"}:
-        raw = {**raw, **{name: _unpack_metadata(raw.get(name)) for name in ("input_manifest", "adapter_execution")}}
+        raw = {
+            **raw,
+            **{
+                name: None if cached is not None else _unpack_metadata(raw.get(name))
+                for name in ("input_manifest", "adapter_execution")
+            },
+        }
     value = _object(
         raw,
         {
@@ -1430,7 +1524,9 @@ def state_from_value(raw: object) -> ScientificBatchState:
             )
         )
 
-    return ScientificBatchState(
+    if cached is not None:
+        input_manifest, adapter_execution = cached
+    state = ScientificBatchState(
         operation_id=_uuid(value["operation_id"], "operation ID"),
         batch_id=_uuid(value["batch_id"], "batch ID"),
         workload_id=_uuid(value["workload_id"], "workload ID"),
@@ -1452,3 +1548,8 @@ def state_from_value(raw: object) -> ScientificBatchState:
         result_published=_boolean(value["result_published"], "terminal result publication"),
         stored_schema=schema_version,
     )
+    if cache_key is not None and cached is None:
+        # Insert only after both SHA-verified subdocuments and the complete
+        # current state have passed the ordinary closed decoder/invariants.
+        _IMMUTABLE_METADATA_CACHE.put(cache_key, (input_manifest, adapter_execution))
+    return state
