@@ -14,6 +14,7 @@ import re
 import tarfile
 import time
 from pathlib import Path
+from uuid import uuid4
 
 import httpx2
 from mcp import Client
@@ -25,6 +26,18 @@ from fs2_serve.live_acceptance import _mcp_result
 def save(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n")
+
+
+def retained_transfer_evidence(item, downloaded, verification_run):
+    """Retain actual verification/retry outcomes, never request credentials."""
+    return {
+        "verification_run": verification_run,
+        "artifact_id": item["artifact"]["artifact_id"],
+        "size_bytes": item["size_bytes"],
+        "sha256": item["sha256"],
+        "publication": downloaded.get("publication"),
+        "transfer_attempts": downloaded.get("transfer_attempts"),
+    }
 
 
 async def run(args):
@@ -385,6 +398,13 @@ async def run(args):
                 started = time.monotonic()
                 verified_bytes = 0
                 verified_files = 0
+                verification_run = str(uuid4())
+                transfer_evidence_path = (
+                    args.output / "retained-artifact-transfers.jsonl"
+                )
+                transfer_retries = 0
+                unknown_retry_counts = 0
+                existing_files = 0
                 pending = list(files.values())
                 # Eight public reads, bounded to one small cohort at a time;
                 # the shared customer-facing API remains the test boundary.
@@ -398,19 +418,36 @@ async def run(args):
                             "Checkpoint path is not a contained relative file"
                         )
                     async with semaphore:
-                        await helper.download(
+                        downloaded = await helper.download(
                             http,
                             item["artifact"],
                             args.output / "verified-files" / relative,
                         )
-                    return item["size_bytes"]
+                    return retained_transfer_evidence(
+                        item, downloaded, verification_run
+                    )
 
                 for offset in range(0, len(pending), 128):
-                    sizes = await asyncio.gather(
+                    transfers = await asyncio.gather(
                         *(verify_file(item) for item in pending[offset : offset + 128])
                     )
-                    verified_bytes += sum(sizes)
-                    verified_files += len(sizes)
+                    # Append with a run identity: an interrupted verifier's
+                    # evidence survives a later replay of this same receipt.
+                    with transfer_evidence_path.open("a") as evidence:
+                        for transfer in transfers:
+                            evidence.write(json.dumps(transfer) + "\n")
+                            attempts = transfer["transfer_attempts"]
+                            if type(attempts) is int and attempts >= 1:
+                                transfer_retries += attempts - 1
+                            else:
+                                unknown_retry_counts += 1
+                            existing_files += (
+                                transfer["publication"] == "verified-existing"
+                            )
+                        evidence.flush()
+                        os.fsync(evidence.fileno())
+                    verified_bytes += sum(item["size_bytes"] for item in transfers)
+                    verified_files += len(transfers)
                     if verified_files % 1024 == 0 or verified_files == len(pending):
                         print(
                             json.dumps(
@@ -429,6 +466,13 @@ async def run(args):
                     "sha256_checked": True,
                     "elapsed_seconds": round(time.monotonic() - started, 3),
                     "parallel_reads": 8,
+                    "verification_run": verification_run,
+                    "transfer_evidence": transfer_evidence_path.name,
+                    "download_retries": transfer_retries
+                    if not unknown_retry_counts
+                    else None,
+                    "files_with_unknown_retry_count": unknown_retry_counts,
+                    "verified_existing_local_files": existing_files,
                 }
             receipt = {
                 **state,
