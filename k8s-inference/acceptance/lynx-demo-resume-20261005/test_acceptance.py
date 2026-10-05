@@ -133,6 +133,18 @@ def test_native_quote_cannot_hide_a_scientific_difference():
         topology_equivalence(text + "inputrec->delta-t (0.002 - 0.003)\n", 14963440)
 
 
+def test_actual_worker_stderr_quote_split_is_reconstructed_not_ignored():
+    quote = '\nGROMACS reminds you: "Fly to the Court of England and Unfold" (Macbeth, Act 3, Scene 6, William Shakespeare)\n\n'
+    text = comparison().replace("comparing atoms\n", "comparing atoms\ncomparin" + quote + "g t_resinfo\n")
+    assert topology_equivalence(text, 14963440)["status"] == "passed"
+    for changed in (text + "inputrec->dt (0.002 - 0.003)\n",
+                    comparison() + "inputrec->dt (0.002 - " + quote + "0.003)\n",
+                    text.replace("g t_resinfo\n", "g t_resinfo\nx[0] (1.0 - 2.0)\n"),
+                    text.replace("comparing boxv\n", "")):
+        with pytest.raises(ValueError):
+            topology_equivalence(changed, 14963440)
+
+
 def test_native_empty_part_probe_inventory_preserves_zeros_and_rejects_links(tmp_path):
     from qualify_empty_segments import inventory
     (tmp_path / "empty.xtc").touch()
@@ -174,16 +186,25 @@ def test_history_and_late_resume_are_checked_independently():
 def test_delivered_rate_uses_new_work_and_whole_public_wall_not_native_counters():
     fixture = {"target_step": 43963440, "dt_ps": "0.002", "minimum_native_seconds": 21600,
                "minimum_delivered_ns_per_day": 200}
-    final = {"operation": {"accepted_at": "2026-10-05T00:00:00+00:00",
+    final = {"operation": {"id": "resumed-operation", "accepted_at": "2026-10-05T00:00:00+00:00",
                             "completed_at": "2026-10-05T07:00:00+00:00"},
              "batch": {"status": "succeeded", "result_published": True}}
-    checkpoint = {"files": [], "state": {"generation": 80, "commands": [
+    checkpoint = {"files": [], "state": {"operation_id": "resumed-operation", "generation": 80, "commands": [
         {"command": ["gmx", "mdrun"], "exit_code": 0, "wall_seconds": 23000,
-         "checkpoint_step": 43963440, "performance_ns_per_day": 250}]}}
+         "checkpoint_step": 43963440, "performance_ns_per_day": 250,
+         "finished_at": "2026-10-05T06:30:00+00:00"}]}}
     result = delivery_gate(fixture, 13963440, final, checkpoint)
     assert result["newly_completed_ns"] == 60
     assert result["delivered_ns_per_day"] == pytest.approx(205.7142857)
     assert result["status"] == "passed"
+    assert result["bootstrap_native_time_included"] is False
+    old_history = copy.deepcopy(checkpoint)
+    old_history["state"]["commands"][0]["finished_at"] = "2026-10-04T23:59:00+00:00"
+    with pytest.raises(ValueError, match="bootstrap or earlier"):
+        delivery_gate(fixture, 13963440, final, old_history)
+    old_history["state"]["operation_id"] = "bootstrap-operation"
+    with pytest.raises(ValueError, match="another operation"):
+        delivery_gate(fixture, 13963440, final, old_history)
     too_short = copy.deepcopy(checkpoint)
     too_short["state"]["commands"][0]["wall_seconds"] = 20000
     assert delivery_gate(fixture, 13963440, final, too_short)["status"] == "failed"

@@ -14,8 +14,14 @@ def topology_equivalence(text, target_step):
     if start < 0:
         raise ValueError("No complete native TPR comparison")
     body = text[start:]
-    # GROMACS' closing quote is stderr and may split a buffered stdout line.
-    body = re.sub(r"\nGROMACS reminds you: [^\n]*\n", "", body)
+    # GROMACS writes this exact newline-delimited block to stderr. When the
+    # worker merges streams it can interrupt stdout inside *any* word (e.g.
+    # "comparin" + block + "g t_resinfo"). Remove the entire known block to
+    # reconstruct stdout; never discard other unrecognized diagnostic lines.
+    body = re.sub(r"\nGROMACS reminds you: [^\n]*\n\n", "", body)
+    # Older retained standalone quote lines have one trailing newline. Keep
+    # that separator rather than joining unrelated scientific diagnostics.
+    body = re.sub(r"\nGROMACS reminds you: [^\n]*\n", "\n", body)
     body = re.sub(r"comparing t\s+_resinfo", "comparing t_resinfo", body)
     lines = [line.strip() for line in body.splitlines() if line.strip()]
     differences = [line for line in lines if not line.startswith("comparing ")]
@@ -61,13 +67,19 @@ def summarize_progress(checkpoint):
 
 
 def delivery_gate(fixture, source_step, final_status, checkpoint):
+    operation = final_status["operation"]
+    accepted = datetime.fromisoformat(operation["accepted_at"])
+    if checkpoint["state"]["operation_id"] != operation["id"]:
+        raise ValueError("Native timing belongs to another operation, not this resume")
+    for row in checkpoint["state"]["commands"]:
+        if "mdrun" in row["command"] and datetime.fromisoformat(row["finished_at"]) < accepted:
+            raise ValueError("Native timing includes bootstrap or earlier-operation commands")
     progress = summarize_progress(checkpoint)
     if final_status["batch"]["status"] != "succeeded" or not final_status["batch"]["result_published"]:
         raise ValueError("Public operation is not durably successful")
     if progress["checkpoint_step"] != fixture["target_step"] or progress["native_segments"] != progress["zero_exit_segments"]:
         raise ValueError("Native continuation did not finish the finite horizon cleanly")
-    operation = final_status["operation"]
-    wall = (datetime.fromisoformat(operation["completed_at"]) - datetime.fromisoformat(operation["accepted_at"])).total_seconds()
+    wall = (datetime.fromisoformat(operation["completed_at"]) - accepted).total_seconds()
     new_ns = (fixture["target_step"] - source_step) * float(fixture["dt_ps"]) / 1000
     if wall <= 0 or new_ns <= 0:
         raise ValueError("Missing positive accepted-to-durable-completion work/time")
@@ -78,7 +90,8 @@ def delivery_gate(fixture, source_step, final_status, checkpoint):
     # Return all evidence before the caller declares a failed quality gate.
     gates = {"minimum_delivered_rate": delivered >= fixture["minimum_delivered_ns_per_day"],
              "minimum_native_duration": progress["native_elapsed_seconds"] >= fixture["minimum_native_seconds"]}
-    return {**progress, "resumed_from_step": source_step, "newly_completed_ns": new_ns,
+    return {**progress, "measured_operation_id": operation["id"],
+            "bootstrap_native_time_included": False, "resumed_from_step": source_step, "newly_completed_ns": new_ns,
             "accepted_to_durable_seconds": wall, "delivered_ns_per_day": delivered,
             "native_useful_ns_per_day": native, "gates": gates,
             "status": "passed" if all(gates.values()) else "failed"}
