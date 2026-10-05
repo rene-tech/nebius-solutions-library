@@ -1,0 +1,16 @@
+# Reader-first expansion: exact legacy public API/catalog/wrappers and maps,
+# with only the new durable codec/domain readers. The final source image is a
+# separate build and is activated only once every old replica has exited.
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:f02e712a5dfb834a054d653ec25062c9946f94e32560abc404e9f989616ce5e5
+ARG SOURCE_REVISION
+USER 0:0
+COPY --chown=65532:65532 k8s-inference/components/control-plane/src/fs2_serve/scientific_batch/codec.py k8s-inference/components/control-plane/src/fs2_serve/scientific_batch/models.py /workspace/k8s-inference/components/control-plane/.venv/lib/python3.13/site-packages/fs2_serve/scientific_batch/
+COPY k8s-inference/acceptance/lynx-longrun-20261005/install_compatibility_guard.py /tmp/install_compatibility_guard.py
+RUN python /tmp/install_compatibility_guard.py \
+ && chmod a+r /workspace/k8s-inference/components/control-plane/.venv/lib/python3.13/site-packages/fs2_serve/scientific_batch/*.py \
+ && test -n "${SOURCE_REVISION}"
+USER 65532:65532
+RUN python -I -c "from fs2_gromacs.contracts import normalize; from fs2_gromacs import PARAMETER_SCHEMA; from fs2_serve.scientific_batch.codec import MAX_IMMUTABLE_METADATA_BYTES; r=normalize({'schema':PARAMETER_SCHEMA,'jobs':[{'id':'md','steps':[{'id':'md','command':'mdrun','args':['-s','run.tpr']}]}]}); assert r['max_wall_seconds']==604800; assert MAX_IMMUTABLE_METADATA_BYTES==32*1024**2"
+LABEL ai.nebius.fs2.release-phase="fourteen-day-compatible-readers-legacy-admission" \
+      ai.nebius.fs2.reader-source-commit="${SOURCE_REVISION}" \
+      ai.nebius.fs2.catalog-source-image="sha256:f02e712a5dfb834a054d653ec25062c9946f94e32560abc404e9f989616ce5e5"
