@@ -119,6 +119,20 @@ async def checkpoint_choices(
     principal: Principal,
     operation_id: UUID,
 ) -> dict[str, Any]:
+    choices, _ = await _checkpoint_inventory(
+        batches=batches, artifacts=artifacts, principal=principal, operation_id=operation_id
+    )
+    return choices
+
+
+async def _checkpoint_inventory(
+    *,
+    batches: ScientificBatchService,
+    artifacts: ScientificArtifactControllerPort,
+    principal: Principal,
+    operation_id: UUID,
+) -> tuple[dict[str, Any], list[ArtifactRecord]]:
+    """One freshly authorized inventory for a single request, never a cache."""
     principal.require(Scope.OPERATIONS_RESULT)
     status = await batches.status(operation_id, principal=principal)
     model_id = status["batch"]["model_id"]
@@ -139,7 +153,7 @@ async def checkpoint_choices(
             checkpoint = await _read_checkpoint(artifacts, principal, pointer)
             job_id = checkpoint["state"]["job_id"]
         jobs.append({"job_id": job_id, "checkpoint": pointer, "committed_at": row.created_at.isoformat()})
-    return {
+    choices = {
         "operation_id": str(operation_id),
         "model_id": model_id,
         "status": status["batch"]["status"],
@@ -147,6 +161,7 @@ async def checkpoint_choices(
         "resume_tool": "resume_gromacs_workflow",
         "max_wall_seconds": MAX_WALL_SECONDS,
     }
+    return choices, records
 
 
 def continuation_inputs(
@@ -236,7 +251,7 @@ async def resume_gromacs(
     idempotency_key: str,
     require_mcp_invocable: bool = False,
 ) -> dict[str, Any]:
-    choices = await checkpoint_choices(
+    choices, all_records = await _checkpoint_inventory(
         batches=batches, artifacts=artifacts, principal=principal, operation_id=operation_id
     )
     principal.require(Scope.INFERENCE_INVOKE, choices["model_id"])
@@ -257,7 +272,9 @@ async def resume_gromacs(
     source = await batches.repository.get(operation_id, tenant_id=principal.tenant_id)
     if source.execution_plan is None:
         raise ContinuationError("original execution plan is unavailable")
-    all_records = await artifacts.list_artifacts(operation_id, tenant_id=principal.tenant_id, stage_id="workflow")
+    # These immutable records already belong to this authorized operation and
+    # request. The ordinary submit path still re-reads every input artifact
+    # and current token policy: retention/revocation races are not bypassed.
     record = next(row for row in all_records if str(row.artifact_id) == choice["checkpoint"]["artifact_id"])
     invocation = source.execution_plan.invocation("workflow", record.shard_id)
     original = await run_scientific_cpu(

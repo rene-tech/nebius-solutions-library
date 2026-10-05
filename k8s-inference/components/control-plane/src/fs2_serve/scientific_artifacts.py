@@ -42,6 +42,7 @@ from pydantic import AwareDatetime, ConfigDict, Field, StringConstraints, model_
 
 from .models import StrictModel
 from .scientific_batch.models import ArtifactCommit, batch_identity, workload_identity
+from .scientific_cpu import run_scientific_cpu
 from .scientific_run_result import (
     SCIENTIFIC_ARTIFACT_MANIFEST_SCHEMA,
     SCIENTIFIC_RUN_RESULT_SCHEMA,
@@ -2039,6 +2040,11 @@ def _artifact_from_row(row: Mapping[str, Any]) -> ArtifactRecord:
     )
 
 
+def _artifacts_from_rows(rows: Sequence[Mapping[str, Any]]) -> list[ArtifactRecord]:
+    """Validate a detached inventory without holding the API event loop."""
+    return [_artifact_from_row(row) for row in rows]
+
+
 def _upload_from_row(row: Mapping[str, Any]) -> UploadIntent:
     return UploadIntent(
         upload_id=row["id"],
@@ -2481,7 +2487,11 @@ class PostgresArtifactRepository:
             stage_id,
             attempt_id,
         )
-        return [_artifact_from_row(row) for row in rows]
+        # A late-state checkpoint can contain tens of thousands of immutable
+        # artifacts. Keep all scope/storage-key validation, but perform this
+        # unbounded projection after fetch has released its connection and off
+        # the shared I/O loop. Small bounded get_artifacts batches stay inline.
+        return await run_scientific_cpu(_artifacts_from_rows, rows)
 
     async def commit_stage(self, request: CommitStageResult) -> StageCommitRecord:
         try:

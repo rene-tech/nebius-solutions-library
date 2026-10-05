@@ -44,6 +44,7 @@ def original():
 class Artifacts:
     def __init__(self):
         self.objects, self.records, self.reads = {}, [], []
+        self.list_calls = []
 
     def add(self, name, content):
         ref = ArtifactRef(
@@ -80,6 +81,7 @@ class Artifacts:
 
     async def list_artifacts(self, operation_id, *, tenant_id, stage_id):
         assert tenant_id == "system"
+        self.list_calls.append((operation_id, tenant_id, stage_id))
         return self.records
 
 
@@ -221,6 +223,9 @@ async def test_resume_full_path_preserves_inputs_new_budget_and_idempotency(gang
     )
     first, second = await resume_gromacs(**kwargs), await resume_gromacs(**kwargs)
     assert first == second
+    # Each request authorizes and reads its own inventory once. An idempotent
+    # replay must not reuse another request's authorization or inventory.
+    assert artifacts.list_calls == [(operation_id, "system", "workflow")] * 2
     assert len(submitted) == 1
     request = next(iter(submitted.values()))
     assert request["parameters"]["max_wall_seconds"] == 1209600
