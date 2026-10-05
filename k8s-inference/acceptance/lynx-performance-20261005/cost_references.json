@@ -1,0 +1,53 @@
+{
+  "schema": "fs2.gromacs-public-cost-references/v1",
+  "accessed_at": "2026-10-05",
+  "sources": {
+    "nebius_pricing": {
+      "url": "https://docs.nebius.com/compute/resources/pricing",
+      "confidence": "Official rate table checked on the stated date; allocation-share estimate, not invoice."
+    },
+    "nebius_presets": {"url": "https://docs.nebius.com/compute/virtual-machines/types"},
+    "mpinat_pdf": {"url": null, "scope": "Legacy report adapter key only; no published comparison applies to this private TPR."}
+  },
+  "pricing": {
+    "region": "eu-north1",
+    "currency": "USD",
+    "basis": "on-demand public list-price allocation-share scenario, not invoice or actual contract",
+    "valid_on": "2026-10-05",
+    "billing_unit_seconds": 1,
+    "pricing_unit_seconds": 3600,
+    "excludes": ["taxes", "discounts", "storage", "network", "control-plane", "idle VM time outside observed Pod allocation"],
+    "currency_scope": "USD scenario; account jurisdiction and actual currency are not inferred",
+    "platforms": {
+      "gpu-h100-sxm": {
+        "name": "H100 NVLink / Intel Sapphire Rapids",
+        "rate_kind": "bundled",
+        "gpu_hour": 4.5,
+        "vcpu_hour": null,
+        "gib_hour": null,
+        "cpu_ram_scope": "Bundled fixed preset; no extra CPU/RAM charge added",
+        "effective_from": "2026-10-01",
+        "presets": [[1, 16, 200], [8, 128, 1600]]
+      },
+      "gpu-l40s-a": {
+        "name": "L40S PCIe / Intel Ice Lake",
+        "rate_kind": "components",
+        "gpu_hour": 1.35,
+        "vcpu_hour": 0.012,
+        "gib_hour": 0.0032,
+        "cpu_ram_scope": "Actual VM GPU/CPU/RAM preset price apportioned by GPU fraction, not Pod CPU use",
+        "presets": [[1, 8, 32], [1, 16, 64], [1, 24, 96], [1, 32, 128], [1, 40, 160]]
+      },
+      "gpu-l40s-d": {
+        "name": "L40S PCIe / AMD EPYC Genoa",
+        "rate_kind": "components",
+        "gpu_hour": 1.35,
+        "vcpu_hour": 0.01,
+        "gib_hour": 0.0032,
+        "cpu_ram_scope": "Actual VM GPU/CPU/RAM preset price apportioned by GPU fraction, not Pod CPU use",
+        "presets": [[1, 16, 96], [1, 32, 192], [1, 48, 288], [2, 64, 384], [2, 96, 576], [4, 128, 768], [4, 192, 1152]]
+      }
+    }
+  },
+  "public_benchmark": {"case_rows": []}
+}

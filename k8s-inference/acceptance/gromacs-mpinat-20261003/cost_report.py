@@ -693,7 +693,7 @@ def build_report(database, references, cohorts=(), retry_map=(), pricing_date="2
         source = detail.get("ledger_source")
         if row["phase"] == "analysis":
             phases["analysis_command_seconds"] = measured_phase(row["wall_seconds"], ngpu, hourly, source,
-                "measured energy/eneconv command process wall; CPU work while GPUs remain reserved")
+                "measured analysis command process wall; CPU work while GPUs remain reserved")
         if row["phase"] != "simulation_and_native_initialization":
             command_phases.append(phases)
             continue

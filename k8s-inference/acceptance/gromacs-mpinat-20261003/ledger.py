@@ -178,7 +178,7 @@ class Ledger:
             seen.add(identity)
             argv = command["command"]
             phase = "simulation_and_native_initialization" if "mdrun" in argv else (
-                "analysis" if any(x in argv for x in ("energy", "eneconv")) else "input_preparation")
+                "analysis" if any(x in argv for x in ("energy", "eneconv", "trjcat", "check")) else "input_preparation")
             wall = command["wall_seconds"]
             if type(wall) not in (int, float) or not math.isfinite(wall) or wall < 0:
                 raise ValueError("Invalid measured command wall time")

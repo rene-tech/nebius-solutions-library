@@ -35,6 +35,19 @@ class LedgerTests(unittest.TestCase):
         self.assertIsNone(native_counter_seconds(text + text))
         self.assertIsNone(native_counter_seconds("Performance: 80.0\nTime: 1 2 3\n"))
 
+    def test_trajectory_postprocessing_is_analysis_not_input_preparation(self):
+        ledger = Ledger(":memory:")
+        ledger.db.execute("INSERT INTO operations VALUES (?,?,?,?,?,?,?,?)",
+                          ("op", "campaign", "case", "REST", "succeeded", "input", "tpr", "{}"))
+        commands = [{"step_id": command, "segment": 1, "finished_at": "2026-10-05T16:00:00+00:00",
+                     "command": ["gmx", command], "wall_seconds": 2.5, "exit_code": 0}
+                    for command in ("trjcat", "check", "convert-tpr")]
+        ledger.commands("op", "job", "attempt", commands, set(), lambda _: None, "source")
+        phases = dict(ledger.db.execute("SELECT command_id,phase FROM commands"))
+        self.assertEqual(phases, {"trjcat": "analysis", "check": "analysis", "convert-tpr": "input_preparation"})
+        self.assertEqual(ledger.db.execute("SELECT sum(wall_seconds) FROM commands WHERE phase='analysis'").fetchone()[0], 5)
+        ledger.db.close()
+
     def test_null_mapping_requires_true_gang_and_literal_gang_stays_literal(self):
         jobs = [{"id": "gang"}]
         self.assertEqual(native_shard(None, "gang-jobset", jobs), "gang")

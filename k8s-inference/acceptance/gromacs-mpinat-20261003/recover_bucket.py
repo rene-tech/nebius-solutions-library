@@ -8,13 +8,21 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 import time
 from datetime import datetime, timezone
 
 import boto3
 from botocore.config import Config
 import httpx2
+
+WORKSPACE_PREFIXES = ("runs/fs2-mpinat-", "runs/fs2-lynx-performance-20261005-")
+
+
+def owned_workspace_prefix(base, allowed):
+    if allowed not in WORKSPACE_PREFIXES or not isinstance(base, str):
+        return False
+    return (base.startswith(allowed) and not Path(base).is_absolute()
+            and ".." not in Path(base).parts and "//" not in base)
 
 
 def save(path, data):
@@ -28,6 +36,8 @@ def main():
     p.add_argument("--cohort", type=Path, required=True)
     p.add_argument("--output", type=Path, required=True)
     p.add_argument("--events-only", action="store_true")
+    p.add_argument("--workspace-prefix", choices=WORKSPACE_PREFIXES, default=WORKSPACE_PREFIXES[0],
+                   help="Exact allowlisted internal campaign family; existing QA identity guard remains mandatory")
     a = p.parse_args()
     os.umask(0o077)
     env = dict(line.split("=", 1) for line in a.qa_env.read_text().splitlines() if "=" in line)
@@ -72,7 +82,7 @@ def main():
         if not receipt.get("operation_id"):
             continue
         base = request["parameters"]["output_prefix"]
-        if not base.startswith("runs/fs2-mpinat-"):
+        if not owned_workspace_prefix(base, a.workspace_prefix):
             raise ValueError("Refuse unrelated workspace prefixes")
         prefix = base + "/" + receipt["operation_id"] + "/"
         out = a.output / receipt_file.parent.name

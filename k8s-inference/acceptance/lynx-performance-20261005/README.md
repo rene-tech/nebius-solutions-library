@@ -59,6 +59,45 @@ not a zero reservation. `validate_public.py` reuses the same finite-output
 validator over already downloaded, rehashed public artifacts without copying
 trajectories or making another API call.
 
+For long segmented recipes, `trjcat` combines every retained trajectory part
+before `check`; the original 1ns output cadence and all original parts remain
+unchanged. Both commands are measured analysis work, not integration.
+
+`collect_report.py` creates one fresh, explicitly selected terminal snapshot
+using the existing MPINAT `Ledger` and `cost_report` implementation. It copies
+small case metadata and a selected complete observer-file prefix at a fixed
+cutoff, rehashes original output references, and indexes no other QA operation.
+The approved recovery helper accepts the additional exact internal prefix
+`runs/fs2-lynx-performance-20261005-`; its old default and QA identity guard
+remain unchanged. Recover terminal cases first, without copying trajectories:
+
+```bash
+components/control-plane/.venv/bin/python acceptance/gromacs-mpinat-20261003/recover_bucket.py \
+  --qa-env "$LYNX_QA_ENV" --cohort "$LYNX_TERMINAL_COHORT" \
+  --output "$LYNX_RECOVERED_COHORT" \
+  --workspace-prefix runs/fs2-lynx-performance-20261005-
+components/control-plane/.venv/bin/python acceptance/lynx-performance-20261005/collect_report.py \
+  --selection "$LYNX_EXPLICIT_SELECTION" --telemetry "$LYNX_OBSERVER" \
+  --references acceptance/lynx-performance-20261005/cost_references.json \
+  --output "$LYNX_NEW_REPORT_DIRECTORY"
+```
+
+The private selection has `public` entries containing absolute `cohort` and
+`recovered` paths plus `interface` (`REST` or `MCP`). Optional `native` entries
+contain `receipt`, `fixture` and protocol/background `notes`; native probes are
+not charged as public operations. Existing snapshots are never overwritten.
+Only verified, single-attempt checkpoint histories with exact remote commit,
+recipe, input and native step continuity can fill durable-step measurements.
+Multiple-attempt lineage stays unknown until explicitly proved.
+
+The bounded PostgreSQL sidecar queries only the selected internal operation
+UUIDs. It keeps reconciled scheduler GPU-seconds separate from observation
+bounds and applies the existing dated per-GPU allocation-share price exactly
+once, including multi-node shapes. Missing attempts or mixed unknown prices
+remain null. Server accepted-to-completed throughput excludes input upload and
+client artifact download; the latter is unknown unless separately timed. No
+generic top-level reserved-GPU zero is interpreted as zero cost.
+
 Example preparation (private paths intentionally supplied by the operator):
 
 ```bash

@@ -26,9 +26,12 @@ def test_supported_mpi_shapes(nodes, gpus):
 
 
 def test_long_confirmations_decode_original_trajectory_cadence():
-    value = parameters(steps=500000)
+    value = parameters(steps=500000, segment_minutes=5)
     checks = [s for s in value["jobs"][0]["steps"] if s["command"] == "check"]
-    assert [s["args"] for s in checks] == [["-f", f"repeat{i}.part0001.xtc"] for i in (1, 2, 3)]
+    assert [s["args"] for s in checks] == [["-f", f"trajectory{i}.xtc"] for i in (1, 2, 3)]
+    joins = [s for s in value["jobs"][0]["steps"] if s["command"] == "trjcat"]
+    assert [s["args"][1] for s in joins] == [{"files": f"repeat{i}.part*.xtc"} for i in (1, 2, 3)]
+    assert value["segment_minutes"] == 5
 
 
 @pytest.mark.parametrize("changes", [{"steps": -1}, {"steps": 500000000}, {"repetitions": 4},

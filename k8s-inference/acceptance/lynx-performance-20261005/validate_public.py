@@ -44,10 +44,15 @@ def check(case):
     gpu_count = request.get("nodes", 1) * request.get("gpus_per_node", 1)
     mpi = receipt["benchmark_identity"]["model_id"] == "gromacs-mpi"
     validation = validate(case, request, gpu_count, mpi, False, 0, data_dir=data, result_path=result_path)
-    return {"operation_id": receipt["operation_id"], "interface": receipt["benchmark_identity"]["interface"],
+    validation["checkpoint_scope"] = result.get("checkpoint_commit_scope")
+    return {"operation_id": receipt["operation_id"], "recipe_sha256": result["recipe_sha256"],
+            "interface": receipt["benchmark_identity"]["interface"],
             "public_transport_verified": True, "artifacts_rehashed": len(receipt["verified_artifacts"]),
             "receipt_sha256": sha(case / "receipt.json"), "request_sha256": sha(case / "request.json"),
-            "native": validation, "checked_at": datetime.now(timezone.utc).isoformat(),
+            "native": validation, "remote_checkpoint_result_declaration": {
+                key: result.get(key) for key in ("checkpoint_commit_scope", "committed_checkpoint_generation",
+                                               "native_checkpoint_generation")},
+            "checked_at": datetime.now(timezone.utc).isoformat(),
             "scope": "Existing internal QA public receipt plus downloaded native output; not actual-agent or ensemble validation."}
 
 
