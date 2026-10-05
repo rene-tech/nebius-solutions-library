@@ -52,7 +52,7 @@ appropriate topology parameters, charge/protonation decisions and validation.
 | GPU work placement | Native automatic selection | `-nb`, `-pme`, `-bonded`, `-update` |
 | Local native checkpoint | Five minutes | `checkpoint_minutes`, 0.1–60 minutes |
 | Coherent remote segment | Five minutes | `segment_minutes`, 0.1–60 minutes |
-| Per-job wall budget | Six hours | `max_wall_seconds`, up to 72 hours; queue limits also apply |
+| Per-job wall budget | Fourteen days | `max_wall_seconds`, 60–1,209,600 seconds; explicit smaller budgets and tenant admission still apply |
 | Files/workspace budget | 4 GiB | `max_output_bytes`, up to 48 GiB within a 64 GiB scratch shape |
 | Output destination | Submitting user's assigned customer bucket, plus platform artifacts | `output_destination`, `output_prefix` |
 | Customer output retention | Until customer deletion or their bucket lifecycle | Customer-managed; no silent platform deletion |
@@ -84,6 +84,13 @@ recoverable generations. This is native GROMACS recovery, **not a CUDA process
 snapshot**. A cancellation may leave the previous committed generation; the
 platform currently invalidates upload authority when cancellation is requested.
 Do not promise a final post-cancellation checkpoint before that path is qualified.
+
+For a terminal job with a committed checkpoint, use the REST `:resume` endpoint
+or typed `resume_gromacs_workflow` tool described in [Continuation](CONTINUATION.md).
+An explicit continuation gets a new operation and budget; infrastructure retries
+share the original budget. Changing today's default does not extend an already
+running worker's frozen budget. The fourteen-day limit is not a fourteen-day
+soak-test claim.
 
 `-noappend` numbers coordinate outputs as well as trajectories. The runner keeps
 all native parts and also copies the latest final coordinate to the normal
@@ -136,6 +143,40 @@ slower than one H100 for the matched large-system fixture. RDMA and explicit
 network/topology eligibility need their own qualification before promotion.
 Benchmark strong scaling before selecting more nodes. MPS can improve aggregate independent-simulation throughput;
 MIG and MPS must be measured per hardware/system, not inferred from an A100 blog.
+
+## Measured membrane-workload tuning
+
+The [2026-10-05 exact-input results](../../../acceptance/lynx-performance-20261005/FINDINGS.md)
+qualify a specific 185,486-atom CHARMM membrane workload, not a universal default.
+With eight OpenMP threads on one L40S, the tested `mdrun` arguments are:
+
+```json
+["-s", "production.tpr", "-deffnm", "production", "-nb", "gpu",
+ "-bonded", "gpu", "-pme", "auto", "-update", "auto", "-pin", "auto",
+ "-nstlist", "200"]
+```
+
+Use these as the native command arguments within an ordinary GROMACS workflow,
+with `threads: 8`; REST and typed MCP accept the same workflow contract. The
+tested TPR had positive Verlet-buffer tolerance `0.005`, so GROMACS adjusted
+the neighbor-list buffer for the changed interval. Do not apply list tuning to
+an unrelated protocol without checking that condition and its native log.
+Force field, timestep, physical cutoffs, PME accuracy and output cadence stay
+in the customer's TPR. Unsupported bonded offload or update settings are not
+silently substituted by the platform.
+
+Three 1 ns repeats through each interface delivered 201.0 ns/day over REST and
+196.6 ns/day over raw MCP, including server startup/checkpoint/export time.
+These are timing repeats, not independent scientific ensembles or an LLM-agent
+qualification. The linked report retains exact commands, images, failures,
+GPU allocation costs and comparison boundaries. More GPUs are not automatically
+faster: the pre-InfiniBand two-node result was slower than one L40S. New RDMA
+results must be recorded separately before recommending that execution shape.
+
+The [MPS comparison](../../../acceptance/lynx-mps-20261005/README.md) measured
+aggregate gains for multiple independent simulations sharing a whole, task-owned
+GPU, at higher per-simulation latency. It did not enable a public fractional-GPU
+or MPS scheduling mode. Existing customer operations remain unchanged.
 
 ## Development and qualification
 
