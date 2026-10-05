@@ -2361,7 +2361,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "880c48466dd6ab7ede1155ff31a5fffe066c086547044e02da008b2184ab07fc",
+      "execution_identity_sha256": "246baa3467d44403bbb743fdb5927f278203486ff77709090f145dc9c0279c2e",
       "model_id": "gromacs-mpi",
       "plan_adapter": {
         "function": "compile_adapter_run",

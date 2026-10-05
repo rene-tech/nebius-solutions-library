@@ -219,8 +219,10 @@ def request_schema(*, mpi: bool = False) -> dict[str, Any]:
             "Distributed upstream GROMACS 2026.2 CUDA/Open MPI workflows. "
             "One MPI rank per GPU, with one to eight GPUs per admitted node and at most "
             "sixteen GPUs total; preparation and analysis run on rank zero. "
-            "Operator-selected local CUDA-aware MPI or cross-node TCP, not the NVIDIA NGC binary. "
-            "RDMA is not claimed. PLUMED, CP2K, Torch NNPot "
+            "The operator-qualified shape selects local CUDA-aware MPI, cross-node TCP, "
+            "or InfiniBand UCX RDMA on a configured GPU cluster; transport and device "
+            "allocation are not request overrides. This is not the NVIDIA NGC binary. "
+            "PLUMED, CP2K, Torch NNPot "
             "and coupled replica exchange are not exposed by this execution shape."
         )
         schema["properties"]["threads"]["description"] = (
