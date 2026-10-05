@@ -1731,6 +1731,21 @@ def contract_for(model: OperationalModel, protocol: str) -> ModelInputContract:
     _check_adapter(model, model_ref)
     if protocol not in model.gateway.protocols:
         raise InputContractUnavailable(f"{model_ref} does not publish protocol {protocol}")
+    if protocol == "native" and model_ref in {"mindguard-4b", "mindguard-8b"}:
+        from .mindguard_contracts import MindGuardAssessRequest
+
+        schema = MindGuardAssessRequest.model_json_schema()
+        schema["properties"]["model"] = {"const": model_ref, "default": model_ref, "type": "string"}
+        schema["description"] = (
+            "Observe English mental-health conversation risk with " + model_ref + ". "
+            "Every user turn is assessed with its preceding context. Returns per-turn labels, "
+            "coverage and measured usage; never blocks or changes the conversation and is not a diagnosis. "
+            "Submit once, poll the returned operation ID, then retrieve its complete result."
+        )
+        return ModelInputContract(schema, (), (
+            "k8s-inference/components/control-plane/src/fs2_serve/mindguard_contracts.py",
+            "k8s-inference/components/control-plane/src/fs2_serve/mindguard.py",
+        ), model_ref, protocol)
     if protocol == "native" and model_ref in _resource("voice.json"):
         schema = copy.deepcopy(_resource("voice.json")[model_ref])
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"

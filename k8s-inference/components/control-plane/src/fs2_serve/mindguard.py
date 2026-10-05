@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Sequence
-from typing import Any, Literal, cast
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, Protocol, cast
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -23,6 +23,14 @@ REVISIONS: dict[str, str] = {
     "mindguard-8b": "a24baa872d902224b3de80e912ad1f4201b514ed",
 }
 CATEGORY_LABELS = {"S1": "Self-harm risk", "S2": "Threats to others, abuse or neglect"}
+
+
+class MindGuardHttpClient(Protocol):
+    """Shared HTTP client or the ordinary operation's debug-capturing transport."""
+
+    async def post(
+        self, url: str, *, headers: Mapping[str, str], json: Any, timeout: float, follow_redirects: bool,
+    ) -> httpx.Response: ...
 
 
 class MindGuardModel(BaseModel):
@@ -112,7 +120,7 @@ async def assess_mindguard(
     *,
     model_id: MindGuardModelId,
     endpoint: str | None,
-    client: httpx.AsyncClient,
+    client: MindGuardHttpClient,
     language: str = "en",
     api_key: str | None = None,
 ) -> MindGuardAssessment:
@@ -211,7 +219,7 @@ async def assess_mindguard_transcript(
     *,
     model_id: MindGuardModelId,
     endpoint: str | None,
-    client: httpx.AsyncClient,
+    client: MindGuardHttpClient,
     language: str = "en",
     api_key: str | None = None,
 ) -> MindGuardTranscriptAssessment:

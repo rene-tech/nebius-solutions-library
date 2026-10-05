@@ -2484,6 +2484,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
     app.include_router(
         mindguard_router(
             principal=principal,
+            admission=runtime.admission,
+            store=runtime.store,
+            registry=runtime.registry,
             endpoints={
                 "mindguard-4b": runtime.settings.mindguard_4b_endpoint,
                 "mindguard-8b": runtime.settings.mindguard_8b_endpoint,

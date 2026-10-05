@@ -1,0 +1,173 @@
+{
+  "schema": "fs2-serve.nebius.ai/native-catalog-model/v1",
+  "record": {
+    "schema": "fs2-serve.nebius.ai/model/v1",
+    "model": {
+      "id": "mindguard-4b",
+      "display_name": "MindGuard 4B",
+      "family": "llm",
+      "tested_lane": true,
+      "source": {
+        "kind": "huggingface",
+        "repository": "swordhealth/MindGuard-4B",
+        "revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "license": {
+          "id": "CC-BY-NC-SA-4.0",
+          "state": "verified",
+          "notes": "Pinned Sword model card declares non-commercial share-alike terms. Existing per-model grants apply."
+        },
+        "entitlement": {
+          "required": true,
+          "state": "verified",
+          "credential_contract": "huggingface-gated-access/v1",
+          "notes": "Existing authorized gated checkpoint is retained in the platform PVC; credentials are not catalog data."
+        }
+      }
+    },
+    "runtime": {
+      "kind": "custom",
+      "version": "vllm-0.28.0-cu130-bf16-32k-observational",
+      "image": {
+        "reference": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+        "digest": "sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+        "state": "resolved"
+      },
+      "command": [
+        "vllm",
+        "serve",
+        "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+      ]
+    },
+    "resources": {
+      "cpu_millis": 4000,
+      "memory_bytes": 34359738368,
+      "host_ram_min_bytes": null,
+      "scaler_owner": "nebius-managed-node-group-autoscaler",
+      "gpu": {
+        "class": "NVIDIA-L40S-48GB",
+        "count": 1,
+        "topology": "single-gpu",
+        "placement": null,
+        "b300_state": "unverified",
+        "alternatives": []
+      }
+    },
+    "interface": {
+      "execution_mode": "http",
+      "protocols": [
+        "native"
+      ],
+      "endpoints": {
+        "native": "/v1/chat/completions"
+      },
+      "readiness": {
+        "method": "GET",
+        "path": "/health",
+        "expected_status": 200,
+        "timeout_seconds": 1200
+      },
+      "warmup": null,
+      "policy": {
+        "operations": [
+          "assess-transcript"
+        ],
+        "license_enforced": true,
+        "non_clinical": true,
+        "commercial_use": "prohibited"
+      },
+      "mcp": {
+        "discoverable": true,
+        "invocable": false
+      }
+    },
+    "startup": {
+      "default": "conventional",
+      "fallback": "conventional",
+      "enabled_mechanisms": [
+        "conventional"
+      ],
+      "experiments": [],
+      "multi_gpu_criu": "unproven-disabled"
+    },
+    "cache": {
+      "owner": "platform-pvc",
+      "shared_path": "/mnt/fs2-serve-cache/models/mindguard-4b",
+      "local_path": "/var/lib/fs2-serve/cache/models/mindguard-4b",
+      "pre_pull_image": true,
+      "artifact": {
+        "state": "platform-verified",
+        "kind": "weights",
+        "manifest_digest": "c5db22f491d868f9ea51387a02ad27308bde80ae9720c784f266bea6c6e50093",
+        "expanded_bytes": 16105837094,
+        "minimum_bytes": 16105837094,
+        "capacity_bound_bytes": 16105837094,
+        "staged": false
+      }
+    },
+    "semantic_validator": {
+      "kind": "repository-command",
+      "contract": "mindguard-transcript-prefix-coverage/v1",
+      "source_path": "k8s-inference/models/mindguard/lifecycle_fixtures.py",
+      "source_sha256": "8f170e6a1e34378d1e6d83a35136940fc885d4145d43b918b79acddbe7b2575a",
+      "fixture_path": "k8s-inference/models/mindguard/lifecycle_fixtures.py",
+      "fixture_sha256": "8f170e6a1e34378d1e6d83a35136940fc885d4145d43b918b79acddbe7b2575a",
+      "request_count": 2,
+      "distinct_requests": true,
+      "distinct_responses": true
+    },
+    "support": {
+      "state": "qualified",
+      "route_exposed": false,
+      "non_clinical": true,
+      "limitations": [
+        "Existing exact L40S BF16 runtime and 32k checkpoint behavior are retained; durable cold lifecycle is qualified separately.",
+        "English observational safety labels only, one prefix per user turn; no diagnosis, clinician grading, blocking or conversation rewriting.",
+        "GPU snapshots are not qualified for this tuple. Non-commercial checkpoint terms and existing per-model grants apply."
+      ]
+    },
+    "evidence": [
+      {
+        "classification": "measured-platform",
+        "hardware": "NVIDIA L40S 48GB, BF16, vLLM 0.28.0, CUDA13.0",
+        "outcome": "live-qualified",
+        "source_commit": "d238f9427379c0e96583ba7595a804c391ef0959",
+        "summary": "Retained exact-runtime representative prefix evidence: 4b-l40s-32k-representative-c1.json SHA256 b7432ac65829ba99a2d58c605ee49b14cae0852f18883f8c8431dbf16df56445. This is functional classifier evidence, not new cold-start or clinical accuracy qualification."
+      }
+    ],
+    "provenance": [
+      {
+        "classification": "reviewed-input",
+        "revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+        "url": "https://huggingface.co/swordhealth/MindGuard-4B/tree/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+      }
+    ]
+  },
+  "variant_id": "mindguard-4b-vllm-bf16-l40s-v1",
+  "runtime_architecture": "cuda",
+  "semantic_requests": {
+    "state": "qualified",
+    "blocker": null,
+    "serialization": "sha256-json-compact-no-newline/v1",
+    "invocation": {
+      "operation": "assess-transcript",
+      "protocol": "native",
+      "method": "POST",
+      "endpoint": "/v1/chat/completions"
+    },
+    "requests": [
+      {
+        "id": "mindguard-4b-transcript-0",
+        "payload_sha256": "88affe4c94ff20ef4f131c1442602cc6bf58757eae912c27a2420650108c91ae"
+      },
+      {
+        "id": "mindguard-4b-transcript-1",
+        "payload_sha256": "9903c65a89bf35bb98fbb945e49ac77d653b7fc69d0db3bc733da82d0a05469e"
+      }
+    ],
+    "assets": []
+  },
+  "artifact_manifest": {
+    "path": "artifacts/mindguard-4b-c5db22f491d868f9ea51387a02ad27308bde80ae9720c784f266bea6c6e50093.json",
+    "sha256": "c5db22f491d868f9ea51387a02ad27308bde80ae9720c784f266bea6c6e50093"
+  }
+}

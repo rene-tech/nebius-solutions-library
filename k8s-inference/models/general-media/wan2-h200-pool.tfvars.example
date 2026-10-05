@@ -1,0 +1,32 @@
+# Merge this entry into deployment.accelerator_pools in the deployment's
+# terraform.tfvars. Do not apply this fragment over a populated root map.
+# The existing eu-north1 group is mk8snodegroup-e00prf74rw5vnbqcxq; import/adopt
+# that exact group using the infrastructure owner's reviewed state workflow,
+# never create a duplicate group merely to match this example.
+#
+# Existing-instance registration without provider mutation is recorded in
+# wan2-h200-existing-pool.json. Its reconciler appends only the corresponding
+# ResourceFlavor and two-node quota and preserves all other live queue quotas.
+deployment = {
+  accelerator_pools = {
+    wan2-h200-1x = {
+      platform          = "gpu-h200-sxm"
+      preset            = "1gpu-16vcpu-200gb"
+      accelerator_class = "nvidia-h200-sxm5-141gb"
+      gpus_per_node     = 1
+      gpu_memory_gb     = 141
+      capacity_type     = "regular"
+      min_nodes         = 2
+      max_nodes         = 2
+      local_nvme        = false
+      driver = {
+        mode   = "managed"
+        preset = "cuda13.0"
+      }
+      topology = { mode = "standalone" }
+      # Measured live allocatable memory is at least 190072 MiB per node.
+      # Attach the retained capture digest through schedulable_capacity when
+      # enabling scheduling.core_capacity in the authoritative root tfvars.
+    }
+  }
+}

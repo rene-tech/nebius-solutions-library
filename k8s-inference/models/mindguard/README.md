@@ -34,14 +34,35 @@ endpoints={"mindguard-4b": settings.mindguard_4b_endpoint,
 `POST /v1/mindguard/assess`. Body: `model`, `messages`, optional `language: "en"`.
 It requires both `inference.invoke` and the selected classifier model grant;
 a `mindeval` grant alone is insufficient. Reuse the enclosing app's request
-telemetry. No new audit store is created. Return values add the normal request ID
-and measured token/latency usage, explicitly marked `observational_unbilled`, with
-no invented GPU-seconds or durable-operation ID. Budget-constrained keys return
-`503 mindguard_metered_admission_required` until classifier admission converges
-on the ordinary durable queue/meter. This preview does not claim durable queueing,
-cluster-wide concurrency enforcement or billable usage accounting. The workshop
-persists the complete returned assessment under its run and handles observer
-outages independently of clinician evaluation.
+telemetry. No new audit store or classifier-enforcement policy is created.
+
+With the registered App, the router receives the ordinary `admission`, `store`
+and `registry` and creates one durable operation for the entire transcript.
+The existing worker executes every user-prefix assessment, records each upstream
+exchange, aggregates reported tokens and uses the normal queue, concurrency,
+budget, cancellation and GPU-lifecycle accounting. The replica is owned by the
+existing ModelDeployment/KEDA controller; queued/activating/running operations
+wake it, and normal cooldown returns it to zero. There is no second scaler.
+
+Clients should provide `Idempotency-Key` and may set `x-fs2-wait-seconds: 0..30`
+(default30). A completed inline result remains HTTP200. A cold/in-progress request
+returns HTTP202 with its operation ID, `Location` and `Retry-After`; this is **not
+a classification**. Poll `/v1/operations/{id}` and fetch
+`/v1/operations/{id}/result` after `succeeded`. Failed/cancelled/expired operations
+do not produce a Safe label. Cancel through the ordinary
+`POST /v1/operations/{id}:cancel`. Large results use the standard immutable
+artifact envelope and checksum-verified download. Typed MCP tools
+`assess_mindguard_4b_native` and `assess_mindguard_8b_native` use the same lane.
+
+The MindEval worker polls this contract with a stable run/model idempotency key;
+shutdown leaves the durable operation recoverable on explicit Resume. It stores
+the complete assessment under its run and handles observer failures independently
+of clinician evaluation. The unregistered legacy preview remains available only
+during migration, explicitly `observational_unbilled`; it still rejects
+budget-constrained keys. Once registered, a disabled or failed App never falls
+back to that bypass. See `acceptance/idle-scale-zero-20261005/README.md` for the
+exact deployment and cold-path verification status; source availability alone is
+not a live qualification claim.
 
 Each assessment contains model identity/revision, observational role, status,
 safety label, category codes (`S1`: self-harm risk; `S2`: threats to others including

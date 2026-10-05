@@ -1092,6 +1092,11 @@ class RuntimeClient:
         source_model = (
             model.dynamic_policy.publication.source_model_ref if model.dynamic_policy is not None else model.id
         )
+        if (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
+                and source_model in {"mindguard-4b", "mindguard-8b"}):
+            from .mindguard_runtime import invoke_mindguard
+
+            return await invoke_mindguard(self, model, operation, request_body)
         headers = self._correlation_headers(operation)
         scvi = (
             model.binding.backend_class == "local-kubernetes"

@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import contextlib
+import hashlib
 import io
 import json
 import logging
@@ -11,7 +12,7 @@ import time
 import wave
 from datetime import UTC, datetime
 from urllib.parse import urlsplit
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import asyncpg
 import httpx
@@ -71,6 +72,63 @@ async def json_call(client, method, url, token, *, body=None, host=None):
         return response.json()
     except ValueError as exc:
         raise RemoteFailure("invalid_response", "Gateway returned invalid JSON") from exc
+
+
+async def classifier_result(client, root, token, result, host):
+    """Resolve the ordinary artifact envelope for long multi-turn assessments."""
+    if result.get("schema") != "fs2-serve.nebius.ai/operation-artifact-result/v1":
+        return result
+    try:
+        artifact_id = str(UUID(result["artifact"]["artifact_id"]))
+        expected = result["artifact"]["sha256"].removeprefix("sha256:")
+    except (KeyError, ValueError, TypeError):
+        raise RemoteFailure("invalid_classifier_artifact", "Classifier result has invalid artifact identity") from None
+    receipt = await json_call(client, "GET", root + "/v1/artifacts/" + artifact_id + "/download", token, host=host)
+    handle = receipt["handle"]
+    # Use the exact signed download handle, not the platform's bearer credential.
+    data = bytearray()
+    async with httpx.AsyncClient(follow_redirects=False, trust_env=False) as download:
+        async with download.stream(handle["method"], handle["url"], headers=handle.get("headers", {})) as response:
+            response.raise_for_status()
+            async for chunk in response.aiter_bytes():
+                data.extend(chunk)
+                if len(data) > 2 * 1024 * 1024:
+                    raise RemoteFailure("classifier_result_too_large", "Classifier result exceeds its bounded contract")
+    if hashlib.sha256(data).hexdigest() != expected:
+        raise RemoteFailure("classifier_result_digest_mismatch", "Classifier artifact checksum does not match")
+    return json.loads(data)
+
+
+async def classifier_call(client, platform_url, token, *, body, host, idempotency_key, timeout=1800):
+    """A cold observation is a durable operation, never a completed label."""
+    root = platform_url.rstrip("/")
+    headers = {"Authorization": f"Bearer {token}", "Host": host,
+               "Idempotency-Key": idempotency_key, "x-fs2-wait-seconds": "0"}
+    response = await client.post(root + "/v1/mindguard/assess", headers=headers, json=body)
+    if response.status_code == 200:
+        return await classifier_result(client, root, token, response.json(), host)
+    if response.status_code != 202:
+        raise RemoteFailure("classifier_http_error", "Classifier admission failed", response.status_code)
+    try:
+        operation_id = str(UUID(response.json()["id"]))
+    except (ValueError, KeyError, TypeError):
+        raise RemoteFailure("invalid_classifier_operation", "Classifier returned no valid operation identity") from None
+    # Construct same-origin URLs from a validated UUID. Never forward the
+    # bearer credential to an arbitrary Location supplied by an upstream.
+    operation_url = root + "/v1/operations/" + operation_id
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        operation = await json_call(client, "GET", operation_url, token, host=host)
+        if operation["status"] == "succeeded":
+            result = await json_call(client, "GET", operation_url + "/result", token, host=host)
+            result = await classifier_result(client, root, token, result, host)
+            if result.get("status") != "completed":
+                raise RemoteFailure("invalid_classifier_result", "Classifier did not complete transcript coverage")
+            return {**result, "operation_id": operation_id}
+        if operation["status"] not in {"queued", "activating", "running"}:
+            raise RemoteFailure("classifier_" + operation["status"], "Classifier operation did not succeed")
+        await asyncio.sleep(min(2, max(0, deadline - time.monotonic())))
+    raise RemoteFailure("classifier_wait_timeout", "Classifier is still processing operation " + operation_id)
 
 
 def wav_bytes(pcm, rate):
@@ -283,12 +341,12 @@ class Worker:
             state["judgment"] = result
             if self.settings.mindguard_model:
                 try:
-                    state["classification"] = await json_call(
+                    state["classification"] = await classifier_call(
                         self.client,
-                        "POST",
-                        self.settings.platform_url.rstrip("/") + "/v1/mindguard/assess",
+                        self.settings.platform_url,
                         token,
                         host=urlsplit(self.settings.public_origin).netloc,
+                        idempotency_key=f"mindeval-classifier-{row['id']}-{self.settings.mindguard_model}",
                         body={
                             "model": self.settings.mindguard_model,
                             "messages": judge_interaction(state),

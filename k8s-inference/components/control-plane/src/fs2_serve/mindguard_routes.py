@@ -1,44 +1,32 @@
-"""Authenticated observational classifier endpoint using existing request telemetry.
+"""Observational classifiers using the normal durable admission and scale-zero lane.
 
-This preview is explicitly unbilled; it does not invent a second durable meter.
-Budget-constrained keys require the ordinary admission path before being supported.
-The enclosing workshop run persists full assessments under its existing ownership.
+The old unbilled preview is retained only until an App is registered. Registered
+Apps never bypass admission, budget accounting or a disabled publication.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from urllib.parse import urlsplit
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import Field, model_validator
+from fastapi.responses import JSONResponse
 
+from .admission import AdmissionService
 from .mindguard import (
-    MindGuardMessage,
     MindGuardModel,
-    MindGuardModelId,
     MindGuardTranscriptAssessment,
     assess_mindguard_transcript,
 )
-from .models import Principal, Scope
+from .mindguard_contracts import MindGuardAssessRequest
+from .models import AdmissionRequest, OperationStatus, Principal, Scope
+from .registry import Registry
 from .request_telemetry import ensure_request_id, observe_request_metadata
-
-
-class MindGuardAssessRequest(MindGuardModel):
-    model: MindGuardModelId
-    messages: list[MindGuardMessage] = Field(min_length=1, max_length=128)
-    language: Literal["en"] = "en"
-
-    @model_validator(mode="after")
-    def bounded_transcript(self) -> MindGuardAssessRequest:
-        if not any(message.role == "user" for message in self.messages):
-            raise ValueError("a transcript must contain a user turn")
-        if sum(len(message.content) for message in self.messages) > 200_000:
-            raise ValueError("transcript exceeds the observation request size limit")
-        return self
+from .store import Store
 
 
 class MindGuardObservedUsage(MindGuardModel):
@@ -61,6 +49,9 @@ def mindguard_router(
     principal: Callable[..., Awaitable[Principal]],
     endpoints: Mapping[str, str | None],
     client: httpx.AsyncClient | None = None,
+    admission: AdmissionService | None = None,
+    store: Store | None = None,
+    registry: Registry | None = None,
 ) -> APIRouter:
     """Mount using the normal PAT dependency; endpoints must come from operator settings.
 
@@ -88,12 +79,12 @@ def mindguard_router(
     router = APIRouter(tags=["MindGuard safety classifiers"])
     identity_dependency = Depends(principal)
 
-    @router.post("/v1/mindguard/assess", response_model=MindGuardAssessResponse)
+    @router.post("/v1/mindguard/assess", response_model=None)
     async def assess(
         body: MindGuardAssessRequest,
         request: Request,
         identity: Principal = identity_dependency,
-    ) -> MindGuardAssessResponse:
+    ) -> MindGuardAssessResponse | JSONResponse:
         try:
             identity.require(Scope.INFERENCE_INVOKE, body.model)
         except PermissionError as exc:
@@ -101,6 +92,69 @@ def mindguard_router(
         request.state.model_id = body.model
         request.state.principal = identity
         observe_request_metadata(principal=identity, model_id=body.model)
+        # The old preview stays available during the staged catalog migration.
+        # Once its canonical App exists, never bypass a failed/disabled route.
+        registered = False
+        if admission is not None and store is not None and registry is not None:
+            try:
+                registry.get(body.model, require_enabled=False)
+                registered = True
+            except KeyError:
+                pass
+        if registered and admission is not None and store is not None:
+            try:
+                wait = float(request.headers.get("x-fs2-wait-seconds", "30"))
+                if not 0 <= wait <= 30:
+                    raise ValueError
+            except ValueError:
+                raise HTTPException(422, "x-fs2-wait-seconds must be between 0 and 30") from None
+            operation = await admission.admit(
+                identity,
+                AdmissionRequest(
+                    model_id=body.model,
+                    operation="assess-transcript",
+                    protocol="native",
+                    request_body=body.model_dump_json().encode(),
+                    idempotency_key=request.headers.get("idempotency-key") or "mindguard-" + str(uuid4()),
+                    deadline_at=datetime.now(UTC) + timedelta(hours=2),
+                ),
+            )
+            request.state.operation_id = operation.id
+            operation = await admission.wait(operation.id, tenant_id=identity.tenant_id, seconds=wait)
+            headers = {
+                "x-fs2-operation-id": str(operation.id),
+                "x-fs2-idempotent-replay": str(operation.reused).lower(),
+                "cache-control": "no-store",
+            }
+            if operation.status is OperationStatus.SUCCEEDED:
+                stored_result = await store.get_operation_result(operation.id, tenant_id=identity.tenant_id)
+                return JSONResponse(
+                    {
+                        **stored_result.result,
+                        "request_id": str(ensure_request_id(request.scope)),
+                        "usage": {
+                            "accounting_mode": "durable_operation",
+                            "durable_operation_id": str(operation.id),
+                            "input_tokens": operation.input_tokens,
+                            "output_tokens": operation.output_tokens,
+                        },
+                    },
+                    headers=headers,
+                )
+            if operation.status.terminal:
+                return JSONResponse(
+                    {
+                        "error": {"code": operation.error_code or "classification_failed"},
+                        "operation": operation.model_dump(mode="json"),
+                    },
+                    status_code=operation.http_status or 502,
+                    headers=headers,
+                )
+            return JSONResponse(
+                operation.model_dump(mode="json"),
+                status_code=202,
+                headers={**headers, "location": f"/v1/operations/{operation.id}", "retry-after": "1"},
+            )
         if identity.request_budget is not None or identity.gpu_seconds_budget is not None:
             raise HTTPException(
                 503,

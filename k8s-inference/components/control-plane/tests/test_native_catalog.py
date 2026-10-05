@@ -102,6 +102,8 @@ def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive
         "cosmos-transfer2-5-2b",
         "qwen3-6-27b-fp8",
         "ace-step-1-5",
+        "mindguard-4b",
+        "mindguard-8b",
     }
     assert augmented.digest == archive.digest
     assert augmented.tested_model_ids == archive.tested_model_ids
