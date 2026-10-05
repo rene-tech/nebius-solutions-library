@@ -17,6 +17,8 @@ def test_rdma_is_fail_closed_and_never_claims_observed_transport(monkeypatch):
     assert mpi.os.environ["UCX_IB_GPU_DIRECT_RDMA"] == "yes"
     assert result["rdma_requested"] and result["rdma"] is None
     assert result["transport_observed"] is None
+    assert result["ucx_queue_settings"] == mpi.RDMA_UCX_SETTINGS
+    assert all(mpi.os.environ[name] == value for name, value in mpi.RDMA_UCX_SETTINGS.items())
     assert result["ucx_net_devices"].split(",") == [f"mlx5_{i}:1" for i in range(8)]
     with pytest.raises(ValueError, match="two-node"):
         mpi.configure_transport(1)
@@ -51,10 +53,23 @@ def test_tcp_and_local_clear_rdma_resource_restrictions(monkeypatch):
         monkeypatch.setenv("FS2_GROMACS_MPI_TRANSPORT", mode)
         monkeypatch.setenv("UCX_NET_DEVICES", "mlx5_0:1")
         monkeypatch.setenv("UCX_IB_GPU_DIRECT_RDMA", "yes")
+        for name in mpi.RDMA_UCX_SETTINGS:
+            monkeypatch.setenv(name, "9999")
         result = mpi.configure_transport(nodes)
         assert result["rdma"] is False
         assert "UCX_NET_DEVICES" not in mpi.os.environ
         assert "UCX_IB_GPU_DIRECT_RDMA" not in mpi.os.environ
+        assert not set(mpi.RDMA_UCX_SETTINGS).intersection(mpi.os.environ)
+
+
+def test_rdma_launcher_forwards_exact_bounded_queue_settings(monkeypatch):
+    monkeypatch.setenv("FS2_GROMACS_MPI_HOSTFILE", "/tmp/admitted-hosts")
+    for name, value in mpi.RDMA_UCX_SETTINGS.items():
+        monkeypatch.setenv(name, value)
+    command = mpi.launch_command({"nodes": 2, "gpus_per_node": 8}, ["gmx_mpi", "--version"])
+    for name in mpi.RDMA_UCX_SETTINGS:
+        assert command[command.index(name) - 1] == "-x"
+    assert not any("MAX_BUFS" in name for name in mpi.RDMA_UCX_SETTINGS)
 
 
 def test_rdma_overlay_adds_only_matching_userspace_provider():

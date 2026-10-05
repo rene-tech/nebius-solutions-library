@@ -21,6 +21,21 @@ import time
 from .contracts import normalize
 from .files import atomic_json, extract_inputs
 
+# Qualified for the bounded 16-rank/two-node profile under the managed runtime's
+# 8 MiB memlock. UCX 1.19 otherwise grows RX by at least 1024 elements even when
+# RX_QUEUE_LEN is smaller (uct/ib/base/ib_iface.c). Explicit growth avoids that
+# initial 10-38 MiB pool without privileges or changing host limits. These are
+# growth increments, not hard MAX_BUFS caps that could deadlock RC progress.
+RDMA_UCX_SETTINGS = {
+    "UCX_RC_RX_QUEUE_LEN": "256",
+    "UCX_RC_RX_BUFS_GROW": "64",
+    "UCX_RC_TX_BUFS_GROW": "64",
+    "UCX_UD_RX_QUEUE_LEN": "256",
+    "UCX_UD_RX_QUEUE_LEN_INIT": "64",
+    "UCX_UD_RX_BUFS_GROW": "64",
+    "UCX_UD_TX_BUFS_GROW": "64",
+}
+
 
 def rank() -> int:
     """Controller Pod/node index, not the MPI process rank within a node."""
@@ -170,7 +185,7 @@ def configure_transport(nodes: int) -> dict:
     transport = os.environ.get(
         "FS2_GROMACS_MPI_TRANSPORT", "ucx-local" if nodes == 1 else "tcp-host-staged"
     )
-    for name in ("UCX_NET_DEVICES", "UCX_IB_GPU_DIRECT_RDMA", "UCX_PROTO_INFO"):
+    for name in ("UCX_NET_DEVICES", "UCX_IB_GPU_DIRECT_RDMA", "UCX_PROTO_INFO", *RDMA_UCX_SETTINGS):
         os.environ.pop(name, None)
     if transport == "ucx-local":
         if nodes != 1:
@@ -197,6 +212,7 @@ def configure_transport(nodes: int) -> dict:
         os.environ["UCX_IB_GPU_DIRECT_RDMA"] = "yes"
         os.environ["UCX_LOG_LEVEL"] = "info"
         os.environ["UCX_PROTO_INFO"] = "y"
+        os.environ.update(RDMA_UCX_SETTINGS)
         os.environ.pop("OMPI_MCA_btl", None)
         os.environ.pop("GMX_DISABLE_DIRECT_GPU_COMM", None)
     elif transport == "tcp-host-staged":
@@ -218,6 +234,7 @@ def configure_transport(nodes: int) -> dict:
         else "disabled",
         "ucx_tls": os.environ.get("UCX_TLS"),
         "ucx_net_devices": os.environ.get("UCX_NET_DEVICES"),
+        "ucx_queue_settings": RDMA_UCX_SETTINGS if transport == "ucx-rdma" else None,
     }
 
 
@@ -307,6 +324,7 @@ def launch_command(request: dict, command: list[str]) -> list[str]:
         "UCX_IB_GPU_DIRECT_RDMA",
         "UCX_LOG_LEVEL",
         "UCX_PROTO_INFO",
+        *RDMA_UCX_SETTINGS,
         "FS2_GROMACS_MPI_TRANSPORT",
         "GMX_DISABLE_DIRECT_GPU_COMM",
     ):
