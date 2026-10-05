@@ -99,6 +99,41 @@ def retained_files(before, after):
     return preserved
 
 
+def single_h100_nodes(pods, nodes):
+    """Keep this optional fault cohort off the full-node RDMA experiment."""
+    names = {pod["spec"].get("nodeName") for pod in pods}
+    selected = [node for node in nodes if node["metadata"]["name"] in names]
+    if (
+        len(names) != 2
+        or len(selected) != 2
+        or {node["metadata"]["name"] for node in selected} != names
+    ):
+        raise ValueError("Expected both exact peer nodes in the fresh capacity read")
+    for node in selected:
+        labels = node["metadata"].get("labels", {})
+        if (
+            labels.get("accelerator.fs2.nebius/pool-id") != "h100-ondemand-1x"
+            or labels.get("accelerator.fs2.nebius/class") != "nvidia-h100-sxm5-80gb"
+            or node["status"].get("allocatable", {}).get("nvidia.com/gpu") != "1"
+            or node["metadata"].get("deletionTimestamp")
+            or node.get("spec", {}).get("unschedulable")
+            or not any(
+                item.get("type") == "Ready" and item.get("status") == "True"
+                for item in node["status"].get("conditions", [])
+            )
+        ):
+            raise ValueError("Refuse peer fault outside the two Ready single-H100 nodes")
+    return [
+        {
+            "name": node["metadata"]["name"],
+            "uid": node["metadata"]["uid"],
+            "pool": node["metadata"]["labels"]["accelerator.fs2.nebius/pool-id"],
+            "allocatable_gpus": node["status"]["allocatable"]["nvidia.com/gpu"],
+        }
+        for node in sorted(selected, key=lambda item: item["metadata"]["name"])
+    ]
+
+
 async def run(args):
     values = dict(
         line.split("=", 1)
@@ -303,6 +338,18 @@ async def run(args):
                     peer = owned_peer(
                         pods["items"], state["operation_id"], attempt["attempt_id"]
                     )
+                    if args.single_h100_nodes_only:
+                        nodes = await asyncio.to_thread(
+                            kubectl,
+                            args,
+                            "get",
+                            "nodes",
+                            *(pod["spec"]["nodeName"] for pod in pods["items"]),
+                            "-o",
+                            "json",
+                        )
+                        capacity = single_h100_nodes(pods["items"], nodes["items"])
+                        save(args.output / "fault-node-capacity.json", capacity)
                     save(
                         args.output / "fault-pods.json",
                         [
@@ -443,6 +490,11 @@ def main():
     parser.add_argument("--origin", default="https://89.169.99.188")
     parser.add_argument("--steps", type=int, default=60000)
     parser.add_argument("--padding-files", type=int, default=0)
+    parser.add_argument(
+        "--single-h100-nodes-only",
+        action="store_true",
+        help="Refuse fault injection unless both owned peers are on Ready single-H100 nodes",
+    )
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args()
     if not re.fullmatch(r"[a-z0-9-]{1,40}", args.label):

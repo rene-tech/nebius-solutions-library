@@ -78,7 +78,7 @@ class BindingTests(unittest.TestCase):
         new = {row["path"]: row for row in rdma["files"]}
         prefix = "models/molecular-dynamics/gromacs/runtime/"
         self.assertEqual(set(new) - set(old), {prefix + path for path in (
-            "Containerfile.mpi-rdma", "rdma/host_collectives.c",
+            "Containerfile.mpi-rdma", ".dockerignore", "rdma/host_collectives.c",
             "rdma/memlock_probe.c", "rdma/ld.so.conf")})
         self.assertTrue(all(new[path] == row for path, row in old.items()))
         self.assertNotEqual(activation.digest(cuda), activation.digest(rdma))

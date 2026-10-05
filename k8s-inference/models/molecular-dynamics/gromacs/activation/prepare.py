@@ -155,6 +155,7 @@ def source_recipe(root, *, mpi_cuda_aware=False, mpi_rdma=False):
         prefix = "models/molecular-dynamics/gromacs/runtime/"
         paths.update(prefix + path for path in (
             "Containerfile.mpi-rdma",
+            ".dockerignore",
             "rdma/host_collectives.c",
             "rdma/memlock_probe.c",
             "rdma/ld.so.conf",

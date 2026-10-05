@@ -398,6 +398,7 @@ documented in `../idle-scale-zero-20261005/PERSISTENCE.md`.
 
 Private evidence: `schema38-stage-191e-r2.json`,
 `schema38-restore-api-191e.json`, `schema38-restore-maintenance-191e.json`,
-`release/outbox38-verification/`, `outbox38-metrics/`,
-`outbox38-database-load.jsonl` and `concurrent-20k-r1/` under the private parent
-root. No customer key, scientific input protocol, timeout or cloud quota changed.
+`release/outbox38-verification/`, `outbox38-metrics/` and
+`outbox38-database-load.jsonl` under the private parent root. The live cohort is
+under `/home/tux/secure-handoff/fs2-longrun-restarts-20261005/concurrent-20k-r1/`.
+No customer key, scientific input protocol, timeout or cloud quota changed.

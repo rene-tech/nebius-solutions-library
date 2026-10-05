@@ -110,3 +110,59 @@ def test_synthetic_late_inventory_identity_must_also_survive_peer_loss():
     changed["files"][1]["sha256"] = "c" * 64
     with pytest.raises(ValueError, match="already closed"):
         peer_loss.retained_files(original, changed)
+
+
+def single_nodes():
+    return [
+        {
+            "metadata": {
+                "name": f"node-{index}",
+                "uid": f"node-uid-{index}",
+                "labels": {
+                    "accelerator.fs2.nebius/pool-id": "h100-ondemand-1x",
+                    "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                },
+            },
+            "spec": {},
+            "status": {
+                "allocatable": {"nvidia.com/gpu": "1"},
+                "conditions": [{"type": "Ready", "status": "True"}],
+            },
+        }
+        for index in range(2)
+    ]
+
+
+def test_single_h100_fault_capacity_is_observed_not_inferred_from_pod_request():
+    original = single_nodes()
+    records = peer_loss.single_h100_nodes(pods(), list(reversed(original)))
+    assert [row["name"] for row in records] == ["node-0", "node-1"]
+    assert all(row["allocatable_gpus"] == "1" for row in records)
+
+
+@pytest.mark.parametrize(
+    "damage", ["pool", "sku", "gpu", "ready", "cordon", "deleted", "missing", "duplicate", "same-node"]
+)
+def test_single_h100_fault_refuses_full_or_unready_node(damage):
+    values = single_nodes()
+    node = values[1]
+    if damage == "pool":
+        node["metadata"]["labels"]["accelerator.fs2.nebius/pool-id"] = "h100-reserved-8x"
+    elif damage == "sku":
+        node["metadata"]["labels"]["accelerator.fs2.nebius/class"] = "nvidia-l40s"
+    elif damage == "gpu":
+        node["status"]["allocatable"]["nvidia.com/gpu"] = "8"
+    elif damage == "ready":
+        node["status"]["conditions"][0]["status"] = "False"
+    elif damage == "cordon":
+        node["spec"]["unschedulable"] = True
+    elif damage == "deleted":
+        node["metadata"]["deletionTimestamp"] = "2026-10-05T18:50:00Z"
+    elif damage == "missing":
+        values.pop()
+    elif damage == "same-node":
+        values[1] = copy.deepcopy(values[0])
+    else:
+        values.append(copy.deepcopy(node))
+    with pytest.raises(ValueError):
+        peer_loss.single_h100_nodes(pods(), values)
