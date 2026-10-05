@@ -20,9 +20,11 @@ class S3:
     def __init__(self, metadata_case=str.lower):
         self.objects = {}
         self.writes = []
+        self.heads = []
         self.metadata_case = metadata_case
 
     def head_object(self, *, Bucket, Key):  # noqa: N803 - boto3's public API
+        self.heads.append((Bucket, Key))
         if (Bucket, Key) not in self.objects:
             raise ClientError({"ResponseMetadata": {"HTTPStatusCode": 404}}, "HeadObject")
         body, metadata = self.objects[Bucket, Key]
@@ -119,6 +121,59 @@ def test_export_failure_never_commits_a_customer_manifest(tmp_path, monkeypatch)
             [{"path": "native.cpt", "sha256": hashlib.sha256(b"checkpoint").hexdigest(), "size_bytes": 10}],
         )
     assert export.s3.writes == []
+
+
+def incremental_export(tmp_path):
+    (tmp_path / "data").mkdir(exist_ok=True)
+    path = tmp_path / "data/old.part0001.xtc"
+    path.write_bytes(b"native trajectory")
+    item = {"path": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "size_bytes": path.stat().st_size}
+    exporter = GromacsCustomerStorage(None, tmp_path, "operation", "replica")
+    exporter.s3, exporter.bucket, exporter.prefix, exporter.attempt, exporter.enabled = (
+        S3(), "customer", "runs/op/replica", 1, True,
+    )
+    return exporter, item
+
+
+def test_incremental_export_does_not_head_old_objects_at_every_segment(tmp_path):
+    export, item = incremental_export(tmp_path)
+    export.publish({"generation": 1, "active_step": {"id": "md"}}, [item])
+    assert len(export.s3.heads) == 2
+    for generation in range(2, 30):
+        export.publish({"generation": generation, "active_step": {"id": "md"}}, [item])
+    assert len(export.s3.heads) == 2
+    export.publish({"generation": 30, "active_step": None}, [item])
+    assert len(export.s3.heads) == 3  # full remote verification at step completion
+
+
+def test_final_export_restores_deleted_customer_copy_and_new_companion_rechecks(tmp_path):
+    export, item = incremental_export(tmp_path)
+    export.publish({"generation": 1, "active_step": {"id": "md"}}, [item])
+    key = f"runs/op/replica/objects/{item['sha256']}"
+    del export.s3.objects["customer", key]
+    export.publish({"generation": 2, "active_step": None}, [item])
+    assert export.s3.objects["customer", key][0] == b"native trajectory"
+    replacement, item = incremental_export(tmp_path)
+    replacement.s3 = export.s3
+    heads = len(export.s3.heads)
+    replacement.publish({"generation": 3, "active_step": {"id": "md"}}, [item])
+    assert len(export.s3.heads) == heads + 1  # no persisted remote-presence cache
+
+
+def test_final_remote_conflict_and_local_modification_never_commit_manifest(tmp_path):
+    export, item = incremental_export(tmp_path)
+    export.publish({"generation": 1, "active_step": {"id": "md"}}, [item])
+    key = f"runs/op/replica/objects/{item['sha256']}"
+    export.s3.objects["customer", key] = (b"wrong", {"sha256": "incorrect"})
+    writes = len(export.s3.writes)
+    with pytest.raises(ValueError, match="conflicting metadata"):
+        export.publish({"generation": 2, "active_step": None}, [item])
+    assert len(export.s3.writes) == writes
+    (tmp_path / "data" / item["path"]).write_bytes(b"different")
+    with pytest.raises(ValueError, match="changed"):
+        export.publish({"generation": 2, "active_step": {"id": "md"}}, [item])
+    assert len(export.s3.writes) == writes
 
 
 @pytest.mark.asyncio

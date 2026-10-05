@@ -7,10 +7,61 @@ import json
 import os
 import stat
 import tarfile
+import time
+from collections import OrderedDict
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 from .contracts import relative_path
+
+MAX_WORKSPACE_FILES = 32766
+
+
+def file_signature(meta: os.stat_result) -> tuple[int, ...]:
+    """Include ctime: replacing bytes then restoring mtime must invalidate."""
+    return (meta.st_dev, meta.st_ino, meta.st_mode, meta.st_size, meta.st_mtime_ns, meta.st_ctime_ns)
+
+
+class FileDigestCache:
+    """Process-local hashes of unchanged closed files, never trusted after restart.
+
+    Long simulations retain thousands of immutable segment files. Re-reading all
+    earlier trajectory bytes at every five-minute checkpoint is quadratic I/O.
+    Every use still checks file identity/metadata; changed files are fully hashed.
+    The worker and companion own independent caches and verify independently.
+    """
+
+    def __init__(self, max_entries: int = MAX_WORKSPACE_FILES) -> None:
+        if max_entries < 1:
+            raise ValueError("digest cache requires a positive entry bound")
+        self.max_entries = max_entries
+        self._entries: OrderedDict[str, tuple[tuple[int, ...], str]] = OrderedDict()
+        self._lock = Lock()
+
+    def digest(self, path: Path) -> str:
+        meta = path.lstat()
+        if not stat.S_ISREG(meta.st_mode):
+            raise ValueError("workflow outputs must be regular files, not links or devices")
+        signature = file_signature(meta)
+        key = str(path.absolute())
+        with self._lock:
+            previous = self._entries.get(key)
+        sha = previous[1] if previous is not None and previous[0] == signature else digest_file(path)
+        if signature != file_signature(path.lstat()):
+            raise ValueError("workflow file changed during its checkpoint inventory")
+        with self._lock:
+            # Filesystems may round ctime/mtime to one clock tick. A new file
+            # rewritten in that tick can retain every stat field. Do not memoize
+            # recently modified files; rehash them until the timestamp is old.
+            if time.time_ns() - max(meta.st_ctime_ns, meta.st_mtime_ns) >= 1_000_000_000:
+                self._entries[key] = (signature, sha)
+                self._entries.move_to_end(key)
+            else:
+                self._entries.pop(key, None)
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+        return sha
 
 
 def media_type(path: str) -> str:
@@ -28,9 +79,11 @@ def digest_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def inventory(root: Path, *, max_bytes: int) -> list[dict[str, Any]]:
+def inventory(
+    root: Path, *, max_bytes: int, digest_cache: FileDigestCache | None = None
+) -> list[dict[str, Any]]:
     total = 0
-    files = []
+    files: list[dict[str, Any]] = []
     for path in sorted(root.rglob("*")):
         meta = path.lstat()
         if stat.S_ISDIR(meta.st_mode):
@@ -38,11 +91,11 @@ def inventory(root: Path, *, max_bytes: int) -> list[dict[str, Any]]:
         if not stat.S_ISREG(meta.st_mode):
             raise ValueError("workflow outputs must be regular files, not links or devices")
         total += meta.st_size
-        if total > max_bytes or len(files) >= 9998:
+        if total > max_bytes or len(files) >= MAX_WORKSPACE_FILES:
             raise ValueError("workflow exceeds the workspace file/byte budget")
-        sha = digest_file(path)
+        sha = digest_cache.digest(path) if digest_cache is not None else digest_file(path)
         after = path.lstat()
-        if (meta.st_ino, meta.st_size, meta.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
+        if file_signature(meta) != file_signature(after):
             raise ValueError("workflow file changed during its checkpoint inventory")
         files.append({"path": str(path.relative_to(root)), "size_bytes": meta.st_size, "sha256": sha})
     return files
@@ -60,7 +113,7 @@ def extract_inputs(archive: Path, destination: Path, *, max_bytes: int) -> None:
             seen.add(name)
             total += member.size
             count += 1
-            if total > max_bytes or count > 9998:
+            if total > max_bytes or count > MAX_WORKSPACE_FILES:
                 raise ValueError("expanded input bundle exceeds the execution workspace budget")
             target = destination / name
             if member.isdir():

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, cast
 
@@ -18,7 +19,7 @@ import httpx
 from boto3.s3.transfer import TransferConfig
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from fs2_gromacs.files import digest_file
+from fs2_gromacs.files import FileDigestCache, digest_file
 
 from .companion import WorkloadArtifactHttpClient
 from .native_workflows import NativeWorkflow, workflow_for_collector, workflow_for_schema
@@ -73,6 +74,10 @@ class GromacsCustomerStorage:
         self.prefix = ""
         self.attempt = 0
         self.enabled = False
+        self.file_digests = FileDigestCache()
+        # Only reuse objects verified by this companion, in this exact bucket
+        # and prefix. Nothing is persisted or trusted from a previous process.
+        self._verified_objects: dict[tuple[str, str], tuple[str, int]] = {}
         self.transfer = TransferConfig(
             multipart_threshold=64 * 1024**2,
             multipart_chunksize=64 * 1024**2,
@@ -119,8 +124,13 @@ class GromacsCustomerStorage:
         # Do not persist credentials in a workspace, artifact, result or log.
         value.clear()
 
-    def _put_file(self, source: Path, digest: str, size: int) -> str:
+    def _put_file(self, source: Path, digest: str, size: int, *, verify_remote: bool = False) -> str:
         key = f"{self.prefix}/objects/{digest}"
+        cached = self._verified_objects.get((self.bucket, key))
+        if cached is not None and cached != (digest, size):
+            raise ValueError("customer checkpoint object has conflicting metadata")
+        if cached is not None and not verify_remote:
+            return key
         try:
             head = self.s3.head_object(Bucket=self.bucket, Key=key)
         except ClientError as error:
@@ -129,6 +139,7 @@ class GromacsCustomerStorage:
         else:
             if not _verified_metadata(head, digest, size):
                 raise ValueError("customer checkpoint object has conflicting metadata")
+            self._verified_objects[self.bucket, key] = (digest, size)
             return key
         if source.stat().st_size != size or digest_file(source) != digest:
             raise ValueError("customer export source changed after the engine stopped")
@@ -149,20 +160,51 @@ class GromacsCustomerStorage:
             ) from None
         if not _verified_metadata(head, digest, size):
             raise ValueError("customer checkpoint export size/digest metadata did not verify")
+        self._verified_objects[self.bucket, key] = (digest, size)
         return key
 
     def publish(self, state: dict[str, Any], files: list[dict[str, Any]]) -> dict[str, Any] | None:
         if not self.enabled:
             return None
+        workflow = self.workflow
+        if workflow is None:
+            raise ValueError("native customer storage workflow is not registered")
         exported = []
+        incremental = workflow.model_id in {"gromacs", "gromacs-mpi"}
+        if incremental:
+            # Verify every local name, including byte-identical aliases. Reuse
+            # only unchanged local hashes; the companion's cache starts empty.
+            unique: dict[tuple[str, int], dict[str, Any]] = {}
+            for item in files:
+                source = self.workspace / "data" / item["path"]
+                if source.stat().st_size != item["size_bytes"] or self.file_digests.digest(source) != item["sha256"]:
+                    raise ValueError("customer export source changed after the engine stopped")
+                unique.setdefault((item["sha256"], item["size_bytes"]), item)
+
+            def export(item: dict[str, Any]) -> str:
+                return self._put_file(
+                    self.workspace / "data" / item["path"], item["sha256"], item["size_bytes"],
+                    # At a completed native step, revalidate remote objects;
+                    # restore deleted ones from the still-verified workspace.
+                    verify_remote="active_step" in state and state["active_step"] is None,
+                )
+
+            # First export/restore can have tens of thousands of small files.
+            # Bound submitted futures as well as threads/multipart concurrency.
+            pending = list(unique.values())
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                for offset in range(0, len(pending), 64):
+                    list(executor.map(export, pending[offset:offset + 64]))
         for item in files:
-            key = self._put_file(self.workspace / "data" / item["path"], item["sha256"], item["size_bytes"])
+            key = (f"{self.prefix}/objects/{item['sha256']}" if incremental else
+                   self._put_file(self.workspace / "data" / item["path"], item["sha256"], item["size_bytes"],
+                                  verify_remote=True))
             exported.append(
                 {"path": item["path"], "key": key, "sha256": item["sha256"], "size_bytes": item["size_bytes"]}
             )
         key = f"{self.prefix}/attempt-{self.attempt:03d}/checkpoint-{state['generation']:08d}.json"
         manifest = {
-            "schema": self.workflow.customer_checkpoint_schema,
+            "schema": workflow.customer_checkpoint_schema,
             "state": state,
             "bucket": self.bucket,
             "files": exported,
@@ -174,6 +216,8 @@ class GromacsCustomerStorage:
             Body=json.dumps(manifest, sort_keys=True).encode(),
             ContentType="application/json",
         )
+        retained = {(self.bucket, row["key"]) for row in exported}
+        self._verified_objects = {key: value for key, value in self._verified_objects.items() if key in retained}
         return {"bucket": self.bucket, "manifest_key": key, "prefix": self.prefix, "retention": "customer-managed"}
 
 
