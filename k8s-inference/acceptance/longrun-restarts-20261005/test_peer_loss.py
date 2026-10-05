@@ -92,3 +92,21 @@ def test_prior_native_history_is_verified_not_just_counted():
     changed["files"][1]["sha256"] = "e" * 64
     with pytest.raises(ValueError, match="already closed"):
         peer_loss.retained_files(original, changed)
+
+
+def test_synthetic_late_inventory_identity_must_also_survive_peer_loss():
+    original = {
+        "files": [
+            {"path": "run.tpr", "sha256": "a" * 64, "size_bytes": 100},
+            {
+                "path": "continuation-padding/file-01999.txt",
+                "sha256": "b" * 64,
+                "size_bytes": 40,
+            },
+        ]
+    }
+    assert peer_loss.retained_files(original, original) == 2
+    changed = copy.deepcopy(original)
+    changed["files"][1]["sha256"] = "c" * 64
+    with pytest.raises(ValueError, match="already closed"):
+        peer_loss.retained_files(original, changed)

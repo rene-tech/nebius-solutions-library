@@ -1,9 +1,10 @@
 # Fourteen-day GROMACS execution and large late-state restarts
 
-Status: fourteen-day release deployed; the first real20k-file trial exposed a
-publication throughput failure. The successor is under implementation; native
-REST/MCP large-inventory acceptance is not yet passed. This is not a fourteen-day
-soak or customer-ready verdict.
+Status: fourteen-day and bulk-publication releases deployed; the first real
+20,000-file trial exposed a publication throughput failure. A measured live
+retry is running with the optimized path. Native REST/MCP large-inventory
+acceptance is not yet passed. This is not a fourteen-day soak or customer-ready
+verdict.
 
 ## First deployed twenty-thousand-file trial
 
@@ -150,6 +151,21 @@ alias, and rejected foreign-tenant reads. The artifact/read/batch suite passed
 suite passed with its two database cases initially skipped; the52-test database
 suite subsequently covered both. Strict typing and Ruff passed.
 
+The recovered-final-publication successor also handles the end of a successful
+same-operation retry. Final result records must belong to the successful attempt;
+retained earlier-attempt native files are therefore re-homed in bounded 64-file /
+1-GiB batches, with SHA/size checks and alias deduplication. This keeps the existing
+ownership contract without reverting to thousands of serial upload lifecycles.
+The 2,048-file plus alias regression includes later-file corruption and a failed
+second batch. Seventy checkpoint/descriptor/failure tests, strict typing and Ruff
+passed for this follow-up. No fourteen-day soak is inferred from those tests.
+
+Use `verify_resume.py --source-only` when a source checkpoint must be qualified
+before a continuation release becomes available. It saves the same receipt and
+stops without submitting continuation work; rerun the identical command without
+that flag after the release is ready. This avoids a race with a coordinated
+reader rollout and never changes the already admitted native source.
+
 `verify_resume.py --source-receipt <historical-private-state.json>` can qualify
 an earlier internal failed operation against a newer continuation release
 without rerunning or changing the source. The source must still be owned by
@@ -157,11 +173,12 @@ system/qa, match the requested App and have a committed native execution-budget
 checkpoint. Current migration fixture: `bfd2bac7-615e-4059-b4b1-3990d48636cc`,
 step22,400/60,000 from the prior seven-day-capable worker.
 
-`verify_peer_loss.py` admits one internal2x1 MPI study, waits for a committed
+`verify_peer_loss.py --padding-files 20000` admits one internal2x1 MPI study with
+an explicitly synthetic late retained inventory, waits for a committed
 native checkpoint and injects one UID-fenced rank1 Pod eviction. It requires
 unchanged operation identity, infrastructure-retry classification, multiple
 attempts, native continuation to the exact finite TPR target, earlier native
-file hashes and actual downloaded output validation. Eleven ownership/history
+file hashes and actual downloaded output validation. Twelve ownership/history
 tests cover refusal to target foreign or ambiguous resources. This runner has
 not passed live until an explicit receipt is recorded below.
 

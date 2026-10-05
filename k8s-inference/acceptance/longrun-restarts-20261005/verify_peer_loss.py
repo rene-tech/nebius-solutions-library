@@ -8,6 +8,7 @@ Saved admission and eviction receipts make interrupted runs resumable.
 import argparse
 import asyncio
 import importlib.util
+import io
 import json
 import os
 import re
@@ -79,8 +80,10 @@ def retained_files(before, after):
     indexed = {item["path"]: item for item in after["files"]}
     preserved = 0
     for item in before["files"]:
-        if item["path"].endswith(".tpr") or re.search(
-            r"\.part\d+\.(?:xtc|trr|edr|gro|log)$", item["path"]
+        if (
+            item["path"].endswith(".tpr")
+            or item["path"].startswith("continuation-padding/")
+            or re.search(r"\.part\d+\.(?:xtc|trr|edr|gro|log)$", item["path"])
         ):
             current = indexed.get(item["path"], {})
             if (item["sha256"], item["size_bytes"]) != (
@@ -148,6 +151,14 @@ async def run(args):
                             original.extractfile(member) if member.isfile() else None,
                         )
                     out.add(args.prebuilt_tpr, arcname="benchmark.tpr")
+                    for index in range(args.padding_files):
+                        content = f"Internal QA peer-recovery file {index}\n".encode()
+                        member = tarfile.TarInfo(
+                            f"continuation-padding/file-{index:05d}.txt"
+                        )
+                        member.size = len(content)
+                        member.mode = 0o644
+                        out.addfile(member, io.BytesIO(content))
             payload = helper.FileSource(archive)
             artifact = await helper.upload(
                 http,
@@ -232,6 +243,7 @@ async def run(args):
             state.update(
                 operation_id=str(UUID(response.json()["operation"]["id"])),
                 input_sha256=payload.sha256,
+                synthetic_retained_files=args.padding_files,
             )
             save(state_path, state)
             print(json.dumps({"phase": "admitted", **state}), flush=True)
@@ -262,6 +274,10 @@ async def run(args):
             if "eviction" not in state and phase == "running":
                 before = await checkpoint("before-eviction")
                 if before and before.get("customer_storage"):
+                    if len(before["files"]) < args.padding_files + 2:
+                        raise ValueError(
+                            "The pre-fault checkpoint does not contain the required late inventory"
+                        )
                     saved_step = max(
                         (
                             item.get("checkpoint_step") or 0
@@ -426,10 +442,13 @@ def main():
     parser.add_argument("--label", required=True)
     parser.add_argument("--origin", default="https://89.169.99.188")
     parser.add_argument("--steps", type=int, default=60000)
+    parser.add_argument("--padding-files", type=int, default=0)
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args()
     if not re.fullmatch(r"[a-z0-9-]{1,40}", args.label):
         parser.error("label must be a bounded task-owned identifier")
+    if not 0 <= args.padding_files <= 30000:
+        parser.error("padding-files must be between 0 and 30000")
     os.umask(0o077)
     asyncio.run(run(args))
 
