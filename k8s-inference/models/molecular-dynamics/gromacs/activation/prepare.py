@@ -114,6 +114,7 @@ def source_recipe(root, *, mpi_cuda_aware=False):
         "components/control-plane/src/fs2_serve/scientific_batch/stage_descriptor.py",
         "components/control-plane/src/fs2_serve/scientific_batch/native_failures.py",
         "components/control-plane/src/fs2_serve/scientific_artifacts.py",
+        "components/control-plane/src/fs2_serve/scientific_artifact_batches.py",
         "components/control-plane/src/fs2_serve/scientific_artifact_routes.py",
         "components/control-plane/src/fs2_serve/scientific_run_result.py",
         "components/control-plane/src/fs2_serve/scientific_batch/workload_routes.py",

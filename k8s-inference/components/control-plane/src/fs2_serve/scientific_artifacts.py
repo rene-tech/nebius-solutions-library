@@ -796,6 +796,16 @@ class ArtifactRepository(Protocol):
 
     async def get_upload(self, request: FinalizeArtifactUpload) -> UploadIntent: ...
 
+    async def begin_uploads(
+        self, requests: tuple[tuple[BeginArtifactUpload, str], ...], *, retention: timedelta
+    ) -> list[UploadIntent]: ...
+
+    async def get_uploads(self, requests: tuple[FinalizeArtifactUpload, ...]) -> list[UploadIntent]: ...
+
+    async def finalize_uploads(
+        self, requests: tuple[tuple[FinalizeArtifactUpload, VerifiedStoredObject, UUID], ...]
+    ) -> list[ArtifactRecord]: ...
+
     async def finalize_upload(
         self, request: FinalizeArtifactUpload, verified: VerifiedStoredObject, *, artifact_id: UUID
     ) -> ArtifactRecord: ...
@@ -842,6 +852,12 @@ class ScientificArtifactControllerPort(Protocol):
     async def begin_upload(
         self, request: BeginArtifactUpload, *, handle_ttl: timedelta | None = None
     ) -> BeginUploadResult: ...
+
+    async def begin_uploads(
+        self, requests: tuple[BeginArtifactUpload, ...], *, handle_ttl: timedelta | None = None
+    ) -> list[BeginUploadResult]: ...
+
+    async def finalize_uploads(self, requests: tuple[FinalizeArtifactUpload, ...]) -> list[ArtifactRecord]: ...
 
     async def store_upload_content(
         self,
@@ -1031,6 +1047,83 @@ class ScientificArtifactService:
         )
         _validate_handle(handle, method="PUT", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
         return BeginUploadResult(upload=intent, handle=handle)
+
+    async def begin_uploads(
+        self, requests: tuple[BeginArtifactUpload, ...], *, handle_ttl: timedelta | None = None
+    ) -> list[BeginUploadResult]:
+        """Reserve a bounded cohort without one database transaction per file.
+
+        The same policy, immutable identities and SQL attempt fences apply as
+        for a single upload. Retrying the full cohort is safe after any failure.
+        Handles remain ephemeral and no checkpoint is acknowledged here.
+        """
+        from .scientific_artifact_batches import validate_cohort
+
+        validate_cohort(requests)
+        first = requests[0]
+        if any(request.attempt_id != first.attempt_id for request in requests):
+            raise ArtifactPolicyError("upload cohort must belong to one attempt")
+        lifetime = self._ttl(handle_ttl)
+        for request in requests:
+            self._check_policy(request.media_type, request.expected_size_bytes)
+        attempt = await self._repository.get_attempt(first.attempt_id, tenant_id=first.tenant_id)
+        if attempt.operation_id != first.operation_id:
+            raise ArtifactNotFoundError("attempt not found")
+        if attempt.status.terminal:
+            raise StaleArtifactAttemptError("a closed attempt cannot accept new artifacts")
+        reservations = tuple((request, artifact_storage_key(
+            tenant_id=request.tenant_id, operation_id=request.operation_id,
+            stage_id=attempt.stage_id, shard_id=attempt.shard_id,
+            attempt_id=request.attempt_id, direction=request.direction, digest=request.expected_digest,
+        )) for request in requests)
+        intents = await self._repository.begin_uploads(reservations, retention=self._retention)
+        if len(intents) != len(reservations):
+            raise ArtifactConflictError("upload cohort differs from its reserved identities")
+        for intent, (request, storage_key) in zip(intents, reservations, strict=True):
+            if not _same_upload_request(intent, request, storage_key):
+                raise ArtifactConflictError("upload identity is already bound to different content")
+        semaphore = asyncio.Semaphore(8)
+
+        async def sign(intent: UploadIntent) -> BeginUploadResult:
+            async with semaphore:
+                handle = await self._store.presign_upload(
+                    storage_key=intent.storage_key, media_type=intent.media_type,
+                    compression=intent.compression, ttl=lifetime,
+                )
+            _validate_handle(handle, method="PUT", now=self._clock(), ttl=lifetime, require_tls=self._require_tls)
+            return BeginUploadResult(upload=intent, handle=handle)
+
+        return list(await asyncio.gather(*(sign(intent) for intent in intents)))
+
+    async def finalize_uploads(self, requests: tuple[FinalizeArtifactUpload, ...]) -> list[ArtifactRecord]:
+        """Independently hash every new object, then publish one bounded cohort."""
+        from .scientific_artifact_batches import validate_cohort
+
+        validate_cohort(requests)
+        intents = await self._repository.get_uploads(requests)
+        semaphore = asyncio.Semaphore(8)
+
+        async def inspect(intent: UploadIntent) -> VerifiedStoredObject:
+            if intent.artifact_id is not None:
+                # An already finalized immutable identity needs no second S3
+                # read, matching the single-artifact replay contract.
+                return VerifiedStoredObject(
+                    storage_key=intent.storage_key, digest=intent.expected_digest,
+                    size_bytes=intent.expected_size_bytes, media_type=intent.media_type,
+                    compression=intent.compression,
+                )
+            async with semaphore:
+                verified = await self._store.inspect(
+                    intent.storage_key, max_bytes=min(self._max_artifact_bytes, intent.expected_size_bytes)
+                )
+            _verify_object(intent, verified)
+            self._check_policy(verified.media_type, verified.size_bytes)
+            return verified
+
+        verified = await asyncio.gather(*(inspect(intent) for intent in intents))
+        return await self._repository.finalize_uploads(tuple(
+            (request, measured, uuid4()) for request, measured in zip(requests, verified, strict=True)
+        ))
 
     async def store_upload_content(
         self,
@@ -1332,6 +1425,29 @@ class MemoryArtifactRepository:
         self._events: list[ArtifactEvent] = []
         self._purged: set[UUID] = set()
         self._next_event_id = 1
+
+    async def begin_uploads(
+        self, requests: tuple[tuple[BeginArtifactUpload, str], ...], *, retention: timedelta
+    ) -> list[UploadIntent]:
+        from .scientific_artifact_batches import validate_cohort
+
+        validate_cohort(tuple(request for request, _ in requests))
+        return [await self.begin_upload(request, key, retention=retention) for request, key in requests]
+
+    async def get_uploads(self, requests: tuple[FinalizeArtifactUpload, ...]) -> list[UploadIntent]:
+        from .scientific_artifact_batches import validate_cohort
+
+        validate_cohort(requests)
+        return [await self.get_upload(request) for request in requests]
+
+    async def finalize_uploads(
+        self, requests: tuple[tuple[FinalizeArtifactUpload, VerifiedStoredObject, UUID], ...]
+    ) -> list[ArtifactRecord]:
+        from .scientific_artifact_batches import validate_cohort
+
+        validate_cohort(tuple(request for request, _, _ in requests))
+        return [await self.finalize_upload(request, verified, artifact_id=identity)
+                for request, verified, identity in requests]
 
     async def register_operation(self, operation_id: UUID, *, tenant_id: str) -> None:
         async with self._lock:
@@ -1945,6 +2061,25 @@ class PostgresArtifactRepository:
 
     def __init__(self, pool: asyncpg.Pool[Any]) -> None:
         self.pool = pool
+
+    async def begin_uploads(
+        self, requests: tuple[tuple[BeginArtifactUpload, str], ...], *, retention: timedelta
+    ) -> list[UploadIntent]:
+        from .scientific_artifact_batches import begin_postgres_uploads
+
+        return await begin_postgres_uploads(self.pool, requests)
+
+    async def get_uploads(self, requests: tuple[FinalizeArtifactUpload, ...]) -> list[UploadIntent]:
+        from .scientific_artifact_batches import get_postgres_uploads
+
+        return await get_postgres_uploads(self.pool, requests)
+
+    async def finalize_uploads(
+        self, requests: tuple[tuple[FinalizeArtifactUpload, VerifiedStoredObject, UUID], ...]
+    ) -> list[ArtifactRecord]:
+        from .scientific_artifact_batches import finalize_postgres_uploads
+
+        return await finalize_postgres_uploads(self.pool, requests)
 
     @staticmethod
     def _translate(error: asyncpg.PostgresError) -> ArtifactServiceError | None:
