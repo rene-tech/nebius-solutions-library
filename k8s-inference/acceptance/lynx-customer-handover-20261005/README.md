@@ -99,16 +99,45 @@ the combined file/byte envelope; if a very late complete history exceeds its
 bundle bounds, use ordinary per-file `:resume` with unchanged tuning or request
 an explicitly qualified import path. Never omit history to fit a limit.
 
+### Preserve empty history without breaking final analysis
+
 Some native trajectory parts are empty when a segment ends before the next
-trajectory-output interval. Retain those original artifacts, but do not blindly
-pass all `part*.xtc` files to `trjcat`: the recorded source has 42 empty XTC parts
-out of 70, and native `trjcat` rejects an empty file. On the qualified successor
-that supports it, an explicit file argument such as
-`{"files":"md.part*.xtc","nonempty":true}` selects only actual nonempty inputs
-for `trjcat` (or `eneconv` for its appropriate energy-file pattern). It does not
-delete or omit the empty artifacts from preserved history. The helper does not
-silently rewrite old analysis commands; qualify any such explicit analysis
-change against the current published schema before submitting it.
+trajectory-output interval. The recorded demo source has 42 empty XTC parts
+out of 70; native `trjcat` rejects an empty file. **Keep those original artifacts.**
+
+For this tuned import, the helper explicitly adds `nonempty: true` to existing
+file-pattern arguments following `-f` in unfinished `trjcat` and `eneconv`
+commands. For example:
+
+```json
+{"id":"join-trajectory","command":"trjcat","args":["-f",{"files":"md.part*.xtc","nonempty":true},"-o","md.xtc"]}
+```
+
+It preserves the original patterns, directories, command order, other arguments
+and expected outputs. It records every affected selector and its previous
+setting in `provenance.json` under `analysis_file_selections`. It changes no
+other analysis tool, literal filename, simulation physics or original artifact.
+The selection is evaluated after simulation, so later resumed parts are included;
+the helper does not bake in a list of files from the old checkpoint. Empty files
+remain in both working files and the complete source-history archive.
+
+Before submission:
+
+1. Inspect `analysis_file_selections` and the generated `parameters.json`.
+   Confirm that the `-f` patterns select the intended trajectory/energy parts,
+   not the duplicate preserved source-history copies.
+2. Confirm the **published** GROMACS request schema advertises the boolean
+   `nonempty` file-selector field and the coordinated worker release has passed
+   its public acceptance. Local schema/unit checks alone are not that gate.
+3. Retain the full source inventory. Do not delete empty files, drop history, or
+   shorten the TPR to force analysis to pass. If an old analysis command lists
+   literal empty filenames rather than an explicit file pattern, stop and prepare
+   a reviewed selector for that command; this helper does not rewrite literals.
+
+An input pattern with no nonempty matches still reports an explicit error; no
+trajectory or scientific result is fabricated. Output cadence must produce at
+least one usable frame for trajectory analysis. The generic helper does not
+add an analysis step where the original workflow had none.
 
 ## Submit a tuned import through the public API
 
@@ -181,7 +210,7 @@ The `job_id` must be the actual source job (the import example uses
 
 The resume schema accepts `job_id` and `max_wall_seconds`, **not tuning
 overrides**. It preserves the source workflow arguments and native science.
-For a changed performance recipe, use a separately qualified new-owner import
+For a changed performance recipe, use a separately qualified new-operation import
 as above, keeping checkpoint/TPR/protocol lineage explicit. Do not pretend an
 unsupported field such as `resume.mdrun_args` can change the deployed recipe.
 An active customer operation cannot be resumed and is not cancelled for testing.

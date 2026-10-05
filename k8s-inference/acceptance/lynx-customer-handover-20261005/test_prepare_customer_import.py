@@ -9,6 +9,7 @@ import tarfile
 from types import SimpleNamespace
 
 import pytest
+from jsonschema import Draft202012Validator
 
 SPEC = importlib.util.spec_from_file_location("customer_import", Path(__file__).with_name("prepare_customer_import.py"))
 helper = importlib.util.module_from_spec(SPEC)
@@ -171,3 +172,105 @@ def test_examples_validate_against_current_public_native_contract():
     from fs2_serve.scientific_batch.gromacs_resume import GromacsResumeRequest
     parsed = GromacsResumeRequest.model_validate_json((folder / "resume-request.example.json").read_text())
     assert parsed.job_id == "production" and parsed.max_wall_seconds == 1209600
+
+
+def replace_frozen_source(args, choices, checkpoint, parameters):
+    """Build a coherent synthetic source after adding fixture analysis steps."""
+    parameters = helper.normalize(parameters)
+    checkpoint["state"]["recipe_sha256"] = hashlib.sha256(helper.canonical({
+        "request": parameters, "job": args.job_id, "image": args.source_engine_id,
+    })).hexdigest()
+    raw = helper.canonical(checkpoint)
+    args.checkpoint.write_bytes(raw)
+    choices["jobs"][0]["checkpoint"].update(size_bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+    write_json(args.checkpoint_choices, choices)
+    write_json(args.original_parameters, parameters)
+    return parameters
+
+
+@pytest.mark.parametrize("previous_nonempty", [None, False, True])
+def test_import_explicitly_selects_nonempty_analysis_without_losing_history(fixture, previous_nonempty):
+    args, choices, checkpoint, original, contents = fixture
+    selectors = []
+    for extension in ("xtc", "edr"):
+        selector = {"files": f"md.part*.{extension}"}
+        if previous_nonempty is not None:
+            selector["nonempty"] = previous_nonempty
+        selectors.append(selector)
+    original["jobs"][0]["steps"][2:2] = [
+        {"id": "join-trajectory", "command": "trjcat",
+         "args": ["-f", selectors[0], "-o", "md.xtc"], "expected_outputs": ["md.xtc"]},
+        {"id": "join-energy", "command": "eneconv",
+         "args": ["-f", selectors[1], "-o", "md.edr"], "expected_outputs": ["md.edr"]},
+    ]
+    for name, content in {"md.part0022.xtc": b"", "md.part0022.edr": b"",
+                          "md.part0023.edr": b"prior energy history"}.items():
+        contents[name] = content
+        (args.native_root / name).write_bytes(content)
+        checkpoint["files"].append({"path": name, "size_bytes": len(content),
+                                    "sha256": hashlib.sha256(content).hexdigest()})
+    original = replace_frozen_source(args, choices, checkpoint, original)
+    frozen_before = args.original_parameters.read_bytes()
+    result = helper.prepare(args)
+    assert not result["submitted"] and result["full_target_step"] == 500000000
+    parameters = json.loads((args.output / "parameters.json").read_text())
+    public_schema = json.loads((helper.ROOT / "catalog/runtime/schema/gromacs-workflow-request.schema.json").read_text())
+    Draft202012Validator(public_schema).validate(parameters)
+    steps = parameters["jobs"][0]["steps"]
+    assert [step["id"] for step in steps] == [step["id"] for step in original["jobs"][0]["steps"][1:]]
+    for actual, previous in zip(steps[1:3], original["jobs"][0]["steps"][2:4], strict=True):
+        expected = copy.deepcopy(previous)
+        expected["args"][1]["nonempty"] = True
+        assert actual == expected
+    assert steps[-1] == original["jobs"][0]["steps"][-1]
+    assert args.original_parameters.read_bytes() == frozen_before
+    provenance = json.loads((args.output / "provenance.json").read_text())
+    selections = provenance["analysis_file_selections"]
+    assert [item["step_id"] for item in selections] == ["join-trajectory", "join-energy"]
+    assert all(item["previous_nonempty"] is bool(previous_nonempty) and item["nonempty"] is True
+               for item in selections)
+    # Every original, including each empty file, is retained twice with exact bytes.
+    with tarfile.open(args.output / "input.tar.gz", "r:gz") as archive:
+        for name, content in contents.items():
+            assert archive.extractfile(name).read() == content
+            assert archive.extractfile(f"{provenance['history_prefix']}/{name}").read() == content
+    # Exercise the actual worker expansion. Parts written by the resumed run
+    # are selected later too: the helper must not freeze the historical list.
+    from fs2_gromacs.worker import expand_args
+    for step, extension in zip(steps[1:3], ("xtc", "edr"), strict=True):
+        (args.native_root / f"md.part0024.{extension}").write_bytes(b"new resumed output")
+        before = {name: helper.digest(args.native_root / name) for name in contents}
+        assert expand_args(step["args"], args.native_root) == [
+            "-f", f"md.part0023.{extension}", f"md.part0024.{extension}", "-o", f"md.{extension}",
+        ]
+        assert {name: helper.digest(args.native_root / name) for name in contents} == before
+
+
+def test_nonempty_adaptation_is_limited_to_merge_input_expansions():
+    parameters = {"jobs": [{"id": "customer-md", "steps": [
+        {"id": "join", "command": "trjcat", "args": [
+            "-f", {"files": "run/part*.xtc"}, "literal.xtc", {"files": "more/part*.xtc"},
+            "-o", "joined.xtc", "-demux", {"files": "replica.xvg"},
+        ]},
+        {"id": "unchanged", "command": "check", "args": ["-f", {"files": "run/part*.xtc"}]},
+    ]}]}
+    prior = copy.deepcopy(parameters)
+    changes = helper.nonempty_analysis_inputs(parameters)
+    assert len(changes) == 2
+    assert [item["argument_index"] for item in changes] == [1, 3]
+    prior["jobs"][0]["steps"][0]["args"][1]["nonempty"] = True
+    prior["jobs"][0]["steps"][0]["args"][3]["nonempty"] = True
+    assert parameters == prior
+
+
+def test_no_nonempty_input_is_an_explicit_error_not_fabricated_success(tmp_path):
+    from fs2_gromacs.worker import expand_args
+    empty = tmp_path / "md.part0001.xtc"
+    empty.write_bytes(b"")
+    parameters = {"jobs": [{"id": "job", "steps": [{
+        "id": "join", "command": "trjcat", "args": ["-f", {"files": "md.part*.xtc"}, "-o", "md.xtc"],
+    }]}]}
+    helper.nonempty_analysis_inputs(parameters)
+    with pytest.raises(ValueError, match="no nonempty files"):
+        expand_args(parameters["jobs"][0]["steps"][0]["args"], tmp_path)
+    assert empty.exists() and empty.read_bytes() == b""

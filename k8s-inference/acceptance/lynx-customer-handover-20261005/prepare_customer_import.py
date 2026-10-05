@@ -90,8 +90,8 @@ def tuned_parameters(original, checkpoint, tuning, *, output_prefix, max_output_
     value["max_output_bytes"] = max_output_bytes
     value["output_destination"] = "customer-bucket"
     value["output_prefix"] = relative_path(output_prefix)
-    # Only the current simulation is tuned. Later scientific/analysis commands
-    # keep their original arguments and order; completed preparation is skipped.
+    # Only the current simulation is tuned. Analysis input-selection changes
+    # are applied separately and recorded; completed preparation is skipped.
     step = value["jobs"][0]["steps"][0]
     if step["id"] != checkpoint["state"]["active_step"]["id"] or step["command"] != "mdrun":
         raise ValueError("First remaining command is not the checkpointed simulation")
@@ -108,6 +108,33 @@ def tuned_parameters(original, checkpoint, tuning, *, output_prefix, max_output_
         else:
             args.extend([flag, setting])
     return normalize(value)
+
+
+def nonempty_analysis_inputs(parameters):
+    """Select nonempty trjcat/eneconv -f expansions, retaining all history.
+
+    This is an explicit import adaptation, not a native runtime default. Keep
+    every command, pattern, output, literal filename and other argument intact.
+    Patterns are evaluated after simulation, when all new parts exist; they
+    are never frozen to the old checkpoint's list of nonempty files.
+    """
+    selections = []
+    for job in parameters["jobs"]:
+        for step in job["steps"]:
+            if step["command"] not in {"trjcat", "eneconv"}:
+                continue
+            file_input = False
+            for index, token in enumerate(step["args"]):
+                if isinstance(token, str) and token.startswith("-"):
+                    file_input = token == "-f"
+                elif file_input and isinstance(token, dict):
+                    selections.append({
+                        "job_id": job["id"], "step_id": step["id"], "command": step["command"],
+                        "argument_index": index, "files": token["files"],
+                        "previous_nonempty": token.get("nonempty", False), "nonempty": True,
+                    })
+                    token["nonempty"] = True
+    return selections
 
 
 def validated_files(checkpoint, native_root: Path):
@@ -144,6 +171,8 @@ def prepare(args):
     )
     parameters = tuned_parameters(original, checkpoint, json.loads(args.tuning.read_text()),
                                   output_prefix=args.output_prefix, max_output_bytes=args.max_output_bytes)
+    analysis_selections = nonempty_analysis_inputs(parameters)
+    parameters = normalize(parameters)
     files = validated_files(checkpoint, args.native_root)
     generation = checkpoint["state"]["generation"]
     history = f"source-history-{source_operation}-g{generation}"
@@ -160,6 +189,8 @@ def prepare(args):
         "original_parameters_sha256": hashlib.sha256(canonical(original)).hexdigest(),
         "new_parameters_sha256": hashlib.sha256(canonical(parameters)).hexdigest(),
         "science_change": "None: exact original TPR and full target retained; performance-only arguments changed.",
+        "analysis_file_selections": analysis_selections,
+        "analysis_change": "Existing trjcat/eneconv -f expansions explicitly select nonempty files; all original artifacts remain retained.",
         "submission": "Not submitted. Upload under the actual owner's key and use ordinary public run-workflow.",
     }
     if 2 * provenance["source_bytes"] + len(raw) + len(canonical(provenance)) > args.max_output_bytes:
