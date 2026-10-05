@@ -2309,7 +2309,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "1a3816dd711376dcca5359e2f41aaa5b7882329392cd4469e1a9f708d85ab3bc",
+      "execution_identity_sha256": "cea319eef1648b1cbf789b862a9bb151e6611e4f60d941ce6dac98027d6efffc",
       "model_id": "gromacs",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2318,10 +2318,10 @@
       "runtime_artifacts": [],
       "stages": [
         {
-          "active_deadline_seconds": 606600,
+          "active_deadline_seconds": 1211400,
           "collector_id": "gromacs-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:f633539e6ea28bcacd3b4eaee44235ace4c33a55e16fa3d50db047b1f37831b6",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:5acd77d66257593896c2fe09cac15392adfffaf00fc7f7625d228a6c8d6084dd",
           "mounts": [
             {
               "claim_name": null,
@@ -2361,7 +2361,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "7c65f06906ebb81c656827a46bd803c24381f5580ddefbb057c8d3ac56834b62",
+      "execution_identity_sha256": "723bc49e30c9487ec0bc33ce5e1df8cedc7a79f826d53e8d2d33474885f5b0ff",
       "model_id": "gromacs-mpi",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2370,10 +2370,10 @@
       "runtime_artifacts": [],
       "stages": [
         {
-          "active_deadline_seconds": 606600,
+          "active_deadline_seconds": 1211400,
           "collector_id": "gromacs-mpi-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:938cc6124eaf7840965bebd24b9ae04014e98651a4260f39266a29c8131c202b",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:fc28fa44489a93a6c73ccb0852e3970025cda1dda65a97d430f8076f2d2a3a92",
           "mounts": [
             {
               "claim_name": null,
