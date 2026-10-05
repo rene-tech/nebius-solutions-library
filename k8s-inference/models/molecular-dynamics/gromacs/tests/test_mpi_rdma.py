@@ -1,4 +1,5 @@
 import pytest
+from pathlib import Path
 
 from fs2_gromacs import mpi
 
@@ -53,3 +54,12 @@ def test_tcp_and_local_clear_rdma_resource_restrictions(monkeypatch):
         assert result["rdma"] is False
         assert "UCX_NET_DEVICES" not in mpi.os.environ
         assert "UCX_IB_GPU_DIRECT_RDMA" not in mpi.os.environ
+
+
+def test_rdma_overlay_adds_only_matching_userspace_provider():
+    recipe = (Path(__file__).resolve().parents[1] / "runtime/Containerfile.mpi-rdma").read_text()
+    assert "RDMA_CORE_VERSION=39.0-1" in recipe
+    assert '"ibverbs-providers=${RDMA_CORE_VERSION}"' in recipe
+    assert "dpkg-query" in recipe and "/etc/libibverbs.d/mlx5.driver" in recipe
+    assert "COPY --from=" not in recipe
+    assert recipe.rstrip().endswith("USER 10001:10001")

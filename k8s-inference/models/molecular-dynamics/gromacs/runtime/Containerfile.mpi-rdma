@@ -1,0 +1,22 @@
+# Add the missing verbs userspace provider to the exact CUDA-aware MPI engine.
+# GROMACS, UCX, Open MPI, host kernel/OFED and GPU drivers are not rebuilt.
+ARG ENGINE_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:fc28fa44489a93a6c73ccb0852e3970025cda1dda65a97d430f8076f2d2a3a92
+FROM ${ENGINE_IMAGE}
+ARG ENGINE_IMAGE
+ARG SOURCE_REVISION
+ARG RDMA_CORE_VERSION=39.0-1
+USER root
+RUN test "$(dpkg-query -W -f='${Version}' libibverbs1)" = "${RDMA_CORE_VERSION}" \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends "ibverbs-providers=${RDMA_CORE_VERSION}" \
+ && test -s /etc/libibverbs.d/mlx5.driver \
+ && rm -rf /var/lib/apt/lists/*
+COPY fs2_gromacs /opt/fs2/gromacs/fs2_gromacs
+RUN test -n "${SOURCE_REVISION}" \
+ && python3 -m compileall -q /opt/fs2/gromacs/fs2_gromacs \
+ && chmod -R a+rX /opt/fs2/gromacs/fs2_gromacs
+LABEL org.opencontainers.image.source="https://github.com/rene-tech/nebius-solutions-library" \
+      org.opencontainers.image.revision="${SOURCE_REVISION}" \
+      org.opencontainers.image.base.name="${ENGINE_IMAGE}" \
+      ai.nebius.scientific.release="gromacs-rdma-20261005"
+USER 10001:10001
