@@ -2309,7 +2309,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "0ddcc2a74ae05ad518cd9d4be0edd7ddbc06b027d3de02bba1cc83dee2c27f5c",
+      "execution_identity_sha256": "407113c93ce3f2cd85fcf4c3d6d135e196fce99c14652ea0016715da84dc3a5c",
       "model_id": "gromacs",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2321,7 +2321,7 @@
           "active_deadline_seconds": 1211400,
           "collector_id": "gromacs-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:5acd77d66257593896c2fe09cac15392adfffaf00fc7f7625d228a6c8d6084dd",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:ca863f44c7d17c8096267ec43939cda8b9546f0d3b11440e62bcf9149bc94a1e",
           "mounts": [
             {
               "claim_name": null,
@@ -2361,7 +2361,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "246baa3467d44403bbb743fdb5927f278203486ff77709090f145dc9c0279c2e",
+      "execution_identity_sha256": "7cbd0bf5811064bfbcf1d1f4683a9b66468e2c3b4527e0f9158c1c9d2a102ac3",
       "model_id": "gromacs-mpi",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2373,7 +2373,7 @@
           "active_deadline_seconds": 1211400,
           "collector_id": "gromacs-mpi-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:c8321a27df6490e3ca33d7f2d80ee5d5a4917b787c612e98c1704346f1cbdece",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:c10a9b2edfab1678153ca45c05c00e4649979065ef2ecadfb69a17b83483f662",
           "mounts": [
             {
               "claim_name": null,
@@ -2777,23 +2777,6 @@
       "protenix-v2",
       "alphafold3",
       "cosmos3-lerobot-augmentation",
-      "namd",
-      "lammps",
-      "amber"
-    ],
-    "611fd56f8a3f3470eb1d576c476548c74f981f48fe1ee47ee86f61c73e01592a": [
-      "boltzgen",
-      "proteina-complexa",
-      "bindcraft",
-      "mosaic",
-      "rfdiffusion",
-      "esmfold2",
-      "esmfold2-fast",
-      "openfold3-openbind",
-      "protenix-v2",
-      "alphafold3",
-      "cosmos3-lerobot-augmentation",
-      "gromacs",
       "namd",
       "lammps",
       "amber"
