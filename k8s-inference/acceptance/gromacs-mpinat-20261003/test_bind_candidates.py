@@ -6,6 +6,16 @@ from test_activate_mpi import contracts
 
 
 class BindingTests(unittest.TestCase):
+    def test_fourteen_day_budget_plus_export_grace_is_bounded(self):
+        execution, catalog, _, _ = contracts()
+        proofs = {"gromacs": {"runtime_image": "registry.test/gromacs@sha256:" + "e" * 64,
+                             "recorded_at": "2026-10-05T15:00:00Z", "tests": [{"native": "passed"}]}}
+        _, desired = bind(catalog, execution, proofs, {"gromacs": "a" * 64}, active_deadline_seconds=1211400)
+        row = next(row for row in desired["models"] if row["model_id"] == "gromacs")
+        self.assertEqual(row["stages"][0]["active_deadline_seconds"], 14 * 24 * 3600 + 1800)
+        with self.assertRaises(ValueError):
+            bind(catalog, execution, proofs, {"gromacs": "a" * 64}, active_deadline_seconds=1211401)
+
     def test_only_selected_images_and_proof_references_change(self):
         execution, catalog, _, _ = contracts()
         before = copy.deepcopy((execution, catalog))

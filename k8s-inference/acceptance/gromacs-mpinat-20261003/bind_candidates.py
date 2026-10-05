@@ -61,8 +61,8 @@ def bind(catalog, execution, proofs, recipe_shas, *, active_deadline_seconds=Non
         raise ValueError("Select one or both GROMACS Apps explicitly")
     if set(recipe_shas) != models:
         raise ValueError("Each selected App needs its own exact source recipe")
-    if active_deadline_seconds is not None and not 60 <= active_deadline_seconds <= 606600:
-        raise ValueError("Deadline must fit the seven-day budget and bounded export grace")
+    if active_deadline_seconds is not None and not 60 <= active_deadline_seconds <= 1211400:
+        raise ValueError("Deadline must fit the fourteen-day budget and bounded export grace")
     before = copy.deepcopy(execution)
     result = copy.deepcopy(catalog)
     desired = copy.deepcopy(execution)
