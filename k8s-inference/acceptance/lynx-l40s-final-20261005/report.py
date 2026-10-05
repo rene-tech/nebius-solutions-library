@@ -53,7 +53,10 @@ def screen_rows(directory):
             "measurements": reference(root / "measurements.json"),
             "actual_thread_masks": reference(directory / "results" / (candidate["case"] + "-affinity.json")),
             "graph_execution_proven": False if candidate["case"] == "graph-eligibility" else None})
-    return {"receipt": reference(directory / "receipt.json"), "image": receipt["image"], "records": records}
+    return {"receipt": reference(directory / "receipt.json"), "image": receipt["image"], "records": records,
+            "environment": reference(directory / "environment.json"),
+            "topology": reference(directory / "results" / "topology.json"),
+            "full_tpr_comparison": reference(directory / "results" / "full-tpr-comparison.log")}
 
 
 def collect(args):
@@ -92,9 +95,15 @@ def collect(args):
             "actual_dispatch": [line for line in lines if any(s in line for s in
                 ("PP tasks will", "PP task will", "PME tasks will", "thread pinning", "Changing nstlist"))]})
     native_rates = [r["native_inclusive_ns_per_day"] for r in verified["repeats"]]
-    report = {"schema": "lynx-final-l40s-round/v1", "screen": screen_rows(args.screen),
+    report = {"schema": "lynx-final-l40s-round/v1", "collector": reference(Path(__file__)),
+        "screen": screen_rows(args.screen),
         "public_pin_control": screen_rows(args.public_pin), "confirmation_receipt": reference(args.confirmation / "receipt.json"),
         "image": receipt["image"], "node": receipt["node"], "pod_uid": uid,
+        "native_finished_at": receipt["finished_at"],
+        "gpu_count": 1, "requested_cpu_cores": 8, "requested_memory_gib": 16,
+        "hardware_evidence": {name: reference(args.confirmation / filename) for name, filename in
+                              (("capacity", "capacity-before.json"), ("cpu", "cpu.txt"),
+                               ("gpu", "gpu.txt"), ("topology", "topology.txt"), ("pod", "pod-final.json"))},
         "validation": verified, "request": reference(args.fixture / "request.json"),
         "rates": rates(total_ns, counter, process, receipt["runtime_wall_seconds"]),
         "native_rate_median": statistics.median(native_rates) if None not in native_rates else None,
