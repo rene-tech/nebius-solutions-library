@@ -2,7 +2,7 @@ import copy
 
 import pytest
 
-from activate_maintenance import PREVIOUS, REPO, prepare
+from activate_maintenance import PREVIOUS, REPO, prepare, verify
 
 
 def cronjob():
@@ -30,3 +30,22 @@ def test_only_existing_maintenance_image_changes():
 def test_unpinned_or_wrong_repository_refused(image):
     with pytest.raises(ValueError):
         prepare(cronjob(), image)
+
+
+def test_verification_needs_owned_success_and_no_active_previous_reader():
+    current = cronjob()
+    final = REPO + "@sha256:" + "a" * 64
+    current["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]["image"] = final
+    job = {"metadata": {"name": "new", "uid": "job", "ownerReferences": [
+        {"uid": "existing", "controller": True}]},
+        "spec": {"template": copy.deepcopy(current["spec"]["jobTemplate"]["spec"]["template"])},
+        "status": {"succeeded": 1, "completionTime": "now"}}
+    assert verify(current, [job], final)["status"] == "passed"
+    previous = copy.deepcopy(job)
+    previous["status"] = {"active": 1}
+    previous["spec"]["template"]["spec"]["containers"][0]["image"] = PREVIOUS
+    with pytest.raises(ValueError, match="previous maintenance reader"):
+        verify(current, [job, previous], final)
+    job["metadata"]["ownerReferences"][0]["uid"] = "another-cronjob"
+    with pytest.raises(ValueError, match="No new successful"):
+        verify(current, [job], final)

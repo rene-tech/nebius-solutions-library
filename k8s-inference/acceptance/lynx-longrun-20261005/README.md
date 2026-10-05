@@ -80,3 +80,55 @@ Local initial regression: 58 storage and inventory-cache tests passed, including
 20,000 files, source mutation, remote conflict/deletion, restart, checkpoint
 manifest-last commit, and no repeat HEAD for immutable prior segments. These
 tests are not a replacement for the live late-state acceptance.
+
+## Long-run release deployed; larger live acceptance still running
+
+Source API commit: `b9cc34f10af61eedf6548abac387a0133dea7902`.
+Worker source commit: `66eeb1a8e` (the following collector/retention changes
+do not alter native worker bytes). Exact regional image digests:
+
+| Component | Digest |
+| --- | --- |
+| API, scientific tools and maintenance | `sha256:ec7ff6833b9e8ccd49cd6ff19e25308019b6bbd0bc1326c1becf83657eeace22` |
+| GROMACS single-GPU worker | `sha256:5acd77d66257593896c2fe09cac15392adfffaf00fc7f7625d228a6c8d6084dd` |
+| GROMACS MPI worker | `sha256:fc28fa44489a93a6c73ccb0852e3970025cda1dda65a97d430f8076f2d2a3a92` |
+
+All are under the existing `e00akg9ndpx77eaexh/fs2-platform` repository in
+`cr.eu-north1.nebius.cloud`. API/tools/maintenance use `fs2-serve-control-plane`;
+both scientific workers use `gromacs`. The execution ConfigMap is
+`fs2-r927c465c6d-scientific-execution-23a04755dc69`.
+
+The single-GPU candidate passed three real 10,000-step membrane-benchmark runs
+on each of H100 and L40S; the MPI candidate passed the same one-GPU H100
+regression, including observed rank bindings. All retained output bytes were
+hashed and native final coordinates/energies checked. These bounded wrapper
+regressions do **not** substitute for the larger exact-Lynx performance and
+large-history continuation cohorts in the child tasks.
+
+The deployment first rolled a temporary compatible reader over the legacy
+public API, then verified every old reader had exited. The final API/tools/map
+were activated together, preserving the idle-model agent's latest live route,
+envelope and bundle bindings. Three exact-image API replicas and authenticated
+public discovery passed verification. No ingress or public-site routing changed.
+
+Testing also found that generic payload cleanup could expire active scientific
+API operations after the default 24-hour TTL. Active scientific outbox/batch
+owners are now excluded during both candidate selection and the locked recheck.
+Terminal scientific cleanup and ordinary inference TTL remain unchanged. A
+real PostgreSQL test under the existing maintenance role passed after advancing
+time beyond 15 days; no database grants changed. The scheduled maintenance
+worker was updated too, and two owned Jobs on the new image completed at
+15:42:18 and 15:43:16 UTC. No previous maintenance reader remained active.
+
+At the final API verification, the original Lynx pod still had zero container
+restarts and generation 18 committed. Its immutable seven-day native budget
+is unchanged, as described above.
+
+Private reproducible release evidence is under
+`/home/tux/secure-handoff/fs2-lynx-longrun-20261005/release/`: source build
+provenance/OCI archives, native receipts, bound source recipes, compatible-reader
+and final-reader observations, server-dry-run/exact-template activation patches,
+the narrow Helm overlay, and maintenance verification. The earlier local
+`f12641f74` API build was superseded by the retention-fixed build and was never
+activated. **Live 20,000-file REST/MCP continuation and final optimized-workload
+results are still pending; there is no fourteen-day soak or combined-ready claim.**

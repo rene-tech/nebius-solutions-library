@@ -37,12 +37,38 @@ def prepare(before: dict, image: str) -> list[dict]:
     ]
 
 
+def verify(cronjob: dict, jobs: list[dict], image: str) -> dict:
+    containers = cronjob["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"]
+    if len(containers) != 1 or containers[0]["image"] != image:
+        raise ValueError("The maintenance CronJob is not on the final image")
+    owned = [job for job in jobs if any(
+        owner.get("uid") == cronjob["metadata"]["uid"] and owner.get("controller") is True
+        for owner in job["metadata"].get("ownerReferences", [])
+    )]
+    if any(job.get("status", {}).get("active", 0) and any(
+        item["image"] != image for item in job["spec"]["template"]["spec"]["containers"]
+    ) for job in owned):
+        raise ValueError("A previous maintenance reader is still active")
+    succeeded = [job for job in owned if job.get("status", {}).get("succeeded", 0) == 1
+                 and all(item["image"] == image for item in job["spec"]["template"]["spec"]["containers"])]
+    if not succeeded:
+        raise ValueError("No new successful maintenance Job is observed yet")
+    return {"status": "passed", "image": image, "jobs": [
+        {"name": job["metadata"]["name"], "uid": job["metadata"]["uid"],
+         "completed_at": job["status"].get("completionTime")}
+        for job in succeeded
+    ]}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--verify", action="store_true", help="Read-only observation of the new scheduled worker")
     args = parser.parse_args()
+    if args.apply and args.verify:
+        parser.error("--apply and --verify are separate phases")
     os.umask(0o077)
     args.output.mkdir(parents=True, exist_ok=False)
     kube = ["kubectl", "--context", CONTEXT, "--request-timeout=30s", "-n", "fs2-system"]
@@ -54,6 +80,12 @@ def main() -> None:
         (args.output / name).write_text(json.dumps(value, indent=2) + "\n")
 
     before = run("get", "cronjob", NAME + "-maintenance", "-o", "json")
+    if args.verify:
+        jobs = run("get", "jobs", "-o", "json")["items"]
+        result = verify(before, jobs, args.image)
+        save("verification.json", result)
+        print(json.dumps(result))
+        return
     patch = prepare(before, args.image)
     save("before.cronjob.json", before)
     save("patch.json", patch)
