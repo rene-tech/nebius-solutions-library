@@ -51,6 +51,28 @@ def select_events(lines, source_operation):
     return {"probes": probes, "admissions": admissions}
 
 
+def coverage_gaps(pods, since, observed_at):
+    """Rotated/missing logs cannot turn a partial healthy tail into a pass."""
+    start = datetime.fromisoformat(since.replace("Z", "+00:00"))
+    end = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    gaps = []
+    if len(pods) != 3:
+        gaps.append("expected_three_readers")
+    for pod in pods:
+        stamps = [datetime.fromisoformat(item["at"].replace("Z", "+00:00")) for item in pod["probes"]]
+        name = pod["name"]
+        if not stamps:
+            gaps.append(f"{name}:missing_probes")
+            continue
+        if (stamps[0] - start).total_seconds() > 30:
+            gaps.append(f"{name}:cohort_start_missing_or_rotated")
+        if (end - stamps[-1]).total_seconds() > 30:
+            gaps.append(f"{name}:cohort_tail_missing")
+        if any((right - left).total_seconds() > 30 for left, right in zip(stamps, stamps[1:])):
+            gaps.append(f"{name}:probe_gap_over_30_seconds")
+    return gaps
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--context", required=True)
@@ -113,18 +135,20 @@ def main():
     with ThreadPoolExecutor(max_workers=3) as pool:
         pods = list(pool.map(collect, json.loads(listed.stdout)["items"]))
     failures = sum(probe["status"] != 200 for pod in pods for probe in pod["probes"])
+    observed_at = datetime.now(UTC).isoformat()
+    gaps = coverage_gaps(pods, args.since, observed_at)
     result = {
-        "observed_at": datetime.now(UTC).isoformat(),
+        "observed_at": observed_at,
         "since": args.since,
         "source_operation": str(args.source_operation),
-        "readiness_status": "unknown"
-        if len(pods) != 3 or any(not pod["probes"] for pod in pods)
-        else "failed"
-        if failures
-        else "passed",
+        "readiness_status": "failed" if failures else "unknown" if gaps else "passed",
         "non_200_probes": failures,
+        "coverage_gaps": gaps,
         "pods": pods,
-        "scope": "Kubernetes readiness probes and this internal source's resume requests, not an availability SLO",
+        "scope": (
+            "Observed GET /readyz responses (kubelet and task-owned samplers) "
+            "and this internal source's resume requests, not an availability SLO"
+        ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(result, indent=2) + "\n")

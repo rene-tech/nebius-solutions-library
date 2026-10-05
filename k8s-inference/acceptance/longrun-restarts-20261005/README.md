@@ -3,10 +3,71 @@
 Status: fourteen-day execution and the large-inventory transport are deployed.
 A real 20,007-file source checkpoint committed within the existing 600-second
 handoff. A new fourteen-day-budget continuation from the old seven-day worker
-has passed, including all output bytes. Large native REST continuation is being
-rerun on the CPU-isolated release; admission still produced brief readiness
-failures, so complete REST/MCP and availability acceptance has not passed.
+has passed, including all output bytes. Large native REST continuation also
+passed with all 20,031 final files downloaded and SHA/size verified. Admission
+still produced brief readiness failures; raw MCP and availability acceptance
+are not yet complete. A narrow recovery-reader fix is tested but not yet live.
 This is not a fourteen-day soak or customer-ready verdict.
+
+## REST r4 success and remaining availability defect
+
+Internal operation `d2e5befa-367f-453d-94f4-cee8bca045bb` resumed the saved
+20k-file source at native step 7,800 and finished the original 60,000 steps on
+API/collector `64c5c77d` and worker `5acd77d6`. It became publicly succeeded at
+17:57:30 UTC; the normal controller released its Pod. All 20,031 final files
+(23,042,709 bytes) were downloaded over the public artifact API and checked
+against SHA-256 and length, preserving 20,004 immutable source files. Eight
+parallel reads took 1,272.759 seconds. This older verifier did not retain its
+download retry count, so no zero-retry claim is made. The subsequent MCP
+verifier records each file's transfer attempts in a private append-only ledger.
+
+Materialization took 111 seconds. The first native handoff committed in
+544.692 seconds, including 390.811 seconds platform publication and 153.050
+seconds customer export. Later unchanged-history handoffs took about six
+seconds. The unchanged 600-second handoff deadline was never relaxed.
+The initial/idempotent admissions took 34.161/29.360 seconds and reused one
+operation. Its fourteen-day budget is a contract test, not a fourteen-day soak.
+
+Readiness still failed: four 503 responses were captured across the three
+readers during admission/verification. A task-owned response-body sampler
+confirmed `database readiness check timed out`; a successful native result
+does not erase this failed availability criterion. Private evidence lives in
+`/home/tux/secure-handoff/fs2-longrun-restarts-20261005/rest-20k-r4/`.
+
+Parent investigation found an expensive pending-batch claim scan and built the
+matching partial index online at 18:03:59 UTC without changing schema ledger 37.
+After that, raw MCP continuation `c9d6195b-8b69-4296-b1a3-c5596083f050` admitted
+in 30.423 seconds, replayed in 37.100 seconds and again produced database
+readiness timeouts. Its first large handoff nevertheless committed in 547.174
+seconds (369.298 platform plus 177.324 customer export). Native execution exited
+successfully at 18:26:25 UTC; the public result is succeeded, the Pod was absent
+at 18:26:48 and full output byte verification is now running. This is not yet a
+complete MCP byte-verification or availability pass. Later downloads may use
+the compatible successor API; the admitted scientific runtime remains frozen.
+
+Current Kubernetes log files rotated away some admission-time probe records.
+`capture_api_readiness.py` now explicitly reports incomplete cohort starts,
+tails or gaps as unknown rather than treating a healthy remaining tail as a
+pass. The independently pre-armed response-body sampler retained the actual
+admission failures. Seven sampler/selector/coverage tests pass.
+
+The next observed cause was nine concurrent PostgreSQL client backends sending
+the same large admission-outbox page. The background workers each fetched and
+decoded identical records, with the remaining JSON decoding on the API loop.
+Commit `7a37a741c` moves get/list decoding onto the existing bounded scientific
+CPU executor and uses one nonblocking PostgreSQL advisory owner for background
+recovery across replicas. A local flag avoids worker-level pool contention;
+normal API submission remains independent. Existing frozen-state comparison
+still arbitrates the original-submit/recovery race. No pool, timeout, key,
+quota or customer limit changes are introduced. Pool reset drains even repeated
+raw cancellation; disconnect releases the advisory owner automatically.
+
+Forty-five targeted tests passed against an isolated actual PostgreSQL database
+and MemoryStore, including nine competing recovery workers reading/materializing
+one page, off-loop heartbeat, original-submit race, callback atomicity,
+cancellation, disconnect reacquisition and fourteen-day payload retention.
+Strict typing and Ruff passed. Parent owns the combined reader/index/metrics
+release and its live availability rerun. No standalone deployment was performed.
 
 ## First deployed twenty-thousand-file trial
 

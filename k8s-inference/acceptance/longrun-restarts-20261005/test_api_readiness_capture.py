@@ -1,7 +1,7 @@
 import json
 from uuid import UUID
 
-from capture_api_readiness import select_events
+from capture_api_readiness import coverage_gaps, select_events
 
 
 def test_capture_keeps_probes_and_only_target_resume_metadata():
@@ -35,3 +35,26 @@ def test_capture_keeps_probes_and_only_target_resume_metadata():
 
 def test_missing_data_is_empty_not_a_success_measurement():
     assert select_events("", UUID(int=1)) == {"probes": [], "admissions": []}
+
+
+def test_rotated_logs_are_incomplete_even_when_remaining_tail_is_healthy():
+    pods = [
+        {"name": f"reader-{number}", "probes": [
+            {"at": "2026-10-05T18:24:50Z", "status": 200},
+            {"at": "2026-10-05T18:25:00Z", "status": 200},
+        ]}
+        for number in range(3)
+    ]
+    gaps = coverage_gaps(pods, "2026-10-05T18:10:20Z", "2026-10-05T18:25:10Z")
+    assert len(gaps) == 3 and all("start_missing_or_rotated" in item for item in gaps)
+    assert not coverage_gaps(pods, "2026-10-05T18:24:40Z", "2026-10-05T18:25:10Z")
+
+
+def test_missing_reader_tail_and_internal_probe_gaps_are_unknown():
+    pods = [{"name": "reader", "probes": [
+        {"at": "2026-10-05T18:10:20Z", "status": 200},
+        {"at": "2026-10-05T18:12:00Z", "status": 200},
+    ]}]
+    assert coverage_gaps(pods, "2026-10-05T18:10:20Z", "2026-10-05T18:14:00Z") == [
+        "expected_three_readers", "reader:cohort_tail_missing", "reader:probe_gap_over_30_seconds",
+    ]
