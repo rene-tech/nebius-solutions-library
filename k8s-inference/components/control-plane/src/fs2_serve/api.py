@@ -1378,6 +1378,72 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             },
         )
 
+    @app.get("/v1/operations/{operation_id}/checkpoints")
+    async def scientific_checkpoints(
+        operation_id: UUID,
+        identity: Annotated[Principal, Depends(principal)],
+    ) -> Response:
+        from .scientific_batch.gromacs_resume import checkpoint_choices
+
+        if runtime.scientific_batches is None or runtime.artifact_service is None:
+            return _error(503, "scientific_batch_unavailable", "scientific checkpoint service is disabled")
+        result = await checkpoint_choices(
+            batches=runtime.scientific_batches,
+            artifacts=runtime.artifact_service,
+            principal=identity,
+            operation_id=operation_id,
+        )
+        return JSONResponse(result, headers={"cache-control": "no-store"})
+
+    @app.post("/v1/operations/{operation_id}:resume", status_code=202)
+    async def scientific_resume(
+        operation_id: UUID,
+        request: Request,
+        identity: Annotated[Principal, Depends(principal)],
+        idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+    ) -> Response:
+        from .scientific_batch.gromacs_resume import GromacsResumeRequest, resume_gromacs
+
+        if (
+            runtime.scientific_batches is None
+            or runtime.artifact_service is None
+            or runtime.scientific_input_uploads is None
+        ):
+            return _error(503, "scientific_batch_unavailable", "scientific continuation service is disabled")
+        if (
+            idempotency_key is None
+            or not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH
+        ):
+            raise HTTPException(status_code=400, detail="a valid Idempotency-Key is required")
+        try:
+            payload = GromacsResumeRequest.model_validate_json(await request.body())
+        except ValueError:
+            raise HTTPException(
+                status_code=422, detail="provide job_id (optional) and max_wall_seconds from 60 to 604800"
+            ) from None
+        result = await resume_gromacs(
+            batches=runtime.scientific_batches,
+            artifacts=runtime.artifact_service,
+            uploads=runtime.scientific_input_uploads,
+            principal=identity,
+            operation_id=operation_id,
+            request=payload,
+            idempotency_key=idempotency_key,
+        )
+        operation = result["operation"]
+        request.state.operation_id = operation["id"]
+        request.state.model_id = result["batch"]["model_id"]
+        return JSONResponse(
+            result,
+            status_code=202,
+            headers={
+                "cache-control": "no-store",
+                "location": f"/v1/operations/{operation['id']}",
+                "x-fs2-operation-id": operation["id"],
+                "x-fs2-idempotent-replay": str(operation["reused"]).lower(),
+            },
+        )
+
     @app.post(
         "/v1/scientific-artifacts/uploads",
         response_model=ScientificInputUpload,

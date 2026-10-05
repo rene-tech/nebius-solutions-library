@@ -49,6 +49,10 @@ def public_input_contract() -> dict[str, Any]:
         "manifest_media_type": "application/vnd.fs2.scientific-manifest+json",
         "manifest_compression": "none",
         "entry_name_rule": "Exactly one gzip tar bundle containing all relative-path GROMACS inputs and includes.",
+        "continuation": (
+            "POST /v1/operations/{operation_id}:resume creates a verified per-file manifest "
+            "for direct checkpoint restoration; no tar repacking is needed."
+        ),
         "entry": {
             "name": INPUT_ID,
             "semantic_type": "gromacs-input-bundle/v1",
@@ -58,6 +62,36 @@ def public_input_contract() -> dict[str, Any]:
             "maximum_bytes": MAX_INPUT_BYTES,
         },
     }
+
+
+def continuation_materializations(
+    value: Mapping[str, Any],
+    entries: tuple[ScientificInputArtifact, ...],
+    workspace: str,
+) -> tuple[ArtifactMaterialization, ...]:
+    """Use ordinary verified input artifacts for large, archive-free restarts."""
+    by_id = {item.logical_artifact_id: item for item in entries}
+    files = value["continuation_files"]
+    if set(by_id) != {item["input_id"] for item in files} or len(entries) != len(by_id):
+        raise ScientificAdapterError("continuation manifest does not match its native file map")
+    if any(
+        item.semantic_type != "gromacs-continuation-file/v1" or item.compression not in {None, "none"}
+        for item in entries
+    ):
+        raise ScientificAdapterError("continuation requires uncompressed verified native files")
+    if sum(by_id[item["input_id"]].size_bytes for item in files) > value["max_output_bytes"]:
+        raise ScientificAdapterError("continuation workspace exceeds max_output_bytes")
+    first_path = {}
+    for item in files:
+        first_path.setdefault(item["input_id"], item["path"])
+    return tuple(
+        ArtifactMaterialization(
+            item.logical_artifact_id,
+            f"{workspace}/data/{first_path[item.logical_artifact_id]}",
+            MaterializationMode.COPY_FILE,
+        )
+        for item in entries
+    )
 
 
 def compile_run(
@@ -88,15 +122,20 @@ def compile_run(
     if mpi and not has_shapes and (value["nodes"] == 1 or value.get("gpus_per_node", 1) != 1):
         raise ScientificAdapterError("GROMACS MPI resource shape is not declared by the operator profile")
     entries = input_artifacts or ()
-    if len(entries) != 1:
+    if "continuation_files" not in value and len(entries) != 1:
         raise ScientificAdapterError("GROMACS needs one verified gromacs-inputs bundle")
-    entry = entries[0]
-    if (entry.logical_artifact_id, entry.semantic_type, entry.media_type, entry.compression) != (
-        INPUT_ID,
-        "gromacs-input-bundle/v1",
-        "application/x-tar",
-        "gzip",
-    ) or not 1 <= entry.size_bytes <= MAX_INPUT_BYTES:
+    entry = entries[0] if entries else None
+    if "continuation_files" not in value and (
+        entry is None
+        or (entry.logical_artifact_id, entry.semantic_type, entry.media_type, entry.compression)
+        != (
+            INPUT_ID,
+            "gromacs-input-bundle/v1",
+            "application/x-tar",
+            "gzip",
+        )
+        or not 1 <= entry.size_bytes <= MAX_INPUT_BYTES
+    ):
         raise ScientificAdapterError("GROMACS bundle metadata differs from its typed input contract")
     invocations = []
     for job in value["jobs"]:
@@ -125,13 +164,15 @@ def compile_run(
                 argv=wrap_stage_argv(workspace, command),
                 environment=(),
                 working_directory=workspace,
-                consumes=(INPUT_ID,),
+                consumes=tuple(item.logical_artifact_id for item in entries),
                 produces=logical_stage_artifact(operation_id, "workflow", job["id"]),
                 collector_id=collector_id,
                 validator_id=collector_id,
                 max_output_artifacts=10000,
                 max_output_bytes=value["max_output_bytes"] + 16 * 1024**2,
-                materializations=(
+                materializations=continuation_materializations(value, entries, workspace)
+                if "continuation_files" in value
+                else (
                     ArtifactMaterialization(
                         INPUT_ID, f"{workspace}/input.tar.gz", MaterializationMode.COPY_FILE, compression="gzip"
                     ),

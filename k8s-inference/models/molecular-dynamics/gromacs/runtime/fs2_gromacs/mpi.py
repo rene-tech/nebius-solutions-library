@@ -414,7 +414,7 @@ def main():
 
 
 def run_coordinator(args, request):
-    from .worker import Workflow
+    from .worker import Workflow, report_time_limit
 
     worker = Workflow(
         request,
@@ -426,7 +426,9 @@ def run_coordinator(args, request):
     )
     signal.signal(signal.SIGTERM, worker.stop)
     signal.signal(signal.SIGINT, worker.stop)
-    return worker.run()
+    result = worker.run()
+    report_time_limit(result)
+    return result
 
 
 def result_exit_code(result):

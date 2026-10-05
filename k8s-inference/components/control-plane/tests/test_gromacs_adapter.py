@@ -86,6 +86,38 @@ def test_two_replicas_compile_into_separate_gpu_shards_not_another_queue():
     assert plan.controller_plan.stages[0].checkpoint_mode.value == "resume"
 
 
+def test_direct_continuation_materializes_large_files_once_and_keeps_aliases():
+    from dataclasses import replace
+
+    body = request()
+    body["parameters"]["max_output_bytes"] = 12 * 1024**3
+    body["parameters"]["continuation_files"] = [
+        {"input_id": "resume-00000", "path": "md.part0001.xtc"},
+        {"input_id": "resume-00000", "path": "retained/md.part0001.xtc"},
+    ]
+    entry = replace(
+        source(),
+        logical_artifact_id="resume-00000",
+        semantic_type="gromacs-continuation-file/v1",
+        media_type="application/octet-stream",
+        compression=None,
+        size_bytes=5 * 1024**3,
+    )
+    validate_input_roles("gromacs", body, (entry,))
+    plan = gromacs.compile_run(profile(), body, operation_id=OP, input_artifacts=(entry,))
+    invocation = plan.invocations[0]
+    assert invocation.consumes == ("resume-00000",)
+    assert len(invocation.materializations) == 1
+    assert invocation.materializations[0].destination.endswith("/data/md.part0001.xtc")
+    assert "retained/md.part0001.xtc" in invocation.workspace_documents[0].canonical_json
+
+
+@pytest.mark.parametrize("path", ["../escape.cpt", "/absolute.cpt", ".fs2/state.json"])
+def test_continuation_paths_cannot_escape_native_workspace(path):
+    body = request()
+    body["parameters"]["continuation_files"] = [{"input_id": "resume-00000", "path": path}]
+    with pytest.raises(ValueError):
+        gromacs.compile_run(profile(), body, operation_id=OP, input_artifacts=(source(),))
 def test_bundle_contract_is_discoverable_and_verified_before_admission():
     assert public_input_contract("gromacs")["entry"]["name"] == "gromacs-inputs"
     validate_input_roles("gromacs", request(), (source(),))

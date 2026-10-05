@@ -41,6 +41,12 @@ ERROR_DETAILS: Mapping[str, str] = MappingProxyType(
     }
 )
 RETRYABLE_CODES = frozenset({"PLATFORM_UPSTREAM_ERROR", "COSMOS_OPERATION_TIMEOUT", "COSMOS_TRANSPORT_ERROR"})
+GROMACS_MODELS = frozenset({"gromacs", "gromacs-mpi"})
+GROMACS_TIMEOUT = "WORKFLOW_TIME_LIMIT_EXCEEDED"
+GROMACS_TIMEOUT_DETAIL = (
+    "The job reached its execution time budget. It is incomplete, not a successful simulation. "
+    "Inspect its committed checkpoints and explicitly resume the remaining work with a new budget."
+)
 # A controller can observe an already-running worker from the prior image during
 # a rollout. Accept that one published static wording as well; public projection
 # still uses ERROR_DETAILS, never arbitrary received termination text.
@@ -56,7 +62,7 @@ def _unique_fields(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return value
 
 
-def worker_error_code(message: object) -> str | None:
+def worker_error_code(message: object, *, model_id: str = LEROBOT_MODEL_ID) -> str | None:
     """Accept only this exact immutable report, without retaining received text."""
     if not isinstance(message, str):
         return None
@@ -66,7 +72,21 @@ def worker_error_code(message: object) -> str | None:
         value = json.loads(message, object_pairs_hook=_unique_fields)
     except (ValueError, UnicodeError, RecursionError):
         return None
-    if not isinstance(value, dict) or set(value) != {"schema", "code", "detail", "retryable"}:
+    if model_id in GROMACS_MODELS:
+        return (
+            GROMACS_TIMEOUT
+            if value
+            == {
+                "schema": "fs2-serve.nebius.ai/gromacs-worker-error/v1",
+                "code": GROMACS_TIMEOUT,
+            }
+            else None
+        )
+    if (
+        model_id != LEROBOT_MODEL_ID
+        or not isinstance(value, dict)
+        or set(value) != {"schema", "code", "detail", "retryable"}
+    ):
         return None
     code = value["code"]
     detail = value["detail"]
@@ -86,5 +106,7 @@ def worker_error_code(message: object) -> str | None:
 
 
 def worker_error_detail(model_id: str, code: str | None) -> str | None:
-    """Only the LeRobot model may project these operator-owned public strings."""
+    """Project only operator-owned static strings for the exact model family."""
+    if model_id in GROMACS_MODELS and code == GROMACS_TIMEOUT:
+        return GROMACS_TIMEOUT_DETAIL
     return ERROR_DETAILS.get(code) if model_id == LEROBOT_MODEL_ID and code is not None else None

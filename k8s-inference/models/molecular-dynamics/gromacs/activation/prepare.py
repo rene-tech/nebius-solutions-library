@@ -284,7 +284,7 @@ def prepare(
                         "ephemeral_storage": "64Gi",
                     },
                 },
-                "active_deadline_seconds": 261000,
+                "active_deadline_seconds": 606600,
                 "termination_grace_seconds": 120,
                 "service_account_name": "default",
                 "workspace_uid": 10001,

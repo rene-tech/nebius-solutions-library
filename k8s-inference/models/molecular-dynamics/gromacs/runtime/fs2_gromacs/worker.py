@@ -99,6 +99,21 @@ class Interrupted(RuntimeError):
     pass
 
 
+class TimeLimitExceeded(Interrupted):
+    """A local execution budget expired; the artifact companion is still alive."""
+
+
+def report_time_limit(result):
+    if result.get("error_code") == "WORKFLOW_TIME_LIMIT_EXCEEDED":
+        try:
+            Path("/dev/termination-log").write_text(json.dumps({
+                "schema": "fs2-serve.nebius.ai/gromacs-worker-error/v1",
+                "code": "WORKFLOW_TIME_LIMIT_EXCEEDED",
+            }))
+        except OSError:
+            pass  # Local executions may not have a Kubernetes termination file.
+
+
 class Workflow:
     def __init__(
         self,
@@ -121,6 +136,7 @@ class Workflow:
         self.gmx = gmx or os.environ.get("FS2_GROMACS_BINARY", DEFAULT_GMX)
         self.checkpoint_mode = checkpoint_mode
         self.stopped = False
+        self.time_limit_exceeded = False
         self.child = None
         self.started = time.monotonic()
         self.deadline = self.started + self.request["max_wall_seconds"]
@@ -208,6 +224,16 @@ class Workflow:
                 archive, self.data, max_bytes=self.request["max_output_bytes"]
             )
         self.data.mkdir(parents=True, exist_ok=True)
+        # Verified input materializations are read-only by default. Native
+        # checkpoint/bias files must be writable in this private run workspace.
+        first_path = {}
+        for item in self.request.get("continuation_files", []):
+            path = self.data / item["path"]
+            if item["input_id"] in first_path and not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(first_path[item["input_id"]], path)
+            first_path.setdefault(item["input_id"], path)
+            path.chmod(0o600)
         self.version = subprocess.check_output(
             [self.gmx, "--version"], stderr=subprocess.STDOUT, text=True, timeout=30
         )
@@ -246,7 +272,10 @@ class Workflow:
 
     def execute(self, argv, *, cwd, log, stdin="", timeout=None):
         remaining = self.deadline - time.monotonic()
-        if remaining <= 0 or self.stopped:
+        if remaining <= 0:
+            self.time_limit_exceeded = True
+            raise TimeLimitExceeded("execution budget exhausted; continue from the last committed checkpoint")
+        if self.stopped:
             raise Interrupted(
                 "workflow stopped before starting the next native command"
             )
@@ -271,7 +300,11 @@ class Workflow:
                     stdin.encode(), timeout=min(remaining, timeout or remaining)
                 )
             except subprocess.TimeoutExpired:
-                self.stop(signal.SIGTERM, None)
+                # This is not a Pod shutdown: keep the companion alive and
+                # wait for its final durable checkpoint acknowledgement.
+                self.time_limit_exceeded = True
+                if self.child.poll() is None:
+                    os.killpg(self.child.pid, signal.SIGTERM)
                 try:
                     self.child.wait(timeout=90)
                 except subprocess.TimeoutExpired:
@@ -435,7 +468,11 @@ class Workflow:
                     )
                 )
             if code != 0:
+                if self.time_limit_exceeded and segmented and checkpoint.is_file():
+                    item["checkpoint_step"] = self.checkpoint_step(checkpoint)
                 self.checkpoint()
+                if self.time_limit_exceeded:
+                    raise TimeLimitExceeded("execution budget exhausted; continue from the last committed checkpoint")
                 raise RuntimeError(
                     f"native command {step['id']} failed with exit code {code}; see its full log"
                 )
@@ -460,6 +497,8 @@ class Workflow:
                 self.state["completed_steps"].append(step["id"])
                 self.state["active_step"] = None
             self.checkpoint()
+            if self.time_limit_exceeded and not complete:
+                raise TimeLimitExceeded("execution budget exhausted; continue from the last committed checkpoint")
             if self.stopped:
                 raise Interrupted(
                     "workflow interrupted; last committed checkpoint is retained"
@@ -505,6 +544,7 @@ class Workflow:
             "job_id": self.job["id"],
             "status": status,
             "error": error,
+            "error_code": "WORKFLOW_TIME_LIMIT_EXCEEDED" if self.time_limit_exceeded and status != "succeeded" else None,
             "recipe_sha256": self.recipe,
             "engine": self.version,
             "nvidia_image": NVIDIA_IMAGE if self.engine_id == NVIDIA_IMAGE else None,
@@ -594,6 +634,7 @@ def main():
     signal.signal(signal.SIGTERM, worker.stop)
     signal.signal(signal.SIGINT, worker.stop)
     result = worker.run()
+    report_time_limit(result)
     print(
         json.dumps(
             {key: result[key] for key in ("operation_id", "job_id", "status", "error")}

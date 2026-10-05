@@ -50,6 +50,7 @@ from .models import (
     accelerator_admission_projection,
 )
 from .profile_catalog import ScientificProfileCatalog, ScientificProfileError, ScientificRequestError
+from .worker_errors import worker_error_detail
 
 _ERROR = re.compile(r"[^A-Z0-9_]+")
 _MAX_MANIFEST_BYTES = 8 * 1024 * 1024
@@ -772,7 +773,8 @@ class ArtifactServiceBridge:
                 ),
                 validation_receipt_digest=validation_receipt,
                 error_code=error_code,
-                error_message="scientific run did not succeed" if error_code is not None else None,
+                error_message=(worker_error_detail(state.model_id, error_code) or "scientific run did not succeed")
+                if error_code is not None else None,
                 error_retryable=False if error_code is not None else None,
             )
         )

@@ -39,6 +39,77 @@ def test_defaults_do_not_change_physics_or_assume_snapshot_support():
         and actual["checkpoint_minutes"] == actual["segment_minutes"] == 5
     )
     assert "threads" not in original
+    assert actual["max_wall_seconds"] == 7 * 24 * 3600
+
+
+def test_seven_days_is_the_maximum_execution_budget():
+    body = request()
+    body["max_wall_seconds"] = 604801
+    with pytest.raises(ValidationError):
+        normalize(body)
+
+
+def test_continuation_materializations_become_writable_and_restore_native_aliases(tmp_path, monkeypatch):
+    body = request()
+    body["continuation_files"] = [
+        {"input_id": "resume-00000", "path": "fs2-md.cpt"},
+        {"input_id": "resume-00000", "path": "subdir/alias.cpt"},
+    ]
+    worker = Workflow(body, job_id="replica", operation_id="new-run", workspace=tmp_path)
+    worker.data.mkdir()
+    checkpoint = worker.data / "fs2-md.cpt"
+    checkpoint.write_bytes(b"original checkpoint")
+    checkpoint.chmod(0o400)
+    monkeypatch.setattr("fs2_gromacs.worker.subprocess.check_output", lambda *a, **k: "test-engine")
+    worker.initialize()
+    assert checkpoint.stat().st_mode & 0o600 == 0o600
+    assert (worker.data / "subdir/alias.cpt").read_bytes() == checkpoint.read_bytes()
+
+
+def test_local_timeout_keeps_companion_alive_for_final_checkpoint(tmp_path, monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    worker = Workflow(request(), job_id="replica", operation_id="one", workspace=tmp_path,
+                      checkpoint_mode="companion")
+    process = SimpleNamespace(pid=123, returncode=143, poll=lambda: None, wait=lambda timeout: 143)
+
+    def communicate(*args, **kwargs):
+        raise subprocess.TimeoutExpired("gmx", 60)
+
+    process.communicate = communicate
+    signals = []
+    monkeypatch.setattr("fs2_gromacs.worker.subprocess.Popen", lambda *args, **kwargs: process)
+    monkeypatch.setattr("fs2_gromacs.worker.os.killpg", lambda *args: signals.append(args))
+    code, _ = worker.execute(["gmx"], cwd=tmp_path, log=tmp_path / "native.log")
+    assert code == 143 and worker.time_limit_exceeded and not worker.stopped
+    assert len(signals) == 1
+    atomic_json(worker.meta / "checkpoint-ack.json", {"status": "committed", "generation": 72})
+    ack = worker._wait_json(worker.meta / "checkpoint-ack.json", lambda value: value["generation"] == 72)
+    assert ack["status"] == "committed"
+
+
+def test_budget_expiry_commits_final_native_checkpoint_and_reports_specific_error(tmp_path, monkeypatch):
+    worker = Workflow(request(), job_id="replica", operation_id="one", workspace=tmp_path)
+    worker.data.mkdir()
+    (worker.data / "run.tpr").write_bytes(b"unchanged protocol")
+    monkeypatch.setattr(worker, "initialize", lambda: setattr(worker, "version", "test-engine"))
+    monkeypatch.setattr(worker, "input_parameters", lambda *args: ({"integrator": "md", "nsteps": "1000"}, "a" * 64))
+    monkeypatch.setattr(worker, "checkpoint_step", lambda path: 250)
+
+    def execute(*args, log, **kwargs):
+        worker.time_limit_exceeded = True
+        (worker.data / "fs2-md.cpt").write_bytes(b"coherent final checkpoint")
+        log.write_text("Received the TERM signal\nPerformance: 120.0\n")
+        return 143, 60
+
+    monkeypatch.setattr(worker, "execute", execute)
+    result = worker.run()
+    assert result["status"] == "interrupted"
+    assert result["error_code"] == "WORKFLOW_TIME_LIMIT_EXCEEDED"
+    assert result["native_checkpoint_generation"] == result["committed_checkpoint_generation"] == 1
+    assert result["commands"][-1]["checkpoint_step"] == 250
+    assert result["completed_steps"] == []
 
 
 @pytest.mark.parametrize(

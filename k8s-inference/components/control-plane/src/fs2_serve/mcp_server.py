@@ -94,6 +94,8 @@ CORE_TOOLS = {
     "acknowledge_operation",
     "submit_scientific_run",
     "get_scientific_status",
+    "get_scientific_checkpoints",
+    "resume_gromacs_workflow",
     "cancel_scientific_run",
     "list_scientific_events",
     "get_scientific_artifact",
@@ -1058,6 +1060,72 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             raise MCPError(code=INVALID_PARAMS, message="scientific batch service is unavailable")
         return await runtime.scientific_batches.status(operation_id, principal=_principal())
 
+    async def get_scientific_checkpoints(operation_id: UUID) -> dict[str, Any]:
+        """List the latest committed native GROMACS checkpoint per job in an owned run.
+
+        These are recoverable partial results, not completed simulations. After
+        a failed/cancelled run, use resume_gromacs_workflow to continue one job.
+        No file bytes or storage credentials are returned.
+        """
+        from .scientific_batch.gromacs_resume import checkpoint_choices
+
+        if runtime.scientific_batches is None or runtime.artifact_service is None:
+            raise MCPError(code=INVALID_PARAMS, message="scientific checkpoint service is unavailable")
+        try:
+            return await checkpoint_choices(
+                batches=runtime.scientific_batches,
+                artifacts=runtime.artifact_service,
+                principal=_principal(),
+                operation_id=operation_id,
+            )
+        except ScientificRequestError as error:
+            raise MCPError(
+                code=INVALID_PARAMS, message=error.public_detail or "checkpoint request is invalid"
+            ) from None
+
+    async def resume_gromacs_workflow(
+        operation_id: UUID,
+        idempotency_key: str,
+        job_id: str | None = None,
+        max_wall_seconds: int = 604800,
+    ) -> dict[str, Any]:
+        """Continue a failed/cancelled GROMACS or GROMACS-MPI job from its last committed checkpoint.
+
+        Reuses the exact TPR, native checkpoint and earlier scientific outputs;
+        skips completed commands without regenerating velocities. Select job_id
+        when the source contains multiple jobs. The new run has a fresh budget
+        of up to seven days and uses normal tenant admission and billing. Reuse
+        idempotency_key on retries. Original results remain untouched. Returns
+        the NEW operation_id to poll with get_scientific_status, not final output.
+        """
+        from .scientific_batch.gromacs_resume import GromacsResumeRequest, resume_gromacs
+
+        if (
+            runtime.scientific_batches is None
+            or runtime.artifact_service is None
+            or runtime.scientific_input_uploads is None
+        ):
+            raise MCPError(code=INVALID_PARAMS, message="scientific continuation service is unavailable")
+        if not MIN_IDEMPOTENCY_KEY_LENGTH <= len(idempotency_key) <= MAX_IDEMPOTENCY_KEY_LENGTH:
+            raise MCPError(code=INVALID_PARAMS, message="idempotency_key length is invalid")
+        try:
+            result = await resume_gromacs(
+                batches=runtime.scientific_batches,
+                artifacts=runtime.artifact_service,
+                uploads=runtime.scientific_input_uploads,
+                principal=_principal(),
+                operation_id=operation_id,
+                request=GromacsResumeRequest(job_id=job_id, max_wall_seconds=max_wall_seconds),
+                idempotency_key=idempotency_key,
+                require_mcp_invocable=True,
+            )
+        except ScientificRequestError as error:
+            raise MCPError(
+                code=INVALID_PARAMS, message=error.public_detail or "continuation request is invalid"
+            ) from None
+        observe_mcp_result(result)
+        return result
+
     async def cancel_scientific_run(operation_id: UUID) -> dict[str, Any]:
         """Request cancellation of an owned queued/running batch run and return its state.
 
@@ -1376,6 +1444,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         acknowledge_operation,
         submit_scientific_run,
         get_scientific_status,
+        get_scientific_checkpoints,
+        resume_gromacs_workflow,
         cancel_scientific_run,
         list_scientific_events,
         get_scientific_artifact,

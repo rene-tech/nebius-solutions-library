@@ -134,6 +134,15 @@ def validate_input_roles(
     model_id: str, request: Mapping[str, Any], entries: tuple[ScientificInputArtifact, ...]
 ) -> None:
     """Reject caller metadata before compiling a runtime plan or admitting work."""
+    if model_id in {"gromacs", "gromacs-mpi"} and "continuation_files" in request.get("parameters", {}):
+        try:
+            parameters = gromacs.normalize(request["parameters"], mpi=model_id == "gromacs-mpi")
+            gromacs.continuation_materializations(parameters, entries, "/mnt/fs2-scientific/continuation")
+        except ValueError as error:
+            raise ScientificRequestError(
+                "invalid GROMACS continuation files", public_detail="Checkpoint continuation file metadata is invalid."
+            ) from error
+        return
     if model_id == video_augmentation.MODEL_ID:
         try:
             video_augmentation.validate_entries(request, entries)

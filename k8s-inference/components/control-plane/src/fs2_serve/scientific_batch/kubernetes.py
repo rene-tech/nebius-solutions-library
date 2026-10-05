@@ -294,7 +294,7 @@ def _reported_failure(
         if job is not None and _retained_job_disruption(job):
             return WorkloadState.FAILED, FailureKind.INFRASTRUCTURE, "JobDisruptionTarget"
     if (
-        model_id != LEROBOT_MODEL_ID
+        model_id not in {LEROBOT_MODEL_ID, "gromacs", "gromacs-mpi"}
         or fallback[1] is not FailureKind.APPLICATION
         or fallback[2] == "EXECUTION_TIMEOUT"
         or any(reason.casefold() == "oomkilled" for reason in reasons)
@@ -305,7 +305,7 @@ def _reported_failure(
         stage = _container_termination(pod_status, STAGE_CONTAINER_NAME)
         if stage is None or type(stage.get("exitCode")) is not int or stage["exitCode"] == 0:
             continue
-        if (code := worker_error_code(stage.get("message"))) is not None:
+        if (code := worker_error_code(stage.get("message"), model_id=model_id)) is not None:
             codes.add(code)
     # Ambiguous multi-Pod reports retain the existing generic failure. Reporting
     # enriches public diagnostics, not the established failure/retry taxonomy.
