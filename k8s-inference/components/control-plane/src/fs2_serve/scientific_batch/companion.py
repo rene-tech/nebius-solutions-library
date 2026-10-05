@@ -11,6 +11,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any, Literal, TypeVar, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
@@ -48,6 +49,7 @@ _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS = 5
 _ARTIFACT_DOWNLOAD_BASE_BACKOFF_SECONDS = 0.5
 _ARTIFACT_UPLOAD_MAX_ATTEMPTS = 5
 _ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS = 0.5
+_ARTIFACT_HANDLE_REFRESH_MARGIN = timedelta(seconds=5)
 RUNTIME_LOCALIZATION_SCHEMA = "fs2-serve.nebius.ai/runtime-localization-marker/v1"
 RUNTIME_TREE_IDENTITY_SCHEMA = "fs2-serve.nebius.ai/scientific-localization-generation-marker/v1"
 RUNTIME_TREE_IDENTITY_FILE = ".fs2-runtime-tree.json"
@@ -643,6 +645,44 @@ def _rewrite_paths(value: object, root: Path, *, depth: int = 0) -> object:
 _ResponseValue = TypeVar("_ResponseValue")
 
 
+class _RefreshableArtifactHandle:
+    """Renew only the same authorized artifact; never extend data retry budgets."""
+
+    def __init__(
+        self,
+        value: dict[str, Any],
+        *,
+        refresh: Callable[[], dict[str, Any]],
+        clock: Callable[[], datetime],
+    ) -> None:
+        self.value = value
+        self.refresh = refresh
+        self.clock = clock
+
+    def _expires_within(self, margin: timedelta) -> bool:
+        raw = self.value.get("expires_at")
+        # An older handle without expiry is unknown, not expired. It must
+        # never make an otherwise permanent 403 eligible for retry.
+        if raw is None:
+            return False
+        expires_at = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if expires_at.tzinfo is None:
+            raise ValueError("artifact handle expiry must include a timezone")
+        return expires_at <= self.clock() + margin
+
+    def current(self) -> dict[str, Any]:
+        if self._expires_within(_ARTIFACT_HANDLE_REFRESH_MARGIN):
+            self.value = self.refresh()
+            if self._expires_within(_ARTIFACT_HANDLE_REFRESH_MARGIN):
+                raise ValueError("artifact service returned an already expiring handle")
+        return self.value
+
+    def expired_response(self, status: int) -> bool:
+        # A still-valid handle's 403 is an authorization failure, not a reason
+        # to retry. Only observed expiry can renew an object-store rejection.
+        return status == 403 and self._expires_within(timedelta())
+
+
 class WorkloadArtifactHttpClient:
     def __init__(
         self,
@@ -651,11 +691,13 @@ class WorkloadArtifactHttpClient:
         capability: str,
         client: httpx.Client | None = None,
         fallback_base_url: str | None = None,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
         self.client = client or httpx.Client(timeout=60, follow_redirects=False)
         self.base_url = base_url.rstrip("/")
         self.fallback_base_url = fallback_base_url.rstrip("/") if fallback_base_url else None
         self.headers = {"Authorization": f"Bearer {capability}"}
+        self.clock = clock or (lambda: datetime.now(UTC))
         self._prepared_downloads: dict[UUID, dict[str, Any]] = {}
         # Two metadata cohorts may overlap, but they share the same existing
         # eight streamed PUT lanes. This is per collector, not per cohort.
@@ -713,14 +755,19 @@ class WorkloadArtifactHttpClient:
         *,
         headers: Mapping[str, str],
         read: Callable[[httpx.Response], _ResponseValue],
+        transfer: _RefreshableArtifactHandle | None = None,
     ) -> _ResponseValue:
-        """Read one download response with bounded transient-only retries."""
+        """Read with bounded retries; renew only proven-expired artifact handles."""
 
         for attempt in range(_ARTIFACT_DOWNLOAD_MAX_ATTEMPTS):
             retry = False
+            if transfer is not None:
+                handle = transfer.current()
+                url, headers = handle["url"], handle.get("headers", {})
             try:
                 with self.client.stream("GET", self._attempt_url(url, attempt), headers=headers) as response:
                     retry = response.status_code == 429 or 500 <= response.status_code < 600
+                    retry = retry or (transfer is not None and transfer.expired_response(response.status_code))
                     if not retry or attempt + 1 == _ARTIFACT_DOWNLOAD_MAX_ATTEMPTS:
                         response.raise_for_status()
                         return read(response)
@@ -741,19 +788,24 @@ class WorkloadArtifactHttpClient:
         headers: Mapping[str, str],
         json_body: Mapping[str, Any] | None = None,
         content: bytes | None = None,
+        transfer: _RefreshableArtifactHandle | None = None,
     ) -> httpx.Response:
-        """Run one idempotent upload step with bounded transient-only retries.
+        """Run one idempotent upload step within its existing retry budget.
 
         The caller supplies a deterministic upload identity for both lifecycle
         POSTs and the PUT always repeats the same complete, content-addressed
         byte string.  Retrying those operations is therefore safe when a
         gateway address is briefly unavailable or returns 429/5xx.  Every
         other response, including auth, stale-capability and digest errors,
-        remains fail-fast.
+        remains fail-fast. Expired signed PUT handles may be reauthorized for
+        exactly the same upload identity, using the same data retry budget.
         """
 
         for attempt in range(_ARTIFACT_UPLOAD_MAX_ATTEMPTS):
             retry = False
+            if transfer is not None:
+                handle = transfer.current()
+                url, headers = handle["url"], handle.get("headers", {})
             try:
                 response = self.client.request(
                     method,
@@ -763,6 +815,7 @@ class WorkloadArtifactHttpClient:
                     content=content,
                 )
                 retry = response.status_code == 429 or 500 <= response.status_code < 600
+                retry = retry or (transfer is not None and transfer.expired_response(response.status_code))
                 if not retry or attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
                     response.raise_for_status()
                     return response
@@ -775,6 +828,90 @@ class WorkloadArtifactHttpClient:
             time.sleep(_ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS * (2**attempt))
         raise RuntimeError("artifact upload retry bound was not enforced")  # pragma: no cover
 
+    def _download_handle(
+        self,
+        artifact_id: UUID,
+        *,
+        expected_digest: str,
+        expected_size_bytes: int,
+        expected_media_type: str,
+        prepared: dict[str, Any] | None = None,
+    ) -> _RefreshableArtifactHandle:
+        def validate(value: dict[str, Any], *, renewed: bool = False) -> dict[str, Any]:
+            artifact, handle = value["artifact"], value["handle"]
+            if (
+                artifact.get("artifact_id", None if renewed else str(artifact_id)) != str(artifact_id)
+                or "sha256:" + artifact["sha256"] != expected_digest
+                or artifact["size_bytes"] != expected_size_bytes
+                or artifact["media_type"] != expected_media_type
+            ):
+                raise ValueError("artifact service pointer differs from the frozen materialization")
+            if handle.get("method") != "GET":
+                raise ValueError("artifact service returned a non-download handle")
+            return cast(dict[str, Any], handle)
+
+        def authorize() -> dict[str, Any]:
+            def pointer(response: httpx.Response) -> dict[str, Any]:
+                response.read()
+                return cast(dict[str, Any], response.json())
+
+            return self._download_get(
+                f"{self.base_url}/internal/scientific-workloads/artifacts/{artifact_id}:download",
+                headers=self.headers,
+                read=pointer,
+            )
+
+        value = prepared if prepared is not None else authorize()
+        return _RefreshableArtifactHandle(
+            validate(value), refresh=lambda: validate(authorize(), renewed=True), clock=self.clock
+        )
+
+    def _upload_handle(
+        self, request: dict[str, Any], *, prepared: dict[str, Any] | None = None
+    ) -> _RefreshableArtifactHandle:
+        def authorize() -> dict[str, Any]:
+            response = self._upload_request(
+                "POST",
+                f"{self.base_url}/internal/scientific-workloads/uploads",
+                headers=self.headers,
+                json_body=request,
+            )
+            return cast(dict[str, Any], response.json())
+
+        def validate(value: dict[str, Any], *, renewed: bool = False) -> dict[str, Any]:
+            if value.get("upload_id", None if renewed else request["upload_id"]) != request["upload_id"]:
+                raise ValueError("upload reservation differs from its immutable identity")
+            handle = value["handle"]
+            if handle.get("method") != "PUT":
+                raise ValueError("artifact service returned a non-upload handle")
+            return cast(dict[str, Any], handle)
+
+        value = prepared if prepared is not None else authorize()
+        return _RefreshableArtifactHandle(
+            validate(value), refresh=lambda: validate(authorize(), renewed=True), clock=self.clock
+        )
+
+    def _put_file(self, path: Path, size_bytes: int, transfer: _RefreshableArtifactHandle) -> None:
+        for attempt in range(_ARTIFACT_UPLOAD_MAX_ATTEMPTS):
+            handle = transfer.current()
+            try:
+                with path.open("rb") as source:
+                    response = self.client.request(
+                        "PUT",
+                        handle["url"],
+                        headers={**handle.get("headers", {}), "Content-Length": str(size_bytes)},
+                        content=iter(lambda: source.read(4 * 1024 * 1024), b""),
+                    )
+                retry = response.status_code == 429 or 500 <= response.status_code < 600
+                retry = retry or transfer.expired_response(response.status_code)
+                if not retry or attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
+                    response.raise_for_status()
+                    return
+            except httpx.TransportError:
+                if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
+                    raise
+            time.sleep(_ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS * 2**attempt)
+
     def download(
         self,
         artifact_id: UUID,
@@ -783,25 +920,12 @@ class WorkloadArtifactHttpClient:
         expected_size_bytes: int,
         expected_media_type: str,
     ) -> bytes:
-        def read_pointer(response: httpx.Response) -> dict[str, Any]:
-            response.read()
-            return cast(dict[str, Any], response.json())
-
-        value = self._download_get(
-            f"{self.base_url}/internal/scientific-workloads/artifacts/{artifact_id}:download",
-            headers=self.headers,
-            read=read_pointer,
+        transfer = self._download_handle(
+            artifact_id,
+            expected_digest=expected_digest,
+            expected_size_bytes=expected_size_bytes,
+            expected_media_type=expected_media_type,
         )
-        artifact = cast(dict[str, Any], value["artifact"])
-        handle = cast(dict[str, Any], value["handle"])
-        if (
-            f"sha256:{artifact.get('sha256')}" != expected_digest
-            or artifact.get("size_bytes") != expected_size_bytes
-            or artifact.get("media_type") != expected_media_type
-        ):
-            raise ValueError("artifact service pointer differs from the frozen materialization")
-        if handle.get("method") != "GET":
-            raise ValueError("artifact service returned a non-download handle")
 
         # Artifact digests cover the exact bytes persisted in object storage.
         # A compressed artifact also carries ``Content-Encoding`` metadata and
@@ -811,17 +935,18 @@ class WorkloadArtifactHttpClient:
         def read_content(stored: httpx.Response) -> bytes:
             content = bytearray()
             for chunk in stored.iter_raw():
-                if len(content) + len(chunk) > artifact["size_bytes"]:
+                if len(content) + len(chunk) > expected_size_bytes:
                     raise ValueError("downloaded artifact exceeds its immutable pointer")
                 content.extend(chunk)
             return bytes(content)
 
         content = self._download_get(
-            handle["url"],
-            headers=handle.get("headers", {}),
+            transfer.value["url"],
+            headers={},
             read=read_content,
+            transfer=transfer,
         )
-        if len(content) != artifact["size_bytes"] or hashlib.sha256(content).hexdigest() != artifact["sha256"]:
+        if len(content) != expected_size_bytes or "sha256:" + hashlib.sha256(content).hexdigest() != expected_digest:
             raise ValueError("downloaded artifact differs from its immutable pointer")
         return content
 
@@ -842,20 +967,13 @@ class WorkloadArtifactHttpClient:
             "media_type": media_type,
             "compression": compression,
         }
-        begun = self._upload_request(
-            "POST",
-            f"{self.base_url}/internal/scientific-workloads/uploads",
-            headers=self.headers,
-            json_body=request,
-        )
-        handle = begun.json()["handle"]
-        if handle.get("method") != "PUT":
-            raise ValueError("artifact service returned a non-upload handle")
+        transfer = self._upload_handle(request)
         self._upload_request(
             "PUT",
-            handle["url"],
-            headers=handle.get("headers", {}),
+            transfer.value["url"],
+            headers={},
             content=content,
+            transfer=transfer,
         )
         finalized = self._upload_request(
             "POST",
@@ -879,39 +997,16 @@ class WorkloadArtifactHttpClient:
             while block := source.read(4 * 1024 * 1024):
                 digest.update(block)
         upload_id = uuid5(NAMESPACE_URL, f"fs2-scientific-upload:{identity}:{digest.hexdigest()}")
-        begun = self._upload_request(
-            "POST",
-            f"{self.base_url}/internal/scientific-workloads/uploads",
-            headers=self.headers,
-            json_body={
+        transfer = self._upload_handle(
+            {
                 "upload_id": str(upload_id),
                 "sha256": digest.hexdigest(),
                 "size_bytes": before.st_size,
                 "media_type": media_type,
                 "compression": compression,
-            },
+            }
         )
-        handle = begun.json()["handle"]
-        if handle.get("method") != "PUT":
-            raise ValueError("artifact service returned a non-upload handle")
-        for attempt in range(_ARTIFACT_UPLOAD_MAX_ATTEMPTS):
-            try:
-                with path.open("rb") as source:
-                    response = self.client.request(
-                        "PUT",
-                        handle["url"],
-                        headers={**handle.get("headers", {}), "Content-Length": str(before.st_size)},
-                        content=iter(lambda: source.read(4 * 1024 * 1024), b""),
-                    )
-                if response.status_code != 429 and response.status_code < 500:
-                    response.raise_for_status()
-                    break
-                if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
-                    response.raise_for_status()
-            except httpx.TransportError:
-                if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
-                    raise
-            time.sleep(_ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS * 2**attempt)
+        self._put_file(path, before.st_size, transfer)
         after = path.stat()
         if (before.st_ino, before.st_size, before.st_mtime_ns) != (after.st_ino, after.st_size, after.st_mtime_ns):
             raise ValueError("output file changed during artifact publication")
@@ -970,27 +1065,7 @@ class WorkloadArtifactHttpClient:
 
         def put_stream(index: int) -> None:
             path, before, request = prepared[index]
-            handle = begun[index]["handle"]
-            if handle.get("method") != "PUT":
-                raise ValueError("artifact service returned a non-upload handle")
-            for attempt in range(_ARTIFACT_UPLOAD_MAX_ATTEMPTS):
-                try:
-                    with path.open("rb") as source:
-                        response = self.client.request(
-                            "PUT",
-                            handle["url"],
-                            headers={**handle.get("headers", {}), "Content-Length": str(before.st_size)},
-                            content=iter(lambda: source.read(4 * 1024 * 1024), b""),
-                        )
-                    if response.status_code != 429 and response.status_code < 500:
-                        response.raise_for_status()
-                        break
-                    if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
-                        response.raise_for_status()
-                except httpx.TransportError:
-                    if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
-                        raise
-                time.sleep(_ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS * 2**attempt)
+            self._put_file(path, before.st_size, self._upload_handle(request, prepared=begun[index]))
             after = path.stat()
             if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
                 after.st_dev,
@@ -1038,28 +1113,16 @@ class WorkloadArtifactHttpClient:
     ) -> None:
         """Download immutable large inputs/checkpoints without buffering in RAM."""
 
-        def pointer(response: httpx.Response) -> dict[str, Any]:
-            response.read()
-            return cast(dict[str, Any], response.json())
-
         # Distinct filenames may alias the same immutable artifact. Keep this
         # bounded128-entry batch until the next prepare_downloads call so aliases
         # do not fall back to rereading the whole checkpoint history.
-        value = self._prepared_downloads.get(artifact_id)
-        if value is None:
-            value = self._download_get(
-                f"{self.base_url}/internal/scientific-workloads/artifacts/{artifact_id}:download",
-                headers=self.headers,
-                read=pointer,
-            )
-        artifact, handle = value["artifact"], value["handle"]
-        if ("sha256:" + artifact["sha256"], artifact["size_bytes"], artifact["media_type"], handle["method"]) != (
-            expected_digest,
-            expected_size_bytes,
-            expected_media_type,
-            "GET",
-        ):
-            raise ValueError("artifact pointer differs from the frozen file identity")
+        transfer = self._download_handle(
+            artifact_id,
+            expected_digest=expected_digest,
+            expected_size_bytes=expected_size_bytes,
+            expected_media_type=expected_media_type,
+            prepared=self._prepared_downloads.get(artifact_id),
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         temporary = destination.with_name(destination.name + ".partial")
 
@@ -1075,7 +1138,7 @@ class WorkloadArtifactHttpClient:
             if size != expected_size_bytes or "sha256:" + digest.hexdigest() != expected_digest:
                 raise ValueError("artifact stream differs from its immutable digest")
 
-        self._download_get(handle["url"], headers=handle.get("headers", {}), read=stream)
+        self._download_get(transfer.value["url"], headers={}, read=stream, transfer=transfer)
         temporary.replace(destination)
 
 
