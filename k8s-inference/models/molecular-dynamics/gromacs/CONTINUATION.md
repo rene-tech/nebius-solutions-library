@@ -1,7 +1,7 @@
 # Long-running GROMACS jobs and checkpoint continuation
 
-The GROMACS and GROMACS-MPI request default and maximum are **1209600 seconds
-(fourteen days) per job**. Explicit smaller budgets remain supported. Infrastructure
+The GROMACS and GROMACS-MPI request default and maximum for **new jobs** are
+**1209600 seconds (fourteen days) per job**. Explicit smaller budgets remain supported. Infrastructure
 retries share the original accumulated runtime budget. A user-requested
 continuation is a new operation with a new budget and ordinary tenant admission;
 it is not an unlimited automatic retry loop.
@@ -45,6 +45,11 @@ The MCP equivalents are `get_scientific_checkpoints` and
 `resume_gromacs_workflow`. Poll the **new** operation ID returned by resume;
 the old operation remains terminal. Reuse the idempotency key after a lost
 response. Do not issue a fresh key merely because the queued run has not started.
+Resume uses the same operation-owner access and normal per-key admission as
+an ordinary run; no customer key is required or permitted for internal tests.
+`202 Accepted` means durable admission, not completed restoration or successful
+MD. Use `GET /v1/operations/{new_operation_id}` and its eventual result/artifacts
+to determine completion. See the [scientific API contract](../../../docs/SCIENTIFIC_BATCH_API.md).
 
 Continuation preserves the original TPR, native checkpoint, bias/restart files
 and previous trajectory parts. It skips completed workflow commands; it does not
@@ -52,6 +57,12 @@ rerun preparation, regenerate velocities, silently change physics, or restart
 from the original coordinates. The worker uses native `-cpi` and `-noappend`.
 Completed trajectories are ensemble simulations, not bitwise-reproducibility
 claims across different GPU shapes or engine builds.
+
+This is **native `.cpt` recovery**, not CUDA/CRIU GPU-process snapshot restore.
+It restages durable files and starts a compatible GROMACS process on the admitted
+shape. No measured GPU-snapshot cold-start time or transparent change from an
+existing TCP run to RDMA follows from a successful continuation. Retain the
+frozen execution/recipe identity and verify any new shape separately.
 
 Files are referenced in a verified per-file input manifest and streamed directly
 from object storage into the new worker. They are **not** repacked on the API

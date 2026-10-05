@@ -58,6 +58,13 @@ appropriate topology parameters, charge/protonation decisions and validation.
 | Customer output retention | Until customer deletion or their bucket lifecycle | Customer-managed; no silent platform deletion |
 | Scientific output cadence | Supplied MDP/TPR, unchanged | `nstxout-compressed`, `nstenergy`, `nstlog`, etc. |
 
+The fourteen-day default applies to **newly admitted jobs**, including explicit
+continuations. It does not change a running operation's frozen native budget.
+The existing Lynx continuation retains its original seven-day budget; if needed,
+continue its last committed checkpoint as a new operation rather than patching
+the active Job. A configured fourteen-day limit is not a completed fourteen-day
+soak test. See [the continuation API and exact release gates](CONTINUATION.md).
+
 These are operational defaults, **not universal scientific standards**. A useful
 trajectory sampling interval depends on the phenomenon and analysis. The byte
 budget is not a bucket-quota increase. Input archive, temporary files and logs
@@ -134,15 +141,63 @@ claim is made that every NVIDIA GPU has been tested.
 | PLUMED | Pinned 2.10 runtime kernel added; 1 ns hosted metadynamics survived Pod eviction with complete bias history |
 | CP2K QM/MM | Not compiled into this image; separate build required |
 | Torch NNPot | Separate LibTorch build passes 18 upstream H100 tests; not a customer-qualified App |
-| Multi-node MPI | Separate `gromacs-mpi` App and external-MPI image; two-H100 STMV, hosted peer-eviction recovery, bucket export and cancellation passed; TCP is slower than one H100 |
+| Multi-node MPI | Separate `gromacs-mpi` App and external-MPI image; retained TCP hosted recovery/export tests and a newer native-qualified 2×8 H100 InfiniBand path have different release scopes; see below |
 | CUDA/CRIU snapshot acceleration | Same-process GPU suspend/resume measured, not persistent/new-Pod restore; native `.cpt` is the default |
 
 The separate MPI App reuses JobSet/Kueue gang scheduling and an external-MPI
-GPU-aware build. Its present transport is host-staged TCP, not RDMA, and is
-slower than one H100 for the matched large-system fixture. RDMA and explicit
-network/topology eligibility need their own qualification before promotion.
-Benchmark strong scaling before selecting more nodes. MPS can improve aggregate independent-simulation throughput;
+GPU-aware build. Its older cross-node shapes use host-staged TCP; those retained
+measurements do not describe the new InfiniBand deployment. One-node shapes use
+the separate local UCX path. The additive `multi-node-8gpu-rdma` shape uses
+operator-selected `ucx-rdma` with exact GPU-cluster and RDMA-resource eligibility,
+not an unvalidated customer transport flag. Native qualification has passed;
+**its exact-release public REST/MCP delivery and recovery gate remains pending**
+in the [InfiniBand evidence](../../../acceptance/lynx-performance-20261005/RDMA.md).
+Benchmark strong scaling before selecting more nodes. MPS can improve aggregate
+independent-simulation throughput, not necessarily one trajectory's latency;
 MIG and MPS must be measured per hardware/system, not inferred from an A100 blog.
+
+## GPU placement and the full-node InfiniBand path
+
+Pool names below describe the retained H100-region deployment, not universal
+names or a guarantee of immediately free GPUs. The operator controls qualified
+pool preferences; clients request a declared shape and inspect the admitted
+pool/resources in operation status. They do not set a Kubernetes node name,
+provider pool, transport or RDMA-device count in a public request.
+
+| Requested work | Retained pool / evidence | Important boundary |
+| --- | --- | --- |
+| One GPU, independent `gromacs` job | L40S in `l40s-4x`; H100 in `h100-ondemand-1x` or a compatible full-node pool | The matched membrane workload favors the tested L40S recipe below; this is not a universal GPU ranking. |
+| `gromacs-mpi`, `nodes: 1`, `gpus_per_node: 8` | One `h100-reserved-8x` node | Eight ranks advance one simulation. Native 3×1 ns median: 318.53 ns/day; not eight independent runs. |
+| `gromacs-mpi`, `nodes: 2`, `gpus_per_node: 8` | Two compatible `h100-reserved-8x` nodes | Once the RDMA profile is published, the operator resolves this to `multi-node-8gpu-rdma`; an older profile resolves the same request to its legacy TCP shape. Inspect the frozen plan, not GPU count alone. |
+
+The existing `h100-ondemand-1x` group has eight one-GPU hosts; its scheduling
+metadata now matches that already-provisioned maximum and live Kueue quota.
+Multi-node shapes require enough **distinct eligible hosts**, not just enough
+aggregate GPUs. The current one-host L40S four-GPU pool cannot satisfy a
+two-node gang. Configured maximum host count bounds feasibility; a temporarily
+empty autoscaled pool may still admit work within its declared maximum.
+
+For the InfiniBand path, Terraform's explicit `managed_rdma_pools` opt-in joins
+the existing full-node pool to its exact provider GPU-cluster identity and
+allocator-only RDMA deployment. It does not install a second GPU driver/OFED
+owner. The two-Pod frozen shape requires eight GPUs and one eight-HCA bundle
+(`rdma.fs2.nebius/hca`) **per Pod**, with the matching cluster label. Kueue must
+account for both resource types together. Both Pods must use the compatible
+reader/worker release and the pinned qualified external-MPI image; old GPU-only
+placement facts cannot qualify RDMA. See the evidence's
+[publication order](../../../acceptance/lynx-performance-20261005/RDMA.md#publication-order)
+before activating the additive shape. No silent TCP fallback is accepted for
+a run labelled `ucx-rdma`.
+
+For the same membrane input, three native 1 ns runs on sixteen RDMA H100s gave
+350.90 ns/day median, versus 318.53 on eight H100s: about 10.2% higher native
+trajectory rate for twice the GPU allocation. These configurations differ in
+rank layout/runtime/transport and are not an isolated InfiniBand speedup test.
+The dated October 5 on-demand scenario is $72/hour for both full nodes, **not**
+the actual reservation invoice, and excludes storage/network/idle capacity.
+The native result is not public accepted-to-completed throughput. Final public
+delivery, checkpoint durability and accounting still need their own receipt;
+do not substitute the native benchmark for that gate.
 
 ## Measured membrane-workload tuning
 
@@ -170,8 +225,10 @@ Three 1 ns repeats through each interface delivered 201.0 ns/day over REST and
 These are timing repeats, not independent scientific ensembles or an LLM-agent
 qualification. The linked report retains exact commands, images, failures,
 GPU allocation costs and comparison boundaries. More GPUs are not automatically
-faster: the pre-InfiniBand two-node result was slower than one L40S. New RDMA
-results must be recorded separately before recommending that execution shape.
+faster: the pre-InfiniBand two-node result was slower than one L40S. The newer
+[RDMA native results](../../../acceptance/lynx-performance-20261005/RDMA.md)
+are recorded separately; their higher single-trajectory rate does not yet
+qualify the end-to-end public path or a cost-efficiency recommendation.
 
 The [MPS comparison](../../../acceptance/lynx-mps-20261005/README.md) measured
 aggregate gains for multiple independent simulations sharing a whole, task-owned

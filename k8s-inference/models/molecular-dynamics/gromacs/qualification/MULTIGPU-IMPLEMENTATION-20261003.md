@@ -4,6 +4,13 @@ This records source behavior, not a GPU qualification or a customer-ready
 claim. Root release acceptance must bind actual REST and installed-skill/MCP
 results to the final images and admitted resources before promotion.
 
+This October 3 record retains its original local/TCP implementation scope.
+The October 5 successor adds an independently native-qualified, operator-selected
+2×8 H100 InfiniBand shape; see the [current operator guide](../README.md#gpu-placement-and-the-full-node-infiniband-path)
+and [separate RDMA evidence](../../../../acceptance/lynx-performance-20261005/RDMA.md).
+Its public REST/MCP gate is separate; neither the old TCP record nor a native
+communication probe alone qualifies that successor.
+
 ## Request and launch contract
 
 `gromacs-mpi` retains its existing App and parameter-schema identity. `nodes`

@@ -1,10 +1,11 @@
 # Scientific batch API quick start
 
 This page is for a researcher, hackathon team, or proof-of-concept customer who
-holds a normal inference API key and wants to run one of the ten qualified
-cancer-immunotherapy models through the public endpoint. It describes the
-customer-visible contract only. Queue placement, images, commands, GPU
-scheduling, and licences are operator-owned and never appear in a request.
+holds a normal inference API key and wants to run a published scientific App,
+including GROMACS, through the public endpoint. It describes the customer-visible
+contract only. Queue placement, images, GPU scheduling and runtime licences are
+operator-owned. Native GROMACS workflows additionally accept validated engine
+commands and scientific inputs; they do not accept an arbitrary shell or image.
 
 The same flow is available over plain HTTPS and over MCP; both call the same
 service, enforce the same token policy, and return the same documents.
@@ -75,6 +76,8 @@ for every profile; they are the exact requests used for public acceptance:
 | `proteina-complexa` | `design-binders` | `models/cancer-immunotherapy/runtime-images/proteina-complexa/activation/public-request.json` |
 | `protenix-v2` | `predict-complex-structure` | `models/structure/batch-adapters/protenix-v2/activation/public-request.json` |
 | `rfdiffusion` | `design-backbone` | `models/cancer-immunotherapy/runtime-images/rfdiffusion/activation/public-request.json` |
+| `gromacs` | `run-workflow` | [Native workflow contract and current qualification](../models/molecular-dynamics/gromacs/README.md) |
+| `gromacs-mpi` | `run-workflow` | [MPI placement and release boundaries](../models/molecular-dynamics/gromacs/README.md#gpu-placement-and-the-full-node-infiniband-path) |
 
 Read the `operation` field of each example rather than assuming a name; the
 discovery row is authoritative for the operations a deployment accepts.
@@ -160,6 +163,43 @@ class every profile offers. The response is `202 Accepted` with a `Location`
 header of `/v1/operations/{operation_id}`, an `x-fs2-operation-id` header, and
 `x-fs2-idempotent-replay: true` when an earlier identical submission was
 reused. The body is the same status document as step 4.
+
+### Long-running GROMACS and MPI
+
+Use `POST /v1/models/gromacs:submit` or
+`POST /v1/models/gromacs-mpi:submit` with `operation: "run-workflow"` and the
+discovered parameter schema. The input manifest references the verified
+`gromacs-inputs` gzip-tar bundle; native TPR/MDP settings remain the customer's
+scientific protocol. The [GROMACS guide](../models/molecular-dynamics/gromacs/README.md)
+describes validated commands, output parts and the retained GPU measurements.
+
+`parameters.max_wall_seconds` defaults to and is bounded by **1209600 seconds
+(fourteen days) per new job**, including checkpoint I/O. Explicit smaller
+budgets are allowed. Infrastructure retries share the original accumulated
+budget; an explicit terminal-operation continuation gets a new budget and normal
+admission. Updating this default does not extend already-running frozen plans:
+the active Lynx recovery retains its original seven-day limit. Do not patch an
+active customer's Job deadline to imply otherwise.
+
+For `gromacs-mpi`, `nodes` and `gpus_per_node` describe one simulation across
+MPI ranks; their product must not exceed sixteen. `threads` is per rank.
+These are not independent replica counts or a free-GPU guarantee. The operator
+selects qualified pools and local/TCP/RDMA transport from the published shape;
+inspect `resolved_pool_id` and the result's frozen execution/scheduling identity.
+The 2×8 H100 InfiniBand path has passed native tests, but its public delivery,
+checkpoint and accounting qualification is separately tracked in the
+[RDMA release evidence](../acceptance/lynx-performance-20261005/RDMA.md).
+Do not assume sixteen GPUs is faster or cheaper for an arbitrary input.
+
+For a failed/cancelled GROMACS operation, discover committed checkpoints with
+`GET /v1/operations/{source_id}/checkpoints`, then
+`POST /v1/operations/{source_id}:resume` with a new stable `Idempotency-Key` and,
+for example, `{"job_id":"production","max_wall_seconds":1209600}`. Poll the new
+operation ID; an admission response is not a finished restart. Files are restored
+from a verified per-file manifest rather than repacking a large late-state
+archive on the API. The [continuation guide](../models/molecular-dynamics/gromacs/CONTINUATION.md)
+defines bounds, lineage, idempotency and current large-inventory acceptance.
+This is native `.cpt` continuation, **not GPU snapshotting**.
 
 Requests are validated before anything is queued. A request that violates the
 schema, names an operation or service class the profile does not offer, or
@@ -247,6 +287,8 @@ private and uncached, so the tool list reflects exactly your token's policy.
 | Events | `list_scientific_events` | `GET /v1/operations/{id}/events` |
 | Cancel | `cancel_scientific_run` | `POST /v1/operations/{id}:cancel` |
 | Result | `get_scientific_result` | `GET /v1/operations/{id}/result` |
+| GROMACS checkpoints | `get_scientific_checkpoints` | `GET /v1/operations/{id}/checkpoints` |
+| GROMACS continuation | `resume_gromacs_workflow` | `POST /v1/operations/{id}:resume` |
 | Artifact pointer | `get_scientific_artifact` | `GET /v1/artifacts/{id}` |
 | Manifest entries | `inspect_scientific_artifact_manifest` | client downloads from `GET /v1/artifacts/{id}/content` |
 | Download handle | `download_scientific_artifact` | `GET /v1/artifacts/{id}/download` |
@@ -265,13 +307,16 @@ clients; neither form bypasses the canonical request or admission checks.
 
 ## What to expect on the retained H100 deployment
 
-The ten profiles run as Kubernetes Jobs on the two capacity-block
-`h100-reserved-8x` nodes and borrow the preemptible `h100-1x` pool when the
-reserved nodes are busy; CPU-only stages run on an elastic `batch-cpu` pool
-that scales from zero. Each run pays for its own image and artifact
-localization today, so first results take from about 100 seconds (AlphaFold 3,
+The September 5 ten-model structure/binder acceptance cohort ran as Kubernetes
+Jobs on the two capacity-block `h100-reserved-8x` nodes and borrowed the
+preemptible `h100-1x` pool when the reserved nodes were busy; CPU-only stages used
+an elastic `batch-cpu` pool that scaled from zero. Each run incurred its own
+image and artifact localization, so first results ranged from about 100 seconds (AlphaFold 3,
 ESMFold2) to about 15 minutes (BoltzGen's twenty-design campaign). The
 measured per-model figures from the accepted 30-attempt campaign are in
 [Live acceptance](../LIVE_ACCEPTANCE.md#scientific-fleet-acceptance-2026-09-05).
 Operators see the same runs, their GPU lifecycle accounting, and the Kueue
 queue under the admin console's scientific pages.
+Those dated measurements are not GROMACS startup or placement guarantees.
+For the current GROMACS L40S/single-H100/full-H100 choices and clock/cost
+boundaries, use the linked GROMACS guide and exact release receipts above.
