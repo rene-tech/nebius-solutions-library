@@ -211,7 +211,7 @@ async def test_trace_state_isolated_across_concurrent_requests_and_reset(caplog)
     assert all([p["phase"] for p in row["phases"]] == ["catalog"] for row in traces(caplog))
 
 
-async def test_overlapping_http_scrapes_allow_history_and_preserve_complete_fresh_metrics(
+async def test_overlapping_http_scrapes_keep_queues_live_while_bounded_history_refreshes(
     registry,
     cipher,
     hasher,
@@ -251,6 +251,18 @@ async def test_overlapping_http_scrapes_allow_history_and_preserve_complete_fres
     runtime.scientific_admin = _service(runs=SharedPoolHistory())
     assert runtime.scientific_admin.adapter_timeout_seconds == 2
     app = create_app(runtime)
+    clock = [100.0]
+    app.state.historical_metrics._monotonic = lambda: clock[0]
+    queued = [3]
+
+    async def queue_counts():
+        return {("qwen3-8b", "queued"): queued[0]}
+
+    async def queue_age():
+        return {"qwen3-8b": float(queued[0])}
+
+    monkeypatch.setattr(runtime.store, "queue_counts", queue_counts)
+    monkeypatch.setattr(runtime.store, "oldest_queue_age", queue_age)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="https://inference.test.invalid"
     ) as client:
@@ -263,17 +275,32 @@ async def test_overlapping_http_scrapes_allow_history_and_preserve_complete_fres
         assert detail.status_code == 200
         assert UUID(detail.headers["x-request-id"])
         assert calls == 1
-        gate.set()
-        responses = await asyncio.gather(*scrapes)
+        responses = await asyncio.wait_for(asyncio.gather(*scrapes), 1)
         assert all(response.status_code == 200 for response in responses)
         assert len({response.content for response in responses}) == 1
-        assert (
-            'fs2_serve_requests_total{model="qwen3-8b",outcome="succeeded",protocol="test"} 12.0' in responses[0].text
-        )
+        assert "fs2_serve_historical_accounting_available 0.0" in responses[0].text
+        assert "fs2_serve_requests_total{" not in responses[0].text
+        queued[0] = 4
+        live = await asyncio.wait_for(client.get("/metrics"), 1)
+        assert 'fs2_serve_operations{model="qwen3-8b",state="queued"} 4.0' in live.text
+        assert 'fs2_serve_oldest_queued_operation_age_seconds{model="qwen3-8b"} 4.0' in live.text
+        assert calls == 1
+        gate.set()
+        await asyncio.wait_for(app.state.historical_metrics._task, 1)
+        sampled = await client.get("/metrics")
+        assert 'fs2_serve_requests_total{model="qwen3-8b",outcome="succeeded",protocol="test"} 12.0' in sampled.text
         rows[0] = rows[0].model_copy(update={"operations": 13})
+        retained = await client.get("/metrics")
+        assert calls == 1
+        assert 'fs2_serve_requests_total{model="qwen3-8b",outcome="succeeded",protocol="test"} 12.0' in retained.text
+        clock[0] += 30
+        expired = await client.get("/metrics")
+        assert "fs2_serve_requests_total{" not in expired.text
+        await asyncio.wait_for(app.state.historical_metrics._task, 1)
         fresh = await client.get("/metrics")
         assert calls == 2
         assert 'fs2_serve_requests_total{model="qwen3-8b",outcome="succeeded",protocol="test"} 13.0' in fresh.text
+    await app.state.historical_metrics.close()
 
 
 async def test_admin_error_response_and_log_share_server_generated_request_id(registry, cipher, hasher, caplog):
@@ -303,7 +330,9 @@ async def test_admin_error_response_and_log_share_server_generated_request_id(re
     assert "PRIVATE SQL" not in caplog.text and "PRIVATE SQL" not in response.text
 
 
-async def test_late_scrape_failure_never_publishes_partial_or_old_response(registry, cipher, hasher, monkeypatch):
+async def test_late_historical_failure_omits_old_accounting_but_keeps_live_metrics(
+    registry, cipher, hasher, monkeypatch
+):
     runtime = _runtime(registry, cipher, hasher)
     count = 12
     fail = False
@@ -329,19 +358,47 @@ async def test_late_scrape_failure_never_publishes_partial_or_old_response(regis
     monkeypatch.setattr(runtime.store, "terminal_accounting", terminal)
     monkeypatch.setattr(runtime.lifecycle, "rollup_metric_rows", rollups)
     app = create_app(runtime)
+    clock = [100.0]
+    app.state.historical_metrics._monotonic = lambda: clock[0]
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
     async with httpx.AsyncClient(transport=transport, base_url="https://inference.test.invalid") as client:
         first = await client.get("/metrics")
         assert first.status_code == 200
-        previous = runtime.metrics.render()
+        assert "fs2_serve_historical_accounting_available 0.0" in first.text
+        await asyncio.wait_for(app.state.historical_metrics._task, 1)
+        good = await client.get("/metrics")
+        metric = 'fs2_serve_requests_total{model="qwen3-8b",outcome="succeeded",protocol="test"}'
+        assert metric + " 12.0" in good.text
         count = 13
         fail = True
+        clock[0] += 30
         failed = await client.get("/metrics")
-        assert failed.status_code == 503  # Preserve existing RuntimeError-to-unavailable mapping.
-        assert failed.content != previous
-        assert runtime.metrics.render() == previous  # No partial13-counter publication.
+        await asyncio.wait_for(app.state.historical_metrics._task, 1)
+        assert failed.status_code == 200  # Queue metrics survive unavailable historical accounting.
+        assert metric not in failed.text  # Neither stale12 nor partial13 is published.
+        assert "fs2_serve_historical_accounting_available 0.0" in failed.text
+        assert "fs2_serve_historical_accounting_age_seconds 30.0" in failed.text
         fail = False
+        clock[0] += 30
+        await client.get("/metrics")
+        await asyncio.wait_for(app.state.historical_metrics._task, 1)
         fresh = await client.get("/metrics")
         assert fresh.status_code == 200
-        metric = 'fs2_serve_requests_total{model="qwen3-8b",outcome="succeeded",protocol="test"}'
         assert metric + " 13.0" in fresh.text
+    await app.state.historical_metrics.close()
+
+
+async def test_live_queue_failure_still_fails_scrape_instead_of_using_old_queue(registry, cipher, hasher, monkeypatch):
+    runtime = _runtime(registry, cipher, hasher)
+
+    async def unavailable():
+        raise RuntimeError("queue unavailable")
+
+    monkeypatch.setattr(runtime.store, "queue_counts", unavailable)
+    app = create_app(runtime)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False), base_url="https://inference.test.invalid"
+    ) as client:
+        assert (await client.get("/metrics")).status_code == 503
+        assert app.state.historical_metrics._task is None
+    await app.state.historical_metrics.close()

@@ -49,6 +49,7 @@ from .configuration_models import (
     TerraformApplyReceipt,
 )
 from .crypto import Ciphertext, KeyedHasher, PayloadCipher
+from .metrics_accounting import historical_reporting_connection
 from .model_deployment import DesiredState, ModelDeploymentSpec, spec_digest
 from .model_deployment_records import (
     ModelDeploymentAppendRequest,
@@ -4136,7 +4137,7 @@ class PostgresStore:
             return {row["model_id"]: float(row["age"]) for row in rows}
 
     async def terminal_accounting(self) -> list[TerminalAccounting]:
-        async with self.pool.acquire() as connection:
+        async with historical_reporting_connection(self.pool) as connection:
             rows = await connection.fetch(
                 """
                 SELECT model_id,protocol,outcome,operations,estimated_gpu_seconds,

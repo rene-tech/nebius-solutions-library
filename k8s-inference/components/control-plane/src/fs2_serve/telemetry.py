@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from opentelemetry import trace
@@ -11,7 +12,10 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Info, generate_latest
+from prometheus_client.core import GaugeMetricFamily, Metric
+from prometheus_client.registry import Collector
 
+from .metrics_accounting import HistoricalSample
 from .models import OperationView, TerminalAccounting
 from .registry import OperationalModel
 
@@ -19,6 +23,66 @@ if TYPE_CHECKING:
     from .lifecycle import LifecycleMetricRow, LifecycleRollupMetricRow
     from .operation_metrics import CustomerOperationMetric
     from .request_telemetry import RequestSemanticMetric
+
+
+@dataclass(frozen=True)
+class HistoricalAccounting:
+    terminal: tuple[TerminalAccounting, ...]
+    semantics: tuple[RequestSemanticMetric, ...]
+    operations: tuple[CustomerOperationMetric, ...] | None
+    lifecycle: tuple[LifecycleMetricRow, ...]
+    rollups: tuple[LifecycleRollupMetricRow, ...]
+
+
+_HISTORICAL_FAMILIES = frozenset(
+    {
+        "fs2_serve_customer_operations_total",
+        "fs2_serve_customer_operations_last_10m",
+        "fs2_serve_requests_total",
+        "fs2_serve_terminal_duration_seconds_total",
+        "fs2_serve_estimated_gpu_seconds_total",
+        "fs2_serve_lifecycle_gpu_seconds_total",
+        "fs2_serve_lifecycle_clock_gpu_seconds_total",
+        "fs2_serve_lifecycle_workloads_total",
+        "fs2_serve_lifecycle_reconciliation_delta_seconds_total",
+        "fs2_serve_lifecycle_unclassified_gpu_seconds_total",
+        "fs2_serve_public_exchanges_total",
+    }
+)
+
+
+class _HistoricalProjection(Collector):
+    def __init__(self, registry: CollectorRegistry, sample: HistoricalSample[HistoricalAccounting]) -> None:
+        self.registry = registry
+        self.sample = sample
+
+    def collect(self) -> Iterator[Metric]:
+        available = self.sample.value is not None
+        for family in self.registry.collect():
+            if available or family.name not in _HISTORICAL_FAMILIES:
+                yield family
+        yield GaugeMetricFamily(
+            "fs2_serve_historical_accounting_available",
+            "1 only when a complete historical accounting sample is less than 30 seconds old",
+            value=int(available),
+        )
+        yield GaugeMetricFamily(
+            "fs2_serve_historical_accounting_refresh_in_progress",
+            "One bounded historical refresh is running in this control-plane replica",
+            value=int(self.sample.refreshing),
+        )
+        if self.sample.age_seconds is not None:
+            yield GaugeMetricFamily(
+                "fs2_serve_historical_accounting_age_seconds",
+                "Age of the last successful sample, including expired samples whose accounting series are omitted",
+                value=self.sample.age_seconds,
+            )
+        if self.sample.sampled_at is not None:
+            yield GaugeMetricFamily(
+                "fs2_serve_historical_accounting_sampled_timestamp_seconds",
+                "Unix time before the first query of the last successful historical sample",
+                value=self.sample.sampled_at,
+            )
 
 
 class Metrics:
@@ -344,7 +408,19 @@ class Metrics:
         self._lifecycle_rollup_labels = rollup_labels
         self._lifecycle_clock_labels = clock_labels
 
-    def render(self) -> bytes:
+    def set_historical_accounting(self, rows: HistoricalAccounting) -> None:
+        self.set_terminal_accounting(rows.terminal)
+        self.set_request_semantics(rows.semantics)
+        if rows.operations is not None:
+            self.set_customer_operations(rows.operations)
+        self.set_lifecycle_accounting(rows.lifecycle)
+        self.set_lifecycle_rollups(rows.rollups)
+
+    def render(self, *, historical: HistoricalSample[HistoricalAccounting] | None = None) -> bytes:
+        if historical is not None:
+            projected = CollectorRegistry(auto_describe=False)
+            projected.register(_HistoricalProjection(self.registry, historical))
+            return generate_latest(projected)
         return generate_latest(self.registry)
 
 

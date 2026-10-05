@@ -23,6 +23,7 @@ import asyncpg
 from pydantic import AwareDatetime, Field
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from .metrics_accounting import historical_reporting_connection
 from .models import Principal, StrictModel
 
 LOGGER = logging.getLogger(__name__)
@@ -685,7 +686,7 @@ class PostgresRequestTelemetryStore:
         ]
 
     async def semantic_metric_rows(self) -> list[RequestSemanticMetric]:
-        async with self.pool.acquire() as connection:
+        async with historical_reporting_connection(self.pool) as connection:
             rows = await connection.fetch(
                 """SELECT coalesce(model_id,'unattributed') AS model_id,transport,
                     coalesce(mcp_tool,'none') AS mcp_tool,

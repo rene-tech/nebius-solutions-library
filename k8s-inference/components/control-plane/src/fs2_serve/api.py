@@ -87,6 +87,7 @@ from .lifecycle import (
     NullLifecycleRepository,
     api_key_id_hash,
 )
+from .metrics_accounting import HistoricalMetricsRead
 from .mindguard_routes import mindguard_router
 from .model_deployment_admin import ModelDeploymentReadService, model_deployment_read_router
 from .model_deployment_bridge import ModelDeploymentRuntimeBridge
@@ -173,7 +174,7 @@ from .store import (
     RateLimitExceededError,
     Store,
 )
-from .telemetry import Metrics
+from .telemetry import HistoricalAccounting, Metrics
 from .user_models import UserAppChoice
 from .user_repository import MemoryUserRepository, PostgresUserRepository
 from .user_routes import user_router
@@ -578,6 +579,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             if workbench_executor is not None:
                 await workbench_executor.close()
             await metrics_reads.close()
+            await historical_metrics.close()
             if users_service.storage is not None:
                 await users_service.storage.close()
             if runtime.scientific_batch_worker is not None:
@@ -1097,27 +1099,32 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             }
         )
 
+    async def collect_historical_metrics() -> HistoricalAccounting:
+        # Publish all historical families together only after every read succeeds.
+        return HistoricalAccounting(
+            terminal=tuple(await runtime.store.terminal_accounting()),
+            semantics=tuple(await transport_store.semantic_metric_rows()),
+            operations=tuple(await customer_operation_metrics(pool)) if pool is not None else None,
+            lifecycle=tuple(await runtime.lifecycle.metric_rows()),
+            rollups=tuple(await runtime.lifecycle.rollup_metric_rows()),
+        )
+
+    historical_metrics = HistoricalMetricsRead(collect_historical_metrics)
+    app.state.historical_metrics = historical_metrics
+
     async def collect_metrics() -> bytes:
-        # Retain every existing query/series. Publish only after all reads succeed;
-        # concurrent scrapes share this in-flight collection, not an old cache.
+        # KEDA consumes these live queue signals. A historical scan must never
+        # delay them or replace missing/expired observations with zeroes.
         accelerator_classes = await _pool_accelerator_classes(runtime)
-        terminal = await runtime.store.terminal_accounting()
         queue = await runtime.store.queue_counts()
         queue_age = await runtime.store.oldest_queue_age()
-        semantics = await transport_store.semantic_metric_rows()
-        operations = await customer_operation_metrics(pool) if pool is not None else None
-        lifecycle = await runtime.lifecycle.metric_rows()
-        rollups = await runtime.lifecycle.rollup_metric_rows()
+        historical = historical_metrics.read()
         runtime.metrics.sync_models(runtime.registry.list(), pool_accelerator_classes=accelerator_classes)
-        runtime.metrics.set_terminal_accounting(terminal)
         runtime.metrics.set_queue(queue)
         runtime.metrics.set_queue_age(queue_age)
-        runtime.metrics.set_request_semantics(semantics)
-        if operations is not None:
-            runtime.metrics.set_customer_operations(operations)
-        runtime.metrics.set_lifecycle_accounting(lifecycle)
-        runtime.metrics.set_lifecycle_rollups(rollups)
-        return runtime.metrics.render()
+        if historical.value is not None:
+            runtime.metrics.set_historical_accounting(historical.value)
+        return runtime.metrics.render(historical=historical)
 
     metrics_reads = InFlightMetricsRead(collect_metrics)
 

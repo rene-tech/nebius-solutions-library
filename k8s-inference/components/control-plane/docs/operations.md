@@ -428,8 +428,14 @@ cancel, revocation, deadline/payload expiry, exhausted release, stale recovery,
 preemption, and normal completion. Facts survive shorter operation retention
 and expire only after `FS2_USAGE_RETENTION_SECONDS`.
 Prometheus terminal request totals, cumulative terminal duration, and
-conservative estimated allocation are restart-safe projections of those facts
-on every scrape and maintenance pass. The worker completion callback observes
+conservative estimated allocation are restart-safe projections of those facts.
+The live queue and oldest-age signals are read on every scrape. Historical
+accounting refreshes separately at most once per 30 seconds per API process with
+a 3-second total budget, without blocking a scrape. Only a complete sample less
+than 30 seconds old is exposed; otherwise historical families are omitted, with
+`fs2_serve_historical_accounting_available=0`. Companion age and sampled-time
+metrics distinguish a prior expired observation from no observation. This
+does not change durable facts or maintenance accounting. The worker completion callback observes
 only process-local latency histograms and is deliberately not a terminal count
 or accounting authority.
 The optional `PrometheusRule` requires the matching `ServiceMonitor` and alerts

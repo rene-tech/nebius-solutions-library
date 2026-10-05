@@ -26,6 +26,7 @@ from uuid import UUID, uuid4
 import asyncpg
 from pydantic import AwareDatetime, Field, JsonValue, field_validator, model_validator
 
+from .metrics_accounting import historical_reporting_connection
 from .models import StrictModel
 
 _SHA256_RE = r"^(?:sha256:)?[a-f0-9]{64}$"
@@ -1354,7 +1355,7 @@ class PostgresLifecycleRepository:
         )
 
     async def metric_rows(self) -> list[LifecycleMetricRow]:
-        async with self.pool.acquire() as connection:
+        async with historical_reporting_connection(self.pool) as connection:
             rows = await connection.fetch(
                 """
                 SELECT tenant_id,model_id,phase,quality,sum(gpu_seconds)::double precision AS seconds
@@ -1366,7 +1367,7 @@ class PostgresLifecycleRepository:
         return [LifecycleMetricRow.model_validate(dict(row)) for row in rows]
 
     async def rollup_metric_rows(self) -> list[LifecycleRollupMetricRow]:
-        async with self.pool.acquire() as connection:
+        async with historical_reporting_connection(self.pool) as connection:
             rows = await connection.fetch(
                 """
                 SELECT subject.tenant_id,subject.model_id,rollup.quality,rollup.reconciled,

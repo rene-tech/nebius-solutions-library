@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from .metrics_accounting import historical_reporting_connection
 from .models import StrictModel
 
 
@@ -29,7 +30,7 @@ async def customer_operation_metrics(pool: Any) -> list[CustomerOperationMetric]
     labels. All replicas read the same rows: Prometheus queries must deduplicate.
     """
 
-    async with pool.acquire() as connection:
+    async with historical_reporting_connection(pool) as connection:
         rows = await connection.fetch(
             """SELECT f.tenant_id AS tenant,f.model_id AS model,f.protocol,
                 f.status::text AS outcome,
