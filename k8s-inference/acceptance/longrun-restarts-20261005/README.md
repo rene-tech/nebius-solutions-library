@@ -4,10 +4,60 @@ Status: fourteen-day execution and the large-inventory transport are deployed.
 A real 20,007-file source checkpoint committed within the existing 600-second
 handoff. A new fourteen-day-budget continuation from the old seven-day worker
 has passed, including all output bytes. Large native REST continuation also
-passed with all 20,031 final files downloaded and SHA/size verified. Admission
-still produced brief readiness failures; raw MCP and availability acceptance
-are not yet complete. A narrow recovery-reader fix is tested but not yet live.
+passed with all 20,031 final files downloaded and SHA/size verified; raw MCP
+also passed that complete byte verification. The subsequent concurrent REST/MCP
+cohort failed both the publication deadline and availability criteria. A bounded
+two-cohort publication pipeline and a separate admission-responsiveness fix are
+tested, but their combined live rerun is still required.
 This is not a fourteen-day soak or customer-ready verdict.
+
+## Concurrent release-191e failure and bounded pipeline follow-up
+
+The exact schema-38 API/collector release `191e2c2b` admitted two internal
+20k-file continuations, staggered initial/replayed submission and then overlapping
+materialization/publication. Both used the same preserved `33b398b6` source,
+one L40S each, the unchanged system/qa concurrency of two, and no customer key.
+
+| Case | Operation | Initial/replay | Materialization | Platform publication |
+| --- | --- | --- | --- | --- |
+| REST r5 | `7fb06cae-0eb6-44ab-8f5d-772d2fb3ae86` | 33.882 / 30.778 s | 171 s | 551.456 s |
+| MCP r2 | `c2d128a9-80f5-418f-82a6-0372b4fdb7a7` | 25.576 / 21.975 s | 163 s | 456.154 s |
+
+The REST publication spent 224.974 seconds reserving upload handles, 263.992
+finalizing metadata, and only 54.547 transferring bytes. MCP spent
+175.952/228.680/43.702 seconds respectively. Both then entered customer export
+but exceeded the unchanged 600-second handoff without a committed acknowledgement.
+Their public results are failed (`Error` and `PodFailurePolicy`); normal owners
+released the Pods by 18:50:22 and 18:51:01 UTC. The original safe checkpoint
+remains available. These are platform transfer failures, not evidence that the
+scientific trajectories or fourteen-day continuation completed.
+
+Readiness also failed with captured `database_unavailable`/database-readiness
+timeouts at 18:35:35.409 and 18:37:33.843 UTC. At those times the parent's
+database observer saw approximately 0.5 CPU rather than the prior database
+saturation. The sibling's measured artifact-inventory responsiveness fix is
+commit `05712815f`; its live availability gate remains open. Private receipts
+are in `rest-20k-r5`, `mcp-20k-r2`, and `concurrent-20k-r1` under the private
+acceptance directory.
+
+The follow-up overlaps at most two metadata cohorts while retaining the existing
+global eight PUT streams per collector, at most 128 signed handles, and at most
+1 GiB of in-flight file bytes (a larger individual file runs alone). It covers
+both checkpoint publication and final successful-attempt rehoming. Results are
+consumed in deterministic input order, aliases are preserved, and returned
+SHA/length must still match the stopped native inventory. Failure/cancellation
+stops new cohorts and drains running transfers before propagating; no partial
+customer manifest, final result, or native acknowledgement is committed.
+
+Progress now distinguishes the non-overlapping wall timeline (`phase_seconds`,
+including `platform-pipeline`) from overlapping summed cohort work
+(`cohort_phase_seconds` and `active_cohort_phases`). These sums must not be
+misreported as elapsed wall time. Eleven new tests plus existing checkpoint and
+descriptor tests passed: 57 total, covering GROMACS and MPI, checkpoint/final
+publication, aliases, exact retry identity, global eight-stream concurrency,
+byte bounds, mutation, partial failure, and cancellation/draining. Focused strict
+typing and Ruff passed. No timeout, quota, customer limit, or native image change
+was used to make the test pass. Parent owns the combined rollout and rerun.
 
 ## REST r4 success and remaining availability defect
 
@@ -40,10 +90,15 @@ After that, raw MCP continuation `c9d6195b-8b69-4296-b1a3-c5596083f050` admitted
 in 30.423 seconds, replayed in 37.100 seconds and again produced database
 readiness timeouts. Its first large handoff nevertheless committed in 547.174
 seconds (369.298 platform plus 177.324 customer export). Native execution exited
-successfully at 18:26:25 UTC; the public result is succeeded, the Pod was absent
-at 18:26:48 and full output byte verification is now running. This is not yet a
-complete MCP byte-verification or availability pass. Later downloads may use
-the compatible successor API; the admitted scientific runtime remains frozen.
+successfully at 18:26:25 UTC; the public result is succeeded and the Pod was absent
+at 18:26:48. Full public byte verification passed: all 20,031 files, 23,042,067
+bytes, and 20,004 immutable source files, with the original target of 60,000
+steps reached. Eight parallel reads took 1,270.784 seconds and required six extra
+GET attempts, retained individually in `retained-artifact-transfers.jsonl`.
+No local files were silently reused and no retry counts are unknown. The admitted
+runtime stayed on `64c5c77d`; artifact downloads crossed the compatible `191e2c2b`
+rollout, so this is explicitly mixed-reader download evidence, not a single-image
+claim. Two admission-time readiness 503s remain an availability failure.
 
 Current Kubernetes log files rotated away some admission-time probe records.
 `capture_api_readiness.py` now explicitly reports incomplete cohort starts,

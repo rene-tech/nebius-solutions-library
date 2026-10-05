@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from collections import deque
+from collections.abc import Callable, Iterator
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
@@ -63,6 +66,7 @@ class GromacsCheckpointTransport:
         )
         self.transfer_progress: dict[str, Any] = {}
         self.transfer_started = self.phase_started = 0.0
+        self.progress_lock = threading.RLock()
 
     def _begin_progress(self, action: str, generation: int, total_files: int) -> None:
         self.transfer_started = self.phase_started = time.monotonic()
@@ -78,17 +82,118 @@ class GromacsCheckpointTransport:
 
     def _progress(self, phase: str, completed_files: int | None = None) -> None:
         """Sanitized local timing evidence: no paths, payloads, handles or keys."""
-        now = time.monotonic()
-        durations = self.transfer_progress["phase_seconds"]
-        previous = self.transfer_progress["phase"]
-        durations[previous] = durations.get(previous, 0.0) + now - self.phase_started
-        self.phase_started = now
-        self.transfer_progress.update(phase=phase, elapsed_seconds=now - self.transfer_started)
-        if completed_files is not None:
-            self.transfer_progress["completed_files"] = completed_files
-        atomic_json(self.meta / "transfer-progress.json", self.transfer_progress)
-        if phase in {"committed", "restored", "finalized"}:
-            print(json.dumps({"event": "native_checkpoint_transfer", **self.transfer_progress}), flush=True)
+        with self.progress_lock:
+            now = time.monotonic()
+            durations = self.transfer_progress["phase_seconds"]
+            previous = self.transfer_progress["phase"]
+            durations[previous] = durations.get(previous, 0.0) + now - self.phase_started
+            self.phase_started = now
+            self.transfer_progress.update(phase=phase, elapsed_seconds=now - self.transfer_started)
+            if completed_files is not None:
+                self.transfer_progress["completed_files"] = completed_files
+            atomic_json(self.meta / "transfer-progress.json", self.transfer_progress)
+            if phase in {"committed", "restored", "finalized"}:
+                print(json.dumps({"event": "native_checkpoint_transfer", **self.transfer_progress}), flush=True)
+
+    def _cohort_progress(self) -> Callable[[str | None], None]:
+        """Separate summed cohort work from the non-overlapping wall timeline."""
+        previous: str | None = None
+        started = time.monotonic()
+
+        def report(phase: str | None) -> None:
+            nonlocal previous, started
+            with self.progress_lock:
+                now = time.monotonic()
+                durations = self.transfer_progress.setdefault("cohort_phase_seconds", {})
+                active = self.transfer_progress.setdefault("active_cohort_phases", {})
+                if previous is not None:
+                    durations[previous] = durations.get(previous, 0.0) + now - started
+                    active[previous] -= 1
+                    if active[previous] == 0:
+                        del active[previous]
+                if phase is not None:
+                    active[phase] = active.get(phase, 0) + 1
+                previous, started = phase, now
+                self.transfer_progress["elapsed_seconds"] = now - self.transfer_started
+                atomic_json(self.meta / "transfer-progress.json", self.transfer_progress)
+
+        return report
+
+    @staticmethod
+    def _native_groups(items: list[dict[str, Any]]) -> Iterator[tuple[list[dict[str, Any]], int]]:
+        group: list[dict[str, Any]] = []
+        size = 0
+        for item in items:
+            if group and (len(group) == 64 or size + item["size_bytes"] > 1024**3):
+                yield group, size
+                group, size = [], 0
+            group.append(item)
+            size += item["size_bytes"]
+        if group:
+            yield group, size
+
+    def _upload_native_groups(
+        self, items: list[dict[str, Any]],
+    ) -> Iterator[tuple[list[dict[str, Any]], list[dict[str, Any]]]]:
+        """At most two cohorts/128 handles and one GiB in-flight file bytes.
+
+        One oversized file runs alone. HTTP PUTs retain the client's shared
+        eight-stream bound. Results are consumed in input order; failures stop
+        new work and drain already-running transfers before the caller can
+        publish a customer manifest, checkpoint acknowledgement or final result.
+        """
+        if not items:
+            return
+        self.transfer_progress["max_parallel_cohorts"] = 2
+        self._progress("platform-pipeline")
+
+        def upload(group: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            report = self._cohort_progress()
+            try:
+                return self.client.upload_files(
+                    identity=f"{self.invocation.produces}:{self.attempt}:native-file",
+                    paths=tuple(self.data / item["path"] for item in group),
+                    media_type="application/octet-stream",
+                    compression=None,
+                    on_phase=report,
+                )
+            finally:
+                report(None)
+
+        groups = self._native_groups(items)
+        waiting = next(groups, None)
+        pending: deque[tuple[Future[list[dict[str, Any]]], list[dict[str, Any]], int]] = deque()
+        in_flight_bytes, completed = 0, 0
+        executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="native-artifact-cohort")
+        try:
+            while waiting is not None or pending:
+                # Do not enqueue more work after a known failure, even if an
+                # earlier cohort is the next one consumed in input order.
+                for future, _, _ in pending:
+                    if future.done():
+                        future.result()
+                while waiting is not None and len(pending) < 2:
+                    group, size = waiting
+                    if pending and in_flight_bytes + size > 1024**3:
+                        break
+                    pending.append((executor.submit(upload, group), group, size))
+                    in_flight_bytes += size
+                    waiting = next(groups, None)
+                future, group, size = pending.popleft()
+                refs = future.result()
+                if len(refs) != len(group) or any(
+                    (ref.get("sha256"), ref.get("size_bytes")) != (item["sha256"], item["size_bytes"])
+                    for item, ref in zip(group, refs, strict=True)
+                ):
+                    raise ValueError("native upload differs from the stopped checkpoint bytes")
+                in_flight_bytes -= size
+                yield group, refs
+                completed += len(group)
+                self._progress("platform-pipeline", completed)
+        finally:
+            for future, _, _ in pending:
+                future.cancel()
+            executor.shutdown(wait=True, cancel_futures=True)
 
     def _state(self, value: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         state = value.get("state", {})
@@ -237,34 +342,14 @@ class GromacsCheckpointTransport:
             }
 
         pending = list(missing.values())
-        index = 0
-        while index < len(pending):
-            group: list[dict[str, Any]] = []
-            group_bytes = 0
-            # Cap both queued requests and signed-handle residence time for
-            # large trajectories. One large file may occupy a batch by itself.
-            while index < len(pending) and len(group) < 64:
-                item = pending[index]
-                if group and group_bytes + item["size_bytes"] > 1024**3:
-                    break
-                group.append(item)
-                group_bytes += item["size_bytes"]
-                index += 1
-            if self.workflow.model_id in {"gromacs", "gromacs-mpi"}:
-                self._progress("platform-validation", index - len(group))
-                refs = self.client.upload_files(
-                    identity=f"{self.invocation.produces}:{self.attempt}:native-file",
-                    paths=tuple(self.data / item["path"] for item in group),
-                    media_type="application/octet-stream",
-                    compression=None,
-                    on_phase=self._progress,
-                )
+        if self.workflow.model_id in {"gromacs", "gromacs-mpi"}:
+            for group, refs in self._upload_native_groups(pending):
                 for item, ref in zip(group, refs, strict=True):
                     known[item["sha256"]] = {**item, "artifact": ref, "uploaded_attempt": self.attempt}
-            else:
-                for item in group:
-                    entry = upload(item)
-                    known[entry["sha256"]] = entry
+        else:
+            for item in pending:
+                entry = upload(item)
+                known[entry["sha256"]] = entry
         for item in files:
             prior = known[item["sha256"]]
             entry = {**item, "artifact": prior["artifact"], "uploaded_attempt": prior.get("uploaded_attempt")}
@@ -355,25 +440,7 @@ class GromacsCheckpointTransport:
             else:
                 pending.setdefault(item["sha256"], item)
         remaining = [item for digest, item in pending.items() if digest not in self.final_files]
-        index = 0
-        while index < len(remaining):
-            group: list[dict[str, Any]] = []
-            group_bytes = 0
-            while index < len(remaining) and len(group) < 64:
-                item = remaining[index]
-                if group and group_bytes + item["size_bytes"] > 1024**3:
-                    break
-                group.append(item)
-                group_bytes += item["size_bytes"]
-                index += 1
-            self._progress("platform-validation", index - len(group))
-            refs = self.client.upload_files(
-                identity=f"{self.invocation.produces}:{self.attempt}:native-file",
-                paths=tuple(self.data / item["path"] for item in group),
-                media_type="application/octet-stream",
-                compression=None,
-                on_phase=self._progress,
-            )
+        for group, refs in self._upload_native_groups(remaining):
             for item, ref in zip(group, refs, strict=True):
                 self.final_files[item["sha256"]] = ref
         self.final_references_prepared = True

@@ -105,7 +105,8 @@ def main():
                                     "import json,pathlib,sys; p=pathlib.Path(sys.argv[1]); "
                                     "v=json.loads(p.read_text()) if p.is_file() else {}; "
                                     "print(json.dumps({k:v[k] for k in "
-                                    "('action','generation','total_files','completed_files','phase','phase_seconds','elapsed_seconds') "
+                                    "('action','generation','total_files','completed_files','phase','phase_seconds',"
+                                    "'elapsed_seconds','cohort_phase_seconds','active_cohort_phases','max_parallel_cohorts') "
                                     "if k in v}))",
                                     workdir + "/.fs2/transfer-progress.json",
                                 ],

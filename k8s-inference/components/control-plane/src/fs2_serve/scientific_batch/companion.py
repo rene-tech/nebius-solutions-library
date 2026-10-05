@@ -7,6 +7,7 @@ import io
 import json
 import os
 import tarfile
+import threading
 import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
@@ -656,6 +657,9 @@ class WorkloadArtifactHttpClient:
         self.fallback_base_url = fallback_base_url.rstrip("/") if fallback_base_url else None
         self.headers = {"Authorization": f"Bearer {capability}"}
         self._prepared_downloads: dict[UUID, dict[str, Any]] = {}
+        # Two metadata cohorts may overlap, but they share the same existing
+        # eight streamed PUT lanes. This is per collector, not per cohort.
+        self._native_put_slots = threading.BoundedSemaphore(8)
 
     def prepare_downloads(self, artifact_ids: tuple[UUID, ...]) -> None:
         """Authorize one bounded batch of inputs or same-operation checkpoint files."""
@@ -964,7 +968,7 @@ class WorkloadArtifactHttpClient:
         ]:
             raise ValueError("bulk upload reservations differ from their immutable identities")
 
-        def put(index: int) -> None:
+        def put_stream(index: int) -> None:
             path, before, request = prepared[index]
             handle = begun[index]["handle"]
             if handle.get("method") != "PUT":
@@ -996,6 +1000,10 @@ class WorkloadArtifactHttpClient:
                 after.st_ctime_ns,
             ):
                 raise ValueError("output file changed during artifact publication")
+
+        def put(index: int) -> None:
+            with self._native_put_slots:
+                put_stream(index)
 
         report("platform-transfer")
         with ThreadPoolExecutor(max_workers=8, thread_name_prefix="native-artifact-put") as executor:
