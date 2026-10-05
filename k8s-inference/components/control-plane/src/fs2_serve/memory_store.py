@@ -149,6 +149,7 @@ class MemoryStore:
         # Controller tests opt out and exercise real fenced intent transitions.
         self.auto_activate = auto_activate
         self._lock = asyncio.Lock()
+        self._scientific_admission_recovery_lock = asyncio.Lock()
         self._activation_mutation_locks: dict[str, asyncio.Lock] = {}
         self.tokens: dict[UUID, _Token] = {}
         self.operations: dict[UUID, _Operation] = {}
@@ -188,6 +189,15 @@ class MemoryStore:
         self.model_deployment_idempotency: dict[tuple[UUID, str, str], tuple[str, str, str, int]] = {}
         self.model_deployment_status_events: dict[tuple[str, str], list[ModelDeploymentStatusObservation]] = {}
         self.model_deployment_status_by_id: dict[UUID, ModelDeploymentStatusObservation] = {}
+
+    @asynccontextmanager
+    async def scientific_admission_recovery(self) -> AsyncIterator[bool]:
+        """Match the production recovery-only, nonblocking owner scope."""
+        if self._scientific_admission_recovery_lock.locked():
+            yield False
+            return
+        async with self._scientific_admission_recovery_lock:
+            yield True
 
     def _activation_event(self, intent: ActivationIntent, event: str) -> None:
         self.activation_events.append(

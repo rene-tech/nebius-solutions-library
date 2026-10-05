@@ -784,10 +784,17 @@ class ScientificBatchService:
     async def recover_pending_admissions(self, *, limit: int = 100) -> int:
         """Materialize accepted batch requests left by a stopped API process."""
 
-        pending = await self.store.list_scientific_admissions(limit=limit)
-        for item in pending:
-            await self._materialize_pending(item)
-        return len(pending)
+        # Every controller worker used to read/decode/materialize the same
+        # potentially multi-MiB page. Keep one background recovery owner across
+        # replicas; the original API submit remains independent, with the
+        # existing frozen-admission comparison handling their legitimate race.
+        async with self.store.scientific_admission_recovery() as acquired:
+            if not acquired:
+                return 0
+            pending = await self.store.list_scientific_admissions(limit=limit)
+            for item in pending:
+                await self._materialize_pending(item)
+            return len(pending)
 
     async def status(self, operation_id: UUID, *, principal: Principal) -> dict[str, Any]:
         self._authorize(principal, Scope.OPERATIONS_READ)

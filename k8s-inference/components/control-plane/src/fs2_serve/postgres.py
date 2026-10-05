@@ -8,8 +8,8 @@ import copy
 import hashlib
 import json
 import secrets
-from collections.abc import Callable
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final, NoReturn, ParamSpec, TypeVar, cast
@@ -183,6 +183,19 @@ def _decode_configuration_json(value: object, label: str) -> dict[str, Any]:
     return cast(dict[str, Any], value)
 
 
+_SCIENTIFIC_ADMISSION_RECOVERY_LOCK = int.from_bytes(
+    hashlib.blake2b(b"fs2:scientific-admission-recovery:v1", digest_size=8).digest(), "big", signed=True
+)
+
+
+def _pending_scientific_admission(record: Any) -> PendingScientificAdmission:
+    return PendingScientificAdmission(
+        operation_id=record["operation_id"],
+        payload=_decode_configuration_json(record["payload"], "scientific admission outbox"),
+        created_at=record["created_at"],
+    )
+
+
 def _upgrade_legacy_model_deployment_status(value: dict[str, Any]) -> dict[str, Any]:
     """Retain pre-identity fast-start paths without letting them qualify.
 
@@ -329,6 +342,7 @@ class PostgresStore:
         self.hasher = hasher
         self.payload_ttl_seconds = payload_ttl_seconds
         self.activation = PostgresActivationStore(pool, owns_pool=False)
+        self._scientific_admission_recovery_active = False
 
     @classmethod
     async def _connect_pool(
@@ -2869,11 +2883,7 @@ class PostgresStore:
             )
         if record is None:
             return None
-        return PendingScientificAdmission(
-            operation_id=record["operation_id"],
-            payload=_decode_configuration_json(record["payload"], "scientific admission outbox"),
-            created_at=record["created_at"],
-        )
+        return await run_scientific_cpu(_pending_scientific_admission, record)
 
     async def list_scientific_admissions(self, *, limit: int = 100) -> list[PendingScientificAdmission]:
         if not 1 <= limit <= 1000:
@@ -2888,14 +2898,59 @@ class PostgresStore:
                 """,
                 limit,
             )
-        return [
-            PendingScientificAdmission(
-                operation_id=record["operation_id"],
-                payload=_decode_configuration_json(record["payload"], "scientific admission outbox"),
-                created_at=record["created_at"],
+        return await run_scientific_cpu(lambda: [_pending_scientific_admission(record) for record in records])
+
+    @asynccontextmanager
+    async def scientific_admission_recovery(self) -> AsyncIterator[bool]:
+        """One background outbox reader across replicas; normal submit is independent.
+
+        The local flag avoids queueing duplicate workers for a pool connection.
+        PostgreSQL's nonblocking session lock covers the complete recovery page,
+        without a long transaction or a persistent lease/migration. A lost
+        connection automatically releases the lock; exact durable admission
+        checks still arbitrate a race with the original submitting process.
+        """
+        if self._scientific_admission_recovery_active:
+            yield False
+            return
+        self._scientific_admission_recovery_active = True
+        connection = None
+        try:
+            connection = await self.pool.acquire()
+            acquired = bool(
+                await connection.fetchval(
+                    "SELECT pg_try_advisory_lock($1::bigint)", _SCIENTIFIC_ADMISSION_RECOVERY_LOCK,
+                )
             )
-            for record in records
-        ]
+            yield acquired
+        finally:
+            try:
+                if connection is not None:
+                    # asyncpg resets the connection, including advisory locks,
+                    # even if cancellation landed after SQL acquired the lock
+                    # but before Python received the result. Drain that reset
+                    # despite repeated raw Task.cancel() before relinquishing
+                    # this owner scope. No new timeout or pool is introduced.
+                    cleanup = asyncio.create_task(self.pool.release(connection))
+                    cancellation: asyncio.CancelledError | None = None
+                    while True:
+                        try:
+                            await asyncio.shield(cleanup)
+                            break
+                        except asyncio.CancelledError as error:
+                            cancellation = cancellation or error
+                            if cleanup.done():
+                                if not cleanup.cancelled():
+                                    cleanup.exception()
+                                break
+                        except BaseException:
+                            if cancellation is not None:
+                                raise cancellation from None
+                            raise
+                    if cancellation is not None:
+                        raise cancellation
+            finally:
+                self._scientific_admission_recovery_active = False
 
     async def complete_scientific_admission(self, operation_id: UUID) -> None:
         async with self.pool.acquire() as connection:
