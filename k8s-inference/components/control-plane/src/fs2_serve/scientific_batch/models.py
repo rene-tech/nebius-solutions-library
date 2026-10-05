@@ -995,7 +995,8 @@ class StageExecutionBinding:
             self.required_node_labels
         ):
             raise ValueError("stage execution maps must have unique keys")
-        if not 1 <= self.active_deadline_seconds <= 7 * 24 * 3600:
+        # Seven days of execution plus bounded checkpoint/export grace.
+        if not 1 <= self.active_deadline_seconds <= 7 * 24 * 3600 + 1800:
             raise ValueError("stage active deadline is outside the bound")
         if not 1 <= self.termination_grace_seconds <= 24 * 3600:
             raise ValueError("stage termination grace is outside the bound")

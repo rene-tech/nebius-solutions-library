@@ -822,7 +822,7 @@ class FileScientificManifestRenderer:
                     limit_memory=limit_memory,
                     limit_ephemeral_storage=limit_ephemeral_storage,
                     active_deadline_seconds=_positive_integer(
-                        stage["active_deadline_seconds"], "scientific active deadline", maximum=7 * 24 * 3600
+                        stage["active_deadline_seconds"], "scientific active deadline", maximum=7 * 24 * 3600 + 1800
                     ),
                     termination_grace_seconds=_positive_integer(
                         stage["termination_grace_seconds"],
