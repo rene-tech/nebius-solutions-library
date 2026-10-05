@@ -34,6 +34,7 @@ from ..scientific_artifacts import (
 from ..scientific_artifacts import (
     AttemptStatus as ArtifactAttemptStatus,
 )
+from ..scientific_cpu import run_scientific_cpu
 from ..store import ConflictError, Store
 from .models import (
     ArtifactAccessContext,
@@ -73,6 +74,49 @@ def _pointer_matches(record: Any, pointer: Mapping[str, Any]) -> bool:
     if actual.get("compression") == "none" and "compression" not in expected:
         actual.pop("compression")
     return actual == expected
+
+
+def _verified_input_admission(
+    artifact: ArtifactRecord,
+    manifest: Mapping[str, Any],
+    records: Mapping[UUID, ArtifactRecord],
+    tenant_id: str,
+) -> ScientificInputAdmission:
+    """Validate already-read immutable records without blocking shared API I/O."""
+    entries = []
+    for raw_entry in cast(list[Mapping[str, Any]], manifest["entries"]):
+        ref = cast(Mapping[str, Any], raw_entry["artifact"])
+        try:
+            entry_id = UUID(str(ref["artifact_id"]))
+        except ValueError:
+            raise ArtifactNotFoundError("input manifest entry artifact ID is not canonical") from None
+        entry = records[entry_id]
+        if not _pointer_matches(entry, ref) or entry.access != artifact.access:
+            raise ArtifactNotFoundError("input manifest entry metadata or access admission differs")
+        entries.append(
+            ScientificInputArtifact(
+                logical_artifact_id=str(raw_entry["name"]),
+                semantic_type=str(raw_entry["semantic_type"]),
+                artifact_id=entry.artifact_id,
+                digest=entry.digest,
+                size_bytes=entry.size_bytes,
+                media_type=entry.media_type,
+                compression=None if entry.compression is None else entry.compression.value,
+            )
+        )
+    return ScientificInputAdmission(
+        manifest=VerifiedInputManifest(
+            manifest_id=str(manifest["manifest_id"]),
+            manifest_artifact_id=artifact.artifact_id,
+            manifest_digest=artifact.digest,
+            entries=tuple(entries),
+        ),
+        access_context=ArtifactAccessContext(
+            profile=artifact.access.profile.value,
+            receipt_digest=artifact.access.receipt_digest,
+            tenant_id=tenant_id,
+        ),
+    )
 
 
 class ScientificBatchResultRepository(Protocol):
@@ -177,7 +221,7 @@ class ArtifactServiceBridge:
                 payload
             ).hexdigest() != artifact.digest.removeprefix("sha256:"):
                 raise ArtifactNotFoundError("input manifest bytes differ from verified metadata")
-            manifest = self.profiles.validate_artifact_manifest(json.loads(payload))
+            manifest = await run_scientific_cpu(lambda: self.profiles.validate_artifact_manifest(json.loads(payload)))
         except ScientificRequestError:
             # The bytes have already been authorized and hash-verified. A bad
             # manifest is a repairable caller error, not a missing artifact.
@@ -188,7 +232,6 @@ class ArtifactServiceBridge:
                 public_detail="The verified input manifest is not valid UTF-8 JSON. "
                 "Upload a corrected scientific artifact manifest; the source artifact can be reused.",
             ) from error
-        entries: list[ScientificInputArtifact] = []
         raw_entries = cast(list[Mapping[str, Any]], manifest["entries"])
         records: dict[UUID, ArtifactRecord] = {}
         for offset in range(0, len(raw_entries), 128):
@@ -202,40 +245,7 @@ class ArtifactServiceBridge:
             records.update(
                 (entry.artifact_id, entry) for entry in await self.artifacts.get_artifacts(ids, tenant_id=tenant_id)
             )
-        for raw_entry in raw_entries:
-            ref = cast(Mapping[str, Any], raw_entry["artifact"])
-            try:
-                entry_id = UUID(str(ref["artifact_id"]))
-            except ValueError:
-                raise ArtifactNotFoundError("input manifest entry artifact ID is not canonical") from None
-            entry = records[entry_id]
-            if not _pointer_matches(entry, ref) or entry.access != artifact.access:
-                raise ArtifactNotFoundError("input manifest entry metadata or access admission differs")
-            entries.append(
-                ScientificInputArtifact(
-                    logical_artifact_id=str(raw_entry["name"]),
-                    semantic_type=str(raw_entry["semantic_type"]),
-                    artifact_id=entry.artifact_id,
-                    digest=entry.digest,
-                    size_bytes=entry.size_bytes,
-                    media_type=entry.media_type,
-                    compression=None if entry.compression is None else entry.compression.value,
-                )
-            )
-        access = ArtifactAccessContext(
-            profile=artifact.access.profile.value,
-            receipt_digest=artifact.access.receipt_digest,
-            tenant_id=tenant_id,
-        )
-        return ScientificInputAdmission(
-            manifest=VerifiedInputManifest(
-                manifest_id=str(manifest["manifest_id"]),
-                manifest_artifact_id=artifact.artifact_id,
-                manifest_digest=artifact.digest,
-                entries=tuple(entries),
-            ),
-            access_context=access,
-        )
+        return await run_scientific_cpu(_verified_input_admission, artifact, manifest, records, tenant_id)
 
     async def validate_model_input(
         self,

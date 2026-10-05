@@ -25,6 +25,7 @@ from ..scientific_artifacts import (
     ArtifactRecord,
     ScientificArtifactControllerPort,
 )
+from ..scientific_cpu import run_scientific_cpu
 from ..scientific_input_uploads import ScientificInputUploadRequest, ScientificInputUploadService
 from ..scientific_run_result import ArtifactRef
 from ..store import ConflictError
@@ -107,7 +108,7 @@ async def _read_checkpoint(
             raise ContinuationError("checkpoint manifest exceeds the supported size")
     if len(content) != pointer["size_bytes"] or hashlib.sha256(content).hexdigest() != pointer["sha256"]:
         raise ContinuationError("checkpoint manifest integrity verification failed")
-    value: dict[str, Any] = json.loads(content)
+    value: dict[str, Any] = await run_scientific_cpu(json.loads, content)
     return value
 
 
@@ -259,20 +260,22 @@ async def resume_gromacs(
     all_records = await artifacts.list_artifacts(operation_id, tenant_id=principal.tenant_id, stage_id="workflow")
     record = next(row for row in all_records if str(row.artifact_id) == choice["checkpoint"]["artifact_id"])
     invocation = source.execution_plan.invocation("workflow", record.shard_id)
-    original = json.loads(
+    original = await run_scientific_cpu(
+        json.loads,
         next(
             document.canonical_json
             for document in invocation.workspace_documents
             if document.relative_path == ".fs2/request.json"
         )
     )
-    parameters = continuation_parameters(
+    parameters = await run_scientific_cpu(
+        continuation_parameters,
         original, checkpoint, model_id=choices["model_id"], max_wall_seconds=request.max_wall_seconds
     )
     records = [
         row for row in all_records if row.shard_id == record.shard_id and row.direction is ArtifactDirection.OUTPUT
     ]
-    entries, paths = continuation_inputs(checkpoint, records)
+    entries, paths = await run_scientific_cpu(continuation_inputs, checkpoint, records)
     lineage = {
         "source_operation_id": str(operation_id),
         "source_job_id": choice["job_id"],
@@ -303,7 +306,8 @@ async def resume_gromacs(
         model_id=choices["model_id"],
         key=f"resume-manifest-{identity}",
         media_type="application/vnd.fs2.scientific-manifest+json",
-        content=canonical(
+        content=await run_scientific_cpu(
+            canonical,
             {
                 "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
                 "manifest_id": f"resume-{identity[:32]}",

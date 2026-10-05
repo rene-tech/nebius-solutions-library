@@ -12,6 +12,7 @@ from pydantic import Field
 
 from ..auth import require_operation_access
 from ..models import AdmissionRequest, OperationView, PendingScientificAdmission, Principal, Scope, StrictModel
+from ..scientific_cpu import run_scientific_cpu
 from ..scientific_run_result import ArtifactRef, ScientificRunResult
 from ..scientific_run_result import SchedulingAdmission as PublicSchedulingAdmission
 from ..store import ConflictError, Store
@@ -517,7 +518,7 @@ class ScientificBatchService:
         workload_namespace = self.execution_binding.workload_namespace(model_id)
         if require_mcp_invocable and not profile.mcp_invocable:
             raise ScientificProfileError("scientific workload profile is not MCP-invocable")
-        validated = self.profiles.validate_request(profile, request)
+        validated = await run_scientific_cpu(self.profiles.validate_request, profile, request)
         # Capture the admin choice once, before either preflight or admission.
         # Existing operations and retries only use their durable stage binding.
         startup_overrides = {}
@@ -538,7 +539,9 @@ class ScientificBatchService:
         input_admission = await self.artifacts.validate_input(
             validated["input_manifest"], tenant_id=principal.tenant_id
         )
-        validate_input_roles(str(profile.value["model_id"]), validated, input_admission.manifest.entries)
+        await run_scientific_cpu(
+            validate_input_roles, str(profile.value["model_id"]), validated, input_admission.manifest.entries
+        )
         # Input artifacts are caller-owned scientific data, not license
         # credentials. Academic runtime authorization is deployment-bound and
         # projected from the reviewed execution handoff, never supplied by a
@@ -548,7 +551,8 @@ class ScientificBatchService:
         except CatalogProfileAdapterError as error:
             raise ScientificProfileError("scientific workload deployment authorization is not runnable") from error
         try:
-            preflight = self.plan_factory.plan(
+            preflight = await run_scientific_cpu(
+                self.plan_factory.plan,
                 profile,
                 validated,
                 operation_id=UUID(int=0),
@@ -605,7 +609,9 @@ class ScientificBatchService:
             )
         except SchedulingContractError as error:
             raise ScientificProfileError("Kueue scheduling contract cannot admit this profile") from error
-        body = json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        body = await run_scientific_cpu(
+            lambda: json.dumps(validated, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        )
 
         def freeze_admission(operation: OperationView) -> dict[str, object]:
             if startup_error is not None:
@@ -715,7 +721,7 @@ class ScientificBatchService:
         return self._state_view(operation, state, recovery_policy=getattr(self.controller, "recovery_policy", None))
 
     async def _materialize_pending(self, pending: PendingScientificAdmission) -> ScientificBatchState:
-        state = state_from_value(pending.payload)
+        state = await run_scientific_cpu(state_from_value, pending.payload)
         operation = await self.store.get_operation(state.operation_id, tenant_id=state.tenant_id)
         if (
             operation.id != pending.operation_id

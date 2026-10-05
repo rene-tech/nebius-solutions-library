@@ -6,12 +6,16 @@ import base64
 import hashlib
 import hmac
 import json
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID
 
 from ..crypto import KeyedHasher
-from .models import WorkloadResource
+from ..scientific_cpu import run_scientific_cpu
+from .codec import _retained_metadata_bytes
+from .models import StageInvocation, VerifiedInputManifest, WorkloadResource
 
 CAPABILITY_SCHEMA = "fs2-serve.nebius.ai/scientific-workload-capability/v1"
 COMPACT_CAPABILITY_SCHEMA = "fs2-serve.nebius.ai/scientific-workload-capability/v2"
@@ -112,6 +116,84 @@ def capability_artifacts_digest(artifacts: tuple[CapabilityArtifact, ...]) -> st
         for item in artifacts
     ]
     return "sha256:" + hashlib.sha256(json.dumps(values, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+_Bindings = tuple[tuple[CapabilityArtifact, ...], str]
+_RetainedBindings = tuple[VerifiedInputManifest, StageInvocation, _Bindings]
+
+
+class _ImmutableBindingsCache:
+    """Only a frozen graph's derived file identities, never an authorization."""
+
+    def __init__(self, *, max_bytes: int = 64 * 1024**2, max_entries: int = 4) -> None:
+        self.max_bytes, self.max_entries = max_bytes, max_entries
+        self.retained_bytes = 0
+        self.entries: OrderedDict[tuple[int, int], tuple[_RetainedBindings, int]] = OrderedDict()
+        self.lock = threading.Lock()
+
+    def get(self, manifest: VerifiedInputManifest, invocation: StageInvocation) -> _Bindings | None:
+        key = (id(manifest), id(invocation))
+        with self.lock:
+            entry = self.entries.get(key)
+            if entry is None:
+                return None
+            # Strong references keep both frozen source objects alive, so a
+            # recycled object ID can never turn a different graph into a hit.
+            value, _ = entry
+            if value[0] is not manifest or value[1] is not invocation:
+                return None
+            self.entries.move_to_end(key)
+            return value[2]
+
+    def put(self, manifest: VerifiedInputManifest, invocation: StageInvocation, bindings: _Bindings) -> None:
+        key = (id(manifest), id(invocation))
+        value = (manifest, invocation, bindings)
+        try:
+            weight = _retained_metadata_bytes((key, value))
+        except ValueError:
+            return  # Future mutable types bypass the optimization, never validation.
+        if weight > self.max_bytes or self.max_entries < 1:
+            return
+        with self.lock:
+            previous = self.entries.pop(key, None)
+            if previous is not None:
+                self.retained_bytes -= previous[1]
+            while self.entries and (
+                len(self.entries) >= self.max_entries or self.retained_bytes + weight > self.max_bytes
+            ):
+                _, (_, removed) = self.entries.popitem(last=False)
+                self.retained_bytes -= removed
+            self.entries[key] = (value, weight)
+            self.retained_bytes += weight
+
+
+_IMMUTABLE_BINDINGS = _ImmutableBindingsCache()
+
+
+def _build_input_bindings(manifest: VerifiedInputManifest, invocation: StageInvocation) -> _Bindings:
+    cached = _IMMUTABLE_BINDINGS.get(manifest, invocation)
+    if cached is not None:
+        return cached
+    sources = {item.logical_artifact_id: item for item in manifest.entries}
+    bindings = tuple(
+        CapabilityArtifact(
+            logical_artifact_id=item.artifact_id,
+            artifact_id=(source := sources[item.artifact_id]).artifact_id,
+            digest=source.digest,
+            size_bytes=source.size_bytes,
+            media_type=source.media_type,
+            compression=source.compression,
+        )
+        for item in invocation.materializations
+    )
+    value = (bindings, capability_artifacts_digest(bindings))
+    _IMMUTABLE_BINDINGS.put(manifest, invocation, value)
+    return value
+
+
+async def immutable_input_bindings(manifest: VerifiedInputManifest, invocation: StageInvocation) -> _Bindings:
+    cached = _IMMUTABLE_BINDINGS.get(manifest, invocation)
+    return cached if cached is not None else await run_scientific_cpu(_build_input_bindings, manifest, invocation)
 
 
 class ScientificWorkloadCapabilityAuthority:

@@ -30,7 +30,7 @@ from .capability import (
     CapabilityArtifact,
     ScientificWorkloadCapability,
     ScientificWorkloadCapabilityAuthority,
-    capability_artifacts_digest,
+    immutable_input_bindings,
 )
 from .models import AttemptOutcome, ExecutionMode, ScientificAttemptState, ScientificBatchState
 from .native_workflows import workflow_for_binding
@@ -128,19 +128,8 @@ async def authorize_workload_capability(
         try:
             if state.input_manifest is None:
                 raise ValueError("missing immutable input manifest")
-            sources = {item.logical_artifact_id: item for item in state.input_manifest.entries}
-            bindings = tuple(
-                CapabilityArtifact(
-                    logical_artifact_id=item.artifact_id,
-                    artifact_id=(source := sources[item.artifact_id]).artifact_id,
-                    digest=source.digest,
-                    size_bytes=source.size_bytes,
-                    media_type=source.media_type,
-                    compression=source.compression,
-                )
-                for item in invocation.materializations
-            )
-            if not hmac.compare_digest(capability_artifacts_digest(bindings), capability.artifacts_digest):
+            bindings, digest = await immutable_input_bindings(state.input_manifest, invocation)
+            if not hmac.compare_digest(digest, capability.artifacts_digest):
                 raise ValueError("immutable input identities changed")
         except (KeyError, ValueError):
             raise HTTPException(status_code=409, detail="workload capability input binding changed") from None

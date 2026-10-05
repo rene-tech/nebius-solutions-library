@@ -214,6 +214,49 @@ The full-node MPI recovery case is held during the separately authorized
 two-node InfiniBand reprovisioning. Single-GPU REST and raw-MCP continuation use
 the existing `gromacs` App and do not require or interfere with that cutover.
 
+## Availability and publication follow-up
+
+Continuation retry `59ae91d5-be0b-4e29-a7b6-151c7b7a4631` used the frozen
+`ea48e966` release. Initial admission returned HTTP 202 in 29.280 seconds;
+same-key replay returned 202 in 15.029 seconds and reused the operation. One
+API readiness probe still returned 503 during initial admission, then recovered.
+Input materialization improved from 333 to 132 seconds. These improvements did
+not constitute acceptance: platform publication reached 20,011 files only after
+599.69 seconds, leaving no time for customer export inside the 600-second native
+handoff. Native execution failed, the public failure was published, and the GPU
+was released normally. No failure was hidden through a changed deadline.
+
+The next source revision moves existing pure metadata validation, compilation,
+serialization and decoding to a dedicated two-thread executor. It does not
+remove preflight, cache authorization or change idempotency/admission rules.
+Raw and repeated task cancellation drains running callbacks before their owner
+can leave its transaction or lock; queued work can be cancelled before starting.
+The pool is process-wide and works across multiple event loops. Local profiles
+found 4.24 seconds in large input validation (3.67 in JSON Schema) and 2.59 seconds
+in a single plan compilation. These had previously run on the API event loop.
+
+Artifact batches additionally reuse only the binding tuple and digest derived
+from already-validated frozen input and invocation objects. Strong references
+prevent object-ID reuse; retained object graphs are bounded to 64 MiB and four
+entries. HMAC verification and current tenant, attempt, status, cancellation and
+access checks still run for every request. Changed source objects or a changed
+signed digest cannot reuse an authorization decision, because none is stored.
+
+Using the exact 20,006 file references and paths from source `33b398b6`, local
+fresh-state decoding plus authorization measured 1.075 seconds cold and 0.425
+seconds for 50 warm calls (8.51 ms/call). The binding cache retained 20.23 MB.
+The earlier representative 20k profile spent 75.8 ms/call on binding construction
+and hashing alone. These are CPU measurements, not database/network or live
+handoff claims. Fresh duplicate checks and state validation remain enabled.
+
+Validation: 119 existing local cases passed (three unconfigured database skips,
+two database cases deselected), then 120 cases passed with the actual disposable
+PostgreSQL instance, including 20k outbox reopen/cancellation/SQL immutability,
+artifact reads, callback transaction safety, controller and checkpoint behavior.
+Eleven new binding-cache/actual-manifest heartbeat cases passed. The standalone
+executor also passed five cancellation, multiloop, context and bounded-concurrency
+cases. Strict typing and Ruff passed. The next live REST/MCP verdict is pending.
+
 Use `verify_resume.py --source-only` when a source checkpoint must be qualified
 before a continuation release becomes available. It saves the same receipt and
 stops without submitting continuation work; rerun the identical command without

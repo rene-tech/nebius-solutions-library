@@ -11,6 +11,7 @@ from uuid import UUID
 import asyncpg
 
 from ..postgres_retry import retry_serialization
+from ..scientific_cpu import run_scientific_cpu
 from .codec import state_from_value, state_to_json
 from .models import (
     PUBLIC_ARTIFACT_ACCESS_CONTEXT,
@@ -133,7 +134,7 @@ class PostgresScientificBatchRepository:
             input_manifest=input_manifest,
             runtime_artifacts=runtime_artifacts,
         )
-        payload = state_to_json(proposed)
+        payload = await run_scientific_cpu(state_to_json, proposed)
         try:
             async with self.pool.acquire() as connection, connection.transaction():
                 # Admission never changes the public Operation. A key-share
@@ -176,7 +177,7 @@ class PostgresScientificBatchRepository:
                 )
                 if record is None:
                     raise RuntimeError("scientific-batch insert did not produce a durable row")
-                current = self._state(record)
+                current = await run_scientific_cpu(self._state, record)
                 if (
                     current.tenant_id != tenant_id
                     or current.model_id != model_id
@@ -309,7 +310,7 @@ class PostgresScientificBatchRepository:
 
     async def load(self, claim: BatchClaim) -> ScientificBatchState:
         async with self.pool.acquire() as connection:
-            return self._state(await self._claimed_record(connection, claim, shared=True))
+            return await run_scientific_cpu(self._state, await self._claimed_record(connection, claim, shared=True))
 
     async def replace(
         self,
@@ -324,7 +325,7 @@ class PostgresScientificBatchRepository:
         try:
             async with self.pool.acquire() as connection, connection.transaction():
                 current_record = await self._claimed_record(connection, claim)
-                current = self._state(current_record)
+                current = await run_scientific_cpu(self._state, current_record)
                 if current.revision != expected_revision or record.revision != expected_revision + 1:
                     raise BatchRepositoryConflictError("scientific-batch revision changed")
                 # Cancellation is an asynchronously asserted level signal,
@@ -354,7 +355,7 @@ class PostgresScientificBatchRepository:
                     or record.runtime_artifacts != current.runtime_artifacts
                 ):
                     raise BatchRepositoryConflictError("immutable scientific-batch admission changed")
-                payload = state_to_json(record)
+                payload = await run_scientific_cpu(state_to_json, record)
                 updated = await connection.fetchrow(
                     """
                     UPDATE fs2_scientific_batches
@@ -397,7 +398,7 @@ class PostgresScientificBatchRepository:
                         event.code,
                     )
                 await self._project_operation(connection, current, record)
-                return self._state(updated)
+                return await run_scientific_cpu(self._state, updated)
         except asyncpg.PostgresError as error:
             translated = self._translate(error)
             if translated is not None:
@@ -504,7 +505,7 @@ class PostgresScientificBatchRepository:
             )
         if record is None:
             raise ScientificBatchNotFoundError("scientific batch does not exist")
-        return self._state(record)
+        return await run_scientific_cpu(self._state, record)
 
     async def request_cancel(self, operation_id: UUID, *, tenant_id: str, actor: str) -> ScientificBatchState:
         async with self.pool.acquire() as connection, connection.transaction():
@@ -515,7 +516,7 @@ class PostgresScientificBatchRepository:
             )
             if record is None:
                 raise ScientificBatchNotFoundError("scientific batch does not exist")
-            state = self._state(record)
+            state = await run_scientific_cpu(self._state, record)
             if state.status.terminal or state.cancel_requested:
                 return state
             replacement = replace(state, cancel_requested=True)
@@ -528,7 +529,7 @@ class PostgresScientificBatchRepository:
                 """,
                 operation_id,
                 tenant_id,
-                state_to_json(replacement),
+                await run_scientific_cpu(state_to_json, replacement),
                 replacement.scheduling.digest,
             )
             await connection.execute(
@@ -545,7 +546,7 @@ class PostgresScientificBatchRepository:
                 actor,
             )
             assert updated is not None
-            return self._state(updated)
+            return await run_scientific_cpu(self._state, updated)
 
     async def list_events(
         self,
