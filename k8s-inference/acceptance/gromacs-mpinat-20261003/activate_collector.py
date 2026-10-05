@@ -22,6 +22,8 @@ def main():
     parser.add_argument("--expected-current", default=OLD)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument("--api-reader-only", action="store_true",
+                        help="Upgrade only the API reader image before activating new durable plan fields.")
     a = parser.parse_args()
     if not all(re.fullmatch(re.escape(REPO) + r"@sha256:[a-f0-9]{64}", image)
                for image in (a.image, a.expected_current)):
@@ -36,18 +38,26 @@ def main():
     if not a.apply:
         value = get()
         template = value["spec"]["template"]
-        ci, ei = next((i, j) for i, c in enumerate(template["spec"]["containers"])
-                      for j, e in enumerate(c["env"]) if e["name"] == "FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE")
-        if template["spec"]["containers"][ci]["env"][ei]["value"] != a.expected_current:
+        if a.api_reader_only:
+            ci = next(i for i, c in enumerate(template["spec"]["containers"]) if c["name"] == "control-plane")
+            current = template["spec"]["containers"][ci]["image"]
+            path = f"/spec/template/spec/containers/{ci}/image"
+            overlay = {"image": {"digest": a.image.rsplit("@", 1)[1]}}
+        else:
+            ci, ei = next((i, j) for i, c in enumerate(template["spec"]["containers"])
+                          for j, e in enumerate(c["env"]) if e["name"] == "FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE")
+            current = template["spec"]["containers"][ci]["env"][ei]["value"]
+            path = f"/spec/template/spec/containers/{ci}/env/{ei}/value"
+            overlay = {"scientificBatch": {"toolsImage": a.image}}
+        if current != a.expected_current:
             raise ValueError("Collector baseline changed; review it before activation")
-        path = f"/spec/template/spec/containers/{ci}/env/{ei}/value"
         patch = [{"op": "test", "path": "/spec/template", "value": template},
                  {"op": "replace", "path": path, "value": a.image}]
         save("before.json", value)
         save("patch.json", patch)
         save("rollback.json", [{"op": "test", "path": path, "value": a.image},
                                {"op": "replace", "path": path, "value": a.expected_current}])
-        save("helm-overlay.json", {"scientificBatch": {"toolsImage": a.image}})
+        save("helm-overlay.json", overlay)
         result = subprocess.check_output(kube + ["patch", "deployment", NAME, "--type=json",
             "--patch-file", str(a.output / "patch.json"), "--dry-run=server", "-o", "json"])
         save("dry-run.json", json.loads(result))

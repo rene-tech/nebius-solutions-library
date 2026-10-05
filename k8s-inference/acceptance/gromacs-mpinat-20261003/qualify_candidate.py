@@ -315,10 +315,15 @@ def run(args):
         for label, command in (("gpu", ["nvidia-smi", "--query-gpu=uuid,name,driver_version,compute_cap,memory.total", "--format=csv"]),
                                ("topology", ["nvidia-smi", "topo", "-m"]), ("cpu", ["lscpu"])):
             (args.output / (label + ".txt")).write_bytes(call(["-n", NS, "exec", args.name, "--", *command]))
-        executable = "/opt/gromacs-mpi/bin/gmx_mpi" if mpi else "gmx"
+        executable = "/opt/gromacs-mpi/bin/gmx_mpi" if mpi else call([
+            "-n", NS, "exec", args.name, "--", "python3", "-c",
+            "import os; from fs2_gromacs.worker import DEFAULT_GMX; "
+            "print(os.environ.get('FS2_GROMACS_BINARY', DEFAULT_GMX))",
+        ]).decode().strip()
         help_result = subprocess.run(KUBE + ["-n", NS, "exec", args.name, "--", executable, "mdrun", "-h"],
-                                     capture_output=True, check=True, timeout=60)
+                                     capture_output=True, timeout=60)
         (args.output / "native-mdrun-help.txt").write_bytes(help_result.stdout + help_result.stderr)
+        help_result.check_returncode()
         if mpi:
             query_code = ("import ctypes,json; m=ctypes.CDLL('/opt/ompi/lib/libmpi.so'); "
                           "m.MPI_Init.argtypes=[ctypes.c_void_p,ctypes.c_void_p]; "

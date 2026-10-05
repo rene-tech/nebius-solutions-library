@@ -55,12 +55,14 @@ def evidence(directories, *, mpi):
             "scope": "Only the listed native shapes; new REST/MCP/agent qualification remains separate"}
 
 
-def bind(catalog, execution, proofs, recipe_shas):
+def bind(catalog, execution, proofs, recipe_shas, *, active_deadline_seconds=None):
     models = set(proofs)
     if not models or not models.issubset({"gromacs", "gromacs-mpi"}):
         raise ValueError("Select one or both GROMACS Apps explicitly")
     if set(recipe_shas) != models:
         raise ValueError("Each selected App needs its own exact source recipe")
+    if active_deadline_seconds is not None and not 60 <= active_deadline_seconds <= 606600:
+        raise ValueError("Deadline must fit the seven-day budget and bounded export grace")
     before = copy.deepcopy(execution)
     result = copy.deepcopy(catalog)
     desired = copy.deepcopy(execution)
@@ -81,6 +83,8 @@ def bind(catalog, execution, proofs, recipe_shas):
             {key: value for key, value in identity.items() if key != "execution_identity_sha256"})
         rows[model]["execution_identity_sha256"] = identity["execution_identity_sha256"]
         rows[model]["stages"][0]["image"] = proof["runtime_image"]
+        if active_deadline_seconds is not None:
+            rows[model]["stages"][0]["active_deadline_seconds"] = active_deadline_seconds
         profile["qualification"] = {"h100_semantic_receipt_sha256": activation.digest(proof),
             "public_completion_receipt_sha256": None, "scheduler_eligibility_receipt_sha256": None,
             "execution_map_sha256": None, "qualified_at": proof["recorded_at"]}
@@ -101,6 +105,7 @@ def main():
     parser.add_argument("--mpi-cuda-aware", action="store_true",
                         help="Include the additive CUDA-aware Open MPI build recipe for the MPI App only")
     parser.add_argument("--evidence-output", type=Path, required=True)
+    parser.add_argument("--active-deadline-seconds", type=int)
     args = parser.parse_args()
     if not args.single and not args.mpi:
         parser.error("select --single, --mpi, or both")
@@ -115,7 +120,8 @@ def main():
     catalog_path, map_path = (contracts / name for name in (
         "scientific-workload-profiles.json", "scientific-execution-map.json"))
     catalog, execution = bind(json.loads(catalog_path.read_text()), json.loads(map_path.read_text()),
-                              proofs, {model: activation.digest(recipe) for model, recipe in recipes.items()})
+                              proofs, {model: activation.digest(recipe) for model, recipe in recipes.items()},
+                              active_deadline_seconds=args.active_deadline_seconds)
     args.evidence_output.mkdir(parents=True, exist_ok=False)
     for name, value in (("runtime-proofs.json", proofs), ("source-recipes.json", recipes)):
         (args.evidence_output / name).write_text(json.dumps(value, indent=2) + "\n")
