@@ -284,3 +284,63 @@ RDMA allocator. A scoped, driver-free device plugin and explicitly qualified
 RDMA execution shape are being added; hardware readiness is not yet a public
 16-GPU workflow or performance qualification. Private plans, hashes and live
 receipts: `/home/tux/secure-handoff/fs2-h100-infiniband-reprovision-20261005/`.
+
+## 18:14 UTC integration checkpoint — not finished
+
+REST restart r4, operation `d2e5befa-367f-453d-94f4-cee8bca045bb`, completed
+native GROMACS from checkpoint step 7,800 to the requested final step 60,000.
+It released its GPU and removed its owned Pod. The first large handoff took
+544.692 seconds, including the customer export, within the unchanged 600-second
+bound; later incremental generations took 5.644 and 6.468 seconds. Verification
+of all 20,031 final artifact bytes is still running. This is not yet a complete
+restart acceptance: the cohort recorded four readiness 503s, one with the
+explicit `database readiness check timed out` response.
+
+Legacy seven-day-source continuation `5f710396-0dc8-4ea8-b3d1-fa0c24c87f85`
+passed on the fourteen-day contract: native step 22,400 to 60,000, 29 final
+files verified by size and SHA-256, eight previous immutable files preserved,
+and idempotent replay reused the operation. This tests compatibility, not a
+fourteen-day soak. The customer's running seven-day operation is unchanged.
+
+Read-only diagnosis found the claim query repeatedly scanning/decompressing
+terminal scientific state, including megabyte-sized checkpoint histories.
+Migration `0038_scientific_claimable_index.sql` adds a partial index for exactly
+the existing claim predicate; claim ordering, authorization, leases and fencing
+are unchanged. Real PostgreSQL planner, eligibility, idempotent prebuild and
+fencing tests passed. The existing migration-owner identity prebuilt this exact
+index with `CREATE INDEX CONCURRENTLY` at 18:03:58–18:03:59 UTC (1.742 seconds).
+The index is valid/ready and the unchanged claim query selects it. This online
+step deliberately leaves the migration ledger at 37 until the coordinated
+reader release. Receipts: `claim-index-verified/` under the private parent root.
+
+A subsequent resource sample fell from approximately 4,001m to 1,310m CPU, but
+this is not a controlled attribution or an availability pass. Raw MCP restart
+`c9d6195b-8b69-4296-b1a3-c5596083f050` still took 30.423 seconds to admit and
+37.100 seconds to replay; both returned the same operation. Readiness failures
+continued during admission. A pre-armed read-only observer captured nine client
+backends simultaneously sending the scientific-admission-outbox payload query
+to API readers; these were not nine PostgreSQL parallel workers. Its CPU sample
+was 1,455m. The source still synchronously decoded these outbox lists, and each
+worker could fetch the same payload. That receive/recovery path is the next
+bounded fix, not a reason to relax readiness or handoff timeouts.
+
+The separate historical-metrics repair is source-tested in `0a5532db9`:
+fresh queue reads remain at the existing scrape cadence; historical accounting
+refreshes asynchronously at most every 30 seconds with a three-second budget,
+explicit age/unavailability and no fabricated zero values. It is not deployed
+at this checkpoint. See `../metrics-ledger-scrape-20261005/README.md`.
+
+The scoped RDMA plugin is now installed on the two replacement nodes, exposing
+one whole-node HCA bundle per node. A 16-rank CUDA-buffer probe passed over
+`rc_mlx5`, with unique GPU/PCI/HCA bindings and local CUDA IPC, without additional
+workload capabilities or increased memlock. Qualification exposed and preserved
+two real issues: UCX queue defaults exceeded the existing lockable-memory bound,
+and singleton GROMACS version/analysis commands inherited a distributed MPI
+environment. Queue sizing is corrected; singleton-local transport isolation is
+being tested. No new public RDMA shape has been published yet.
+
+At 18:13 UTC the original Lynx Pod retained UID
+`28cba283-f42d-4fe7-aac7-010ba2222f1e`, both containers Ready and zero restarts.
+All tests use the existing internal QA identity; no customer key or limit was
+changed. Migration 38/all-reader activation, large MCP terminal validation,
+peer-loss recovery and public RDMA performance remain open.
