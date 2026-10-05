@@ -58,20 +58,78 @@ Provide these private inputs from the actual customer-owned operation:
 - Every native file named by that checkpoint, downloaded to a private local
   directory and independently verified against its SHA-256 and size.
 - The original **normalized/frozen** workflow parameters and original engine
-  identity from that source's execution receipt. A reconstructed request with
+  identity from that source's native result. A reconstructed request with
   different defaults is insufficient; the helper verifies the original recipe
   digest before preparing any changes.
 - The final qualified performance settings. [`tuning.example.json`](tuning.example.json)
-  is only the earlier baseline until the final measurement fills it in.
+  contains the confirmed native finalist: eight threads, `nstlist=200`,
+  `pin=auto`. Public delivered-throughput and soak acceptance remain separate.
+
+### Where each input comes from
+
+Ordinary same-owner `:resume` is public and does **not** need this offline
+packaging helper or database access. A tuned new-operation import has an extra
+provenance requirement: the source's exact normalized request. The current
+public status/checkpoint/result APIs do not export that request automatically.
+
+| Helper input | Existing customer path or prepared input |
+| --- | --- |
+| Latest checkpoint choices | `GET /v1/operations/{source_id}/checkpoints`; select `.jobs[]` by `job_id` after the source is failed/cancelled |
+| Exact checkpoint bytes | Download `.jobs[].checkpoint.artifact_id` using `GET /v1/artifacts/{id}/content`; verify the pointer's SHA-256 and byte length before decoding |
+| Native files | In that downloaded checkpoint, every `.files[]` has `path`, `sha256`, `size_bytes` and an `artifact.artifact_id`; download through the same artifact route and reconstruct the complete relative tree |
+| Original TPR/target | Checkpoint `.state.active_step.tpr_sha256` and `.target_step`, independently matched against the original supplied TPR and agreed full target; do not substitute the demo's shortened TPR |
+| Source native engine identity | Terminal `GET /v1/operations/{source_id}/result` → `output_manifest.artifact_id` → output-manifest entry with `semantic_type` `gromacs-workflow-result/v1` or `gromacs-failed-result/v1` → download its `artifact.artifact_id` and read `.engine_id` |
+| Frozen parameters | The caller's saved exact request can be used only if normalization reproduces the checkpoint recipe hash. Otherwise the operator supplies the prepared frozen request below; no customer database access is needed |
+| Qualified tuning | The provided tuning file, with its exact native/public acceptance scope stated in the final receipt |
+
+The helper's `--source-engine-id` is the native result's **`engine_id`**, not
+the outer result's `execution_identity.runtime_image_digest`. These are distinct
+identities. A failed/cancelled run may lack a final native result after abrupt
+loss; then use the operator-verified engine identity, never infer it from the
+current catalog. Checkpoint metadata alone contains a recipe hash, not the
+complete original request or engine identity.
+
+For the current Lynx source, the required immutable inputs have already been
+prepared privately at:
+
+`/home/tux/secure-handoff/fs2-lynx-customer-handover-20261005/a424-frozen-source/`
+
+- `source-frozen-parameters.json`: exact frozen `.fs2/request.json`, SHA-256
+  `b9bb43f5e896cc85766892bdb10be3df4575f9eeedbddd4fa5f41d8dd5a25160`.
+- `source-engine-id.txt`: exact native engine identity.
+- `export-receipt.json` and `helper-verification.json`: tenant/operation-scoped
+  read-only export and native recipe verification; no customer key was used.
+
+Supply these private files with the customer handover; do not publish them to
+Git or ask Lynx to query PostgreSQL. This operation was itself a continuation,
+so its frozen request includes generated per-file bindings which are not
+recoverable from the customer's original pre-continuation submit body alone.
+The export used the existing repository decoder and an explicitly read-only
+transaction, then verified the recipe against the exact running worker's
+native metadata. Its remaining workflow is `mdrun` → `trjcat` → `check`; the
+trajectory command already has an explicit file pattern and receives the
+documented `nonempty: true` adaptation.
+
+These frozen inputs stay valid while this exact operation runs. The export
+does **not** make it terminal or freeze its latest checkpoint: after the
+customer's chosen stop or an actual failure, retrieve fresh public checkpoint
+choices and all files for that latest committed generation. The helper refuses
+the still-running source. If the recovery lineage advances to another operation,
+obtain that operation's matching frozen request instead of reusing these files.
+
+The public API gap is the lack of a frozen-request export endpoint, not a
+requirement for customer database credentials. The operator-prepared files
+close it for this handover; no new API or broader access was introduced here.
 
 ```bash
+read -r SOURCE_ENGINE_ID < /private/a424-frozen-source/source-engine-id.txt
 python prepare_customer_import.py \
   --source-operation a42479f9-5ee0-4ed4-869b-0a094357403f \
   --job-id mas1-20e \
   --checkpoint-choices /private/latest-checkpoint-choices.json \
   --checkpoint /private/latest-platform-checkpoint.json \
-  --original-parameters /private/source-frozen-parameters.json \
-  --source-engine-id '<EXACT_SOURCE_ENGINE_ID>' \
+  --original-parameters /private/a424-frozen-source/source-frozen-parameters.json \
+  --source-engine-id "$SOURCE_ENGINE_ID" \
   --native-root /private/latest-native-files \
   --expected-tpr-sha256 e2ee73571f0dd9855709d2a957e41e5ad52316b3f1d2b1808e65476f4bd8ef10 \
   --expected-target-step 500000000 \
@@ -152,9 +210,9 @@ URLs in the request.
 
 `import-request.example.json` illustrates the public body. Its manifest pointer
 must be replaced with the real finalized manifest, and the tuning values must
-match the final qualified recipe. The supplied 8-thread / `nstlist=200` settings
-are the earlier measured baseline, **not a claim that the final speed gate
-passed**. Pool assignment is operator-owned: the submit body does not accept an
+match the final qualified recipe. The supplied eight-thread / `nstlist=200` /
+`pin=auto` settings are the confirmed native finalist, **not a claim that the
+public delivered-throughput/soak gate passed**. Pool assignment is operator-owned: the submit body does not accept an
 invented GPU-selector field. Confirm `resolved_pool_id` in the admitted status
 and receipt; a run on another pool is not the same performance measurement.
 
