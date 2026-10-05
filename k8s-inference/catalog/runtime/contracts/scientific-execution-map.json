@@ -2361,7 +2361,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "a546c6848e6771bf8fc601916efd699033604386e014cb7f98e4e511992b22f2",
+      "execution_identity_sha256": "880c48466dd6ab7ede1155ff31a5fffe066c086547044e02da008b2184ab07fc",
       "model_id": "gromacs-mpi",
       "plan_adapter": {
         "function": "compile_adapter_run",
@@ -2373,7 +2373,7 @@
           "active_deadline_seconds": 1211400,
           "collector_id": "gromacs-mpi-workflow-v1",
           "environment": {},
-          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:fc28fa44489a93a6c73ccb0852e3970025cda1dda65a97d430f8076f2d2a3a92",
+          "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:c8321a27df6490e3ca33d7f2d80ee5d5a4917b787c612e98c1704346f1cbdece",
           "mounts": [
             {
               "claim_name": null,
@@ -2525,6 +2525,26 @@
                   "memory": "128Gi",
                   "ephemeral_storage": "64Gi"
                 }
+              }
+            },
+            {
+              "id": "multi-node-8gpu-rdma",
+              "resources": {
+                "requests": {
+                  "cpu": "64000m",
+                  "memory": "128Gi",
+                  "ephemeral_storage": "64Gi"
+                },
+                "limits": {
+                  "cpu": "64000m",
+                  "memory": "128Gi",
+                  "ephemeral_storage": "64Gi"
+                }
+              },
+              "rdma": {
+                "resource_name": "rdma.fs2.nebius/hca",
+                "count": 1,
+                "gpu_cluster_id": "computegpucluster-e00p8hjysxfyk1n58x"
               }
             }
           ]
@@ -2757,6 +2777,23 @@
       "protenix-v2",
       "alphafold3",
       "cosmos3-lerobot-augmentation",
+      "namd",
+      "lammps",
+      "amber"
+    ],
+    "611fd56f8a3f3470eb1d576c476548c74f981f48fe1ee47ee86f61c73e01592a": [
+      "boltzgen",
+      "proteina-complexa",
+      "bindcraft",
+      "mosaic",
+      "rfdiffusion",
+      "esmfold2",
+      "esmfold2-fast",
+      "openfold3-openbind",
+      "protenix-v2",
+      "alphafold3",
+      "cosmos3-lerobot-augmentation",
+      "gromacs",
       "namd",
       "lammps",
       "amber"

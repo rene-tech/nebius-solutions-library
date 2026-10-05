@@ -145,6 +145,13 @@ def test_shape_draft_does_not_invent_qualification_or_mutate_legacy_catalog():
     contracts = prepare.HERE.parents[1] / "catalog/runtime/contracts"
     profiles = json.loads((contracts / "scientific-workload-profiles.json").read_text())
     execution = json.loads((contracts / "scientific-execution-map.json").read_text())
+    # Model the pre-publication input even after the real additive shape ships.
+    for rows in (profiles["profiles"], execution["models"]):
+        selected = prepare.one(rows, "model_id", "gromacs-mpi")
+        stage = selected.get("workload", selected)["stages"][0]
+        stage["execution_shapes"] = [
+            shape for shape in stage["execution_shapes"] if shape["id"] != prepare.SHAPE
+        ]
     before = copy.deepcopy((profiles, execution))
     value = prepare.shape_fragments(profiles, execution)
     assert (profiles, execution) == before

@@ -2333,7 +2333,7 @@
         "h100_semantic_receipt_sha256": "294a7e29a4e2a39fe895d308d46b0b84ed6a7eab204a24a42976145267c0a539",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "8c48a08ef7d8a08409cc99b99d2cafd0a2dd0ed2d2c2ce46936864063b873b4c",
+        "execution_map_sha256": "611fd56f8a3f3470eb1d576c476548c74f981f48fe1ee47ee86f61c73e01592a",
         "qualified_at": "2026-10-05T15:32:11.296693+00:00"
       }
     },
@@ -2353,11 +2353,11 @@
       },
       "execution_identity": {
         "model_revision": "da9e013175bae98b31b34384f6b4864ff29f65a5",
-        "runtime_image_digest": "sha256:fc28fa44489a93a6c73ccb0852e3970025cda1dda65a97d430f8076f2d2a3a92",
-        "runtime_recipe_sha256": "2a0f0c57960edaac3b86dcb50b963d3edc57e74416fc556809f43aa111ff37a9",
-        "workload_recipe_sha256": "9f014f868e5cc5767a48c5d57016601c03d500e635c7422c50d20df1d2c4a51e",
+        "runtime_image_digest": "sha256:c8321a27df6490e3ca33d7f2d80ee5d5a4917b787c612e98c1704346f1cbdece",
+        "runtime_recipe_sha256": "c46946b9f6b4de9497f68b6112f83b75569e324efbaf5b21a650857dadf70610",
+        "workload_recipe_sha256": "6a8147a6a07367112d6263400dabbebd9afe264a374306d6e0dd47c854c62b6c",
         "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-        "execution_identity_sha256": "a546c6848e6771bf8fc601916efd699033604386e014cb7f98e4e511992b22f2"
+        "execution_identity_sha256": "880c48466dd6ab7ede1155ff31a5fffe066c086547044e02da008b2184ab07fc"
       },
       "interface": {
         "protocol": "scientific-batch-v1",
@@ -2650,6 +2650,37 @@
                     "ephemeral_storage_bytes": 68719476736
                   }
                 }
+              },
+              {
+                "id": "multi-node-8gpu-rdma",
+                "admission_mode": "gang-jobset",
+                "min_parallelism": 2,
+                "max_parallelism": 2,
+                "placement": {
+                  "class": "accelerator",
+                  "accelerator": {
+                    "resource_name": "nvidia.com/gpu",
+                    "count": 8,
+                    "pool_ids": [
+                      "h100-reserved-8x"
+                    ]
+                  }
+                },
+                "resources": {
+                  "cpu_millis": 64000,
+                  "memory_bytes": 137438953472,
+                  "ephemeral_storage_bytes": 68719476736,
+                  "limits": {
+                    "cpu_millis": 64000,
+                    "memory_bytes": 137438953472,
+                    "ephemeral_storage_bytes": 68719476736
+                  }
+                },
+                "rdma": {
+                  "resource_name": "rdma.fs2.nebius/hca",
+                  "count": 1,
+                  "gpu_cluster_id": "computegpucluster-e00p8hjysxfyk1n58x"
+                }
               }
             ]
           }
@@ -2683,11 +2714,11 @@
         ]
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "f7883924a41e6faa468e66425b9681ecb383eda6fd446d440034bc4138f2924d",
+        "h100_semantic_receipt_sha256": "4088095dd28bba4b6e8a1fb00661b6cf1af3948b991f0ea6c02aa75abeb7f0fe",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "8c48a08ef7d8a08409cc99b99d2cafd0a2dd0ed2d2c2ce46936864063b873b4c",
-        "qualified_at": "2026-10-05T15:32:47.976415+00:00"
+        "execution_map_sha256": "e237a9418f63ff89ac03e0e3b14c1b0eb31970fec3fdb949089285aad8c3f2a4",
+        "qualified_at": "2026-10-05T18:57:17.299168+00:00"
       }
     },
     {
