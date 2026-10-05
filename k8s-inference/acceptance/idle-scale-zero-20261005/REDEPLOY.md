@@ -122,6 +122,12 @@ qualify the exact successor. **No Terraform apply or state migration** was
 performed by this task; whole-stack overlay activation remains the release
 owner's responsibility.
 
+The bounded read-only follow-up found that H200 is absent from the authoritative
+infrastructure state and cannot be represented without current count-mode/name/
+template differences. See [PERSISTENCE.md](PERSISTENCE.md) for the exact existing
+group, proposed import identity, current release fields and non-executable
+candidate overlay. Adding the example pool and applying blindly is not safe.
+
 ## Verification and rollback
 
 The scoped test suite renders all eight Apps with one Deployment/ScaledObject

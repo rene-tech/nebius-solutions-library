@@ -7,6 +7,7 @@ import importlib.util
 import json
 import sys
 import time
+from fractions import Fraction
 from pathlib import Path
 
 import httpx
@@ -31,6 +32,35 @@ FIXTURES = module("fixtures", ROOT / "acceptance/wan2-sam2-20260920/fixtures.py"
 MEDIA = module("idle_media_validation", ROOT / "acceptance/wan2-sam2-20260920/qualify.py")
 MUSIC = module("idle_music_validation", ROOT / "acceptance/ace-step-20260920/qualify.py")
 MINDGUARD = module("idle_mindguard_validation", ROOT / "models/mindguard/lifecycle_fixtures.py")
+
+
+def validate_wan_video(semantic, arguments):
+    """Validate requested geometry/duration, not another variant's frame count."""
+    assert len(semantic["streams"]) == 1
+    stream = semantic["streams"][0]
+    assert (stream["width"], stream["height"]) == tuple(map(int, arguments["size"].split("x")))
+    frames = int(stream["nb_frames"])
+    rate = float(Fraction(stream["avg_frame_rate"]))
+    duration = float(semantic["format"]["duration"])
+    assert frames > 0 and rate > 0 and duration > 0
+    # Match the adapter's quarter-second output tolerance, with a lower bound
+    # too. The I2V fixture produced 65 frames; T2V produced 61 at the same 16fps.
+    assert abs(duration - arguments["seconds"]) <= 0.25
+    assert abs(frames / rate - duration) <= 1 / rate
+
+
+async def poll(client, operation_id, timeout):
+    """Observe the real MCP path without hammering shared control-plane reads."""
+    deadline = time.monotonic() + timeout
+    states = []
+    while time.monotonic() < deadline:
+        operation = VISUAL.data(await client.call_tool("get_operation", {"operation_id": operation_id}))
+        if not states or states[-1]["status"] != operation["status"]:
+            states.append({"at": VISUAL.now(), "status": operation["status"]})
+        if operation["status"] in VISUAL.TERMINAL:
+            return operation, states
+        await asyncio.sleep(5)
+    raise TimeoutError("operation remained nonterminal at the bounded probe deadline")
 
 
 async def main(args):
@@ -126,7 +156,7 @@ async def main(args):
                 replay = VISUAL.data(await mcp.call_tool(tool, arguments))
                 replay_id = replay["id"]
             assert replay_id == accepted["id"]
-            operation, states = await VISUAL.poll(mcp, accepted["id"], args.timeout)
+            operation, states = await poll(mcp, accepted["id"], args.timeout)
             receipt.update(operation=operation, states=states, elapsed_seconds=time.monotonic()-started)
             if operation["status"] != "succeeded":
                 raise RuntimeError("operation did not succeed: " + str(operation.get("error_code")))
@@ -147,9 +177,9 @@ async def main(args):
                 assert abs(semantic["duration_seconds"] - arguments["duration_seconds"]) < 0.1
             elif args.model.startswith("wan2-"):
                 semantic = MEDIA.probe_mp4(raw)
-                stream = semantic["streams"][0]
-                assert (stream["width"], stream["height"]) == (832, 480)
-                assert int(stream["nb_frames"]) == 61
+                receipt.update(semantic=semantic, requested_video={
+                    key: arguments[key] for key in ("size", "seconds", "seed", "steps", "cfg_scale")})
+                validate_wan_video(semantic, arguments)
             elif args.model.startswith("mindguard-"):
                 semantic = MINDGUARD.validate(json.loads(raw), args.model)
             else:
