@@ -9,8 +9,8 @@ also passed that complete byte verification. The subsequent concurrent REST/MCP
 cohort failed both the publication deadline and availability criteria. Their
 combined pipeline/responsiveness successor has now passed concurrent native
 REST/MCP continuation, terminal publication and complete all-reader readiness.
-Full output-byte verification for that latest cohort is still running; MPI
-peer-loss qualification remains a separate pending gate.
+Full SHA/size verification of all 40,062 output files also passed; MPI peer-loss
+qualification remains a separate pending gate.
 This is not a fourteen-day soak or customer-ready verdict.
 
 ## Bridge-872b concurrent native and availability pass
@@ -33,6 +33,11 @@ system/qa concurrency of two were used. No customer key or limit changed.
 | Later incremental handoffs, generations 2–6 | 4.879–5.944 s | 4.989–6.342 s |
 | Final handoff including complete remote audit | 42.959 s | 43.831 s |
 | Public terminal success, UTC | 19:29:57.317 | 19:31:21.062 |
+| Final files actually downloaded and SHA/size checked | 20,031 | 20,031 |
+| Verified output bytes | 23,042,682 | 23,042,957 |
+| Eight-stream artifact verification | 1,681.657 s | 1,665.128 s |
+| Extra bounded artifact GET attempts | 4 | 4 |
+| Verification completed, UTC | 19:58:07.775 | 19:59:31.633 |
 
 Native logs confirm exact continuation from step 7,800 and the final native
 checkpoint confirms 60,000 steps/zero exit for both. Each final manifest contains
@@ -43,10 +48,13 @@ The pre-armed three-reader capture from 19:18:06 through 19:31:46 retained 978
 successful readiness responses, zero non-200 responses, and no coverage gaps.
 An independent response-body sampler also recorded 489 healthy samples by that
 cutoff. This is an observed cohort pass, not an unlimited availability guarantee.
-All native/publication/readiness evidence is on the exact bridge image; the
-parent may change only the compatible catalog release during subsequent immutable
-artifact GET verification, which will be recorded separately rather than claimed
-as single-image evidence. Those complete byte checks remain in progress.
+All native/publication/readiness and these artifact GETs completed before the
+parent's next release activation. Both complete byte-verifiers exited zero and
+preserved 20,004 source files each. All eight extra GET attempts were measured;
+there were no unknown retry counts, reused local files, or hash/length failures.
+Do not describe this as a zero-retry run. Download overhead remains substantial
+for tens of thousands of tiny files even though native checkpoint publication
+now fits comfortably inside its unchanged bound.
 
 Private receipts are `rest-20k-r6`, `mcp-20k-r3`, and
 `concurrent-20k-r2/native-terminal-readiness.json` under
