@@ -133,5 +133,26 @@ through the public artifact API with byte verification. Its explicit QA-key
 check prevents accidental use of customer credentials. Fixture and credentials
 stay in the private acceptance directory, not this repository.
 
+`observe_attempts.py --transfer-progress` captures sanitized publication/restore
+phase counters from only the exact saved operations' Pods. Committed/restored
+phase totals also appear in the collector stdout, without file paths, payloads,
+signed URLs or credentials. A terminal failed source stops the acceptance runner
+and is retained as a failure rather than silently retried under a passing label.
+
+`verify_resume.py --source-receipt <historical-private-state.json>` can qualify
+an earlier internal failed operation against a newer continuation release
+without rerunning or changing the source. The source must still be owned by
+system/qa, match the requested App and have a committed native execution-budget
+checkpoint. Current migration fixture: `bfd2bac7-615e-4059-b4b1-3990d48636cc`,
+step22,400/60,000 from the prior seven-day-capable worker.
+
+`verify_peer_loss.py` admits one internal2x1 MPI study, waits for a committed
+native checkpoint and injects one UID-fenced rank1 Pod eviction. It requires
+unchanged operation identity, infrastructure-retry classification, multiple
+attempts, native continuation to the exact finite TPR target, earlier native
+file hashes and actual downloaded output validation. Eleven ownership/history
+tests cover refusal to target foreign or ambiguous resources. This runner has
+not passed live until an explicit receipt is recorded below.
+
 The earlier actual Lynx run is not part of this QA cohort. No automatic
 continuation loop or in-place runtime-budget mutation has been introduced.
