@@ -252,15 +252,39 @@ async def run(args):
                 "idempotency_key": identity + "-resume",
                 "max_wall_seconds": args.resume_seconds,
             }
+            admission_timings = []
+
+            def record_admission(started, outcome):
+                admission_timings.append(
+                    {
+                        "interface": args.interface,
+                        "call": len(admission_timings) + 1,
+                        "elapsed_seconds": round(time.monotonic() - started, 3),
+                        **outcome,
+                    }
+                )
+                save(args.output / "admission-timings.json", admission_timings)
 
             async def resume():
+                started = time.monotonic()
                 if args.interface == "mcp":
-                    return await call("resume_gromacs_workflow", arguments)
-                response = await http.post(
-                    f"/v1/operations/{source}:resume",
-                    json={"max_wall_seconds": args.resume_seconds},
-                    headers={"Idempotency-Key": arguments["idempotency_key"]},
-                )
+                    try:
+                        value = await call("resume_gromacs_workflow", arguments)
+                    except Exception as error:
+                        record_admission(started, {"error_type": type(error).__name__})
+                        raise
+                    record_admission(started, {"tool_completed": True})
+                    return value
+                try:
+                    response = await http.post(
+                        f"/v1/operations/{source}:resume",
+                        json={"max_wall_seconds": args.resume_seconds},
+                        headers={"Idempotency-Key": arguments["idempotency_key"]},
+                    )
+                except Exception as error:
+                    record_admission(started, {"error_type": type(error).__name__})
+                    raise
+                record_admission(started, {"http_status": response.status_code})
                 if response.status_code != 202:
                     try:
                         body = response.json()
@@ -423,6 +447,7 @@ async def run(args):
                 "synthetic_retained_files": args.padding_files,
                 "prebuilt_finite_tpr": args.prebuilt_tpr is not None,
                 "retained_artifact_verification": byte_verification,
+                "admission_timings": admission_timings,
                 "customer_key_used": False,
             }
             save(args.output / "receipt.json", receipt)

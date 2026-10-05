@@ -1,9 +1,10 @@
 # Fourteen-day GROMACS execution and large late-state restarts
 
-Status: fourteen-day and bulk-publication releases deployed; the first real
-20,000-file trial exposed a publication throughput failure. A measured live
-retry is running with the optimized path. Native REST/MCP large-inventory
-acceptance is not yet passed. This is not a fourteen-day soak or customer-ready
+Status: fourteen-day execution and the large-inventory transport are deployed.
+A real 20,007-file source checkpoint committed within the existing 600-second
+handoff. Its explicit continuation exposed another metadata-decoding bottleneck;
+the fix is tested and being deployed. Complete native REST/MCP late-inventory
+acceptance has not yet passed. This is not a fourteen-day soak or customer-ready
 verdict.
 
 ## First deployed twenty-thousand-file trial
@@ -159,6 +160,59 @@ ownership contract without reverting to thousands of serial upload lifecycles.
 The 2,048-file plus alias regression includes later-file corruption and a failed
 second batch. Seventy checkpoint/descriptor/failure tests, strict typing and Ruff
 passed for this follow-up. No fourteen-day soak is inferred from those tests.
+
+## Live follow-up: large input state is part of the workload
+
+Source retry `33b398b6-4311-4400-9a0b-67dfa2e596b5` committed a real native
+checkpoint at step7,800/60,000 with20,007 files and an8,324,151-byte manifest at
+16:39:38.759UTC. Platform publication took332.78seconds; the whole handoff,
+including verified customer export, was about490seconds and stayed below600.
+It then terminated with the deliberately requested execution-budget timeout.
+The count/identity inventory is synthetic; native GROMACS execution and checkpoint
+continuation are real. This is not a fourteen-day scientific soak.
+
+Its explicit continuation `5dfc4c25-8747-403f-8ec6-07525a1ade98` admitted on the
+979e85fa reader release, but the API responded202 only after65.794seconds. The
+caller had already received a non-JSON failure. The accepted operation was found
+through its exact server request and read-only idempotency lookup; no duplicate
+was submitted. Read-only follow-up uses `--observe-existing-resume`, which reports
+only output validation, not a passing admission/idempotency experience.
+
+This caught two additional scale-dependent CPU paths. Controller materialization
+resolution scanned all inputs once per file. A logical-ID index and bounded
+cooperative yields changed a local20k-file profile from10.53seconds to1.34seconds;
+111controller/production tests plus typing/Ruff passed. The original test first
+failed only because the new test called the destination field `target_path`;
+the assertion was corrected to the actual `destination` contract.
+
+Every artifact batch also repeatedly reconstructed the same frozen20k-input
+state. A process-local cache now retains only fully validated immutable input
+and execution dataclasses, keyed by SHA of every encoded byte and its decoder
+context. It is bounded to four entries and64MiB of recursively measured retained
+object graphs. Mutable status, tenant access, attempts, cancellation and their
+validation are still read fresh on every request. Cold/warm local decode was
+0.739/0.0056seconds with18.26MB retained for the20k case. Corruption, changed plan,
+tenant mismatch, byte/count eviction, immutable fields, legacy decoding and warm
+20k cancellation/replaced-attempt rejection are tested.47codec/descriptor/capability
+tests and11final cache-focused tests passed, with strict typing and Ruff.
+
+The continuation's materializer finished20k immutable files in333seconds before
+this cache release. Its first native publication exposed the repeated-decode
+bottleneck again (4,800/20,011files after354seconds), so the complete REST/MCP
+late-inventory verdict remains pending a genuine fixed-release pass.
+
+At 16:58 UTC the native worker correctly reported `durable checkpoint handoff
+timed out`. The companion had finalized only 8,256 of 20,011 files after 604.6
+seconds: 281.2 seconds reserving artifacts, 290.7 finalizing them and 26.9
+transferring bytes. The unchanged 600-second worker bound was not extended to
+hide that failure. The companion's normal finalization remains observed; the
+original source checkpoint is safe and can be retried under a new explicit
+continuation identity. Future acceptance receipts include actual initial and
+idempotent-replay REST/MCP admission durations, not only GPU execution times.
+
+The full-node MPI recovery case is held during the separately authorized
+two-node InfiniBand reprovisioning. Single-GPU REST and raw-MCP continuation use
+the existing `gromacs` App and do not require or interfere with that cutover.
 
 Use `verify_resume.py --source-only` when a source checkpoint must be qualified
 before a continuation release becomes available. It saves the same receipt and
