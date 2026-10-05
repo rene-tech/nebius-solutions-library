@@ -29,6 +29,11 @@ retains any incompatibility rather than changing CHARMM CMAP forces or retrying.
 Graph eligibility is not a performance claim. Affinity/environment changes are
 operator-only experiments, not silently published API features.
 
+`--public-pin-probe` runs exactly one additional four-run control using the
+existing public `-pin on` option with `nstlist=200`, without taskset or OpenMP
+binding variables. It is distinct from binding the process before CUDA creates
+its helper threads, and cannot be inferred from that operator-only experiment.
+
 The best public-expressible list recipe receives a separate three-by-1ns
 confirmation through the existing worker/recipe harness. Native counters,
 process wall, setup/validation and public delivered clocks remain distinct.

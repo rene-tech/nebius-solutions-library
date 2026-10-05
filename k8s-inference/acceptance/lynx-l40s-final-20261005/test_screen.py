@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -61,3 +62,37 @@ def test_no_alternate_image_or_unowned_name():
     args.image = "gromacs:latest"
     with pytest.raises(ValueError):
         launcher.pod_spec(args)
+
+
+def test_public_pin_control_has_no_external_affinity(tmp_path, monkeypatch):
+    monkeypatch.setenv("OMP_PLACES", "{999}")
+    monkeypatch.setenv("OMP_PROC_BIND", "close")
+    monkeypatch.setenv("GMX_CUDA_GRAPH", "1")
+    tpr = tmp_path / "test.tpr"
+    tpr.write_bytes(b"test")
+    captured = {}
+
+    class Completed:
+        returncode = 0
+
+        def poll(self):
+            return 0
+
+    def start(command, **kwargs):
+        captured.update(command=command, environment=kwargs["env"])
+        output = Path(command[command.index("--output") + 1])
+        output.mkdir()
+        (output / "measurements.json").write_text(json.dumps([
+            {"cohort": f"warm-{i}", "native_ns_per_day": 200, "validation": {"passed": True}}
+            for i in (1, 2, 3)
+        ]))
+        return Completed()
+
+    monkeypatch.setattr(screen.subprocess, "Popen", start)
+    result = screen.run_case(tmp_path, tpr, "public-pin-on", 200, pin="on")
+    command = captured["command"]
+    assert command[command.index("--pin") + 1] == "on"
+    assert "taskset" not in command
+    assert not {"OMP_PLACES", "OMP_PROC_BIND", "GMX_CUDA_GRAPH"} & captured["environment"].keys()
+    assert result["validated_warm_runs"] == 3
+    assert result["pin"] == "on"

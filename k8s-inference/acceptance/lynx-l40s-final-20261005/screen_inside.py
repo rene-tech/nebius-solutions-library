@@ -96,7 +96,7 @@ def active_gmx_affinity():
     return records
 
 
-def run_case(root, tpr, name, nstlist, *, selected=None, graphs=False, warm=3):
+def run_case(root, tpr, name, nstlist, *, selected=None, graphs=False, warm=3, pin="auto"):
     destination = root / name
     env = {**os.environ}
     for key in ("GMX_CUDA_GRAPH", "OMP_PLACES", "OMP_PROC_BIND", "GOMP_CPU_AFFINITY"):
@@ -110,7 +110,7 @@ def run_case(root, tpr, name, nstlist, *, selected=None, graphs=False, warm=3):
     command = [*prefix, sys.executable, str(Path(baseline.__file__).resolve()),
                "--tpr", str(tpr), "--sha256", baseline.sha256(tpr), "--output", str(destination),
                "--expected-steps", "50000", "--expected-time-ps", "100", "--threads", "8",
-               "--bonded", "gpu", "--pin", "auto", "--nstlist", str(nstlist),
+               "--bonded", "gpu", "--pin", pin, "--nstlist", str(nstlist),
                "--warm-repetitions", str(warm)]
     affinity = {}
     started = time.monotonic()
@@ -137,7 +137,7 @@ def run_case(root, tpr, name, nstlist, *, selected=None, graphs=False, warm=3):
     good = [row["native_ns_per_day"] for row in measurements
             if row["cohort"].startswith("warm-") and row.get("validation", {}).get("passed")]
     logs = "\n".join(path.read_text(errors="replace") for path in destination.glob("*/command.log"))
-    record = {"case": name, "nstlist": nstlist, "command": command,
+    record = {"case": name, "nstlist": nstlist, "pin": pin, "command": command,
               "environment": {key: env[key] for key in ("GMX_CUDA_GRAPH", "OMP_PLACES", "OMP_PROC_BIND") if key in env},
               "exit_code": process.returncode, "elapsed_seconds": time.monotonic() - started,
               "validated_warm_runs": len(good), "warm_median_ns_per_day": statistics.median(good) if good else None,
@@ -154,6 +154,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tpr", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--public-pin-probe", action="store_true",
+                        help="Only the bounded public -pin on / nstlist200 control, without external affinity")
     args = parser.parse_args()
     if baseline.sha256(args.tpr) != TPR_SHA256:
         raise ValueError("Not the unchanged approved Lynx TPR")
@@ -178,6 +180,14 @@ def main():
     finite = baseline.mdp_values((root / "finite.mdp").read_text())
     changed = parameter_difference(original, finite)
     save(root / "finite-parameter-diff.json", changed)
+    if args.public_pin_probe:
+        result = run_case(root, tpr, "public-pin-on", 200, pin="on")
+        if result["validated_warm_runs"] != 3 or not result["all_native_valid"]:
+            raise ValueError("Public pinning control failed")
+        save(root / "summary.json", {"input_tpr_sha256": TPR_SHA256, "records": [result],
+             "best_public_list_interval": 200, "public_recipe_environment_changes": False,
+             "scope": "Publicly expressible pinning control; native only, not delivered throughput"})
+        return
     records = [run_case(root, tpr, f"list-{value}", value) for value in (200, 100, 300)]
     if any(row["validated_warm_runs"] != 3 or not row["all_native_valid"] for row in records):
         raise ValueError("A primary list screen failed; retain results without promoting a winner")

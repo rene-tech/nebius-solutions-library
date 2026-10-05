@@ -80,6 +80,8 @@ def run(args):
             native.call(["-n", native.NS, "cp", "--no-preserve", str(source), args.name + ":" + REMOTE + "/" + target])
         native.call(["-n", native.NS, "exec", args.name, "--", "python3", REMOTE + "/collect_env.py", "--output", REMOTE + "/environment.json"])
         command = ["python3", REMOTE + "/screen_inside.py", "--tpr", REMOTE + "/original.tpr", "--output", REMOTE + "/results"]
+        if args.public_pin_probe:
+            command.append("--public-pin-probe")
         record["command"] = command
         with (args.output / "screen.log").open("xb") as log:
             process = subprocess.run([*native.KUBE, "-n", native.NS, "exec", args.name, "--", *command],
@@ -129,5 +131,6 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--image", default=IMAGE)
     parser.add_argument("--cpus", type=int, default=8)
+    parser.add_argument("--public-pin-probe", action="store_true")
     parser.add_argument("--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a")
     raise SystemExit(run(parser.parse_args()))
