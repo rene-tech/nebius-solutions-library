@@ -32,6 +32,16 @@ def test_unpinned_or_wrong_repository_refused(image):
         prepare(cronjob(), image)
 
 
+def test_successor_requires_the_exact_observed_current_image():
+    before = cronjob()
+    current, target = (REPO + "@sha256:" + value * 64 for value in ("a", "b"))
+    before["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]["image"] = current
+    with pytest.raises(ValueError, match="Unexpected existing"):
+        prepare(before, target)
+    patch = prepare(before, target, expected_image=current)
+    assert patch[-1]["value"]["spec"]["containers"][0]["image"] == target
+
+
 def test_verification_needs_owned_success_and_no_active_previous_reader():
     current = cronjob()
     final = REPO + "@sha256:" + "a" * 64

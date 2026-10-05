@@ -19,14 +19,15 @@ from activate_compatible_readers import CONTEXT, NAME, REPO
 PREVIOUS = REPO + "@sha256:fb6d32098a2e32853aaac1eb5a6ee117b3212e06ad357aa790668f5450a18179"
 
 
-def prepare(before: dict, image: str) -> list[dict]:
-    if not re.fullmatch(re.escape(REPO) + r"@sha256:[a-f0-9]{64}", image):
+def prepare(before: dict, image: str, *, expected_image: str = PREVIOUS) -> list[dict]:
+    if any(not re.fullmatch(re.escape(REPO) + r"@sha256:[a-f0-9]{64}", value)
+           for value in (image, expected_image)):
         raise ValueError("An immutable image from the existing regional repository is required")
     template = before["spec"]["jobTemplate"]["spec"]["template"]
     desired = copy.deepcopy(template)
     containers = desired["spec"]["containers"]
     if (len(containers) != 1 or containers[0]["name"] != "maintenance"
-            or containers[0]["image"] != PREVIOUS or containers[0].get("args") != ["maintenance"]):
+            or containers[0]["image"] != expected_image or containers[0].get("args") != ["maintenance"]):
         raise ValueError("Unexpected existing maintenance worker contract")
     containers[0]["image"] = image
     path = "/spec/jobTemplate/spec/template"
@@ -63,6 +64,7 @@ def verify(cronjob: dict, jobs: list[dict], image: str) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
+    parser.add_argument("--expected-image", default=PREVIOUS, help="Exact currently observed reader image")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--verify", action="store_true", help="Read-only observation of the new scheduled worker")
@@ -86,7 +88,7 @@ def main() -> None:
         save("verification.json", result)
         print(json.dumps(result))
         return
-    patch = prepare(before, args.image)
+    patch = prepare(before, args.image, expected_image=args.expected_image)
     save("before.cronjob.json", before)
     save("patch.json", patch)
     command = ("patch", "cronjob", NAME + "-maintenance", "--type=json", "--patch-file", str(args.output / "patch.json"))
