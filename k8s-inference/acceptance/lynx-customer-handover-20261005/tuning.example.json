@@ -1,0 +1,11 @@
+{
+  "threads": 8,
+  "mdrun": {
+    "-nb": "gpu",
+    "-bonded": "gpu",
+    "-pme": "auto",
+    "-update": "auto",
+    "-pin": "auto",
+    "-nstlist": "200"
+  }
+}
