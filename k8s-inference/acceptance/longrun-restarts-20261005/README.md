@@ -218,8 +218,9 @@ the existing `gromacs` App and do not require or interfere with that cutover.
 
 Continuation retry `59ae91d5-be0b-4e29-a7b6-151c7b7a4631` used the frozen
 `ea48e966` release. Initial admission returned HTTP 202 in 29.280 seconds;
-same-key replay returned 202 in 15.029 seconds and reused the operation. One
-API readiness probe still returned 503 during initial admission, then recovered.
+same-key replay returned 202 in 15.029 seconds and reused the operation. A full
+reader log capture found four readiness 503s: all three readers briefly degraded
+at initial admission (17:07:31–35 UTC), plus one at 17:19:05 during publication.
 Input materialization improved from 333 to 132 seconds. These improvements did
 not constitute acceptance: platform publication reached 20,011 files only after
 599.69 seconds, leaving no time for customer export inside the 600-second native
@@ -256,6 +257,12 @@ artifact reads, callback transaction safety, controller and checkpoint behavior.
 Eleven new binding-cache/actual-manifest heartbeat cases passed. The standalone
 executor also passed five cancellation, multiloop, context and bounded-concurrency
 cases. Strict typing and Ruff passed. The next live REST/MCP verdict is pending.
+
+`capture_api_readiness.py` collects only each exact current reader's readiness
+responses and the selected internal source's resume timings. It excludes request
+bodies, credentials and unrelated customer requests. Missing reader/probe evidence
+is unknown, not a pass; two selection/redaction tests passed. The r3 receipt is
+`rest-20k-r3/api-readiness.json` in the private acceptance directory (877 probes).
 
 Use `verify_resume.py --source-only` when a source checkpoint must be qualified
 before a continuation release becomes available. It saves the same receipt and
