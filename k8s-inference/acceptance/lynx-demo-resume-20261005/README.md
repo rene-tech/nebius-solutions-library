@@ -2,7 +2,8 @@
 
 Status: the authorized customer checkpoint has been copied and byte-verified;
 local fixture/runner tests pass. No demo GPU operation has been admitted yet.
-The final signed-handle renewal release and measured L40S recipe are prerequisites.
+The signed-handle renewal and explicit nonempty-file-selection release, plus the
+measured L40S recipe, are prerequisites.
 This directory is acceptance tooling, not a customer-specific serving service.
 
 ## Exact test scope
@@ -78,6 +79,22 @@ full original target, and submit an explicitly tuned native import. Ordinary
 flags. No cross-tenant database ownership rewrite is used.
 
 ## Local evidence
+
+The real source has 70 trajectory parts, of which 42 are zero bytes: its sparse
+1-ns coordinate cadence does not emit a frame in every five-minute wall segment.
+The pinned native reader aborts when `trjcat` receives one of those empty files.
+This is a real postprocessing failure, not a reason to change scientific output
+cadence or discard history. The fixture now explicitly requests
+`{"files":"continued.part*.xtc","nonempty":true}` for `trjcat`, and the matching
+energy selector for `eneconv`. Both single-GPU and MPI schemas expose the same
+optional selector; absent/false retains the old behavior. Every original file,
+including empty ones, remains in checkpoint and output validation. Unmatched or
+all-empty selections fail before invoking a native reader.
+
+134 focused runtime, schema, MPI and acceptance tests pass, including explicit
+selection, legacy normalization, all-empty failure, path validation and all four
+public schema projections. This is not a substitute for the new-image native
+checks or final public demo continuation.
 
 27 focused fixture/science/owner/export tests and Ruff pass. Tests reject changed
 bytes, duplicate/unsafe paths, wrong source state, missing topology comparisons,

@@ -60,6 +60,7 @@ def expand_args(tokens, cwd):
         matches = sorted(cwd.glob(token["files"]))
         if not matches:
             raise ValueError("explicit input file pattern matched no files")
+        selected = []
         for path in matches:
             if (
                 path.is_symlink()
@@ -69,7 +70,15 @@ def expand_args(tokens, cwd):
                 raise ValueError(
                     "input file pattern must select contained regular files"
                 )
-            args.append(str(path.relative_to(cwd)))
+            # Sparse output cadence can leave a valid closed segment empty.
+            # Filter only when explicitly requested, after validating every
+            # match. Never remove the original from checkpoint/output history.
+            if token.get("nonempty", False) and path.stat().st_size == 0:
+                continue
+            selected.append(str(path.relative_to(cwd)))
+        if not selected:
+            raise ValueError("explicit input file pattern matched no nonempty files")
+        args.extend(selected)
     # Fourteen days of five-minute segments exceed 4096 trajectory parts once
     # a previous run is continued. Keep each token below Linux MAX_ARG_STRLEN
     # and the total below a conservative exec budget, leaving space for env and

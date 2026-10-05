@@ -104,6 +104,12 @@ all native parts and also copies the latest final coordinate to the normal
 `-c`/`-deffnm` path, allowing the next explicit `grompp` step to use it. Explicit
 `{"files":"md.part*.xtc"}` arguments resolve contained files without shell globbing.
 Use `trjcat` and `eneconv` deliberately; do not concatenate binary trajectories.
+If sparse output cadence leaves zero-byte segments, explicitly select
+`{"files":"md.part*.xtc","nonempty":true}` (or the corresponding energy-file
+pattern). This excludes empty files only from that command's arguments; all
+original files remain in checkpoint and output inventories. An all-empty or
+unmatched selection fails clearly. Omitted or false `nonempty` preserves the
+original include-all behavior; it does not repair corrupted nonempty files.
 
 Customer storage uses the original submitting user's tenant/user bucket policy.
 Only the trusted companion obtains that user's bucket-scoped credentials, in

@@ -76,6 +76,9 @@ def test_recipe_only_changes_finite_horizon_and_explicit_tuning():
     assert value["segment_minutes"] == value["checkpoint_minutes"] == 5
     assert value["max_wall_seconds"] == 300
     assert all(step["command"] not in {"grompp", "pdb2gmx", "genion"} for step in steps)
+    for step in steps:
+        if step["command"] in {"trjcat", "eneconv"}:
+            assert step["args"][1]["nonempty"] is True
     assert target_step(2) == (14963440, 14963440)
 
 

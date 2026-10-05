@@ -196,12 +196,17 @@
                             "type": "string",
                             "minLength": 1,
                             "maxLength": 512
+                          },
+                          "nonempty": {
+                            "type": "boolean",
+                            "default": false,
+                            "description": "Explicitly exclude zero-byte matches from this argument only, for native tools such as trjcat/eneconv. All files remain in checkpoints and outputs. An expansion with no eligible files is an error."
                           }
                         }
                       }
                     ]
                   },
-                  "description": "Exact argv tokens, or an explicit {files: relative-pattern} expansion for trajectory/energy parts. Patterns must match existing files. No shell expansion. Do not include gmx or platform-managed mdrun flags."
+                  "description": "Exact argv tokens, or an explicit {files: relative-pattern, nonempty: true} expansion for trajectory/energy parts. nonempty is optional and defaults to false; use true when a native reader rejects valid empty segments. Patterns must match eligible existing files. No shell expansion. Do not include gmx or platform-managed mdrun flags."
                 },
                 "directory": {
                   "type": "string",
@@ -309,7 +314,7 @@
       "description": "GPUs and MPI ranks per node. Defaults to the legacy one-GPU-per-node layout. All ranks are part of one simulation, not independent replicas."
     }
   },
-  "description": "Distributed upstream GROMACS 2026.2 CUDA/Open MPI workflows. One MPI rank per GPU, with one to eight GPUs per admitted node and at most sixteen GPUs total; preparation and analysis run on rank zero. Operator-selected local CUDA-aware MPI or cross-node TCP, not the NVIDIA NGC binary. RDMA is not claimed. PLUMED, CP2K, Torch NNPot and coupled replica exchange are not exposed by this execution shape.",
+  "description": "Distributed upstream GROMACS 2026.2 CUDA/Open MPI workflows. One MPI rank per GPU, with one to eight GPUs per admitted node and at most sixteen GPUs total; preparation and analysis run on rank zero. The operator-qualified shape selects local CUDA-aware MPI, cross-node TCP, or InfiniBand UCX RDMA on a configured GPU cluster; transport and device allocation are not request overrides. This is not the NVIDIA NGC binary. PLUMED, CP2K, Torch NNPot and coupled replica exchange are not exposed by this execution shape.",
   "allOf": [
     {
       "if": {

@@ -88,11 +88,18 @@ def request_schema(*, mpi: bool = False) -> dict[str, Any]:
                             "type": "object",
                             "additionalProperties": False,
                             "required": ["files"],
-                            "properties": {"files": RELATIVE},
+                            "properties": {
+                                "files": RELATIVE,
+                                "nonempty": {
+                                    "type": "boolean",
+                                    "default": False,
+                                    "description": "Explicitly exclude zero-byte matches from this argument only, for native tools such as trjcat/eneconv. All files remain in checkpoints and outputs. An expansion with no eligible files is an error.",
+                                },
+                            },
                         },
                     ]
                 },
-                "description": "Exact argv tokens, or an explicit {files: relative-pattern} expansion for trajectory/energy parts. Patterns must match existing files. No shell expansion. Do not include gmx or platform-managed mdrun flags.",
+                "description": "Exact argv tokens, or an explicit {files: relative-pattern, nonempty: true} expansion for trajectory/energy parts. nonempty is optional and defaults to false; use true when a native reader rejects valid empty segments. Patterns must match eligible existing files. No shell expansion. Do not include gmx or platform-managed mdrun flags.",
             },
             "directory": {
                 **RELATIVE,
