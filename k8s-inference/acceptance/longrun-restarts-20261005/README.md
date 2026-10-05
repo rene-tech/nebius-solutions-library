@@ -2,10 +2,11 @@
 
 Status: fourteen-day execution and the large-inventory transport are deployed.
 A real 20,007-file source checkpoint committed within the existing 600-second
-handoff. Its explicit continuation exposed another metadata-decoding bottleneck;
-the fix is tested and being deployed. Complete native REST/MCP late-inventory
-acceptance has not yet passed. This is not a fourteen-day soak or customer-ready
-verdict.
+handoff. A new fourteen-day-budget continuation from the old seven-day worker
+has passed, including all output bytes. Large native REST continuation is being
+rerun on the CPU-isolated release; admission still produced brief readiness
+failures, so complete REST/MCP and availability acceptance has not passed.
+This is not a fourteen-day soak or customer-ready verdict.
 
 ## First deployed twenty-thousand-file trial
 
@@ -43,6 +44,34 @@ the restored state/ready marker.74targeted tests and strict typing passed before
 the publication repository optimization. The final live rerun is still required.
 
 ## Requested scope
+
+### Old-worker compatibility, with concurrent large-restart traffic
+
+On the exact API/collector release
+`sha256:64c5c77d4eb6cac4b4ecf58d16766b2aa0423f836c1b9adee5a2034abd3e3644`,
+internal operation `5f710396-0dc8-4ea8-b3d1-fa0c24c87f85` continued the saved
+`bfd2bac7-615e-4059-b4b1-3990d48636cc` checkpoint. The source was qualified on
+the old `f633539e` seven-day-cap worker; the new worker is `5acd77d6`.
+Native GROMACS resumed at step 22,400 and finished the original 60,000-step
+target with a requested 1,209,600-second budget. All 29 final files, totaling
+22,330,900 bytes, were downloaded and checked against their size and SHA-256;
+eight immutable prior files were preserved. Customer-bucket export and exact
+idempotent replay passed. Initial and replay admission took 3.522 and 2.381 s.
+The normal owner released its Pod without manual cleanup.
+
+This case ran concurrently with the 20k-file REST r4 materialization/publication,
+using the existing system/qa second lane. All 175 readiness probes captured
+across the three readers during the small case passed. This does **not** erase
+the three earlier r4-admission readiness 503s. The original active Lynx operation
+was neither tested nor changed. Receipts are private under
+`/home/tux/secure-handoff/fs2-longrun-restarts-20261005/legacy-seven-to-fourteen/`.
+
+`sample_readiness_reasons.py` provides bounded read-only localhost sampling of
+the exact three existing readers. It retains status/timing and an error's public
+type/message only, never successful response bodies or customer requests.
+The sampler and existing log selector passed five targeted privacy/selection
+tests. Readiness-body sampling supplements, rather than replaces, the complete
+all-reader probe capture.
 
 - New GROMACS/GROMACS-MPI jobs and explicit continuations default to and allow
   1,209,600 seconds. Infrastructure deadline is 1,211,400 seconds, including the
