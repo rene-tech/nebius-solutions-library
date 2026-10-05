@@ -27,6 +27,7 @@ output "managed_resource_count" {
     31 +
     (nonsensitive(var.bootstrap_grafana_credentials == null) ? 0 : 1) +
     (var.jobset.enabled ? 5 : 0)
+    + 2 * length(var.managed_rdma_pools)
   )
 }
 

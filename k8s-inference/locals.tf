@@ -1052,6 +1052,7 @@ locals {
   }
 
   foundation_variables = {
+    managed_rdma_pools       = var.managed_rdma_pools
     grafana_admin_secret_ref = var.deployment.secrets.grafana_admin_secret
     jobset = {
       enabled            = var.deployment.scientific_batch.enabled
@@ -1120,6 +1121,7 @@ locals {
   }
 
   workloads_variables = {
+    managed_rdma_pools              = var.managed_rdma_pools
     customer_storage                = var.deployment.storage.customer_buckets
     deployment_profile              = local.model_profile
     enabled_model_ids               = local.selected_model_ids

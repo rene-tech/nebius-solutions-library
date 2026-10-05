@@ -158,6 +158,37 @@ locals {
     )
   }
   resource_names = sort(distinct([for pool in values(var.pools) : pool.resource_name]))
+  coupled_resource_names = {
+    for accelerator in local.resource_names : accelerator => sort(distinct(flatten([
+      for pool_id, pool in var.pools : keys(try(var.coupled_resource_capacity[pool_id], {}))
+      if pool.resource_name == accelerator
+    ])))
+  }
+  # As with core capacity, a queue receives the same fraction as its GPU floor.
+  # Residual whole bundles stay in the cohort. No GPU quota is increased and a
+  # flavor without qualified RDMA capacity advertises zero bundles.
+  coupled_queue_pool_quota = {
+    for queue_name, queue in local.cluster_queues : queue_name => {
+      for pool_id, pool in var.pools : pool_id => {
+        for name in local.coupled_resource_names[pool.resource_name] : name => (
+          pool.capacity == 0 ? 0 : floor(
+            try(var.coupled_resource_capacity[pool_id][name], 0) *
+            try(queue.pool_quotas[pool_id].nominal_quota, 0) / pool.capacity
+          )
+        )
+      }
+    }
+  }
+  coupled_shared_by_pool = {
+    for pool_id, pool in var.pools : pool_id => {
+      for name in local.coupled_resource_names[pool.resource_name] : name => (
+        try(var.coupled_resource_capacity[pool_id][name], 0) - sum(concat([0], [
+          for queue_name in keys(local.cluster_queues) :
+          local.coupled_queue_pool_quota[queue_name][pool_id][name]
+        ]))
+      )
+    }
+  }
 
   # Core admission is pool-coupled. cpu and memory join the accelerator
   # resourceGroup rather than forming one of their own, because Kueue assigns
@@ -355,6 +386,7 @@ locals {
       coveredResources = concat(
         [resource_name],
         local.core_admission_enabled ? ["cpu", "memory"] : [],
+        local.coupled_resource_names[resource_name],
       )
       flavors = [
         for pool_id in local.pool_ids : {
@@ -363,6 +395,10 @@ locals {
             [{
               name         = resource_name
               nominalQuota = tostring(local.shared_by_pool[pool_id])
+            }],
+            [for name in local.coupled_resource_names[resource_name] : {
+              name         = name
+              nominalQuota = tostring(local.coupled_shared_by_pool[pool_id][name])
             }],
             !local.core_admission_enabled ? [] : [
               {
@@ -376,13 +412,15 @@ locals {
             ],
           )
           } if var.pools[pool_id].resource_name == resource_name && (
-          local.shared_by_pool[pool_id] > 0 || local.core_admission_enabled
+          local.shared_by_pool[pool_id] > 0 || local.core_admission_enabled ||
+          sum(concat([0], values(local.coupled_shared_by_pool[pool_id]))) > 0
         )
       ]
       } if length([
         for pool_id in local.pool_ids : pool_id
         if var.pools[pool_id].resource_name == resource_name && (
-          local.shared_by_pool[pool_id] > 0 || local.core_admission_enabled
+          local.shared_by_pool[pool_id] > 0 || local.core_admission_enabled ||
+          sum(concat([0], values(local.coupled_shared_by_pool[pool_id]))) > 0
         )
     ]) > 0
   ]
@@ -459,6 +497,7 @@ locals {
               coveredResources = concat(
                 [resource_name],
                 local.core_admission_enabled ? ["cpu", "memory"] : [],
+                local.coupled_resource_names[resource_name],
               )
               flavors = [
                 for pool_id in local.queue_pool_order[queue_name] : {
@@ -476,6 +515,10 @@ locals {
                         lendingLimit = tostring(queue.pool_quotas[pool_id].lending_limit)
                       },
                     )],
+                    [for name in local.coupled_resource_names[resource_name] : {
+                      name         = name
+                      nominalQuota = tostring(local.coupled_queue_pool_quota[queue_name][pool_id][name])
+                    }],
                     !local.core_admission_enabled ? [] : [
                       {
                         name         = "cpu"
@@ -725,7 +768,13 @@ locals {
     # Unlike core_capacity, these are per-node limits, not max-node-count
     # totals. Consumers intersect model eligibility with whole-Pod feasibility.
     accelerator_node_capacity_schema = "fs2-serve.nebius.ai/accelerator-node-capacity/v1"
-    accelerator_node_capacity        = var.accelerator_node_capacity
+    accelerator_node_capacity = {
+      for pool_id, capacity in var.accelerator_node_capacity : pool_id => {
+        for key, value in capacity : key => value
+        if !contains(["extended_resources", "node_labels"], key) || try(length(value) > 0, false)
+      }
+    }
+    coupled_resource_capacity = var.coupled_resource_capacity
     pools = {
       for pool_id, pool in var.pools : pool_id => {
         resource_flavor           = pool.flavor_name
@@ -743,6 +792,10 @@ resource "terraform_data" "contract" {
   input = local.contract
 
   lifecycle {
+    precondition {
+      condition     = length(flatten(values(local.coupled_resource_names))) == length(distinct(flatten(values(local.coupled_resource_names))))
+      error_message = "An RDMA resource may couple to only one accelerator resource group."
+    }
     precondition {
       condition     = local.contract_bytes <= 900000
       error_message = "The rendered scheduling contract must remain below 900,000 UTF-8 bytes so the immutable Kubernetes ConfigMap has safe metadata headroom."

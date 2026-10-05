@@ -1665,3 +1665,53 @@ run "rejects_nonpositive_or_unknown_node_capacity" {
 
   expect_failures = [var.accelerator_node_capacity]
 }
+
+run "rdma_bundles_share_gpu_flavor_and_do_not_invent_capacity" {
+  command = plan
+  variables {
+    coupled_resource_capacity = { reserved = { "rdma.fs2.nebius/hca" = 2 } }
+    accelerator_node_capacity = {
+      reserved = {
+        cpu_millicores     = 127900
+        memory_mib         = 1572748
+        accelerator_count  = 8
+        extended_resources = { "rdma.fs2.nebius/hca" = 1 }
+        node_labels = {
+          "topology.fs2.nebius/scope"          = "gpu_cluster"
+          "topology.nebius.com/gpu-cluster-id" = "computegpucluster-test"
+        }
+      }
+    }
+  }
+  assert {
+    condition = (
+      one(output.contract.cluster_queues["inference-accelerators"].spec.resourceGroups).coveredResources ==
+      ["example.com/accelerator", "cpu", "memory", "rdma.fs2.nebius/hca"] &&
+      alltrue([for flavor in one(output.contract.cluster_queues["inference-accelerators"].spec.resourceGroups).flavors :
+        length([for resource in flavor.resources : resource if resource.name == "rdma.fs2.nebius/hca"]) == 1
+      ]) &&
+      output.contract.accelerator_node_capacity.reserved.extended_resources["rdma.fs2.nebius/hca"] == 1 &&
+      output.contract.accelerator_node_capacity.reserved.node_labels["topology.nebius.com/gpu-cluster-id"] == "computegpucluster-test"
+    )
+    error_message = "GPU and RDMA must share one flavor with exact per-node bundle and cluster facts."
+  }
+  assert {
+    condition = (
+      sum([for flavor in one(output.contract.cohort.spec.resourceGroups).flavors :
+        sum([for resource in flavor.resources : tonumber(resource.nominalQuota) if resource.name == "rdma.fs2.nebius/hca"])
+      ]) == 2 &&
+      alltrue([for flavor in one(output.contract.cluster_queues["inference-accelerators"].spec.resourceGroups).flavors :
+        alltrue([for resource in flavor.resources : resource.nominalQuota == "0" if resource.name == "rdma.fs2.nebius/hca"])
+      ]) && output.contract.pools.reserved.capacity == 8
+    )
+    error_message = "A fractional queue floor cannot invent a whole RDMA bundle; the cohort retains the exact residual and GPUs are unchanged."
+  }
+}
+
+run "rejects_unknown_pool_or_unqualified_coupled_resource" {
+  command = plan
+  variables {
+    coupled_resource_capacity = { missing = { "nvidia.com/gpu" = 16 } }
+  }
+  expect_failures = [var.coupled_resource_capacity]
+}

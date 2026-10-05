@@ -5,10 +5,6 @@ variable "managed_rdma_pools" {
   type    = map(object({ gpu_cluster_id = string }))
   default = {}
   validation {
-    condition     = length(var.managed_rdma_pools) <= 8
-    error_message = "RDMA allocator opt-in must be bounded to at most eight exact pools."
-  }
-  validation {
     condition = alltrue([
       for pool_id in keys(var.managed_rdma_pools) : try(
         var.accelerator_pool_contract.pools[pool_id].node.topology == "gpu_cluster" &&
@@ -18,6 +14,12 @@ variable "managed_rdma_pools" {
       )
     ])
     error_message = "RDMA allocator-only opt-in requires an existing eight-GPU cluster pool with provider-owned drivers."
+  }
+  validation {
+    condition = length(var.managed_rdma_pools) == 0 || alltrue([
+      for prefix in var.kueue.exclude_resource_prefixes : !startswith("rdma.fs2.nebius/hca", prefix)
+    ])
+    error_message = "The managed RDMA bundle must remain budgeted by Kueue, not excluded as an auxiliary resource."
   }
 }
 
