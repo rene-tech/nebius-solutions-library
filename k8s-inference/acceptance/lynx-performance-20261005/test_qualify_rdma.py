@@ -70,6 +70,23 @@ def test_configuration_or_gpu_query_alone_is_not_transport_evidence():
         probe.validate_transport(log + "ep_cfg[3]: tag(tcp/eth0)\n")
 
 
+def test_longer_finite_confirmation_extends_only_acceptance_lifetime():
+    values = []
+    for timeout in (900, 1800):
+        values.append(probe.manifest(
+            "fs2-lynx-rdma-test", "registry/test@sha256:" + "a" * 64,
+            sorted(probe.NODES), "0" * 64, file_ipc_lock=True,
+            native_timeout=timeout,
+        ))
+    short, long = [v["spec"]["replicatedJobs"][0]["template"]["spec"] for v in values]
+    assert short["activeDeadlineSeconds"] == 1200
+    assert long["activeDeadlineSeconds"] == 2400
+    assert long["template"]["spec"]["containers"][0]["command"] == ["sleep", "2300"]
+    long["activeDeadlineSeconds"] = 1200
+    long["template"]["spec"]["containers"][0]["command"] = ["sleep", "1100"]
+    assert values[0] == values[1]
+
+
 def test_ucx_119_first_use_cuda_protocol_tables_are_process_scoped():
     summary = json.dumps(
         {"kind": "summary", "status": "passed", "ranks": 16}, separators=(",", ":")

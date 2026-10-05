@@ -80,6 +80,7 @@ def manifest(
     ipc_lock=False,
     file_ipc_lock=False,
     transport="ucx-rdma",
+    native_timeout=900,
 ):
     if (
         set(nodes) != NODES
@@ -87,6 +88,7 @@ def manifest(
         or not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", image)
         or transport not in {"ucx-rdma", "tcp-host-staged"}
         or (file_ipc_lock and transport != "ucx-rdma")
+        or native_timeout not in (900, 1800)
     ):
         raise ValueError("exact approved nodes, immutable image and task name required")
     spec = two.manifest(name, image, nodes, seed)
@@ -99,6 +101,11 @@ def manifest(
         "topology.nebius.com/gpu-cluster-id": CLUSTER,
     }
     container = pod["spec"]["containers"][0]
+    if native_timeout == 1800:
+        # Acceptance-only longer finite confirmation; no production timeout
+        # or native scientific parameter changes. Keep the old default exact.
+        spec["spec"]["replicatedJobs"][0]["template"]["spec"]["activeDeadlineSeconds"] = 2400
+        container["command"] = ["sleep", "2300"]
     resources = {
         "cpu": "64",
         "memory": "128Gi",
@@ -237,7 +244,7 @@ def validated_host_build(binary, receipt):
     return proof
 
 
-def execute_lynx(pods, fixture, output):
+def execute_lynx(pods, fixture, output, *, native_timeout=900):
     """Run the unchanged finite Lynx recipe only after device-buffer proof."""
     from native_probe import validate
 
@@ -280,7 +287,7 @@ def execute_lynx(pods, fixture, output):
                 ],
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                timeout=900,
+                timeout=native_timeout,
                 check=False,
             )
         if rank == 0:
@@ -329,6 +336,7 @@ def run(args):
     transport = getattr(args, "transport", "ucx-rdma")
     host_collectives = getattr(args, "host_collectives", False)
     file_ipc_lock = getattr(args, "file_ipc_lock", False)
+    native_timeout = getattr(args, "native_timeout", 900)
     if transport != "ucx-rdma" and (not host_collectives or args.input):
         raise ValueError(
             "TCP is allowed only as an explicit host-collective control, never RDMA fallback"
@@ -381,6 +389,7 @@ def run(args):
         ipc_lock=args.ipc_lock,
         file_ipc_lock=file_ipc_lock,
         transport=transport,
+        native_timeout=native_timeout,
     )
     sanitized = json.loads(json.dumps(spec))
     for env in sanitized["spec"]["replicatedJobs"][0]["template"]["spec"]["template"][
@@ -399,6 +408,7 @@ def run(args):
         "file_capability_executables": file_ipc_lock,
         "transport_requested": transport,
         "host_collective_control": host_collectives,
+        "native_timeout_seconds": native_timeout,
     }
     if host_build:
         record["host_build"] = host_build
@@ -679,7 +689,9 @@ def run(args):
             record["host_collective_source_sha256"] = native.sha(HOST_SOURCE)
         if args.input:
             record["science_executed"] = True
-            record["native_md"] = execute_lynx(pods, args.input, args.output)
+            record["native_md"] = execute_lynx(
+                pods, args.input, args.output, native_timeout=native_timeout
+            )
             if record["native_md"]["validation"]["status"] != "passed":
                 raise ValueError("exact-input finite native validation failed")
         record["status"] = "passed"
@@ -742,6 +754,8 @@ if __name__ == "__main__":
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--ipc-lock", action="store_true")
     parser.add_argument("--file-ipc-lock", action="store_true")
+    parser.add_argument("--native-timeout", type=int, choices=(900, 1800), default=900,
+                        help="Acceptance subprocess bound only; 1800 for the approved 3x1ns confirmation")
     parser.add_argument("--bounded-ucx-queues", action="store_true")
     parser.add_argument("--host-collectives", action="store_true")
     parser.add_argument("--host-binary", type=Path)
