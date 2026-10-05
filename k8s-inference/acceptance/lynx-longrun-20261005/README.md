@@ -132,3 +132,58 @@ the narrow Helm overlay, and maintenance verification. The earlier local
 `f12641f74` API build was superseded by the retention-fixed build and was never
 activated. **Live 20,000-file REST/MCP continuation and final optimized-workload
 results are still pending; there is no fourteen-day soak or combined-ready claim.**
+
+## Large-history test exposed metadata round-trip cost
+
+The first real 20,007-file checkpoint on internal operation
+`682e77af-3d22-45db-9c3f-29b8515cde70` exceeded the existing 600-second handoff
+timeout. Generation zero remained committed: an incomplete upload was **not**
+acknowledged as recoverable. Failure evidence remains in the restart subtask.
+
+Read-only PostgreSQL evidence identified the slow phase before customer S3
+export: 12,032 finalized objects, only 3,846,298 bytes, between 15:53:07 and
+16:04:01 UTC. Each 64-file HTTP cohort still performed per-file database
+transactions. Representative cohorts spent 0.4–1.9 seconds reserving metadata
+and 0.5–2.7 seconds finalizing it; PUT plus the first finalization took
+0.18–0.62 seconds. Merely extending the timeout would hide this bottleneck.
+
+`scientific_artifact_batches.py` now uses bounded set-based reservation and
+finalization under the existing runtime role, tables, identity constraints,
+attempt/terminal fences and event ledger. Every new object is still independently
+read and SHA-256 verified; customer checkpoint manifests are still published
+last. Forty-five artifact tests passed including actual PostgreSQL replay,
+ordering, conflict rollback, scope and superseded-attempt checks. A 2,048-file
+SQL-only regression completed in 1.59 seconds locally; this is **not** a measured
+end-to-end cluster transfer rate. Ninety-eight related route/storage/continuation
+tests passed; thirteen optional external-object-store tests were skipped.
+
+API/tools/maintenance successor `sha256:6f0703fa08f229a5f5b2e0239c5bfeb45d777e961a035483226d3f0f46fbe481`
+(source `00fe3ca09`) was verified with three exact API readers, public discovery,
+eight MPI shapes and successful maintenance Jobs. It preserves the native worker
+images. The running Lynx Pod retained the same UID and zero container restarts.
+Additional bounded read batches now cover large continuation admission, artifact
+download handles and terminal stage commits; the next source is `d654cb1a3`.
+Its actual PostgreSQL test covered 20,000 unique files and concurrent/replayed
+20,001-entry final manifests. The successor `979e85fa4bacb8e1b72063fb2bf300834d9a9e6c90045c346e1565d33bb171ba`
+was verified at 16:33 UTC: three exact API readers, public discovery and the
+scheduled maintenance worker. It preserves the native engine images.
+
+The repeated source operation `33b398b6-4311-4400-9a0b-67dfa2e596b5` committed
+all 20,007 files and its 8.324 MB manifest at 16:39:38 UTC. Platform publication
+took 332.78 seconds; customer export brought total handoff to about 490 seconds,
+inside the unchanged 600-second limit. The intentionally short native run stopped
+at step 7,800/60,000 with the expected workflow time-limit outcome, not a transport
+timeout. This qualifies checkpoint publication, not yet completed continuation.
+
+Its explicit continuation `5dfc4c25-8747-403f-8ec6-07525a1ade98` was admitted and
+is running. Initial HTTP delivery failed while admission took 65.8 seconds;
+read-only operation/idempotency checks prevented duplicate work. This latency
+defect remains an acceptance failure until fixed and retested. Final-attempt
+publication after same-operation recovery was also changed to bounded batches
+(`3dd88de96`), with 70 targeted tests, and built from bound source `8f70f3025`.
+That image is not yet an accepted recovery release.
+
+The added NVIDIA MPS/MIG article is tracked in
+`../lynx-mps-20261005/README.md` and its linked Task Deck child. Isolated H100 and
+L40S comparisons run in parallel. No customer sharing mode or MIG geometry is
+being enabled from a native performance screen.
