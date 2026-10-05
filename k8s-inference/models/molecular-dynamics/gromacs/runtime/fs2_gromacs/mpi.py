@@ -143,11 +143,35 @@ def validate_shape(request: dict) -> None:
         raise ValueError("Requested nodes differ from the admitted peer set")
 
 
+def rdma_devices(
+    sysfs: Path = Path("/sys/class/infiniband"),
+    devfs: Path = Path("/dev/infiniband"),
+) -> list[str]:
+    """Fail closed on the qualified full-node bundle, not host sysfs alone."""
+    devices = sorted(sysfs.glob("mlx5_*"))
+    verbs = sorted(devfs.glob("uverbs*"))
+    if len(devices) != 8 or len(verbs) != 8 or any(
+        not os.access(path, os.R_OK | os.W_OK) for path in verbs
+    ):
+        raise ValueError("RDMA requires eight accessible HCA character devices from its reserved bundle")
+    names = []
+    for device in devices:
+        port = device / "ports" / "1"
+        if (port / "link_layer").read_text().strip() != "InfiniBand" or not (
+            port / "state"
+        ).read_text().strip().startswith("4:"):
+            raise ValueError("RDMA requires eight active InfiniBand ports")
+        names.append(f"{device.name}:1")
+    return names
+
+
 def configure_transport(nodes: int) -> dict:
     """Bounded operator policy; never label a TCP job as RDMA or CUDA-aware."""
     transport = os.environ.get(
         "FS2_GROMACS_MPI_TRANSPORT", "ucx-local" if nodes == 1 else "tcp-host-staged"
     )
+    for name in ("UCX_NET_DEVICES", "UCX_IB_GPU_DIRECT_RDMA", "UCX_PROTO_INFO"):
+        os.environ.pop(name, None)
     if transport == "ucx-local":
         if nodes != 1:
             raise ValueError("ucx-local is only supported within one admitted node")
@@ -157,6 +181,22 @@ def configure_transport(nodes: int) -> dict:
         os.environ["OMPI_MCA_pml_ucx_tls"] = "any"
         os.environ["OMPI_MCA_pml_ucx_devices"] = "any"
         os.environ["UCX_TLS"] = "self,sm,cuda_copy,cuda_ipc"
+        os.environ.pop("OMPI_MCA_btl", None)
+        os.environ.pop("GMX_DISABLE_DIRECT_GPU_COMM", None)
+    elif transport == "ucx-rdma":
+        if nodes != 2:
+            raise ValueError("ucx-rdma currently requires the qualified two-node gang")
+        devices = rdma_devices()
+        os.environ["OMPI_MCA_pml"] = "ucx"
+        os.environ["OMPI_MCA_pml_ucx_tls"] = "rc_mlx5"
+        os.environ["OMPI_MCA_pml_ucx_devices"] = "mlx5_*"
+        # rc_x includes the UD bootstrap required by RC, but no TCP fallback.
+        # CUDA transports are mandatory for correct device-pointer detection.
+        os.environ["UCX_TLS"] = "rc_x,self,sm,cuda_copy,cuda_ipc"
+        os.environ["UCX_NET_DEVICES"] = ",".join(devices)
+        os.environ["UCX_IB_GPU_DIRECT_RDMA"] = "yes"
+        os.environ["UCX_LOG_LEVEL"] = "info"
+        os.environ["UCX_PROTO_INFO"] = "y"
         os.environ.pop("OMPI_MCA_btl", None)
         os.environ.pop("GMX_DISABLE_DIRECT_GPU_COMM", None)
     elif transport == "tcp-host-staged":
@@ -171,11 +211,13 @@ def configure_transport(nodes: int) -> dict:
     return {
         "transport": transport,
         "transport_observed": None,
-        "rdma": False,
+        "rdma": None if transport == "ucx-rdma" else False,
+        "rdma_requested": transport == "ucx-rdma",
         "direct_gpu_communication": "autodetect"
-        if transport == "ucx-local"
+        if transport in {"ucx-local", "ucx-rdma"}
         else "disabled",
         "ucx_tls": os.environ.get("UCX_TLS"),
+        "ucx_net_devices": os.environ.get("UCX_NET_DEVICES"),
     }
 
 
@@ -261,6 +303,10 @@ def launch_command(request: dict, command: list[str]) -> list[str]:
         "OMPI_MCA_pml_ucx_tls",
         "OMPI_MCA_pml_ucx_devices",
         "UCX_TLS",
+        "UCX_NET_DEVICES",
+        "UCX_IB_GPU_DIRECT_RDMA",
+        "UCX_LOG_LEVEL",
+        "UCX_PROTO_INFO",
         "GMX_DISABLE_DIRECT_GPU_COMM",
     ):
         if name in os.environ:
