@@ -198,6 +198,83 @@ run "custom_operator_mig_pool" {
   }
 }
 
+run "managed_h100_gpu_cluster_uses_provider_network_components" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.gpu_software_contract]
+  }
+
+  variables {
+    custom_accelerator_pools = {
+      h100-managed-fabric = {
+        platform          = "gpu-h100-sxm"
+        preset            = "8gpu-128vcpu-1600gb"
+        accelerator_class = "nvidia-h100-sxm5-80gb"
+        gpus_per_node     = 8
+        capacity_type     = "regular"
+        min_nodes         = 2
+        max_nodes         = 2
+        driver = {
+          mode   = "managed"
+          preset = "cuda13.0"
+        }
+        topology = {
+          mode              = "gpu_cluster"
+          infiniband_fabric = "fabric-2"
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(local.gpu_cluster_pools) == 1 &&
+      local.selected_gpu_pools["h100-managed-fabric"].provider.driver.owner == "provider-managed" &&
+      !terraform_data.gpu_software_contract.input.network_operator_enabled
+    )
+    error_message = "A managed-image GPU-cluster pool must not automatically add a second networking driver stack."
+  }
+}
+
+run "custom_image_h100_gpu_cluster_requires_network_operator" {
+  command = plan
+
+  plan_options {
+    target = [terraform_data.gpu_software_contract]
+  }
+
+  variables {
+    custom_accelerator_pools = {
+      h100-custom-fabric = {
+        platform          = "gpu-h100-sxm"
+        preset            = "8gpu-128vcpu-1600gb"
+        accelerator_class = "nvidia-h100-sxm5-80gb"
+        gpus_per_node     = 8
+        capacity_type     = "regular"
+        min_nodes         = 2
+        max_nodes         = 2
+        driver = {
+          mode = "operator"
+        }
+        topology = {
+          mode              = "gpu_cluster"
+          infiniband_fabric = "fabric-2"
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = (
+      length(local.gpu_cluster_pools) == 1 &&
+      local.selected_gpu_pools["h100-custom-fabric"].provider.driver.owner == "gpu-operator" &&
+      terraform_data.gpu_software_contract.input.network_operator_enabled
+    )
+    error_message = "A custom-image GPU-cluster pool must still bootstrap the required networking components."
+  }
+}
+
 run "two_rack_gb300_nvlink_pool" {
   command = plan
 

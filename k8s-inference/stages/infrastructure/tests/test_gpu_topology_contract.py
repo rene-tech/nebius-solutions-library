@@ -52,7 +52,12 @@ class GpuTopologyContractTests(unittest.TestCase):
             self.cluster,
         )
         self.assertIn(
-            "network_operator_required = length(local.gpu_cluster_pools) > 0",
+            "network_operator_required = anytrue([",
+            self.software,
+        )
+        self.assertIn("for pool in values(local.gpu_cluster_pools) :", self.software)
+        self.assertIn(
+            'pool.provider.driver.owner == "gpu-operator" || pool.node.topology == "nvlink_rack"',
             self.software,
         )
         self.assertIn(
