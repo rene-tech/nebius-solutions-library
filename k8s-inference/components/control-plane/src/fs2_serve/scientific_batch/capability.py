@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import hmac
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from ..crypto import KeyedHasher
 from .models import WorkloadResource
 
 CAPABILITY_SCHEMA = "fs2-serve.nebius.ai/scientific-workload-capability/v1"
+COMPACT_CAPABILITY_SCHEMA = "fs2-serve.nebius.ai/scientific-workload-capability/v2"
 _CONTEXT = "fs2-scientific-workload-capability/v1"
 
 
@@ -52,6 +54,7 @@ class ScientificWorkloadCapability:
     artifacts: tuple[CapabilityArtifact, ...]
     access_profile: str
     access_receipt_digest: str | None
+    artifacts_digest: str | None = None
 
     def __post_init__(self) -> None:
         if not 1 <= self.attempt_number <= 10 or not self.tenant_id:
@@ -60,8 +63,8 @@ class ScientificWorkloadCapability:
             raise ValueError("scientific workload capability artifacts are duplicated")
 
     def value(self) -> dict[str, Any]:
-        return {
-            "schema": CAPABILITY_SCHEMA,
+        value = {
+            "schema": COMPACT_CAPABILITY_SCHEMA if self.artifacts_digest is not None else CAPABILITY_SCHEMA,
             "operation_id": str(self.operation_id),
             "batch_id": str(self.batch_id),
             "workload_id": str(self.workload_id),
@@ -91,6 +94,24 @@ class ScientificWorkloadCapability:
                 "receipt_digest": self.access_receipt_digest,
             },
         }
+        if self.artifacts_digest is not None:
+            value["artifacts_digest"] = self.artifacts_digest
+        return value
+
+
+def capability_artifacts_digest(artifacts: tuple[CapabilityArtifact, ...]) -> str:
+    values = [
+        {
+            "logical_artifact_id": item.logical_artifact_id,
+            "artifact_id": str(item.artifact_id),
+            "digest": item.digest,
+            "size_bytes": item.size_bytes,
+            "media_type": item.media_type,
+            "compression": item.compression,
+        }
+        for item in artifacts
+    ]
+    return "sha256:" + hashlib.sha256(json.dumps(values, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 class ScientificWorkloadCapabilityAuthority:
@@ -131,6 +152,12 @@ class ScientificWorkloadCapabilityAuthority:
             access_receipt_digest=resource.access_context.receipt_digest,
         )
         payload = json.dumps(claims.value(), sort_keys=True, separators=(",", ":")).encode()
+        if len(payload) > 4096 and resource.model_id in {"gromacs", "gromacs-mpi"}:
+            # Long native continuations already have an immutable input manifest
+            # in durable batch state. Bind its exact ordered artifact identities
+            # instead of copying hundreds of file records into every HTTP header.
+            claims = replace(claims, artifacts_digest=capability_artifacts_digest(claims.artifacts), artifacts=())
+            payload = json.dumps(claims.value(), sort_keys=True, separators=(",", ":")).encode()
         key_id, digest = self.hasher.digest(payload, context=_CONTEXT)
         return f"{key_id}.{_encode(payload)}.{digest}"
 
@@ -146,6 +173,7 @@ class ScientificWorkloadCapabilityAuthority:
             value = json.loads(payload)
         except (UnicodeError, ValueError, json.JSONDecodeError):
             raise ValueError("scientific workload capability is invalid") from None
+        compact = isinstance(value, dict) and value.get("schema") == COMPACT_CAPABILITY_SCHEMA
         if (
             not isinstance(value, dict)
             or set(value)
@@ -167,7 +195,8 @@ class ScientificWorkloadCapabilityAuthority:
                 "artifacts",
                 "access",
             }
-            or value.get("schema") != CAPABILITY_SCHEMA
+            | ({"artifacts_digest"} if compact else set())
+            or value.get("schema") not in {CAPABILITY_SCHEMA, COMPACT_CAPABILITY_SCHEMA}
         ):
             raise ValueError("scientific workload capability fields differ")
         artifacts = value["artifacts"]
@@ -182,6 +211,14 @@ class ScientificWorkloadCapabilityAuthority:
             }
         ):
             raise ValueError("scientific workload capability fields differ")
+        if compact and (
+            artifacts != []
+            or value["model_id"] not in {"gromacs", "gromacs-mpi"}
+            or not isinstance(value["artifacts_digest"], str)
+            or not value["artifacts_digest"].startswith("sha256:")
+            or len(value["artifacts_digest"]) != 71
+        ):
+            raise ValueError("scientific workload capability artifact binding is invalid")
         try:
             bindings = tuple(
                 CapabilityArtifact(
@@ -216,6 +253,7 @@ class ScientificWorkloadCapabilityAuthority:
                 artifacts=bindings,
                 access_profile=str(access["profile"]),
                 access_receipt_digest=(None if access["receipt_digest"] is None else str(access["receipt_digest"])),
+                artifacts_digest=value["artifacts_digest"] if compact else None,
             )
         except (KeyError, TypeError, ValueError):
             raise ValueError("scientific workload capability values are invalid") from None

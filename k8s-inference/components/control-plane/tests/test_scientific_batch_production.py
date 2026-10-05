@@ -1314,6 +1314,53 @@ async def test_submit_freezes_public_profile_and_never_enters_generic_worker(cip
 
 
 @pytest.mark.asyncio
+async def test_unreadable_execution_plan_is_rejected_before_durable_admission(cipher, hasher, monkeypatch):
+    from fs2_serve.scientific_batch.profile_catalog import ScientificProfileError
+
+    store = MemoryStore(cipher, hasher)
+    identity = await principal(store)
+    repository = FakeScientificBatchRepository()
+    controller = ScientificBatchController(
+        repository=repository,
+        cluster=FakeScientificBatchCluster(),
+        controller_id="controller-a",
+        namespace="fs2-models",
+    )
+    pointer = {"artifact_id": str(uuid4()), "sha256": "1" * 64, "size_bytes": 100, "media_type": "application/json"}
+    service = ScientificBatchService(
+        store=store,
+        repository=repository,
+        controller=controller,
+        profiles=profile_catalog(),
+        scheduling=scheduling(),
+        artifacts=FakeArtifactAccess(pointer),
+        execution_binding=FakeExecutionBinding(),
+    )
+    request = {
+        "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "operation": "design",
+        "service_class": "customer-batch",
+        "input_manifest": pointer,
+        "parameters": {},
+    }
+
+    def incompatible_reader(payload):
+        raise ValueError("injected writer/reader mismatch")
+
+    monkeypatch.setattr("fs2_serve.scientific_batch.service.state_from_value", incompatible_reader)
+    with pytest.raises(ScientificProfileError, match="cannot be durably restored"):
+        await service.submit(
+            principal=identity,
+            model_id="protein-design",
+            request=request,
+            idempotency_key="unreadable-plan-must-not-be-admitted",
+        )
+    assert store.operations == {}
+    assert await store.list_scientific_admissions() == []
+    assert repository.records == {}
+
+
+@pytest.mark.asyncio
 async def test_crash_after_operation_insert_recovers_frozen_admission_without_client_resubmission(
     cipher,
     hasher,

@@ -416,7 +416,10 @@ class ScientificBatchService:
 
     @staticmethod
     def _state_view(
-        operation: OperationView, state: ScientificBatchState, *, recovery_policy: PoolRecoveryPolicy | None = None,
+        operation: OperationView,
+        state: ScientificBatchState,
+        *,
+        recovery_policy: PoolRecoveryPolicy | None = None,
     ) -> dict[str, Any]:
         # Scientific results are committed to the artifact plane rather than the
         # generic operation response ciphertext.  Project the artifact
@@ -647,7 +650,7 @@ class ScientificBatchService:
                     raise ScientificProfileError("scientific runtime binding changed during admission") from error
             else:
                 execution_plan = None
-            return state_to_value(
+            payload = state_to_value(
                 ScientificBatchState.admit(
                     operation_id=operation.id,
                     tenant_id=principal.tenant_id,
@@ -662,6 +665,14 @@ class ScientificBatchService:
                     runtime_artifacts=runtime_artifacts,
                 )
             )
+            # Validate with the actual durable reader before the enclosing
+            # transaction commits. A writer/reader contract mismatch must reject
+            # this request, not leave a poison outbox row in every worker loop.
+            try:
+                state_from_value(payload)
+            except (KeyError, TypeError, ValueError) as error:
+                raise ScientificProfileError("scientific execution plan cannot be durably restored") from error
+            return payload
 
         operation = await self.store.append_operation(
             principal=principal,

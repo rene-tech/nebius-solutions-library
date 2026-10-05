@@ -112,14 +112,12 @@ def test_direct_continuation_materializes_large_files_once_and_keeps_aliases():
     assert "retained/md.part0001.xtc" in invocation.workspace_documents[0].canonical_json
 
 
-@pytest.mark.parametrize("count", [65, 305, 1000])
-def test_many_file_continuation_survives_durable_execution_plan_roundtrip(count):
+def many_file_continuation_state(count):
     from dataclasses import replace
     from uuid import uuid4
 
     from test_scientific_batch_execution_handoff import scheduling
 
-    from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
     from fs2_serve.scientific_batch.models import ArtifactAccessContext, ScientificBatchState, VerifiedInputManifest
 
     body = request()
@@ -150,7 +148,7 @@ def test_many_file_continuation_survives_durable_execution_plan_roundtrip(count)
             for stage in snapshot.stages
         ),
     )
-    state = ScientificBatchState.admit(
+    return ScientificBatchState.admit(
         operation_id=UUID(OP),
         tenant_id="system",
         model_id=plan.model_id,
@@ -162,6 +160,13 @@ def test_many_file_continuation_survives_durable_execution_plan_roundtrip(count)
         input_manifest=manifest,
         access_context=ArtifactAccessContext(profile="public", tenant_id="system", receipt_digest=None),
     )
+
+
+@pytest.mark.parametrize("count", [65, 305, 1000])
+def test_many_file_continuation_survives_durable_execution_plan_roundtrip(count):
+    from fs2_serve.scientific_batch.codec import state_from_value, state_to_value
+
+    state = many_file_continuation_state(count)
     decoded = state_from_value(state_to_value(state))
     assert decoded == state
     assert len(decoded.execution_plan.invocations[0].materializations) == count
