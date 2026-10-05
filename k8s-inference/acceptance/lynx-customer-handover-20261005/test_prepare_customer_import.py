@@ -274,3 +274,35 @@ def test_no_nonempty_input_is_an_explicit_error_not_fabricated_success(tmp_path)
     with pytest.raises(ValueError, match="no nonempty files"):
         expand_args(parameters["jobs"][0]["steps"][0]["args"], tmp_path)
     assert empty.exists() and empty.read_bytes() == b""
+
+
+@pytest.mark.parametrize("command,extension", [("trjcat", "xtc"), ("eneconv", "edr")])
+def test_known_empty_literal_merge_input_is_reported_before_packaging(fixture, command, extension):
+    args, choices, checkpoint, original, _ = fixture
+    directory = args.native_root / "segments"
+    directory.mkdir()
+    name = f"md.part0022.{extension}"
+    (directory / name).write_bytes(b"")
+    checkpoint["files"].append({"path": f"segments/{name}", "size_bytes": 0,
+                                "sha256": hashlib.sha256(b"").hexdigest()})
+    original["jobs"][0]["steps"].append({
+        "id": "literal-join", "command": command, "directory": "segments",
+        "args": ["-f", name, "-o", f"combined.{extension}"],
+    })
+    replace_frozen_source(args, choices, checkpoint, original)
+    with pytest.raises(ValueError, match="Known empty literal.*explicitly reviewed"):
+        helper.prepare(args)
+    assert not args.output.exists()
+    assert (directory / name).read_bytes() == b""
+
+
+def test_nonempty_literal_and_not_yet_generated_inputs_are_preserved():
+    parameters = {"jobs": [{"id": "job", "steps": [{
+        "id": "join", "command": "trjcat", "directory": "segments",
+        "args": ["-f", "prior.xtc", "future.xtc", "-o", "combined.xtc"],
+    }]}]}
+    original = copy.deepcopy(parameters)
+    assert helper.nonempty_analysis_inputs(parameters, source_files=[
+        {"path": "segments/prior.xtc", "size_bytes": 100},
+    ]) == []
+    assert parameters == original

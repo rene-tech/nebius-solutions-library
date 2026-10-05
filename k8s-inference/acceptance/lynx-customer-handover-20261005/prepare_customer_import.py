@@ -13,7 +13,7 @@ import gzip
 import hashlib
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import stat
 import sys
@@ -110,7 +110,7 @@ def tuned_parameters(original, checkpoint, tuning, *, output_prefix, max_output_
     return normalize(value)
 
 
-def nonempty_analysis_inputs(parameters):
+def nonempty_analysis_inputs(parameters, *, source_files=()):
     """Select nonempty trjcat/eneconv -f expansions, retaining all history.
 
     This is an explicit import adaptation, not a native runtime default. Keep
@@ -119,6 +119,7 @@ def nonempty_analysis_inputs(parameters):
     are never frozen to the old checkpoint's list of nonempty files.
     """
     selections = []
+    source_sizes = {item["path"]: item["size_bytes"] for item in source_files}
     for job in parameters["jobs"]:
         for step in job["steps"]:
             if step["command"] not in {"trjcat", "eneconv"}:
@@ -134,6 +135,13 @@ def nonempty_analysis_inputs(parameters):
                         "previous_nonempty": token.get("nonempty", False), "nonempty": True,
                     })
                     token["nonempty"] = True
+                elif file_input and isinstance(token, str):
+                    path = str(PurePosixPath(step.get("directory", ".")) / token)
+                    if source_sizes.get(path) == 0:
+                        raise ValueError(
+                            f"Known empty literal {step['command']} input {path!r}; "
+                            "prepare an explicitly reviewed file-pattern selector before import"
+                        )
     return selections
 
 
@@ -171,7 +179,7 @@ def prepare(args):
     )
     parameters = tuned_parameters(original, checkpoint, json.loads(args.tuning.read_text()),
                                   output_prefix=args.output_prefix, max_output_bytes=args.max_output_bytes)
-    analysis_selections = nonempty_analysis_inputs(parameters)
+    analysis_selections = nonempty_analysis_inputs(parameters, source_files=checkpoint["files"])
     parameters = normalize(parameters)
     files = validated_files(checkpoint, args.native_root)
     generation = checkpoint["state"]["generation"]

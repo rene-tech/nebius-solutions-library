@@ -131,8 +131,10 @@ Before submission:
    its public acceptance. Local schema/unit checks alone are not that gate.
 3. Retain the full source inventory. Do not delete empty files, drop history, or
    shorten the TPR to force analysis to pass. If an old analysis command lists
-   literal empty filenames rather than an explicit file pattern, stop and prepare
-   a reviewed selector for that command; this helper does not rewrite literals.
+   a literal filename already known to be empty in the source checkpoint, the
+   helper stops **before packaging** and names that input. Prepare a reviewed
+   selector for that command; the helper does not silently rewrite literals.
+   Future generated files cannot be checked from the old checkpoint alone.
 
 An input pattern with no nonempty matches still reports an explicit error; no
 trajectory or scientific result is fabricated. Output cadence must produce at
