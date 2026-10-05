@@ -223,7 +223,7 @@ def collect_companion_output(
         workspace, "result.json", maximum_bytes=16 * 1024**2, label="GROMACS result"
     )
     _, request_raw = contained_stable_file(
-        workspace, ".fs2/request.json", maximum_bytes=1024**2, label="GROMACS request"
+        workspace, ".fs2/request.json", maximum_bytes=4 * 1024**2, label="GROMACS request"
     )
     result, request = json.loads(raw), normalize(json.loads(request_raw), mpi=mpi)
     operation = invocation.argv[invocation.argv.index("--operation-id") + 1]

@@ -55,7 +55,10 @@ def collect_failed_diagnostics(
         workspace, "result.json", maximum_bytes=16 * 1024**2, label="failed native result"
     )
     _, request_raw = contained_stable_file(
-        workspace, ".fs2/request.json", maximum_bytes=1024**2, label="failed native request"
+        workspace,
+        ".fs2/request.json",
+        maximum_bytes=(4 if workflow.engine == "gromacs" else 1) * 1024**2,
+        label="failed native request",
     )
     result, request = json.loads(raw), workflow.normalize(json.loads(request_raw))
     runtime = import_module(workflow.runtime_package)
@@ -84,7 +87,8 @@ def collect_failed_diagnostics(
     if not isinstance(completed, list) or completed != steps[: len(completed)]:
         raise ScientificAdapterError("failed native completed steps are not a frozen workflow prefix")
     inventory = result.get("files")
-    if not isinstance(inventory, list) or len(inventory) > 9998:
+    maximum_files = 32766 if workflow.engine == "gromacs" else 9998
+    if not isinstance(inventory, list) or len(inventory) > maximum_files:
         raise ScientificAdapterError("failed native file inventory exceeds its bound")
     indexed = {}
     for item in inventory:

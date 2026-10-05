@@ -42,10 +42,61 @@ def bindings(entries):
     )
 
 
+@pytest.mark.parametrize("collector", ["gromacs-workflow-v1", "gromacs-mpi-workflow-v1"])
+def test_late_continuation_terminal_readers_accept_large_request_and_inventory(tmp_path, monkeypatch, collector):
+    from fs2_gromacs.contracts import canonical
+    from fs2_gromacs.files import atomic_json
+    from test_native_md_failure_diagnostics import fixture
+
+    from fs2_serve.scientific_batch import native_failures
+    from fs2_serve.scientific_batch.adapters import gromacs
+
+    invocation, workflow, result = fixture(tmp_path, collector)
+    request_path = tmp_path / ".fs2/request.json"
+    request = json.loads(request_path.read_text())
+    request["continuation_files"] = [
+        {"input_id": f"resume-{index:05d}", "path": f"retained/md.part{index:05d}.xtc"}
+        for index in range(20000)
+    ]
+    request = workflow.normalize(request)
+    atomic_json(request_path, request)
+    assert 1024**2 < request_path.stat().st_size < 4 * 1024**2
+    result["recipe_sha256"] = hashlib.sha256(
+        canonical({"request": request, "job": invocation.shard_id, "image": result["engine_id"]})
+    ).hexdigest()
+    result["files"].extend(
+        {"path": item["path"], "size_bytes": 0, "sha256": hashlib.sha256(b"").hexdigest()}
+        for item in request["continuation_files"]
+    )
+    atomic_json(tmp_path / "result.json", result)
+    failed = native_failures.collect_failed_diagnostics(invocation, tmp_path, workflow)
+    assert failed.validation["status"] == "failed"
+    assert failed.validation["scientific_validation_passed"] is False
+
+    # Isolate the metadata reader's bound. Independent collector tests cover
+    # filesystem/marker certification; live acceptance verifies all20k bytes.
+    result.update(status="succeeded", completed_steps=["production"])
+    atomic_json(tmp_path / "result.json", result)
+    monkeypatch.setattr(gromacs, "completion_marker", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gromacs, "inventory", lambda *args, **kwargs: result["files"])
+    output = gromacs.collect_companion_output(invocation, tmp_path, mpi=workflow.model_id == "gromacs-mpi")
+    assert output.validation["status"] == "passed"
+    assert output.validation["file_count"] == 20002
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("count", [1, 3000, 5000, 20000])
 async def test_frozen_descriptor_roundtrips_large_inventory_over_authorized_http(hasher, count):
     state, resource, repository = active_workload(count)
+    # Unique native file identities must fit too; repeated placeholder hashes
+    # would otherwise give an unrealistically generous compression ratio.
+    entries = tuple(
+        replace(item, digest="sha256:" + hashlib.sha256(f"file-{index}".encode()).hexdigest())
+        for index, item in enumerate(state.input_manifest.entries)
+    )
+    state = replace(state, input_manifest=replace(state.input_manifest, entries=entries))
+    resource.materializations = entries
+    repository.records[state.operation_id] = state
     assert state_from_value(state_to_json(state)) == state
     if count == 20000:
         encoded = state_to_value(state)

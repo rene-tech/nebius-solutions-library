@@ -51,10 +51,14 @@ export optimizations; see the parent release evidence for their measurements.
 
 - 240 focused backend tests passed; four object-store integration tests skipped
   because that separate test backend was not configured.
-- 16 large-descriptor/bulk-transfer tests passed, including 20,000-record
+- 18 large-descriptor/bulk-transfer tests passed, including 20,000-record
   durable/HTTP round-trip, deterministic immutable representations, corruption
   and expansion-limit rejection, cancelled-attempt fencing, ordered bounded
   bulk identities, failed transfer never finalizing, and small legacy state.
+  The large inventory uses distinct SHA-256 values, not an artificially
+  compressible repeated hash. Late terminal success/failure readers also accept
+  the 4-MiB continuation request and 32,766-file native envelope. The final
+  descriptor plus native-failure test group passed 42 tests.
 - 38 GROMACS worker tests passed, including 4,200 explicit trajectory parts and
   argv/token limits. These are synthetic file inventories, not scientific
   trajectories or a timed fourteen-day simulation.
@@ -72,10 +76,17 @@ export optimizations; see the parent release evidence for their measurements.
    final fleet is ready. Active admitted jobs keep their frozen plans.
 4. Run the existing `../gromacs-continuation-20261005/verify_resume.py` with
    `--padding-files 20000 --resume-seconds 1209600`, an internal finite TPR and
-   `--prebuilt-tpr`. The native MD is real; the additional retained inventory is
+   `--prebuilt-tpr --verify-retained-bytes`. The native MD is real; the additional retained inventory is
    explicitly synthetic. Reuse saved state/idempotency IDs on interruptions.
 5. Record exact release digests, source/resumed operation IDs, checkpoint steps,
    retained hashes, export confirmation, transfer timings, failures and cleanup.
+   Eight bounded public reads verify actual SHA-256/length of every final
+   checkpoint file, retaining local copies and a verification timing receipt.
+
+`prepare_fixture.py` retrieves a previously completed internal 60,000-step TPR
+through the public artifact API with byte verification. Its explicit QA-key
+check prevents accidental use of customer credentials. Fixture and credentials
+stay in the private acceptance directory, not this repository.
 
 The earlier actual Lynx run is not part of this QA cohort. No automatic
 continuation loop or in-place runtime-budget mutation has been introduced.

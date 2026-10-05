@@ -325,6 +325,47 @@ async def run(args):
                 raise ValueError(
                     "Preparation was rerun or prior outputs were not preserved"
                 )
+            byte_verification = None
+            if args.verify_retained_bytes:
+                started = time.monotonic()
+                verified_bytes = 0
+                verified_files = 0
+                pending = list(files.values())
+                # Eight public reads, bounded to one small cohort at a time;
+                # the shared customer-facing API remains the test boundary.
+                # The helper validates actual streamed SHA-256 and length.
+                semaphore = asyncio.Semaphore(8)
+
+                async def verify_file(item):
+                    relative = Path(item["path"])
+                    if relative.is_absolute() or ".." in relative.parts:
+                        raise ValueError("Checkpoint path is not a contained relative file")
+                    async with semaphore:
+                        await helper.download(
+                            http, item["artifact"], args.output / "verified-files" / relative
+                        )
+                    return item["size_bytes"]
+
+                for offset in range(0, len(pending), 128):
+                    sizes = await asyncio.gather(
+                        *(verify_file(item) for item in pending[offset : offset + 128])
+                    )
+                    verified_bytes += sum(sizes)
+                    verified_files += len(sizes)
+                    if verified_files % 1024 == 0 or verified_files == len(pending):
+                        print(json.dumps({
+                            "label": args.label,
+                            "phase": "verify-retained-bytes",
+                            "files": verified_files,
+                            "total_files": len(pending),
+                        }), flush=True)
+                byte_verification = {
+                    "files": verified_files,
+                    "bytes": verified_bytes,
+                    "sha256_checked": True,
+                    "elapsed_seconds": round(time.monotonic() - started, 3),
+                    "parallel_reads": 8,
+                }
             receipt = {
                 **state,
                 "status": "passed",
@@ -339,6 +380,7 @@ async def run(args):
                 "full_budget_soak_tested": False,
                 "synthetic_retained_files": args.padding_files,
                 "prebuilt_finite_tpr": args.prebuilt_tpr is not None,
+                "retained_artifact_verification": byte_verification,
                 "customer_key_used": False,
             }
             save(args.output / "receipt.json", receipt)
@@ -358,6 +400,7 @@ def main():
     parser.add_argument("--source-seconds", type=int, default=60)
     parser.add_argument("--padding-files", type=int, default=0)
     parser.add_argument("--prebuilt-tpr", type=Path)
+    parser.add_argument("--verify-retained-bytes", action="store_true")
     parser.add_argument("--resume-seconds", type=int, default=1209600)
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--origin", default="https://89.169.99.188")
