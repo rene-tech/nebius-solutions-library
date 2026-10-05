@@ -364,6 +364,35 @@ def prepare(items, image):
     }
 
 
+def prepare_restore(items, prepared, image, target):
+    if prepared["context"] != CONTEXT or prepared["candidate_image"] != image:
+        raise ValueError("Prepared release identity differs")
+    if target not in {"api", "maintenance"}:
+        raise ValueError("Select exactly one restore target: api or maintenance")
+    inventory(items)
+    key = API if target == "api" else MAINTENANCE
+    matches = [
+        entry
+        for entry in prepared["stage_in_order"]
+        if (entry["kind"], entry["namespace"], entry["name"]) == key
+    ]
+    if len(matches) != 1:
+        raise ValueError("Prepared release must contain exactly one selected target")
+    objects = {identity(obj): obj for obj in items}
+    return {
+        "review_only": True,
+        "restore_target": target,
+        "restore": [
+            {
+                "kind": key[0],
+                "namespace": key[1],
+                "name": key[2],
+                "patch": restore_patch(objects[key], matches[0], image),
+            }
+        ],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--candidate-image", required=True)
@@ -377,7 +406,14 @@ def main():
         type=Path,
         help="Emit fresh-RV restore proposals after staging; still never applies",
     )
+    parser.add_argument(
+        "--restore-target",
+        choices=("api", "maintenance"),
+        help="Required with --restore-from; each release phase restores only its selected target",
+    )
     args = parser.parse_args()
+    if bool(args.restore_from) != bool(args.restore_target):
+        parser.error("--restore-from and --restore-target must be supplied together")
     items = json.loads(
         subprocess.check_output(
             [
@@ -395,27 +431,9 @@ def main():
     )["items"]
     if args.restore_from:
         prepared = json.loads(args.restore_from.read_text())
-        if (
-            prepared["context"] != CONTEXT
-            or prepared["candidate_image"] != args.candidate_image
-        ):
-            raise ValueError("Prepared release identity differs")
-        inventory(items)
-        objects = {identity(obj): obj for obj in items}
-        output = {"review_only": True, "restore": []}
-        for entry in prepared["stage_in_order"]:
-            if entry["original_flag"]:
-                key = entry["kind"], entry["namespace"], entry["name"]
-                output["restore"].append(
-                    {
-                        "kind": key[0],
-                        "namespace": key[1],
-                        "name": key[2],
-                        "patch": restore_patch(
-                            objects[key], entry, args.candidate_image
-                        ),
-                    }
-                )
+        output = prepare_restore(
+            items, prepared, args.candidate_image, args.restore_target
+        )
     else:
         output = prepare(items, args.candidate_image)
     if args.output:

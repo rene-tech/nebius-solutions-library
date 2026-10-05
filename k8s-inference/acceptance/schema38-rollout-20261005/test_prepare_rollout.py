@@ -165,6 +165,65 @@ def test_restore_preserves_original_flag_and_uses_fresh_resource_version(
     assert restored["metadata"]["resourceVersion"] == "999"
 
 
+def test_two_phase_api_then_fresh_maintenance_restore(items):
+    prepared = p.prepare(items, IMAGE)
+    staged = {p.identity(obj): copy.deepcopy(obj) for obj in items}
+    for entry in prepared["stage_in_order"]:
+        key = entry["kind"], entry["namespace"], entry["name"]
+        staged[key] = apply_patch(staged[key], entry["patch"])
+        staged[key]["metadata"]["resourceVersion"] = "200"
+    api_restore = p.prepare_restore(list(staged.values()), prepared, IMAGE, "api")
+    assert len(api_restore["restore"]) == 1
+    assert api_restore["restore"][0]["name"] == p.API[2]
+    staged[p.API] = apply_patch(staged[p.API], api_restore["restore"][0]["patch"])
+    assert "paused" not in staged[p.API]["spec"]
+    assert staged[p.MAINTENANCE]["spec"]["suspend"] is True
+    # After the API rollout/HPA runs, only the selected maintenance spec is
+    # checked for restoration. It must not try to unpause the API a second time.
+    staged[p.API]["spec"]["replicas"] = 2
+    staged[p.API]["metadata"]["resourceVersion"] = "300"
+    staged[p.MAINTENANCE]["metadata"]["resourceVersion"] = "400"
+    maintenance_restore = p.prepare_restore(
+        list(staged.values()), prepared, IMAGE, "maintenance"
+    )
+    assert len(maintenance_restore["restore"]) == 1
+    entry = maintenance_restore["restore"][0]
+    assert entry["name"] == p.MAINTENANCE[2]
+    assert entry["patch"][1]["value"] == "400"
+    restored = apply_patch(staged[p.MAINTENANCE], entry["patch"])
+    assert restored["spec"]["suspend"] is False
+    assert staged[p.API]["spec"]["replicas"] == 2
+
+
+@pytest.mark.parametrize("target", ["api", "maintenance"])
+def test_selected_restore_still_checks_its_own_spec(items, target):
+    prepared = p.prepare(items, IMAGE)
+    key = p.API if target == "api" else p.MAINTENANCE
+    entry = next(row for row in prepared["stage_in_order"] if row["name"] == key[2])
+    staged = {p.identity(obj): copy.deepcopy(obj) for obj in items}
+    staged[key] = apply_patch(staged[key], entry["patch"])
+    p.pod_spec(staged[key])["containers"][0]["image"] = OLD
+    with pytest.raises(ValueError, match="Candidate image not fully staged"):
+        p.prepare_restore(list(staged.values()), prepared, IMAGE, target)
+
+
+@pytest.mark.parametrize(
+    "arguments", [["--restore-from", "unused.json"], ["--restore-target", "api"]]
+)
+def test_restore_cli_requires_target_and_proposal_together(monkeypatch, arguments):
+    monkeypatch.setattr(
+        "sys.argv", ["prepare_rollout.py", "--candidate-image", IMAGE, *arguments]
+    )
+
+    def forbidden_read(*args, **kwargs):
+        pytest.fail("invalid CLI must not read cluster")
+
+    monkeypatch.setattr(p.subprocess, "check_output", forbidden_read)
+    with pytest.raises(SystemExit) as exc:
+        p.main()
+    assert exc.value.code == 2
+
+
 @pytest.mark.parametrize("change", ["map", "uid", "candidate", "resources", "strategy"])
 def test_restore_refuses_concurrent_drift(items, change):
     original = items[0]

@@ -72,7 +72,7 @@ HTTP-only entrypoint before loading the API/database module.
    may perform DDL during this transition. An already exact-38 ledger is a
    verified no-op. Any other ledger/index state stops the Job.
 5. Require Job success, exact ledger 38 and valid/ready index. Generate fresh-RV
-   restore proposals with `--restore-from`. Restore **only API's original paused
+   restore proposals with `--restore-from … --restore-target api`. Restore **only API's original paused
    state first**. If it was absent, remove the field; if true, preserve true and
    do not claim a rollout occurred. Do not unpause unrelated suspended work.
 6. Wait for all three API readers and both controller readers to be ready on
@@ -83,7 +83,8 @@ HTTP-only entrypoint before loading the API/database module.
    fresh live queues and the parent's historical-metrics gate. The latter
    requires repeated successful accounting refreshes, not just bounded failures.
 7. Only after the reader barrier, restore maintenance's original suspend flag
-   from a **new fresh read** and verify a candidate-image maintenance Job.
+   using `--restore-from … --restore-target maintenance` from a **new fresh read**
+   and verify a candidate-image maintenance Job.
    Existing `suspend=false` returns to false; absent stays absent; true stays
    true. Current initial API `paused` is absent and maintenance `suspend=false`.
 8. Only after these gates, publish RDMA profiles plus matching execution and
@@ -114,10 +115,15 @@ The helper only runs `kubectl get`; it deliberately has no `--apply`. Output
 contains an ordered list of review patches and a guarded migration manifest.
 Supply the final successor digest instead if parent fixes land before rollout.
 Re-run immediately before staging; stale resourceVersion tests should fail.
-After staging, `--restore-from /operator-private/new-review.json` generates
-fresh restore proposals and rejects changed UIDs, configuration, resource
-settings, rollout strategy or partially updated images. Regenerate it again
-before the separate maintenance restore; do not reuse an earlier resourceVersion.
+After staging, `--restore-from /operator-private/new-review.json --restore-target api`
+generates only the API restore proposal; after its reader barrier, repeat with
+`--restore-target maintenance`. Both options must be supplied together. Each
+phase retains the inventory check and rejects changed UIDs, configuration,
+resource settings, rollout strategy or partially updated images for its selected
+target. The later maintenance phase does not try to re-restore the already
+unpaused API. Do not reuse an earlier resourceVersion. An HPA replica change on
+the selected API intentionally stops that API proposal for operator inspection;
+the helper never overrides the HPA.
 
 ## Tests and remaining acceptance
 
