@@ -1,8 +1,9 @@
 # Full-node InfiniBand qualification — 2026-10-05
 
 This is a separate successor to the immutable [TCP measurements](FINDINGS.md),
-not a reinterpretation of them. Public RDMA admission is still disabled pending
-native GROMACS and then exact-release REST/MCP qualification.
+not a reinterpretation of them. Native GROMACS has passed, including three
+1 ns repeats. Exact-release public REST/MCP qualification remains pending;
+native measurements alone do not establish public delivered performance.
 
 ## Infrastructure and ownership
 
@@ -94,6 +95,119 @@ not production limits. Public REST/MCP and performance publication remain gated.
 Short native receipt SHA256:
 `9dc228adeb944cd3a241dd2e3cca61cba028ff3cbab0dcfee53e0a4667b80897`.
 The original failed builds, timeouts and controls remain alongside it.
+
+## Longer native comparison and recommendation
+
+`native-confirm-r13` finished at `2026-10-05T19:14:21.551710+00:00` on the
+same exact `c8321a27…` image. Three 500,000-step repeats each simulated 1 ns
+from the original 185,486-atom TPR. All 46 inventory hashes, finite energies,
+coordinates and monotonic native checkpoints passed. Host collectives,
+CUDA-buffer communication, actual effective IPC_LOCK and no-TCP transport
+checks passed again. Both exact Pod UIDs were deleted and absence observed;
+the read-only sampler subsequently exited naturally after its STOP marker.
+
+| Native configuration | Work | Median native-counter ns/day | Repeat range | ns/day per allocated GPU |
+| --- | --- | ---: | ---: | ---: |
+| One H100, GPU update/list 200 | 3×1 ns | 206.88 | 206.65–209.22 | 206.88 |
+| One node, eight H100s, CPU update | 3×1 ns | 318.53 | 295.87–326.44 | 39.82 |
+| Two nodes, sixteen H100s, RDMA/CPU update | 3×1 ns | 350.90 | 348.84–363.61 | 21.93 |
+| Earlier sixteen H100s, TCP/CPU update | 3×0.1 ns | 55.78 | Short screen | 3.49 |
+
+The new sixteen-GPU median is **10.2% higher** than the retained eight-GPU
+median at twice the GPU allocation, or about 55% of its per-GPU efficiency.
+The eight- and sixteen-GPU long runs use eight threads/rank, bonded GPU,
+fixed GPU PME/FFT, one PME rank, CPU update, unchanged output cadence and no
+explicit list-interval override (native logs select 80). They differ in rank
+layout (7 PP + 1 PME versus 15 PP + 1 PME), 64 versus 128 requested vCPUs,
+node generation, runtime wrapper/provider/file capability and transport.
+This is an observed configuration comparison, not a controlled estimate of
+InfiniBand's isolated speedup. The old TCP case is also ten times shorter;
+neither its ratio nor the two-thread TCP variant's 58.01 ns/day is a matched
+long-run scaling factor. Single-GPU GPU-update/list-200 numbers are a separate
+protocol, not the same multi-rank execution.
+
+The cost-efficient tested customer recipe remains the [long public single-L40S
+recipe](FINDINGS.md): 201.0/196.6 delivered ns/day via REST/raw MCP with eight
+vCPUs, bonded GPU and list interval 200. One-node eight H100s remains a
+latency/per-GPU-efficiency compromise. Sixteen RDMA H100s now has the highest
+measured single-trajectory native rate, but only a modest gain over eight and
+not a cost-efficiency win. Public RDMA delivery, checkpoint and durable-accounting
+verification must pass before recommending it as an end-to-end option. No
+customer job or default is changed by this recommendation.
+
+The separate [MPS screen](../lynx-mps-20261005/README.md) addresses aggregate
+independent-process throughput: H100 four-client MPS reached 218.51 aggregate
+process-wall ns/day versus 172.61 without MPS for one process; L40S two-client
+MPS reached 202.17 versus 177.95, with overlapping short-run ranges. Individual
+trajectories became slower. Those 100 ps screens exclude hosted export and
+are not comparable to either native-counter or public-delivery clocks here.
+MPS is neither an acceleration switch for one ongoing trajectory nor a
+qualified public sharing mode. This distinction follows the scope of the
+[NVIDIA MPS/MIG experiment](https://developer.nvidia.com/blog/maximizing-gromacs-throughput-with-multiple-simulations-per-gpu-using-mps-and-mig/),
+not its A100/older-GROMACS speedup numbers.
+
+### Clocks, allocation share and limits
+
+The three native counters total **731.524 s** (380.34 million atom-steps/s).
+Actual mdrun subprocess wall is **798.969 s**; the native supervisor scope is
+**820.370 s**, or 315.96 ns/day, including input copies, worker workflow and
+local evidence retrieval. It is not server accepted-to-delivered throughput.
+Analysis-command process wall is 1.875 s. Peer input staging measured 0.387 s
+and 8,996,516 bytes. The retained inventory totals 123,922,737 bytes, not a
+network-transfer total. Separate initialization, pure integration, checkpoint
+publication and export durations remain null; no residual is assigned to them.
+Local checkpoint replay is zero; remote durable replay is unknown because
+this native qualification has no public checkpoint/export path.
+
+The existing ledger's allocation and pricing helpers—not a second accounting
+model—bound both Pods from scheduling through observed release. Their total
+is **14,389.84–14,760.83 GPU-s**, equivalent to **$17.987–18.451** for this
+3 ns native qualification. It includes host/CUDA gates and preparation and
+must not be called steady-state MD cost. The native counter-window share alone
+is $14.630 ($4.8768/ns); comparable three-repeat counter-window shares for
+one/eight H100s are $0.5203/$2.7598 per ns, not complete workflow costs.
+
+These are dated **2026-10-05 on-demand allocation-share scenarios**, using the
+actual two `8gpu-128vcpu-1600gb` H100 presets at $36/node-hour, $72/hour total,
+from [official compute pricing](https://docs.nebius.com/compute/resources/pricing).
+They are not the reservation invoice and exclude storage, network, tax,
+discounts and idle VM time outside the Pod bounds. Historical failed native
+qualification attempts remain separate; they are not included in this r13
+success cost and are not treated as free or retroactively successful.
+
+The 63 retained samples per Pod span 864.64 s and include non-MD work. Mean
+CPU usage was 54.33/48.46 cores; unweighted GPU activity averaged 25.24/25.70%
+and device power 167.19/166.72 W. These are not an energy integral or a
+native-only utilization average. The first native log's rank-weighted cycle
+categories include coordinate communication 19.4%, force wait/communication
+17.4%, constraints 18.6%, launch PP GPU operations 12.4%, force 3.6% and PME
+GPU mesh 2.0%. They are not network-only wall or kernel measurements. Executed
+transport is now verbs rather than TCP, but the retained host accounting
+does not isolate that change's gain, justify linear scaling or identify one
+exclusive remaining cause.
+The [GROMACS performance guide](https://manual.gromacs.org/2026.2/user-guide/mdrun-performance.html)
+likewise treats rank/thread/offload choices as workload-dependent measurements.
+
+Private fixed evidence under the infrastructure evidence root above:
+
+- `native-confirm-r13/receipt.json`, SHA256
+  `bea72860f56382db6b7c10babcfe160ce95d8ac306013c20b6b1391c7327e0b3`.
+- `native-confirm-r13-accounting-r1/report.json`, SHA256
+  `c82feeaf5e9bf576ddaed685073194ecd9eff999e03e1760c8ce31edab7a1f1b`.
+- `native-confirm-r13-samples/samples.jsonl`, SHA256
+  `26b3773048422e64697e99d1ab508f38bf2e62b6f0a1c2760495315061ccfe91`.
+
+`summarize_rdma.py` rehashes the exact receipt-bound fixture and native outputs,
+then reuses the existing phase, price, allocation-bound and sampled-counter
+calculations. It copies no trajectory and makes no API/DB/GPU call. To project
+a different final receipt, use a fresh output directory and stopped sampler:
+
+```bash
+components/control-plane/.venv/bin/python acceptance/lynx-performance-20261005/summarize_rdma.py \
+  --receipt "$FINAL_RECEIPT" --samples "$STOPPED_SAMPLES" \
+  --references acceptance/lynx-performance-20261005/cost_references.json \
+  --pricing-date 2026-10-05 --output "$FRESH_PRIVATE_ACCOUNTING"
+```
 
 `qualify_rdma.py` owns only exact labelled test JobSets, verifies image digests,
 GPU/RDMA resources and current free capacity, and deletes only its retained UID
