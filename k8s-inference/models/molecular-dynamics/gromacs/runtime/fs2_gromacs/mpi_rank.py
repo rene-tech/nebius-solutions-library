@@ -14,10 +14,57 @@ import ctypes
 from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import socket
+import subprocess
 import uuid
 
 RECEIPT_PREFIX = "FS2_MPI_RANK_BINDING "
+
+
+def match_rdma_devices(gpu_paths: dict[str, Path], hca_paths: dict[str, Path]) -> dict[str, str]:
+    """Select the unique closest PCI ancestor, never assume GPU/NIC ordinals."""
+    if len(gpu_paths) != 8 or len(hca_paths) != 8:
+        raise ValueError("RDMA topology requires eight GPU and HCA PCI identities")
+    mapping = {}
+    for gpu, gpu_path in gpu_paths.items():
+        distances = {}
+        for hca, hca_path in hca_paths.items():
+            common = 0
+            for first, second in zip(gpu_path.parts, hca_path.parts):
+                if first != second:
+                    break
+                common += 1
+            distances[hca] = common
+        closest = [hca for hca, distance in distances.items() if distance == max(distances.values())]
+        if len(closest) != 1 or distances[closest[0]] < 4:
+            raise ValueError("RDMA has no unique topology-local HCA for a visible GPU")
+        mapping[gpu] = closest[0]
+    if len(set(mapping.values())) != 8:
+        raise ValueError("RDMA rank layout must cover eight distinct local HCAs")
+    return mapping
+
+
+def rdma_rank_binding(visible: list[str], selected: str) -> dict:
+    from .mpi import rdma_devices
+
+    text = subprocess.run(
+        ["nvidia-smi", "--query-gpu=uuid,pci.bus_id", "--format=csv,noheader"],
+        capture_output=True, text=True, check=True, timeout=10,
+    ).stdout
+    by_uuid = {}
+    for line in text.splitlines():
+        identifier, bus = [part.strip() for part in line.split(",")]
+        # CUDA/nvidia-smi print an eight-digit domain; Linux sysfs uses four.
+        domain, remainder = bus.split(":", 1)
+        by_uuid[identifier] = Path("/sys/bus/pci/devices") / f"{int(domain, 16):04x}:{remainder.lower()}"
+    gpu_paths = {identifier: by_uuid[identifier].resolve(strict=True) for identifier in visible}
+    hca_paths = {device: (Path("/sys/class/infiniband") / device.split(":")[0] / "device").resolve(strict=True)
+                 for device in rdma_devices()}
+    mapping = match_rdma_devices(gpu_paths, hca_paths)
+    os.environ["UCX_NET_DEVICES"] = mapping[selected]
+    return {"ucx_net_device": mapping[selected], "gpu_pci_path": str(gpu_paths[selected]),
+            "hca_pci_path": str(hca_paths[mapping[selected]]), "rdma_layout": "one-topology-local-hca-per-rank"}
 
 
 def visible_gpu_uuids() -> list[str]:
@@ -74,6 +121,8 @@ def bind_rank(*, nodes: int, gpus_per_node: int) -> dict:
     # Do not hide peer GPUs from UCX/CUDA IPC by narrowing CUDA_VISIBLE_DEVICES.
     os.environ["GMX_GPU_ID"] = str(local_rank)
     os.environ.pop("GMX_GPUTASKS", None)
+    rdma = (rdma_rank_binding(visible, selected)
+            if os.environ.get("FS2_GROMACS_MPI_TRANSPORT") == "ucx-rdma" else {})
     return {
         "schema": "fs2-serve.nebius.ai/gromacs-mpi-rank-binding/v1",
         "world_rank": world_rank,
@@ -88,6 +137,7 @@ def bind_rank(*, nodes: int, gpus_per_node: int) -> dict:
         "cpu_affinity": sorted(os.sched_getaffinity(0)),
         "threads_per_rank": int(os.environ["OMP_NUM_THREADS"]),
         "observed_at": datetime.now(timezone.utc).isoformat(),
+        **rdma,
     }
 
 

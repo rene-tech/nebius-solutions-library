@@ -307,6 +307,7 @@ def launch_command(request: dict, command: list[str]) -> list[str]:
         "UCX_IB_GPU_DIRECT_RDMA",
         "UCX_LOG_LEVEL",
         "UCX_PROTO_INFO",
+        "FS2_GROMACS_MPI_TRANSPORT",
         "GMX_DISABLE_DIRECT_GPU_COMM",
     ):
         if name in os.environ:

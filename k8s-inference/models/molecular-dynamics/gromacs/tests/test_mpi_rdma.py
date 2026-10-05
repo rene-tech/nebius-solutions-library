@@ -2,6 +2,7 @@ import pytest
 from pathlib import Path
 
 from fs2_gromacs import mpi
+from fs2_gromacs.mpi_rank import match_rdma_devices
 
 
 def test_rdma_is_fail_closed_and_never_claims_observed_transport(monkeypatch):
@@ -63,3 +64,13 @@ def test_rdma_overlay_adds_only_matching_userspace_provider():
     assert "dpkg-query" in recipe and "/etc/libibverbs.d/mlx5.driver" in recipe
     assert "COPY --from=" not in recipe
     assert recipe.rstrip().endswith("USER 10001:10001")
+
+
+def test_rdma_mapping_uses_pci_locality_not_mismatched_gpu_nic_index():
+    gpu = {f"GPU-{i}": Path(f"/sys/devices/pci0000:00/bridge{i}/gpu") for i in range(8)}
+    hca = {f"mlx5_{i}:1": Path(f"/sys/devices/pci0000:00/bridge{(i + 4) % 8}/nic") for i in range(8)}
+    result = match_rdma_devices(gpu, hca)
+    assert result == {f"GPU-{i}": f"mlx5_{(i + 4) % 8}:1" for i in range(8)}
+    hca["mlx5_1:1"] = hca["mlx5_0:1"]
+    with pytest.raises(ValueError, match="unique topology-local"):
+        match_rdma_devices(gpu, hca)
