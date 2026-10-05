@@ -51,13 +51,19 @@ def mpi_request(nodes=2, gpus=None):
 
 
 def mpi_profile():
+    """Legacy TCP/local shape fixture, independent of additive live RDMA shapes."""
     profiles = json.loads((ROOT / "catalog/runtime/contracts/scientific-workload-profiles.json").read_text())
-    return next(item for item in profiles["profiles"] if item["model_id"] == "gromacs-mpi")
+    profile = next(item for item in profiles["profiles"] if item["model_id"] == "gromacs-mpi")
+    for stage in profile["workload"]["stages"]:
+        stage["execution_shapes"] = [shape for shape in stage["execution_shapes"] if not shape.get("rdma")]
+    return profile
 
 
 def renderer(tmp_path: Path, *, edit=None):
     document = json.loads((ROOT / "catalog/runtime/contracts/scientific-execution-map.json").read_text())
     model = next(item for item in document["models"] if item["model_id"] == "gromacs-mpi")
+    for stage in model["stages"]:
+        stage["execution_shapes"] = [shape for shape in stage["execution_shapes"] if not shape.get("rdma")]
     if edit:
         edit(model)
     path = tmp_path / "mpi-execution.json"

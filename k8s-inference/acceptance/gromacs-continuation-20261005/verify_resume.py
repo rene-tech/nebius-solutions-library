@@ -332,6 +332,13 @@ async def run(args):
                     )
             final = await poll(resumed, "resumed")
             if final["batch"]["status"] != "succeeded":
+                # A failed qualification is evidence too. Keep the public
+                # terminal envelope/attempts before rejecting this case.
+                try:
+                    failed_result = await get(f"/v1/operations/{resumed}/result")
+                except Exception as error:
+                    failed_result = {"retrieval_error_type": type(error).__name__}
+                save(args.output / "failed-result.json", failed_result)
                 raise ValueError(
                     "Resumed scientific operation failed; inspect retained evidence"
                 )

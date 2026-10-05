@@ -19,8 +19,11 @@ RDMA = {"resource_name": "rdma.fs2.nebius/hca", "count": 1, "gpu_cluster_id": "c
 
 
 def rdma_runtime(tmp_path, monkeypatch, *, missing_map=False):
+    # Build exactly one independently configured RDMA shape on the explicit
+    # pre-RDMA fixture, even after the canonical catalog publishes its own one.
     profile = shapes.mpi_profile()
     stage = profile["workload"]["stages"][0]
+    assert not any(shape.get("rdma") for shape in stage["execution_shapes"])
     shape = copy.deepcopy(next(x for x in stage["execution_shapes"] if x["id"] == "multi-node-8gpu"))
     shape.update(id="multi-node-8gpu-rdma", rdma=RDMA)
     stage["execution_shapes"].append(shape)
@@ -28,6 +31,7 @@ def rdma_runtime(tmp_path, monkeypatch, *, missing_map=False):
 
     def edit(model):
         entries = model["stages"][0]["execution_shapes"]
+        assert not any(shape.get("rdma") for shape in entries)
         selected = copy.deepcopy(next(x for x in entries if x["id"] == "multi-node-8gpu"))
         selected.update(id="multi-node-8gpu-rdma")
         if not missing_map:
