@@ -149,6 +149,10 @@ def test_composed_patch_preserves_unrelated_configuration_and_never_mutates_inpu
         assert cm["metadata"]["name"].endswith(
             "-" + release.A.sha(next(iter(cm["data"].values())).encode())[:12]
         )
+    scheduling = result["configmaps"]["scheduling"]
+    assert scheduling["metadata"]["annotations"][
+        "fs2-serve.nebius.ai/scheduling-contract-sha256"
+    ] == release.A.sha(scheduling["data"]["kueue-scheduling.json"].encode())
 
 
 def test_ready_reader_barrier_records_exact_fleet():

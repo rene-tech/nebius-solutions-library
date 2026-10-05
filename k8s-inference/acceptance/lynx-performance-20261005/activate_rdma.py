@@ -169,6 +169,9 @@ def prepare(
     schedule_digest = A.sha(
         maps["scheduling"]["data"]["kueue-scheduling.json"].encode()
     )
+    maps["scheduling"]["metadata"]["annotations"][
+        "fs2-serve.nebius.ai/scheduling-contract-sha256"
+    ] = schedule_digest
     main = A.named(api["spec"]["containers"], "control-plane", "API")
     A.named(
         main["env"], "FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SHA256", "environment"
