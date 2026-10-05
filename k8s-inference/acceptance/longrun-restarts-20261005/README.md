@@ -6,10 +6,53 @@ handoff. A new fourteen-day-budget continuation from the old seven-day worker
 has passed, including all output bytes. Large native REST continuation also
 passed with all 20,031 final files downloaded and SHA/size verified; raw MCP
 also passed that complete byte verification. The subsequent concurrent REST/MCP
-cohort failed both the publication deadline and availability criteria. A bounded
-two-cohort publication pipeline and a separate admission-responsiveness fix are
-tested, but their combined live rerun is still required.
+cohort failed both the publication deadline and availability criteria. Their
+combined pipeline/responsiveness successor has now passed concurrent native
+REST/MCP continuation, terminal publication and complete all-reader readiness.
+Full output-byte verification for that latest cohort is still running; MPI
+peer-loss qualification remains a separate pending gate.
 This is not a fourteen-day soak or customer-ready verdict.
+
+## Bridge-872b concurrent native and availability pass
+
+Both internal continuations ran on the exact API/collector
+`sha256:872b7d58cf275f2bc7e7d396e626fd1418285e65f25047ed8fbd35ab7af9f6dd`,
+source `dbcb4b994`, with the unchanged `5acd77d6` single-GPU worker. The parent
+verified every reader, controller and maintenance instance before admission.
+One L40S per operation, the same original `33b398b6` source, and the original
+system/qa concurrency of two were used. No customer key or limit changed.
+
+| Measurement | REST r6 | Raw MCP r3 |
+| --- | --- | --- |
+| Operation | `2da99333-e473-4025-8230-edf67d49c62b` | `ba3e658b-6355-418b-b7fd-d4bd8c2b1067` |
+| Initial / exact replay admission | 15.077 / 11.883 s | 19.515 / 18.251 s |
+| Input materialization | 114 s | 107 s |
+| First 20,011-file platform publication | 170.320 s | 191.073 s |
+| First verified customer export | 155.209 s | 158.953 s |
+| First complete durable handoff | 331.050 s | 354.805 s |
+| Later incremental handoffs, generations 2–6 | 4.879–5.944 s | 4.989–6.342 s |
+| Final handoff including complete remote audit | 42.959 s | 43.831 s |
+| Public terminal success, UTC | 19:29:57.317 | 19:31:21.062 |
+
+Native logs confirm exact continuation from step 7,800 and the final native
+checkpoint confirms 60,000 steps/zero exit for both. Each final manifest contains
+20,031 files. The original 600-second handoff bound was never relaxed. The normal
+owner released the exact Pods; absence was observed at 19:29:50 and 19:31:08 UTC.
+
+The pre-armed three-reader capture from 19:18:06 through 19:31:46 retained 978
+successful readiness responses, zero non-200 responses, and no coverage gaps.
+An independent response-body sampler also recorded 489 healthy samples by that
+cutoff. This is an observed cohort pass, not an unlimited availability guarantee.
+All native/publication/readiness evidence is on the exact bridge image; the
+parent may change only the compatible catalog release during subsequent immutable
+artifact GET verification, which will be recorded separately rather than claimed
+as single-image evidence. Those complete byte checks remain in progress.
+
+Private receipts are `rest-20k-r6`, `mcp-20k-r3`, and
+`concurrent-20k-r2/native-terminal-readiness.json` under
+`/home/tux/secure-handoff/fs2-longrun-restarts-20261005/`. Every failed predecessor
+is retained below; a later pass does not erase it. The reusable acceptance harness
+also saves public failed terminal envelopes before rejecting a failed case.
 
 ## Concurrent release-191e failure and bounded pipeline follow-up
 
