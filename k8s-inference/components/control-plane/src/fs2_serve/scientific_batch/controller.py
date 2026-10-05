@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -1025,14 +1026,20 @@ class ScientificBatchController:
         if not isinstance(invocation, StageInvocation):
             raise RuntimeError("scientific workload has no canonical stage invocation")
         resolved: list[ResolvedArtifactMaterialization] = []
-        for item in invocation.materializations:
-            if record.input_manifest is not None:
-                try:
-                    source = record.input_manifest.artifact(item.artifact_id)
-                except ValueError:
-                    source = None
-            else:
-                source = None
+        # Late native continuations can contain tens of thousands of immutable
+        # inputs. Looking up each one through tuple-scanning artifact() made
+        # launch quadratic and stalled unrelated requests on the API event loop.
+        inputs = (
+            {item.logical_artifact_id: item for item in record.input_manifest.entries}
+            if record.input_manifest is not None
+            else {}
+        )
+        for index, item in enumerate(invocation.materializations):
+            if index and index % 128 == 0:
+                # All identities remain frozen in this claim. Cooperatively
+                # leave time for health checks and unrelated tenant requests.
+                await asyncio.sleep(0)
+            source = inputs.get(item.artifact_id)
             if source is not None:
                 resolved.append(
                     ResolvedArtifactMaterialization.resolve(

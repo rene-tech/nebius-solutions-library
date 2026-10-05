@@ -262,28 +262,37 @@ async def run(args):
                     headers={"Idempotency-Key": arguments["idempotency_key"]},
                 )
                 if response.status_code != 202:
+                    try:
+                        body = response.json()
+                    except ValueError:
+                        body = response.text[:4000]
                     save(
                         args.output / "resume-error.json",
-                        {"status": response.status_code, "body": response.json()},
+                        {"status": response.status_code, "body": body},
                     )
                 response.raise_for_status()
                 return response.json()
 
-            accepted = await resume()
+            accepted = (
+                await get(f"/v1/operations/{state['resume_operation']}")
+                if args.observe_existing_resume
+                else await resume()
+            )
             resumed = accepted["operation"]["id"]
             if "resume_operation" in state and state["resume_operation"] != resumed:
                 raise ValueError("Replay created duplicate work")
             state["resume_operation"] = resumed
             save(state_path, state)
-            save(args.output / "resume-response.json", accepted)
-            replay = await resume()
-            if (
-                replay["operation"]["id"] != resumed
-                or not replay["operation"]["reused"]
-            ):
-                raise ValueError(
-                    "Idempotent resume replay did not reuse the existing operation"
-                )
+            if not args.observe_existing_resume:
+                save(args.output / "resume-response.json", accepted)
+                replay = await resume()
+                if (
+                    replay["operation"]["id"] != resumed
+                    or not replay["operation"]["reused"]
+                ):
+                    raise ValueError(
+                        "Idempotent resume replay did not reuse the existing operation"
+                    )
             final = await poll(resumed, "resumed")
             if final["batch"]["status"] != "succeeded":
                 raise ValueError(
@@ -399,14 +408,16 @@ async def run(args):
                 }
             receipt = {
                 **state,
-                "status": "passed",
+                "status": "output-validation-passed"
+                if args.observe_existing_resume
+                else "passed",
                 "model": args.model,
                 "interface": args.interface,
                 "finished_step": args.steps,
                 "native_resume_step": starts[0],
                 "preserved_files": preserved,
                 "customer_bucket_export": final_checkpoint["customer_storage"],
-                "idempotent_replay": True,
+                "idempotent_replay": not args.observe_existing_resume,
                 "budget_seconds": args.resume_seconds,
                 "full_budget_soak_tested": False,
                 "synthetic_retained_files": args.padding_files,
@@ -437,6 +448,11 @@ def main():
         help="Reuse a prior internal-QA failed source without resubmitting it",
     )
     parser.add_argument("--verify-retained-bytes", action="store_true")
+    parser.add_argument(
+        "--observe-existing-resume",
+        action="store_true",
+        help="Read-only follow-up for an independently verified saved admission whose response was lost; does not claim idempotency passed",
+    )
     parser.add_argument(
         "--source-only",
         action="store_true",
