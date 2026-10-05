@@ -1,5 +1,8 @@
 # Exact-input MD performance qualification — 2026-10-05
 
+Completed pre-InfiniBand measurements, recommendation and immutable evidence:
+[FINDINGS.md](FINDINGS.md).
+
 This task benchmarks an operator-approved private copy of the actual Lynx
 185486-atom CHARMM membrane TPR. The input and all molecular outputs stay outside
 Git. Immutable TPR SHA256:

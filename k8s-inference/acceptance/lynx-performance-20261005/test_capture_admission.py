@@ -1,6 +1,16 @@
 import pytest
 
-from capture_admission import allocation
+from capture_admission import allocation, resources
+
+
+def test_only_fixed_nonsecret_shape_transport_environment_is_retained():
+    result = resources([{"name": "runtime", "env": [
+        {"name": "FS2_GROMACS_MPI_TRANSPORT", "value": "tcp-host-staged"},
+        {"name": "FS2_GROMACS_MPI_TOTAL_RANKS", "value": "16"},
+        {"name": "SCIENTIFIC_MODELS_API_KEY", "value": "never-retain"},
+        {"name": "FS2_MPI_SSH_KEY", "value": "never-retain"}]}])
+    assert result[0]["shape_environment"] == {"FS2_GROMACS_MPI_TRANSPORT": "tcp-host-staged",
+                                              "FS2_GROMACS_MPI_TOTAL_RANKS": "16"}
 
 
 @pytest.mark.parametrize("count,gpus", [(1, 1), (1, 4), (1, 8), (2, 8)])

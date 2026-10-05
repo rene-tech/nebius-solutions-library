@@ -11,10 +11,14 @@ from recipes import save, sha
 
 PREFIX = "fs2.nebius.ai/"
 GPU = "nvidia.com/gpu"
+SHAPE_ENV = {"FS2_GROMACS_MPI_TRANSPORT", "FS2_GROMACS_MPI_NODES", "FS2_GROMACS_MPI_GPUS_PER_NODE",
+             "FS2_GROMACS_MPI_RANKS_PER_NODE", "FS2_GROMACS_MPI_TOTAL_RANKS"}
 
 
 def resources(containers):
-    return [{"name": c["name"], "image": c.get("image"), "resources": c.get("resources", {})}
+    return [{"name": c["name"], "image": c.get("image"), "resources": c.get("resources", {}),
+             "shape_environment": {entry["name"]: entry["value"] for entry in c.get("env", [])
+                                   if entry["name"] in SHAPE_ENV and "value" in entry}}
             for c in containers]
 
 
@@ -83,7 +87,8 @@ def main():
             workloads[workload["metadata"]["uid"]] = workload
     proof = allocation(plan, pods, list(workloads.values()))
     save(args.output, {**proof, "captured_at": datetime.now(timezone.utc).isoformat(),
-                       "plan_file": str(args.plan.resolve()), "plan_sha256": sha(args.plan)})
+                       "plan_file": str(args.plan.resolve()), "plan_sha256": sha(args.plan),
+                       "capture_source_sha256": sha(Path(__file__))})
     print(json.dumps({k: v for k, v in proof.items() if k not in ("pods", "kueue_workloads")}))
 
 

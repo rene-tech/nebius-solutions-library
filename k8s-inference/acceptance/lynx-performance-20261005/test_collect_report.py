@@ -148,3 +148,20 @@ def test_missing_attempt_or_mixed_price_is_unknown_not_zero():
     result = collect_report.lifecycle_comparisons(report, rows)[0]
     assert result["durable_scheduler_occupied_gpu_seconds"] == 1600
     assert result["durable_allocation_share_cost_usd"] is None
+
+
+def test_private_csv_keeps_native_rates_without_inventing_public_comparison(monkeypatch, tmp_path):
+    report = {"operations": [{"operation_id": "verified"}, {"operation_id": "unknown"}],
+              "public_comparisons": []}
+    checked = [{"operation_id": "verified", "status": "validated", "native_output_validation": {
+        "native": {"repeats": [{"native_inclusive_ns_per_day": rate} for rate in (200, 220, 210)]}}}]
+    captured = []
+    monkeypatch.setattr(collect_report, "write_summary_csv", lambda value, path: captured.append(value))
+    collect_report.write_private_summary_csv(report, checked, tmp_path / "operations.csv")
+    assert report["public_comparisons"] == []
+    comparison, unknown = captured[0]["public_comparisons"]
+    assert comparison["observed_native_median"] == 210
+    assert comparison["public_ns_per_day"]["value"] is None
+    assert "no matched public benchmark" in comparison["comparison_status"]
+    assert unknown["observed_native_median"] is None
+    assert unknown["observed_native_ns_per_day"] == []

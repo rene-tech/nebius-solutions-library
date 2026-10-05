@@ -13,6 +13,7 @@ import math
 import os
 from pathlib import Path
 import shutil
+import statistics
 import subprocess
 import sys
 from uuid import UUID
@@ -127,6 +128,22 @@ def lifecycle_comparisons(report, rows):
                        "scope": "Same dated per-GPU allocation-share prices as existing ledger; durable scheduler "
                                 "clock is separate from observation bounds, native work, device utilization and invoice."})
     return result
+
+
+def write_private_summary_csv(report, checks, path):
+    """Reuse the existing CSV columns without inventing a public benchmark."""
+    by_operation = {row["operation_id"]: row for row in checks if row["status"] == "validated"}
+    comparisons = []
+    for operation in report["operations"]:
+        checked = by_operation.get(operation["operation_id"])
+        rates = ([row["native_inclusive_ns_per_day"] for row in
+                  checked["native_output_validation"]["native"]["repeats"]] if checked else [])
+        comparisons.append({"operation_id": operation["operation_id"],
+                            "observed_native_ns_per_day": rates,
+                            "observed_native_median": statistics.median(rates) if rates else None,
+                            "public_ns_per_day": {"value": None},
+                            "comparison_status": "private exact input; no matched public benchmark"})
+    write_summary_csv({**report, "public_comparisons": comparisons}, path)
 
 
 def validated_work(index, case, recovered):
@@ -264,14 +281,30 @@ def main():
     args.output.mkdir(parents=True, exist_ok=False)
     save(args.output / "selection.json", selection)
     metadata = []
+    coordination_history = []
     for _, case, receipt in cases:
-        for source in sorted(case.glob("*.json")):
+        campaign = case.parent.parent
+        sources = [(path, Path(path.name)) for path in sorted(case.glob("*.json"))]
+        for pattern in ("admission-*.json", "output-validation-*.json", "transport-process-*.json",
+                        "existing-policy-observation.json"):
+            sources += [(path, Path("campaign") / path.name) for path in sorted(campaign.glob(pattern))]
+        for source, relative in sources:
             if source.stat().st_size > 32 * 1024**2:
                 raise ValueError("Unexpectedly large case metadata")
-            target = args.output / "metadata" / receipt["operation_id"] / source.name
+            target = args.output / "metadata" / receipt["operation_id"] / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(source, target)
             metadata.append({"source": reference(source), "snapshot": reference(target)})
+    for number, row in enumerate(selection.get("preserved_non_native_history", [])):
+        source = Path(row["path"])
+        if source.stat().st_size > 32 * 1024**2:
+            raise ValueError("Unexpectedly large coordination history")
+        target = args.output / "coordination-history" / f"{number:02d}-{source.name}"
+        target.parent.mkdir(exist_ok=True)
+        shutil.copyfile(source, target)
+        retained = {"source": reference(source), "snapshot": reference(target)}
+        metadata.append(retained)
+        coordination_history.append({**retained, "classification": row["classification"]})
     frozen = freeze_telemetry(args.telemetry, args.output / "telemetry", ids, cutoff)
     index = Ledger(args.output / "measurements.sqlite")
     checks = []
@@ -304,6 +337,7 @@ def main():
     report["comparison_scope"] = "Private exact TPR; no matched published benchmark or generic application-capacity claim."
     report["input_tpr_sha256"] = TPR_SHA256
     report["cutoff"] = cutoff.isoformat()
+    report["non_native_history"] = coordination_history
     report["sampled_cpu_gpu"] = summarize_samples(args.output / "telemetry" / "container-samples.jsonl")
     report["io_evidence"] = {"existing_ledger_measurements": storage,
                              "total_checkpoint_upload_bytes": None, "total_export_transfer_bytes": None,
@@ -314,7 +348,7 @@ def main():
                                         "fixture": reference(row["fixture"]), "notes": row.get("notes")}
                                        for row in selection.get("native", [])]
     save(args.output / "report.json", report)
-    write_summary_csv(report, args.output / "operations.csv")
+    write_private_summary_csv(report, checks, args.output / "operations.csv")
     save(args.output / "validated-work.json", checks)
     lifecycle = durable_rows(ids, args.context)
     save(args.output / "durable-lifecycle.json", {**lifecycle,
