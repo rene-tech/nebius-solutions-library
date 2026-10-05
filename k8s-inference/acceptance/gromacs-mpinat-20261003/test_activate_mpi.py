@@ -95,6 +95,24 @@ def contracts():
     return execution, profiles, source, proposed_profiles
 
 
+def test_schema_init_update_is_explicit_and_guarded():
+    args, options = fixture()
+    args[0]["spec"]["template"]["spec"]["initContainers"] = [
+        {"name": "wait-schema", "image": options["expected_api"]},
+        {"name": "other", "image": "unchanged"},
+    ]
+    preserved = prepare(*args, **options)["patch"][-1]["value"]
+    assert preserved["spec"]["initContainers"][0]["image"] == options["expected_api"]
+    updated = prepare(*args, **options, update_schema_init=True)["patch"][-1]["value"]
+    assert updated["spec"]["initContainers"] == [
+        {"name": "wait-schema", "image": options["image"]},
+        {"name": "other", "image": "unchanged"},
+    ]
+    args[0]["spec"]["template"]["spec"]["initContainers"][0]["image"] = "drifted"
+    with unittest.TestCase().assertRaisesRegex(ValueError, "schema init image"):
+        prepare(*args, **options, update_schema_init=True)
+
+
 def fixture():
     execution, live_profiles, source, profiles = contracts()
     scheduling = {

@@ -206,6 +206,7 @@ def prepare(
     expected_scheduling,
     enable_mpi_pools=(),
     mechanics_only=False,
+    update_schema_init=False,
 ):
     for value in (image, tools_image, expected_api, expected_tools):
         if re.fullmatch(re.escape(REPO) + r"@sha256:[a-f0-9]{64}", value) is None:
@@ -269,6 +270,11 @@ def prepare(
     desired = copy.deepcopy(before)
     candidate = named(desired["spec"]["containers"], "control-plane", "API container")
     candidate["image"] = image
+    if update_schema_init:
+        schema_init = named(desired["spec"].get("initContainers", []), "wait-schema", "schema init")
+        if schema_init["image"] != expected_api:
+            raise ValueError("schema init image differs from the reviewed API reader")
+        schema_init["image"] = image
     named(candidate["env"], "FS2_SCIENTIFIC_BATCH_TOOLS_IMAGE", "environment")["value"] = tools_image
     named(candidate["env"], "FS2_SCIENTIFIC_BATCH_SCHEDULING_CONTRACT_SHA256", "environment")["value"] = schedule_digest
     for name, cm in (("scientific-batch-execution", new_execution), ("scientific-batch-scheduling", new_scheduling)):
@@ -340,6 +346,7 @@ def main():
     parser.add_argument("--expected-scheduling-configmap", default=SCHEDULING_CM)
     parser.add_argument("--enable-mpi-pool", action="append", choices=("l40s-1x", "l40s-4x"), default=[])
     parser.add_argument("--mechanics-only", action="store_true", help="Validate patch mechanics, not a release")
+    parser.add_argument("--update-schema-init", action="store_true", help="Bind the existing wait-schema init to the same exact new reader")
     parser.add_argument("--context", default=CONTEXT)
     parser.add_argument(
         "--source-map", type=Path, default=ROOT / "catalog/runtime/contracts/scientific-execution-map.json"
@@ -408,6 +415,7 @@ def main():
         expected_scheduling=args.expected_scheduling_configmap,
         enable_mpi_pools=args.enable_mpi_pool,
         mechanics_only=args.mechanics_only,
+        update_schema_init=args.update_schema_init,
     )
     for filename, key in (
         ("patch.json", "patch"),
