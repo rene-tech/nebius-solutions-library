@@ -20,6 +20,10 @@ POOL = "h100-reserved-8x"
 CLUSTER = "computegpucluster-e00p8hjysxfyk1n58x"
 NODES = {"computeinstance-e00s8g6t7z6qvz3f9p", "computeinstance-e00zgn138sxphp909c"}
 TASK = "lynx-rdma-20261005"
+HOST_SOURCE = (
+    Path(__file__).resolve().parents[2]
+    / "models/molecular-dynamics/gromacs/runtime/rdma/host_collectives.c"
+)
 REQUEST = {
     "schema": "fs2-serve.nebius.ai/gromacs-mpi-workflow-request/v1",
     "nodes": 2,
@@ -67,12 +71,22 @@ for argv in [['/opt/ucx/bin/ucx_info','-v'],['/opt/ucx/bin/ucx_info','-d'],['/op
 """
 
 
-def manifest(name, image, nodes, seed, *, ipc_lock=False, transport="ucx-rdma"):
+def manifest(
+    name,
+    image,
+    nodes,
+    seed,
+    *,
+    ipc_lock=False,
+    file_ipc_lock=False,
+    transport="ucx-rdma",
+):
     if (
         set(nodes) != NODES
         or not name.startswith("fs2-lynx-rdma-")
         or not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", image)
         or transport not in {"ucx-rdma", "tcp-host-staged"}
+        or (file_ipc_lock and transport != "ucx-rdma")
     ):
         raise ValueError("exact approved nodes, immutable image and task name required")
     spec = two.manifest(name, image, nodes, seed)
@@ -93,8 +107,10 @@ def manifest(name, image, nodes, seed, *, ipc_lock=False, transport="ucx-rdma"):
         "rdma.fs2.nebius/hca": "1",
     }
     container["resources"] = {"requests": resources, "limits": resources}
-    if ipc_lock:
+    if ipc_lock or file_ipc_lock:
         container["securityContext"]["capabilities"]["add"] = ["IPC_LOCK"]
+    if file_ipc_lock:
+        container["securityContext"]["allowPrivilegeEscalation"] = True
     container["env"].append({"name": "FS2_GROMACS_MPI_TRANSPORT", "value": transport})
     return spec
 
@@ -206,6 +222,21 @@ def validate_host_collectives(log):
     }
 
 
+def validated_host_build(binary, receipt):
+    proof = json.loads(receipt.read_text())
+    if (
+        proof.get("binary_sha256") != native.sha(binary)
+        or proof.get("source_sha256") != native.sha(HOST_SOURCE)
+        or set(proof.get("runtime_files", {}))
+        != {"/opt/ompi/include/mpi.h", "/opt/ompi/lib/libmpi.so.40"}
+        or not re.fullmatch(r"sha256:[a-f0-9]{64}", proof.get("compiler_image", ""))
+    ):
+        raise ValueError(
+            "host probe build does not bind this source, binary and exact MPI runtime"
+        )
+    return proof
+
+
 def execute_lynx(pods, fixture, output):
     """Run the unchanged finite Lynx recipe only after device-buffer proof."""
     from native_probe import validate
@@ -297,10 +328,16 @@ def execute_lynx(pods, fixture, output):
 def run(args):
     transport = getattr(args, "transport", "ucx-rdma")
     host_collectives = getattr(args, "host_collectives", False)
+    file_ipc_lock = getattr(args, "file_ipc_lock", False)
     if transport != "ucx-rdma" and (not host_collectives or args.input):
         raise ValueError(
             "TCP is allowed only as an explicit host-collective control, never RDMA fallback"
         )
+    host_build = None
+    if getattr(args, "host_binary", None):
+        if not host_collectives or not args.host_build:
+            raise ValueError("external host probe requires its exact build receipt")
+        host_build = validated_host_build(args.host_binary, args.host_build)
     args.output.mkdir(parents=True, exist_ok=False)
     call = native.call
     nodes = sorted(NODES)
@@ -342,6 +379,7 @@ def run(args):
         nodes,
         secrets.token_hex(32),
         ipc_lock=args.ipc_lock,
+        file_ipc_lock=file_ipc_lock,
         transport=transport,
     )
     sanitized = json.loads(json.dumps(spec))
@@ -357,10 +395,13 @@ def run(args):
         "native_only": True,
         "source_sha256": native.sha(__file__),
         "science_executed": False,
-        "added_capabilities": ["IPC_LOCK"] if args.ipc_lock else [],
+        "added_capabilities": ["IPC_LOCK"] if args.ipc_lock or file_ipc_lock else [],
+        "file_capability_executables": file_ipc_lock,
         "transport_requested": transport,
         "host_collective_control": host_collectives,
     }
+    if host_build:
+        record["host_build"] = host_build
     uid = None
     try:
         call(
@@ -423,6 +464,11 @@ def run(args):
         native.save(args.output / "pods.json", pods)
 
         probe_code = PROBE_CODE
+        if file_ipc_lock:
+            probe_code = probe_code.replace(
+                "/opt/fs2-cuda-aware/mpi-device-probe",
+                "/opt/fs2-rdma/bin/mpi-device-probe",
+            )
         if args.bounded_ucx_queues:
             probe_code = probe_code.replace(
                 "['/opt/fs2-cuda-aware/mpi-device-probe']",
@@ -446,8 +492,16 @@ def run(args):
                 ("before", INSPECT_CODE),
                 ("buffer", probe_code),
             ]
+            if file_ipc_lock:
+                phases.insert(
+                    1,
+                    (
+                        "memlock",
+                        "import subprocess;subprocess.run(['/opt/fs2-rdma/bin/memlock-probe'],check=True)",
+                    ),
+                )
             if host_collectives:
-                source = Path(__file__).with_name("host_collectives.c")
+                source = HOST_SOURCE
                 call(
                     [
                         "-n",
@@ -457,34 +511,91 @@ def run(args):
                         name + ":/mnt/fs2-scientific/host-collectives.c",
                     ]
                 )
-                with (args.output / f"host-compile-{rank}.log").open("xb") as log:
-                    subprocess.run(
-                        native.KUBE
-                        + [
+                if file_ipc_lock:
+                    observed = call(
+                        [
                             "-n",
                             native.NS,
                             "exec",
                             name,
                             "--",
-                            "/opt/ompi/bin/mpicc",
-                            "-O2",
-                            "-Wall",
-                            "-Wextra",
-                            "-Werror",
-                            "/mnt/fs2-scientific/host-collectives.c",
-                            "-o",
-                            "/mnt/fs2-scientific/host-collectives",
-                        ],
-                        stdout=log,
-                        stderr=subprocess.STDOUT,
-                        timeout=60,
-                        check=True,
+                            "sha256sum",
+                            "/opt/fs2-rdma/source/host_collectives.c",
+                            "/opt/fs2-rdma/bin/host-collectives",
+                        ]
+                    ).decode()
+                    actual = {
+                        line.split()[1]: line.split()[0]
+                        for line in observed.splitlines()
+                    }
+                    if actual["/opt/fs2-rdma/source/host_collectives.c"] != native.sha(
+                        source
+                    ):
+                        raise ValueError(
+                            "installed host collective probe source differs"
+                        )
+                    native.save(args.output / f"host-build-{rank}.json", actual)
+                elif host_build:
+                    observed = call(
+                        [
+                            "-n",
+                            native.NS,
+                            "exec",
+                            name,
+                            "--",
+                            "sha256sum",
+                            *host_build["runtime_files"],
+                        ]
+                    ).decode()
+                    actual = {
+                        line.split()[1]: line.split()[0]
+                        for line in observed.splitlines()
+                    }
+                    if actual != host_build["runtime_files"]:
+                        raise ValueError(
+                            "host collective binary was not built against this exact MPI installation"
+                        )
+                    call(
+                        [
+                            "-n",
+                            native.NS,
+                            "cp",
+                            str(args.host_binary),
+                            name + ":/mnt/fs2-scientific/host-collectives",
+                        ]
                     )
+                    observed = (
+                        call(
+                            [
+                                "-n",
+                                native.NS,
+                                "exec",
+                                name,
+                                "--",
+                                "sha256sum",
+                                "/mnt/fs2-scientific/host-collectives",
+                            ]
+                        )
+                        .decode()
+                        .split()[0]
+                    )
+                    if observed != host_build["binary_sha256"]:
+                        raise ValueError("staged host collective binary differs")
+                    native.save(
+                        args.output / f"host-build-{rank}.json",
+                        {"runtime_files": actual, "binary_sha256": observed},
+                    )
+                else:
+                    compile_host_probe(name, args.output / f"host-compile-{rank}.log")
                 host_code = (
                     probe_code.replace("/buffer-probe", "/host-probe")
                     .replace(
-                        "/opt/fs2-cuda-aware/mpi-device-probe",
-                        "/mnt/fs2-scientific/host-collectives",
+                        "/opt/fs2-rdma/bin/mpi-device-probe"
+                        if file_ipc_lock
+                        else "/opt/fs2-cuda-aware/mpi-device-probe",
+                        "/opt/fs2-rdma/bin/host-collectives"
+                        if file_ipc_lock
+                        else "/mnt/fs2-scientific/host-collectives",
                     )
                     .replace("timeout=90", "timeout=150")
                     .replace("exceeded 90", "exceeded 150")
@@ -508,6 +619,31 @@ def run(args):
                         "exit_code": result.returncode,
                     }
             return {"rank": rank, "exit_code": 0}
+
+        def compile_host_probe(name, logfile):
+            with logfile.open("xb") as log:
+                subprocess.run(
+                    native.KUBE
+                    + [
+                        "-n",
+                        native.NS,
+                        "exec",
+                        name,
+                        "--",
+                        "/opt/ompi/bin/mpicc",
+                        "-O2",
+                        "-Wall",
+                        "-Wextra",
+                        "-Werror",
+                        "/mnt/fs2-scientific/host-collectives.c",
+                        "-o",
+                        "/mnt/fs2-scientific/host-collectives",
+                    ],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    timeout=60,
+                    check=True,
+                )
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             record["rank_outcomes"] = list(executor.map(execute, pods))
@@ -540,9 +676,7 @@ def run(args):
             record["host_collectives"] = validate_host_collectives(
                 (args.output / "host-0.log").read_text()
             )
-            record["host_collective_source_sha256"] = native.sha(
-                Path(__file__).with_name("host_collectives.c")
-            )
+            record["host_collective_source_sha256"] = native.sha(HOST_SOURCE)
         if args.input:
             record["science_executed"] = True
             record["native_md"] = execute_lynx(pods, args.input, args.output)
@@ -607,8 +741,11 @@ if __name__ == "__main__":
     parser.add_argument("--image", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--ipc-lock", action="store_true")
+    parser.add_argument("--file-ipc-lock", action="store_true")
     parser.add_argument("--bounded-ucx-queues", action="store_true")
     parser.add_argument("--host-collectives", action="store_true")
+    parser.add_argument("--host-binary", type=Path)
+    parser.add_argument("--host-build", type=Path)
     parser.add_argument(
         "--transport", choices=["ucx-rdma", "tcp-host-staged"], default="ucx-rdma"
     )

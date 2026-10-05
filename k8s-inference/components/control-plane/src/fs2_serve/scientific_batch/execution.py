@@ -2123,8 +2123,12 @@ class FileScientificManifestRenderer:
                     "volumeMounts": volume_mounts,
                     "resources": {"requests": requests, "limits": limits},
                     "securityContext": {
-                        "allowPrivilegeEscalation": False,
-                        "capabilities": {"drop": ["ALL"]},
+                        # The qualified RDMA image has fixed, root-owned
+                        # IPC_LOCK-only copies of its native executables.
+                        # No root process/host limit changes; every older
+                        # local/TCP shape and all companions stay drop-ALL.
+                        "allowPrivilegeEscalation": execution.rdma is not None,
+                        "capabilities": {"drop": ["ALL"], **({"add": ["IPC_LOCK"]} if execution.rdma else {})},
                         "runAsUser": execution.workspace_uid,
                         "runAsGroup": execution.workspace_gid,
                     },

@@ -1,6 +1,8 @@
-import pytest
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from fs2_gromacs import mpi
 from fs2_gromacs.mpi_rank import match_rdma_devices
 from fs2_gromacs.worker import Workflow
@@ -11,6 +13,7 @@ def test_rdma_is_fail_closed_and_never_claims_observed_transport(monkeypatch):
     monkeypatch.setenv("OMPI_MCA_btl", "self,sm,tcp")
     monkeypatch.setenv("GMX_DISABLE_DIRECT_GPU_COMM", "1")
     monkeypatch.setattr(mpi, "rdma_devices", lambda: [f"mlx5_{i}:1" for i in range(8)])
+    monkeypatch.setattr(mpi, "check_rdma_memlock", lambda: {"status": "passed"})
     result = mpi.configure_transport(2)
     assert "tcp" not in mpi.os.environ["UCX_TLS"]
     assert "OMPI_MCA_btl" not in mpi.os.environ
@@ -99,8 +102,30 @@ def test_rdma_overlay_adds_only_matching_userspace_provider():
     assert "RDMA_CORE_VERSION=39.0-1" in recipe
     assert '"ibverbs-providers=${RDMA_CORE_VERSION}"' in recipe
     assert "dpkg-query" in recipe and "/etc/libibverbs.d/mlx5.driver" in recipe
-    assert "COPY --from=" not in recipe
+    assert "COPY --from=runtime_source /opt/ompi /opt/ompi" in recipe
+    assert 'Path("/opt/gromacs-mpi/bin/gmx_mpi").read_bytes() == (root/"gmx_mpi").read_bytes()' in recipe
+    assert 'os.listxattr("/opt/gromacs-mpi/bin/gmx_mpi")' in recipe
+    assert '0x02000001,1<<14,0,0,0' in recipe
     assert recipe.rstrip().endswith("USER 10001:10001")
+
+
+def test_only_rdma_uses_fixed_capability_binary(monkeypatch):
+    for transport in ("ucx-local", "tcp-host-staged"):
+        monkeypatch.setenv("FS2_GROMACS_MPI_TRANSPORT", transport)
+        assert mpi.workflow_binary() is None
+    monkeypatch.setenv("FS2_GROMACS_MPI_TRANSPORT", "ucx-rdma")
+    assert mpi.workflow_binary() == "/opt/fs2-rdma/bin/gmx_mpi"
+
+
+def test_rdma_requires_effective_nonroot_capability_not_bounding_bit_only(monkeypatch):
+    value = {"status": "passed", "uid": 10001, "euid": 10001,
+             "cap_effective": "4000", "cap_permitted": "4000", "cap_bounding": "4000",
+             "no_new_privs": 0, "locked_bytes": 64 * 1024 * 1024}
+    monkeypatch.setattr(mpi.subprocess, "run", lambda *a, **k: SimpleNamespace(stdout=json.dumps(value)))
+    assert mpi.check_rdma_memlock() == value
+    value["cap_effective"] = "0"
+    with pytest.raises(ValueError, match="non-root IPC_LOCK"):
+        mpi.check_rdma_memlock()
 
 
 def test_rdma_mapping_uses_pci_locality_not_mismatched_gpu_nic_index():

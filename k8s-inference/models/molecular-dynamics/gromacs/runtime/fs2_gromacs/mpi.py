@@ -13,18 +13,19 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
 import signal
 import subprocess
 import time
+from pathlib import Path
 
 from .contracts import normalize
 from .files import atomic_json, extract_inputs
 
-# Qualified for the bounded 16-rank/two-node profile under the managed runtime's
-# 8 MiB memlock. UCX 1.19 otherwise grows RX by at least 1024 elements even when
+# Bounds initial allocation for the 16-rank/two-node profile. UCX 1.19 otherwise
+# grows RX by at least 1024 elements even when
 # RX_QUEUE_LEN is smaller (uct/ib/base/ib_iface.c). Explicit growth avoids that
-# initial 10-38 MiB pool without privileges or changing host limits. These are
+# initial 10-38 MiB pool. Larger real host collectives still require the
+# RDMA-only IPC_LOCK executables below; no host limits are changed. These are
 # growth increments, not hard MAX_BUFS caps that could deadlock RC progress.
 RDMA_UCX_SETTINGS = {
     "UCX_RC_RX_QUEUE_LEN": "256",
@@ -35,6 +36,26 @@ RDMA_UCX_SETTINGS = {
     "UCX_UD_RX_BUFS_GROW": "64",
     "UCX_UD_TX_BUFS_GROW": "64",
 }
+RDMA_BINARY = "/opt/fs2-rdma/bin/gmx_mpi"
+
+
+def check_rdma_memlock() -> dict:
+    result = subprocess.run(
+        ["/opt/fs2-rdma/bin/memlock-probe"], check=True, capture_output=True,
+        text=True, timeout=15,
+    )
+    proof = json.loads(result.stdout)
+    if (proof.get("status") != "passed" or proof.get("uid") != 10001
+            or proof.get("euid") != 10001 or proof.get("cap_effective") != "4000"
+            or proof.get("cap_permitted") != "4000" or proof.get("cap_bounding") != "4000"
+            or proof.get("no_new_privs") != 0 or proof.get("locked_bytes") != 64 * 1024 * 1024):
+        raise ValueError("RDMA requires the qualified non-root IPC_LOCK capability and real memlock proof")
+    return proof
+
+
+def workflow_binary() -> str | None:
+    # Keep the original unprivileged path for every older local/TCP shape.
+    return RDMA_BINARY if os.environ.get("FS2_GROMACS_MPI_TRANSPORT") == "ucx-rdma" else None
 
 
 def rank() -> int:
@@ -185,6 +206,7 @@ def configure_transport(nodes: int) -> dict:
     transport = os.environ.get(
         "FS2_GROMACS_MPI_TRANSPORT", "ucx-local" if nodes == 1 else "tcp-host-staged"
     )
+    memlock_proof = None
     for name in ("UCX_NET_DEVICES", "UCX_IB_GPU_DIRECT_RDMA", "UCX_PROTO_INFO", *RDMA_UCX_SETTINGS):
         os.environ.pop(name, None)
     if transport == "ucx-local":
@@ -202,6 +224,7 @@ def configure_transport(nodes: int) -> dict:
         if nodes != 2:
             raise ValueError("ucx-rdma currently requires the qualified two-node gang")
         devices = rdma_devices()
+        memlock_proof = check_rdma_memlock()
         os.environ["OMPI_MCA_pml"] = "ucx"
         os.environ["OMPI_MCA_pml_ucx_tls"] = "rc_mlx5"
         os.environ["OMPI_MCA_pml_ucx_devices"] = "mlx5_*"
@@ -235,6 +258,7 @@ def configure_transport(nodes: int) -> dict:
         "ucx_tls": os.environ.get("UCX_TLS"),
         "ucx_net_devices": os.environ.get("UCX_NET_DEVICES"),
         "ucx_queue_settings": RDMA_UCX_SETTINGS if transport == "ucx-rdma" else None,
+        "memlock_proof": memlock_proof,
     }
 
 
@@ -270,6 +294,7 @@ def configure_launcher(
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=10,
+                check=False,
             )
             if result.returncode == 0:
                 break
@@ -488,6 +513,7 @@ def run_coordinator(args, request):
         workspace=args.workspace,
         checkpoint_mode=args.checkpoint_mode,
         mpi=True,
+        gmx=workflow_binary(),
     )
     signal.signal(signal.SIGTERM, worker.stop)
     signal.signal(signal.SIGINT, worker.stop)

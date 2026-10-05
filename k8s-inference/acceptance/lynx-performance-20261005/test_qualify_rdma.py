@@ -36,6 +36,22 @@ def test_probe_uses_real_sixteen_rank_request_and_only_owned_full_nodes():
         "allowPrivilegeEscalation": False,
         "capabilities": {"drop": ["ALL"], "add": ["IPC_LOCK"]},
     }
+    file_locked = probe.manifest(
+        "fs2-lynx-rdma-test",
+        "registry/test@sha256:" + "a" * 64,
+        sorted(probe.NODES),
+        "0" * 64,
+        file_ipc_lock=True,
+    )
+    pod = file_locked["spec"]["replicatedJobs"][0]["template"]["spec"]["template"]["spec"]
+    context = pod["containers"][0]["securityContext"]
+    assert context == {
+        "allowPrivilegeEscalation": True,
+        "capabilities": {"drop": ["ALL"], "add": ["IPC_LOCK"]},
+    }
+    assert pod["securityContext"]["runAsUser"] == 10001
+    assert not pod.get("hostIPC", False)
+    assert not context.get("privileged", False)
 
 
 def test_configuration_or_gpu_query_alone_is_not_transport_evidence():

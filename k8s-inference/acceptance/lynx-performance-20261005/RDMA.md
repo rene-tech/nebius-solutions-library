@@ -55,9 +55,26 @@ executed-buffer/protocol evidence, not a hardware-counter bandwidth claim.
 The first native run past singleton setup stalled before step zero. A small
 CUDA-buffer success is therefore explicitly insufficient for GROMACS readiness.
 
+The subsequent exact-image host control (`native-host-r10`) reached a real
+`ibv_reg_mr` failure at the 8 MiB locked-memory limit during the first 9 MB
+broadcast. The separately requested TCP control (`native-tcp-control-r11`)
+passed all nine Bcast/Scatterv/Alltoall checks. Neither the RDMA timeout nor the
+earlier missing-compiler harness failure is relabelled as a successful MD run.
+
+The next candidate therefore adds IPC_LOCK file capabilities only to four fixed,
+root-owned executables under `/opt/fs2-rdma/bin`: the unchanged GROMACS binary,
+the CUDA communication probe, the host-collective probe and a fixed memlock
+diagnostic. There is no arbitrary-command capability helper. A frozen RDMA
+stage alone permits that capability; original executable paths, old local/TCP
+shapes and all companion/init containers remain drop-ALL with escalation
+disabled. Trusted image library directories support secure executable loading;
+the probe checks actual effective/permitted/bounding IPC_LOCK, UID 10001 and a
+64 MiB `mlock`, without changing any limit. This is a candidate, not yet native
+qualification or permission to publish the RDMA profile.
+
 `qualify_rdma.py` owns only exact labelled test JobSets, verifies image digests,
 GPU/RDMA resources and current free capacity, and deletes only its retained UID
-before proving Pod absence. `host_collectives.c` adds Bcast, Scatterv and
+before proving Pod absence. `runtime/rdma/host_collectives.c` adds Bcast, Scatterv and
 Alltoall checks at 9 MB, 16 MiB and 32 MiB per destination. Every byte is checked;
 these are correctness controls, not bandwidth measurements. An explicit
 `--transport tcp-host-staged --host-collectives` control is allowed only without
@@ -66,7 +83,7 @@ an MD input; it is never an automatic fallback for a claimed RDMA result.
 ```bash
 components/control-plane/.venv/bin/python acceptance/lynx-performance-20261005/qualify_rdma.py \
   --name fs2-lynx-rdma-host-UNIQUE \
-  --image "$EXACT_RDMA_CANDIDATE" --host-collectives \
+  --image "$EXACT_RDMA_CANDIDATE" --file-ipc-lock --host-collectives \
   --output "$FRESH_PRIVATE_EVIDENCE"
 ```
 

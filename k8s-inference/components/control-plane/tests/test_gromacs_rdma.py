@@ -90,6 +90,12 @@ def test_rdma_freezes_pod_resources_cluster_and_joint_kueue_count(tmp_path, monk
     assert pod["nodeSelector"]["topology.nebius.com/gpu-cluster-id"] == RDMA["gpu_cluster_id"]
     assert {x["name"]: x.get("value") for x in stage["env"]}["FS2_GROMACS_MPI_TRANSPORT"] == "ucx-rdma"
     assert not stage["securityContext"].get("privileged", False)
+    assert stage["securityContext"]["allowPrivilegeEscalation"] is True
+    assert stage["securityContext"]["capabilities"] == {"drop": ["ALL"], "add": ["IPC_LOCK"]}
+    assert stage["securityContext"]["runAsUser"] == 10001
+    for companion in pod["containers"][1:] + pod["initContainers"]:
+        assert companion["securityContext"]["allowPrivilegeEscalation"] is False
+        assert companion["securityContext"]["capabilities"] == {"drop": ["ALL"]}
     assert not any("hostPath" in volume for volume in pod["volumes"])
     envelope = envelope_from_manifest(manifest, resource.kind)
     assert envelope.aggregate_requests.accelerator("nvidia.com/gpu") == 16

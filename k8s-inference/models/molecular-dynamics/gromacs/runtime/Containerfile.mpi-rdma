@@ -1,7 +1,20 @@
 # Add the missing verbs userspace provider to the exact CUDA-aware MPI engine.
 # GROMACS, UCX, Open MPI, host kernel/OFED and GPU drivers are not rebuilt.
 ARG ENGINE_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs@sha256:fc28fa44489a93a6c73ccb0852e3970025cda1dda65a97d430f8076f2d2a3a92
-FROM ${ENGINE_IMAGE}
+ARG COMPILER_IMAGE=cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/gromacs-engine@sha256:7e531c7b97c8dc7c0aea115396ff2f63f04acf9f0ae00593fa0a9a5ed9369945
+FROM ${ENGINE_IMAGE} AS runtime_source
+FROM ${COMPILER_IMAGE} AS probes
+USER root
+# Use the immutable runtime's exact MPI headers/libraries, not the old compiler
+# image's predecessor MPI build. No engine or MPI library is rebuilt here.
+RUN rm -rf /opt/ompi
+COPY --from=runtime_source /opt/ompi /opt/ompi
+COPY rdma/host_collectives.c rdma/memlock_probe.c /src/fs2-rdma/
+RUN mkdir -p /opt/fs2-rdma/bin \
+ && /opt/ompi/bin/mpicc -O2 -Wall -Wextra -Werror /src/fs2-rdma/host_collectives.c -o /opt/fs2-rdma/bin/host-collectives \
+ && gcc-12 -O2 -Wall -Wextra -Werror /src/fs2-rdma/memlock_probe.c -o /opt/fs2-rdma/bin/memlock-probe
+
+FROM runtime_source
 ARG ENGINE_IMAGE
 ARG SOURCE_REVISION
 ARG RDMA_CORE_VERSION=39.0-1
@@ -12,6 +25,16 @@ RUN test "$(dpkg-query -W -f='${Version}' libibverbs1)" = "${RDMA_CORE_VERSION}"
  && test -s /etc/libibverbs.d/mlx5.driver \
  && rm -rf /var/lib/apt/lists/*
 COPY fs2_gromacs /opt/fs2/gromacs/fs2_gromacs
+COPY --from=probes /opt/fs2-rdma/bin /opt/fs2-rdma/bin
+COPY rdma /opt/fs2-rdma/source
+COPY rdma/ld.so.conf /etc/ld.so.conf.d/fs2-rdma.conf
+# Existing executable paths retain no capabilities so old drop-ALL local/TCP
+# Pods remain valid. Only these fixed root-owned RDMA copies gain IPC_LOCK.
+# No arbitrary-command helper, root science process or host limit change.
+RUN cp /opt/gromacs-mpi/bin/gmx_mpi /opt/fs2-rdma/bin/gmx_mpi \
+ && cp /opt/fs2-cuda-aware/mpi-device-probe /opt/fs2-rdma/bin/mpi-device-probe \
+ && ldconfig \
+ && python3 -c 'import os,struct; from pathlib import Path; root=Path("/opt/fs2-rdma/bin"); expected={"gmx_mpi","mpi-device-probe","host-collectives","memlock-probe"}; assert {p.name for p in root.iterdir()} == expected; cap=struct.pack("<IIIII",0x02000001,1<<14,0,0,0); [(os.chown(p,0,0),os.chmod(p,0o755),os.setxattr(p,"security.capability",cap)) for p in root.iterdir()]; assert not os.listxattr("/opt/gromacs-mpi/bin/gmx_mpi"); assert Path("/opt/gromacs-mpi/bin/gmx_mpi").read_bytes() == (root/"gmx_mpi").read_bytes()'
 RUN test -n "${SOURCE_REVISION}" \
  && python3 -m compileall -q /opt/fs2/gromacs/fs2_gromacs \
  && chmod -R a+rX /opt/fs2/gromacs/fs2_gromacs
