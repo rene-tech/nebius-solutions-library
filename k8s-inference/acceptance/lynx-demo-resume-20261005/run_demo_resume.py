@@ -106,10 +106,12 @@ async def run(args):
 
         async def download(pointer, name):
             path = args.output / name
+            started = time.monotonic()
             receipt = await helper.download(http, pointer, path)
             with (args.output / "transfers.jsonl").open("a") as handle:
-                handle.write(json.dumps({"artifact_id": pointer["artifact_id"], "name": name,
+                handle.write(json.dumps({"at": now(), "artifact_id": pointer["artifact_id"], "name": name,
                     "sha256": pointer["sha256"], "size_bytes": pointer["size_bytes"],
+                    "wall_seconds": time.monotonic() - started,
                     "transfer_attempts": receipt.get("transfer_attempts"),
                     "publication": receipt["publication"]}) + "\n")
             return path
@@ -155,6 +157,7 @@ async def run(args):
             if body_path.exists():
                 body = json.loads(body_path.read_text())
             else:
+                upload_started = time.monotonic()
                 artifact = await helper.upload(http, "gromacs", helper.FileSource(args.fixture / "input.tar.gz"),
                     "application/x-tar", "gzip", identity + "-bundle")
                 manifest = {"schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1", "manifest_id": identity,
@@ -168,6 +171,9 @@ async def run(args):
                         "client_context": {"display_name": "Authorized demo late-checkpoint qualification",
                                            "correlation_id": identity}}
                 save(body_path, body)
+                state["input_upload_seconds"] = time.monotonic() - upload_started
+                state["input_upload_bytes"] = (args.fixture / "input.tar.gz").stat().st_size
+                save(state_path, state)
             admitted = await post("/v1/models/gromacs:submit", body, identity + "-bootstrap", "bootstrap")
             state["source_operation"] = admitted["operation"]["id"]
             save(state_path, state)
@@ -233,8 +239,10 @@ async def run(args):
             async with semaphore:
                 await download(row["artifact"], "verified-files/" + relative_path(row["path"]))
 
+        verification_started = time.monotonic()
         for offset in range(0, len(final["files"]), 64):
             await asyncio.gather(*(verify_file(row) for row in final["files"][offset:offset + 64]))
+        platform_verification_seconds = time.monotonic() - verification_started
         import boto3
         from botocore.config import Config
         storage = json.loads(args.demo_storage.read_text())
@@ -244,14 +252,17 @@ async def run(args):
             aws_access_key_id=storage["access_key_id"], aws_secret_access_key=storage["secret_access_key"],
             config=Config(max_pool_connections=4, retries={"mode": "standard", "max_attempts": 3}))
         try:
+            verification_started = time.monotonic()
             exported = await asyncio.to_thread(verify_customer_storage, client, final,
                                                expected_bucket=storage["bucket_name"])
+            exported["wall_seconds"] = time.monotonic() - verification_started
         finally:
             client.close()
         save(args.output / "customer-export-verification.json", exported)
         receipt = {**state, **gate, "preserved_source_files": preserved_history(fixture, final),
                    "verified_files": len(files), "verified_bytes": sum(row["size_bytes"] for row in files.values()),
                    "all_platform_artifact_bytes_checked": True, "customer_key_used": False,
+                   "platform_verification_seconds": platform_verification_seconds,
                    "fourteen_day_soak_claimed": False, "fixture_setup_expected_timeout": True,
                    "customer_bucket_export": final["customer_storage"], "customer_bytes_verified": exported}
         save(args.output / "receipt.json", receipt)
