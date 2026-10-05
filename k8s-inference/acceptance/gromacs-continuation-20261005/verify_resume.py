@@ -163,7 +163,7 @@ async def run(args):
                 production = next(step for step in steps if step["command"] == "mdrun")
                 params["jobs"][0]["steps"] = [converter, production]
                 params.update(
-                    max_wall_seconds=60,
+                    max_wall_seconds=args.source_seconds,
                     segment_minutes=0.2,
                     output_destination="customer-bucket",
                     output_prefix="runs/" + identity,
@@ -351,6 +351,7 @@ def main():
     parser.add_argument("--interface", choices=("rest", "mcp"), required=True)
     parser.add_argument("--label", required=True)
     parser.add_argument("--steps", type=int, default=60000)
+    parser.add_argument("--source-seconds", type=int, default=60)
     parser.add_argument("--padding-files", type=int, default=0)
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--origin", default="https://89.169.99.188")
@@ -359,6 +360,8 @@ def main():
         parser.error("label must be a bounded task-owned identifier")
     if not 0 <= args.padding_files <= 1000:
         parser.error("padding-files must be between 0 and 1000")
+    if not 60 <= args.source_seconds <= 600:
+        parser.error("source-seconds must be between 60 and 600 for bounded internal QA")
     os.umask(0o077)
     asyncio.run(run(args))
 

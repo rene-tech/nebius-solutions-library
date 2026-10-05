@@ -60,6 +60,12 @@ workspace byte/file bounds and customer storage quotas still apply. Native
 trajectory/log parts are retained; old wrapper segment logs stay with the source
 operation. `_fs2-continuation.json` records immutable source/checkpoint lineage.
 
+The incident fix qualifies the observed multi-part customer case and bounded
+native REST/MCP tests, not arbitrarily large restart inventories. Very large
+file lists remain subject to the durable admission and Kubernetes launch-envelope
+bounds. See the [exact release evidence and remaining limits](../../../acceptance/gromacs-continuation-20261005/README.md)
+before treating a metadata-only test as proof of a thousands-of-files launch.
+
 ## Release qualification
 
 Changing a seven-day bound does not constitute a seven-day soak test. Qualify the
