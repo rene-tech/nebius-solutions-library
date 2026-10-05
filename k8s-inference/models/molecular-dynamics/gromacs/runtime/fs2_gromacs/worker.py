@@ -170,6 +170,23 @@ class Workflow:
         }
         self.committed_generation = 0
 
+    def command_environment(self, *, distributed=False):
+        env = {
+            **os.environ,
+            "OMP_NUM_THREADS": str(self.request["threads"]),
+            "GMX_MAXBACKUP": "-1",
+        }
+        if self.mpi and not distributed and env.get("FS2_GROMACS_MPI_TRANSPORT") == "ucx-rdma":
+            # gmx_mpi --version/dump and analysis commands still call MPI_Init,
+            # but run as one coordinator process. They do not use the rank
+            # wrapper's one-HCA binding and must not open eight network HCAs.
+            # This is singleton-only: actual mdrun's mpirun environment retains
+            # the mandatory fail-closed RDMA transport and GPU-aware settings.
+            env = {key: value for key, value in env.items()
+                   if not key.startswith(("UCX_", "OMPI_MCA_pml_ucx_"))}
+            env.update(OMPI_MCA_pml="ob1", OMPI_MCA_btl="self")
+        return env
+
     def stop(self, signum, frame):
         self.stopped = True
         if self.child is not None and self.child.poll() is None:
@@ -243,7 +260,8 @@ class Workflow:
             first_path.setdefault(item["input_id"], path)
             path.chmod(0o600)
         self.version = subprocess.check_output(
-            [self.gmx, "--version"], stderr=subprocess.STDOUT, text=True, timeout=30
+            [self.gmx, "--version"], stderr=subprocess.STDOUT, text=True, timeout=30,
+            env=self.command_environment(),
         )
         atomic_json(
             self.meta / "engine.json",
@@ -287,11 +305,7 @@ class Workflow:
             raise Interrupted(
                 "workflow stopped before starting the next native command"
             )
-        env = {
-            **os.environ,
-            "OMP_NUM_THREADS": str(self.request["threads"]),
-            "GMX_MAXBACKUP": "-1",
-        }
+        env = self.command_environment(distributed=self.mpi and argv[0] == "mpirun")
         started = time.monotonic()
         with log.open("wb") as output:
             self.child = subprocess.Popen(
@@ -336,6 +350,7 @@ class Workflow:
                 stderr=log,
                 check=True,
                 timeout=120,
+                env=self.command_environment(),
             )
         params = parse_mdp(output.read_text())
         return params, digest_file(tpr)
@@ -347,6 +362,7 @@ class Workflow:
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
             text=True,
+            env=self.command_environment(),
         )
         assert process.stdout is not None
         # Stream the dump: checkpoint coordinates can contain millions of lines.

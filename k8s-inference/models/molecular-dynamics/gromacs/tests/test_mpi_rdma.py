@@ -3,6 +3,7 @@ from pathlib import Path
 
 from fs2_gromacs import mpi
 from fs2_gromacs.mpi_rank import match_rdma_devices
+from fs2_gromacs.worker import Workflow
 
 
 def test_rdma_is_fail_closed_and_never_claims_observed_transport(monkeypatch):
@@ -70,6 +71,27 @@ def test_rdma_launcher_forwards_exact_bounded_queue_settings(monkeypatch):
     for name in mpi.RDMA_UCX_SETTINGS:
         assert command[command.index(name) - 1] == "-x"
     assert not any("MAX_BUFS" in name for name in mpi.RDMA_UCX_SETTINGS)
+
+
+def test_singleton_tools_never_inherit_distributed_rdma_network(monkeypatch):
+    workflow = Workflow.__new__(Workflow)
+    workflow.mpi = True
+    workflow.request = {"threads": 8}
+    monkeypatch.setenv("FS2_GROMACS_MPI_TRANSPORT", "ucx-rdma")
+    monkeypatch.setenv("OMPI_MCA_pml", "ucx")
+    monkeypatch.setenv("OMPI_MCA_pml_ucx_tls", "rc_mlx5")
+    monkeypatch.setenv("UCX_TLS", "rc_x,self,sm,cuda_copy,cuda_ipc")
+    monkeypatch.setenv("UCX_NET_DEVICES", "mlx5_0:1,mlx5_1:1")
+    singleton = workflow.command_environment()
+    assert singleton["OMPI_MCA_pml"] == "ob1"
+    assert singleton["OMPI_MCA_btl"] == "self"
+    assert not any(key.startswith(("UCX_", "OMPI_MCA_pml_ucx_")) for key in singleton)
+    distributed = workflow.command_environment(distributed=True)
+    assert distributed["OMPI_MCA_pml"] == "ucx"
+    assert distributed["UCX_TLS"] == "rc_x,self,sm,cuda_copy,cuda_ipc"
+    assert mpi.os.environ["OMPI_MCA_pml"] == "ucx"
+    workflow.mpi = False
+    assert workflow.command_environment()["UCX_TLS"] == distributed["UCX_TLS"]
 
 
 def test_rdma_overlay_adds_only_matching_userspace_provider():
