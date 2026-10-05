@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import os
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
@@ -58,6 +60,32 @@ class GromacsCheckpointTransport:
         self.customer = GromacsCustomerStorage(
             client, workspace, self.operation, invocation.shard_id, workflow=self.workflow
         )
+        self.transfer_progress: dict[str, Any] = {}
+        self.transfer_started = self.phase_started = 0.0
+
+    def _begin_progress(self, action: str, generation: int, total_files: int) -> None:
+        self.transfer_started = self.phase_started = time.monotonic()
+        self.transfer_progress = {
+            "action": action,
+            "generation": generation,
+            "total_files": total_files,
+            "completed_files": 0,
+            "phase": "validation",
+            "phase_seconds": {},
+        }
+        self._progress("validation")
+
+    def _progress(self, phase: str, completed_files: int | None = None) -> None:
+        """Sanitized local timing evidence: no paths, payloads, handles or keys."""
+        now = time.monotonic()
+        durations = self.transfer_progress["phase_seconds"]
+        previous = self.transfer_progress["phase"]
+        durations[previous] = durations.get(previous, 0.0) + now - self.phase_started
+        self.phase_started = now
+        self.transfer_progress.update(phase=phase, elapsed_seconds=now - self.transfer_started)
+        if completed_files is not None:
+            self.transfer_progress["completed_files"] = completed_files
+        atomic_json(self.meta / "transfer-progress.json", self.transfer_progress)
 
     def _state(self, value: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         state = value.get("state", {})
@@ -121,7 +149,9 @@ class GromacsCheckpointTransport:
             )
             value = json.loads(raw)
             state, files = self._state(value)
-            for item in files:
+            self._begin_progress("restore", state["generation"], len(files))
+
+            def restore_file(item: dict[str, Any]) -> None:
                 ref = item["artifact"]
                 if (ref["sha256"], ref["size_bytes"], ref["media_type"]) != (
                     item["sha256"],
@@ -137,8 +167,23 @@ class GromacsCheckpointTransport:
                     expected_media_type=ref["media_type"],
                 )
                 self.files[item["path"]] = item
+
+            if self.workflow.engine == "gromacs":
+                with ThreadPoolExecutor(max_workers=8) as executor:
+                    for offset in range(0, len(files), 128):
+                        group = files[offset : offset + 128]
+                        self._progress("restore-authorize", offset)
+                        self.client.prepare_downloads(
+                            tuple(dict.fromkeys(UUID(item["artifact"]["artifact_id"]) for item in group))
+                        )
+                        self._progress("restore-transfer", offset)
+                        tuple(executor.map(restore_file, group))
+            else:
+                for item in files:
+                    restore_file(item)
             atomic_json(self.meta / self.workflow.state_filename, state)
             self.generation = state["generation"]
+            self._progress("restored", len(files))
         atomic_json(self.meta / "restore-complete.json", {"status": "ready", "generation": self.generation})
 
     def publish_ready(self) -> None:
@@ -158,6 +203,7 @@ class GromacsCheckpointTransport:
         state, files = self._state(value)
         if state["generation"] <= self.generation:
             return
+        self._begin_progress("publish", state["generation"], len(files))
         published = []
         known = {item["sha256"]: item for item in self.files.values()}
         missing: dict[str, dict[str, Any]] = {}
@@ -202,11 +248,13 @@ class GromacsCheckpointTransport:
                 group_bytes += item["size_bytes"]
                 index += 1
             if self.workflow.model_id in {"gromacs", "gromacs-mpi"}:
+                self._progress("platform-validation", index - len(group))
                 refs = self.client.upload_files(
                     identity=f"{self.invocation.produces}:{self.attempt}:native-file",
                     paths=tuple(self.data / item["path"] for item in group),
                     media_type="application/octet-stream",
                     compression=None,
+                    on_phase=self._progress,
                 )
                 for item, ref in zip(group, refs, strict=True):
                     known[item["sha256"]] = {**item, "artifact": ref, "uploaded_attempt": self.attempt}
@@ -218,7 +266,9 @@ class GromacsCheckpointTransport:
             prior = known[item["sha256"]]
             entry = {**item, "artifact": prior["artifact"], "uploaded_attempt": prior.get("uploaded_attempt")}
             published.append(entry)
+        self._progress("customer-export", len(files))
         customer_storage = self.customer.publish(state, files)
+        self._progress("manifest")
         manifest = {"state": state, "files": published, "customer_storage": customer_storage}
         raw = json.dumps(manifest, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
         if len(raw) > MAX_MANIFEST_BYTES:
@@ -231,6 +281,7 @@ class GromacsCheckpointTransport:
         )
         self.generation = state["generation"]
         self.files = {item["path"]: item for item in published}
+        self._progress("acknowledgement")
         atomic_json(
             self.meta / "checkpoint-ack.json",
             {
@@ -240,6 +291,7 @@ class GromacsCheckpointTransport:
                 "customer_storage": customer_storage,
             },
         )
+        self._progress("committed")
 
     def diagnostic_file_reference(self, path: Path) -> dict[str, Any] | None:
         """Retain failed native bytes without declaring recoverable progress.

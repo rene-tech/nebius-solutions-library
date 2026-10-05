@@ -1,6 +1,8 @@
 import asyncio
 import hashlib
 import json
+import threading
+import time
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -59,11 +61,14 @@ class Artifacts:
     def upload_file(self, *, path, **kwargs):
         return self.upload(content=path.read_bytes(), **kwargs)
 
-    def upload_files(self, *, paths, **kwargs):
+    def upload_files(self, *, paths, on_phase=None, **kwargs):
         return [self.upload_file(path=path, **kwargs) for path in paths]
 
     def download(self, artifact_id, **kwargs):
         return self.objects[str(artifact_id)]
+
+    def prepare_downloads(self, artifact_ids):
+        assert 1 <= len(artifact_ids) <= 128
 
     def download_file(self, artifact_id, *, destination, **kwargs):
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -118,8 +123,116 @@ def test_checkpoint_commit_and_restore_reuse_closed_segments(tmp_path, monkeypat
     resumed = GromacsCheckpointTransport(client, invocation(), second)
     resumed.restore()
     assert resumed.generation == 2
+    progress = json.loads((second / ".fs2/transfer-progress.json").read_text())
+    assert progress["phase"] == "restored" and progress["completed_files"] == 2
+    assert progress["elapsed_seconds"] >= 0
+    assert set(progress["phase_seconds"]) >= {"validation", "restore-authorize", "restore-transfer"}
     assert (second / "data/native.cpt").read_bytes() == b"checkpoint two"
     assert (second / "data/md.part0001.xtc").read_bytes() == b"trajectory segment"
+
+
+def test_prepared_restore_handle_is_reused_for_immutable_file_aliases(tmp_path):
+    artifact_id = uuid4()
+    content = b"the same checkpoint under two native filenames"
+    sha256 = hashlib.sha256(content).hexdigest()
+    requests = []
+
+    def reply(request):
+        requests.append((request.method, request.url.path))
+        if request.url.path == "/internal/scientific-workloads/artifacts:download":
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "artifact": {
+                            "artifact_id": str(artifact_id),
+                            "sha256": sha256,
+                            "size_bytes": len(content),
+                            "media_type": "application/octet-stream",
+                        },
+                        "handle": {"method": "GET", "url": "https://object.test/closed"},
+                    }
+                ],
+            )
+        assert request.url.host == "object.test" and request.url.path == "/closed"
+        return httpx.Response(200, stream=httpx.ByteStream(content))
+
+    client = WorkloadArtifactHttpClient(
+        base_url="https://api.test",
+        capability="internal-test",
+        client=httpx.Client(transport=httpx.MockTransport(reply)),
+    )
+    client.prepare_downloads((artifact_id,))
+    for name in ("md.gro", "md.part0001.gro"):
+        client.download_file(
+            artifact_id,
+            destination=tmp_path / name,
+            expected_digest="sha256:" + sha256,
+            expected_size_bytes=len(content),
+            expected_media_type="application/octet-stream",
+        )
+        assert (tmp_path / name).read_bytes() == content
+    assert requests == [
+        ("POST", "/internal/scientific-workloads/artifacts:download"),
+        ("GET", "/closed"),
+        ("GET", "/closed"),
+    ]
+
+
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_late_same_operation_restore_is_bounded_parallel_and_commits_only_verified_files(tmp_path, corrupt):
+    client = Artifacts()
+    first = tmp_path / "first"
+    (first / "data").mkdir(parents=True)
+    for index in range(2048):
+        (first / "data" / f"part-{index:05d}").write_bytes(index.to_bytes(4, "big"))
+    original = GromacsCheckpointTransport(client, invocation(), first)
+    original.restore()
+    ready(first, 1)
+    original.publish_ready()
+    prepared = []
+    counters = {"active": 0, "peak": 0, "done": 0}
+    lock = threading.Lock()
+    base_download = client.download_file
+
+    def checked_download(artifact_id, *, destination, **kwargs):
+        with lock:
+            counters["active"] += 1
+            counters["peak"] = max(counters["peak"], counters["active"])
+        try:
+            time.sleep(0.001)
+            content = client.objects[str(artifact_id)]
+            if corrupt and content == (128).to_bytes(4, "big"):
+                content += b"corrupt"
+            if "sha256:" + hashlib.sha256(content).hexdigest() != kwargs["expected_digest"]:
+                raise ValueError("artifact stream differs from its immutable digest")
+            assert len(content) == kwargs["expected_size_bytes"]
+            base_download(artifact_id, destination=destination, **kwargs)
+            with lock:
+                counters["done"] += 1
+        finally:
+            with lock:
+                counters["active"] -= 1
+
+    client.prepare_downloads = prepared.append
+    client.download_file = checked_download
+    second = tmp_path / "replacement"
+    resumed = GromacsCheckpointTransport(client, invocation(), second)
+    if corrupt:
+        with pytest.raises(ValueError, match="immutable digest"):
+            resumed.restore()
+        assert not (second / ".fs2/restore-complete.json").exists()
+        assert not (second / ".fs2/gromacs-state.json").exists()
+        assert resumed.generation == 0
+    else:
+        resumed.restore()
+        assert counters["done"] == 2048
+        assert len(prepared) == 16 and all(len(group) == 128 for group in prepared)
+        assert resumed.generation == 1
+        assert (second / ".fs2/restore-complete.json").exists()
+        for index in range(2048):
+            assert (second / "data" / f"part-{index:05d}").read_bytes() == index.to_bytes(4, "big")
+    assert 1 < counters["peak"] <= 8
 
 
 def test_failed_diagnostic_reuses_exact_committed_artifact_and_keeps_new_bytes_uncommitted(tmp_path, monkeypatch):

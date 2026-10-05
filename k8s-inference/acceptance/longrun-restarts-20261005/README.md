@@ -1,8 +1,44 @@
 # Fourteen-day GROMACS execution and large late-state restarts
 
-Status: implementation/offline qualification; deployment and native REST/MCP
-large-inventory acceptance are pending. Do not interpret this record as a
-fourteen-day soak or customer-ready verdict.
+Status: fourteen-day release deployed; the first real20k-file trial exposed a
+publication throughput failure. The successor is under implementation; native
+REST/MCP large-inventory acceptance is not yet passed. This is not a fourteen-day
+soak or customer-ready verdict.
+
+## First deployed twenty-thousand-file trial
+
+On2026-10-05 the reader-first rollout completed with all three API replicas and
+the tools at `sha256:ec7ff6833b9e8ccd49cd6ff19e25308019b6bbd0bc1326c1becf83657eeace22`.
+The maintenance CronJob used the same fixed image. Internal system/qa operation
+`682e77af-3d22-45db-9c3f-29b8515cde70` used a real finite60,000-step MPINAT TPR and
+20,000 distinct tiny synthetic retained files. No Lynx key, data or operation
+was used.
+
+Initial bundle materialization took2seconds. Native GROMACS2026.2-dev reached
+step7,300 in14.954seconds at103.816ns/day and closed generation1 at15:52:57UTC.
+The20,007-file checkpoint then exceeded the600-second durable publication
+handoff. The source correctly ended failed; the acceptance harness rejected it
+because this was a transport timeout, not the intended execution-budget timeout.
+It did not pretend the uncommitted checkpoint or the whole test had passed.
+Parent DB diagnostics found12,032 finalized output artifacts/3.846MB between
+15:53:07 and16:04:01, approximately18objects/second, before customer export.
+This pins the initial failed bound to platform artifact publication, not GPU
+simulation or customer S3 export.
+
+Private receipts are in
+`/home/tux/secure-handoff/fs2-longrun-restarts-20261005/rest-20k-r1/`, including
+the exact request, operation status and Pod phase/image/resource history.
+The failed resource was released by the normal scientific owner. Evidence is
+retained; no customer run was interrupted.
+
+The successor adds sanitized `.fs2/transfer-progress.json` phase/cohort timings
+for validation, platform reservation/transfer/finalization, customer export,
+manifest commit and acknowledgement. It also batches same-operation checkpoint
+restore authorization (128identities) and streams eight SHA-verified downloads,
+including safe immutable filename aliases. Scope remains tenant/operation/stage/
+shard plus active-attempt/cancellation; a partial or corrupt restore never writes
+the restored state/ready marker.74targeted tests and strict typing passed before
+the publication repository optimization. The final live rerun is still required.
 
 ## Requested scope
 

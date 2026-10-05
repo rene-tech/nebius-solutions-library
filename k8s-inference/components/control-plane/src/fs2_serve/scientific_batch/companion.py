@@ -658,7 +658,7 @@ class WorkloadArtifactHttpClient:
         self._prepared_downloads: dict[UUID, dict[str, Any]] = {}
 
     def prepare_downloads(self, artifact_ids: tuple[UUID, ...]) -> None:
-        """Authorize one bounded input batch instead of rereading N-file state N times."""
+        """Authorize one bounded batch of inputs or same-operation checkpoint files."""
         if not 1 <= len(artifact_ids) <= 128 or len(set(artifact_ids)) != len(artifact_ids):
             raise ValueError("bulk artifact downloads require 1..128 distinct input identities")
         response = self._upload_request(
@@ -923,10 +923,13 @@ class WorkloadArtifactHttpClient:
         paths: tuple[Path, ...],
         media_type: str,
         compression: str | None,
+        on_phase: Callable[[str], None] | None = None,
     ) -> list[dict[str, Any]]:
         """Stream a bounded native-file cohort with two capability checks, not 2N."""
         if not 1 <= len(paths) <= 64:
             raise ValueError("bulk artifact uploads require 1..64 files")
+        report = on_phase or (lambda _: None)
+        report("platform-validation")
         prepared = []
         for path in paths:
             before = path.stat()
@@ -949,6 +952,7 @@ class WorkloadArtifactHttpClient:
                     },
                 )
             )
+        report("platform-begin")
         begun = self._upload_request(
             "POST",
             f"{self.base_url}/internal/scientific-workloads/uploads:batch",
@@ -993,8 +997,10 @@ class WorkloadArtifactHttpClient:
             ):
                 raise ValueError("output file changed during artifact publication")
 
+        report("platform-transfer")
         with ThreadPoolExecutor(max_workers=8, thread_name_prefix="native-artifact-put") as executor:
             list(executor.map(put, range(len(prepared))))
+        report("platform-finalize")
         finalized = self._upload_request(
             "POST",
             f"{self.base_url}/internal/scientific-workloads/uploads:finalize",
@@ -1010,6 +1016,7 @@ class WorkloadArtifactHttpClient:
                 request["media_type"],
             ):
                 raise ValueError("bulk finalized artifacts differ from the immutable identities")
+        report("platform-verified")
         return cast(list[dict[str, Any]], finalized)
 
     def download_file(
@@ -1027,7 +1034,10 @@ class WorkloadArtifactHttpClient:
             response.read()
             return cast(dict[str, Any], response.json())
 
-        value = self._prepared_downloads.pop(artifact_id, None)
+        # Distinct filenames may alias the same immutable artifact. Keep this
+        # bounded128-entry batch until the next prepare_downloads call so aliases
+        # do not fall back to rereading the whole checkpoint history.
+        value = self._prepared_downloads.get(artifact_id)
         if value is None:
             value = self._download_get(
                 f"{self.base_url}/internal/scientific-workloads/artifacts/{artifact_id}:download",

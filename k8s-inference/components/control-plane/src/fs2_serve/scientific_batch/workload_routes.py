@@ -19,6 +19,7 @@ from ..scientific_artifacts import (
     ArtifactAccessProfile,
     ArtifactCompression,
     ArtifactDirection,
+    ArtifactNotFoundError,
     ArtifactRecord,
     BeginArtifactUpload,
     FinalizeArtifactUpload,
@@ -194,21 +195,35 @@ def scientific_workload_artifact_router(
         request: WorkloadDownloadsRequest,
         authorization: Annotated[str | None, Header()] = None,
     ) -> list[WorkloadDownloadResponse]:
-        capability, _, _ = await authorized(authorization)
+        capability, _, attempt = await authorized(authorization)
         if capability.model_id not in {"gromacs", "gromacs-mpi"}:
             raise HTTPException(status_code=403, detail="this workload has no bulk input contract")
         bindings = {item.artifact_id: item for item in capability.artifacts}
-        if (
-            len(set(request.artifact_ids)) != len(request.artifact_ids)
-            or not set(request.artifact_ids) <= bindings.keys()
-        ):
+        if len(set(request.artifact_ids)) != len(request.artifact_ids):
             raise HTTPException(status_code=403, detail="artifact is outside workload capability")
         semaphore = asyncio.Semaphore(8)
 
         async def resolve(artifact_id: UUID) -> WorkloadDownloadResponse:
             async with semaphore:
-                result = await artifacts.download(artifact_id, tenant_id=capability.tenant_id)
-            binding = bindings[artifact_id]
+                try:
+                    result = await artifacts.download(artifact_id, tenant_id=capability.tenant_id)
+                except ArtifactNotFoundError:
+                    raise HTTPException(status_code=403, detail="artifact is outside workload capability") from None
+            binding: CapabilityArtifact | ArtifactRecord | None = bindings.get(artifact_id)
+            if binding is None:
+                record = result.artifact
+                # The same boundary as checkpoint_records + the single-file
+                # route, without rereading every historical row per128 files.
+                # Never return the generated handle until scope is verified.
+                if (
+                    workflow_for_binding(capability.model_id, capability.stage_id, capability.collector_id) is None
+                    or record.operation_id != capability.operation_id
+                    or record.stage_id != capability.stage_id
+                    or record.shard_id != attempt.shard_id
+                    or record.direction is not ArtifactDirection.OUTPUT
+                ):
+                    raise HTTPException(status_code=403, detail="artifact is outside workload capability")
+                binding = record
             if (
                 result.artifact.digest != binding.digest
                 or result.artifact.size_bytes != binding.size_bytes
@@ -295,27 +310,28 @@ def scientific_workload_artifact_router(
     async def reserve_upload(
         request: WorkloadUploadRequest, capability: ScientificWorkloadCapability
     ) -> WorkloadUploadResponse:
-        compression = request.compression if isinstance(request.compression, ArtifactCompression) else None
-        result = await artifacts.begin_upload(
-            BeginArtifactUpload(
-                upload_id=request.upload_id,
-                attempt_id=capability.attempt_id,
-                operation_id=capability.operation_id,
-                tenant_id=capability.tenant_id,
-                direction=ArtifactDirection.OUTPUT,
-                expected_digest=f"sha256:{request.sha256}",
-                expected_size_bytes=request.size_bytes,
-                media_type=request.media_type,
-                compression=compression,
-                access=ArtifactAccess(
-                    profile=ArtifactAccessProfile(capability.access_profile),
-                    receipt_digest=capability.access_receipt_digest,
-                ),
-            )
-        )
+        result = await artifacts.begin_upload(upload_request(request, capability))
         return WorkloadUploadResponse(
             upload_id=result.upload.upload_id,
             handle=EphemeralHandleResponse.of(result.handle),
+        )
+
+    def upload_request(request: WorkloadUploadRequest, capability: ScientificWorkloadCapability) -> BeginArtifactUpload:
+        compression = request.compression if isinstance(request.compression, ArtifactCompression) else None
+        return BeginArtifactUpload(
+            upload_id=request.upload_id,
+            attempt_id=capability.attempt_id,
+            operation_id=capability.operation_id,
+            tenant_id=capability.tenant_id,
+            direction=ArtifactDirection.OUTPUT,
+            expected_digest=f"sha256:{request.sha256}",
+            expected_size_bytes=request.size_bytes,
+            media_type=request.media_type,
+            compression=compression,
+            access=ArtifactAccess(
+                profile=ArtifactAccessProfile(capability.access_profile),
+                receipt_digest=capability.access_receipt_digest,
+            ),
         )
 
     @router.post("/uploads:batch", response_model=list[WorkloadUploadResponse], status_code=status.HTTP_201_CREATED)
@@ -339,13 +355,11 @@ def scientific_workload_artifact_router(
                 started_at=attempt.started_at or state.scheduling.captured_at,
             )
         )
-        semaphore = asyncio.Semaphore(8)
-
-        async def reserve(item: WorkloadUploadRequest) -> WorkloadUploadResponse:
-            async with semaphore:
-                return await reserve_upload(item, capability)
-
-        return list(await asyncio.gather(*(reserve(item) for item in request.uploads)))
+        results = await artifacts.begin_uploads(tuple(upload_request(item, capability) for item in request.uploads))
+        return [
+            WorkloadUploadResponse(upload_id=result.upload.upload_id, handle=EphemeralHandleResponse.of(result.handle))
+            for result in results
+        ]
 
     @router.post("/uploads:finalize", response_model=list[ArtifactRef])
     async def finalize_uploads(
@@ -357,20 +371,17 @@ def scientific_workload_artifact_router(
             raise HTTPException(status_code=403, detail="this workload has no bulk upload contract")
         if len(set(request.upload_ids)) != len(request.upload_ids):
             raise HTTPException(status_code=422, detail="upload identities must be distinct")
-        semaphore = asyncio.Semaphore(8)
-
-        async def finalize(upload_id: UUID) -> ArtifactRef:
-            async with semaphore:
-                record = await artifacts.finalize_upload(
-                    FinalizeArtifactUpload(
-                        upload_id=upload_id,
-                        operation_id=capability.operation_id,
-                        tenant_id=capability.tenant_id,
-                    )
+        results = await artifacts.finalize_uploads(
+            tuple(
+                FinalizeArtifactUpload(
+                    upload_id=upload_id,
+                    operation_id=capability.operation_id,
+                    tenant_id=capability.tenant_id,
                 )
-            return record.to_public_ref()
-
-        return list(await asyncio.gather(*(finalize(item) for item in request.upload_ids)))
+                for upload_id in request.upload_ids
+            )
+        )
+        return [record.to_public_ref() for record in results]
 
     @router.post("/uploads/{upload_id}:finalize", response_model=ArtifactRef)
     async def finalize_upload(

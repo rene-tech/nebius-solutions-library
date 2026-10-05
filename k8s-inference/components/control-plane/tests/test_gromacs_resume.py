@@ -103,13 +103,14 @@ def fixture():
     return artifacts, checkpoint
 
 
-def test_resume_reuses_original_physics_and_skips_completed_preparation():
+@pytest.mark.parametrize("budget", [604800, 1209600])
+def test_resume_reuses_original_physics_and_skips_completed_preparation(budget):
     _, checkpoint = fixture()
     parameters = original()
     before = copy.deepcopy(parameters)
-    result = continuation_parameters(parameters, checkpoint, model_id="gromacs", max_wall_seconds=604800)
+    result = continuation_parameters(parameters, checkpoint, model_id="gromacs", max_wall_seconds=budget)
     assert parameters == before
-    assert result["max_wall_seconds"] == 604800
+    assert result["max_wall_seconds"] == budget
     steps = result["jobs"][0]["steps"]
     assert [step["id"] for step in steps] == ["production", "join"]
     assert steps[0]["args"] == before["jobs"][0]["steps"][1]["args"]

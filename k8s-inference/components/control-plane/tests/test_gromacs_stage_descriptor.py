@@ -17,7 +17,7 @@ from test_gromacs_compact_capability import active_workload
 from test_gromacs_execution_shapes import mpi_request, renderer, resolver, resource_for
 
 from fs2_serve import scientific_companion_cli as cli
-from fs2_serve.scientific_artifacts import EphemeralHandle
+from fs2_serve.scientific_artifacts import ArtifactDirection, ArtifactNotFoundError, EphemeralHandle
 from fs2_serve.scientific_batch.capability import CapabilityArtifact, ScientificWorkloadCapabilityAuthority
 from fs2_serve.scientific_batch.codec import COMPACT_METADATA_SCHEMA, state_from_value, state_to_json, state_to_value
 from fs2_serve.scientific_batch.companion import WorkloadArtifactHttpClient, _invocation
@@ -55,8 +55,7 @@ def test_late_continuation_terminal_readers_accept_large_request_and_inventory(t
     request_path = tmp_path / ".fs2/request.json"
     request = json.loads(request_path.read_text())
     request["continuation_files"] = [
-        {"input_id": f"resume-{index:05d}", "path": f"retained/md.part{index:05d}.xtc"}
-        for index in range(20000)
+        {"input_id": f"resume-{index:05d}", "path": f"retained/md.part{index:05d}.xtc"} for index in range(20000)
     ]
     request = workflow.normalize(request)
     atomic_json(request_path, request)
@@ -291,6 +290,8 @@ async def test_batch_input_handles_preserve_exact_capability_scope_with_bounded_
 
     async def download(artifact_id, *, tenant_id):
         assert tenant_id == "system"
+        if artifact_id not in entries:
+            raise ArtifactNotFoundError("not found")
         counters["calls"] += 1
         counters["active"] += 1
         counters["max"] = max(counters["max"], counters["active"])
@@ -347,11 +348,82 @@ async def test_batch_input_handles_preserve_exact_capability_scope_with_bounded_
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", [None, "operation", "stage", "shard", "direction", "tenant", "cancel", "attempt"])
+async def test_bulk_checkpoint_handles_preserve_same_operation_recovery_scope(hasher, mismatch):
+    state, resource, repository = active_workload(1)
+    authority = ScientificWorkloadCapabilityAuthority(hasher)
+    token = authority.issue(resource)
+    artifact_id = uuid4()
+    calls = []
+    record = SimpleNamespace(
+        operation_id=state.operation_id if mismatch != "operation" else uuid4(),
+        stage_id=resource.stage_id if mismatch != "stage" else "another-stage",
+        shard_id=resource.shard_id if mismatch != "shard" else "another-shard",
+        direction=ArtifactDirection.INPUT if mismatch == "direction" else ArtifactDirection.OUTPUT,
+        digest="sha256:" + "c" * 64,
+        size_bytes=7,
+        media_type="application/octet-stream",
+        compression=None,
+        to_public_ref=lambda: ArtifactRef(
+            artifact_id=str(artifact_id),
+            sha256="c" * 64,
+            size_bytes=7,
+            media_type="application/octet-stream",
+            compression="none",
+        ),
+    )
+
+    async def download(requested_id, *, tenant_id):
+        calls.append(requested_id)
+        assert tenant_id == "system" and requested_id == artifact_id
+        if mismatch == "tenant":
+            # The real artifact service hides foreign-tenant IDs as not found.
+            raise ArtifactNotFoundError("not found")
+        return SimpleNamespace(
+            artifact=record,
+            handle=EphemeralHandle(
+                method="GET",
+                url="https://objects.test/checkpoint",
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            ),
+        )
+
+    if mismatch == "cancel":
+        repository.records[state.operation_id] = replace(state, cancel_requested=True)
+    if mismatch == "attempt":
+        stage = state.stages[0]
+        repository.records[state.operation_id] = replace(
+            state,
+            stages=(replace(stage, attempts=(replace(stage.attempts[0], attempt_id=uuid4()),)),),
+        )
+    app = FastAPI()
+    app.include_router(
+        scientific_workload_artifact_router(
+            authority=authority,
+            artifacts=SimpleNamespace(download=download),
+            batches=repository,
+        )
+    )
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.post(
+            "/internal/scientific-workloads/artifacts:download",
+            json={"artifact_ids": [str(artifact_id)]},
+            headers={"Authorization": "Bearer " + token},
+        )
+    expected = 200 if mismatch is None else 409 if mismatch in {"cancel", "attempt"} else 403
+    assert response.status_code == expected
+    assert calls == ([] if mismatch in {"cancel", "attempt"} else [artifact_id])
+    if mismatch is not None:
+        assert "objects.test" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_bulk_uploads_retain_original_tenant_operation_attempt_and_idempotent_ids(hasher):
     state, resource, repository = active_workload(20000)
     authority = ScientificWorkloadCapabilityAuthority(hasher)
     token = authority.issue(resource)
     opened, begun, finalized = [], {}, []
+    batch_calls = []
 
     async def open_attempt(request):
         opened.append(request)
@@ -380,13 +452,21 @@ async def test_bulk_uploads_retain_original_tenant_operation_attempt_and_idempot
         )
         return SimpleNamespace(to_public_ref=lambda: ref)
 
+    async def begin_uploads(requests):
+        batch_calls.append(("begin", len(requests)))
+        return [await begin_upload(request) for request in requests]
+
+    async def finalize_uploads(requests):
+        batch_calls.append(("finalize", len(requests)))
+        return [await finalize_upload(request) for request in requests]
+
     app = FastAPI()
     app.include_router(
         scientific_workload_artifact_router(
             authority=authority,
             batches=repository,
             artifacts=SimpleNamespace(
-                open_attempt=open_attempt, begin_upload=begin_upload, finalize_upload=finalize_upload
+                open_attempt=open_attempt, begin_uploads=begin_uploads, finalize_uploads=finalize_uploads
             ),
         )
     )
@@ -416,6 +496,7 @@ async def test_bulk_uploads_retain_original_tenant_operation_attempt_and_idempot
             headers=headers,
         )
         assert response.status_code == 200 and len(finalized) == 64
+        assert batch_calls == [("begin", 64), ("begin", 64), ("finalize", 64)]
         repository.records[state.operation_id] = replace(state, cancel_requested=True)
         response = await client.post(
             "/internal/scientific-workloads/uploads:finalize",
