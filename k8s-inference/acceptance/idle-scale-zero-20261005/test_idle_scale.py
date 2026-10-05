@@ -7,8 +7,9 @@ import yaml
 from test_model_deployment import envelope, model_spec
 from fs2_serve.model_deployment import InfrastructureEnvelope, ModelDeploymentSpec, RenderContext
 from fs2_serve.model_deployment_controller import ControllerFiles
-from prepare_managed import MODELS, ROOT, TOOLS, append_models
+from prepare_managed import MODELS, ROOT, TOOLS, append_models, source_resources
 from remove_hot_floors import proposal_for
+from retained_adoptions import SOURCE, configmaps, merge_registration
 
 
 def inputs():
@@ -71,3 +72,66 @@ def test_registration_refuses_existing_model_overwrite():
     source[0]["qualifications"][MODELS[0]] = {}
     with pytest.raises(ValueError, match="already registered"):
         append_models(*source)
+
+
+def all_pool_inputs():
+    source = inputs()
+    for pool_id, accelerator in (("l40s-1x", "nvidia-l40s-48gb"),
+                                 ("wan2-h200-1x", "nvidia-h200-sxm5-141gb")):
+        source[0]["pools"][pool_id] = {
+            **source[0]["pools"]["h100-ondemand-1x"],
+            "poolId": pool_id, "acceleratorClass": accelerator,
+            "nodeSelector": {"accelerator.fs2.nebius/pool-id": pool_id},
+        }
+    return source
+
+
+def test_all_eight_sources_render_zero_floor_under_the_existing_owner():
+    source = all_pool_inputs()
+    models = tuple(TOOLS)
+    source[4].update({model: source_resources(model) for model in models})
+    actual, bundles, proposals = append_models(*source, models=models)
+    assert len(proposals) == 8
+    contract = ControllerFiles(infrastructure_envelope=InfrastructureEnvelope.model_validate(actual), bundles=bundles)
+    for proposal in proposals:
+        spec = ModelDeploymentSpec.model_validate(proposal["spec"])
+        pool = contract.infrastructure_envelope.pools[spec.placement.pool_refs[0]]
+        render = contract.renderer().render(spec, RenderContext(
+            name=proposal["name"], namespace=proposal["namespace"], uid="test-owner", generation=1,
+            pool=pool, eligible_pools=[pool], prometheus_server_address="http://prometheus.example:9090"))
+        workloads = [r.manifest for r in render.resources if r.kind == "Deployment"]
+        scalers = [r.manifest for r in render.resources if r.kind == "ScaledObject"]
+        assert len(workloads) == len(scalers) == 1
+        assert "replicas" not in workloads[0]["spec"]
+        assert scalers[0]["spec"]["minReplicaCount"] == 0
+        assert scalers[0]["spec"]["maxReplicaCount"] == 1
+        assert len(workloads[0]["metadata"]["ownerReferences"]) == 1
+
+
+def test_retained_bundle_sources_are_exact_and_idempotent():
+    envelope, bundles, *_ = all_pool_inputs()
+    source = json.loads(SOURCE.read_text())
+    before = copy.deepcopy((envelope, bundles, source))
+    merged = merge_registration(envelope, bundles, source)
+    assert (envelope, bundles, source) == before
+    assert merge_registration(*merged, source) == merged
+    assert merged[0]["pools"] == envelope["pools"]
+    assert merged[0]["qualifications"]["qwen.3-8b"] == envelope["qualifications"]["qwen.3-8b"]
+    assert all(item["immutable"] for item in configmaps(*merged)["items"])
+    # Historical retained ACE bundle has replicas=1. Its canonical source is
+    # now cold, and the renderer never writes replicas for any managed App.
+    for model in source["modelIds"]:
+        resources = source_resources(model)
+        assert next(r for r in resources if r["kind"] == "Deployment")["spec"]["replicas"] == 0
+
+
+def test_retained_registration_refuses_missing_pool_or_changed_model():
+    envelope, bundles, *_ = all_pool_inputs()
+    source = json.loads(SOURCE.read_text())
+    del envelope["pools"]["wan2-h200-1x"]
+    with pytest.raises(ValueError, match="missing declared compatible pool"):
+        merge_registration(envelope, bundles, source)
+    envelope, bundles, *_ = all_pool_inputs()
+    envelope["qualifications"]["mindguard-4b"] = {"different": True}
+    with pytest.raises(ValueError, match="different existing model qualification"):
+        merge_registration(envelope, bundles, source)

@@ -37,7 +37,7 @@ a `mindeval` grant alone is insufficient. Reuse the enclosing app's request
 telemetry. No new audit store or classifier-enforcement policy is created.
 
 With the registered App, the router receives the ordinary `admission`, `store`
-and `registry` and creates one durable operation for the entire transcript.
+and `model_namespace` and creates one durable operation for the entire transcript.
 The existing worker executes every user-prefix assessment, records each upstream
 exchange, aggregates reported tokens and uses the normal queue, concurrency,
 budget, cancellation and GPU-lifecycle accounting. The replica is owned by the
@@ -81,10 +81,17 @@ here is only for measurement and handoff validation.
 ```bash
 uv venv .venv
 uv pip install --python .venv/bin/python --require-hashes -r requirements.lock
-python render_preview.py mindguard-4b --node EXISTING_FREE_L40S_NODE
+python render_preview.py mindguard-4b --replicas 0 --node EXISTING_FREE_L40S_NODE
 ```
 
-The renderer emits a task-owned PVC, Deployment and internal Service in
+The renderer defaults to **zero replicas** and is a legacy preview source, not
+the deployment command for a managed Scientific AI App. The two original live
+previews were adopted into ModelDeployment/KEDA on 2026-10-05, retaining their
+Service names and cached PVC. Never apply the preview over those owned objects:
+use the admin App availability settings for hot floors. An isolated standalone
+preview needs an explicit `--replicas 1` and does not have request-driven waking.
+
+The renderer emits a preview PVC, Deployment and internal Service in
 `fs2-models`. Its init container expects Secret `fs2-mindguard-r20260916-hf`, key
 `token`, containing an already authorized HF credential. The credential is mounted
 only into the downloader environment; the serving container is offline and mounts

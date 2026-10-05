@@ -64,7 +64,7 @@ def test_default_model_runtime_matches_gpu_tested_preview(tmp_path: Path) -> Non
     assert pod["securityContext"] == expected_pod["securityContext"]
     assert pod["nodeSelector"] == expected_pod["nodeSelector"]
     assert deployed["spec"]["strategy"] == {"type": "Recreate"}
-    assert deployed["spec"]["replicas"] == 1
+    assert deployed["spec"]["replicas"] == expected["spec"]["replicas"] == 0
     assert deployed["metadata"]["name"] == "workshop-test-mindguard-4b"
     assert deployed["metadata"]["namespace"] == "fs2-models"
     assert pod["initContainers"][0]["env"][-1]["valueFrom"]["secretKeyRef"] == {"name": "approved-hf", "key": "token"}

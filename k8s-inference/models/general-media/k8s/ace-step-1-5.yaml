@@ -39,7 +39,9 @@ metadata:
     app.kubernetes.io/part-of: fs2-serve
     fs2-serve.nebius.ai/model-id: ace-step-1-5
 spec:
-  replicas: 1
+  # In a managed installation, ModelDeployment/KEDA owns the replica count.
+  # This legacy source is cold by default; do not apply it over that owner.
+  replicas: 0
   revisionHistoryLimit: 2
   strategy:
     type: Recreate

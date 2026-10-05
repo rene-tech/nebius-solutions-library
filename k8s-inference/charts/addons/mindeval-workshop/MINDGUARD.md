@@ -12,6 +12,13 @@ models explicitly. Each replica requests one GPU by default; no autoscaling, quo
 node, storage-class, namespace, Secret or additional network-policy resources are
 created. A new retained cache PVC is optional; an existing claim is mounted only.
 
+Enabled standalone previews now default to **zero replicas**, not a hidden hot
+floor. This optional static chart has no request-driven wake controller; choose
+an explicit nonzero replica count only for a standalone preview. On the shared
+Scientific AI installation leave `mindguard.enabled: false`: both classifiers
+are already Apps owned by ModelDeployment/KEDA, with live availability managed
+through the admin API. Do not create a second replica owner for their names.
+
 ## Configuration
 
 The model namespace must already exist and contain the approved HF Secret and
@@ -91,14 +98,16 @@ Allow sufficient release timeout for first image pull and weight hydration.
 
 ## Current previews and managed adoption
 
-The live workshop continues using explicitly configured CP endpoints:
+Since 2026-10-05 the two existing Services below belong to the platform's
+ModelDeployment/KEDA lifecycle. The live workshop uses the CP assess API and
+polls durable operations when a cold classifier returns 202:
 
 - `http://fs2-mindguard-r20260916-4b.fs2-models.svc.cluster.local:8000/v1`
 - `http://fs2-mindguard-r20260916-8b.fs2-models.svc.cluster.local:8000/v1`
 
-This template neither adopts those existing task-owned resources nor changes
-the shared control-plane endpoint settings. They remain the serving endpoints
-until a separate coordinated adoption. With the example prefix, new endpoints
+This optional template neither adopts those existing controller-owned resources
+nor changes the shared control-plane endpoint settings. They remain the serving
+endpoints. With the example prefix, new standalone preview endpoints
 would be `http://workshop-models-mindguard-4b.fs2-models.svc.cluster.local:8000/v1`
 and the corresponding `-8b`. A no-surprise adoption sequence is:
 

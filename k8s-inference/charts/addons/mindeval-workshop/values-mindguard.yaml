@@ -39,9 +39,12 @@ mindguard:
   models:
     mindguard-4b:
       enabled: true
-      replicas: 1
+      replicas: 0
     mindguard-8b:
       enabled: false
-      replicas: 1
+      replicas: 0
+  # This optional static preview has no wake controller. For platform-managed
+  # Apps leave mindguard.enabled=false and use the existing ModelDeployment.
+  # A standalone preview needs an explicit replica setting before it can serve.
   # A model entry may override nodeSelector, tolerations, affinity or resources.
   # Checkpoint source/revision, BF16, native 32768 context and TP=1 stay pinned.

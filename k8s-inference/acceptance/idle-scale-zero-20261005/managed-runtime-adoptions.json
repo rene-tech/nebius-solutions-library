@@ -1,0 +1,2489 @@
+{
+  "schema": "fs2-serve.nebius.ai/retained-managed-adoptions/v1",
+  "modelIds": [
+    "scvi-scanvi",
+    "cellpose-cpsam-v2",
+    "sam2-1-hiera-large",
+    "ace-step-1-5",
+    "wan2-2-t2v-nim",
+    "wan2-2-i2v-nim",
+    "mindguard-4b",
+    "mindguard-8b"
+  ],
+  "qualifications": {
+    "ace-step-1-5": {
+      "acceleratorClasses": [
+        "nvidia-l40s-48gb"
+      ],
+      "artifactManifestDigests": [
+        "sha256:5ce06a5fe70423245a3b554f3ae52badeed5b0c0891164695b5f89be75b5b407"
+      ],
+      "artifactRevisions": {
+        "19671f406d603126926c1b7e2adc169acbcade22": "sha256:5ce06a5fe70423245a3b554f3ae52badeed5b0c0891164695b5f89be75b5b407"
+      },
+      "maxAcceleratorsPerReplica": 1,
+      "mcpToolName": "generate_music",
+      "modelRef": "ace-step-1-5",
+      "openAIQualified": false,
+      "runtimeImages": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-models/general-media/ace-step-1-5-runtime@sha256:95652cd780c78a1b1a7f6f0335530430f0ae53d96c7c12d59f9f39fa23d38567"
+      ],
+      "runtimeProfile": "custom",
+      "scaleToZeroQualified": false,
+      "templateCacheTiers": {
+        "sha256:e023f08aefabe031d3ee32683e97f5b8d37a050ea95ab13e376d5b144d24a289": "Disabled"
+      },
+      "templateDigests": [
+        "sha256:e023f08aefabe031d3ee32683e97f5b8d37a050ea95ab13e376d5b144d24a289"
+      ],
+      "templateRefs": {
+        "ace-step-1-5.legacy-v1": "sha256:e023f08aefabe031d3ee32683e97f5b8d37a050ea95ab13e376d5b144d24a289"
+      }
+    },
+    "cellpose-cpsam-v2": {
+      "acceleratorClasses": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "artifactManifestDigests": [
+        "sha256:fee386ce63e19044399a7c15792b4ba643c8fe61cfd4d268cc72894e9c028df7"
+      ],
+      "artifactRevisions": {
+        "7c61431b5fbb078f3296754bd15d9f51b320f837": "sha256:fee386ce63e19044399a7c15792b4ba643c8fe61cfd4d268cc72894e9c028df7"
+      },
+      "maxAcceleratorsPerReplica": 1,
+      "mcpToolName": "segment_cells",
+      "modelRef": "cellpose-cpsam-v2",
+      "openAIQualified": false,
+      "runtimeImages": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/cellpose-cpsam-v2@sha256:d3048aca99d4c278002fa88e42417dd42d1a40fb2689af1688d239799fc59a5e"
+      ],
+      "runtimeProfile": "custom",
+      "scaleToZeroQualified": false,
+      "templateCacheTiers": {
+        "sha256:4ade005981918c9e8301f493cb44a0f0ad0d76bb79f4b63bbc6e56f931ee9211": "Disabled"
+      },
+      "templateDigests": [
+        "sha256:4ade005981918c9e8301f493cb44a0f0ad0d76bb79f4b63bbc6e56f931ee9211"
+      ],
+      "templateRefs": {
+        "cellpose-cpsam-v2.legacy-v1": "sha256:4ade005981918c9e8301f493cb44a0f0ad0d76bb79f4b63bbc6e56f931ee9211"
+      }
+    },
+    "mindguard-4b": {
+      "acceleratorClasses": [
+        "nvidia-l40s-48gb"
+      ],
+      "artifactManifestDigests": [
+        "sha256:c5db22f491d868f9ea51387a02ad27308bde80ae9720c784f266bea6c6e50093"
+      ],
+      "artifactRevisions": {
+        "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2": "sha256:c5db22f491d868f9ea51387a02ad27308bde80ae9720c784f266bea6c6e50093"
+      },
+      "maxAcceleratorsPerReplica": 1,
+      "mcpToolName": "assess_mindguard_4b",
+      "modelRef": "mindguard-4b",
+      "openAIQualified": false,
+      "runtimeImages": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      ],
+      "runtimeProfile": "custom",
+      "scaleToZeroQualified": false,
+      "templateCacheTiers": {
+        "sha256:9db4655f8a2330bf141202c1e5245a6981de25e3f5614632c489e997023e7cf3": "Disabled"
+      },
+      "templateDigests": [
+        "sha256:9db4655f8a2330bf141202c1e5245a6981de25e3f5614632c489e997023e7cf3"
+      ],
+      "templateRefs": {
+        "mindguard-4b.legacy-v1": "sha256:9db4655f8a2330bf141202c1e5245a6981de25e3f5614632c489e997023e7cf3"
+      }
+    },
+    "mindguard-8b": {
+      "acceleratorClasses": [
+        "nvidia-l40s-48gb"
+      ],
+      "artifactManifestDigests": [
+        "sha256:1946ae5e567667231fbefeabbe33f18a03ba03d860ded2989d9d265cfe58f214"
+      ],
+      "artifactRevisions": {
+        "a24baa872d902224b3de80e912ad1f4201b514ed": "sha256:1946ae5e567667231fbefeabbe33f18a03ba03d860ded2989d9d265cfe58f214"
+      },
+      "maxAcceleratorsPerReplica": 1,
+      "mcpToolName": "assess_mindguard_8b",
+      "modelRef": "mindguard-8b",
+      "openAIQualified": false,
+      "runtimeImages": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635"
+      ],
+      "runtimeProfile": "custom",
+      "scaleToZeroQualified": false,
+      "templateCacheTiers": {
+        "sha256:cc35605643645e2cd7e9e9b17c3ee80da58d39bbb22341fe2a238b8cfb54dc6e": "Disabled"
+      },
+      "templateDigests": [
+        "sha256:cc35605643645e2cd7e9e9b17c3ee80da58d39bbb22341fe2a238b8cfb54dc6e"
+      ],
+      "templateRefs": {
+        "mindguard-8b.legacy-v1": "sha256:cc35605643645e2cd7e9e9b17c3ee80da58d39bbb22341fe2a238b8cfb54dc6e"
+      }
+    },
+    "sam2-1-hiera-large": {
+      "acceleratorClasses": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "artifactManifestDigests": [
+        "sha256:0b2a1df89a7907c7d08463695e955e637afd4e4b4ded961bbb4407d504343512"
+      ],
+      "artifactRevisions": {
+        "665f8e2ad61cf5f53d65644ff27c8ee525124610": "sha256:0b2a1df89a7907c7d08463695e955e637afd4e4b4ded961bbb4407d504343512"
+      },
+      "maxAcceleratorsPerReplica": 1,
+      "mcpToolName": "segment_track_media",
+      "modelRef": "sam2-1-hiera-large",
+      "openAIQualified": false,
+      "runtimeImages": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/sam2@sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c"
+      ],
+      "runtimeProfile": "custom",
+      "scaleToZeroQualified": false,
+      "templateCacheTiers": {
+        "sha256:9ce29ef882a14ddd48903b0345147876771ef6d19aec51e28336019e720d63ae": "Disabled"
+      },
+      "templateDigests": [
+        "sha256:9ce29ef882a14ddd48903b0345147876771ef6d19aec51e28336019e720d63ae"
+      ],
+      "templateRefs": {
+        "sam2-1-hiera-large.legacy-v1": "sha256:9ce29ef882a14ddd48903b0345147876771ef6d19aec51e28336019e720d63ae"
+      }
+    },
+    "scvi-scanvi": {
+      "acceleratorClasses": [
+        "nvidia-h100-sxm5-80gb"
+      ],
+      "artifactManifestDigests": [
+        "sha256:00da7cb7f69898bb40cf6a2498784fb10fa2c45c8751e0bab0db2f5a364e7bdc"
+      ],
+      "artifactRevisions": {
+        "56520c713eb1d2b245c72a0f60bc393b74198c91": "sha256:00da7cb7f69898bb40cf6a2498784fb10fa2c45c8751e0bab0db2f5a364e7bdc"
+      },
+      "maxAcceleratorsPerReplica": 1,
+      "mcpToolName": "integrate_single_cell",
+      "modelRef": "scvi-scanvi",
+      "openAIQualified": false,
+      "runtimeImages": [
+        "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:cd22562eb59d067f734b65af1669c483f971dacb5e58462ca7f4d43afc940396"
+      ],
+      "runtimeProfile": "custom",
+      "scaleToZeroQualified": false,
+      "templateCacheTiers": {
+        "sha256:f7df6d9f269e1a4bcfaf67fd53533885b46c070facf2c3080c7ca99e9002db73": "Disabled"
+      },
+      "templateDigests": [
+        "sha256:f7df6d9f269e1a4bcfaf67fd53533885b46c070facf2c3080c7ca99e9002db73"
+      ],
+      "templateRefs": {
+        "scvi-scanvi.legacy-v1": "sha256:f7df6d9f269e1a4bcfaf67fd53533885b46c070facf2c3080c7ca99e9002db73"
+      }
+    },
+    "wan2-2-i2v-nim": {
+      "acceleratorClasses": [
+        "nvidia-h200-sxm5-141gb"
+      ],
+      "artifactManifestDigests": [
+        "sha256:e53a652bbc91526b24950537dbf778ae1a3ff115625e93248bb165b4c827c4a7"
+      ],
+      "artifactRevisions": {
+        "e38919caed06f51e1039e841a6c116b7388244b05ad62576100b38c935fb6924": "sha256:e53a652bbc91526b24950537dbf778ae1a3ff115625e93248bb165b4c827c4a7"
+      },
+      "maxAcceleratorsPerReplica": 1,
+      "mcpToolName": "animate_image",
+      "modelRef": "wan2-2-i2v-nim",
+      "openAIQualified": false,
+      "runtimeImages": [
+        "nvcr.io/nim/wan-ai/wan2.2@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b"
+      ],
+      "runtimeProfile": "custom",
+      "scaleToZeroQualified": false,
+      "templateCacheTiers": {
+        "sha256:55b5e2e6df05d5a28b2c83ebd6ce57650df60d0d8b3bd27f21f8f5682c004846": "Disabled"
+      },
+      "templateDigests": [
+        "sha256:55b5e2e6df05d5a28b2c83ebd6ce57650df60d0d8b3bd27f21f8f5682c004846"
+      ],
+      "templateRefs": {
+        "wan2-2-i2v-nim.legacy-v1": "sha256:55b5e2e6df05d5a28b2c83ebd6ce57650df60d0d8b3bd27f21f8f5682c004846"
+      }
+    },
+    "wan2-2-t2v-nim": {
+      "acceleratorClasses": [
+        "nvidia-h200-sxm5-141gb"
+      ],
+      "artifactManifestDigests": [
+        "sha256:4933f15e47cac51462752edcbba451e674f834ad51441cd92d774733c4f56783"
+      ],
+      "artifactRevisions": {
+        "83310ae8f14819f6e09119801b1702fbaa0cc5ffd7bfc6ca1dde9cdbb81bca2f": "sha256:4933f15e47cac51462752edcbba451e674f834ad51441cd92d774733c4f56783"
+      },
+      "maxAcceleratorsPerReplica": 1,
+      "mcpToolName": "generate_video",
+      "modelRef": "wan2-2-t2v-nim",
+      "openAIQualified": false,
+      "runtimeImages": [
+        "nvcr.io/nim/wan-ai/wan2.2@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b"
+      ],
+      "runtimeProfile": "custom",
+      "scaleToZeroQualified": false,
+      "templateCacheTiers": {
+        "sha256:736eb1fa72d6bc68cc48c8ae3b5730ef4f381c36aa245869ae7c7bfb5442338d": "Disabled"
+      },
+      "templateDigests": [
+        "sha256:736eb1fa72d6bc68cc48c8ae3b5730ef4f381c36aa245869ae7c7bfb5442338d"
+      ],
+      "templateRefs": {
+        "wan2-2-t2v-nim.legacy-v1": "sha256:736eb1fa72d6bc68cc48c8ae3b5730ef4f381c36aa245869ae7c7bfb5442338d"
+      }
+    }
+  },
+  "bundles": [
+    {
+      "modelRef": "scvi-scanvi",
+      "primaryServiceName": "scvi-scanvi",
+      "primaryServicePort": 8000,
+      "primaryWorkloadName": "scvi-scanvi",
+      "resources": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "scvi-scanvi",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "scvi-scanvi"
+            },
+            "name": "scvi-scanvi",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "replicas": 0,
+            "revisionHistoryLimit": 2,
+            "selector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "scvi-scanvi"
+              }
+            },
+            "strategy": {
+              "type": "Recreate"
+            },
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app.kubernetes.io/component": "model-runtime",
+                  "app.kubernetes.io/name": "scvi-scanvi",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2-serve.nebius.ai/model-id": "scvi-scanvi"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "env": [
+                      {
+                        "name": "HOME",
+                        "value": "/tmp"
+                      },
+                      {
+                        "name": "XDG_CACHE_HOME",
+                        "value": "/tmp/cache"
+                      },
+                      {
+                        "name": "MPLCONFIGDIR",
+                        "value": "/tmp/matplotlib"
+                      },
+                      {
+                        "name": "NUMBA_CACHE_DIR",
+                        "value": "/tmp/numba"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:cd22562eb59d067f734b65af1669c483f971dacb5e58462ca7f4d43afc940396",
+                    "imagePullPolicy": "IfNotPresent",
+                    "livenessProbe": {
+                      "failureThreshold": 3,
+                      "httpGet": {
+                        "path": "/v1/health/live",
+                        "port": "http"
+                      },
+                      "periodSeconds": 20,
+                      "timeoutSeconds": 3
+                    },
+                    "name": "runtime",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "12",
+                        "ephemeral-storage": "128Gi",
+                        "memory": "96Gi",
+                        "nvidia.com/gpu": "1"
+                      },
+                      "requests": {
+                        "cpu": "6",
+                        "ephemeral-storage": "64Gi",
+                        "memory": "32Gi",
+                        "nvidia.com/gpu": "1"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true
+                    },
+                    "startupProbe": {
+                      "failureThreshold": 180,
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      },
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "shm"
+                      }
+                    ]
+                  }
+                ],
+                "nodeSelector": {
+                  "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                  "kubernetes.io/arch": "amd64"
+                },
+                "securityContext": {
+                  "fsGroup": 10001,
+                  "runAsGroup": 10001,
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "terminationGracePeriodSeconds": 30,
+                "tolerations": [
+                  {
+                    "effect": "NoSchedule",
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference"
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "128Gi"
+                    },
+                    "name": "tmp"
+                  },
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "8Gi"
+                    },
+                    "name": "shm"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "scvi-scanvi",
+              "fs2-serve.nebius.ai/model-id": "scvi-scanvi"
+            },
+            "name": "scvi-scanvi",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8000,
+                "targetPort": "http"
+              }
+            ],
+            "selector": {
+              "app.kubernetes.io/name": "scvi-scanvi"
+            },
+            "type": "ClusterIP"
+          }
+        }
+      ],
+      "runtimeContainerName": "runtime",
+      "runtimeProfile": "custom",
+      "templateDigest": "sha256:f7df6d9f269e1a4bcfaf67fd53533885b46c070facf2c3080c7ca99e9002db73"
+    },
+    {
+      "modelRef": "cellpose-cpsam-v2",
+      "primaryServiceName": "cellpose-cpsam-v2",
+      "primaryServicePort": 8000,
+      "primaryWorkloadName": "cellpose-cpsam-v2",
+      "resources": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "cellpose-cpsam-v2",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "cellpose-cpsam-v2"
+            },
+            "name": "cellpose-cpsam-v2",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "replicas": 0,
+            "revisionHistoryLimit": 2,
+            "selector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "cellpose-cpsam-v2"
+              }
+            },
+            "strategy": {
+              "type": "Recreate"
+            },
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app.kubernetes.io/component": "model-runtime",
+                  "app.kubernetes.io/name": "cellpose-cpsam-v2",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2-serve.nebius.ai/model-id": "cellpose-cpsam-v2"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "env": [
+                      {
+                        "name": "HOME",
+                        "value": "/tmp"
+                      },
+                      {
+                        "name": "XDG_CACHE_HOME",
+                        "value": "/tmp/cache"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/cellpose-cpsam-v2@sha256:d3048aca99d4c278002fa88e42417dd42d1a40fb2689af1688d239799fc59a5e",
+                    "imagePullPolicy": "IfNotPresent",
+                    "livenessProbe": {
+                      "failureThreshold": 3,
+                      "httpGet": {
+                        "path": "/v1/health/live",
+                        "port": "http"
+                      },
+                      "periodSeconds": 20,
+                      "timeoutSeconds": 3
+                    },
+                    "name": "runtime",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "8",
+                        "ephemeral-storage": "12Gi",
+                        "memory": "24Gi",
+                        "nvidia.com/gpu": "1"
+                      },
+                      "requests": {
+                        "cpu": "4",
+                        "ephemeral-storage": "4Gi",
+                        "memory": "12Gi",
+                        "nvidia.com/gpu": "1"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true
+                    },
+                    "startupProbe": {
+                      "failureThreshold": 180,
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      },
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "shm"
+                      }
+                    ]
+                  }
+                ],
+                "nodeSelector": {
+                  "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                  "kubernetes.io/arch": "amd64"
+                },
+                "securityContext": {
+                  "fsGroup": 10001,
+                  "runAsGroup": 10001,
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "terminationGracePeriodSeconds": 30,
+                "tolerations": [
+                  {
+                    "effect": "NoSchedule",
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference"
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "4Gi"
+                    },
+                    "name": "tmp"
+                  },
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "2Gi"
+                    },
+                    "name": "shm"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "cellpose-cpsam-v2",
+              "fs2-serve.nebius.ai/model-id": "cellpose-cpsam-v2"
+            },
+            "name": "cellpose-cpsam-v2",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8000,
+                "targetPort": "http"
+              }
+            ],
+            "selector": {
+              "app.kubernetes.io/name": "cellpose-cpsam-v2"
+            },
+            "type": "ClusterIP"
+          }
+        }
+      ],
+      "runtimeContainerName": "runtime",
+      "runtimeProfile": "custom",
+      "templateDigest": "sha256:4ade005981918c9e8301f493cb44a0f0ad0d76bb79f4b63bbc6e56f931ee9211"
+    },
+    {
+      "modelRef": "sam2-1-hiera-large",
+      "primaryServiceName": "sam2-1-hiera-large",
+      "primaryServicePort": 8000,
+      "primaryWorkloadName": "sam2-1-hiera-large",
+      "resources": [
+        {
+          "apiVersion": "v1",
+          "automountServiceAccountToken": false,
+          "kind": "ServiceAccount",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "sam2-1-hiera-large",
+              "app.kubernetes.io/part-of": "fs2-serve"
+            },
+            "name": "sam2-1-hiera-large",
+            "namespace": "fs2-models"
+          }
+        },
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "sam2-1-hiera-large",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "sam2-1-hiera-large"
+            },
+            "name": "sam2-1-hiera-large",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "replicas": 0,
+            "revisionHistoryLimit": 2,
+            "selector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "sam2-1-hiera-large"
+              }
+            },
+            "strategy": {
+              "type": "Recreate"
+            },
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app.kubernetes.io/component": "model-runtime",
+                  "app.kubernetes.io/name": "sam2-1-hiera-large",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2-serve.nebius.ai/model-id": "sam2-1-hiera-large"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "env": [
+                      {
+                        "name": "HOME",
+                        "value": "/tmp"
+                      },
+                      {
+                        "name": "XDG_CACHE_HOME",
+                        "value": "/tmp/cache"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/sam2@sha256:8a1b659d53b9ed47edb381e3086ac3768b13248ef6a3ee733e89c733597bd24c",
+                    "imagePullPolicy": "IfNotPresent",
+                    "livenessProbe": {
+                      "failureThreshold": 3,
+                      "httpGet": {
+                        "path": "/v1/health/live",
+                        "port": "http"
+                      },
+                      "periodSeconds": 20,
+                      "timeoutSeconds": 3
+                    },
+                    "name": "runtime",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "12",
+                        "ephemeral-storage": "32Gi",
+                        "memory": "64Gi",
+                        "nvidia.com/gpu": "1"
+                      },
+                      "requests": {
+                        "cpu": "4",
+                        "ephemeral-storage": "8Gi",
+                        "memory": "24Gi",
+                        "nvidia.com/gpu": "1"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true
+                    },
+                    "startupProbe": {
+                      "failureThreshold": 180,
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      },
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "shm"
+                      }
+                    ]
+                  }
+                ],
+                "enableServiceLinks": false,
+                "nodeSelector": {
+                  "accelerator.fs2.nebius/class": "nvidia-h100-sxm5-80gb",
+                  "kubernetes.io/arch": "amd64"
+                },
+                "securityContext": {
+                  "fsGroup": 10001,
+                  "runAsGroup": 10001,
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "serviceAccountName": "sam2-1-hiera-large",
+                "terminationGracePeriodSeconds": 30,
+                "tolerations": [
+                  {
+                    "effect": "NoSchedule",
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference"
+                  }
+                ],
+                "volumes": [
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "32Gi"
+                    },
+                    "name": "tmp"
+                  },
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "8Gi"
+                    },
+                    "name": "shm"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "sam2-1-hiera-large",
+              "fs2-serve.nebius.ai/model-id": "sam2-1-hiera-large"
+            },
+            "name": "sam2-1-hiera-large",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8000,
+                "targetPort": "http"
+              }
+            ],
+            "selector": {
+              "app.kubernetes.io/name": "sam2-1-hiera-large"
+            },
+            "type": "ClusterIP"
+          }
+        }
+      ],
+      "runtimeContainerName": "runtime",
+      "runtimeProfile": "custom",
+      "templateDigest": "sha256:9ce29ef882a14ddd48903b0345147876771ef6d19aec51e28336019e720d63ae"
+    },
+    {
+      "modelRef": "ace-step-1-5",
+      "primaryServiceName": "ace-step-1-5",
+      "primaryServicePort": 8000,
+      "primaryWorkloadName": "ace-step-1-5",
+      "resources": [
+        {
+          "apiVersion": "v1",
+          "automountServiceAccountToken": false,
+          "kind": "ServiceAccount",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "ace-step-1-5",
+              "app.kubernetes.io/part-of": "fs2-serve"
+            },
+            "name": "ace-step-1-5",
+            "namespace": "fs2-models"
+          }
+        },
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "ace-step-1-5",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "ace-step-1-5"
+            },
+            "name": "ace-step-1-5",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "replicas": 1,
+            "revisionHistoryLimit": 2,
+            "selector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "ace-step-1-5"
+              }
+            },
+            "strategy": {
+              "type": "Recreate"
+            },
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app.kubernetes.io/component": "model-runtime",
+                  "app.kubernetes.io/name": "ace-step-1-5",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2-serve.nebius.ai/model-id": "ace-step-1-5"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "env": [
+                      {
+                        "name": "HOME",
+                        "value": "/tmp"
+                      },
+                      {
+                        "name": "USER",
+                        "value": "acestep"
+                      },
+                      {
+                        "name": "XDG_CACHE_HOME",
+                        "value": "/tmp/.cache"
+                      },
+                      {
+                        "name": "ACESTEP_PROJECT_ROOT",
+                        "value": "/tmp/acestep-project"
+                      },
+                      {
+                        "name": "ACESTEP_CHECKPOINTS_DIR",
+                        "value": "/app/checkpoints"
+                      },
+                      {
+                        "name": "ACESTEP_TMPDIR",
+                        "value": "/tmp/acestep"
+                      },
+                      {
+                        "name": "TRITON_CACHE_DIR",
+                        "value": "/tmp/triton"
+                      },
+                      {
+                        "name": "TORCHINDUCTOR_CACHE_DIR",
+                        "value": "/tmp/torchinductor"
+                      },
+                      {
+                        "name": "ACESTEP_MODE",
+                        "value": "api"
+                      },
+                      {
+                        "name": "ACESTEP_API_HOST",
+                        "value": "127.0.0.1"
+                      },
+                      {
+                        "name": "ACESTEP_API_PORT",
+                        "value": "8001"
+                      },
+                      {
+                        "name": "ACESTEP_NO_INIT",
+                        "value": "false"
+                      },
+                      {
+                        "name": "ACESTEP_INIT_LLM",
+                        "value": "true"
+                      },
+                      {
+                        "name": "ACESTEP_CONFIG_PATH",
+                        "value": "acestep-v15-turbo"
+                      },
+                      {
+                        "name": "ACESTEP_LM_MODEL_PATH",
+                        "value": "acestep-5Hz-lm-4B"
+                      },
+                      {
+                        "name": "ACESTEP_LM_BACKEND",
+                        "value": "vllm"
+                      },
+                      {
+                        "name": "ACESTEP_DOWNLOAD_SOURCE",
+                        "value": "huggingface"
+                      },
+                      {
+                        "name": "ACESTEP_QUEUE_MAXSIZE",
+                        "value": "1"
+                      },
+                      {
+                        "name": "ACESTEP_QUEUE_WORKERS",
+                        "value": "1"
+                      },
+                      {
+                        "name": "TOKENIZERS_PARALLELISM",
+                        "value": "false"
+                      },
+                      {
+                        "name": "HF_HUB_DISABLE_TELEMETRY",
+                        "value": "1"
+                      },
+                      {
+                        "name": "UV_NO_SYNC",
+                        "value": "1"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-models/general-media/ace-step-1-5-runtime@sha256:95652cd780c78a1b1a7f6f0335530430f0ae53d96c7c12d59f9f39fa23d38567",
+                    "imagePullPolicy": "IfNotPresent",
+                    "name": "acestep",
+                    "ports": [
+                      {
+                        "containerPort": 8001,
+                        "name": "upstream"
+                      }
+                    ],
+                    "resources": {
+                      "limits": {
+                        "cpu": "15",
+                        "ephemeral-storage": "8Gi",
+                        "memory": "50Gi",
+                        "nvidia.com/gpu": "1"
+                      },
+                      "requests": {
+                        "cpu": "8",
+                        "ephemeral-storage": "4Gi",
+                        "memory": "36Gi",
+                        "nvidia.com/gpu": "1"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "runAsGroup": 1000,
+                      "runAsUser": 1000
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/app/checkpoints",
+                        "name": "checkpoints"
+                      },
+                      {
+                        "mountPath": "/app/.cache",
+                        "name": "runtime-cache"
+                      },
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      },
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "shm"
+                      }
+                    ]
+                  },
+                  {
+                    "env": [
+                      {
+                        "name": "HOME",
+                        "value": "/tmp"
+                      },
+                      {
+                        "name": "ACESTEP_UPSTREAM_URL",
+                        "value": "http://127.0.0.1:8001"
+                      },
+                      {
+                        "name": "ACESTEP_GENERATION_TIMEOUT_SECONDS",
+                        "value": "900"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/ace-step-adapter@sha256:6ea30ef78c6d0480c3995c77701274e9a67a0e69665a8f3804d25f75128812e8",
+                    "imagePullPolicy": "IfNotPresent",
+                    "livenessProbe": {
+                      "failureThreshold": 3,
+                      "httpGet": {
+                        "path": "/v1/health/live",
+                        "port": "http"
+                      },
+                      "periodSeconds": 20,
+                      "timeoutSeconds": 3
+                    },
+                    "name": "adapter",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "failureThreshold": 3,
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "1",
+                        "ephemeral-storage": "1Gi",
+                        "memory": "1Gi"
+                      },
+                      "requests": {
+                        "cpu": "250m",
+                        "ephemeral-storage": "256Mi",
+                        "memory": "256Mi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true,
+                      "runAsGroup": 10001,
+                      "runAsUser": 10001
+                    },
+                    "startupProbe": {
+                      "failureThreshold": 360,
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      }
+                    ]
+                  }
+                ],
+                "enableServiceLinks": false,
+                "initContainers": [
+                  {
+                    "args": [
+                      "/app/.venv/bin/python - <<'PY'\nfrom huggingface_hub import snapshot_download\nsnapshot_download(\n    repo_id=\"ACE-Step/Ace-Step1.5\",\n    revision=\"19671f406d603126926c1b7e2adc169acbcade22\",\n    local_dir=\"/app/checkpoints\",\n    local_dir_use_symlinks=False,\n)\nsnapshot_download(\n    repo_id=\"ACE-Step/acestep-5Hz-lm-4B\",\n    revision=\"0a3ec94b557aea7d508da38b31cfe7341f6ff737\",\n    local_dir=\"/app/checkpoints/acestep-5Hz-lm-4B\",\n    local_dir_use_symlinks=False,\n)\nPY\n"
+                    ],
+                    "command": [
+                      "/bin/bash",
+                      "-ec"
+                    ],
+                    "env": [
+                      {
+                        "name": "HOME",
+                        "value": "/tmp"
+                      },
+                      {
+                        "name": "USER",
+                        "value": "acestep"
+                      },
+                      {
+                        "name": "HF_HUB_DISABLE_TELEMETRY",
+                        "value": "1"
+                      },
+                      {
+                        "name": "UV_NO_SYNC",
+                        "value": "1"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-models/general-media/ace-step-1-5-runtime@sha256:95652cd780c78a1b1a7f6f0335530430f0ae53d96c7c12d59f9f39fa23d38567",
+                    "imagePullPolicy": "IfNotPresent",
+                    "name": "materialize-models",
+                    "resources": {
+                      "limits": {
+                        "cpu": "8",
+                        "ephemeral-storage": "4Gi",
+                        "memory": "8Gi"
+                      },
+                      "requests": {
+                        "cpu": "2",
+                        "ephemeral-storage": "2Gi",
+                        "memory": "4Gi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "runAsGroup": 1000,
+                      "runAsUser": 1000
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/app/checkpoints",
+                        "name": "checkpoints"
+                      },
+                      {
+                        "mountPath": "/app/.cache",
+                        "name": "runtime-cache"
+                      },
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      }
+                    ]
+                  }
+                ],
+                "nodeSelector": {
+                  "accelerator.fs2.nebius/class": "nvidia-l40s-48gb",
+                  "kubernetes.io/arch": "amd64"
+                },
+                "securityContext": {
+                  "fsGroup": 1000,
+                  "fsGroupChangePolicy": "OnRootMismatch",
+                  "runAsNonRoot": true,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "serviceAccountName": "ace-step-1-5",
+                "terminationGracePeriodSeconds": 60,
+                "tolerations": [
+                  {
+                    "effect": "NoSchedule",
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference"
+                  }
+                ],
+                "volumes": [
+                  {
+                    "name": "checkpoints",
+                    "persistentVolumeClaim": {
+                      "claimName": "ace-step-1-5-cache"
+                    }
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "8Gi"
+                    },
+                    "name": "tmp"
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "8Gi"
+                    },
+                    "name": "runtime-cache"
+                  },
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "8Gi"
+                    },
+                    "name": "shm"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "ace-step-1-5",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "ace-step-1-5"
+            },
+            "name": "ace-step-1-5",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8000,
+                "targetPort": "http"
+              }
+            ],
+            "selector": {
+              "app.kubernetes.io/name": "ace-step-1-5"
+            },
+            "type": "ClusterIP"
+          }
+        }
+      ],
+      "runtimeContainerName": "acestep",
+      "runtimeProfile": "custom",
+      "templateDigest": "sha256:e023f08aefabe031d3ee32683e97f5b8d37a050ea95ab13e376d5b144d24a289"
+    },
+    {
+      "modelRef": "wan2-2-t2v-nim",
+      "primaryServiceName": "wan2-2-t2v-nim",
+      "primaryServicePort": 8000,
+      "primaryWorkloadName": "wan2-2-t2v-nim",
+      "resources": [
+        {
+          "apiVersion": "v1",
+          "automountServiceAccountToken": false,
+          "kind": "ServiceAccount",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "wan2-2-t2v-nim",
+              "app.kubernetes.io/part-of": "fs2-serve"
+            },
+            "name": "wan2-2-t2v-nim",
+            "namespace": "fs2-models"
+          }
+        },
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "wan2-2-t2v-nim",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "wan2-2-t2v-nim"
+            },
+            "name": "wan2-2-t2v-nim",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "replicas": 0,
+            "revisionHistoryLimit": 2,
+            "selector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "wan2-2-t2v-nim"
+              }
+            },
+            "strategy": {
+              "type": "Recreate"
+            },
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app.kubernetes.io/component": "model-runtime",
+                  "app.kubernetes.io/name": "wan2-2-t2v-nim",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2-serve.nebius.ai/model-id": "wan2-2-t2v-nim"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "env": [
+                      {
+                        "name": "NGC_API_KEY",
+                        "valueFrom": {
+                          "secretKeyRef": {
+                            "key": "NGC_API_KEY",
+                            "name": "wan2-ngc-api"
+                          }
+                        }
+                      },
+                      {
+                        "name": "NIM_MODEL_VARIANT",
+                        "value": "t2v"
+                      },
+                      {
+                        "name": "NIM_MODEL_PRECISION",
+                        "value": "bf16"
+                      },
+                      {
+                        "name": "NIM_HTTP_API_PORT",
+                        "value": "9000"
+                      },
+                      {
+                        "name": "NIM_CACHE_PATH",
+                        "value": "/opt/nim/.cache"
+                      }
+                    ],
+                    "image": "nvcr.io/nim/wan-ai/wan2.2@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b",
+                    "imagePullPolicy": "IfNotPresent",
+                    "name": "nim",
+                    "ports": [
+                      {
+                        "containerPort": 9000,
+                        "name": "nim-http"
+                      }
+                    ],
+                    "resources": {
+                      "limits": {
+                        "cpu": "15",
+                        "ephemeral-storage": "32Gi",
+                        "memory": "128Gi",
+                        "nvidia.com/gpu": "1"
+                      },
+                      "requests": {
+                        "cpu": "12",
+                        "ephemeral-storage": "16Gi",
+                        "memory": "96Gi",
+                        "nvidia.com/gpu": "1"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "runAsGroup": 1000,
+                      "runAsUser": 1000
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/opt/nim/.cache",
+                        "name": "cache"
+                      },
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      },
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "shm"
+                      }
+                    ]
+                  },
+                  {
+                    "env": [
+                      {
+                        "name": "HOME",
+                        "value": "/tmp"
+                      },
+                      {
+                        "name": "WAN_VARIANT",
+                        "value": "t2v"
+                      },
+                      {
+                        "name": "WAN_UPSTREAM_URL",
+                        "value": "http://127.0.0.1:9000"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:c2cd8a47598c24285f9c4362f013d80cf7807d72babe39a958e29cf828ae66a0",
+                    "imagePullPolicy": "IfNotPresent",
+                    "livenessProbe": {
+                      "failureThreshold": 3,
+                      "httpGet": {
+                        "path": "/v1/health/live",
+                        "port": "http"
+                      },
+                      "periodSeconds": 20,
+                      "timeoutSeconds": 3
+                    },
+                    "name": "adapter",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "2",
+                        "ephemeral-storage": "4Gi",
+                        "memory": "2Gi"
+                      },
+                      "requests": {
+                        "cpu": "500m",
+                        "ephemeral-storage": "1Gi",
+                        "memory": "512Mi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true,
+                      "runAsGroup": 10001,
+                      "runAsUser": 10001
+                    },
+                    "startupProbe": {
+                      "failureThreshold": 360,
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      }
+                    ]
+                  }
+                ],
+                "enableServiceLinks": false,
+                "imagePullSecrets": [
+                  {
+                    "name": "wan2-ngc-pull"
+                  }
+                ],
+                "nodeSelector": {
+                  "accelerator.fs2.nebius/class": "nvidia-h200-sxm5-141gb",
+                  "kubernetes.io/arch": "amd64"
+                },
+                "securityContext": {
+                  "fsGroup": 1000,
+                  "runAsNonRoot": true,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "serviceAccountName": "wan2-2-t2v-nim",
+                "terminationGracePeriodSeconds": 60,
+                "tolerations": [
+                  {
+                    "effect": "NoSchedule",
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference"
+                  }
+                ],
+                "volumes": [
+                  {
+                    "name": "cache",
+                    "persistentVolumeClaim": {
+                      "claimName": "wan2-2-t2v-nim-cache"
+                    }
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "32Gi"
+                    },
+                    "name": "tmp"
+                  },
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "16Gi"
+                    },
+                    "name": "shm"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "wan2-2-t2v-nim",
+              "fs2-serve.nebius.ai/model-id": "wan2-2-t2v-nim"
+            },
+            "name": "wan2-2-t2v-nim",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8000,
+                "targetPort": "http"
+              }
+            ],
+            "selector": {
+              "app.kubernetes.io/name": "wan2-2-t2v-nim"
+            },
+            "type": "ClusterIP"
+          }
+        }
+      ],
+      "runtimeContainerName": "nim",
+      "runtimeProfile": "custom",
+      "templateDigest": "sha256:736eb1fa72d6bc68cc48c8ae3b5730ef4f381c36aa245869ae7c7bfb5442338d"
+    },
+    {
+      "modelRef": "wan2-2-i2v-nim",
+      "primaryServiceName": "wan2-2-i2v-nim",
+      "primaryServicePort": 8000,
+      "primaryWorkloadName": "wan2-2-i2v-nim",
+      "resources": [
+        {
+          "apiVersion": "v1",
+          "automountServiceAccountToken": false,
+          "kind": "ServiceAccount",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "wan2-2-i2v-nim",
+              "app.kubernetes.io/part-of": "fs2-serve"
+            },
+            "name": "wan2-2-i2v-nim",
+            "namespace": "fs2-models"
+          }
+        },
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "wan2-2-i2v-nim",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2-serve.nebius.ai/model-id": "wan2-2-i2v-nim"
+            },
+            "name": "wan2-2-i2v-nim",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "replicas": 0,
+            "revisionHistoryLimit": 2,
+            "selector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "wan2-2-i2v-nim"
+              }
+            },
+            "strategy": {
+              "type": "Recreate"
+            },
+            "template": {
+              "metadata": {
+                "labels": {
+                  "app.kubernetes.io/component": "model-runtime",
+                  "app.kubernetes.io/name": "wan2-2-i2v-nim",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2-serve.nebius.ai/model-id": "wan2-2-i2v-nim"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "env": [
+                      {
+                        "name": "NGC_API_KEY",
+                        "valueFrom": {
+                          "secretKeyRef": {
+                            "key": "NGC_API_KEY",
+                            "name": "wan2-ngc-api"
+                          }
+                        }
+                      },
+                      {
+                        "name": "NIM_MODEL_VARIANT",
+                        "value": "i2v"
+                      },
+                      {
+                        "name": "NIM_MODEL_PRECISION",
+                        "value": "bf16"
+                      },
+                      {
+                        "name": "NIM_HTTP_API_PORT",
+                        "value": "9000"
+                      },
+                      {
+                        "name": "NIM_CACHE_PATH",
+                        "value": "/opt/nim/.cache"
+                      }
+                    ],
+                    "image": "nvcr.io/nim/wan-ai/wan2.2@sha256:05c1d390af4eec607b654172fa889ae8cef2b2c238e84516514e61e5ba52e63b",
+                    "imagePullPolicy": "IfNotPresent",
+                    "name": "nim",
+                    "ports": [
+                      {
+                        "containerPort": 9000,
+                        "name": "nim-http"
+                      }
+                    ],
+                    "resources": {
+                      "limits": {
+                        "cpu": "15",
+                        "ephemeral-storage": "32Gi",
+                        "memory": "128Gi",
+                        "nvidia.com/gpu": "1"
+                      },
+                      "requests": {
+                        "cpu": "12",
+                        "ephemeral-storage": "16Gi",
+                        "memory": "96Gi",
+                        "nvidia.com/gpu": "1"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "runAsGroup": 1000,
+                      "runAsUser": 1000
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/opt/nim/.cache",
+                        "name": "cache"
+                      },
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      },
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "shm"
+                      }
+                    ]
+                  },
+                  {
+                    "env": [
+                      {
+                        "name": "HOME",
+                        "value": "/tmp"
+                      },
+                      {
+                        "name": "WAN_VARIANT",
+                        "value": "i2v"
+                      },
+                      {
+                        "name": "WAN_UPSTREAM_URL",
+                        "value": "http://127.0.0.1:9000"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/general-media/wan2-adapter@sha256:c2cd8a47598c24285f9c4362f013d80cf7807d72babe39a958e29cf828ae66a0",
+                    "imagePullPolicy": "IfNotPresent",
+                    "livenessProbe": {
+                      "failureThreshold": 3,
+                      "httpGet": {
+                        "path": "/v1/health/live",
+                        "port": "http"
+                      },
+                      "periodSeconds": 20,
+                      "timeoutSeconds": 3
+                    },
+                    "name": "adapter",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "2",
+                        "ephemeral-storage": "4Gi",
+                        "memory": "2Gi"
+                      },
+                      "requests": {
+                        "cpu": "500m",
+                        "ephemeral-storage": "1Gi",
+                        "memory": "512Mi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      },
+                      "readOnlyRootFilesystem": true,
+                      "runAsGroup": 10001,
+                      "runAsUser": 10001
+                    },
+                    "startupProbe": {
+                      "failureThreshold": 360,
+                      "httpGet": {
+                        "path": "/v1/health/ready",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5,
+                      "timeoutSeconds": 3
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/tmp",
+                        "name": "tmp"
+                      }
+                    ]
+                  }
+                ],
+                "enableServiceLinks": false,
+                "imagePullSecrets": [
+                  {
+                    "name": "wan2-ngc-pull"
+                  }
+                ],
+                "nodeSelector": {
+                  "accelerator.fs2.nebius/class": "nvidia-h200-sxm5-141gb",
+                  "kubernetes.io/arch": "amd64"
+                },
+                "securityContext": {
+                  "fsGroup": 1000,
+                  "runAsNonRoot": true,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "serviceAccountName": "wan2-2-i2v-nim",
+                "terminationGracePeriodSeconds": 60,
+                "tolerations": [
+                  {
+                    "effect": "NoSchedule",
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference"
+                  }
+                ],
+                "volumes": [
+                  {
+                    "name": "cache",
+                    "persistentVolumeClaim": {
+                      "claimName": "wan2-2-i2v-nim-cache"
+                    }
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "32Gi"
+                    },
+                    "name": "tmp"
+                  },
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "16Gi"
+                    },
+                    "name": "shm"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "wan2-2-i2v-nim",
+              "fs2-serve.nebius.ai/model-id": "wan2-2-i2v-nim"
+            },
+            "name": "wan2-2-i2v-nim",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8000,
+                "targetPort": "http"
+              }
+            ],
+            "selector": {
+              "app.kubernetes.io/name": "wan2-2-i2v-nim"
+            },
+            "type": "ClusterIP"
+          }
+        }
+      ],
+      "runtimeContainerName": "nim",
+      "runtimeProfile": "custom",
+      "templateDigest": "sha256:55b5e2e6df05d5a28b2c83ebd6ce57650df60d0d8b3bd27f21f8f5682c004846"
+    },
+    {
+      "modelRef": "mindguard-4b",
+      "primaryServiceName": "fs2-mindguard-r20260916-4b",
+      "primaryServicePort": 8000,
+      "primaryWorkloadName": "fs2-mindguard-r20260916-4b",
+      "resources": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/component": "model-runtime",
+              "app.kubernetes.io/name": "fs2-mindguard-r20260916-4b",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2.nebius/task": "fs2-mindguard-r20260916"
+            },
+            "name": "fs2-mindguard-r20260916-4b",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "replicas": 0,
+            "revisionHistoryLimit": 2,
+            "selector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "fs2-mindguard-r20260916-4b"
+              }
+            },
+            "strategy": {
+              "type": "Recreate"
+            },
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "fs2.nebius/enforcement": "observe",
+                  "fs2.nebius/model-revision": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+                  "fs2.nebius/model-role": "safety-classifier"
+                },
+                "labels": {
+                  "app.kubernetes.io/component": "model-runtime",
+                  "app.kubernetes.io/name": "fs2-mindguard-r20260916-4b",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2.nebius/task": "fs2-mindguard-r20260916"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "args": [
+                      "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2",
+                      "--served-model-name",
+                      "mindguard-4b",
+                      "--host",
+                      "0.0.0.0",
+                      "--port",
+                      "8000",
+                      "--dtype",
+                      "bfloat16",
+                      "--max-model-len",
+                      "32768",
+                      "--tensor-parallel-size",
+                      "1",
+                      "--gpu-memory-utilization",
+                      "0.80",
+                      "--generation-config",
+                      "vllm",
+                      "--chat-template",
+                      "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2/chat_template.jinja",
+                      "--enforce-eager"
+                    ],
+                    "env": [
+                      {
+                        "name": "HF_HUB_OFFLINE",
+                        "value": "1"
+                      },
+                      {
+                        "name": "TRANSFORMERS_OFFLINE",
+                        "value": "1"
+                      },
+                      {
+                        "name": "VLLM_NO_USAGE_STATS",
+                        "value": "1"
+                      },
+                      {
+                        "name": "HF_HOME",
+                        "value": "/runtime-cache/huggingface"
+                      },
+                      {
+                        "name": "VLLM_CACHE_ROOT",
+                        "value": "/runtime-cache/vllm"
+                      },
+                      {
+                        "name": "TRITON_CACHE_DIR",
+                        "value": "/runtime-cache/triton"
+                      },
+                      {
+                        "name": "XDG_CACHE_HOME",
+                        "value": "/runtime-cache/xdg"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+                    "livenessProbe": {
+                      "periodSeconds": 20,
+                      "tcpSocket": {
+                        "port": "http"
+                      }
+                    },
+                    "name": "vllm",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "12",
+                        "memory": "64Gi",
+                        "nvidia.com/gpu": "1"
+                      },
+                      "requests": {
+                        "cpu": "4",
+                        "memory": "32Gi",
+                        "nvidia.com/gpu": "1"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      }
+                    },
+                    "startupProbe": {
+                      "failureThreshold": 180,
+                      "httpGet": {
+                        "path": "/health",
+                        "port": "http"
+                      },
+                      "periodSeconds": 10
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/models",
+                        "name": "models",
+                        "readOnly": true
+                      },
+                      {
+                        "mountPath": "/runtime-cache",
+                        "name": "runtime-cache"
+                      },
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "shm"
+                      }
+                    ]
+                  }
+                ],
+                "enableServiceLinks": false,
+                "initContainers": [
+                  {
+                    "command": [
+                      "python3",
+                      "-c",
+                      "import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id=os.environ['MODEL_REPO'], revision=os.environ['MODEL_REVISION'], local_dir=os.environ['MODEL_PATH'], allow_patterns=['*.json','*.jinja','*.txt','*.safetensors'])"
+                    ],
+                    "env": [
+                      {
+                        "name": "MODEL_REPO",
+                        "value": "swordhealth/MindGuard-4B"
+                      },
+                      {
+                        "name": "MODEL_REVISION",
+                        "value": "f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+                      },
+                      {
+                        "name": "MODEL_PATH",
+                        "value": "/models/mindguard-4b/f66279d31561e5e96736cb9cc5c2ec6e7d49d1c2"
+                      },
+                      {
+                        "name": "HF_HOME",
+                        "value": "/models/.huggingface"
+                      },
+                      {
+                        "name": "HF_HUB_DISABLE_TELEMETRY",
+                        "value": "1"
+                      },
+                      {
+                        "name": "HF_TOKEN",
+                        "valueFrom": {
+                          "secretKeyRef": {
+                            "key": "token",
+                            "name": "fs2-mindguard-r20260916-hf"
+                          }
+                        }
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+                    "name": "hydrate",
+                    "resources": {
+                      "limits": {
+                        "cpu": "4",
+                        "memory": "8Gi"
+                      },
+                      "requests": {
+                        "cpu": "1",
+                        "memory": "2Gi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      }
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/models",
+                        "name": "models"
+                      }
+                    ]
+                  }
+                ],
+                "nodeSelector": {
+                  "accelerator.fs2.nebius/class": "nvidia-l40s-48gb",
+                  "capacity.fs2.nebius/type": "regular"
+                },
+                "securityContext": {
+                  "fsGroup": 1000,
+                  "runAsGroup": 1000,
+                  "runAsNonRoot": true,
+                  "runAsUser": 1000,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "tolerations": [
+                  {
+                    "effect": "NoSchedule",
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference"
+                  }
+                ],
+                "volumes": [
+                  {
+                    "name": "models",
+                    "persistentVolumeClaim": {
+                      "claimName": "fs2-mindguard-r20260916-cache"
+                    }
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "12Gi"
+                    },
+                    "name": "runtime-cache"
+                  },
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "8Gi"
+                    },
+                    "name": "shm"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/component": "model-runtime",
+              "app.kubernetes.io/name": "fs2-mindguard-r20260916-4b",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2.nebius/task": "fs2-mindguard-r20260916"
+            },
+            "name": "fs2-mindguard-r20260916-4b",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8000,
+                "targetPort": "http"
+              }
+            ],
+            "selector": {
+              "app.kubernetes.io/name": "fs2-mindguard-r20260916-4b"
+            }
+          }
+        }
+      ],
+      "runtimeContainerName": "vllm",
+      "runtimeProfile": "custom",
+      "templateDigest": "sha256:9db4655f8a2330bf141202c1e5245a6981de25e3f5614632c489e997023e7cf3"
+    },
+    {
+      "modelRef": "mindguard-8b",
+      "primaryServiceName": "fs2-mindguard-r20260916-8b",
+      "primaryServicePort": 8000,
+      "primaryWorkloadName": "fs2-mindguard-r20260916-8b",
+      "resources": [
+        {
+          "apiVersion": "apps/v1",
+          "kind": "Deployment",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/component": "model-runtime",
+              "app.kubernetes.io/name": "fs2-mindguard-r20260916-8b",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2.nebius/task": "fs2-mindguard-r20260916"
+            },
+            "name": "fs2-mindguard-r20260916-8b",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "replicas": 0,
+            "revisionHistoryLimit": 2,
+            "selector": {
+              "matchLabels": {
+                "app.kubernetes.io/name": "fs2-mindguard-r20260916-8b"
+              }
+            },
+            "strategy": {
+              "type": "Recreate"
+            },
+            "template": {
+              "metadata": {
+                "annotations": {
+                  "fs2.nebius/enforcement": "observe",
+                  "fs2.nebius/model-revision": "a24baa872d902224b3de80e912ad1f4201b514ed",
+                  "fs2.nebius/model-role": "safety-classifier"
+                },
+                "labels": {
+                  "app.kubernetes.io/component": "model-runtime",
+                  "app.kubernetes.io/name": "fs2-mindguard-r20260916-8b",
+                  "app.kubernetes.io/part-of": "fs2-serve",
+                  "fs2.nebius/task": "fs2-mindguard-r20260916"
+                }
+              },
+              "spec": {
+                "automountServiceAccountToken": false,
+                "containers": [
+                  {
+                    "args": [
+                      "/models/mindguard-8b/a24baa872d902224b3de80e912ad1f4201b514ed",
+                      "--served-model-name",
+                      "mindguard-8b",
+                      "--host",
+                      "0.0.0.0",
+                      "--port",
+                      "8000",
+                      "--dtype",
+                      "bfloat16",
+                      "--max-model-len",
+                      "32768",
+                      "--tensor-parallel-size",
+                      "1",
+                      "--gpu-memory-utilization",
+                      "0.80",
+                      "--generation-config",
+                      "vllm",
+                      "--chat-template",
+                      "/models/mindguard-8b/a24baa872d902224b3de80e912ad1f4201b514ed/chat_template.jinja",
+                      "--enforce-eager"
+                    ],
+                    "env": [
+                      {
+                        "name": "HF_HUB_OFFLINE",
+                        "value": "1"
+                      },
+                      {
+                        "name": "TRANSFORMERS_OFFLINE",
+                        "value": "1"
+                      },
+                      {
+                        "name": "VLLM_NO_USAGE_STATS",
+                        "value": "1"
+                      },
+                      {
+                        "name": "HF_HOME",
+                        "value": "/runtime-cache/huggingface"
+                      },
+                      {
+                        "name": "VLLM_CACHE_ROOT",
+                        "value": "/runtime-cache/vllm"
+                      },
+                      {
+                        "name": "TRITON_CACHE_DIR",
+                        "value": "/runtime-cache/triton"
+                      },
+                      {
+                        "name": "XDG_CACHE_HOME",
+                        "value": "/runtime-cache/xdg"
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+                    "livenessProbe": {
+                      "periodSeconds": 20,
+                      "tcpSocket": {
+                        "port": "http"
+                      }
+                    },
+                    "name": "vllm",
+                    "ports": [
+                      {
+                        "containerPort": 8000,
+                        "name": "http"
+                      }
+                    ],
+                    "readinessProbe": {
+                      "httpGet": {
+                        "path": "/health",
+                        "port": "http"
+                      },
+                      "periodSeconds": 5
+                    },
+                    "resources": {
+                      "limits": {
+                        "cpu": "12",
+                        "memory": "64Gi",
+                        "nvidia.com/gpu": "1"
+                      },
+                      "requests": {
+                        "cpu": "4",
+                        "memory": "32Gi",
+                        "nvidia.com/gpu": "1"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      }
+                    },
+                    "startupProbe": {
+                      "failureThreshold": 180,
+                      "httpGet": {
+                        "path": "/health",
+                        "port": "http"
+                      },
+                      "periodSeconds": 10
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/models",
+                        "name": "models",
+                        "readOnly": true
+                      },
+                      {
+                        "mountPath": "/runtime-cache",
+                        "name": "runtime-cache"
+                      },
+                      {
+                        "mountPath": "/dev/shm",
+                        "name": "shm"
+                      }
+                    ]
+                  }
+                ],
+                "enableServiceLinks": false,
+                "initContainers": [
+                  {
+                    "command": [
+                      "python3",
+                      "-c",
+                      "import os; from huggingface_hub import snapshot_download; snapshot_download(repo_id=os.environ['MODEL_REPO'], revision=os.environ['MODEL_REVISION'], local_dir=os.environ['MODEL_PATH'], allow_patterns=['*.json','*.jinja','*.txt','*.safetensors'])"
+                    ],
+                    "env": [
+                      {
+                        "name": "MODEL_REPO",
+                        "value": "swordhealth/MindGuard-8B"
+                      },
+                      {
+                        "name": "MODEL_REVISION",
+                        "value": "a24baa872d902224b3de80e912ad1f4201b514ed"
+                      },
+                      {
+                        "name": "MODEL_PATH",
+                        "value": "/models/mindguard-8b/a24baa872d902224b3de80e912ad1f4201b514ed"
+                      },
+                      {
+                        "name": "HF_HOME",
+                        "value": "/models/.huggingface"
+                      },
+                      {
+                        "name": "HF_HUB_DISABLE_TELEMETRY",
+                        "value": "1"
+                      },
+                      {
+                        "name": "HF_TOKEN",
+                        "valueFrom": {
+                          "secretKeyRef": {
+                            "key": "token",
+                            "name": "fs2-mindguard-r20260916-hf"
+                          }
+                        }
+                      }
+                    ],
+                    "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/vllm-openai@sha256:2286e8533ca8b6bc777594bae30524f1426ba46ca21797524e06df6a94b06635",
+                    "name": "hydrate",
+                    "resources": {
+                      "limits": {
+                        "cpu": "4",
+                        "memory": "8Gi"
+                      },
+                      "requests": {
+                        "cpu": "1",
+                        "memory": "2Gi"
+                      }
+                    },
+                    "securityContext": {
+                      "allowPrivilegeEscalation": false,
+                      "capabilities": {
+                        "drop": [
+                          "ALL"
+                        ]
+                      }
+                    },
+                    "volumeMounts": [
+                      {
+                        "mountPath": "/models",
+                        "name": "models"
+                      }
+                    ]
+                  }
+                ],
+                "nodeSelector": {
+                  "accelerator.fs2.nebius/class": "nvidia-l40s-48gb",
+                  "capacity.fs2.nebius/type": "regular"
+                },
+                "securityContext": {
+                  "fsGroup": 1000,
+                  "runAsGroup": 1000,
+                  "runAsNonRoot": true,
+                  "runAsUser": 1000,
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "tolerations": [
+                  {
+                    "effect": "NoSchedule",
+                    "key": "dedicated",
+                    "operator": "Equal",
+                    "value": "fs2-inference"
+                  }
+                ],
+                "volumes": [
+                  {
+                    "name": "models",
+                    "persistentVolumeClaim": {
+                      "claimName": "fs2-mindguard-r20260916-cache"
+                    }
+                  },
+                  {
+                    "emptyDir": {
+                      "sizeLimit": "12Gi"
+                    },
+                    "name": "runtime-cache"
+                  },
+                  {
+                    "emptyDir": {
+                      "medium": "Memory",
+                      "sizeLimit": "8Gi"
+                    },
+                    "name": "shm"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "apiVersion": "v1",
+          "kind": "Service",
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/component": "model-runtime",
+              "app.kubernetes.io/name": "fs2-mindguard-r20260916-8b",
+              "app.kubernetes.io/part-of": "fs2-serve",
+              "fs2.nebius/task": "fs2-mindguard-r20260916"
+            },
+            "name": "fs2-mindguard-r20260916-8b",
+            "namespace": "fs2-models"
+          },
+          "spec": {
+            "ports": [
+              {
+                "name": "http",
+                "port": 8000,
+                "targetPort": "http"
+              }
+            ],
+            "selector": {
+              "app.kubernetes.io/name": "fs2-mindguard-r20260916-8b"
+            }
+          }
+        }
+      ],
+      "runtimeContainerName": "vllm",
+      "runtimeProfile": "custom",
+      "templateDigest": "sha256:cc35605643645e2cd7e9e9b17c3ee80da58d39bbb22341fe2a238b8cfb54dc6e"
+    }
+  ]
+}

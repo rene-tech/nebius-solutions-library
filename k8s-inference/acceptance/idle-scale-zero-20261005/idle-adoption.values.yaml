@@ -1,0 +1,19 @@
+# Merge fragment for the current fs2-serve-control-plane release. This is NOT a
+# standalone release configuration. Preserve the current immutable API/tools
+# images, execution map, database/Secret references, routes and sibling values.
+# Reproducible registration source: managed-runtime-adoptions.json plus the
+# already-versioned base registration, merged by retained_adoptions.py.
+modelController:
+  enabled: true
+  writesEnabled: true
+  infrastructureEnvelopeConfigMapName: fs2-idle-envelope-21ef2f1eac8f
+  rendererBundlesConfigMapName: fs2-idle-bundles-37bb372fe37d
+catalog:
+  leanRoutes:
+    enabled: true
+    configMapName: fs2-idle-routes-1a1ea92b8529
+    deploymentRuntimes: true
+# H200 registration is retained separately in
+# models/general-media/wan2-h200-existing-pool.json. Its additive scheduling CM
+# is fs2-scientific-scheduling-8c76afc02ad5. Preserve the exact contract digest
+# from the current release; do not replace it with an invented empty value.

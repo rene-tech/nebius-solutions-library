@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render task-owned public classifier resources; never mutates shared services."""
+"""Render a cold legacy preview; never apply over an adopted ModelDeployment."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ NAMESPACE = "fs2-models"
 PREFIX = "fs2-mindguard-r20260916"
 
 
-def render(model_id: str, replicas: int = 1, node: str | None = None) -> dict:
+def render(model_id: str, replicas: int = 0, node: str | None = None) -> dict:
     lock = json.loads((ROOT / "public-models.lock.json").read_text())
     model = lock["models"][model_id]
     name = f"{PREFIX}-{model_id.removeprefix('mindguard-')}"
@@ -103,7 +103,8 @@ def render(model_id: str, replicas: int = 1, node: str | None = None) -> dict:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model", choices=["mindguard-4b", "mindguard-8b"])
-    parser.add_argument("--replicas", type=int, choices=[0, 1], default=1)
+    parser.add_argument("--replicas", type=int, choices=[0, 1], default=0,
+                        help="legacy preview only; managed Apps use admin minReplicas instead")
     parser.add_argument("--node", help="pin repeated hardware comparisons to an existing L40S node")
     args = parser.parse_args()
     print(json.dumps(render(args.model, args.replicas, args.node), indent=2))

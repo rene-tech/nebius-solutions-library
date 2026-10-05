@@ -11,6 +11,7 @@ from pathlib import Path
 
 import httpx
 import httpx2
+import jsonschema
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 
@@ -50,7 +51,7 @@ async def main(args):
         receipt["identity"] = policy
         if args.model not in policy["models"]:
             raise RuntimeError("existing internal key lacks the exact model grant")
-        await VISUAL.list_tools(mcp)
+        tools = await VISUAL.list_tools(mcp)
         prefix = "idle-zero-20261005-" + args.model + "-" + args.run
         if args.model == "scvi-scanvi":
             artifact = await VISUAL.upload(http, args.model, args.fixture, "application/x-hdf5", prefix + "-upload")
@@ -78,23 +79,40 @@ async def main(args):
             arguments = FIXTURES.sam_requests()[0][1]
             tool = "segment_track_media_native"
         arguments.update(idempotency_key=prefix, wait_seconds=0)
+        assert tool in tools, "typed tool not published: " + tool
+        jsonschema.validate(arguments, tools[tool].input_schema)
+        receipt["tool_schema_sha256"] = hashlib.sha256(
+            json.dumps(tools[tool].input_schema, sort_keys=True).encode()).hexdigest()
+        if args.preflight_only:
+            receipt.update(status="preflight-only", tool=tool, inference_submitted=False)
+            (args.output / (prefix + ".json")).write_text(json.dumps(receipt, indent=2) + "\n")
+            print(json.dumps({"model": args.model, "tool": tool, "status": "preflight-only",
+                              "tool_schema_sha256": receipt["tool_schema_sha256"]}), flush=True)
+            return
         started = time.monotonic()
         try:
-            if args.direct:
+            if args.resume_operation:
+                accepted = {"id": args.resume_operation}
+                receipt.update(public_path="typed-MCP recovery", inference_submitted=False,
+                               recovery_of_existing_operation=True)
+            elif args.direct:
                 if not args.model.startswith("mindguard-"):
                     raise RuntimeError("direct compatibility route applies only to MindGuard")
                 body = {key: value for key, value in arguments.items() if key not in {"idempotency_key", "wait_seconds"}}
                 response = await http.post("/v1/mindguard/assess", json=body,
                     headers={"idempotency-key": prefix, "x-fs2-wait-seconds": "0"})
-                assert response.status_code == 202, response.status_code
-                accepted = response.json()
-                receipt.update(public_path="REST assess + typed-MCP poll", admission_status=202)
+                assert response.status_code in {200, 202}, response.status_code
+                accepted = (response.json() if response.status_code == 202 else
+                            {"id": response.headers["x-fs2-operation-id"]})
+                receipt.update(public_path="REST assess + typed-MCP poll", admission_status=response.status_code)
             else:
                 accepted = VISUAL.data(await mcp.call_tool(tool, arguments))
             receipt["operation_id"] = accepted["id"]
             (args.output / (prefix + ".json")).write_text(json.dumps(receipt, indent=2) + "\n")
             print(json.dumps({"model": args.model, "operation_id": accepted["id"], "status": "accepted"}), flush=True)
-            if args.direct:
+            if args.resume_operation:
+                replay_id = accepted["id"]
+            elif args.direct:
                 repeated = await http.post("/v1/mindguard/assess", json=body,
                     headers={"idempotency-key": prefix, "x-fs2-wait-seconds": "0"})
                 repeated.raise_for_status()
@@ -136,9 +154,18 @@ async def main(args):
                 semantic = MINDGUARD.validate(json.loads(raw), args.model)
             else:
                 semantic = MEDIA.validate_sam(raw, arguments["mode"])
-            receipt.update(status="passed", semantic=semantic, idempotency_verified=True)
+            receipt.update(status="passed", semantic=semantic, idempotency_verified=not args.resume_operation)
             print(json.dumps({"model": args.model, "operation_id": accepted["id"], "status": "passed",
                               "elapsed_seconds": receipt["elapsed_seconds"]}), flush=True)
+        except Exception as error:
+            receipt.update(status="failed", elapsed_seconds=time.monotonic()-started,
+                           client_error={"type": type(error).__name__, "message": str(error),
+                                         "code": getattr(error, "code", None),
+                                         "data": getattr(error, "data", None)})
+            print(json.dumps({"model": args.model, "operation_id": receipt.get("operation_id"),
+                              "status": "failed", "client_error_type": type(error).__name__,
+                              "client_error_code": getattr(error, "code", None)}), flush=True)
+            raise
         finally:
             (args.output / (prefix + ".json")).write_text(json.dumps(receipt, indent=2) + "\n")
 
@@ -149,6 +176,8 @@ if __name__ == "__main__":
                                            "ace-step-1-5", "wan2-2-t2v-nim", "wan2-2-i2v-nim",
                                            "mindguard-4b", "mindguard-8b"), required=True)
     parser.add_argument("--direct", action="store_true", help="Check compatibility assess route with202 + polling")
+    parser.add_argument("--preflight-only", action="store_true", help="Validate discovery/schema without model admission")
+    parser.add_argument("--resume-operation", help="Recover/poll an existing operation without submitting inference")
     parser.add_argument("--variant", type=int, choices=(0, 1), default=0)
     parser.add_argument("--method", choices=("scvi", "scanvi"), default="scvi")
     parser.add_argument("--fixture", type=Path)
