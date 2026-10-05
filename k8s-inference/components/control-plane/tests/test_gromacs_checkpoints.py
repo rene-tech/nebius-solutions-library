@@ -371,6 +371,63 @@ def test_native_aliases_share_one_content_address_and_keep_every_filename(tmp_pa
     assert client.uploads == 2
 
 
+@pytest.mark.parametrize("fault", [None, "corrupt", "upload"])
+def test_late_recovered_final_files_are_rehomed_in_bounded_batches(tmp_path, monkeypatch, fault):
+    client = Artifacts()
+    transport = GromacsCheckpointTransport(client, invocation(), tmp_path)
+    transport.data.mkdir()
+    transport.meta.mkdir()
+    transport.generation = 17
+    batches = []
+    for index in range(2048):
+        path = transport.data / f"part-{index:05d}.xtc"
+        content = f"verified prior attempt part {index}".encode()
+        path.write_bytes(content)
+        digest = hashlib.sha256(content).hexdigest()
+        transport.files[path.name] = {
+            "path": path.name,
+            "sha256": digest,
+            "size_bytes": len(content),
+            "uploaded_attempt": "previous",
+            "artifact": {"artifact_id": str(uuid4()), "sha256": digest},
+        }
+    alias = transport.data / "same-part-alias.xtc"
+    first = transport.data / "part-00000.xtc"
+    alias.write_bytes(first.read_bytes())
+    transport.files[alias.name] = {**transport.files[first.name], "path": alias.name}
+
+    def upload_files(*, paths, on_phase=None, **kwargs):
+        batches.append(paths)
+        assert 1 <= len(paths) <= 64
+        if fault == "upload" and len(batches) == 2:
+            raise RuntimeError("bounded transfer failed")
+        return [client.upload(content=path.read_bytes(), **kwargs) for path in paths]
+
+    def disallow_serial_upload(**kwargs):
+        raise AssertionError("recovered final publication must not serialize individual uploads")
+
+    monkeypatch.setattr(client, "upload_files", upload_files)
+    monkeypatch.setattr(client, "upload_file", disallow_serial_upload)
+    if fault == "corrupt":
+        # Corruption in a later file must be detected before any batch is sent.
+        (transport.data / "part-02047.xtc").write_bytes(b"changed")
+        with pytest.raises(ValueError, match="differs from its committed checkpoint"):
+            transport.final_file_reference(first)
+        assert not batches and not transport.final_references_prepared
+    elif fault == "upload":
+        with pytest.raises(RuntimeError, match="bounded transfer failed"):
+            transport.final_file_reference(first)
+        assert len(batches) == 2 and not transport.final_references_prepared
+    else:
+        refs = [transport.final_file_reference(transport.data / name) for name in transport.files]
+        assert refs[0] == refs[-1]
+        assert len(batches) == 32 and client.uploads == 2048
+        assert transport.final_references_prepared
+        progress = json.loads((transport.meta / "transfer-progress.json").read_text())
+        assert progress["phase"] == "finalized" and progress["completed_files"] == 2049
+        assert all(identity == f"output:{transport.attempt}:native-file" for identity, _ in client.addresses.values())
+
+
 def test_alias_checkpoint_and_stage_commit_use_the_real_artifact_service(tmp_path, monkeypatch):
     from test_scientific_artifacts import NOW, TENANT, FakeObjectStore, open_attempt
 

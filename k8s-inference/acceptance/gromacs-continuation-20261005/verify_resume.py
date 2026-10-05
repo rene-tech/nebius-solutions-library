@@ -233,6 +233,20 @@ async def run(args):
                 )
             state["saved_step"] = completed
             save(state_path, state)
+            if args.source_only:
+                print(
+                    json.dumps(
+                        {
+                            "label": args.label,
+                            "phase": "source-checkpoint-verified",
+                            "operation": source,
+                            "checkpoint_step": completed,
+                            "continuation_submitted": False,
+                        }
+                    ),
+                    flush=True,
+                )
+                return
             arguments = {
                 "operation_id": source,
                 "idempotency_key": identity + "-resume",
@@ -423,6 +437,11 @@ def main():
         help="Reuse a prior internal-QA failed source without resubmitting it",
     )
     parser.add_argument("--verify-retained-bytes", action="store_true")
+    parser.add_argument(
+        "--source-only",
+        action="store_true",
+        help="Stop after verifying the committed source checkpoint; rerun without this flag to continue the same receipt",
+    )
     parser.add_argument("--resume-seconds", type=int, default=1209600)
     parser.add_argument("--timeout", type=int, default=1200)
     parser.add_argument("--origin", default="https://89.169.99.188")

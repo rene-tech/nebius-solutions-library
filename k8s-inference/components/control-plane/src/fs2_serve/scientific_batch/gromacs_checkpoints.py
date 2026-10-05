@@ -53,6 +53,7 @@ class GromacsCheckpointTransport:
         self.generation = 0
         self.files: dict[str, dict[str, Any]] = {}
         self.final_files: dict[str, dict[str, Any]] = {}
+        self.final_references_prepared = False
         self.diagnostic_files: dict[str, dict[str, Any]] = {}
         self.file_digests = FileDigestCache()
         self.operation = invocation.argv[invocation.argv.index("--operation-id") + 1]
@@ -86,7 +87,7 @@ class GromacsCheckpointTransport:
         if completed_files is not None:
             self.transfer_progress["completed_files"] = completed_files
         atomic_json(self.meta / "transfer-progress.json", self.transfer_progress)
-        if phase in {"committed", "restored"}:
+        if phase in {"committed", "restored", "finalized"}:
             print(json.dumps({"event": "native_checkpoint_transfer", **self.transfer_progress}), flush=True)
 
     def _state(self, value: dict[str, Any]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -330,6 +331,54 @@ class GromacsCheckpointTransport:
         self.diagnostic_files[digest] = ref
         return ref
 
+    def _prepare_final_references(self) -> None:
+        """Re-home recovered bytes into this successful attempt in bounded batches.
+
+        Stage-result ownership still requires the current attempt. In particular,
+        this must not turn a twenty-thousand-file preemption recovery into twenty
+        thousand sequential upload lifecycles at the final publication boundary.
+        """
+        self._begin_progress("finalize", self.generation, len(self.files))
+        pending: dict[str, dict[str, Any]] = {}
+        root = self.data.resolve(strict=True)
+        for item in self.files.values():
+            path = self.data / item["path"]
+            if (
+                path.is_symlink()
+                or root not in path.resolve(strict=True).parents
+                or not path.is_file()
+                or (path.stat().st_size, self.file_digests.digest(path)) != (item["size_bytes"], item["sha256"])
+            ):
+                raise ValueError("final native file differs from its committed checkpoint")
+            if item.get("uploaded_attempt") == self.attempt:
+                self.final_files[item["sha256"]] = item["artifact"]
+            else:
+                pending.setdefault(item["sha256"], item)
+        remaining = [item for digest, item in pending.items() if digest not in self.final_files]
+        index = 0
+        while index < len(remaining):
+            group: list[dict[str, Any]] = []
+            group_bytes = 0
+            while index < len(remaining) and len(group) < 64:
+                item = remaining[index]
+                if group and group_bytes + item["size_bytes"] > 1024**3:
+                    break
+                group.append(item)
+                group_bytes += item["size_bytes"]
+                index += 1
+            self._progress("platform-validation", index - len(group))
+            refs = self.client.upload_files(
+                identity=f"{self.invocation.produces}:{self.attempt}:native-file",
+                paths=tuple(self.data / item["path"] for item in group),
+                media_type="application/octet-stream",
+                compression=None,
+                on_phase=self._progress,
+            )
+            for item, ref in zip(group, refs, strict=True):
+                self.final_files[item["sha256"]] = ref
+        self.final_references_prepared = True
+        self._progress("finalized", len(self.files))
+
     def final_file_reference(self, path: Path) -> dict[str, Any] | None:
         """Publish native final bytes once per digest in the current attempt.
 
@@ -347,6 +396,13 @@ class GromacsCheckpointTransport:
             raise ValueError("final native file differs from its committed checkpoint")
         digest = prior["sha256"]
         if digest in self.final_files:
+            return self.final_files[digest]
+        if (
+            prior.get("uploaded_attempt") != self.attempt
+            and self.workflow.model_id in {"gromacs", "gromacs-mpi"}
+            and not self.final_references_prepared
+        ):
+            self._prepare_final_references()
             return self.final_files[digest]
         if prior.get("uploaded_attempt") == self.attempt:
             ref = cast(dict[str, Any], prior["artifact"])
