@@ -171,6 +171,14 @@ same demo-owned API; input upload took 5.226 seconds. The six-hour/native and
 expected bootstrap stop, not bootstrap time or work. Timestamps and operation
 identity reject imported timing history. Sustained results remain pending.
 
+Its expected setup stop preserved step 14,317,800; full native comparison again
+passed with only `nsteps` different. Literal demo-owned `:resume` admitted
+`831f030a-afb4-47f2-b719-bb02f3091c7b` at 20:51:55 UTC; initial/replay latency
+was 0.853/0.617 seconds with exact idempotent reuse. The new Pod is Running on
+the same default AMD L40S pool with the qualified immutable images and no
+restarts. The remaining useful work is 64.29128 ns. Its sustained results and
+final output checks are pending, not inferred from the short qualification.
+
 Read-only attempt, hardware and exact-reader readiness observations are retained
 under `short-r1/` and `short-r1-readiness/`. The long run uses the same bounded
 observers under `long-r1/`, with consecutive windows of the existing readiness
