@@ -2486,7 +2486,7 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             principal=principal,
             admission=runtime.admission,
             store=runtime.store,
-            registry=runtime.registry,
+            model_namespace=runtime.settings.admin_kubernetes_model_namespace,
             endpoints={
                 "mindguard-4b": runtime.settings.mindguard_4b_endpoint,
                 "mindguard-8b": runtime.settings.mindguard_8b_endpoint,

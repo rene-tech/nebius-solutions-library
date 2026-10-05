@@ -1,10 +1,10 @@
 from dataclasses import replace
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock
 
 import httpx
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from test_mindguard_routes import BODY, ENDPOINT, identity, runtime_reply
 from test_runtime_and_schema import claimed
 from test_runtime_debug import DebugSink, runtime
@@ -96,11 +96,11 @@ async def test_direct_endpoint_uses_ordinary_admission_and_bounded_wait(registry
     )
     admission = SimpleNamespace(admit=AsyncMock(return_value=operation), wait=AsyncMock(return_value=operation))
     store = SimpleNamespace(
+        model_deployment_current=AsyncMock(return_value=SimpleNamespace()),
         get_operation_result=AsyncMock(
             return_value=SimpleNamespace(result={"status": "completed", "evaluated_user_turns": 2})
-        )
+        ),
     )
-    selected = SimpleNamespace(get=Mock(return_value=model(registry)))
 
     async def principal():
         return who
@@ -112,7 +112,6 @@ async def test_direct_endpoint_uses_ordinary_admission_and_bounded_wait(registry
             endpoints={"mindguard-4b": ENDPOINT},
             admission=admission,
             store=store,
-            registry=selected,
         )
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
@@ -149,10 +148,49 @@ async def test_wait_cannot_be_unbounded(registry, wait):
             principal=principal,
             endpoints={"mindguard-4b": ENDPOINT},
             admission=admission,
-            store=Mock(),
-            registry=Mock(),
+            store=SimpleNamespace(model_deployment_current=AsyncMock(return_value=SimpleNamespace())),
         )
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
         response = await client.post("/v1/mindguard/assess", json=BODY, headers={"x-fs2-wait-seconds": wait})
     assert response.status_code == 422 and not admission.admit.called
+
+
+@pytest.mark.parametrize("adopted", [False, True])
+async def test_reader_first_preserves_preview_but_managed_withdrawal_cannot_bypass_admission(adopted):
+    async def principal():
+        return identity()
+
+    admission = SimpleNamespace(admit=AsyncMock(side_effect=HTTPException(503, "App withdrawn")))
+    store = SimpleNamespace(model_deployment_current=AsyncMock(return_value=object() if adopted else None))
+    requests = []
+
+    def reply(request):
+        requests.append(request)
+        return runtime_reply(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(reply)) as upstream:
+        app = FastAPI()
+        app.include_router(
+            mindguard_router(
+                principal=principal,
+                endpoints={"mindguard-4b": ENDPOINT},
+                admission=admission,
+                store=store,
+                client=upstream,
+                model_namespace="configured-models",
+            )
+        )
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test") as client:
+            response = await client.post("/v1/mindguard/assess", json=BODY)
+    assert store.model_deployment_current.call_args.kwargs == {
+        "namespace": "configured-models",
+        "name": "mindguard-4b",
+        "tenant_id": None,
+    }
+    if adopted:
+        assert response.status_code == 503 and not requests
+        assert admission.admit.call_count == 1
+    else:
+        assert response.status_code == 200 and response.json()["status"] == "completed"
+        assert len(requests) == 2 and not admission.admit.called

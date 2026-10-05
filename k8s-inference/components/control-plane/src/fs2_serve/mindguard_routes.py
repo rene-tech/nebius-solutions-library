@@ -24,7 +24,6 @@ from .mindguard import (
 )
 from .mindguard_contracts import MindGuardAssessRequest
 from .models import AdmissionRequest, OperationStatus, Principal, Scope
-from .registry import Registry
 from .request_telemetry import ensure_request_id, observe_request_metadata
 from .store import Store
 
@@ -51,7 +50,7 @@ def mindguard_router(
     client: httpx.AsyncClient | None = None,
     admission: AdmissionService | None = None,
     store: Store | None = None,
-    registry: Registry | None = None,
+    model_namespace: str = "fs2-models",
 ) -> APIRouter:
     """Mount using the normal PAT dependency; endpoints must come from operator settings.
 
@@ -95,12 +94,19 @@ def mindguard_router(
         # The old preview stays available during the staged catalog migration.
         # Once its canonical App exists, never bypass a failed/disabled route.
         registered = False
-        if admission is not None and store is not None and registry is not None:
-            try:
-                registry.get(body.model, require_enabled=False)
-                registered = True
-            except KeyError:
-                pass
+        if admission is not None and store is not None:
+            # A native catalog entry alone does not mean its legacy Deployment
+            # has been adopted. Consult the existing durable desired state, so
+            # a reader-first image rollout preserves the old endpoint until
+            # adoption and a disabled/withdrawn App never bypasses admission.
+            registered = (
+                await store.model_deployment_current(
+                    namespace=model_namespace,
+                    name=body.model,
+                    tenant_id=None,
+                )
+                is not None
+            )
         if registered and admission is not None and store is not None:
             try:
                 wait = float(request.headers.get("x-fs2-wait-seconds", "30"))

@@ -11,7 +11,7 @@ from remove_hot_floors import kubectl
 
 TOKEN_ID = "56130b22-ae09-42fc-a0f0-48012f22fb71"
 TEST_MODELS = ("scvi-scanvi", "cellpose-cpsam-v2", "sam2-1-hiera-large", "ace-step-1-5",
-               "wan2-2-t2v-nim", "wan2-2-i2v-nim", "mindguard-4b", "mindguard-8b", "genmol")
+               "wan2-2-t2v-nim", "wan2-2-i2v-nim", "mindguard-4b", "mindguard-8b", "genmol", "mindeval")
 
 
 def main(args):
