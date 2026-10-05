@@ -96,6 +96,18 @@ selection, legacy normalization, all-empty failure, path validation and all four
 public schema projections. This is not a substitute for the new-image native
 checks or final public demo continuation.
 
+Exact worker `sha256:ca863f44c7d17c8096267ec43939cda8b9546f0d3b11440e62bcf9149bc94a1e`
+passed the CPU-only `qualify_empty_segments.py` regression in 3.87 seconds:
+the unfiltered 70-part control reproduced the native assertion; the explicit
+selector joined all 28 nonempty parts and `gmx check` verified 185,486 atoms,
+28 frames and unchanged 1,000-ps cadence. The joined trajectory is 19,424,220
+bytes, SHA-256 `e836ed0dc4daf5b3f35e8d8fc6eac674190a83ed01449d7b1ac12752f1a5ef2e`.
+All 305 source files were rehashed unchanged. Detailed retained evidence:
+`/home/tux/secure-handoff/fs2-lynx-demo-resume-20261005/nonempty-native-r1/`.
+The short public fixture is prepared with 2 ns, list 200, pin auto, 8 threads;
+its measured delivery rate is reported without the long cohort's 200-ns/day
+or six-hour threshold. No public demo admission has happened yet.
+
 27 focused fixture/science/owner/export tests and Ruff pass. Tests reject changed
 bytes, duplicate/unsafe paths, wrong source state, missing topology comparisons,
 unapproved TPR differences, incorrect start step, customer-key substitution and

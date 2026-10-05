@@ -133,6 +133,18 @@ def test_native_quote_cannot_hide_a_scientific_difference():
         topology_equivalence(text + "inputrec->delta-t (0.002 - 0.003)\n", 14963440)
 
 
+def test_native_empty_part_probe_inventory_preserves_zeros_and_rejects_links(tmp_path):
+    from qualify_empty_segments import inventory
+    (tmp_path / "empty.xtc").touch()
+    (tmp_path / "frame.xtc").write_bytes(b"one frame")
+    result = inventory(tmp_path)
+    assert result["empty.xtc"] == {"size_bytes": 0, "sha256": hashlib.sha256(b"").hexdigest()}
+    assert result["frame.xtc"]["size_bytes"] == 9
+    (tmp_path / "link.xtc").symlink_to(tmp_path / "empty.xtc")
+    with pytest.raises(ValueError, match="contained regular files"):
+        inventory(tmp_path)
+
+
 def test_history_and_late_resume_are_checked_independently():
     fixture = {"source_files": [{"path": "one.xtc", "sha256": "a", "size_bytes": 10}]}
     checkpoint = {"files": [{"path": "source-history/one.xtc", "sha256": "a", "size_bytes": 10}]}
