@@ -3561,6 +3561,29 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
     ).accepted_at
     assert await postgres_store.claim_operation("generic-worker", lease_seconds=30) is None
 
+    async def prove_active_retention():
+        await postgres_store.pool.execute(
+            "UPDATE fs2_operations SET payload_expires_at=clock_timestamp()-interval '15 days' WHERE id=$1",
+            frozen.operation_id,
+        )
+        # The actual deployed CronJob uses this restricted maintenance role.
+        # No new table/column grants may be required for the retention fix.
+        pool = await asyncpg.create_pool(
+            os.environ["FS2_TEST_DATABASE_URL"], min_size=1, max_size=1,
+            server_settings={"role": "fs2_serve_maintenance"},
+        )
+        try:
+            assert await PostgresMaintenanceStore(pool).purge_expired_payloads() == 0
+        finally:
+            await pool.close()
+        stored = await postgres_store.pool.fetchrow(
+            "SELECT status,payload_purged_at,request_ciphertext FROM fs2_operations WHERE id=$1",
+            frozen.operation_id,
+        )
+        assert stored["status"] == "queued"
+        assert stored["payload_purged_at"] is None and stored["request_ciphertext"] is not None
+
+    await prove_active_retention()  # before the durable outbox is materialized
     input_attempt_id = uuid4()
     input_digest = "sha256:" + "1" * 64
     async with postgres_store.pool.acquire() as connection:
@@ -3615,6 +3638,13 @@ async def test_scientific_admission_outbox_recovers_after_committed_operation_wi
     await postgres_store.complete_scientific_admission(frozen.operation_id)
     assert recovered == frozen
     assert await postgres_store.get_scientific_admission(frozen.operation_id) is None
+    await prove_active_retention()  # durable batch now owns it; no outbox exists
+    await postgres_store.pool.execute(
+        "UPDATE fs2_operations SET status='succeeded',completed_at=clock_timestamp() WHERE id=$1",
+        frozen.operation_id,
+    )
+    assert await postgres_store.purge_expired_payloads() == 1
+    assert (await postgres_store.get_operation(frozen.operation_id)).status is OperationStatus.SUCCEEDED
 
 
 @pytest.mark.postgres

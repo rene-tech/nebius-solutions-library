@@ -2436,6 +2436,14 @@ class MemoryStore:
             for row in self.operations.values():
                 if row.view.payload_expires_at is None or row.view.payload_expires_at > now:
                     continue
+                # Scientific jobs have their own frozen execution/queue budget.
+                # A generic request-payload TTL must not expire their owning
+                # Operation mid-simulation or between preempted attempts.
+                if not row.view.status.terminal and (
+                    row.view.id in self.scientific_admission_outbox
+                    or row.view.id in self.scientific_admissions_completed
+                ):
+                    continue
                 if row.request is not None or row.response is not None:
                     count += 1
                 row.request = None

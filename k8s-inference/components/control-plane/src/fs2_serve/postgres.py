@@ -3787,12 +3787,22 @@ class PostgresStore:
 
     @retry_serialization
     async def purge_expired_payloads(self) -> int:
+        # Active scientific owners retain their request across long native runs,
+        # queue delays and infrastructure retries. Their frozen batch budget,
+        # not the generic short request-payload TTL, controls execution. Recheck
+        # under the operation lock; terminal scientific payloads still expire.
         async with self.pool.acquire() as connection:
             candidates = await connection.fetch(
                 """
                 SELECT id,token_id FROM fs2_operations
                 WHERE payload_expires_at<=clock_timestamp()
                   AND payload_purged_at IS NULL
+                  AND (status NOT IN ('queued','activating','running') OR (
+                    NOT EXISTS (SELECT 1 FROM fs2_scientific_batches b
+                                WHERE b.operation_id=fs2_operations.id)
+                    AND NOT EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox a
+                                    WHERE a.operation_id=fs2_operations.id)
+                  ))
                 ORDER BY payload_expires_at,id LIMIT 100
                 """
             )
@@ -3805,6 +3815,12 @@ class PostgresStore:
                     """
                     SELECT id,token_id,status,reserved_gpu_seconds FROM fs2_operations
                     WHERE id=$1 AND payload_expires_at<=clock_timestamp() AND payload_purged_at IS NULL
+                      AND (status NOT IN ('queued','activating','running') OR (
+                        NOT EXISTS (SELECT 1 FROM fs2_scientific_batches b
+                                    WHERE b.operation_id=fs2_operations.id)
+                        AND NOT EXISTS (SELECT 1 FROM fs2_scientific_admission_outbox a
+                                        WHERE a.operation_id=fs2_operations.id)
+                      ))
                     FOR UPDATE SKIP LOCKED
                     """,
                     candidate["id"],

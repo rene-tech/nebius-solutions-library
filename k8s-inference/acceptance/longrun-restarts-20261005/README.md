@@ -47,6 +47,15 @@ system-aware argv byte budget, without shell expansion.
 The root integration also owns per-process file-digest caching and customer S3
 export optimizations; see the parent release evidence for their measurements.
 
+Generic payload maintenance previously expired any active Operation after the
+24-hour request TTL, independently of its scientific execution budget. Active
+scientific owners now retain payloads while a durable batch or admission outbox
+exists; terminal payload cleanup and unrelated inference TTLs are unchanged.
+This does not modify API-key expiry. Both the API and the maintenance CronJob
+must use the fixed image. An isolated PostgreSQL16 test exercised the actual
+restricted maintenance role before/after outbox materialization and terminal
+cleanup without new grants. Seven time-shifted memory cases also passed.
+
 ## Offline evidence so far
 
 - 240 focused backend tests passed; four object-store integration tests skipped
