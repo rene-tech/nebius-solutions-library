@@ -18,17 +18,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "gromacs-mpinat-202
 import qualify_candidate as native
 
 
-def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit, **_):
+def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit, *, data_dir=None, result_path=None, **_):
     if expected_failure:
         raise ValueError("No expected native failures are silently accepted")
-    result = json.loads((workspace / "result.json").read_text())
+    data_dir = data_dir or workspace / "data"
+    result_path = result_path or workspace / "result.json"
+    result = json.loads(result_path.read_text())
     errors = []
     for item in result["files"]:
-        path = workspace / "data" / item["path"]
-        if (not path.resolve().is_relative_to((workspace / "data").resolve())
+        path = data_dir / item["path"]
+        if (not path.resolve().is_relative_to(data_dir.resolve())
                 or path.stat().st_size != item["size_bytes"] or sha(path) != item["sha256"]):
             errors.append("inventory mismatch: " + item["path"])
-    if sha(workspace / "data/original.tpr") != TPR_SHA256:
+    if sha(data_dir / "original.tpr") != TPR_SHA256:
         errors.append("original TPR changed")
     converter = request["jobs"][0]["steps"][0]["args"]
     steps = int(converter[converter.index("-nsteps") + 1])
@@ -44,7 +46,7 @@ def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit, 
         counter_walls = []
         for index, command in enumerate(commands):
             current = command.get("checkpoint_step")
-            log = (workspace / "data" / command["log"]).read_text(errors="replace")
+            log = (data_dir / command["log"]).read_text(errors="replace")
             restarts = [int(s) for s in re.findall(r"continuing from step\s+(\d+)", log, re.I)]
             if (command.get("exit_code") != 0 or current is None or not previous < current <= steps
                     or (index and restarts != [previous]) or (not index and restarts)):
@@ -60,7 +62,7 @@ def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit, 
             previous = current if current is not None else previous
         if previous != steps:
             errors.append(f"repeat {repeat}: final native checkpoint is not the target")
-        energy = workspace / "data" / f"energy{repeat}.xvg"
+        energy = data_dir / f"energy{repeat}.xvg"
         rows = [[float(x) for x in line.split()] for line in energy.read_text().splitlines()
                 if line.strip() and not line.lstrip().startswith(("#", "@"))] if energy.exists() else []
         if (not rows or not all(len(row) >= 6 and all(math.isfinite(x) for x in row) for row in rows)
@@ -68,7 +70,7 @@ def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit, 
                 or any(row[4] <= 0 for row in rows)):
             errors.append(f"repeat {repeat}: finite energy/time validation failed")
         try:
-            coordinates = native.validate_gro(workspace / "data" / f"repeat{repeat}.gro", ATOMS)
+            coordinates = native.validate_gro(data_dir / f"repeat{repeat}.gro", ATOMS)
         except (ValueError, OSError) as exc:
             errors.append(f"repeat {repeat}: {exc}")
             coordinates = None
@@ -86,7 +88,7 @@ def validate(workspace, request, gpu_count, mpi, expected_failure, worker_exit, 
             "repeats": summaries, "median_native_inclusive_ns_per_day": statistics.median(rates) if rates else None,
             "native_min_ns_per_day": min(rates) if rates else None,
             "native_max_ns_per_day": max(rates) if rates else None,
-            "source_sha256": sha(__file__), "native_result_sha256": sha(workspace / "result.json"),
+            "source_sha256": sha(__file__), "native_result_sha256": sha(result_path),
             "customer_path_tested": False, "checkpoint_scope": "local-only",
             "scope": "Exact-input finite performance/finite-energy/coordinate/step-continuity check, not ensemble convergence."}
 

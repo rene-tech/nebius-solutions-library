@@ -25,6 +25,12 @@ def test_supported_mpi_shapes(nodes, gpus):
     assert "-ntomp" not in run
 
 
+def test_long_confirmations_decode_original_trajectory_cadence():
+    value = parameters(steps=500000)
+    checks = [s for s in value["jobs"][0]["steps"] if s["command"] == "check"]
+    assert [s["args"] for s in checks] == [["-f", f"repeat{i}.part0001.xtc"] for i in (1, 2, 3)]
+
+
 @pytest.mark.parametrize("changes", [{"steps": -1}, {"steps": 500000000}, {"repetitions": 4},
                                       {"mpi": True, "nodes": 3, "gpus_per_node": 8, "update": "cpu"},
                                       {"gpus_per_node": 2}, {"mpi": True, "gpus_per_node": 2},

@@ -67,6 +67,12 @@ def parameters(*, steps=50000, repetitions=3, threads=8, mpi=False, nodes=1,
                       "args": ["-f", f"energy{repeat}.edr", "-o", f"energy{repeat}.xvg"],
                       "stdin": "Potential\nKinetic-En.\nTotal-Energy\nTemperature\nPressure\n0\n",
                       "expected_outputs": [f"energy{repeat}.xvg"]}]
+        if steps >= 500000:
+            # The immutable source emits an XTC frame every 500000 steps.
+            # Longer confirmations retain that cadence and ask the native
+            # decoder to read the real first trajectory part, not a mock file.
+            commands.append({"id": f"trajectory-check-{repeat}", "command": "check",
+                             "args": ["-f", f"repeat{repeat}.part0001.xtc"]})
     value = {"schema": "fs2-serve.nebius.ai/gromacs-workflow-request/v1",
              "jobs": [{"id": "benchmark", "steps": commands}], "threads": threads,
              "checkpoint_minutes": 5, "segment_minutes": segment_minutes,

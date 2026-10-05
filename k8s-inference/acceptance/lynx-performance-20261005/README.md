@@ -48,6 +48,17 @@ customer Pod. `run_public.py` uses the prior durable campaign/transport verifier
 without its policy-changing path. One owned API operation at a time, optionally
 beside one explicitly coordinated peer; the two-slot QA limit remains unchanged.
 
+`native_cpu_probe.py` reuses the retained native CLI harness for an explicitly
+requested 8/16/32-CPU Pod with one GPU, fresh CUDA cache plus three warm runs.
+This is an operator-only envelope experiment, not a new public resource shape;
+all public recipes retain the existing eight-CPU-per-rank envelope.
+`capture_admission.py` captures only the selected system operation's live Pod
+and Kueue resources, checking per-Pod GPU requests and total gang reservation
+against its immutable plan. Run while objects still exist; missing evidence is
+not a zero reservation. `validate_public.py` reuses the same finite-output
+validator over already downloaded, rehashed public artifacts without copying
+trajectories or making another API call.
+
 Example preparation (private paths intentionally supplied by the operator):
 
 ```bash
