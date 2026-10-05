@@ -9,6 +9,11 @@ This supplements the existing [API contract](../../docs/SCIENTIFIC_BATCH_API.md)
 and [continuation guide](../../models/molecular-dynamics/gromacs/CONTINUATION.md),
 not a separate API or tenant-lifecycle implementation.
 
+The generic helper has also passed [real-source offline qualification](REAL-SOURCE-OFFLINE.md)
+against all 305 files from the original terminal six-hour run, retaining the
+full 1 µs target. No job was submitted by that check; it does not replace the
+public continuation, performance or soak gates below.
+
 ## What is being preserved and tested
 
 The approved demo source is the original six-hour run's committed generation 71,
