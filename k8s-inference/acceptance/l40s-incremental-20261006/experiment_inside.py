@@ -208,6 +208,9 @@ def profile_experiment(root, original):
     tools = {tool: shutil.which(tool) for tool in ("nsys", "ncu", "nvidia-smi", "nvcc", "perf", "numactl", "lstopo")}
     for path in Path("/opt/nvidia").glob("nsight-systems/*/bin/nsys"):
         tools["nsys"] = tools["nsys"] or str(path)
+    overlay = Path(__file__).with_name("nsight") / "nsys"
+    if overlay.is_file():
+        tools["nsys"] = tools["nsys"] or str(overlay)
     save(root / "profiling-tools.json", tools)
     if not tools["nsys"]:
         return {"status": "tool-unavailable", "tools": tools, "reason": "Nsight Systems absent in pinned production image; no host changes"}

@@ -95,6 +95,13 @@ def run(args):
         record["source_hashes"] = {str(path): lifecycle.sha(path) for path, _ in sources}
         for source, target in sources:
             native.call(["-n", native.NS, "cp", "--no-preserve", str(source), args.name + ":" + REMOTE + "/" + target])
+        if args.profile_tools:
+            if args.mode != "profile" or not (args.profile_tools / "nsys").is_file():
+                raise ValueError("Profiler overlay is only allowed for an isolated profile run")
+            record["profile_tool_identity"] = {
+                "source": str(args.profile_tools), "nsys_sha256": lifecycle.sha(args.profile_tools / "nsys")}
+            subprocess.run([*native.KUBE, "-n", native.NS, "cp", "--no-preserve", str(args.profile_tools),
+                            args.name + ":" + REMOTE + "/nsight"], check=True, capture_output=True, timeout=180)
         command = ["python3", REMOTE + "/experiment_inside.py", "--mode", args.mode,
                    "--tpr", REMOTE + "/original.tpr", "--output", REMOTE + "/results"]
         record["command"] = command
@@ -141,5 +148,6 @@ if __name__ == "__main__":
     for name in ("tpr", "output"):
         p.add_argument("--" + name, type=Path, required=True)
     p.add_argument("--mode", choices=("cpu", "checkpoint", "profile"), required=True)
+    p.add_argument("--profile-tools", type=Path)
     p.add_argument("--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a")
     raise SystemExit(run(p.parse_args()))
