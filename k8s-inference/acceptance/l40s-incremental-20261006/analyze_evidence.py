@@ -122,6 +122,21 @@ def profile_summary(path):
         return result
 
 
+def comparison_cases(cases):
+    """Select the explicit control used by each experiment, never pool hosts."""
+    comparisons = [("five-minute-segments", "continuous"), ("pme-auto", "pme-original-grid"),
+                   ("wait-default", "wait-active"), ("wait-default", "wait-passive")]
+    controls = cases.intersection({"confirm-threads-8", "confirm-baseline"})
+    if len(controls) > 1:
+        raise ValueError("Ambiguous confirmation control in evidence root")
+    if controls:
+        control = next(iter(controls))
+        comparisons += [(control, name) for name in sorted(cases)
+                        if name.startswith("confirm-") and name != control]
+    return [(baseline, candidate) for baseline, candidate in comparisons
+            if baseline in cases and candidate in cases]
+
+
 def analyze(root):
     result = {"evidence_root": str(root), "inventory": verify_inventory(root),
               "summary": json.loads((root / "summary.json").read_text()), "runs": []}
@@ -142,13 +157,8 @@ def analyze(root):
     for path in root.glob("profile/*.sqlite"):
         result["profile"] = profile_summary(path)
     cases = {run["case"] for run in result["runs"]}
-    comparisons = [("five-minute-segments", "continuous"), ("pme-auto", "pme-original-grid"),
-                   ("wait-default", "wait-active"), ("wait-default", "wait-passive")]
-    comparisons += [("confirm-threads-8", name) for name in sorted(cases)
-                    if name.startswith("confirm-") and name != "confirm-threads-8"]
     result["paired_comparisons"] = [paired_comparison(result["runs"], baseline_case, candidate_case)
-                                    for baseline_case, candidate_case in comparisons
-                                    if baseline_case in cases and candidate_case in cases]
+                                    for baseline_case, candidate_case in comparison_cases(cases)]
     return result
 
 

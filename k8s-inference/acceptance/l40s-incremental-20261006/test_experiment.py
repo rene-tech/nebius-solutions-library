@@ -95,3 +95,13 @@ def test_comparison_rejects_different_run_lengths():
             for case, steps in (("baseline", 500000), ("candidate", 100000))]
     with pytest.raises(ValueError, match="different simulation lengths"):
         analyzer.paired_comparison(rows, "baseline", "candidate")
+
+
+def test_confirmation_control_is_explicit_and_unambiguous():
+    assert analyzer.comparison_cases({"confirm-baseline", "confirm-affinity-8", "warmup"}) == [
+        ("confirm-baseline", "confirm-affinity-8")]
+    assert analyzer.comparison_cases({"confirm-threads-8", "confirm-threads-7"}) == [
+        ("confirm-threads-8", "confirm-threads-7")]
+    assert analyzer.comparison_cases({"confirm-baseline"}) == []
+    with pytest.raises(ValueError, match="Ambiguous"):
+        analyzer.comparison_cases({"confirm-baseline", "confirm-threads-8"})
