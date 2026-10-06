@@ -4,10 +4,105 @@ Owner-requested changes: fourteen-day GROMACS execution budgets, the existing
 Lynx shared bucket at 100 GB, meaningful late-stage continuation tests, matched
 L40S/H100/multi-GPU optimization, and idle Apps without hot replica floors.
 
-This is an in-progress integration record, **not a completed release claim**.
+The narrowed Lynx single-L40S handover gate **passed on 6 October 2026**.
+The broader MPI/whole-root infrastructure scope is not fully qualified; see the
+explicit remaining boundaries below. Earlier dated entries are retained history,
+not the current handover status.
 Parent task: `fs2-lynx-gromacs-longrun-performance-r20261005` in the NIM Fast
 Start Platform epic. Source branch: `agent/fs2-lynx-longrun-performance-20261005`,
 based on `7d0f6e0ba` (the deployed continuation incident fixes).
+
+## Final customer-focused result — 6 October 2026
+
+The actual six-hour source checkpoint was copied, with permission, into the
+existing demo tenant. A real REST import established its own committed state;
+literal same-owner `:resume` then completed **64.29128 newly simulated ns** at
+**216.956 ns/day delivered**. The denominator is the entire 25,603.145 seconds
+from API acceptance to durable success, including placement/startup, restore,
+checkpointing, final analysis and export. It is not a native-only counter.
+
+- Measured operation: `831f030a-afb4-47f2-b719-bb02f3091c7b`, accepted
+  `2026-10-05T20:51:55.034690Z`, durably succeeded about `2026-10-06T03:58:38.180Z`.
+- One L40S on the regular AMD four-GPU pool; eight CPU threads, bonded and
+  nonbonded GPU offload, `nstlist=200`, `pin=auto`, automatic PME/update placement.
+  Scientific protocol, accuracy, seeds and output cadence were preserved.
+- 25,315.613 native seconds (over seven hours), **84/84 zero-exit segments**,
+  step 14,317,800 → 46,463,440, final checkpoint generation 88. Bootstrap work
+  and imported execution time are excluded. Native useful rate: 219.421 ns/day.
+- All 659 platform files / 285,005,633 bytes were downloaded and size/SHA-256
+  verified. Independent demo-bucket checks passed all 659 paths / 597 unique
+  objects / 272,207,046 bytes. All 305 original source files remain unchanged.
+- Submission and resume replays returned the same operation IDs. There was one
+  successful execution attempt, no unexpected native failures or Pod restarts,
+  and no manual repair/redeployment during the sustained run.
+
+The separately reported short continuation delivered 198.173 ns/day; its fixed
+overhead is not hidden or rounded up. Three final native-only repetitions on an
+Intel single-L40S node measured 216.630–217.533 ns/day. Neither result is a second
+sustained public cohort or a promise for different hardware/protocols.
+
+Final immutable runtime source: `2f7c2d1e329941fa085edb9fce3fee185487e1f6`.
+API/tools/schema-init/controller/maintenance image:
+`sha256:1c22336993e588408c069b5a8f93e550ea60829f167099f55acdc1f3918fd0d9`.
+Single worker:
+`sha256:ca863f44c7d17c8096267ec43939cda8b9546f0d3b11440e62bcf9149bc94a1e`.
+The current coordinated MPI wrapper is `sha256:c10a9b2edfab1678153ca45c05c00e4649979065ef2ecadfb69a17b83483f662`;
+this single-GPU result does not qualify public multi-node execution.
+
+Read-only closeout checks found three exact Ready API readers and authenticated
+public discovery HTTP 200, two Ready model controllers, and successful exact-image
+maintenance Jobs at 03:39/03:40 UTC. Admin generation 43 and workshop generation
+10 each remained 2/2 Ready on their unchanged images. The authoritative private
+H100 `terraform.tfvars` pins the final API image and passes `terraform fmt -check`;
+no broad Terraform apply or ownership rewrite was performed.
+
+Lynx's original customer operation `a42479f9-5ee0-4ed4-869b-0a094357403f` was
+not cancelled, replaced or tested with its key. At 04:00 UTC its original Pod UID
+`28cba283-f42d-4fe7-aac7-010ba2222f1e` still had both containers Ready and zero
+restarts. Its native state had reached generation 161 / step 46,400,480, with
+the original full 500,000,000-step target. This is an observed running state,
+not a terminal checkpoint selection. Its old tuning and seven-day budget stay
+frozen until a new explicit continuation; the new defaults do not rewrite it.
+
+The existing Lynx bucket remains active at 100,000,000,000 bytes. Provider counters
+at closeout reported 1,798,114,381 bytes occupied (eventually consistent, subject
+to ongoing writes), leaving substantial room for the documented conservative
+remaining-run estimate. No credentials, objects, customer keys or quota were
+changed during this final check. The root-owned local synthetic PostgreSQL
+regression container `fs2-artifact-bulk-pg-20261005` was stopped and removed;
+it had no mounted customer data. Durable test receipts and source data remain.
+
+Customer instructions and the offline full-target preparation helper:
+[`../lynx-customer-handover-20261005/README.md`](../lynx-customer-handover-20261005/README.md).
+Use the latest committed checkpoint after the customer's chosen stop/failure,
+not the older demo fixture. Ordinary `:resume` preserves the old recipe; the
+qualified tuned import applies the measured settings and empty-trajectory-safe
+analysis while preserving the complete native history and full target.
+
+Exact sustained evidence (private, no credentials or customer data in Git):
+`/home/tux/secure-handoff/fs2-lynx-demo-resume-20261005/long-r1/`:
+`receipt.json`, `delivery-gate.json`, `customer-export-verification.json`, plus
+attempt, hardware and readiness observations. Release/storage checks are in
+the sibling `final-reader-verification/`, `final-maintenance-verification/` and
+`final-storage-readonly/` directories. The
+[demo acceptance report](../lynx-demo-resume-20261005/README.md) contains final
+observer coverage, phase timings and resource-release evidence.
+
+### Deliberately separate remaining boundaries
+
+- Fourteen days is the deployed new-job/resume budget, **not a fourteen-day soak**.
+  Known transfer-expiry, large-history metadata and empty-trajectory failures
+  were addressed and tested; no guarantee against future cloud/node failures is made.
+- The measured rate is for this protocol and actual L40S placement. Current
+  scheduling prefers the AMD L40S pool but permits H100 fallback. There is no
+  public request field that guarantees a GPU family.
+- Native 16-H100 RDMA performance is documented separately. Public REST/MCP
+  16-GPU admission, peer-loss recovery and durable accounting are not qualified
+  by this result and were deferred when the owner narrowed the immediate goal.
+- Existing unrelated H200 ownership/retained-App replay issues remain documented
+  in [the persistence record](../idle-scale-zero-20261005/PERSISTENCE.md).
+  Whole-root redeployment is not claimed safe merely because these runtime
+  digests were persisted. No quota or unrequested infrastructure change was made.
 
 ## Storage change completed
 
