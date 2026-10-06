@@ -153,7 +153,7 @@ if __name__ == "__main__":
         p.add_argument("--" + name, required=True)
     for name in ("tpr", "output"):
         p.add_argument("--" + name, type=Path, required=True)
-    p.add_argument("--mode", choices=("cpu", "checkpoint", "profile"), required=True)
+    p.add_argument("--mode", choices=("cpu", "checkpoint", "profile", "pme"), required=True)
     p.add_argument("--profile-tools", type=Path)
     p.add_argument("--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a")
     raise SystemExit(run(p.parse_args()))

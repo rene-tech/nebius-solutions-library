@@ -72,6 +72,7 @@ def measured_run(root, tpr, case, repeat, steps, *, segmented=False, segment_min
     base = [*prefix, binary, "mdrun", "-s", str(tpr), "-deffnm", "md", "-ntmpi", "1",
             "-ntomp", str(case["threads"]), "-pin", "auto", "-nb", "gpu", "-pme", "auto",
             "-bonded", "gpu", "-update", "auto", "-nstlist", "200", "-cpt", str(segment_minutes)]
+    base += case.get("extra_args", [])
     native = []
     process_wall = 0.0
     start_step = 0
@@ -204,6 +205,20 @@ def checkpoint_experiment(root, original):
             "scope": "Native process/restart cost only; checkpoint writes enabled in both arms. No claim of consistent live S3 export."}
 
 
+def pme_experiment(root, original):
+    measured_run(root, finite_input(root, original, 50000), {"name": "warmup", "threads": 8}, 0, 50000)
+    tpr = finite_input(root, original, 500000)
+    cases = [{"name": "pme-auto", "threads": 8},
+             {"name": "pme-original-grid", "threads": 8, "extra_args": ["-notunepme"]}]
+    records = []
+    for repeat in range(1, 4):
+        for case in (cases if repeat % 2 else list(reversed(cases))):
+            records.append(measured_run(root, tpr, case, repeat, 500000))
+            save(root / "pme-progress.json", aggregate(records))
+    return {"comparison": aggregate(records), "records": records,
+            "scope": "Native original-TPR PME grid vs normal PME tuning; no new tolerance/cutoff or force-field choice"}
+
+
 def profile_experiment(root, original):
     tools = {tool: shutil.which(tool) for tool in ("nsys", "ncu", "nvidia-smi", "nvcc", "perf", "numactl", "lstopo")}
     for path in Path("/opt/nvidia").glob("nsight-systems/*/bin/nsys"):
@@ -248,7 +263,7 @@ def profile_experiment(root, original):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("cpu", "checkpoint", "profile"), required=True)
+    parser.add_argument("--mode", choices=("cpu", "checkpoint", "profile", "pme"), required=True)
     parser.add_argument("--tpr", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -270,6 +285,8 @@ def main():
             result = cpu_experiment(root, args.tpr, layout)
         elif args.mode == "checkpoint":
             result = checkpoint_experiment(root, args.tpr)
+        elif args.mode == "pme":
+            result = pme_experiment(root, args.tpr)
         else:
             result = profile_experiment(root, args.tpr)
         result.update(mode=args.mode, original_tpr_sha256=TPR_SHA256)
