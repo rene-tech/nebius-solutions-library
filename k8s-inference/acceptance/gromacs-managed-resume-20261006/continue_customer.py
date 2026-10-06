@@ -21,7 +21,7 @@ SOURCE = "a42479f9-5ee0-4ed4-869b-0a094357403f"
 TPR = "e2ee73571f0dd9855709d2a957e41e5ad52316b3f1d2b1808e65476f4bd8ef10"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lynx-demo-resume-20261005"))
 from run_demo_resume import save  # noqa: E402
-from validate_resume import summarize_progress  # noqa: E402
+from validate_resume import restart_step, summarize_progress  # noqa: E402
 
 
 def released(status):
@@ -59,7 +59,12 @@ async def run(args):
             if not choices["jobs"]:
                 return None
             selected = next(row for row in choices["jobs"] if row["job_id"] == "mas1-20e")
-            path = args.output / (label + "-checkpoint.json")
+            # Each committed generation is immutable. Keep its bytes under its
+            # artifact identity, rather than reusing a previous generation's
+            # download destination (which the client correctly refuses).
+            directory = args.output / "checkpoints"
+            directory.mkdir(mode=0o700, exist_ok=True)
+            path = directory / (selected["checkpoint"]["artifact_id"] + ".json")
             await helper.download(client, selected["checkpoint"], path)
             document = json.loads(path.read_text())
             if document["state"]["operation_id"] != operation:
@@ -69,6 +74,7 @@ async def run(args):
                 raise ValueError("Scientific input or full target changed")
             if document["customer_storage"]["bucket"] != "fs2-lynx-c327dcc386444425":
                 raise ValueError("Customer bucket identity changed")
+            save(args.output / (label + "-checkpoint.json"), document)
             return document
 
         policy = await get("/v1/me")
@@ -164,7 +170,31 @@ async def run(args):
                         stream.write(json.dumps(receipt) + "\n")
                     print(json.dumps(receipt), flush=True)
                     last_generation = progress["generation"]
-                    if progress["zero_exit_segments"] >= 3:
+                    if progress["zero_exit_segments"] >= args.minimum_segments:
+                        native = [row for row in document["state"]["commands"] if "mdrun" in row["command"]]
+                        for row in native:
+                            for flag, setting in (("-nb", "gpu"), ("-bonded", "gpu"), ("-nstlist", "200")):
+                                if (
+                                    flag not in row["command"]
+                                    or row["command"][row["command"].index(flag) + 1] != setting
+                                ):
+                                    raise ValueError("Actual customer native command is not performance optimized")
+                        files = {row["path"]: row for row in document["files"]}
+                        native_log = args.output / "first-native-segment.log"
+                        await helper.download(client, files[native[0]["log"]]["artifact"], native_log)
+                        if restart_step(native_log.read_text()) != state["resume_from_step"]:
+                            raise ValueError("Actual customer native restart did not use the exact saved step")
+                        source = json.loads((args.output / "resume-source-checkpoint.json").read_text())
+                        retained = 0
+                        for old in source["files"]:
+                            if old["path"] == "simulation.tpr" or old["path"].startswith("md.part"):
+                                current = files.get(old["path"], {})
+                                if (current.get("sha256"), current.get("size_bytes")) != (
+                                    old["sha256"],
+                                    old["size_bytes"],
+                                ):
+                                    raise ValueError("Original scientific input/trajectory history was changed or lost")
+                                retained += 1
                         accepted = datetime.fromisoformat(status["operation"]["accepted_at"])
                         committed = max(
                             datetime.fromisoformat(row["committed_at"])
@@ -177,10 +207,21 @@ async def run(args):
                             new_ns=new_ns,
                             accepted_to_checkpoint_seconds=elapsed,
                             delivered_ns_per_day=new_ns * 86400 / elapsed,
+                            verified_native_start_step=state["resume_from_step"],
+                            original_scientific_files_retained=retained,
+                            native_performance_flags_verified=True,
                             customer_job_left_running=True,
                         )
+                        receipt["minimum_delivered_ns_per_day"] = args.minimum_delivered_ns_per_day
+                        receipt["performance_gate"] = (
+                            "passed"
+                            if receipt["delivered_ns_per_day"] >= args.minimum_delivered_ns_per_day
+                            else "pending_longer_observation"
+                        )
                         save(args.output / "verification.json", receipt)
-                        return
+                        if receipt["performance_gate"] == "passed":
+                            return
+                        print(json.dumps(receipt), flush=True)
                 await asyncio.sleep(15)
             raise TimeoutError("Observation window exhausted; continuation left running")
 
@@ -189,6 +230,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("action", choices=["inspect", "stop", "resume", "observe"])
     parser.add_argument("--owner-authorized", action="store_true")
+    parser.add_argument("--minimum-segments", type=int, default=3)
+    parser.add_argument("--minimum-delivered-ns-per-day", type=float, default=200.0)
     for name in ("key-file", "artifact-client", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     os.umask(0o077)

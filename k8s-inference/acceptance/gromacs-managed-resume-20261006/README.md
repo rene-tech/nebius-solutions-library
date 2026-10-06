@@ -59,13 +59,87 @@ Both plain resumes receive the new defaults and replay idempotently.
 | a | `2cc68d38-56c1-4627-9b4e-23cd2b7be72b` | `db281d2a-945e-4977-a7b1-8603bf433d12` |
 | b | `ee615c8c-d102-46ce-8e16-0cd018cfd85c` | `76dcd047-e7ea-49d5-9e8e-80e768328796` |
 
-Terminal output verification and the real customer continuation are **pending**
-at this documentation checkpoint. Do not treat accepted/running as complete.
+Both internal cohorts completed successfully on the unchanged release:
+
+| Metric | Cohort a | Cohort b |
+| --- | ---: | ---: |
+| Newly resumed simulation | 1.876 ns | 1.87472 ns |
+| Accepted to durable completion | 789.850 s | 807.923 s |
+| Delivered performance | 205.212 ns/day | 200.484 ns/day |
+| Native useful performance | 220.039 ns/day | 215.429 ns/day |
+| Clean native segments | 3/3 | 3/3 |
+| Final platform files SHA/size-verified | 335 | 335 |
+| Original source files retained | 305 | 305 |
+| Independently verified bucket objects | 291 | 291 |
+
+Both result documents passed semantic validation, complete zero-tolerance TPR
+comparison allowed only the finite test horizon, and native restart began at the
+exact new bootstrap checkpoint. All six native segments and the remaining
+analysis commands completed; the same single-L40S node hosted the overlapping
+cohorts while the old customer run continued. Both test Pods were released before
+the customer switch. This is a new bounded functional/throughput gate, not a
+new six-hour or fourteen-day soak. Prior seven-hour sustained evidence remains
+separately identified in the previous handover.
+
+The owner-authorized customer switch has been performed. Source
+`a42479f9-5ee0-4ed4-869b-0a094357403f` was cancelled only after committed
+generation 189, native step 52,023,920 / 104.04784 ns, and all old resources
+were released. Plain resume returned new operation
+`5a6cba05-2de1-43e5-8dc7-a29d5a222d76` at 06:23:05 UTC. Replay returned the
+same operation. The admission response records profile `single-gpu-list200-v1`,
+the fourteen-day budget and the nonempty trajectory selector.
+
+The continuation is running on one L40S in existing pool `l40s-4x`, node
+`computeinstance-e00xwjv9khjp8fhp3v`, with worker `ca863f44` and unchanged
+collector `1c223369`. Its full 500,000,000-step / 1 µs target is unchanged.
+The live customer observation gate **passed** at 06:39 UTC:
+
+| Customer measurement | Observed value |
+| --- | ---: |
+| Native restart step, independently checked in its log | 52,023,920 |
+| Latest committed step / simulated time | 53,145,800 / 106.29160 ns |
+| New simulation completed during observation | 2.24376 ns |
+| Acceptance to third durable checkpoint | 948.585962 s |
+| Delivered performance, including startup and exports | **204.368 ns/day** |
+| Native segment performance | 219.512, 217.780, 214.799 ns/day |
+| Previous run's last 20 native segments, mean | 116.891 ns/day |
+| Native segments completing without errors | 3/3 |
+| Original scientific files retained unchanged | 778 |
+| Current checkpoint workspace files | 814 |
+| Worker / collector restarts | 0 / 0 |
+
+This is roughly 1.86× the previous **native** throughput; native and delivered
+rates are not conflated. The new delivered measurement spans 15.81 minutes,
+not the full 1 µs simulation or a new multi-hour soak. The earlier sustained
+qualification and the two new terminal internal cohorts are separately reported
+above. The customer's real continuation is deliberately **left running**.
+
+Actual native commands contain the qualified GPU/list-200 settings. The first
+native log starts at the exact saved step. Every original `simulation.tpr` and
+`md.part*` file has an unchanged SHA-256 and size in the new checkpoint. The
+receipt is `customer/verification.json` under the private receipts directory;
+raw customer inputs and outputs are not published to Git. The observation
+processes have exited; no additional internal GPU workload remains.
+
+Customer Job: `fs2-workflow-mas1-20e-a1-ec69e0520fc9`, Pod
+`fs2-workflow-mas1-20e-a1-ec69e0520fc9-fjr6j`, Pod UID
+`51b9d39a-8e8b-45da-b198-1fb730ff89e5`. Both containers were Ready and the
+operation remained Running at the final 06:39 UTC check.
+
+The local observation helper initially reused an immutable checkpoint download
+destination between generations and correctly refused mismatching bytes.
+No customer mutation occurred during those failed observations. It now retains
+each downloaded checkpoint by artifact ID, separately from the latest summary;
+the subsequent boundary stop succeeded.
 
 The provider confirms the existing `fs2-lynx-c327dcc386444425` bucket's limit is
 100,000,000,000 bytes, previously 5 GB. No data or S3 credential identity changed.
-The new operation/resume budget is fourteen days. The running legacy operation
-still has its frozen seven-day budget until explicitly continued.
+The new operation's confirmed budget is fourteen days (1,209,600 seconds).
+The cancelled legacy source retains its original frozen seven-day budget.
+The actual successor Kubernetes Job has `activeDeadlineSeconds: 1211400`
+(the execution budget plus 1,800 seconds of export grace), rather than an old
+six-hour or seven-day deadline. Its scientific container requests one GPU,
+eight CPUs and 16 GiB RAM. No new capacity was provisioned for this continuation.
 
 ## Customer commands
 
@@ -74,7 +148,7 @@ Use the existing API key; no new key or S3 upload is needed:
 ```bash
 export SCIENTIFIC_AI_URL='https://89.169.99.188'
 export SCIENTIFIC_AI_API_KEY='<your existing API key>'
-export JOB_ID='<operation ID>'
+export JOB_ID='5a6cba05-2de1-43e5-8dc7-a29d5a222d76'
 
 # Current status (also works while the job is queued or running).
 curl --fail-with-body -sS \
@@ -87,7 +161,7 @@ curl --fail-with-body -sS \
 curl --fail-with-body -sS -X POST \
   -H "Authorization: Bearer $SCIENTIFIC_AI_API_KEY" \
   -H 'Content-Type: application/json' \
-  -H 'Idempotency-Key: my-job-continuation-01' \
+  -H "Idempotency-Key: resume-$JOB_ID-01" \
   -d '{}' "$SCIENTIFIC_AI_URL/v1/operations/$JOB_ID:resume" |
   jq '{new_job_id: .operation.id, status: .batch.status, continuation: .continuation}'
 ```
@@ -99,3 +173,12 @@ just because a queued run takes time. Retrieve its committed progress via
 `GET /v1/operations/{id}/result` after completion. Native checkpoint continuation
 is not GPU-process snapshotting, and the configured fourteen-day budget is not
 a claim of a fourteen-day soak.
+
+## Handover delivery
+
+The copyable customer draft was sent **only to Rene**, not directly to Lynx,
+at 06:40 UTC: [Slack DM](https://nebius.slack.com/archives/D07UH2N735X/p1791268846098699).
+It explains the platform-side integration gap, controlled cancellation of the
+old operation, new live ID, measured native/delivered performance, 100 GB bucket,
+fourteen-day budget, unchanged access, and the status/resume commands above.
+No actual API key or customer molecular data is included in the message.
