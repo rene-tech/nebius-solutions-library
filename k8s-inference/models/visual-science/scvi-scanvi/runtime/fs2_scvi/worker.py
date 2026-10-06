@@ -492,6 +492,10 @@ def main():
                 "scientific_convergence_claimed": False,
             },
         )
+        if isinstance(error, (InterruptedError, KeyboardInterrupt)):
+            # Match the profile's retryable exit codes. An uncaught Python
+            # exception exits 1 and incorrectly makes graceful preemption final.
+            raise SystemExit(75) from error
         raise
 
 

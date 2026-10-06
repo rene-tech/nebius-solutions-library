@@ -21,6 +21,7 @@ from fs2_serve.mcp_server import CLIENT_ONLY_TOOLS, CORE_TOOLS, MCP_HTTP_PATH, m
 from fs2_serve.models import Scope, TokenCreate
 from fs2_serve.registry import Registry
 from fs2_serve.request_debug import InMemoryDebugStore
+from fs2_serve.scientific_batch.models import BatchStatus
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog, ScientificRequestError
 
 
@@ -491,6 +492,28 @@ async def test_http_scientific_flat_manifest_and_legacy_wrapper_share_one_run(re
         assert len(repository.records) == 1
         status = _data(await client.call_tool("get_scientific_status", {"operation_id": submitted["operation"]["id"]}))
         assert status["batch"]["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_generic_mcp_poll_reports_scientific_result_publication(registry, cipher, hasher):
+    runtime, _, repository, _, pointer = scientific_runtime(registry, cipher, hasher)
+    app = _app(runtime)
+    key = await _key(runtime, models=("protein-design",))
+    async with app.router.lifespan_context(app), _connection(runtime, app, key) as client:
+        submitted = _data(await client.call_tool("submit_protein_design", {
+            "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+            "operation": "design", "service_class": "customer-batch",
+            "input_manifest": pointer, "parameters": {},
+            "idempotency_key": "generic-scientific-result-poll-20261006",
+        }))
+        operation_id = submitted["operation"]["id"]
+        arguments = {"operation_id": operation_id}
+        assert _data(await client.call_tool("get_operation", arguments))["result_available"] is False
+        # Scientific outputs are published in the durable batch repository,
+        # not the serving-result column of the generic operation record.
+        state = repository.records[UUID(operation_id)]
+        repository.records[UUID(operation_id)] = replace(state, status=BatchStatus.SUCCEEDED, result_published=True)
+        assert _data(await client.call_tool("get_operation", arguments))["result_available"] is True
 
 
 @pytest.mark.asyncio

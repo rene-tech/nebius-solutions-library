@@ -74,6 +74,13 @@
       "minimum": 2,
       "default": 3000
     },
+    "hvg_span": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "maximum": 1,
+      "default": 0.3,
+      "description": "Seurat-v3 LOESS smoothing span for HVG selection. Increase toward 1 for numerically singular batches, or provide your own var.highly_variable mask. No automatic method change is made."
+    },
     "max_epochs": {
       "type": [
         "integer",

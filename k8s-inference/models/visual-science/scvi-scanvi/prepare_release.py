@@ -18,6 +18,7 @@ ROOT = HERE.parents[2]
 sys.path.insert(0, str(ROOT / "models/molecular-dynamics/gromacs/activation"))
 sys.path.insert(0, str(ROOT / "models/molecular-dynamics/gromacs/runtime"))
 sys.path.insert(0, str(ROOT / "components/control-plane/src"))
+sys.path.insert(0, str(HERE / "runtime"))
 from prepare import (  # noqa: E402 - shared composer uses the solution source tree
     digest,
     prepare,
@@ -31,6 +32,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--baseline", type=Path, required=True)
     parser.add_argument("--runtime-receipts", type=Path, required=True)
+    parser.add_argument("--runtime-image", required=True)
+    parser.add_argument("--runtime-pod", type=Path, required=True)
+    parser.add_argument("--component-receipt", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--publish-catalog", action="store_true")
     parser.add_argument("--refresh-onboarding", action="store_true")
@@ -40,13 +44,17 @@ def main():
     captured = values["scientificBatch"]["executionMap"]
     contracts = ROOT / "catalog/runtime/contracts"
     source = json.loads((contracts / "scientific-execution-map.json").read_text())
+    replacing = any(item["model_id"] == "scvi-scanvi" for item in captured["models"])
     if args.refresh_onboarding:
         existing_catalog = json.loads((contracts / "scientific-workload-profiles.json").read_text())
         existing = next(item for item in existing_catalog["profiles"] if item["model_id"] == "scvi-scanvi")
         if existing["state"] != "active" or existing["qualification"]["public_completion_receipt_sha256"]:
             raise ValueError("Never rewrite a qualified release as onboarding")
-        source["models"] = [item for item in source["models"] if item["model_id"] != "scvi-scanvi"]
-        source["qualification_baselines"] = {sha: ids for sha, ids in source.get("qualification_baselines", {}).items() if "scvi-scanvi" not in ids}
+        if not replacing:
+            source["models"] = [item for item in source["models"] if item["model_id"] != "scvi-scanvi"]
+            source["qualification_baselines"] = {sha: ids for sha, ids in source.get("qualification_baselines", {}).items() if "scvi-scanvi" not in ids}
+    elif replacing:
+        raise ValueError("The live onboarding release requires --refresh-onboarding")
     if source["schema"] != captured["schema"] or source["models"] != captured["models"]:
         raise ValueError(
             "Source and actual live execution rows differ; do not overwrite them"
@@ -59,9 +67,15 @@ def main():
     }
     result_path = args.runtime_receipts / "hlca-receipt.json"
     result = json.loads(result_path.read_text())
-    components = json.loads(
-        (args.runtime_receipts / "component-receipt.json").read_text()
-    )
+    components = json.loads(args.component_receipt.read_text())
+    pod = json.loads(args.runtime_pod.read_text())
+    image = args.runtime_image
+    if (
+        pod["spec"]["containers"][0]["image"] != image
+        or pod["status"]["phase"] != "Succeeded"
+        or pod["status"]["containerStatuses"][0]["state"]["terminated"]["exitCode"] != 0
+    ):
+        raise ValueError("Current component evidence requires the successful exact-image pod")
     if (
         result["status"] != "succeeded"
         or result["cells"] != 584944
@@ -70,7 +84,6 @@ def main():
         raise ValueError(
             "Require the successful real HLCA cohort plus restart/query evidence"
         )
-    image = "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:eb2835095574d290a90d289fc2790e49d984b5bb4fa4911f74156d7f172d77e5"
     evidence = {
         "schema": "fs2-serve.nebius.ai/scvi-runtime-qualification/v1",
         "model_id": "scvi-scanvi",
@@ -80,10 +93,20 @@ def main():
         "scientific_convergence_claimed": False,
         "tests": [
             {
-                "case": "HLCA-core-584944",
+                "case": "full-state-interruption-and-query-mapping",
                 "pool": "h100-1x",
-                "gpu_name": result["gpu"],
                 "status": "succeeded",
+                "runtime_image": image,
+                "component_receipt_sha256": hashlib.sha256(args.component_receipt.read_bytes()).hexdigest(),
+                "pod_receipt_sha256": hashlib.sha256(args.runtime_pod.read_bytes()).hexdigest(),
+            },
+        ],
+        "prior_large_data_evidence": [
+            {
+                "case": "HLCA-core-584944",
+                "runtime_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:eb2835095574d290a90d289fc2790e49d984b5bb4fa4911f74156d7f172d77e5",
+                "status": "succeeded",
+                "gpu_name": result["gpu"],
                 "input_sha256": result["input_sha256"],
                 "result_sha256": hashlib.sha256(result_path.read_bytes()).hexdigest(),
                 "cells": result["cells"],
@@ -91,7 +114,7 @@ def main():
             }
         ],
         "component_receipt_sha256": hashlib.sha256(
-            (args.runtime_receipts / "component-receipt.json").read_bytes()
+            args.component_receipt.read_bytes()
         ).hexdigest(),
     }
     from fs2_serve.scientific_batch.adapters.common import _RECIPE_SHARED_PATHS
@@ -126,6 +149,7 @@ def main():
         image,
         evidence,
         digest(recipe),
+        replace_existing=replacing,
     )
     args.output.mkdir(parents=True, exist_ok=False)
     for name, value in (
@@ -146,7 +170,8 @@ def main():
             raise ValueError("Already published; prepare an explicit successor")
         desired = overlay["scientificBatch"]["executionMap"]
         catalog["profiles"] = rebase_profile_qualifications(
-            catalog["profiles"], source, desired
+            catalog["profiles"], source, desired,
+            replace_models=frozenset({"scvi-scanvi"}) if replacing else frozenset(),
         )
         catalog["profiles"].append(profile)
         validate_profile_qualifications(catalog["profiles"], desired)

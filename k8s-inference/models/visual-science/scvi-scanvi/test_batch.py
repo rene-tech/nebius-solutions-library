@@ -15,6 +15,25 @@ from fs2_scvi.data import inspect_counts, load_counts, validate_values
 
 
 class ContractTests(unittest.TestCase):
+    def test_graceful_interruption_uses_retryable_exit_code(self):
+        import json
+        from unittest.mock import Mock, patch
+        from fs2_scvi.worker import main
+
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root)
+            request = path / "request.json"
+            request.write_text(json.dumps({"schema": PARAMETER_SCHEMA}))
+            worker = Mock(parameters={}, state={"active_stage": "scvi", "generation": 2})
+            worker.run.side_effect = InterruptedError("test interruption")
+            with patch("fs2_scvi.worker.Workflow", return_value=worker), patch("signal.signal"), patch(
+                "sys.argv", ["worker", "--request", str(request), "--workspace", str(path), "--operation-id", "test"]
+            ):
+                with self.assertRaises(SystemExit) as error:
+                    main()
+            self.assertEqual(error.exception.code, 75)
+            self.assertEqual(json.loads((path / "result.json").read_text())["status"], "interrupted")
+
     def test_periodic_checkpoint_does_not_require_top_k(self):
         from types import SimpleNamespace
         from unittest.mock import Mock
@@ -103,6 +122,26 @@ class DataTests(unittest.TestCase):
     def save(self):
         ad.settings.allow_write_nullable_strings = True
         self.adata.write_h5ad(self.path)
+
+    def test_hvg_span_is_explicit_and_reported(self):
+        from unittest.mock import patch
+
+        self.save()
+        params = {**self.parameters, "gene_selection": "hvg", "n_top_genes": 2, "hvg_span": 0.7}
+        with patch("scanpy.pp.highly_variable_genes") as select:
+            _, report = load_counts(self.path, params, budget_bytes=32 * 1024**3)
+        self.assertEqual(select.call_args.kwargs["span"], 0.7)
+        self.assertEqual(report["hvg"]["span"], 0.7)
+
+    def test_hvg_failure_suggests_configuration_without_silent_fallback(self):
+        from unittest.mock import patch
+
+        self.save()
+        params = {**self.parameters, "gene_selection": "hvg", "n_top_genes": 2}
+        with patch("scanpy.pp.highly_variable_genes", side_effect=ValueError("singular")) as select:
+            with self.assertRaisesRegex(ValueError, "larger hvg_span"):
+                load_counts(self.path, params, budget_bytes=32 * 1024**3)
+        self.assertEqual(select.call_count, 1)
 
     def test_sparse_and_dense(self):
         for dense in (False, True):

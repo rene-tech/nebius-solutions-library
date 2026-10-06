@@ -9,6 +9,7 @@ import json
 import shutil
 import time
 import urllib.request
+import sys
 from pathlib import Path
 
 import anndata as ad
@@ -25,6 +26,11 @@ ROOT = Path("/work/atlas-r5")
 
 def main():
     ROOT.mkdir(parents=True, exist_ok=True)
+    # Re-qualify full-state restore and mapping in this exact runtime image.
+    sys.path.insert(0, "/opt/fs2")
+    from qualify_runtime import run_components
+    if not (ROOT / "components-r6/component-receipt.json").exists():
+        run_components(ROOT / "components-r6")
     source = ROOT / "hlca-full.h5ad"
     started = time.monotonic()
     if not source.exists():
@@ -89,6 +95,7 @@ def main():
         "batch_key": batch,
         "labels_key": "cell_type",
         "n_top_genes": 2000,
+        "hvg_span": 1.0,
         "batch_size": 512,
         "visualization": "sample",
         "output_destination": "platform-artifacts",

@@ -2084,6 +2084,13 @@ def scientific_contract_for(
     schema["properties"]["service_class"]["enum"] = list(profile.service_classes)
     model_ref = str(profile.value["model_id"])
     purpose = _PURPOSES.get(model_ref, f"{profile.display_name}: {profile.operations}")
+    if model_ref == "scvi-scanvi":
+        purpose = (
+            "Train scVI integration, scANVI annotation or map query cells to an exported reference. "
+            "Returns all-cell embeddings, optional label probabilities, selected-gene AnnData, "
+            "a reusable reference.tar.gz, training curves and optional UMAP. "
+            "Use this durable batch route for large inputs; the legacy native route has separate smaller limits."
+        )
     schema["description"] = (
         purpose + " Upload/finalize the input manifest, submit this asynchronous run, then poll its operation. "
         "After publication, inspect validation results and download the result/artifact manifest and output files. "

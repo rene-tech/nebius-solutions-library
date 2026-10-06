@@ -15,7 +15,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: scvi-whitelab-atlas-20261006-r6
+  name: scvi-whitelab-atlas-20261006-r7
   namespace: fs2-models
   labels:
     fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
@@ -42,8 +42,8 @@ spec:
         fsGroup: 10001
       containers:
         - name: atlas
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:eb2835095574d290a90d289fc2790e49d984b5bb4fa4911f74156d7f172d77e5
-          command: [python, -u, /qualification/qualify_atlas.py]
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:1471ca507c2ecee9ce0441b7b0ff5fc5a8bc504759e338db50d1a10681242f02
+          command: [sh, -c, "python -m unittest discover -s /qualification -p test_batch.py -v && python -u /qualification/qualify_atlas.py"]
           env:
             - {name: OMP_NUM_THREADS, value: "8"}
             - {name: MPLCONFIGDIR, value: /work/cache/matplotlib}
@@ -60,6 +60,6 @@ spec:
         - name: work
           persistentVolumeClaim: {claimName: scvi-whitelab-atlas-20261006}
         - name: harness
-          configMap: {name: scvi-whitelab-atlas-harness-20261006-r6}
+          configMap: {name: scvi-whitelab-atlas-harness-20261006-r7}
         - name: shm
           emptyDir: {medium: Memory, sizeLimit: 8Gi}

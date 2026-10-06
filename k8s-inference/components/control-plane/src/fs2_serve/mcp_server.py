@@ -962,7 +962,16 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         This does not submit new work or return the prediction. On completion,
         use get_operation_result; retain the same operation_id across polls.
         """
-        return (await _metadata(runtime, _principal(), operation_id)).model_dump(mode="json")
+        principal = _principal()
+        operation = await _metadata(runtime, principal, operation_id)
+        value = operation.model_dump(mode="json")
+        if operation.protocol == "scientific-batch-v1" and runtime.scientific_batches is not None:
+            batch_status = await runtime.scientific_batches.status(operation.id, principal=principal)
+            # Scientific artifacts are durably published outside the native
+            # response store. Its flag otherwise stays false after success and
+            # generic MCP clients can wait indefinitely for an available result.
+            value["result_available"] = bool(batch_status["batch"]["result_published"])
+        return value
 
     async def get_operation_result(operation_id: UUID) -> dict[str, Any]:
         """Retrieve a completed operation's prediction together with its operation metadata.

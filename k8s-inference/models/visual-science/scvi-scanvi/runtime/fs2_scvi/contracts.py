@@ -51,6 +51,13 @@ def request_schema() -> dict[str, Any]:
                 "description": "hvg uses batch-aware Seurat v3; provided uses var.highly_variable; all retains all genes. Query mapping uses reference genes instead.",
             },
             "n_top_genes": {"type": "integer", "minimum": 2, "default": 3000},
+            "hvg_span": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1,
+                "default": 0.3,
+                "description": "Seurat-v3 LOESS smoothing span for HVG selection. Increase toward 1 for numerically singular batches, or provide your own var.highly_variable mask. No automatic method change is made.",
+            },
             "max_epochs": {
                 "type": ["integer", "null"],
                 "minimum": 1,

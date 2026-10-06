@@ -131,13 +131,27 @@ def load_counts(path: Path, parameters: dict, *, budget_bytes: int | None = None
         elif selection == "hvg" and adata.n_vars > parameters["n_top_genes"]:
             import scanpy as sc
 
-            sc.pp.highly_variable_genes(
-                adata,
-                flavor="seurat_v3",
-                n_top_genes=parameters["n_top_genes"],
-                batch_key=parameters["batch_key"],
-                subset=True,
-            )
+            try:
+                sc.pp.highly_variable_genes(
+                    adata,
+                    flavor="seurat_v3",
+                    n_top_genes=parameters["n_top_genes"],
+                    batch_key=parameters["batch_key"],
+                    span=parameters["hvg_span"],
+                    subset=True,
+                )
+            except ValueError as error:
+                raise ValueError(
+                    "Seurat-v3 HVG selection failed for these batches. Try a larger hvg_span "
+                    "(up to 1), or supply boolean var.highly_variable and gene_selection=provided. "
+                    "No alternate selection method or batch definition was silently substituted."
+                ) from error
+            description["hvg"] = {
+                "flavor": "seurat_v3",
+                "span": parameters["hvg_span"],
+                "batch_key": parameters["batch_key"],
+                "n_top_genes": parameters["n_top_genes"],
+            }
         if adata.n_vars < 2:
             raise ValueError("Gene selection retained fewer than two genes")
     description["selected_genes"] = int(adata.n_vars)

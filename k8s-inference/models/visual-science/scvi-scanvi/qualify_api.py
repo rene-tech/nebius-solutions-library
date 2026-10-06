@@ -20,7 +20,7 @@ import httpx
 def checked(response):
     if response.is_error:
         raise RuntimeError(
-            f"HTTP {response.status_code}; request {response.headers.get('x-request-id', 'unknown')}"
+            f"HTTP {response.status_code}; request {response.headers.get('x-request-id', 'unknown')}; {response.text[:2000]}"
         )
     return response.json()
 
@@ -243,6 +243,7 @@ def main():
             "parameters": json.loads(args.parameters.read_text()),
         }
         identity = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
+        save(args.output / "request.json", body)
         response = checked(
             client.post(
                 "/v1/models/scvi-scanvi:submit",

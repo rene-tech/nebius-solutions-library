@@ -108,19 +108,21 @@ def main():
         deadline = time.monotonic() + args.timeout
         previous = None
         while time.monotonic() < deadline:
-            status = (tool("get_operation", {"operation_id": operation_id}) if args.protocol == "mcp"
+            status = (tool("get_scientific_status", {"operation_id": operation_id}) if args.protocol == "mcp"
                       else checked(client.get(f"/v1/operations/{operation_id}")))
             save(args.output / "status.json", status)
-            state = status["batch"]["status"]
+            state = status["batch"]["status"] if "batch" in status else status["status"]
             if state != previous:
                 print(json.dumps({"operation_id": operation_id, "protocol": args.protocol, "status": state}), flush=True)
                 previous = state
-            if state in {"succeeded", "failed", "cancelled"} and status["batch"]["result_published"]:
+            published = status["batch"]["result_published"] if "batch" in status else status["result_available"]
+            if state in {"succeeded", "failed", "cancelled"} and published:
                 break
             time.sleep(10)
         else:
             raise TimeoutError("Operation retained; do not duplicate work")
-        result = checked(client.get(f"/v1/operations/{operation_id}/result"))
+        result = (tool("get_scientific_result", {"operation_id": operation_id}) if args.protocol == "mcp"
+                  else checked(client.get(f"/v1/operations/{operation_id}/result")))
         save(args.output / "result.json", result)
 
         def download(pointer):
