@@ -5,6 +5,29 @@ Source starts at `19bfdf2c3`, the verified live shared-backend lineage.
 
 ## Status
 
+**Deployed and tested for a scoped REST/MCP PoC, 2026-10-06.** See the
+[final acceptance report](../../../acceptance/scvi-whitelab-20261006/README.md)
+and its machine-readable results. Final R6 backend / R7 worker passed:
+
+- 584,944 real cells via REST: **15.11 minutes accepted to completed**;
+  13.16 minutes worker execution, 19.67 GiB peak host RSS.
+- 1,000,000 real cells via MCP: **21.28 minutes accepted to completed**;
+  17.80 minutes worker execution, 22.67 GiB peak host RSS.
+- Full artifact and row-level validation; tenant-bucket readback; typed/generic
+  MCP polling/results; Python customer client; reference mapping; cancellation;
+  automatic replacement-worker recovery after SIGTERM and actual Pod eviction.
+- A fresh 14.33 GB upload passed after the artifact-specific timeout fix:
+  232.85s transfer plus 113.54s full checksum verification.
+
+No arbitrary cell/epoch cap was added. This is execution and resource-fit
+evidence, not biological convergence, a LibreChat qualification, or blanket
+production readiness. No WhiteLab tenant/key was created. Their representative
+data is helpful for scientific validation but not a platform-testing blocker.
+Temporary test disks/jobs are cleaned after exporting evidence; the live service
+and hosted outputs remain available. The histories below are superseded.
+
+### Earlier 14:48 status (superseded)
+
 **Live onboarding release; final PoC qualification in progress.** The existing
 native App is unchanged; the new durable batch protocol is published separately
 under the same App ID. WhiteLab has not supplied representative data yet.

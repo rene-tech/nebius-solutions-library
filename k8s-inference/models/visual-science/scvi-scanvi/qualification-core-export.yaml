@@ -1,0 +1,36 @@
+# CPU-only export after the original preemptible qualification host went away.
+# Task-owned public-data evidence, no customer dataset/key. Cleanup by Oct 8.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scvi-whitelab-core-export-20261006
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  activeDeadlineSeconds: 3600
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector:
+        kubernetes.io/hostname: computeinstance-e00s8g6t7z6qvz3f9p
+      tolerations:
+        - {key: dedicated, operator: Equal, value: fs2-inference, effect: NoSchedule}
+      securityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+      containers:
+        - name: export
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:f64cd4b39a6eaf41e1762837e0a878ee7a78307f973ef6a822a29b118b5510df
+          command: [python, -c, "import time; time.sleep(3500)"]
+          resources:
+            requests: {cpu: "1", memory: 1Gi}
+            limits: {cpu: "2", memory: 1Gi}
+          volumeMounts:
+            - {name: work, mountPath: /work}
+      volumes:
+        - name: work
+          persistentVolumeClaim: {claimName: scvi-whitelab-qualification-20261006}

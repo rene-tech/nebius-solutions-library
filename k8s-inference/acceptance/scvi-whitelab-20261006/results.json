@@ -1,0 +1,795 @@
+{
+  "schema": "fs2-serve.nebius.ai/scvi-poc-qualification-summary/v1",
+  "generated_at": "2026-10-06T15:21:42.330082+00:00",
+  "scope": "Measured public-data PoC execution, not biological accuracy or unrestricted production readiness",
+  "backend_image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:f64cd4b39a6eaf41e1762837e0a878ee7a78307f973ef6a822a29b118b5510df",
+  "backend_build_commit": "96626104f8b04a8bf232371f1f43d35e07f3d5bd",
+  "worker_digest": "sha256:063877787f8c1c1aef28887242389449b871e1d48c74edc07c267bccee340246",
+  "execution_identity_sha256": "d687522fcfcaf0ec460f56e2d1af1b80d1eabf36e2630d61b959f87114235bd5",
+  "scheduling_sha256": "1a3431c6b5309d87552f3d76b6d049df7d692ac28dda849a8317a6d1ca86ad56",
+  "evidence_directory": "/home/tux/secure-handoff/fs2-scvi-whitelab-20261006",
+  "cohorts": [
+    {
+      "operation_id": "569b7696-d660-4048-8632-084d20de61e9",
+      "interface": "REST",
+      "accepted_at": "2026-10-06T14:41:05.618511Z",
+      "completed_at": "2026-10-06T14:56:12.422404Z",
+      "accepted_to_completed_seconds": 906.803893,
+      "worker_seconds": 789.76694763056,
+      "worker_timings_seconds": {
+        "export_and_visualize": 97.06675103097223,
+        "load_and_select": 83.40845507290214,
+        "scanvi": 440.337450990919,
+        "scvi": 131.15749179804698
+      },
+      "cells": 584944,
+      "genes": 2000,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "peak_host_rss_bytes": 21115904000,
+      "pytorch_peak_allocated_bytes_not_total_device_usage": 348099584,
+      "input_sha256": "1cbdde1e513a31bdb6a3f70296e2d0612760d2af4032e239c94596ea87b44007",
+      "versions": {
+        "anndata": "0.12.3",
+        "lightning": "2.6.5",
+        "scanpy": "1.12.3",
+        "scvi-tools": "1.5.0.post1",
+        "torch": "2.7.1+cu128"
+      },
+      "parameters": {
+        "method": "scanvi",
+        "mode": "train",
+        "resource_profile": "routine",
+        "counts_source": "raw.X",
+        "batch_key": "dataset",
+        "labels_key": "cell_type",
+        "n_top_genes": 2000,
+        "hvg_span": 0.3,
+        "max_epochs": null,
+        "scanvi_max_epochs": 20,
+        "query_max_epochs": 100,
+        "batch_size": 512,
+        "seed": 0,
+        "visualization": "sample"
+      },
+      "validation": {
+        "status": "passed",
+        "operation_id": "569b7696-d660-4048-8632-084d20de61e9",
+        "cells": 584944,
+        "latent_dimensions": 10,
+        "files_verified": 42,
+        "bytes_verified": 893740834,
+        "annotation_validated": true,
+        "maximum_probability_sum_error": 3.2362202273539253e-07,
+        "biological_accuracy_or_convergence_claimed": false
+      },
+      "attempts": [
+        {
+          "attempt_id": "b8496e83-dd17-5509-9a9a-8ff53ac3f8e1",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a1-66751f1ca123",
+          "workload_uid": "1748c027-c4a0-4d1f-bd85-58120e5ce215",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "succeeded",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-ondemand-1x",
+            "admitted_resource_flavor": "inference-h100-ondemand-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T14:41:05Z"
+          },
+          "failure_kind": null,
+          "failure_code": null,
+          "recovery": null
+        }
+      ],
+      "worker_receipt_sha256": "703e5f80b4addea476747e91830bd14b136b0bbd7f05ad97abf335faaff8a198",
+      "status_receipt_sha256": "1a3ac41155b03d35852a76b81c473d8451f19401cc17ea8c7464de3a0f36ed0f",
+      "bucket_readback": {
+        "metadata_verified_files": 42,
+        "direct_byte_readback": [
+          {
+            "path": "predicted_labels.csv",
+            "sha256": "e5fd89c0e1cc2ce5e054afbeea5ff822cc6e921c6116bf3870fd6bcfb05ae6b1",
+            "size_bytes": 30624214
+          },
+          {
+            "path": "preflight.json",
+            "sha256": "d05f92fd0d56489b8400b170739d476aa3b255376efe6f3b95f9145179357b73",
+            "size_bytes": 332
+          },
+          {
+            "path": "reference.tar.gz",
+            "sha256": "d4f311ab7a5bbbd693f0cf9a85adbe386a0fb9ace4981bc1e2b7ad1376352579",
+            "size_bytes": 7822221
+          }
+        ],
+        "receipt_sha256": "46e42092d7f0a26f10ad0e84701afecc9e9d9b36980777e2c6f9506301b041fd"
+      }
+    },
+    {
+      "operation_id": "02b914a6-da6f-497e-8b99-f7aff51fb866",
+      "interface": "typed MCP",
+      "accepted_at": "2026-10-06T14:55:33.545761Z",
+      "completed_at": "2026-10-06T15:16:50.474207Z",
+      "accepted_to_completed_seconds": 1276.928446,
+      "worker_seconds": 1067.765073655999,
+      "worker_timings_seconds": {
+        "export_and_visualize": 117.70626767199792,
+        "load_and_select": 56.64615969299848,
+        "scanvi": 684.7632490879987,
+        "scvi": 117.54218089400092
+      },
+      "cells": 1000000,
+      "genes": 2000,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "peak_host_rss_bytes": 24345083904,
+      "pytorch_peak_allocated_bytes_not_total_device_usage": 353294848,
+      "input_sha256": "638e1635cbcddcfb01dc15cb5938ac98e43b8cc9a5529360efc63a4c11a453bf",
+      "versions": {
+        "anndata": "0.12.3",
+        "lightning": "2.6.5",
+        "scanpy": "1.12.3",
+        "scvi-tools": "1.5.0.post1",
+        "torch": "2.7.1+cu128"
+      },
+      "parameters": {
+        "method": "scanvi",
+        "mode": "train",
+        "resource_profile": "atlas",
+        "counts_source": "X",
+        "batch_key": "dataset",
+        "labels_key": "cell_type",
+        "n_top_genes": 2000,
+        "hvg_span": 1.0,
+        "max_epochs": null,
+        "scanvi_max_epochs": 20,
+        "query_max_epochs": 100,
+        "batch_size": 512,
+        "seed": 0,
+        "visualization": "sample"
+      },
+      "validation": {
+        "status": "passed",
+        "operation_id": "02b914a6-da6f-497e-8b99-f7aff51fb866",
+        "cells": 1000000,
+        "latent_dimensions": 10,
+        "files_verified": 42,
+        "bytes_verified": 1423753120,
+        "annotation_validated": true,
+        "maximum_probability_sum_error": 3.036773439379914e-07,
+        "biological_accuracy_or_convergence_claimed": false
+      },
+      "attempts": [
+        {
+          "attempt_id": "0fc6cab7-dfb4-56fc-88f4-2de0304a66ad",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a1-202f9bc07217",
+          "workload_uid": "57c57e32-5ef2-4599-9878-1cbd77e610ea",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "succeeded",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-reserved-8x",
+            "admitted_resource_flavor": "inference-h100-reserved-8x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T14:55:33Z"
+          },
+          "failure_kind": null,
+          "failure_code": null,
+          "recovery": null
+        }
+      ],
+      "worker_receipt_sha256": "6c7fbaca46bdec5c3b13985ddc05267dc234ec6484b492fcbc88752170dcbb7d",
+      "status_receipt_sha256": "2ae18905298cb3cc0401b07925211a74e1b363079f4109b7bafc7167fe0b261d",
+      "bucket_readback": {
+        "metadata_verified_files": 42,
+        "direct_byte_readback": [
+          {
+            "path": "predicted_labels.csv",
+            "sha256": "82cd1814bffdaaed55e9e8f4721af3497247c3db48712f52d8bb702b02c0a056",
+            "size_bytes": 55052105
+          },
+          {
+            "path": "preflight.json",
+            "sha256": "74a2caa3d2032ce76198d3bcc38d28571c86052bea93419f42deeb3d36fb0e2f",
+            "size_bytes": 329
+          },
+          {
+            "path": "reference.tar.gz",
+            "sha256": "e06df402f142360c69bb6233fd15da22ecc7d8f94121f9ff70f58b6062f21e9f",
+            "size_bytes": 9753038
+          }
+        ],
+        "receipt_sha256": "aa0e26739e69c9791802600c587571fe9c582ef6dae8e56a4975d6449e71c56e"
+      }
+    },
+    {
+      "operation_id": "f2aea9ca-162d-4366-819f-ed2032cf9813",
+      "interface": "typed MCP: reference mapping",
+      "accepted_at": "2026-10-06T14:38:32.862369Z",
+      "completed_at": "2026-10-06T14:39:05.892409Z",
+      "accepted_to_completed_seconds": 33.03004,
+      "worker_seconds": 9.87338914675638,
+      "worker_timings_seconds": {
+        "export_and_visualize": 0.08522628410719335,
+        "load_and_select": 0.015407141065225005,
+        "query": 4.900132457027212
+      },
+      "cells": 512,
+      "genes": 128,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "peak_host_rss_bytes": 1941954560,
+      "pytorch_peak_allocated_bytes_not_total_device_usage": 76653056,
+      "input_sha256": "04e205c9709a9c8072e869ee9b101f0147197978c4a727344a5b91017a6370ab",
+      "versions": {
+        "anndata": "0.12.3",
+        "lightning": "2.6.5",
+        "scanpy": "1.12.3",
+        "scvi-tools": "1.5.0.post1",
+        "torch": "2.7.1+cu128"
+      },
+      "parameters": {
+        "method": "scanvi",
+        "mode": "map-query",
+        "resource_profile": "routine",
+        "counts_source": "X",
+        "batch_key": "batch",
+        "labels_key": "cell_type",
+        "n_top_genes": 3000,
+        "hvg_span": 0.3,
+        "max_epochs": null,
+        "scanvi_max_epochs": 20,
+        "query_max_epochs": 2,
+        "batch_size": 256,
+        "seed": 0,
+        "visualization": "none"
+      },
+      "validation": {
+        "status": "passed",
+        "operation_id": "f2aea9ca-162d-4366-819f-ed2032cf9813",
+        "cells": 512,
+        "latent_dimensions": 10,
+        "files_verified": 27,
+        "bytes_verified": 3165979,
+        "annotation_validated": true,
+        "maximum_probability_sum_error": 1.0000000005838672e-07,
+        "biological_accuracy_or_convergence_claimed": false
+      },
+      "attempts": [
+        {
+          "attempt_id": "0b0e7040-64e1-52ae-a7a9-d2ebd0f1fbf1",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a1-e16b32d6db66",
+          "workload_uid": "2f1d89e1-12f5-40de-8cc6-8c74b31acc85",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "succeeded",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-ondemand-1x",
+            "admitted_resource_flavor": "inference-h100-ondemand-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T14:38:33Z"
+          },
+          "failure_kind": null,
+          "failure_code": null,
+          "recovery": null
+        }
+      ],
+      "worker_receipt_sha256": "b264df8121869fd39e179de4b4ea0fa0b6d03a8ad87de3e20932d5ce0edf7086",
+      "status_receipt_sha256": "dab8b0a42a341400cea579c3526123c3f0ea890f71fbb327048908a844c6fb38"
+    },
+    {
+      "operation_id": "69dfd6b3-3f60-4105-b02e-7810e3114f58",
+      "interface": "typed MCP: scVI-only",
+      "accepted_at": "2026-10-06T14:53:11.484143Z",
+      "completed_at": "2026-10-06T14:53:45.416141Z",
+      "accepted_to_completed_seconds": 33.931998,
+      "worker_seconds": 13.178868712158874,
+      "worker_timings_seconds": {
+        "export_and_visualize": 0.06627991492860019,
+        "load_and_select": 0.015756229870021343,
+        "scvi": 9.305200243135914
+      },
+      "cells": 512,
+      "genes": 128,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "peak_host_rss_bytes": 1743065088,
+      "pytorch_peak_allocated_bytes_not_total_device_usage": 71552512,
+      "input_sha256": "04e205c9709a9c8072e869ee9b101f0147197978c4a727344a5b91017a6370ab",
+      "versions": {
+        "anndata": "0.12.3",
+        "lightning": "2.6.5",
+        "scanpy": "1.12.3",
+        "scvi-tools": "1.5.0.post1",
+        "torch": "2.7.1+cu128"
+      },
+      "parameters": {
+        "method": "scvi",
+        "mode": "train",
+        "resource_profile": "routine",
+        "counts_source": "X",
+        "batch_key": "batch",
+        "labels_key": null,
+        "n_top_genes": 3000,
+        "hvg_span": 0.3,
+        "max_epochs": 3,
+        "scanvi_max_epochs": 20,
+        "query_max_epochs": 100,
+        "batch_size": 256,
+        "seed": 0,
+        "visualization": "none"
+      },
+      "validation": {
+        "status": "passed",
+        "operation_id": "69dfd6b3-3f60-4105-b02e-7810e3114f58",
+        "cells": 512,
+        "latent_dimensions": 10,
+        "files_verified": 17,
+        "bytes_verified": 2344331,
+        "annotation_validated": false,
+        "maximum_probability_sum_error": null,
+        "biological_accuracy_or_convergence_claimed": false
+      },
+      "attempts": [
+        {
+          "attempt_id": "2eb13a8d-0d3d-530c-bff2-b1c53f9106b2",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a1-aad4b1975fbf",
+          "workload_uid": "886dcf5f-1482-4a1d-8a65-64e6e80b4b9d",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "succeeded",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-ondemand-1x",
+            "admitted_resource_flavor": "inference-h100-ondemand-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T14:53:11Z"
+          },
+          "failure_kind": null,
+          "failure_code": null,
+          "recovery": null
+        }
+      ],
+      "worker_receipt_sha256": "581b5c49fe99d4a277d07e94a3d2bbd6c3c55ae3e98b58260061e7076d0dcf03",
+      "status_receipt_sha256": "e5348bfe47a8efa99e17efbaa35b69cecbf8079d2d2658a76daf9c46985fe677"
+    },
+    {
+      "operation_id": "f297923b-9ee5-430a-823f-095df56b2f38",
+      "interface": "customer submit.py/collect.py",
+      "accepted_at": "2026-10-06T15:03:33.286996Z",
+      "completed_at": "2026-10-06T15:04:07.270362Z",
+      "accepted_to_completed_seconds": 33.983366,
+      "worker_seconds": 12.178312106290832,
+      "worker_timings_seconds": {
+        "export_and_visualize": 0.06664341292344034,
+        "load_and_select": 0.017399901058524847,
+        "scvi": 9.058643938973546
+      },
+      "cells": 512,
+      "genes": 128,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "peak_host_rss_bytes": 1744130048,
+      "pytorch_peak_allocated_bytes_not_total_device_usage": 71552512,
+      "input_sha256": "04e205c9709a9c8072e869ee9b101f0147197978c4a727344a5b91017a6370ab",
+      "versions": {
+        "anndata": "0.12.3",
+        "lightning": "2.6.5",
+        "scanpy": "1.12.3",
+        "scvi-tools": "1.5.0.post1",
+        "torch": "2.7.1+cu128"
+      },
+      "parameters": {
+        "method": "scvi",
+        "mode": "train",
+        "resource_profile": "routine",
+        "counts_source": "X",
+        "batch_key": "batch",
+        "labels_key": null,
+        "n_top_genes": 3000,
+        "hvg_span": 0.3,
+        "max_epochs": 3,
+        "scanvi_max_epochs": 20,
+        "query_max_epochs": 100,
+        "batch_size": 256,
+        "seed": 0,
+        "visualization": "none"
+      },
+      "validation": {
+        "status": "passed",
+        "operation_id": "f297923b-9ee5-430a-823f-095df56b2f38",
+        "cells": 512,
+        "latent_dimensions": 10,
+        "files_verified": 17,
+        "bytes_verified": 2344332,
+        "annotation_validated": false,
+        "maximum_probability_sum_error": null,
+        "biological_accuracy_or_convergence_claimed": false
+      },
+      "attempts": [
+        {
+          "attempt_id": "646a5561-5949-5f17-a6e0-f8fff53ed697",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a1-31be77aa16eb",
+          "workload_uid": "3dddb42a-92d3-417d-9204-1d466eaadd20",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "succeeded",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-ondemand-1x",
+            "admitted_resource_flavor": "inference-h100-ondemand-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T15:03:33Z"
+          },
+          "failure_kind": null,
+          "failure_code": null,
+          "recovery": null
+        }
+      ],
+      "worker_receipt_sha256": "e023add13c8b9e4f595665b64d9a8624951c02362dd90d8909f1651c1b84b978",
+      "status_receipt_sha256": "9d7987ac1f4b4bd5be96c27065a0eaa2f70a64a27ef2c82b0e20113965bc2c6e",
+      "bucket_readback": {
+        "metadata_verified_files": 17,
+        "direct_byte_readback": [
+          {
+            "path": "preflight.json",
+            "sha256": "9fc6ec0676f802c256c39e551efa9ff73b8e42c17e06c0a01fc387a6aa6ea226",
+            "size_bytes": 228
+          },
+          {
+            "path": "reference.tar.gz",
+            "sha256": "897fbd731db2e9f8e16bddcf5596555ff900d43a316ab572e3d28522cfef7fad",
+            "size_bytes": 463046
+          }
+        ],
+        "receipt_sha256": "9bb3385337bd731ecf6d911ae3ecb35e13ce153d6649d2a5bcb2023fc996371a"
+      }
+    },
+    {
+      "operation_id": "181a7010-44df-4ea9-bb64-670c7f7d19f6",
+      "interface": "MCP: worker SIGTERM and replacement",
+      "accepted_at": "2026-10-06T14:38:29.161171Z",
+      "completed_at": "2026-10-06T14:40:34.124306Z",
+      "accepted_to_completed_seconds": 124.963135,
+      "worker_seconds": 80.97709374316037,
+      "worker_timings_seconds": {
+        "export_and_visualize": 0.08924330794252455,
+        "load_and_select": 0.016478682169690728,
+        "scanvi": 5.09348952001892,
+        "scvi": 62.91224972601049
+      },
+      "cells": 512,
+      "genes": 128,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "peak_host_rss_bytes": 1957064704,
+      "pytorch_peak_allocated_bytes_not_total_device_usage": 80883712,
+      "input_sha256": "04e205c9709a9c8072e869ee9b101f0147197978c4a727344a5b91017a6370ab",
+      "versions": {
+        "anndata": "0.12.3",
+        "lightning": "2.6.5",
+        "scanpy": "1.12.3",
+        "scvi-tools": "1.5.0.post1",
+        "torch": "2.7.1+cu128"
+      },
+      "parameters": {
+        "method": "scanvi",
+        "mode": "train",
+        "resource_profile": "routine",
+        "counts_source": "X",
+        "batch_key": "batch",
+        "labels_key": "cell_type",
+        "n_top_genes": 3000,
+        "hvg_span": 0.3,
+        "max_epochs": 30,
+        "scanvi_max_epochs": 2,
+        "query_max_epochs": 100,
+        "batch_size": 256,
+        "seed": 0,
+        "visualization": "none"
+      },
+      "validation": {
+        "status": "passed",
+        "operation_id": "181a7010-44df-4ea9-bb64-670c7f7d19f6",
+        "cells": 512,
+        "latent_dimensions": 10,
+        "files_verified": 40,
+        "bytes_verified": 5342347,
+        "annotation_validated": true,
+        "maximum_probability_sum_error": 1.0000000005838672e-07,
+        "biological_accuracy_or_convergence_claimed": false
+      },
+      "attempts": [
+        {
+          "attempt_id": "8ba362de-f4ef-55d4-9aca-c0585adfdd53",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a1-d06f40e07366",
+          "workload_uid": "88e6cae5-f872-419f-bdcb-db0b4dbeb5b1",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "preempted",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-ondemand-1x",
+            "admitted_resource_flavor": "inference-h100-ondemand-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T14:38:29Z"
+          },
+          "failure_kind": "preemption",
+          "failure_code": "SCVI_WORKER_INTERRUPTED",
+          "recovery": null
+        },
+        {
+          "attempt_id": "099a69af-6f63-5e60-8855-ff24b85154db",
+          "shard_id": "main",
+          "attempt_number": 2,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a2-9645e3f590e4",
+          "workload_uid": "cac14f80-451b-47c0-8374-40afacb84f5c",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "succeeded",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-ondemand-1x",
+            "admitted_resource_flavor": "inference-h100-ondemand-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T14:38:58Z"
+          },
+          "failure_kind": null,
+          "failure_code": null,
+          "recovery": null
+        }
+      ],
+      "worker_receipt_sha256": "9dd1dd3a0a628346238522e4e4c09933419db5b533c463beb4ec60c6534d4764",
+      "status_receipt_sha256": "c0ce0502a4d3e137c18b92c4458aa8d8363941ceae092a2474e6797c0ad67469"
+    },
+    {
+      "operation_id": "1f8e83fa-8b20-4695-b254-d56dd2d8330b",
+      "interface": "REST: Kubernetes Pod eviction and replacement",
+      "accepted_at": "2026-10-06T14:40:07.640590Z",
+      "completed_at": "2026-10-06T14:42:06.434666Z",
+      "accepted_to_completed_seconds": 118.794076,
+      "worker_seconds": 80.36544070206583,
+      "worker_timings_seconds": {
+        "export_and_visualize": 0.08868705900385976,
+        "load_and_select": 0.01633315603248775,
+        "scanvi": 4.594181474996731,
+        "scvi": 63.161055822856724
+      },
+      "cells": 512,
+      "genes": 128,
+      "gpu": "NVIDIA H100 80GB HBM3",
+      "peak_host_rss_bytes": 1957236736,
+      "pytorch_peak_allocated_bytes_not_total_device_usage": 80883712,
+      "input_sha256": "04e205c9709a9c8072e869ee9b101f0147197978c4a727344a5b91017a6370ab",
+      "versions": {
+        "anndata": "0.12.3",
+        "lightning": "2.6.5",
+        "scanpy": "1.12.3",
+        "scvi-tools": "1.5.0.post1",
+        "torch": "2.7.1+cu128"
+      },
+      "parameters": {
+        "method": "scanvi",
+        "mode": "train",
+        "resource_profile": "routine",
+        "counts_source": "X",
+        "batch_key": "batch",
+        "labels_key": "cell_type",
+        "n_top_genes": 3000,
+        "hvg_span": 0.3,
+        "max_epochs": 30,
+        "scanvi_max_epochs": 2,
+        "query_max_epochs": 100,
+        "batch_size": 256,
+        "seed": 0,
+        "visualization": "none"
+      },
+      "validation": {
+        "status": "passed",
+        "operation_id": "1f8e83fa-8b20-4695-b254-d56dd2d8330b",
+        "cells": 512,
+        "latent_dimensions": 10,
+        "files_verified": 40,
+        "bytes_verified": 5342344,
+        "annotation_validated": true,
+        "maximum_probability_sum_error": 1.0000000005838672e-07,
+        "biological_accuracy_or_convergence_claimed": false
+      },
+      "attempts": [
+        {
+          "attempt_id": "18f12b42-82d5-5f22-af25-3cd1d026ee60",
+          "shard_id": "main",
+          "attempt_number": 1,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a1-1b3794051d8d",
+          "workload_uid": "9564b892-5600-4a4d-9bfb-dd262277a185",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "failed",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-ondemand-1x",
+            "admitted_resource_flavor": "inference-h100-ondemand-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T14:40:07Z"
+          },
+          "failure_kind": "infrastructure",
+          "failure_code": "JobDisruptionTarget",
+          "recovery": null
+        },
+        {
+          "attempt_id": "45290eee-dfc9-55d7-8049-487b77878bac",
+          "shard_id": "main",
+          "attempt_number": 2,
+          "workload_kind": "Job",
+          "workload_name": "fs2-workflow-main-a2-4aa75b40601b",
+          "workload_uid": "f193b251-764a-42a7-bcb6-487ab62e10ca",
+          "workload_namespace": "fs2-models",
+          "route_namespace": "fs2-models",
+          "outcome": "succeeded",
+          "last_phase": "teardown",
+          "resource_released": true,
+          "scheduling_admission": {
+            "resolved_pool_id": "h100-ondemand-1x",
+            "admitted_resource_flavor": "inference-h100-ondemand-1x",
+            "accelerator_resource_name": "nvidia.com/gpu",
+            "accelerator_count": 1,
+            "admitted_at": "2026-10-06T14:40:31Z"
+          },
+          "failure_kind": null,
+          "failure_code": null,
+          "recovery": null
+        }
+      ],
+      "worker_receipt_sha256": "40043553e871ceeda168d3d0446746b72403ed7eb5aa86fc7c26edfaec82b4e0",
+      "status_receipt_sha256": "f3810232c416d7943ad8c93046fd3f41b9a46fc77371d807d4620dcce22c1c30"
+    }
+  ],
+  "large_transfer": {
+    "status": "passed",
+    "artifact": {
+      "artifact_id": "ee40286f-079f-49e6-8930-f78cc1593934",
+      "sha256": "638e1635cbcddcfb01dc15cb5938ac98e43b8cc9a5529360efc63a4c11a453bf",
+      "size_bytes": 14326834896,
+      "media_type": "application/x-hdf5",
+      "compression": "none"
+    },
+    "operation_id": "62180231-e975-4190-90d1-72b615088ae7",
+    "transfer_seconds": 232.85433865400046,
+    "finalization_seconds": 113.53726325699972,
+    "total_seconds": 346.3916019110002
+  },
+  "cancellation": {
+    "operation_id": "71c69808-26a7-4884-b4cc-6c6d5b0ad370",
+    "status": "cancelled"
+  },
+  "public_routing_after_change": {
+    "at": "2026-10-06T14:54:32.573Z",
+    "ok": true,
+    "results": [
+      {
+        "url": "https://forge.nebius.cloud/",
+        "status": 200,
+        "content_type": "text/html; charset=utf-8",
+        "milliseconds": 386,
+        "body_sha256": "0fa2b329ff469a23e1ea11f62ed5184c5d15473094afaf4859364e363fc423f1",
+        "ok": true,
+        "error": null
+      },
+      {
+        "url": "https://forge.nebius.cloud/models/",
+        "status": 200,
+        "content_type": "text/html; charset=utf-8",
+        "milliseconds": 268,
+        "body_sha256": "f366e9cf0f220166333a61c68934440bf07b936dea549c9124b4f354179f3024",
+        "ok": true,
+        "error": null
+      },
+      {
+        "url": "https://forge.nebius.cloud/pricing/",
+        "status": 200,
+        "content_type": "text/html; charset=utf-8",
+        "milliseconds": 275,
+        "body_sha256": "2f4b45bf18a6ba1f0ed510574dbc5b45c882a18fecae28750bc891d8599390af",
+        "ok": true,
+        "error": null
+      },
+      {
+        "url": "https://forge.nebius.cloud/mcp/",
+        "status": 200,
+        "content_type": "text/html; charset=utf-8",
+        "milliseconds": 343,
+        "body_sha256": "18ffa7defd50481e91719f615654359c13c8b35f8867a400813d454aa3a59e11",
+        "ok": true,
+        "error": null
+      },
+      {
+        "url": "https://forge.nebius.cloud/api/health",
+        "status": 200,
+        "content_type": "application/json; charset=utf-8",
+        "milliseconds": 276,
+        "body_sha256": "a80fe1d300f4d457f313a2a63281d95de7c46cb0709c770953b8f42ae2e72863",
+        "ok": true,
+        "error": null
+      },
+      {
+        "url": "https://forge.nebius.cloud/api/models",
+        "status": 200,
+        "content_type": "application/json; charset=utf-8",
+        "milliseconds": 271,
+        "body_sha256": "02aa7636dccfeb37635676cd12157b946b7f391fd00bd94d1c12355e9b6ae349",
+        "ok": true,
+        "error": null
+      },
+      {
+        "url": "https://89.169.99.188/admin/",
+        "status": 200,
+        "content_type": "text/html; charset=utf-8",
+        "milliseconds": 275,
+        "body_sha256": "5db5ca8ce0dfe1619e3957bceb2b8c1bf8b2becd7c9da75d1073874fac2b800b",
+        "ok": true,
+        "error": null
+      },
+      {
+        "url": "https://89.169.99.188/v1/models",
+        "status": 401,
+        "content_type": "application/json",
+        "milliseconds": 275,
+        "body_sha256": "64abe2a67b551ff4e8cc3dd86321850294ce5743963dfe6a546a2f8e4b3e62ee",
+        "ok": true,
+        "error": null
+      },
+      {
+        "url": "https://89.169.99.188/mcp",
+        "status": 401,
+        "content_type": "application/json",
+        "milliseconds": 270,
+        "body_sha256": "3ae7ddab16f90209af2f2b5932135d3bc56e8f3cbd44b967535f6c1db5c1bd2e",
+        "ok": true,
+        "error": null
+      }
+    ]
+  },
+  "not_claimed": [
+    "WhiteLab-specific biological validation or convergence",
+    "LibreChat agent qualification",
+    "multi-GPU training",
+    "GPU process snapshotting",
+    "arbitrary dataset fit",
+    "billing-grade GPU occupancy attribution",
+    "full repository CI passing"
+  ]
+}
