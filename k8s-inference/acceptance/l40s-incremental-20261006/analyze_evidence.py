@@ -42,6 +42,27 @@ def gpu_samples(path):
             for name, values in columns.items()}
 
 
+def energy_samples(path):
+    """Summarize retained native terms; variability is not convergence evidence."""
+    legends, rows = {}, []
+    for line in path.read_text().splitlines():
+        match = re.match(r'@\s+s(\d+)\s+legend\s+"([^\"]+)"', line)
+        if match:
+            legends[int(match[1]) + 1] = match[2]
+        elif line.strip() and not line.lstrip().startswith(("#", "@")):
+            rows.append([float(value) for value in line.split()])
+    if not legends or not rows or not all(
+            len(row) == max(legends) + 1 and all(math.isfinite(value) for value in row) for row in rows):
+        raise ValueError("Missing or non-finite native energy terms: " + str(path))
+    terms = {}
+    for column, name in legends.items():
+        values = [row[column] for row in rows]
+        terms[name] = {"mean": statistics.mean(values), "min": min(values), "max": max(values),
+                       "sample_stddev": statistics.stdev(values) if len(values) > 1 else 0.0}
+    return {"samples": len(rows), "time_ps": [rows[0][0], rows[-1][0]], "terms": terms,
+            "scope": "Native time-series summary, not independent samples, uncertainty or ensemble convergence"}
+
+
 def interval_union(intervals):
     total, current_start, current_end = 0, None, None
     for start, end in sorted(intervals):
@@ -153,6 +174,7 @@ def analyze(root):
             "mean_cpu_cores_including_native_checkpoint_inspection": cpu.get("usage_usec", 0) / 1e6 / record["component_wall_seconds"],
             "cgroup_throttled_seconds": cpu.get("throttled_usec", 0) / 1e6,
             "gpu": gpu_samples(path.parent / "gpu-samples.csv"),
+            "energy": energy_samples(path.parent / "energy-validation.xvg"),
         })
     for path in root.glob("profile/*.sqlite"):
         result["profile"] = profile_summary(path)

@@ -105,3 +105,17 @@ def test_confirmation_control_is_explicit_and_unambiguous():
     assert analyzer.comparison_cases({"confirm-baseline"}) == []
     with pytest.raises(ValueError, match="Ambiguous"):
         analyzer.comparison_cases({"confirm-baseline", "confirm-threads-8"})
+
+
+def test_energy_summary_uses_native_term_labels(tmp_path):
+    source = tmp_path / "energy-validation.xvg"
+    source.write_text('@ s0 legend "Potential"\n@ s1 legend "Temperature"\n'
+                      '0 -100 309\n2 -102 311\n')
+    summary = analyzer.energy_samples(source)
+    assert summary["samples"] == 2
+    assert summary["terms"]["Temperature"]["mean"] == 310
+    assert summary["terms"]["Potential"]["mean"] == -101
+    assert summary["time_ps"] == [0, 2]
+    source.write_text('@ s0 legend "Temperature"\n0 nan\n')
+    with pytest.raises(ValueError, match="non-finite"):
+        analyzer.energy_samples(source)
