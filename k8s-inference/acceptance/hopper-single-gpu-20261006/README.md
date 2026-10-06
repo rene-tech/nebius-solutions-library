@@ -133,3 +133,30 @@ this workload. GPU force computation and CPU/GPU synchronization both matter.
 The trace does not quantify attainable speedup or isolate every transfer's
 cause. Comparing the previous L40S trace is diagnostic only: neither trace is
 an uninstrumented performance trial, and hosts/drivers differ.
+
+## Completed H100 CPU-envelope confirmation
+
+`h100-cpu32-r1`: one H100, 32 requested/limited CPUs, otherwise idle full host
+`computeinstance-e00s8g6t7z6qvz3f9p`. Xeon Platinum 8468, driver 580.173.02,
+700 W configured GPU limit (unchanged). The short 8/16/32-thread screen selected
+16 threads. Each confirmation below comprises three separate 1 ns runs.
+
+| Threads | Native median (range), ns/day | Process-inclusive median (range), ns/day |
+| --- | --- | --- |
+| 8 | 213.070 (210.065–213.766) | 209.964 (207.285–210.865) |
+| 16 | 220.727 (220.046–221.863) | 217.694 (216.056–218.867) |
+
+Paired process-inclusive changes were +4.240%, +3.239% and +4.231%:
+median **+4.231%**, all three positive. This is repeatability evidence on this
+host, not a statistical-significance or busy-host packing claim. Average CPU
+consumption increased from about 7.8 to 15.7 cores for a roughly 4% speed gain;
+it is a latency/resource tradeoff, not a free throughput improvement.
+
+All 16 finite runs, including warmup and screens, validated. Confirmation mean
+temperatures were 310.043–310.106 K; raw potential/kinetic/total energies and
+pressure series are retained. No claim of independent samples or pressure/
+conformational convergence is made from these 1 ns performance repetitions.
+275 files / 413,135,541 bytes were independently rehashed after download.
+The exact pod was removed at completion, and the customer UID, node, readiness,
+images and restart counts were unchanged. The follow-up `cpu-pme` separately
+tests a real 16-CPU quota and the combined settings.
