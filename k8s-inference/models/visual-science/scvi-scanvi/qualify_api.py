@@ -9,6 +9,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -66,10 +67,20 @@ def multipart_file(client, objects, reserved, path, size, receipt):
 
         def transfer(part):
             start = (part["part_number"] - 1) * part_size
-            with path.open("rb") as stream:
-                stream.seek(start)
-                content = stream.read(min(part_size, size - start))
-            result = objects.put(part["url"], content=content)
+            length = min(part_size, size - start)
+
+            def chunks():
+                with path.open("rb") as stream:
+                    stream.seek(start)
+                    remaining = length
+                    while remaining:
+                        block = stream.read(min(1024**2, remaining))
+                        if not block:
+                            raise ValueError("Input was truncated during upload")
+                        remaining -= len(block)
+                        yield block
+
+            result = objects.put(part["url"], content=chunks(), headers={"Content-Length": str(length)})
             if result.is_error:
                 raise RuntimeError(
                     f"Multipart part {part['part_number']} HTTP {result.status_code}"
@@ -94,6 +105,7 @@ def main():
     parser.add_argument("--input", type=Path)
     parser.add_argument("--parameters", type=Path)
     parser.add_argument("--stage-only", action="store_true")
+    parser.add_argument("--sha256", help="Previously recorded input SHA-256; the server still verifies every uploaded byte")
     args = parser.parse_args()
     os.umask(0o077)
     values = dict(
@@ -120,8 +132,13 @@ def main():
 
         def upload(path, media_type, suffix):
             receipt = args.output / (suffix + "-artifact.json")
-            with path.open("rb") as handle:
-                digest = hashlib.file_digest(handle, "sha256").hexdigest()
+            if suffix == "anndata" and args.sha256:
+                if not re.fullmatch(r"[0-9a-f]{64}", args.sha256):
+                    raise ValueError("Invalid previously recorded SHA-256")
+                digest = args.sha256
+            else:
+                with path.open("rb") as handle:
+                    digest = hashlib.file_digest(handle, "sha256").hexdigest()
             size = path.stat().st_size
             if receipt.exists():
                 value = json.loads(receipt.read_text())

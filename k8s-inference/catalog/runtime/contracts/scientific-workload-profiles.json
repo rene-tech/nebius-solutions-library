@@ -3281,11 +3281,11 @@
         ]
       },
       "qualification": {
-        "h100_semantic_receipt_sha256": "a9e83f317e9475fe2584586506a484637ae1e67c9649ccc0f7bb2f042643203e",
+        "h100_semantic_receipt_sha256": "11f78d588619ab4bb0bf4e50498aad1f07a60074e44677684537250b2e73d968",
         "public_completion_receipt_sha256": null,
         "scheduler_eligibility_receipt_sha256": null,
-        "execution_map_sha256": "30f0e1e87fe242b26bcde0d97ab10941c12c26b60419da43c50a14e361f67f96",
-        "qualified_at": "2026-10-06T13:45:03.238498+00:00"
+        "execution_map_sha256": "289aba4ef2e70b8cd4533710f94cb67e375444f84bef4a5905722504493a8d64",
+        "qualified_at": "2026-10-06T13:53:13.478537+00:00"
       }
     }
   ]

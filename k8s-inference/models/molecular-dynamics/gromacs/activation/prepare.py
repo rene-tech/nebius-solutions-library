@@ -338,8 +338,8 @@ def prepare(
         def resources(value):
             def quantities(part):
                 return {"cpu": str(part["cpu_millis"]) + "m",
-                        "memory": str(part["memory_bytes"]),
-                        "ephemeral_storage": str(part["ephemeral_storage_bytes"])}
+                        "memory": str(part["memory_bytes"] // 1024**3) + "Gi",
+                        "ephemeral_storage": str(part["ephemeral_storage_bytes"] // 1024**3) + "Gi"}
             return {"requests": quantities(value), "limits": quantities(value["limits"])}
 
         stage = profile["workload"]["stages"][0]

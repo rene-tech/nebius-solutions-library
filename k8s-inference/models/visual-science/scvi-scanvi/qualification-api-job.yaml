@@ -3,7 +3,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: scvi-whitelab-api-20261006
+  name: scvi-whitelab-api-20261006-r2
   namespace: fs2-models
   labels:
     fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
@@ -30,7 +30,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: api
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:4f9f12882ea9ffaac7b3034b8f1a45c476d910dece291a7c23062a3988ececcc
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-platform/fs2-serve-control-plane@sha256:493b1a1f9e93e0fa5cde4f77ad00db6cb0d9540fe5c1097ea62d1da35ac7b190
           command: [python, -c, "import time; time.sleep(7100)"]
           resources:
             requests: {cpu: "1", memory: 1Gi}

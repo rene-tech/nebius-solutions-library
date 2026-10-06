@@ -211,9 +211,23 @@ def test_activation_keeps_existing_apps_and_projects_both_memory_shapes():
     assert json.loads(config["data"]["scheduling.json"])["quotas"] == {"keep": True}
     assert profile["qualification"]["public_completion_receipt_sha256"] is None
     shapes = row["stages"][0]["execution_shapes"]
-    assert [(s["id"], int(s["resources"]["requests"]["memory"])) for s in shapes] == [
-        ("routine", 128 * 1024**3),
-        ("atlas", 256 * 1024**3),
+    assert [(s["id"], s["resources"]["requests"]["memory"]) for s in shapes] == [
+        ("routine", "128Gi"),
+        ("atlas", "256Gi"),
     ]
     assert "application/x-hdf5" in overlay["scientificArtifacts"]["mediaTypes"]
     assert "application/vnd.fs2.scvi-checkpoint+json" in overlay["scientificArtifacts"]["mediaTypes"]
+
+
+def test_published_single_cell_map_is_accepted_by_production_renderer():
+    from pathlib import Path
+
+    from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
+    from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
+
+    root = Path(__file__).resolve().parents[3] / "catalog/runtime"
+    renderer = FileScientificManifestRenderer(
+        path=root / "contracts/scientific-execution-map.json",
+        profiles=ScientificProfileCatalog.load(root),
+    )
+    assert renderer.variant_id("scvi-scanvi") == "scvi-tools-1-5-batch-v1"

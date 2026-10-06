@@ -33,12 +33,20 @@ def main():
     parser.add_argument("--runtime-receipts", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--publish-catalog", action="store_true")
+    parser.add_argument("--refresh-onboarding", action="store_true")
     args = parser.parse_args()
     os.umask(0o077)
     values = json.loads((args.baseline / "values.json").read_text())
     captured = values["scientificBatch"]["executionMap"]
     contracts = ROOT / "catalog/runtime/contracts"
     source = json.loads((contracts / "scientific-execution-map.json").read_text())
+    if args.refresh_onboarding:
+        existing_catalog = json.loads((contracts / "scientific-workload-profiles.json").read_text())
+        existing = next(item for item in existing_catalog["profiles"] if item["model_id"] == "scvi-scanvi")
+        if existing["state"] != "active" or existing["qualification"]["public_completion_receipt_sha256"]:
+            raise ValueError("Never rewrite a qualified release as onboarding")
+        source["models"] = [item for item in source["models"] if item["model_id"] != "scvi-scanvi"]
+        source["qualification_baselines"] = {sha: ids for sha, ids in source.get("qualification_baselines", {}).items() if "scvi-scanvi" not in ids}
     if source["schema"] != captured["schema"] or source["models"] != captured["models"]:
         raise ValueError(
             "Source and actual live execution rows differ; do not overwrite them"
@@ -132,6 +140,8 @@ def main():
     if args.publish_catalog:
         catalog_path = contracts / "scientific-workload-profiles.json"
         catalog = json.loads(catalog_path.read_text())
+        if args.refresh_onboarding:
+            catalog["profiles"] = [item for item in catalog["profiles"] if item["model_id"] != "scvi-scanvi"]
         if any(item["model_id"] == "scvi-scanvi" for item in catalog["profiles"]):
             raise ValueError("Already published; prepare an explicit successor")
         desired = overlay["scientificBatch"]["executionMap"]
@@ -151,6 +161,8 @@ def main():
         )
         receipt_path = contracts / "scientific-source-candidate-receipts.json"
         receipts = json.loads(receipt_path.read_text())
+        if args.refresh_onboarding:
+            receipts["receipts"] = [item for item in receipts["receipts"] if item["model_id"] != "scvi-scanvi"]
         if any(item["model_id"] == "scvi-scanvi" for item in receipts["receipts"]):
             raise ValueError("Existing source receipt requires explicit reconciliation")
         receipts["receipts"].append(

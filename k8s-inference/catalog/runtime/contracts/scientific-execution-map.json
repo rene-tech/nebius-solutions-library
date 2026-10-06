@@ -2738,13 +2738,13 @@
           "resources": {
             "requests": {
               "cpu": "8000m",
-              "memory": "137438953472",
-              "ephemeral_storage": "137438953472"
+              "memory": "128Gi",
+              "ephemeral_storage": "128Gi"
             },
             "limits": {
               "cpu": "8000m",
-              "memory": "137438953472",
-              "ephemeral_storage": "137438953472"
+              "memory": "128Gi",
+              "ephemeral_storage": "128Gi"
             }
           },
           "active_deadline_seconds": 1211400,
@@ -2769,13 +2769,13 @@
               "resources": {
                 "requests": {
                   "cpu": "8000m",
-                  "memory": "137438953472",
-                  "ephemeral_storage": "137438953472"
+                  "memory": "128Gi",
+                  "ephemeral_storage": "128Gi"
                 },
                 "limits": {
                   "cpu": "8000m",
-                  "memory": "137438953472",
-                  "ephemeral_storage": "137438953472"
+                  "memory": "128Gi",
+                  "ephemeral_storage": "128Gi"
                 }
               }
             },
@@ -2784,13 +2784,13 @@
               "resources": {
                 "requests": {
                   "cpu": "8000m",
-                  "memory": "274877906944",
-                  "ephemeral_storage": "137438953472"
+                  "memory": "256Gi",
+                  "ephemeral_storage": "128Gi"
                 },
                 "limits": {
                   "cpu": "8000m",
-                  "memory": "274877906944",
-                  "ephemeral_storage": "137438953472"
+                  "memory": "256Gi",
+                  "ephemeral_storage": "128Gi"
                 }
               }
             }

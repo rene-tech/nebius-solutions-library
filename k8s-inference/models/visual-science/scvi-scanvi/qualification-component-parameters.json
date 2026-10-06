@@ -1,0 +1,14 @@
+{
+  "schema": "fs2-serve.nebius.ai/scvi-workflow-request/v1",
+  "resource_profile": "routine",
+  "method": "scanvi",
+  "batch_key": "batch",
+  "labels_key": "cell_type",
+  "max_epochs": 3,
+  "scanvi_max_epochs": 2,
+  "checkpoint_every_n_epochs": 1,
+  "early_stopping": false,
+  "gene_selection": "all",
+  "visualization": "none",
+  "output_destination": "platform-artifacts"
+}
