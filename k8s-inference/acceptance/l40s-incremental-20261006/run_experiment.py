@@ -101,7 +101,7 @@ def run(args):
             record["profile_tool_identity"] = {
                 "source": str(args.profile_tools), "nsys_sha256": lifecycle.sha(args.profile_tools / "nsys")}
             subprocess.run([*native.KUBE, "-n", native.NS, "cp", "--no-preserve", str(args.profile_tools),
-                            args.name + ":" + REMOTE + "/nsight"], check=True, capture_output=True, timeout=180)
+                            args.name + ":" + REMOTE + "/target-linux-x64"], check=True, capture_output=True, timeout=180)
         command = ["python3", REMOTE + "/experiment_inside.py", "--mode", args.mode,
                    "--tpr", REMOTE + "/original.tpr", "--output", REMOTE + "/results"]
         record["command"] = command
@@ -111,7 +111,12 @@ def run(args):
         record["exit_code"] = process.returncode
         native.call(["-n", native.NS, "cp", args.name + ":" + REMOTE + "/results", str(args.output / "results")])
         record["summary"] = json.loads((args.output / "results/summary.json").read_text())
-        record["status"] = "passed" if process.returncode == 0 else "failed"
+        if process.returncode:
+            record["status"] = "failed"
+        elif args.mode == "profile" and record["summary"].get("status") != "captured":
+            record["status"] = "incomplete"
+        else:
+            record["status"] = "passed"
     except Exception as exc:
         record.update(status="failed", error=str(exc))
     finally:
