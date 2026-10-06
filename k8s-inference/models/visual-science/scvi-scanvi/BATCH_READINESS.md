@@ -25,6 +25,20 @@ required to avoid one PoC request crashing another customer's work.
 
 ## Tests and next gates
 
+R1 isolated H100 run (`b87f4644ae66`) failed before training because upstream
+SaveCheckpoint constructs a filename from a non-null monitor. The custom full
+checkpoint callback now supplies an explicit filename, covered by a new test.
+The runtime cache directories also use task-owned writable paths instead of
+image-inherited root-owned directories. R2 image is `45bae1378c76`.
+Both attempts' input/output files remain on the same task-owned PVC in separate
+`r1/` and `r2/` prefixes. No failed attempt is counted as passing.
+
+Failure diagnostics now distinguish single-cell jobs from MD command jobs.
+The expanded focused platform suite passes 82 tests (one pre-existing Starlette
+deprecation warning), including a single-cell failure receipt without publishing
+partial embeddings as success. MD-specific fixtures remain MD-specific; shared
+binding/checkpoint tests also cover the new single-cell registration.
+
 - Eleven in-image data/parameter tests pass (2026-10-06).
 - 61 focused platform registry/input/checkpoint tests pass. Pytest reported
   cleanup warnings for unrelated pre-existing root-owned /tmp fixtures; these

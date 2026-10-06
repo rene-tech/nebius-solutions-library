@@ -61,6 +61,11 @@ def collect_failed_diagnostics(
         label="failed native request",
     )
     result, request = json.loads(raw), workflow.normalize(json.loads(request_raw))
+    if workflow.engine == "scvi":
+        # Single-cell jobs share durable transport, not MD command semantics.
+        from .adapters.scvi_scanvi import collect_failed_result
+
+        return collect_failed_result(invocation, result_path, result, request, exit_code)
     runtime = import_module(workflow.runtime_package)
     contracts = import_module(workflow.runtime_package + ".contracts")
     engine_id = (

@@ -179,3 +179,34 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path):
             "scientific_convergence_claimed": False,
         },
     )
+
+
+def collect_failed_result(invocation, path, result, parameters, exit_code):
+    """Publish a failure receipt, never partial embeddings as a successful fit."""
+    from . import CollectedArtifactFile, CollectedStageOutput
+    from ..native_failures import DIAGNOSTIC_ROLE
+
+    operation = invocation.argv[invocation.argv.index("--operation-id") + 1]
+    if (result.get("schema"), result.get("operation_id"), result.get("parameters")) != (
+        RESULT_SCHEMA,
+        operation,
+        parameters,
+    ) or result.get("status") not in {"failed", "interrupted"}:
+        raise ScientificAdapterError("scVI failure receipt does not match the frozen invocation")
+    return CollectedStageOutput(
+        (CollectedArtifactFile("failed-result", "scvi-failed-result/v1", path, "application/json"),),
+        {
+            "schema": "fs2-serve.nebius.ai/native-failed-diagnostics/v1",
+            "artifact_role": DIAGNOSTIC_ROLE,
+            "status": "failed",
+            "operation_id": operation,
+            "validator_id": VALIDATOR_ID,
+            "collector_id": COLLECTOR_ID,
+            "stage_id": invocation.stage_id,
+            "shard_id": invocation.shard_id,
+            "logical_output_id": invocation.produces,
+            "exit_code": exit_code,
+            "partial_scientific_outputs_included": False,
+            "scientific_validation_passed": False,
+        },
+    )

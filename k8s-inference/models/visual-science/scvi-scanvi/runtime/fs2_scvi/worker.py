@@ -62,6 +62,7 @@ class DurableCheckpoint(SaveCheckpoint):
         self.workflow, self.stage = workflow, stage
         super().__init__(
             dirpath=str(workflow.data / "checkpoints" / stage),
+            filename="epoch-{epoch}",
             monitor=None,
             save_top_k=0,
             save_last=True,
@@ -443,7 +444,26 @@ def main():
         checkpoint_mode=args.checkpoint_mode,
     )
     signal.signal(signal.SIGTERM, worker.stop)
-    worker.run()
+    try:
+        worker.run()
+    except BaseException as error:
+        args.workspace.mkdir(parents=True, exist_ok=True)
+        atomic_json(
+            args.workspace / "result.json",
+            {
+                "schema": RESULT_SCHEMA,
+                "operation_id": args.operation_id,
+                "parameters": worker.parameters,
+                "status": "interrupted"
+                if isinstance(error, (InterruptedError, KeyboardInterrupt))
+                else "failed",
+                "error_type": type(error).__name__,
+                "stage": worker.state["active_stage"],
+                "checkpoint_generation": worker.state["generation"],
+                "scientific_convergence_claimed": False,
+            },
+        )
+        raise
 
 
 if __name__ == "__main__":

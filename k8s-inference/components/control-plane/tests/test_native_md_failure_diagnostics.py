@@ -135,7 +135,7 @@ def fixture(root, collector="lammps-workflow-v1", *, marker=True):
     return invocation, workflow, result
 
 
-@pytest.mark.parametrize("collector", [item.collector_id for item in WORKFLOWS])
+@pytest.mark.parametrize("collector", [item.collector_id for item in WORKFLOWS if item.engine != "scvi"])
 def test_all_native_engines_preserve_exact_failure_logs_not_partial_science(tmp_path, collector):
     invocation, workflow, _ = fixture(tmp_path, collector)
     output = native_failures.collect_failed_diagnostics(invocation, tmp_path, workflow)
@@ -346,7 +346,7 @@ def test_failed_upload_never_acknowledges_diagnostic_publication(tmp_path, monke
     assert not (tmp_path / ".fs2/checkpoint-ack.json").exists()
 
 
-@pytest.mark.parametrize("collector", [item.collector_id for item in WORKFLOWS])
+@pytest.mark.parametrize("collector", [item.collector_id for item in WORKFLOWS if item.engine != "scvi"])
 def test_failed_log_reuses_checkpoint_upload_identity_without_certifying_progress(tmp_path, monkeypatch, collector):
     invocation, _, _ = fixture(tmp_path, collector)
     native_identity = f"{invocation.produces}:test-attempt:native-file"

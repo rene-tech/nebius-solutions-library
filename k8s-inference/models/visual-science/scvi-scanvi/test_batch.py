@@ -15,6 +15,18 @@ from fs2_scvi.data import inspect_counts, load_counts, validate_values
 
 
 class ContractTests(unittest.TestCase):
+    def test_checkpoint_construction_uses_full_lightning_state(self):
+        from types import SimpleNamespace
+        from fs2_scvi.worker import DurableCheckpoint
+
+        with tempfile.TemporaryDirectory() as root:
+            workflow = SimpleNamespace(
+                data=Path(root), parameters={"checkpoint_every_n_epochs": 5}
+            )
+            checkpoint = DurableCheckpoint(workflow, "scvi")
+            self.assertTrue(checkpoint.save_last)
+            self.assertFalse(checkpoint.save_weights_only)
+
     def test_defaults_and_no_demo_epoch_cap(self):
         params = normalize({"schema": PARAMETER_SCHEMA})
         self.assertIsNone(params["max_epochs"])

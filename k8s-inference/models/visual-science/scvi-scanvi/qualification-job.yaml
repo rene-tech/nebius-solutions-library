@@ -16,7 +16,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: scvi-whitelab-qualification-20261006-r1
+  name: scvi-whitelab-qualification-20261006-r2
   namespace: fs2-models
   labels:
     fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
@@ -44,16 +44,16 @@ spec:
         fsGroup: 10001
       containers:
         - name: qualify
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:b87f4644ae661829d8c9aada4ec537fafff0572144347b1c1d141b20953d04b0
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:45bae1378c76ba0836050b3a8b4a1ca1161b096223bc9d4bf61122d3469aec18
           command: [python, -u, /opt/fs2/qualify_runtime.py]
-          args: [--root, /work/r1]
+          args: [--root, /work/r2]
           env:
             - name: OMP_NUM_THREADS
               value: "8"
             - name: MPLCONFIGDIR
-              value: /tmp/matplotlib
+              value: /work/cache/matplotlib
             - name: NUMBA_CACHE_DIR
-              value: /tmp/numba
+              value: /work/cache/numba
           resources:
             requests:
               cpu: "8"
