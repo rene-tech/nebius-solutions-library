@@ -203,6 +203,17 @@ are preserved byte-identically; a separate local rehash of every final downloade
 file also passed. All 934 platform/checkpoint GETs used one attempt, with no
 unknown retry counts or transient public polling failures. The runner exited zero.
 
+The retained `trjcat` log contains 64 spacing warnings, not silent success without
+warnings. Its 65 nonempty inputs each contain one frame, so the per-file scan
+infers a zero timestep; the actual frame times are uniformly 28,000–92,000 ps.
+The warning condition in [upstream `trjcat`](https://github.com/gromacs/gromacs/blob/main/src/gromacs/tools/trjcat.cpp)
+corroborates this one-frame-file limitation. More importantly, the exact-release
+native `gmx check` independently verifies the joined output: 185,486 atoms and
+65 Step/Time/Coords/Box entries at unchanged 1,000-ps spacing, with no missing or
+duplicate frame time. All raw parts and warnings remain retained; the private
+`trajectory-warning-classification.json` records the assertions and native log
+hashes. No additional simulation or scientific setting change was needed.
+
 Native input materialization took four seconds. The 84 observed committed
 handoffs ranged from 0.912 to 9.660 seconds, below the unchanged 600-second bound;
 the first handoff's platform and customer-export phases took 3.593 and 5.716
@@ -217,7 +228,11 @@ reader UIDs and exact `1c223369…` image were retained. This is cohort evidence
 not an availability SLO. Public `resource_released` is true; the task-owned
 resumed Pod UID `de673fb2-5b70-40f7-b264-57e45bc6aba4` was observed absent at
 03:58:40.934 UTC. Attempt and hardware observers exited zero; the customer's
-ongoing operation was not stopped or replaced.
+ongoing operation was not stopped or replaced. The readiness chain subsequently
+finished its last window naturally at 04:18:01.075 UTC and exited zero. Including
+that tail, all 45 collectors across 15 windows passed, with **16,191 HTTP-200
+samples**, zero errors and no interval over 30 seconds. All four original local
+runner/observer PIDs are absent; no acceptance process or GPU workload remains.
 
 Final private evidence under `long-r1/`:
 
@@ -227,7 +242,8 @@ Final private evidence under `long-r1/`:
 - `final-evidence.json`: exact placement, coverage, retries, phase timings,
   independent local rehash and released-Pod evidence.
 - `runner-session-exit.json`, `attempt-observer-session-exit.json` and
-  `hardware-observer-session-exit.json`: actual process exit receipts.
+  `hardware-observer-session-exit.json`, plus
+  `readiness-observer-session-exit.json`: actual process exit receipts.
 
 The customer manifest hash is
 `530105e572683dfde7eff0c037e88c5721671e6d50536cdbe4c49aeda3916e3e`.
