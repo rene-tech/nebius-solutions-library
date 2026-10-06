@@ -41,6 +41,14 @@ rule and three paired 1 ns confirmations. This tests whether the promising
 CPU and PME settings actually combine; no speedups are added arithmetically.
 The original 32-CPU cohort remains separate and is not relabeled as 16 CPUs.
 
+The current single-GPU H100/H200 VM nodes expose 16 logical CPUs (eight
+physical-core IDs), with 15.9 allocatable Kubernetes CPUs. A pod requesting
+16 CPUs therefore belongs on the tested full-host pool, not those single-GPU
+VM nodes. The full hosts expose 128 logical CPUs / 64 physical-core IDs;
+only one GPU is assigned to each test. CPU quota is not an exclusive physical
+core reservation. These isolated trials do not qualify the same throughput
+when all eight GPUs and their CPU workers share a busy host.
+
 ## Reproduction
 
 ```bash
