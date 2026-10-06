@@ -208,7 +208,7 @@ def profile_experiment(root, original):
     tools = {tool: shutil.which(tool) for tool in ("nsys", "ncu", "nvidia-smi", "nvcc", "perf", "numactl", "lstopo")}
     for path in Path("/opt/nvidia").glob("nsight-systems/*/bin/nsys"):
         tools["nsys"] = tools["nsys"] or str(path)
-    overlay = Path(__file__).with_name("target-linux-x64") / "nsys"
+    overlay = Path(__file__).with_name("nsight") / "target-linux-x64/nsys"
     if overlay.is_file():
         tools["nsys"] = tools["nsys"] or str(overlay)
     save(root / "profiling-tools.json", tools)

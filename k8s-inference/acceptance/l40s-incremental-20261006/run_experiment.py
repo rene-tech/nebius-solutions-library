@@ -96,12 +96,13 @@ def run(args):
         for source, target in sources:
             native.call(["-n", native.NS, "cp", "--no-preserve", str(source), args.name + ":" + REMOTE + "/" + target])
         if args.profile_tools:
-            if args.mode != "profile" or not (args.profile_tools / "nsys").is_file():
+            nsys = args.profile_tools / "target-linux-x64/nsys"
+            if args.mode != "profile" or not nsys.is_file():
                 raise ValueError("Profiler overlay is only allowed for an isolated profile run")
             record["profile_tool_identity"] = {
-                "source": str(args.profile_tools), "nsys_sha256": lifecycle.sha(args.profile_tools / "nsys")}
+                "source": str(args.profile_tools), "nsys_sha256": lifecycle.sha(nsys)}
             subprocess.run([*native.KUBE, "-n", native.NS, "cp", "--no-preserve", str(args.profile_tools),
-                            args.name + ":" + REMOTE + "/target-linux-x64"], check=True, capture_output=True, timeout=180)
+                            args.name + ":" + REMOTE + "/nsight"], check=True, capture_output=True, timeout=180)
         command = ["python3", REMOTE + "/experiment_inside.py", "--mode", args.mode,
                    "--tpr", REMOTE + "/original.tpr", "--output", REMOTE + "/results"]
         record["command"] = command
