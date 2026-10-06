@@ -659,6 +659,9 @@ httpRoute:
   # Must remain above config.maxSyncWaitSeconds (30 seconds).
   requestTimeout: 40s
   backendRequestTimeout: 40s
+  # Full SHA verification and streaming downloads of multi-GB scientific files.
+  # Only artifact paths receive this timeout; ordinary API/MCP remains 40s.
+  artifactTransferTimeout: 900s
   # Dedicated upgraded connection; ordinary HTTP/MCP requests retain 40s.
   speechStreamTimeout: 7500s
 

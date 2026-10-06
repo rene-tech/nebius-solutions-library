@@ -2369,6 +2369,8 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
     }
     assert paths == {
         "/v1": "PathPrefix",
+        "/v1/artifacts": "PathPrefix",
+        "/v1/scientific-artifacts/uploads": "PathPrefix",
         "/v1/audio/stream": "Exact",
         "/v1/voice": "PathPrefix",
         "/mcp": "Exact",
@@ -2391,7 +2393,11 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
         "request": "40s",
         "backendRequest": "40s",
     }
-    stream_rule = route["spec"]["rules"][1]
+    artifact_rule = route["spec"]["rules"][1]
+    assert artifact_rule["timeouts"] == {"request": "900s", "backendRequest": "900s"}
+    assert artifact_rule["filters"] == route["spec"]["rules"][0]["filters"]
+    assert artifact_rule["backendRefs"] == route["spec"]["rules"][0]["backendRefs"]
+    stream_rule = route["spec"]["rules"][2]
     assert stream_rule["timeouts"] == {"request": "7500s", "backendRequest": "7500s"}
     assert stream_rule["filters"] == route["spec"]["rules"][0]["filters"]
     assert redirect["spec"] == {
@@ -2429,6 +2435,14 @@ def test_public_route_exposes_inference_and_session_authenticated_admin_paths() 
     rule = rate_limit["spec"]["rateLimit"]["local"]["rules"][0]
     assert rule == {"limit": {"requests": 200, "unit": "Second"}}
     assert rate_limit["spec"]["mergeType"] == "StrategicMerge"
+
+
+def test_artifact_timeout_override_does_not_lengthen_model_calls():
+    route = application_route(render("--set", "httpRoute.artifactTransferTimeout=1800s"))
+    assert "hostnames" not in route["spec"]
+    assert route["spec"]["rules"][0]["timeouts"] == {"request": "40s", "backendRequest": "40s"}
+    assert route["spec"]["rules"][1]["timeouts"] == {"request": "1800s", "backendRequest": "1800s"}
+    assert route["spec"]["rules"][2]["timeouts"] == {"request": "7500s", "backendRequest": "7500s"}
 
 
 def test_enabled_public_route_rejects_an_incomplete_edge() -> None:

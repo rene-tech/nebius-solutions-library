@@ -144,6 +144,11 @@ def main(*, require_qa=True):
         result = (tool("get_scientific_result", {"operation_id": operation_id}) if args.protocol == "mcp"
                   else checked(client.get(f"/v1/operations/{operation_id}/result")))
         save(args.output / "result.json", result)
+        if args.protocol == "mcp":
+            generic_result = tool("get_operation_result", {"operation_id": operation_id})
+            save(args.output / "generic-result.json", generic_result)
+            if generic_result != result:
+                raise ValueError("Generic and scientific MCP result tools disagree")
 
         def download(pointer):
             destination = args.output / "artifacts" / pointer["artifact_id"]

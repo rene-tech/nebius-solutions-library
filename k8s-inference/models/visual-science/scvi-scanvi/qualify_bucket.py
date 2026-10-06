@@ -49,7 +49,8 @@ def main():
         if not item["key"].startswith(prefix + "objects/"):
             raise ValueError("Unexpected object outside the test's operation prefix")
         head = s3.head_object(Bucket=bucket, Key=item["key"])
-        if (head["ContentLength"], head["Metadata"].get("sha256")) != (item["size_bytes"], item["sha256"]):
+        digests = [value for key, value in head.get("Metadata", {}).items() if key.lower() == "sha256"]
+        if head["ContentLength"] != item["size_bytes"] or not digests or any(digest != item["sha256"] for digest in digests):
             raise ValueError("Object metadata differs from the committed inventory")
         verified.append(item["path"])
         if item["path"] in {"reference.tar.gz", "preflight.json", "predicted_labels.csv"}:

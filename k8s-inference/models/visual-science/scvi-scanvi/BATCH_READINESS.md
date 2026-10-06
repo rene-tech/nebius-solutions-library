@@ -9,7 +9,44 @@ Source starts at `19bfdf2c3`, the verified live shared-backend lineage.
 native App is unchanged; the new durable batch protocol is published separately
 under the same App ID. WhiteLab has not supplied representative data yet.
 
-At 14:23 UTC on 2026-10-06:
+At 14:48 UTC on 2026-10-06:
+
+- Final backend R6 `f64cd4b39a6e...`, source `96626104f`, is live with
+  three API and two model-controller replicas. Worker remains R7
+  `063877787f8c...`. Existing scheduling policy is unchanged.
+- Hosted 584,944-cell operation `983a0cba-5c3d-463a-8f63-7a00a0b5b3de`
+  succeeded: 805.74 s worker, 935.47 s accepted-to-terminal, 42 output files /
+  893,740,845 bytes. Every downloaded file was hash-verified, every exported
+  cell/embedding/label/probability checked, and customer-bucket metadata plus
+  three selected raw objects independently read back. This was admitted under
+  R4 and completed while R5 served; it is not substituted for R6 acceptance.
+- One-million-real-cell direct runtime test on R6 succeeded: 960.91 s worker,
+  25,710,936,064 B peak RSS, 42 files / 1,423,752,923 B. All copied output bytes
+  and all one-million exported rows passed independent validation. An actual
+  final-release hosted 1M run is being prepared; the direct result alone does
+  not qualify public upload/admission.
+- R6 worker-signal recovery `181a7010-44df-4ea9-bb64-670c7f7d19f6` and
+  actual pod eviction `1f8e83fa-8b20-4695-b254-d56dd2d8330b` both succeeded.
+  Each used two controller attempts, restored all Lightning states from the
+  committed checkpoint, published verified output, and released its worker.
+- R6 typed MCP reference mapping `f2aea9ca-162d-4366-819f-ed2032cf9813`
+  succeeded, including correct generic MCP result availability and artifact
+  download. Cancellation was verified on R5; final R6 repetition is pending.
+- Admin reporting correlates runs, tenant/principal, attempts, pool, Pod/node/
+  GPU identities, phase occupancy and DCGM samples. Accounting reconciles to
+  zero residual, but phase boundaries are application-observed estimates,
+  not billable utilization. Missing distributed trace context is explicit.
+- The unchanged internal key's two-slot limit correctly returned non-admission
+  for excess work during a large upload plus training. Customer CLI now waits
+  for explicit concurrency responses without changing key policy or creating
+  duplicate operations. Other HTTP failures remain visible.
+
+Remaining: final R6 large-data cohorts, retained receipts, clean closeout and
+source publication. No WhiteLab identity/storage binding or LibreChat instance
+has been provisioned or qualified. Public source data demonstrates execution
+and resource fit, not biological convergence or customer-specific accuracy.
+
+### Earlier 14:23 status (superseded)
 
 - Worker R7 `063877787f8c...` passed 17 unit tests plus real H100 full-state
   restart and reference-mapping component checks.
@@ -29,7 +66,7 @@ At 14:23 UTC on 2026-10-06:
   success. R4 fixes this using the durable batch publication state.
 - No customer key, node group, cloud quota, hot floor or unrelated route changed.
 
-Remaining gates: hosted replacement-worker recovery, default customer-bucket
+At that point, remaining gates were hosted replacement-worker recovery, default customer-bucket
 readback, public query mapping, cancellation, unchanged-release clean cohorts,
 final large-data receipts and documentation. Biological validation remains a
 customer/study-specific activity, not a platform execution claim.

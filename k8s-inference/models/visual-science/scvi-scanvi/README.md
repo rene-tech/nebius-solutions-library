@@ -100,6 +100,11 @@ and idempotency key after a disconnected client. Use a new key/output directory
 for an intentional independent run. `collect.py` verifies every output's bytes
 and SHA-256 and restores meaningful filenames under `run-001/data/`. A local
 collection timeout does not cancel the remote job; poll the same operation again.
+If your key's concurrent-operation slots are occupied, submission waits up to
+900 seconds, retrying only an explicit non-admission response with the same
+idempotency key. Configure this with `--admission-wait-seconds`; a timeout
+preserves completed uploads. Input-upload intents also use those slots while
+active. Other errors are reported, not retried blindly.
 
 For reference mapping, set `mode: map-query`, use the matching `method`, and add
 `--reference previous-run/data/reference.tar.gz` to `submit.py`. The reference
@@ -133,6 +138,19 @@ use the GROMACS-specific resume tool for it.
 Inspect held-out annotation quality, batch mixing and biological conservation
 for your own study. A successful job, normalized probabilities, or an attractive
 UMAP does **not** demonstrate biological correctness or convergence.
+
+## PoC handover inputs
+
+No customer dataset is required to exercise the provided public-data examples.
+For a customer's exact study, collect a representative H5AD (or its shape and
+storage size), the raw-count location, batch/donor column, annotation column,
+and whether the task is integration, annotation or reference mapping. The
+operator grants `scvi-scanvi` to their existing inference identity and workspace;
+these scripts do not create a tenant or expose an operator credential.
+
+This release covers the Python REST client and typed MCP protocol. It does not
+qualify a particular LibreChat/LLM workflow, biological accuracy, multi-GPU
+training, or an arbitrary atlas size. There is no GPU-process-snapshot claim.
 
 ## References
 

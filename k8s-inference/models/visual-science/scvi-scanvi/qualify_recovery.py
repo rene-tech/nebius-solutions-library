@@ -22,6 +22,7 @@ def main():
     parser.add_argument("--request", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cohort", required=True)
+    parser.add_argument("--fault", choices=("worker-signal", "pod-eviction"), default="worker-signal")
     args = parser.parse_args()
     os.umask(0o077)
     args.output.mkdir(parents=True, exist_ok=True)
@@ -61,7 +62,7 @@ def main():
                 # matching or node-wide process mutation.
                 code = '''import json, os, signal, sys, time
 from pathlib import Path
-root, operation = Path(sys.argv[1]), sys.argv[2]
+root, operation, fault = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 ack = root / '.fs2/checkpoint-ack.json'
 statefile = root / '.fs2/scvi-state.json'
 if not ack.exists() or not statefile.exists(): sys.exit(3)
@@ -75,8 +76,12 @@ for proc in Path('/proc').iterdir():
     # arguments. Select the actual Python -m worker, not that wrapper (which
     # deliberately reports 143 when it receives Kubernetes termination).
     if argv[1:3] == [b'-m', b'fs2_scvi.worker'] and operation.encode() in argv:
+        observed = {'generation': commit['generation'], 'epoch': state.get('epoch'), 'operation_id': operation, 'fault': fault}
+        if fault == 'pod-eviction':
+            print(json.dumps(observed))
+            sys.exit(0)
         os.kill(int(proc.name), signal.SIGTERM)
-        observed = {'generation': commit['generation'], 'epoch': state.get('epoch'), 'operation_id': operation, 'signal': 'SIGTERM'}
+        observed['signal'] = 'SIGTERM'
         for _ in range(50):
             result = root / 'result.json'
             marker = root / '.fs2/stage-failed.json'
@@ -89,10 +94,25 @@ for proc in Path('/proc').iterdir():
         sys.exit(0)
 sys.exit(3)
 '''
-                result = subprocess.run([*kube, "exec", pod["metadata"]["name"], "-c", "scientific-stage", "--", "python", "-c", code, workspace, operation], capture_output=True, text=True)
+                result = subprocess.run([*kube, "exec", pod["metadata"]["name"], "-c", "scientific-stage", "--", "python", "-c", code, workspace, operation, args.fault], capture_output=True, text=True)
                 if result.returncode == 0:
                     receipt = json.loads(result.stdout)
                     receipt.update(pod_uid=pod["metadata"]["uid"], pod_name=pod["metadata"]["name"])
+                    if args.fault == "pod-eviction":
+                        eviction = {
+                            "apiVersion": "policy/v1", "kind": "Eviction",
+                            "metadata": {"name": receipt["pod_name"], "namespace": "fs2-models"},
+                            "deleteOptions": {"preconditions": {"uid": receipt["pod_uid"]}},
+                        }
+                        subprocess.run([
+                            *kube, "create", "--raw",
+                            f"/api/v1/namespaces/fs2-models/pods/{receipt['pod_name']}/eviction", "-f", "-",
+                        ], input=json.dumps(eviction), text=True, check=True, capture_output=True)
+                        save_pod = subprocess.run([
+                            *kube, "get", "pod", receipt["pod_name"], "-o", "json",
+                        ], text=True, capture_output=True)
+                        if save_pod.returncode == 0:
+                            (args.output / "evicted-pod.json").write_text(save_pod.stdout)
                     (args.output / "interruption.json").write_text(json.dumps(receipt, indent=2) + "\n")
                     print(json.dumps(receipt), flush=True)
                     # Observe the replacement while it exists: the production

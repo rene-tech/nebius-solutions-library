@@ -30,6 +30,45 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
+def post_with_admission_wait(client, endpoint, *, wait_seconds, **kwargs):
+    """Retry only explicit non-admission, keeping the same idempotency key.
+
+    Do not retry ambiguous transport errors or arbitrary HTTP failures here.
+    Upload/job receipts let a disconnected client resume explicitly instead.
+    """
+    deadline, announced = time.monotonic() + wait_seconds, False
+    while True:
+        response = client.post(endpoint, **kwargs)
+        if response.status_code != 429:
+            return checked(response)
+        try:
+            error = response.json().get("error", {})
+        except ValueError:
+            return checked(response)
+        code = error.get("code", error.get("type"))
+        if code not in {"concurrency_exceeded", "admission_limit_reached"}:
+            return checked(response)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError(
+                "API key concurrency is still occupied. Uploaded files are retained; "
+                "rerun with the same output directory and idempotency key, or increase "
+                "--admission-wait-seconds. No new job was admitted."
+            )
+        if not announced:
+            print(
+                json.dumps({"waiting_for_key_capacity": True, "job_admitted": False}),
+                flush=True,
+            )
+            announced = True
+        delay = error.get("retry_after_seconds", response.headers.get("retry-after", 5))
+        try:
+            delay = min(30, max(1, float(delay)))
+        except (TypeError, ValueError):
+            delay = 5
+        time.sleep(min(delay, remaining))
+
+
 def multipart_file(client, objects, reserved, path, size, receipt):
     endpoint = reserved.get("multipart_path")
     if not endpoint:
@@ -80,7 +119,9 @@ def multipart_file(client, objects, reserved, path, size, receipt):
                         remaining -= len(block)
                         yield block
 
-            result = objects.put(part["url"], content=chunks(), headers={"Content-Length": str(length)})
+            result = objects.put(
+                part["url"], content=chunks(), headers={"Content-Length": str(length)}
+            )
             if result.is_error:
                 raise RuntimeError(
                     f"Multipart part {part['part_number']} HTTP {result.status_code}"
@@ -108,14 +149,38 @@ def main(*, require_qa=True):
     parser.add_argument("--input", type=Path)
     parser.add_argument("--parameters", type=Path)
     parser.add_argument("--stage-only", action="store_true")
-    parser.add_argument("--prepare-only", action="store_true", help="Upload inputs and save request.json without starting GPU work")
-    parser.add_argument("--reference", type=Path, help="Reference archive from an earlier matching scVI/scANVI run, for map-query")
-    parser.add_argument("--idempotency-key", help="Reuse on retries; choose a new value for an intentional repeat")
-    parser.add_argument("--sha256", help="Previously recorded input SHA-256; the server still verifies every uploaded byte")
+    parser.add_argument(
+        "--prepare-only",
+        action="store_true",
+        help="Upload inputs and save request.json without starting GPU work",
+    )
+    parser.add_argument(
+        "--reference",
+        type=Path,
+        help="Reference archive from an earlier matching scVI/scANVI run, for map-query",
+    )
+    parser.add_argument(
+        "--idempotency-key",
+        help="Reuse on retries; choose a new value for an intentional repeat",
+    )
+    parser.add_argument(
+        "--sha256",
+        help="Previously recorded input SHA-256; the server still verifies every uploaded byte",
+    )
+    parser.add_argument(
+        "--admission-wait-seconds",
+        type=int,
+        default=900,
+        help="Wait for this API key's available slots; does not change server concurrency (default 900)",
+    )
     args = parser.parse_args()
     os.umask(0o077)
     if require_qa:
-        values = dict(line.split("=", 1) for line in args.qa_env.read_text().splitlines() if "=" in line)
+        values = dict(
+            line.split("=", 1)
+            for line in args.qa_env.read_text().splitlines()
+            if "=" in line
+        )
         key = values["SCIENTIFIC_MODELS_API_KEY"]
     else:
         key = os.environ.get(args.api_key_env)
@@ -133,7 +198,15 @@ def main(*, require_qa=True):
                 "Qualification requires existing system/qa; never a customer key"
             )
         save(args.output / "caller.json", me)
-        print(json.dumps({"identity": me["tenant_id"] + "/" + me["principal_id"], "authenticated": True}), flush=True)
+        print(
+            json.dumps(
+                {
+                    "identity": me["tenant_id"] + "/" + me["principal_id"],
+                    "authenticated": True,
+                }
+            ),
+            flush=True,
+        )
         if args.input is None:
             return
 
@@ -154,28 +227,77 @@ def main(*, require_qa=True):
                         "Input changed; use a new qualification run directory"
                     )
                 return value
-            reserved = checked(
-                client.post(
-                    "/v1/scientific-artifacts/uploads",
-                    json={
-                        "model_id": "scvi-scanvi",
-                        "sha256": digest,
-                        "size_bytes": size,
-                        "media_type": media_type,
-                        "compression": compression,
-                    },
-                    headers={
-                        "Idempotency-Key": "scvi-input-v1-"
-                        + suffix
-                        + "-"
-                        + digest
-                    },
+            reservation_receipt = args.output / (suffix + "-upload.json")
+            completion_receipt = args.output / (suffix + "-transfer-completed.json")
+            if reservation_receipt.exists():
+                previous = json.loads(reservation_receipt.read_text())
+                status = checked(
+                    client.get(f"/v1/operations/{previous['operation_id']}")
                 )
+                # A lost finalize response must not restart a completed
+                # multipart upload or attempt to overwrite its write-once key.
+                if completion_receipt.exists() or status["status"] == "succeeded":
+                    ref = checked(
+                        client.post(
+                            f"/v1/scientific-artifacts/uploads/{previous['upload_id']}:finalize",
+                            json={"operation_id": previous["operation_id"]},
+                        )
+                    )
+                    if (ref["sha256"], ref["size_bytes"]) != (digest, size):
+                        raise ValueError("Input changed; use a new run directory")
+                    save(receipt, ref)
+                    print(
+                        json.dumps(
+                            {
+                                "uploaded": suffix,
+                                "size_bytes": size,
+                                "verified": True,
+                                "resumed_finalization": True,
+                            }
+                        ),
+                        flush=True,
+                    )
+                    return ref
+            reserved = post_with_admission_wait(
+                client,
+                "/v1/scientific-artifacts/uploads",
+                wait_seconds=args.admission_wait_seconds,
+                json={
+                    "model_id": "scvi-scanvi",
+                    "sha256": digest,
+                    "size_bytes": size,
+                    "media_type": media_type,
+                    "compression": compression,
+                },
+                headers={"Idempotency-Key": "scvi-input-v1-" + suffix + "-" + digest},
             )
             save(
                 args.output / (suffix + "-upload.json"),
                 {k: reserved[k] for k in ("operation_id", "upload_id")},
             )
+            status = checked(client.get(f"/v1/operations/{reserved['operation_id']}"))
+            if status["status"] == "succeeded":
+                ref = checked(
+                    client.post(
+                        f"/v1/scientific-artifacts/uploads/{reserved['upload_id']}:finalize",
+                        json={"operation_id": reserved["operation_id"]},
+                    )
+                )
+                if (ref["sha256"], ref["size_bytes"]) != (digest, size):
+                    raise ValueError("The reused upload does not match this input")
+                save(receipt, ref)
+                print(
+                    json.dumps(
+                        {
+                            "uploaded": suffix,
+                            "size_bytes": size,
+                            "verified": True,
+                            "reused_verified_upload": True,
+                        }
+                    ),
+                    flush=True,
+                )
+                return ref
             headers = {**reserved["handle"]["headers"], "content-length": str(size)}
             started = time.monotonic()
             # Separate client: do not send the platform bearer to object storage.
@@ -198,6 +320,7 @@ def main(*, require_qa=True):
                         )
                     if response.is_error:
                         raise RuntimeError(f"Object upload HTTP {response.status_code}")
+            save(completion_receipt, {"sha256": digest, "size_bytes": size})
             ref = checked(
                 client.post(
                     f"/v1/scientific-artifacts/uploads/{reserved['upload_id']}:finalize",
@@ -238,8 +361,19 @@ def main(*, require_qa=True):
         }
         if args.reference:
             reference = upload(args.reference, "application/x-tar", "reference", "gzip")
-            manifest["entries"].append({"name": "reference", "semantic_type": "scvi-reference/v1", "artifact": reference})
-        manifest["manifest_id"] = "scvi-" + hashlib.sha256(json.dumps(manifest["entries"], sort_keys=True).encode()).hexdigest()
+            manifest["entries"].append(
+                {
+                    "name": "reference",
+                    "semantic_type": "scvi-reference/v1",
+                    "artifact": reference,
+                }
+            )
+        manifest["manifest_id"] = (
+            "scvi-"
+            + hashlib.sha256(
+                json.dumps(manifest["entries"], sort_keys=True).encode()
+            ).hexdigest()
+        )
         save(args.output / "manifest.json", manifest)
         pointer = upload(
             args.output / "manifest.json",
@@ -256,20 +390,31 @@ def main(*, require_qa=True):
         identity = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
         save(args.output / "request.json", body)
         if args.prepare_only:
-            print(json.dumps({"prepared": True, "request": str(args.output / "request.json")}), flush=True)
-            return
-        response = checked(
-            client.post(
-                "/v1/models/scvi-scanvi:submit",
-                json=body,
-                headers={"Idempotency-Key": args.idempotency_key or "scvi-run-v1-" + identity},
+            print(
+                json.dumps(
+                    {"prepared": True, "request": str(args.output / "request.json")}
+                ),
+                flush=True,
             )
+            return
+        response = post_with_admission_wait(
+            client,
+            "/v1/models/scvi-scanvi:submit",
+            wait_seconds=args.admission_wait_seconds,
+            json=body,
+            headers={
+                "Idempotency-Key": args.idempotency_key or "scvi-run-v1-" + identity
+            },
         )
         save(args.output / "request.json", body)
         save(args.output / "admission.json", response)
         print(
             json.dumps(
-                {"submitted": True, "operation_id": response["operation"]["id"], "receipt": str(args.output / "admission.json")}
+                {
+                    "submitted": True,
+                    "operation_id": response["operation"]["id"],
+                    "receipt": str(args.output / "admission.json"),
+                }
             ),
             flush=True,
         )
