@@ -183,7 +183,7 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path):
     )
 
 
-def collect_failed_result(invocation, path, result, parameters, exit_code):
+def collect_failed_result(invocation, path, result, parameters, exit_code, *, failure_marker_sha256, result_sha256):
     """Publish a failure receipt, never partial embeddings as a successful fit."""
     from ..native_failures import DIAGNOSTIC_ROLE
     from . import CollectedArtifactFile, CollectedStageOutput
@@ -208,6 +208,9 @@ def collect_failed_result(invocation, path, result, parameters, exit_code):
             "shard_id": invocation.shard_id,
             "logical_output_id": invocation.produces,
             "exit_code": exit_code,
+            "failure_marker_sha256": failure_marker_sha256,
+            "result_sha256": result_sha256,
+            "native_status": result["status"],
             "partial_scientific_outputs_included": False,
             "scientific_validation_passed": False,
         },

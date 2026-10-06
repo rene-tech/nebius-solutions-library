@@ -5,9 +5,34 @@ Source starts at `19bfdf2c3`, the verified live shared-backend lineage.
 
 ## Status
 
-**Candidate, not customer-ready and not published.** The existing native App is
-unchanged. The 584,944-cell HLCA core completed on one H100; hosted API/MCP and
-1M-cell qualification remain in progress. WhiteLab has not supplied representative data yet.
+**Live onboarding release; final PoC qualification in progress.** The existing
+native App is unchanged; the new durable batch protocol is published separately
+under the same App ID. WhiteLab has not supplied representative data yet.
+
+At 14:23 UTC on 2026-10-06:
+
+- Worker R7 `063877787f8c...` passed 17 unit tests plus real H100 full-state
+  restart and reference-mapping component checks.
+- Backend R4 `8b1dc669af81...` is live with three ready API replicas. R3 hosted
+  REST and MCP scANVI runs succeeded and all 40 output artifacts per run passed
+  byte-count/SHA verification. These used worker R5, not R7.
+- The real 5.87 GB input passed public multipart upload and final SHA verification,
+  including resuming a client that was OOM-killed after uploading 13 parts.
+- Hosted full 584,944-cell run `983a0cba-5c3d-463a-8f63-7a00a0b5b3de` is
+  running on R7 with tenant-bucket export enabled. The separate one-million-cell
+  direct runtime test uses R6; it is not a hosted-path qualification.
+- The first hosted fault injection found worker interruptions exited 1; R7
+  fixes this. The second found scheduler classification still made exit 75 a
+  permanent application failure. The narrowly scoped correction passed 101
+  tests; backend R5 is being promoted. Neither failed run counts as a pass.
+- Generic MCP polling previously returned `result_available=false` after batch
+  success. R4 fixes this using the durable batch publication state.
+- No customer key, node group, cloud quota, hot floor or unrelated route changed.
+
+Remaining gates: hosted replacement-worker recovery, default customer-bucket
+readback, public query mapping, cancellation, unchanged-release clean cohorts,
+final large-data receipts and documentation. Biological validation remains a
+customer/study-specific activity, not a platform execution claim.
 
 ### Measured R5 runtime, 2026-10-06
 
@@ -28,11 +53,10 @@ R4 restored state but exposed a reference-path bug and missing periodic saves;
 neither counts as a passing cohort. R2 was suspended, not successful.
 
 Hosted input staging of the real 5,873,612,847-byte file returned S3
-`400 ObjectTooLarge` through the old single-PUT handle. The candidate adds
+`400 ObjectTooLarge` through the old single-PUT handle. The deployed backend adds
 resumable multipart transfers using the existing immutable artifact intent,
 tenant authorization and final SHA-256 verification; no quota increase or
-new identity store. This must pass against real storage before large files are
-advertised. Existing `system/qa` received **only** an additional `scvi-scanvi`
+new identity store. This passed against real storage. Existing `system/qa` received **only** an additional `scvi-scanvi`
 model grant; no credential rotation, expiry, concurrency or budget changes.
 
 Secret-free runtime receipts are retained in
@@ -61,7 +85,7 @@ remain the platform's responsibility, not a second single-cell service.
 Full input data stays separate from checkpoints. Resource admission is still
 required to avoid one PoC request crashing another customer's work.
 
-## Tests and next gates
+## Earlier development history (not current readiness)
 
 R1 isolated H100 run (`b87f4644ae66`) failed before training because upstream
 SaveCheckpoint constructs a filename from a non-null monitor. The custom full
@@ -87,13 +111,10 @@ binding/checkpoint tests also cover the new single-cell registration.
   upstream automatic scVI epochs and 20 scANVI epochs.
 - Its PVC is task-owned, expires for review on 2026-10-08, and must be exported
   to the existing system workspace before cleanup. No new tenant/bucket/key.
-- Remaining: exact GPU results; durable-companion checkpoint recovery; larger
-  profile/catalog/schema and execution-map projection; failure diagnostics;
-  large-file REST/MCP transfer; API/MCP queue/replay/cancel/scaling; scientific
-  holdout/bioconservation metrics; 1M-cell public data; final promotion/evidence.
+- This was the initial checklist. See the current status above for remaining gates.
 
 Do not count synthetic interruption fixtures as biological or atlas qualification.
-Do not publish a route or change shared images based on these component tests.
+An active onboarding route is not a customer-readiness claim.
 
 ## Public evidence dataset
 

@@ -1,4 +1,8 @@
-# Large scientific inputs (candidate, not deployed yet)
+# Large scientific inputs
+
+Deployed 2026-10-06. A real 5,873,612,847-byte H5AD upload passed public API
+finalization, including resuming 13 already-transferred parts after a client
+interruption and independent full SHA-256 verification.
 
 Reserve an upload with the existing `POST /v1/scientific-artifacts/uploads`,
 including model ID, whole-file SHA-256, exact byte length, media type and optional
@@ -13,8 +17,9 @@ POST JSON to that path, always including `operation_id`:
    numbers, sizes and ETags after interruption. It does not infer whole-file success.
 3. `{"action":"parts","multipart_upload_id":"...","part_numbers":[1,2]}`
    signs at most 128 requested parts. PUT each part's bytes directly to its URL;
-   do not send the platform API key to object storage. Four concurrent parts
-   use at most 256 MiB in the supplied Python client. Refresh part handles if
+   do not send the platform API key to object storage. The supplied client
+   streams four concurrent parts in 1 MiB chunks; it does not hold four complete
+   64 MiB parts in memory. Refresh part handles if
    their 15-minute transfer lifetime elapses; the user's API key does not expire.
 4. `{"action":"complete","multipart_upload_id":"..."}` lists the provider's
    parts and verifies contiguous numbering and expected total length before
@@ -36,4 +41,4 @@ an MCP argument. API/MCP submissions carry the finalized artifact manifest.
 This is standard S3 multipart behavior using the existing boto3 dependency:
 [initiation](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/create_multipart_upload.html),
 [completion](https://docs.aws.amazon.com/boto3/latest/reference/services/s3/client/complete_multipart_upload.html).
-The candidate keeps current inline-body limits unchanged.
+The implementation keeps current inline-body limits unchanged.

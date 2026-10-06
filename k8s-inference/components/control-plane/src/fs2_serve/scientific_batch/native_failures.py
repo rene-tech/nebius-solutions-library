@@ -65,7 +65,11 @@ def collect_failed_diagnostics(
         # Single-cell jobs share durable transport, not MD command semantics.
         from .adapters.scvi_scanvi import collect_failed_result
 
-        return collect_failed_result(invocation, result_path, result, request, exit_code)
+        return collect_failed_result(
+            invocation, result_path, result, request, exit_code,
+            failure_marker_sha256=hashlib.sha256(marker_raw).hexdigest(),
+            result_sha256=hashlib.sha256(raw).hexdigest(),
+        )
     runtime = import_module(workflow.runtime_package)
     contracts = import_module(workflow.runtime_package + ".contracts")
     engine_id = (

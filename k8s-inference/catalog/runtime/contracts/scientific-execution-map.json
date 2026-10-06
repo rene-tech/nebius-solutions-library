@@ -2711,7 +2711,7 @@
     },
     {
       "access_profile": "public",
-      "execution_identity_sha256": "d8bc8f0f8807f0f1456f604f1b232d3f8827373e6802d2a657504d21a2776f40",
+      "execution_identity_sha256": "d687522fcfcaf0ec460f56e2d1af1b80d1eabf36e2630d61b959f87114235bd5",
       "model_id": "scvi-scanvi",
       "plan_adapter": {
         "function": "compile_adapter_run",

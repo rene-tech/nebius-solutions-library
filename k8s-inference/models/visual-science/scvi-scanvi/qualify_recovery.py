@@ -43,6 +43,7 @@ def main():
             raise ValueError("Fault was already injected; monitor the existing operation")
         workspace = "/mnt/fs2-scientific/work/scvi-scanvi/" + hashlib.sha256(operation.encode()).hexdigest()[:20] + "/main"
         kube = ["kubectl", "--context", args.context, "-n", "fs2-models"]
+        following = set()
         deadline = time.monotonic() + 900
         while time.monotonic() < deadline:
             data = json.loads(subprocess.check_output([*kube, "get", "pods", "-l", "fs2.nebius.ai/operation-id=" + operation, "-o", "json"]))
@@ -52,9 +53,13 @@ def main():
                     raise ValueError("Unexpected pod identity")
                 if not any(s["name"] == "scientific-stage" and s.get("state", {}).get("running") for s in pod["status"].get("containerStatuses", [])):
                     continue
+                if pod["metadata"]["uid"] not in following:
+                    following.add(pod["metadata"]["uid"])
+                    with (args.output / "interrupted-worker.log").open("w") as log:
+                        subprocess.Popen([*kube, "logs", "-f", pod["metadata"]["name"], "-c", "scientific-stage"], stdout=log, stderr=subprocess.STDOUT)
                 # Fixed script, exact operation/namespace/container. No shell
                 # matching or node-wide process mutation.
-                code = '''import json, os, signal, sys
+                code = '''import json, os, signal, sys, time
 from pathlib import Path
 root, operation = Path(sys.argv[1]), sys.argv[2]
 ack = root / '.fs2/checkpoint-ack.json'
@@ -66,9 +71,21 @@ for proc in Path('/proc').iterdir():
     if not proc.name.isdigit(): continue
     try: argv = (proc / 'cmdline').read_bytes().split(b'\\0')
     except OSError: continue
-    if b'fs2_scvi.worker' in argv and operation.encode() in argv:
+    # The trusted PID-1 stage runner also contains the child command in its
+    # arguments. Select the actual Python -m worker, not that wrapper (which
+    # deliberately reports 143 when it receives Kubernetes termination).
+    if argv[1:3] == [b'-m', b'fs2_scvi.worker'] and operation.encode() in argv:
         os.kill(int(proc.name), signal.SIGTERM)
-        print(json.dumps({'generation': commit['generation'], 'epoch': state.get('epoch'), 'operation_id': operation, 'signal': 'SIGTERM'}))
+        observed = {'generation': commit['generation'], 'epoch': state.get('epoch'), 'operation_id': operation, 'signal': 'SIGTERM'}
+        for _ in range(50):
+            result = root / 'result.json'
+            marker = root / '.fs2/stage-failed.json'
+            if result.exists(): observed['worker_result'] = json.loads(result.read_text())
+            if marker.exists():
+                observed['stage_exit_code'] = json.loads(marker.read_text())['exit_code']
+                break
+            time.sleep(.05)
+        print(json.dumps(observed))
         sys.exit(0)
 sys.exit(3)
 '''
@@ -78,7 +95,36 @@ sys.exit(3)
                     receipt.update(pod_uid=pod["metadata"]["uid"], pod_name=pod["metadata"]["name"])
                     (args.output / "interruption.json").write_text(json.dumps(receipt, indent=2) + "\n")
                     print(json.dumps(receipt), flush=True)
-                    return
+                    # Observe the replacement while it exists: the production
+                    # controller cleans completed Pods promptly. Retain actual
+                    # restore evidence, not merely two attempt numbers.
+                    for _ in range(180):
+                        replacements = json.loads(subprocess.check_output([
+                            *kube, "get", "pods", "-l", "fs2.nebius.ai/operation-id=" + operation, "-o", "json",
+                        ]))
+                        for replacement in replacements["items"]:
+                            if replacement["metadata"]["uid"] == receipt["pod_uid"]:
+                                continue
+                            labels = replacement["metadata"]["labels"]
+                            if labels.get("fs2.nebius.ai/tenant-id") != "system" or labels.get("fs2.nebius.ai/model-id") != "scvi-scanvi":
+                                raise ValueError("Replacement identity differs from the internal test")
+                            observed = subprocess.run([
+                                *kube, "logs", replacement["metadata"]["name"], "-c", "scientific-stage",
+                            ], capture_output=True, text=True)
+                            if observed.returncode == 0:
+                                (args.output / "replacement-worker.log").write_text(observed.stdout)
+                                if "Restored all states from the checkpoint" in observed.stdout:
+                                    (args.output / "replacement-pod.json").write_text(json.dumps(replacement, indent=2) + "\n")
+                                    print(json.dumps({"operation_id": operation, "replacement_pod": replacement["metadata"]["name"], "full_state_restore_observed": True}), flush=True)
+                                    return
+                        status = client.get(f"/v1/operations/{operation}")
+                        status.raise_for_status()
+                        status_value = status.json()
+                        state = status_value["batch"]["status"] if "batch" in status_value else status_value["status"]
+                        if state in {"failed", "cancelled", "succeeded"}:
+                            raise RuntimeError("Operation became terminal before full-state replacement evidence was observed")
+                        time.sleep(2)
+                    raise TimeoutError("No verified replacement restore; operation retained")
             time.sleep(2)
         raise TimeoutError("No safe committed mid-training interruption point; operation retained")
 

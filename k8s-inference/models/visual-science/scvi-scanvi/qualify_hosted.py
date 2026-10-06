@@ -39,6 +39,7 @@ def main(*, require_qa=True):
     parser.add_argument("--cohort", default="a")
     parser.add_argument("--protocol", choices=("rest", "mcp"), default="rest")
     parser.add_argument("--discover-only", action="store_true")
+    parser.add_argument("--cancel", action="store_true", help="Cancel this explicitly selected/new operation and verify final cancellation")
     parser.add_argument("--timeout", type=int, default=7200)
     args = parser.parse_args()
     os.umask(0o077)
@@ -115,6 +116,10 @@ def main(*, require_qa=True):
                 raise ValueError("Idempotency replay launched different work")
         if not operation_id:
             raise ValueError("Supply an existing operation or a finalized request")
+        if args.cancel:
+            cancelled = (tool("cancel_scientific_run", {"operation_id": operation_id}) if args.protocol == "mcp"
+                         else checked(client.post(f"/v1/operations/{operation_id}:cancel")))
+            save(args.output / "cancellation.json", cancelled)
         deadline = time.monotonic() + args.timeout
         previous = None
         while time.monotonic() < deadline:
@@ -127,6 +132,11 @@ def main(*, require_qa=True):
                 previous = state
             published = status["batch"]["result_published"] if "batch" in status else status["result_available"]
             if state in {"succeeded", "failed", "cancelled"} and published:
+                if args.protocol == "mcp":
+                    generic = tool("get_operation", {"operation_id": operation_id})
+                    save(args.output / "generic-operation.json", generic)
+                    if not generic["result_available"]:
+                        raise ValueError("Generic MCP polling incorrectly hides the published batch result")
                 break
             time.sleep(10)
         else:
@@ -182,7 +192,8 @@ def main(*, require_qa=True):
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(args.output / "artifacts" / pointer["artifact_id"], destination)
         # Keep transport failures/results visible even when the run failed.
-        if state != "succeeded":
+        expected = "cancelled" if args.cancel else "succeeded"
+        if state != expected:
             raise ValueError(f"Hosted operation ended {state}; inspect the retained result")
         print(json.dumps({"operation_id": operation_id, "status": state, "result_saved": True}), flush=True)
 

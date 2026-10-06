@@ -132,7 +132,7 @@ def test_candidate_profiles_and_compilation_use_existing_resource_shapes(shape, 
     assert plan.invocations[0].materializations[0].destination.endswith("/input.h5ad")
 
 
-def test_single_cell_failure_is_not_interpreted_as_an_md_job(tmp_path):
+def test_single_cell_failure_is_not_interpreted_as_an_md_job(tmp_path, monkeypatch):
     import hashlib
     import json
 
@@ -188,7 +188,24 @@ def test_single_cell_failure_is_not_interpreted_as_an_md_job(tmp_path):
     )
     assert output.validation["status"] == "failed"
     assert output.validation["scientific_validation_passed"] is False
+    assert output.validation["failure_marker_sha256"] == hashlib.sha256(
+        (tmp_path / ".fs2/stage-failed.json").read_bytes()
+    ).hexdigest()
+    assert output.validation["result_sha256"] == hashlib.sha256((tmp_path / "result.json").read_bytes()).hexdigest()
     assert [item.name for item in output.artifacts] == ["failed-result"]
+    # Exercise the real collector/ACK boundary, not just the adapter dictionary.
+    # Without the marker digest the companion crashed while the stage waited
+    # for its ACK, masking exit 75 as a permanent collector application error.
+    from test_native_md_failure_diagnostics import collect
+
+    client = collect(invocation, tmp_path, monkeypatch)
+    ack = json.loads((tmp_path / ".fs2/failed-diagnostics-ack.json").read_text())
+    assert ack == {
+        "status": "diagnostics-exported",
+        "failure_marker_sha256": output.validation["failure_marker_sha256"],
+    }
+    assert len(client.uploads) == 3
+    assert not (tmp_path / ".fs2/stage-complete.json").exists()
 
 
 def test_activation_keeps_existing_apps_and_projects_both_memory_shapes():
