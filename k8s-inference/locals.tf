@@ -868,6 +868,7 @@ locals {
   root_budgeted_resource_names = sort(distinct(concat(
     local.root_accelerator_resource_names,
     local.root_core_admission_enabled ? ["cpu", "memory"] : [],
+    length(var.managed_rdma_pools) > 0 ? ["rdma.fs2.nebius/hca"] : [],
   )))
 
   root_serving_lanes = {
