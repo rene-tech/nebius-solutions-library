@@ -24,6 +24,7 @@ from .adapters import (
     proteina_complexa,
     protenix_v2,
     rfdiffusion,
+    scvi_scanvi,
     video_augmentation,
 )
 from .adapters.cosmos_lerobot import public_input_contract as lerobot_input_contract
@@ -46,6 +47,8 @@ def _entry(
 
 def public_input_contract(model_id: str) -> dict[str, Any] | None:
     """Return a fresh, caller-visible descriptor; never infer by model name."""
+    if model_id == scvi_scanvi.MODEL_ID:
+        return scvi_scanvi.public_input_contract()
     if model_id in {gromacs.MODEL_ID, "gromacs-mpi"}:
         return gromacs.public_input_contract()
     for engine in (lammps, namd, amber):
@@ -134,6 +137,12 @@ def validate_input_roles(
     model_id: str, request: Mapping[str, Any], entries: tuple[ScientificInputArtifact, ...]
 ) -> None:
     """Reject caller metadata before compiling a runtime plan or admitting work."""
+    if model_id == scvi_scanvi.MODEL_ID:
+        try:
+            scvi_scanvi.validate_entries(request, entries)
+        except ValueError as error:
+            raise ScientificRequestError("scVI input artifact roles are invalid", public_detail=str(error)) from error
+        return
     if model_id in {"gromacs", "gromacs-mpi"} and "continuation_files" in request.get("parameters", {}):
         try:
             parameters = gromacs.normalize(request["parameters"], mpi=model_id == "gromacs-mpi")

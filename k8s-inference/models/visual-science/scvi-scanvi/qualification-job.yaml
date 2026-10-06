@@ -1,0 +1,78 @@
+# Temporary internal qualification only. No customer route, key or hot floor.
+# Owner: fs2-scvi-scanvi-whitelab-readiness-r20261006. Review/cleanup by 2026-10-08.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: scvi-whitelab-qualification-20261006
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 64Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scvi-whitelab-qualification-20261006-r1
+  namespace: fs2-models
+  labels:
+    fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 21600
+  template:
+    metadata:
+      labels:
+        fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector:
+        accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
+        capacity.fs2.nebius/type: preemptible
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: fs2-inference
+          effect: NoSchedule
+      securityContext:
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: qualify
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:b87f4644ae661829d8c9aada4ec537fafff0572144347b1c1d141b20953d04b0
+          command: [python, -u, /opt/fs2/qualify_runtime.py]
+          args: [--root, /work/r1]
+          env:
+            - name: OMP_NUM_THREADS
+              value: "8"
+            - name: MPLCONFIGDIR
+              value: /tmp/matplotlib
+            - name: NUMBA_CACHE_DIR
+              value: /tmp/numba
+          resources:
+            requests:
+              cpu: "8"
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: 128Gi
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: work
+              mountPath: /work
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: work
+          persistentVolumeClaim:
+            claimName: scvi-whitelab-qualification-20261006
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Gi

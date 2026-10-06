@@ -31,6 +31,7 @@ from . import (
     proteina_complexa,
     protenix_v2,
     rfdiffusion,
+    scvi_scanvi,
     video_augmentation,
 )
 
@@ -58,6 +59,10 @@ def _primary_collectors() -> Mapping[str, tuple[AdapterCompiler, str, Mapping[st
     """
 
     return {
+        scvi_scanvi.MODEL_ID: (
+            _COMPILERS[scvi_scanvi.MODEL_ID], scvi_scanvi.VARIANT_ID,
+            {scvi_scanvi.COLLECTOR_ID: scvi_scanvi.collect_companion_output},
+        ),
         amber.MODEL_ID: (
             _COMPILERS[amber.MODEL_ID],
             amber.VARIANT_ID,

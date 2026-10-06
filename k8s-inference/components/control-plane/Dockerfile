@@ -26,6 +26,7 @@ COPY k8s-inference/models/molecular-dynamics/gromacs/runtime/fs2_gromacs /worksp
 COPY k8s-inference/models/molecular-dynamics/lammps/runtime/fs2_lammps /workspace/k8s-inference/models/molecular-dynamics/lammps/runtime/fs2_lammps
 COPY k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd /workspace/k8s-inference/models/molecular-dynamics/namd/runtime/fs2_namd
 COPY k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber /workspace/k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber
+COPY k8s-inference/models/visual-science/scvi-scanvi/runtime/fs2_scvi /workspace/k8s-inference/models/visual-science/scvi-scanvi/runtime/fs2_scvi
 
 # The canonical catalog is a nested immutable tree and cannot be represented by
 # a single Kubernetes ConfigMap without flattening paths. Build the exact

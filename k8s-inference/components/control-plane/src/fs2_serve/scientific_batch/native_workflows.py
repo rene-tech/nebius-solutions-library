@@ -52,6 +52,10 @@ class NativeWorkflow:
 
 WORKFLOWS = (
     NativeWorkflow(
+        "scvi-scanvi", "scvi", "scvi-scanvi-workflow-v1", "fs2_scvi",
+        "fs2-serve.nebius.ai/scvi-workflow-request/v1",
+    ),
+    NativeWorkflow(
         "gromacs",
         "gromacs",
         "gromacs-workflow-v1",

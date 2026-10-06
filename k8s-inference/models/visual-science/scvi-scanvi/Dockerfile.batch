@@ -1,0 +1,11 @@
+FROM cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:cd22562eb59d067f734b65af1669c483f971dacb5e58462ca7f4d43afc940396
+
+USER root
+RUN python -m pip install --no-cache-dir jsonschema==4.26.0 scikit-misc==0.5.2 \
+    && python -m pip check
+COPY models/visual-science/scvi-scanvi/runtime/fs2_scvi /opt/fs2/python/fs2_scvi
+COPY models/molecular-dynamics/gromacs/runtime/fs2_gromacs /opt/fs2/python/fs2_gromacs
+COPY models/visual-science/scvi-scanvi/qualify_runtime.py /opt/fs2/qualify_runtime.py
+ENV PYTHONPATH=/opt/fs2/python
+LABEL org.opencontainers.image.title="Scientific AI scVI/scANVI batch worker"
+ENTRYPOINT ["python", "-m", "fs2_scvi.worker"]
