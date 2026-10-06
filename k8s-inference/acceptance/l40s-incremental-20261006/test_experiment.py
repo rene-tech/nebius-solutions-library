@@ -9,6 +9,7 @@ sys.path[:0] = [str(HERE), str(HERE.parent / "lynx-l40s-final-20261005"),
                 str(HERE.parents[1] / "models/molecular-dynamics/gromacs/qualification")]
 import experiment_inside as inside
 import run_experiment as supervisor
+import analyze_evidence as analyzer
 
 
 def args(node="idle-test-node"):
@@ -63,3 +64,8 @@ def test_aggregate_reports_median_and_all_samples():
     assert summary["process_inclusive_median_ns_day"] == 101
     assert summary["process_inclusive_range_ns_day"] == [100, 150]
     assert summary["repetitions"] == 3
+
+
+def test_gpu_busy_union_does_not_double_count_overlapping_streams():
+    assert analyzer.interval_union([(0, 5), (3, 7), (10, 12)]) == 9
+    assert analyzer.interval_union([]) == 0
