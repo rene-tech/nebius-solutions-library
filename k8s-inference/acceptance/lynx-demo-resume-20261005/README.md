@@ -1,10 +1,11 @@
 # Real late-state demo continuation — 2026-10-05
 
-Status: the short demo-owned API continuation has passed its native, history,
+Status (2026-10-06): both demo-owned API continuations passed native, history,
 postprocessing and full platform/customer-bucket byte checks on the exact deployed
-release. The separately measured sustained 65-ns cohort is now admitted; its
-six-hour/native and 200-ns/day delivered gates have not yet passed.
+release. The sustained cohort delivered **216.956 ns/day**, with over seven hours
+of newly resumed native execution. Its six-hour and 200-ns/day gates passed.
 This directory is acceptance tooling, not a customer-specific serving service.
+This is not a fourteen-day soak or a qualification of every client/GPU/workflow.
 
 ## Exact test scope
 
@@ -113,6 +114,7 @@ bytes, duplicate/unsafe paths, wrong source state, missing topology comparisons,
 unapproved TPR differences, incorrect start step, customer-key substitution and
 corrupted/missing/foreign-bucket output objects. The full native comparison parser
 also consumed the independent exact-runtime L40S comparison log successfully.
+
 ## Exact deployed release and public evidence
 
 Deployment source `2f7c2d1e3`; API/tools/controllers/maintenance:
@@ -169,19 +171,76 @@ explicit nonempty postprocessing. Its bootstrap operation
 same demo-owned API; input upload took 5.226 seconds. The six-hour/native and
 200-ns/day delivered gates count only the new resumed operation after the
 expected bootstrap stop, not bootstrap time or work. Timestamps and operation
-identity reject imported timing history. Sustained results remain pending.
+identity reject imported timing history.
 
 Its expected setup stop preserved step 14,317,800; full native comparison again
 passed with only `nsteps` different. Literal demo-owned `:resume` admitted
 `831f030a-afb4-47f2-b719-bb02f3091c7b` at 20:51:55 UTC; initial/replay latency
-was 0.853/0.617 seconds with exact idempotent reuse. The new Pod is Running on
-the same default AMD L40S pool with the qualified immutable images and no
-restarts. The remaining useful work is 64.29128 ns. Its sustained results and
-final output checks are pending, not inferred from the short qualification.
+was 0.853/0.617 seconds with exact idempotent reuse. It completed durably at
+2026-10-06 03:58:38.180 UTC on the same default AMD L40S pool, using the
+qualified immutable images with no retries, Pod replacement or container restarts.
+
+| Sustained metric | Measured result |
+| --- | --- |
+| Native saved → final step | 14,317,800 → 46,463,440 |
+| Newly resumed useful simulation | 64.29128 ns |
+| Resumed native process time | 25,315.613 s (7 h 1 min 55.613 s) |
+| API acceptance → durable completion | 25,603.145 s (7 h 6 min 43.145 s) |
+| Delivered rate, including startup/checkpoint/export | **216.956 ns/day** |
+| Native useful rate, including per-process initialization | 219.421 ns/day |
+| Native segments / remaining analysis commands | 84/84 and 4/4 exited zero |
+
+The per-segment native headline counters ranged from 220.242 to 226.091 ns/day
+(median 222.457). These are different clocks from delivered performance and
+must not replace it. Ordinary five-minute checkpoint segments are not retries.
+The long cohort's bootstrap contributed another 0.70872 ns of setup progress;
+neither that work nor its time is included above.
+
+All **659 final platform files / 285,005,633 bytes** passed SHA/size verification
+in 47.458 seconds. Independent customer-bucket verification passed all 659 paths,
+597 unique objects / 272,207,046 bytes in 20.676 seconds. All 305 original files
+are preserved byte-identically; a separate local rehash of every final downloaded
+file also passed. All 934 platform/checkpoint GETs used one attempt, with no
+unknown retry counts or transient public polling failures. The runner exited zero.
+
+Native input materialization took four seconds. The 84 observed committed
+handoffs ranged from 0.912 to 9.660 seconds, below the unchanged 600-second bound;
+the first handoff's platform and customer-export phases took 3.593 and 5.716
+seconds respectively. Final generation 88's observed handoff took 1.638 seconds.
+These are observed completed snapshots, not an assertion that every transient
+postprocessing generation was sampled or a worst-case latency guarantee.
+
+Retained readiness-body samples bracket initial admission through full output
+byte verification: **15,548 samples**, all HTTP 200, no sampler errors or coverage
+gaps over 30 seconds. The largest interval was 12.232 seconds. The same three
+reader UIDs and exact `1c223369…` image were retained. This is cohort evidence,
+not an availability SLO. Public `resource_released` is true; the task-owned
+resumed Pod UID `de673fb2-5b70-40f7-b264-57e45bc6aba4` was observed absent at
+03:58:40.934 UTC. Attempt and hardware observers exited zero; the customer's
+ongoing operation was not stopped or replaced.
+
+Final private evidence under `long-r1/`:
+
+- `receipt.json`: SHA-256 `8258fdedcaa855d6d0239e72d15bc83e517c96afa892086a17f5bfea3c2c4323`.
+- `delivery-gate.json`: SHA-256 `330623950c223196fece7985b96d42c39ddb7171e35f6620a0e3a8f1c9c03c60`.
+- `customer-export-verification.json`: SHA-256 `7e1af043826d1e80dc8d48a37435607f4dfd71744df08a052a49ec918d61e52f`.
+- `final-evidence.json`: exact placement, coverage, retries, phase timings,
+  independent local rehash and released-Pod evidence.
+- `runner-session-exit.json`, `attempt-observer-session-exit.json` and
+  `hardware-observer-session-exit.json`: actual process exit receipts.
+
+The customer manifest hash is
+`530105e572683dfde7eff0c037e88c5721671e6d50536cdbe4c49aeda3916e3e`.
+Raw molecular files, customer export paths and credentials remain private.
 
 Read-only attempt, hardware and exact-reader readiness observations are retained
 under `short-r1/` and `short-r1-readiness/`. The long run uses the same bounded
 observers under `long-r1/`, with consecutive windows of the existing readiness
 sampler in `long-r1-readiness/` throughout the cohort. Native five-minute
-segments are not reported as retries. There is no sustained-readiness claim
-from the short functional result alone.
+segments are not reported as retries. The consecutive short functional and long
+sustained cohorts used the unchanged release; only the latter proves the
+six-hour and delivered-rate gates. A fourteen-day soak, full original 1-µs run,
+MPI peer-loss, other GPU pools, and LibreChat/agent execution are not qualified
+by this specific demo. The separate late-inventory REST/MCP evidence is in
+[`../longrun-restarts-20261005`](../longrun-restarts-20261005), with its own exact
+release identities and retained failures.
