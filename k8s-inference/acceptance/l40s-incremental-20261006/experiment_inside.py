@@ -68,6 +68,7 @@ def measured_run(root, tpr, case, repeat, steps, *, segmented=False, segment_min
     directory = root / f"{case['name']}-r{repeat}"
     directory.mkdir()
     env, prefix = environment(root, case["threads"], case.get("selected"))
+    env.update(case.get("environment", {}))
     binary = case.get("binary", BINARY)
     base = [*prefix, binary, "mdrun", "-s", str(tpr), "-deffnm", "md", "-ntmpi", "1",
             "-ntomp", str(case["threads"]), "-pin", "auto", "-nb", "gpu", "-pme", "auto",
@@ -134,6 +135,7 @@ def measured_run(root, tpr, case, repeat, steps, *, segmented=False, segment_min
     validation["passed"] = validation["passed"] and coords_ok
     record = {"case": case["name"], "repeat": repeat, "steps": steps, "simulated_ns": steps * 0.002 / 1000,
               "threads": case["threads"], "binary": binary, "selected_cpus": case.get("selected"),
+              "case_environment": case.get("environment", {}),
               "segmented": segmented, "segments": native, "validation": validation,
               "native_ns_per_day": native[-1]["native_ns_per_day"] if len(native) == 1 else None,
               "process_wall_seconds": process_wall, "component_wall_seconds": total_wall,
@@ -219,6 +221,21 @@ def pme_experiment(root, original):
             "scope": "Native original-TPR PME grid vs normal PME tuning; no new tolerance/cutoff or force-field choice"}
 
 
+def wait_policy_experiment(root, original):
+    measured_run(root, finite_input(root, original, 50000), {"name": "warmup", "threads": 8}, 0, 50000)
+    tpr = finite_input(root, original, 100000)
+    cases = [{"name": "wait-default", "threads": 8},
+             {"name": "wait-active", "threads": 8, "environment": {"OMP_WAIT_POLICY": "ACTIVE"}},
+             {"name": "wait-passive", "threads": 8, "environment": {"OMP_WAIT_POLICY": "PASSIVE"}}]
+    records = []
+    for repeat in range(1, 4):
+        for case in (cases if repeat % 2 else list(reversed(cases))):
+            records.append(measured_run(root, tpr, case, repeat, 100000))
+            save(root / "wait-policy-progress.json", aggregate(records))
+    return {"comparison": aggregate(records), "records": records,
+            "scope": "Native 100,000-step OpenMP wait-policy screen, eight-CPU allocation unchanged"}
+
+
 def profile_experiment(root, original):
     tools = {tool: shutil.which(tool) for tool in ("nsys", "ncu", "nvidia-smi", "nvcc", "perf", "numactl", "lstopo")}
     for path in Path("/opt/nvidia").glob("nsight-systems/*/bin/nsys"):
@@ -263,7 +280,7 @@ def profile_experiment(root, original):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("cpu", "checkpoint", "profile", "pme"), required=True)
+    parser.add_argument("--mode", choices=("cpu", "checkpoint", "profile", "pme", "wait-policy"), required=True)
     parser.add_argument("--tpr", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
@@ -287,6 +304,8 @@ def main():
             result = checkpoint_experiment(root, args.tpr)
         elif args.mode == "pme":
             result = pme_experiment(root, args.tpr)
+        elif args.mode == "wait-policy":
+            result = wait_policy_experiment(root, args.tpr)
         else:
             result = profile_experiment(root, args.tpr)
         result.update(mode=args.mode, original_tpr_sha256=TPR_SHA256)
