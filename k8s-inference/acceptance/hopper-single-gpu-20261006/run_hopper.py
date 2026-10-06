@@ -30,7 +30,7 @@ if __name__ == "__main__":
         parser.add_argument("--" + field, type=Path, required=True)
     parser.add_argument("--gpu", choices=("H100", "H200"), required=True)
     parser.add_argument("--cpus", type=int, choices=(8, 16, 32), default=8)
-    parser.add_argument("--mode", choices=("tune", "cpu-envelope", "profile"), required=True)
+    parser.add_argument("--mode", choices=("tune", "cpu-envelope", "cpu-pme", "profile"), required=True)
     parser.add_argument("--profile-tools", type=Path)
     parser.add_argument("--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a")
     args = parser.parse_args()

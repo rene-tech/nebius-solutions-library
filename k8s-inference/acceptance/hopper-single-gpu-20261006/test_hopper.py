@@ -46,3 +46,11 @@ def test_combination_requires_two_independent_screen_gains():
     combined, used = worker.combined_candidate(cases, summary)
     assert combined == {"name": "combined", "threads": 6, "extra_args": ["-notunepme"]}
     assert set(used) == {"threads-6", "original-pme"}
+
+
+def test_cpu_pme_screen_is_resource_bounded():
+    with pytest.raises(ValueError, match="16 allocated"):
+        worker.cases_for("cpu-pme", 8, {}, False)
+    assert worker.cases_for("cpu-pme", 16, {}, False) == [
+        {"name": "baseline", "threads": 8}, {"name": "threads-16", "threads": 16},
+        {"name": "original-pme", "threads": 8, "extra_args": ["-notunepme"]}]

@@ -37,6 +37,11 @@ def layout(expected_gpu):
 
 def cases_for(mode, cpu_budget, topology, avx512_available):
     base = {"name": "baseline", "threads": 8}
+    if mode == "cpu-pme":
+        if cpu_budget < 16:
+            raise ValueError("Combined CPU/PME experiment requires at least 16 allocated CPUs")
+        return [base, {"name": "threads-16", "threads": 16},
+                {"name": "original-pme", "threads": 8, "extra_args": ["-notunepme"]}]
     if mode == "cpu-envelope":
         return [base] + [{"name": f"threads-{n}", "threads": n}
                          for n in (16, 32) if n <= cpu_budget]
@@ -107,7 +112,7 @@ def tune(root, original, cases):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--mode", choices=("tune", "cpu-envelope", "profile"), required=True)
+    parser.add_argument("--mode", choices=("tune", "cpu-envelope", "cpu-pme", "profile"), required=True)
     parser.add_argument("--gpu", choices=("H100", "H200"), required=True)
     parser.add_argument("--cpu-budget", type=int, choices=(8, 16, 32), required=True)
     parser.add_argument("--tpr", type=Path, required=True)

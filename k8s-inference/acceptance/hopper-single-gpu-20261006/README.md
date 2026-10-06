@@ -34,6 +34,13 @@ retains the original positive Verlet buffer tolerance and native adjustment.
    remove only exact task-owned pods. Report native/process-inclusive rates,
    not unmeasured API-delivered gains. Compare hosts with hardware caveats.
 
+A bounded follow-up, `cpu-pme`, uses 16 allocated CPUs and exactly one H100
+on a different idle full host. It screens eight-thread control, 16 threads and
+eight threads with original PME, then uses the same predeclared >2% combination
+rule and three paired 1 ns confirmations. This tests whether the promising
+CPU and PME settings actually combine; no speedups are added arithmetically.
+The original 32-CPU cohort remains separate and is not relabeled as 16 CPUs.
+
 ## Reproduction
 
 ```bash
