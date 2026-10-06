@@ -1,10 +1,17 @@
 # Lynx native GROMACS continuation: customer handover
 
-Status: **the exact single-L40S public continuation passed its sustained gate**
+**6 October update:** plain `:resume` now performs the qualified tuning and
+empty-segment selector migration server-side. Use the
+[managed-resume handover](../gromacs-managed-resume-20261006/README.md) for the
+current customer operation and release evidence. No client-side import is needed.
+The owner explicitly authorized continuing the current job using Lynx's key;
+internal qualification still uses only internal keys.
+
+Historical performance evidence: **the exact single-L40S public continuation passed its sustained gate**
 on 6 October 2026: 216.956 ns/day delivered over 7.112 hours, with 7.032 hours of
 native execution and complete platform/bucket artifact verification. This is
 not a fourteen-day soak or a completed full 1 µs customer run. No customer API
-key was used for testing. The already-running customer recovery is untouched.
+key was used for that test. The customer recovery was untouched during that cohort.
 
 This supplements the existing [API contract](../../docs/SCIENTIFIC_BATCH_API.md)
 and [continuation guide](../../models/molecular-dynamics/gromacs/CONTINUATION.md),
@@ -17,27 +24,15 @@ public continuation, performance or soak gates below.
 
 ## Customer steps at a glance
 
-**For the current Lynx recipe, use the qualified tuned import when a switch is
-chosen.** It applies both the measured performance recipe and the empty-XTC
-analysis fix. Plain `:resume` of that old operation is not equivalent: it keeps
-the old tuning and can retain the legacy final-analysis failure. The generic
-resume example below is reference documentation, not the recommended switch
-for this particular source. Do not cancel the running recovery for this test.
-
-1. Leave the current recovery running unless the customer independently chooses
-   to stop it. A platform update does not change its frozen budget or tuning.
-2. Once it is failed/cancelled, obtain its **latest** checkpoint and complete
-   verified file tree. Do not restart from the older demo copy.
-3. For the measured tuning and empty-segment analysis fix, use the prepared
-   private frozen inputs with `prepare_customer_import.py`. Keep the original
-   full 1 µs target. Ordinary `:resume` instead preserves the old parameters;
-   it does not add tuning or the explicit `nonempty` selector.
-4. Upload the generated bundle and manifest, and submit the generated
-   `parameters.json` through the normal API with one stable idempotency key.
-   The illustrative `production` template is not the actual `mas1-20e` job.
-5. Keep the returned operation ID, check the actual admitted pool, and poll
-   until durable completion. Verify the result and exported files. Fourteen
-   days is the configured new-job budget, not the duration tested here.
+1. For a failed/cancelled run, `POST /v1/operations/{id}:resume` with body `{}`
+   and one stable `Idempotency-Key`. The server chooses the latest committed
+   checkpoint, preserves the full target and applies compatible qualified defaults.
+2. Keep the **new** operation ID. Poll `GET /v1/operations/{new_id}`; check
+   `continuation.adjustments` in the admission response for the applied tuning.
+3. A running job needs no action. If an operator-authorized switch is needed,
+   stop it at a fresh committed boundary, wait for capacity release, then resume.
+4. Verify durable completion and exported artifacts. Fourteen days is the new
+   budget, not a claim that a fourteen-day soak has been performed.
 
 ## What is being preserved and tested
 
@@ -68,15 +63,15 @@ test is not evidence that this entire production run finished.
 
 ## Customer recovery must use the latest source, not the demo fixture
 
-The running customer recovery is `a42479f9-5ee0-4ed4-869b-0a094357403f`.
-**Do not cancel it.** Its original seven-day budget, hardware and performance
-do not change when a successor is deployed. If it later fails or the customer
-stops it, freshly retrieve its public operation status and checkpoint choices.
-Use its latest committed checkpoint, not the older generation 71 demo copy.
+The legacy recovery is `a42479f9-5ee0-4ed4-869b-0a094357403f`. Its original
+seven-day budget and performance do not change in place when a successor is
+deployed. The 6 October owner-authorized continuation selects its latest
+committed checkpoint, never the older generation 71 demo copy. Current
+successor identity is in the managed-resume handover linked above.
 
-For this legacy Lynx source, the qualified switch is the tuned import, not a
-plain `:resume`: both its performance arguments and trajectory selector need
-the measured update. The offline
+The following offline-import procedure is retained as historical evidence and
+an optional expert recovery tool, **not the ordinary customer resume path**.
+The offline
 [`prepare_customer_import.py`](prepare_customer_import.py) helper prepares a new
 ordinary `run-workflow` request. It does not submit, cancel, download or upload
 anything by itself.

@@ -70,14 +70,13 @@ continuation establishes only the duration, recovery and workload actually teste
 
 ## Customer handover distinction
 
-The real customer's current recovery keeps running and has progressed beyond
-generation 71. It must not be cancelled or reverted to this older acceptance
-fixture. The generic customer handover lives in
-[`../lynx-customer-handover-20261005`](../lynx-customer-handover-20261005): select the
-latest committed state after the customer's chosen stop/failure, preserve the
-full original target, and submit an explicitly tuned native import. Ordinary
-`:resume` preserves old arguments; it does not itself enable new performance
-flags. No cross-tenant database ownership rewrite is used.
+During this historical cohort the customer's recovery was preserved and had
+progressed beyond generation 71. Never revert it to this older test fixture.
+The subsequent [6 October managed-resume release](../gromacs-managed-resume-20261006/README.md)
+closes the original integration gap: plain `:resume` now applies compatible,
+qualified defaults and omitted empty-segment selectors. The owner separately
+authorized continuation of the real customer operation using its latest state
+and unchanged full target. No cross-tenant database ownership rewrite is used.
 
 ## Local evidence
 

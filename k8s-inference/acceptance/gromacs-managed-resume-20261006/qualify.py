@@ -3,22 +3,23 @@
 Reuses the retained, authorized copy and existing artifact client. No customer
 key, quota changes or production cancellation. Private evidence never goes in Git.
 """
+
 import argparse
 import asyncio
 import copy
-from datetime import datetime, timezone
 import importlib.util
 import json
 import os
-from pathlib import Path
 import sys
+from datetime import UTC, datetime
+from pathlib import Path
 
 import httpx2
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "lynx-demo-resume-20261005"))
-from run_demo_resume import save
-from validate_resume import delivery_gate, preserved_history, restart_step, topology_equivalence
+from run_demo_resume import save  # noqa: E402
+from validate_resume import delivery_gate, preserved_history, restart_step, topology_equivalence  # noqa: E402
 
 
 async def run(args):
@@ -32,8 +33,13 @@ async def run(args):
     state_path = args.output / "state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     identity = "gromacs-managed-resume-20261006-" + args.cohort
-    async with httpx2.AsyncClient(base_url="https://89.169.99.188", timeout=120, trust_env=False,
-                                 headers={"Authorization": "Bearer " + credential}) as client:
+    async with httpx2.AsyncClient(
+        base_url="https://89.169.99.188",
+        timeout=120,
+        trust_env=False,
+        headers={"Authorization": "Bearer " + credential},
+    ) as client:
+
         async def get(path):
             response = await client.get(path)
             response.raise_for_status()
@@ -66,8 +72,17 @@ async def run(args):
                 save(args.output / (label + "-status.json"), status)
                 now = status["batch"]["status"]
                 if now != previous:
-                    print(json.dumps({"at": datetime.now(timezone.utc).isoformat(), "phase": label,
-                                      "operation": operation, "status": now}), flush=True)
+                    print(
+                        json.dumps(
+                            {
+                                "at": datetime.now(UTC).isoformat(),
+                                "phase": label,
+                                "operation": operation,
+                                "status": now,
+                            }
+                        ),
+                        flush=True,
+                    )
                     previous = now
                 if now in {"succeeded", "failed", "cancelled"} and status["batch"]["result_published"]:
                     return status
@@ -90,15 +105,36 @@ async def run(args):
                             item.pop("nonempty", None)
             request["max_wall_seconds"] = 120
             request["output_prefix"] = "runs/" + identity
-            artifact = await helper.upload(client, "gromacs", helper.FileSource(args.fixture / "input.tar.gz"),
-                "application/x-tar", "gzip", identity + "-bundle")
-            manifest = {"schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1", "manifest_id": identity,
-                        "entries": [{"name": "gromacs-inputs", "semantic_type": "gromacs-input-bundle/v1",
-                                     "artifact": artifact}]}
-            pointer = await helper.upload(client, "gromacs", helper.canonical(manifest),
-                "application/vnd.fs2.scientific-manifest+json", "none", identity + "-manifest")
-            body = {"schema": "fs2-serve.nebius.ai/scientific-run-request/v1", "operation": "run-workflow",
-                    "service_class": "customer-batch", "input_manifest": pointer, "parameters": request}
+            artifact = await helper.upload(
+                client,
+                "gromacs",
+                helper.FileSource(args.fixture / "input.tar.gz"),
+                "application/x-tar",
+                "gzip",
+                identity + "-bundle",
+            )
+            manifest = {
+                "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
+                "manifest_id": identity,
+                "entries": [
+                    {"name": "gromacs-inputs", "semantic_type": "gromacs-input-bundle/v1", "artifact": artifact}
+                ],
+            }
+            pointer = await helper.upload(
+                client,
+                "gromacs",
+                helper.canonical(manifest),
+                "application/vnd.fs2.scientific-manifest+json",
+                "none",
+                identity + "-manifest",
+            )
+            body = {
+                "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+                "operation": "run-workflow",
+                "service_class": "customer-batch",
+                "input_manifest": pointer,
+                "parameters": request,
+            }
             save(args.output / "bootstrap-request.json", body)
             admitted = await post("/v1/models/gromacs:submit", body, identity + "-bootstrap")
             state["source_operation"] = admitted["operation"]["id"]
@@ -109,7 +145,9 @@ async def run(args):
 
         bootstrap = await poll(state["source_operation"], "bootstrap")
         if (bootstrap["batch"]["status"], bootstrap["batch"]["failure_code"]) != (
-                "failed", "WORKFLOW_TIME_LIMIT_EXCEEDED"):
+            "failed",
+            "WORKFLOW_TIME_LIMIT_EXCEEDED",
+        ):
             raise ValueError("Expected bounded bootstrap budget stop was not observed")
         source = await checkpoint(state["source_operation"], "source")
         saved = max(row.get("checkpoint_step") or 0 for row in source["state"]["commands"])
@@ -148,9 +186,15 @@ async def run(args):
         bounded = copy.deepcopy(fixture)
         bounded.update(minimum_native_seconds=0, minimum_delivered_ns_per_day=0)
         gate = delivery_gate(bounded, saved, final_status, final)
-        receipt = {**state, **gate, "adjustments": adjustments,
-                   "verified_files": len(final["files"]), "history_files": preserved_history(fixture, final),
-                   "customer_key_used": False, "scope": "two-ns API resume; not a new six-hour soak"}
+        receipt = {
+            **state,
+            **gate,
+            "adjustments": adjustments,
+            "verified_files": len(final["files"]),
+            "history_files": preserved_history(fixture, final),
+            "customer_key_used": False,
+            "scope": "two-ns API resume; not a new six-hour soak",
+        }
         save(args.output / "receipt.json", receipt)
         print(json.dumps(receipt), flush=True)
 
