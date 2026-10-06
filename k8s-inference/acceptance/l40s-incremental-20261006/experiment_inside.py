@@ -55,7 +55,7 @@ def checkpoint_step(binary, directory):
 
 def environment(root, threads, selected=None):
     env = {**os.environ, "OMP_NUM_THREADS": str(threads), "CUDA_CACHE_PATH": str(root / "cuda-cache")}
-    for key in ("GMX_CUDA_GRAPH", "OMP_PLACES", "OMP_PROC_BIND", "GOMP_CPU_AFFINITY"):
+    for key in ("GMX_CUDA_GRAPH", "OMP_PLACES", "OMP_PROC_BIND", "GOMP_CPU_AFFINITY", "OMP_WAIT_POLICY", "GOMP_SPINCOUNT"):
         env.pop(key, None)
     prefix = []
     if selected:
@@ -71,8 +71,10 @@ def measured_run(root, tpr, case, repeat, steps, *, segmented=False, segment_min
     env.update(case.get("environment", {}))
     binary = case.get("binary", BINARY)
     base = [*prefix, binary, "mdrun", "-s", str(tpr), "-deffnm", "md", "-ntmpi", "1",
-            "-ntomp", str(case["threads"]), "-pin", "auto", "-nb", "gpu", "-pme", "auto",
-            "-bonded", "gpu", "-update", "auto", "-nstlist", "200", "-cpt", str(segment_minutes)]
+            "-ntomp", str(case["threads"]), "-pin", case.get("pin", "auto"), "-nb", "gpu",
+            "-pme", case.get("pme", "auto"), "-bonded", case.get("bonded", "gpu"),
+            "-update", case.get("update", "auto"), "-nstlist", str(case.get("nstlist", 200)),
+            "-cpt", str(segment_minutes)]
     base += case.get("extra_args", [])
     native = []
     process_wall = 0.0
@@ -236,7 +238,7 @@ def wait_policy_experiment(root, original):
             "scope": "Native 100,000-step OpenMP wait-policy screen, eight-CPU allocation unchanged"}
 
 
-def profile_experiment(root, original):
+def profile_experiment(root, original, steps=100000):
     tools = {tool: shutil.which(tool) for tool in ("nsys", "ncu", "nvidia-smi", "nvcc", "perf", "numactl", "lstopo")}
     for path in Path("/opt/nvidia").glob("nsight-systems/*/bin/nsys"):
         tools["nsys"] = tools["nsys"] or str(path)
@@ -250,7 +252,7 @@ def profile_experiment(root, original):
     baseline.run_logged([tools["nsys"], "profile", "--help"], root / "nsys-help.txt")
     short = finite_input(root, original, 50000)
     measured_run(root, short, {"name": "warmup", "threads": 8}, 0, 50000)
-    tpr = finite_input(root, original, 100000)
+    tpr = finite_input(root, original, steps)
     work = root / "profile"
     work.mkdir()
     env, _ = environment(root, 8)
@@ -266,7 +268,7 @@ def profile_experiment(root, original):
         if time.monotonic() > deadline:
             raise TimeoutError("Profile target did not finish its bounded native work")
         time.sleep(0.5)
-    validation = baseline.validate(BINARY, work, 100000, 200,
+    validation = baseline.validate(BINARY, work, steps, steps * 0.002,
                                    baseline.expected_trajectories((root / "original.mdp").read_text()))
     if not validation["passed"]:
         raise ValueError("Profile target did not finish a valid finite simulation")

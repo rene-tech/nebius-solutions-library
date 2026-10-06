@@ -1,6 +1,7 @@
 """Isolated native benchmark; never edits a production workload or node."""
 
 import argparse
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -20,6 +21,21 @@ TPR_SHA256 = "e2ee73571f0dd9855709d2a957e41e5ad52316b3f1d2b1808e65476f4bd8ef10"
 REMOTE = "/mnt/fs2-scientific/incremental"
 
 
+@dataclass(frozen=True)
+class ExperimentSpec:
+    task: str = TASK
+    pod_prefix: str = "fs2-lynx-perf-cpu-incremental-"
+    allowed_pools: tuple = ("l40s-1x",)
+    allowed_cpus: tuple = (8,)
+    worker: Path = HERE / "experiment_inside.py"
+    extra_sources: tuple = ()
+    worker_args: tuple = ()
+    purpose: str = "isolated native L40S benchmark"
+
+
+DEFAULT_SPEC = ExperimentSpec()
+
+
 def save(path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + "\n")
 
@@ -33,36 +49,39 @@ def customer_observation(native):
                            for c in pod["status"].get("containerStatuses", [])]}
 
 
-def pod_spec(args):
-    if args.node == CUSTOMER_NODE or not args.name.startswith("fs2-lynx-perf-cpu-incremental-"):
+def pod_spec(args, spec=DEFAULT_SPEC):
+    if args.node == CUSTOMER_NODE or not args.name.startswith(spec.pod_prefix):
         raise ValueError("Customer node excluded; require unique task pod")
-    args.cpus, args.image = 8, IMAGE
+    args.cpus, args.image = getattr(args, "cpus", 8), IMAGE
+    if args.cpus not in spec.allowed_cpus:
+        raise ValueError("CPU envelope outside this experiment contract")
     pod = lifecycle.pod_spec(args)
-    pod["metadata"]["labels"]["scientific-ai.nebius.com/task"] = TASK
-    pod["metadata"]["annotations"] = {"purpose": "isolated native L40S benchmark", "owner": "system/development"}
+    pod["metadata"]["labels"]["scientific-ai.nebius.com/task"] = spec.task
+    pod["metadata"]["annotations"] = {"purpose": spec.purpose, "owner": "system/development"}
     pod["spec"]["activeDeadlineSeconds"] = 10800
     pod["spec"]["containers"][0]["command"] = ["sleep", "10700"]
     return pod
 
 
-def run(args):
+def run(args, spec=DEFAULT_SPEC):
     native = lifecycle.native
     native.KUBE = ["kubectl", "--context", args.context]
     if lifecycle.sha(args.tpr) != TPR_SHA256:
         raise ValueError("Original scientific input identity differs")
     args.output.mkdir(parents=True, exist_ok=False, mode=0o700)
-    pod = pod_spec(args)
+    pod = pod_spec(args, spec)
     nodes = json.loads(native.call(["get", "nodes", "-o", "json"]))["items"]
     pods = json.loads(native.call(["get", "pods", "-A", "-o", "json"]))["items"]
     capacity = native.free_capacity(args.node, nodes, pods, 1)
-    if capacity["labels"].get("accelerator.fs2.nebius/pool-id") != "l40s-1x":
-        raise ValueError("Only an idle single-L40S node is in this experiment")
+    if capacity["labels"].get("accelerator.fs2.nebius/pool-id") not in spec.allowed_pools:
+        raise ValueError("Node pool outside this experiment contract")
     for p in pods:
         if (p["spec"].get("nodeName") == args.node
                 and p["status"].get("phase") not in ("Succeeded", "Failed")
                 and not any(o["kind"] in ("DaemonSet", "Node") for o in p["metadata"].get("ownerReferences", []))):
             raise ValueError("Target has other application work; no eviction")
     record = {"mode": args.mode, "node": args.node, "pod": args.name, "image": IMAGE,
+              "task": spec.task, "cpus": args.cpus, "gpus": 1,
               "input_sha256": TPR_SHA256, "started_at": datetime.now(timezone.utc).isoformat(),
               "customer_before": customer_observation(native), "capacity": capacity,
               "scope": "Native benchmark, not API or object-storage delivery acceptance"}
@@ -88,10 +107,11 @@ def run(args):
         if IMAGE.split("@", 1)[1] not in record["image_id"]:
             raise ValueError("Running worker differs from pinned production digest")
         native.call(["-n", native.NS, "exec", args.name, "--", "mkdir", "-p", REMOTE])
-        sources = [(args.tpr, "original.tpr"), (HERE / "experiment_inside.py", "experiment_inside.py"),
+        sources = [(args.tpr, "original.tpr"), (spec.worker, spec.worker.name),
                    (lifecycle.ROOT / "models/molecular-dynamics/gromacs/qualification/benchmark_sm89.py", "benchmark_sm89.py"),
                    (HERE.parent / "lynx-l40s-final-20261005/screen_inside.py", "screen_inside.py"),
-                   (Path("/home/tux/.codex/skills/gpu-performance/scripts/collect_blackwell_env.py"), "collect_env.py")]
+                   (Path("/home/tux/.codex/skills/gpu-performance/scripts/collect_blackwell_env.py"), "collect_env.py"),
+                   *spec.extra_sources]
         record["source_hashes"] = {str(path): lifecycle.sha(path) for path, _ in sources}
         for source, target in sources:
             native.call(["-n", native.NS, "cp", "--no-preserve", str(source), args.name + ":" + REMOTE + "/" + target])
@@ -103,8 +123,8 @@ def run(args):
                 "source": str(args.profile_tools), "nsys_sha256": lifecycle.sha(nsys)}
             subprocess.run([*native.KUBE, "-n", native.NS, "cp", "--no-preserve", str(args.profile_tools),
                             args.name + ":" + REMOTE + "/nsight"], check=True, capture_output=True, timeout=180)
-        command = ["python3", REMOTE + "/experiment_inside.py", "--mode", args.mode,
-                   "--tpr", REMOTE + "/original.tpr", "--output", REMOTE + "/results"]
+        command = ["python3", REMOTE + "/" + spec.worker.name, "--mode", args.mode,
+                   "--tpr", REMOTE + "/original.tpr", "--output", REMOTE + "/results", *spec.worker_args]
         record["command"] = command
         with (args.output / "experiment.log").open("xb") as log:
             process = subprocess.run([*native.KUBE, "-n", native.NS, "exec", args.name, "--", *command],
@@ -124,7 +144,7 @@ def run(args):
         if uid:
             current = json.loads(native.call(["-n", native.NS, "get", "pod", args.name, "-o", "json"]))
             save(args.output / "pod-final.json", current)
-            if current["metadata"]["uid"] != uid or current["metadata"]["labels"].get("scientific-ai.nebius.com/task") != TASK:
+            if current["metadata"]["uid"] != uid or current["metadata"]["labels"].get("scientific-ai.nebius.com/task") != spec.task:
                 raise ValueError("Refuse cleanup of unrelated/replaced resource")
             if record.get("status") != "passed":
                 try:
