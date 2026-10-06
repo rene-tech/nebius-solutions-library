@@ -69,7 +69,9 @@ No profiling wall time is mixed into throughput comparisons.
 
 Live measurements started at approximately 09:53 UTC. Evidence root:
 `/home/tux/secure-handoff/fs2-hopper-single-gpu-20261006/`.
-No result or production improvement is claimed yet.
+H100/H200 eight-CPU studies, the H100 CPU-envelope study and the diagnostic are
+complete and independently verified. The 16-CPU combination study is finishing.
+No public-default or customer-workload change has been made.
 
 ## Runtime and evidence contract
 
@@ -160,3 +162,35 @@ conformational convergence is made from these 1 ns performance repetitions.
 The exact pod was removed at completion, and the customer UID, node, readiness,
 images and restart counts were unchanged. The follow-up `cpu-pme` separately
 tests a real 16-CPU quota and the combined settings.
+
+## Completed eight-CPU H100/H200 confirmation
+
+Both GPUs selected `-notunepme` with the original input's grid after the full
+three-repeat nine-case screen. This avoids retuning; it does not relax accuracy
+or replace the force field. Both use eight OpenMP threads and one GPU.
+
+| GPU / case | Native median (range), ns/day | Process-inclusive median (range), ns/day |
+| --- | --- | --- |
+| H100 control | 214.111 (213.902–214.383) | 211.370 (211.242–211.630) |
+| H100 original PME | 215.811 (214.381–215.905) | 213.044 (211.680–213.127) |
+| H200 control | 213.869 (213.747–217.288) | 211.009 (210.887–214.343) |
+| H200 original PME | 218.113 (218.093–218.476) | 215.148 (215.121–215.551) |
+
+Paired process-inclusive gains (three 1 ns pairs per GPU):
+
+- H100: +0.146%, +0.892%, +0.668%; median **+0.668%**. Marginal, not a
+  meaningful steady-state upgrade by itself.
+- H200: +1.962%, +2.211%, +0.363%; median **+1.962%**. Modest, with host/run
+  variability of similar order; not a guarantee of a 2% production gain.
+
+Short 0.1 ns screens overstated the sustained gain because PME startup tuning
+is a greater fraction of those short runs. They were used for candidate
+selection, not final speedup claims. Fewer threads, CPU bonded placement,
+neighbour-list 100/300, explicit physical-core affinity and AVX-512 did not beat
+the original-PME candidate's screening median on these nodes. In particular,
+CPU bonded placement was much slower. None of those rejected candidates is
+promoted as a production recommendation.
+
+Each cohort completed 34 validated finite runs. After export, H100 verified
+545 files / 818,473,203 bytes, and H200 verified 545 / 818,472,485 bytes. Both
+exact pods were removed, with the protected customer pod unchanged.
