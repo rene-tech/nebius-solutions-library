@@ -1,15 +1,16 @@
-# Bounded GROMACS lifetime check — 5 October 2026
+# Bounded GROMACS lifetime check — 5–6 October 2026
 
-This is a source/retained-metadata review for the Lynx continuation, not a
-fourteen-day soak or a promise against cloud failures. No live policy, key,
-quota, customer Job or bucket is changed by this work.
+This records the source/retained-metadata check and the qualified seven-hour
+public demo continuation. It is not a fourteen-day soak or a promise against
+cloud failures. No live policy, key, quota, customer Job or bucket is changed
+by this documentation work.
 
 ## Budgets that actually apply
 
 | Layer | Bound and meaning |
 | --- | --- |
 | New workflow and explicit `:resume` | Default/max 1,209,600 s (14 days), including native checkpoint I/O. A new explicit continuation gets a new budget. |
-| Already-admitted customer recovery | Frozen original 7-day budget; changing defaults does not rewrite it. |
+| Already-admitted customer recovery | `a42479f9-5ee0-4ed4-869b-0a094357403f` retains its frozen original 7-day budget and old arguments; changing defaults does not rewrite it. |
 | Infrastructure retry | Restores the same workflow state and subtracts accumulated elapsed time; it does not reset the budget indefinitely. |
 | GROMACS/MPI Kubernetes Job | Source execution map 1,211,400 s (14 days + 30 min) for staging/export; controller does not equate its 30 s reconciliation lease with run lifetime. |
 | Collector | Job deadline less 120 s; controller's post-model-exit collection grace is 1,800 s. Neither removes the native per-handoff bound. |
@@ -54,18 +55,20 @@ Evidence: 28 new clock-controlled cases plus 91 existing workspace, routing,
 descriptor, native checkpoint and two-cohort pipeline regressions passed
 (119 total); Ruff passed. Tests cover queued transfer expiry, expiry during a
 request/backoff, immutable identity mismatch, 401/403/409 renewal denial and
-the five-attempt maximum. This is source qualification; deployment and live
-continuation qualification are recorded by the integrating release, not
-assumed from unit tests.
+the five-attempt maximum. The correction is deployed in control-plane image
+`1c22336993e588408c069b5a8f93e550ea60829f167099f55acdc1f3918fd0d9`.
+The exact-release public continuation and full-byte checks below passed;
+the forced expiry-race cases are unit evidence, not a claim that each race
+was induced during the live soak.
 
 ## 600 s handoff: actual bytes, not a larger timeout
 
 The approved generation 71 metadata has 305 files / 82,674,112 bytes. Moving all
 those bytes within 600 s requires only 0.138 MB/s at the data layer, but this omits
 authorization, hashing, per-object overhead, platform verification and customer
-export. The real demo receipt must measure restore and publish elapsed times,
-new bytes vs unchanged files, and metadata/transfer/export phases. Do not call
-a 600 s handoff safe using bandwidth alone.
+export. The real demo evidence retains restore and publication phases, with
+new bytes distinct from unchanged files. Do not call a 600 s handoff safe
+using bandwidth alone.
 
 Steady-state publication uploads changed content, not all prior trajectory
 parts again. Full restore and the first export in a new operation revisit the
@@ -73,6 +76,15 @@ complete history. A growing manifest and many small files can dominate even
 when byte throughput looks adequate. The two 64-file metadata cohorts share 8
 PUT lanes; the final handoff remains acknowledged only after all required
 publication succeeds. No timeout was stretched to hide a slow publication.
+
+In the completed public continuation, input materialization took **4 s** and
+exited zero. Across **84 observed committed handoffs**, the longest was
+**9.660 s**: 3.593 s platform pipeline and 5.716 s customer export, with the
+remainder in validation/manifest/acknowledgement. Final generation 88 committed
+in **1.638 s**. The observer did not capture every intermediate generation;
+these are observed maxima, not an invented complete distribution. The retained
+`long-r1/final-evidence.json` records each captured phase and unchanged two-cohort
+limit. None approached the existing 600 s handoff deadline.
 
 ## Storage projection for this exact cadence
 
@@ -87,7 +99,7 @@ Source metadata only; no customer scientific content is in this document:
 | Native/wrapper logs |10,960,863 |
 | Total latest workspace inventory |82,674,112 |
 
-At the requested **measured** 200 ns/day, the remaining
+At a **planning rate** of 200 ns/day, the remaining
 `1000 − 27.92688 = 972.07312 ns` takes about 4.86 days. Five-minute segments imply at
 most roughly 1,400 additional segments before stop/export overhead. With the
 same TPR output cadence:
@@ -113,25 +125,61 @@ same TPR output cadence:
   do not assume cross-operation deduplication. Fourteen full days can retain
   about 35.92 GB of checkpoint versions alone with the same conservative rule.
 
-The current demo task is bounded differently: a short qualification plus a
-six-hour soak. 72 five-minute segments retain at most about 0.64 GB of checkpoint
-versions under the same conservative estimate, plus inputs, outputs and
-manifests. That can fit the existing 5 GB demo bucket, but actual occupancy must
-be observed. A full 1 µs run must not be left running there based on the small
-initial copy alone. No canonical seed data is modified.
+The October 6, approximately 03:41 UTC read-only closeout check confirmed both
+the platform policy and provider limit at **100,000,000,000 bytes**, with the
+same Lynx bucket `ACTIVE` / `NOT_SUSPENDED`. Provider counters reported
+1,627,429,382 simple-object bytes plus 170,684,999 multipart bytes: about
+1.80 GB used and 98.2 GB nominal headroom at that observation. These counters
+are not an atomic object inventory and the running job continues to grow.
+They leave room for the conservative projection above at that point; they
+do not reserve space or guarantee future usage by other runs. Evidence:
+`/home/tux/secure-handoff/fs2-lynx-demo-resume-20261005/final-storage-readonly/before.json`.
 
-## Exact remaining claims and conditions
+The demo task was bounded differently: a short qualification plus at least six
+native hours; the sustained run completed 84 clean segments over 7.032 native
+hours. Its final workspace had 285,005,633 bytes, and the final customer export
+contained 597 unique objects / 272,207,046 bytes. Those final-generation counts
+are not total bucket occupancy: historical generations and the short fixture
+remain separate. The existing 5 GB demo limit was not raised. A full 1 µs run
+must not be left there based on the small initial copy or final workspace alone.
+No canonical seed data was modified.
+
+## Qualified claim and remaining bounds
 
 The fixed source removes a predictable **signed-handle expiry** failure and
 the already-deployed fourteen-day path removes the former default six-hour
 compute stop for new runs. It does not guarantee zero infrastructure failures,
 infinite waiting, unlimited storage or indefinite retry.
 
-Final acceptance still needs the exact-release public demo continuation,
-replayed admission, ≥200 ns/day delivered work, preservation of old native
-history, observed transfer margins, and the actual six-hour soak. Retain any
-unexpected failure rather than relabel it as success. Use a qualified
+**One sustained** exact-release public continuation passed: operation
+`831f030a-afb4-47f2-b719-bb02f3091c7b` completed **64.29128 newly resumed ns** in
+25,603.145 s accepted-to-durable time, **216.956 ns/day delivered**. Its 84 clean
+segments totalled **25,315.613 native seconds / 7.032 hours**. Both the ≥200 rate
+and ≥21,600 native-second gates passed. Same-key admission replay returned the
+same operation, all 305 original files survived unchanged, and every final
+platform and customer-bucket artifact was byte-verified. Full final platform
+verification took 47.458 s; the independent S3 verification took 20.676 s.
+These post-completion checks are not native checkpoint-handoff timings.
+The 15,548 retained per-reader readiness samples through complete verification
+had zero non-200 responses, sampler errors or coverage gaps; the longest sample
+interval was 12.232 s. This is bounded observed availability, not an SLO or
+proof that all possible future failures have been eliminated.
+
+The separate short functional result remains **198.173 ns/day delivered**;
+three native-only confirmations are not additional sustained public cohorts.
+Neither the fourteen-day configuration nor this seven-hour result is evidence
+of a fourteen-day soak or a completed full 1 µs customer run. The exact release,
+hardware scope and private receipt hashes are in the [handover](README.md#final-sustained-receipt--6-october-2026).
+Retain any unexpected failure rather than relabel it as success. Use a qualified
 non-preemptible pool for the no-planned-preemption customer path; native
 checkpoint recovery, not GPU-process snapshotting, is the fallback for node
 loss. Future resumes near artifact-retention expiry need an explicit source
 retention check; a fresh 14-day run is not a promise to retain old inputs forever.
+
+For the real customer, fetch the latest committed checkpoint only after their
+chosen stop/failure. The private frozen request/engine export is already
+prepared, but is not a substitute for that fresh checkpoint. Ordinary `:resume`
+preserves existing tuning and analysis arguments; the documented tuned import
+retains the full original 1 µs target while explicitly applying the measured
+recipe and nonempty trajectory selection. Neither route modifies the still
+running seven-day operation.

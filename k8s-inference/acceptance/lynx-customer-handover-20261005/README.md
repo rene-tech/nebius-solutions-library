@@ -1,9 +1,10 @@
 # Lynx native GROMACS continuation: customer handover
 
-Status: prepared runbook, **not a completed customer-performance qualification**.
-The final L40S measurement and demo-owned public continuation/soak must fill the
-release fields below before this is presented as tested. No customer API key is
-used for the internal tests. The already-running customer recovery is untouched.
+Status: **the exact single-L40S public continuation passed its sustained gate**
+on 6 October 2026: 216.956 ns/day delivered over 7.112 hours, with 7.032 hours of
+native execution and complete platform/bucket artifact verification. This is
+not a fourteen-day soak or a completed full 1 µs customer run. No customer API
+key was used for testing. The already-running customer recovery is untouched.
 
 This supplements the existing [API contract](../../docs/SCIENTIFIC_BATCH_API.md)
 and [continuation guide](../../models/molecular-dynamics/gromacs/CONTINUATION.md),
@@ -13,6 +14,30 @@ The generic helper has also passed [real-source offline qualification](REAL-SOUR
 against all 305 files from the original terminal six-hour run, retaining the
 full 1 µs target. No job was submitted by that check; it does not replace the
 public continuation, performance or soak gates below.
+
+## Customer steps at a glance
+
+**For the current Lynx recipe, use the qualified tuned import when a switch is
+chosen.** It applies both the measured performance recipe and the empty-XTC
+analysis fix. Plain `:resume` of that old operation is not equivalent: it keeps
+the old tuning and can retain the legacy final-analysis failure. The generic
+resume example below is reference documentation, not the recommended switch
+for this particular source. Do not cancel the running recovery for this test.
+
+1. Leave the current recovery running unless the customer independently chooses
+   to stop it. A platform update does not change its frozen budget or tuning.
+2. Once it is failed/cancelled, obtain its **latest** checkpoint and complete
+   verified file tree. Do not restart from the older demo copy.
+3. For the measured tuning and empty-segment analysis fix, use the prepared
+   private frozen inputs with `prepare_customer_import.py`. Keep the original
+   full 1 µs target. Ordinary `:resume` instead preserves the old parameters;
+   it does not add tuning or the explicit `nonempty` selector.
+4. Upload the generated bundle and manifest, and submit the generated
+   `parameters.json` through the normal API with one stable idempotency key.
+   The illustrative `production` template is not the actual `mas1-20e` job.
+5. Keep the returned operation ID, check the actual admitted pool, and poll
+   until durable completion. Verify the result and exported files. Fourteen
+   days is the configured new-job budget, not the duration tested here.
 
 ## What is being preserved and tested
 
@@ -49,12 +74,17 @@ do not change when a successor is deployed. If it later fails or the customer
 stops it, freshly retrieve its public operation status and checkpoint choices.
 Use its latest committed checkpoint, not the older generation 71 demo copy.
 
-If the existing tuning is appropriate, ordinary same-owner `:resume` below is
-the simplest path and streams late history without creating another bundle.
-If adopting a newly measured performance recipe, the offline
+For this legacy Lynx source, the qualified switch is the tuned import, not a
+plain `:resume`: both its performance arguments and trajectory selector need
+the measured update. The offline
 [`prepare_customer_import.py`](prepare_customer_import.py) helper prepares a new
 ordinary `run-workflow` request. It does not submit, cancel, download or upload
 anything by itself.
+
+For other source operations whose tuning and analysis are already appropriate,
+ordinary same-owner `:resume` remains the simpler generic route and streams late
+history without another bundle. That generic capability does not make the old
+Lynx recipe equivalent to the qualified import.
 
 Provide these private inputs from the actual customer-owned operation:
 
@@ -67,8 +97,8 @@ Provide these private inputs from the actual customer-owned operation:
   different defaults is insufficient; the helper verifies the original recipe
   digest before preparing any changes.
 - The final qualified performance settings. [`tuning.example.json`](tuning.example.json)
-  contains the confirmed native finalist: eight threads, `nstlist=200`,
-  `pin=auto`. Public delivered-throughput and soak acceptance remain separate.
+  contains the qualified recipe: eight threads, `nstlist=200`, `pin=auto`.
+  Native and sustained public results are reported separately below.
 
 ### Where each input comes from
 
@@ -215,11 +245,11 @@ URLs in the request.
 
 `import-request.example.json` illustrates the public body. Its manifest pointer
 must be replaced with the real finalized manifest, and the tuning values must
-match the final qualified recipe. The supplied eight-thread / `nstlist=200` /
-`pin=auto` settings are the confirmed native finalist, **not a claim that the
-public delivered-throughput/soak gate passed**. Pool assignment is operator-owned: the submit body does not accept an
-invented GPU-selector field. Confirm `resolved_pool_id` in the admitted status
-and receipt; a run on another pool is not the same performance measurement.
+match the qualified recipe. The supplied eight-thread / `nstlist=200` /
+`pin=auto` settings passed the sustained public gate below on one L40S in the
+AMD `l40s-4x` pool. Pool assignment is operator-owned: the submit body does not
+accept an invented GPU-selector field. Confirm `resolved_pool_id` in the
+admitted status and receipt; another pool is not the same performance measurement.
 
 ```bash
 export SCIENTIFIC_AI_BASE_URL='https://89.169.99.188/v1'
@@ -258,15 +288,18 @@ queueing. Check the remote committed generation, saved native step and current
 transfer phase; local `.cpt` existence alone does not prove durability.
 
 When an operation is **failed or cancelled**, select its checkpoint job and
-request a fresh budget:
+request a fresh budget. The bundled resume example uses the generic job ID
+`production`; for the current Lynx source, first set the actual `mas1-20e` ID:
 
 ```bash
+jq --arg job_id 'mas1-20e' '.job_id = $job_id' \
+  resume-request.example.json > resume-request.json
 curl --fail-with-body --silent --show-error --max-time 120 \
   -X POST "$SCIENTIFIC_AI_BASE_URL/operations/$SOURCE_OPERATION_ID:resume" \
   -H "Authorization: Bearer $SCIENTIFIC_AI_KEY" \
   -H 'Idempotency-Key: lynx-native-resume-<unique-run-label>' \
   -H 'Content-Type: application/json' \
-  --data-binary @resume-request.example.json
+  --data-binary @resume-request.json
 ```
 
 Use the returned **new** operation ID from then on. The source stays terminal.
@@ -275,6 +308,9 @@ The `job_id` must be the actual source job (the import example uses
 
 The resume schema accepts `job_id` and `max_wall_seconds`, **not tuning
 overrides**. It preserves the source workflow arguments and native science.
+It also preserves the source analysis selectors: an old request without
+`nonempty: true` does not acquire it through `:resume`. The tuned import helper
+explicitly applies that documented adaptation for the current legacy request.
 For a changed performance recipe, use a separately qualified new-operation import
 as above, keeping checkpoint/TPR/protocol lineage explicit. Do not pretend an
 unsupported field such as `resume.mdrun_args` can change the deployed recipe.
@@ -295,23 +331,67 @@ steps, retry work or a team's aggregate MPS throughput as new single-run speed.
 
 Earlier unchanged-input L40S measurements were 200.98 ns/day by REST and
 196.58 ns/day by raw MCP. They are retained as evidence, not rounded up to a
-universal ≥200 ns/day result. The new target needs its own exact-release proof.
+universal ≥200 ns/day result. The exact-release sustained result below is the
+proof for the new recipe, not a relabelling of those older results.
 
-Before customer handover, record:
+The agreed evidence consists of **one sustained public continuation** meeting
+both ≥200 ns/day delivered and at least 21,600 native execution seconds, plus
+the separate short functional continuation and three native confirmation
+repeats. It does not require or claim a second sustained cohort.
 
-| Release field | Required evidence |
+The short public continuation completed 1.30208 new ns at **198.173 ns/day
+delivered**, including its 46.398 s difference between native process and full
+accepted-to-durable clocks; its native useful-work rate was 215.812 ns/day.
+This passed functional recovery, postprocessing and artifact validation, **not**
+the sustained 200-ns/day gate. The three native-only 1-ns confirmations were
+217.082, 216.630 and 217.533 ns/day on the dedicated Intel single-L40S host.
+The public cohorts use the separate AMD four-L40S pool with one GPU per request;
+neither those host results nor native and public clocks are interchangeable.
+
+### Final sustained receipt — 6 October 2026
+
+| Release field | Verified result |
 | --- | --- |
-| Control-plane/companion image and engine image | Immutable digests from actual admitted run |
-| L40S recipe | Threads, offloads, `nstlist`, pinning; unchanged TPR physics |
-| Demo import operation and checkpoint | Real operation/job/generation IDs; saved step from native log |
-| Public continuation | Real new operation ID; same-key replay returns same ID |
-| Completed work | New step range, verified earlier history and new output artifacts |
-| Throughput | Delivered ≥200 ns/day on two clean unchanged-release cohorts; native speed separately |
-| Six-hour soak | Actual duration, committed progress, transfer timings, bucket growth and interruptions |
-| Sibling availability | Public API responsiveness and untouched original customer operation |
+| Control-plane/companion | `sha256:1c22336993e588408c069b5a8f93e550ea60829f167099f55acdc1f3918fd0d9` |
+| Native single-GPU worker | `sha256:ca863f44c7d17c8096267ec43939cda8b9546f0d3b11440e62bcf9149bc94a1e` |
+| Execution shape | One L40S, 8 CPU, 16 GiB worker memory; `l40s-4x`, AMD node `computeinstance-e00xwjv9khjp8fhp3v` |
+| Recipe | Eight threads; `-nb gpu -bonded gpu -pme auto -update auto -pin auto -nstlist 200`; unchanged scientific TPR parameters |
+| Demo bootstrap | `01954a58-69b4-4375-8133-4358e85ee48b`; intentional 300 s fixture stop, committed step 14,317,800 |
+| Actual public `:resume` | `831f030a-afb4-47f2-b719-bb02f3091c7b`; initial/replayed `202` in 0.853/0.617 s, same operation ID |
+| New completed work | Step 14,317,800 → 46,463,440, **64.29128 new ns**, final generation 88; bootstrap work excluded |
+| Durable completion | 2026-10-06 03:58:38.179627 UTC; accepted-to-durable **25,603.145 s / 7.112 h** |
+| Sustained delivered rate | **216.956 ns/day**; minimum-200 gate passed |
+| Native execution | **25,315.613 s / 7.032 h**, 84/84 segments exited zero, useful-work rate 219.421 ns/day; minimum-six-hour gate passed |
+| Full platform verification | All **659 files / 285,005,633 bytes** SHA-256/size checked in 47.458 s; all **305 original files** preserved |
+| Customer-bucket export verification | All **659 paths**, **597 unique objects / 272,207,046 bytes** SHA-256 checked in 20.676 s |
+| Restore/publication | Input materialization 4 s; longest of 84 observed committed handoffs **9.660 s**, final-generation handoff **1.638 s**, below the unchanged 600 s bound |
+| Interruption/release | No polling-error file; 934 platform/checkpoint downloads with zero extra attempts; terminal result published and the owned resumed Pod released |
+| Availability observation | **15,548 per-reader readiness samples**, zero non-200 responses or sampler errors, no coverage gaps from admission through complete byte verification; not an availability SLO |
+| Sibling closeout | Three unchanged exact-release API reader UIDs and maintenance verified; original customer Pod retained its UID and zero restarts through the final 03:59 read |
 
-Until these fields are filled from the qualification receipts, no blanket
-"no more timeouts" or fourteen-day soak claim is supported. The
-[lifetime and storage analysis](LIFETIME.md) states the precise limits and the
-signed-handle fix; [demo qualification tooling](../lynx-demo-resume-20261005/prepare_acceptance.py)
-preserves the source history for the actual test.
+The delivered clock includes queueing, restore, simulation and durable export.
+The independent post-completion downloads above verify delivery; their elapsed
+times are not silently added to or subtracted from that clock. The finite demo
+target and preserved original TPR are explicitly distinct. The actual customer
+helper retains the original 500,000,000-step / 1 µs target.
+
+Private evidence is under
+`/home/tux/secure-handoff/fs2-lynx-demo-resume-20261005/long-r1/`:
+
+- `receipt.json`, SHA-256 `8258fdedcaa855d6d0239e72d15bc83e517c96afa892086a17f5bfea3c2c4323`.
+- `delivery-gate.json`, SHA-256 `330623950c223196fece7985b96d42c39ddb7171e35f6620a0e3a8f1c9c03c60`.
+- `customer-export-verification.json`, SHA-256 `7e1af043826d1e80dc8d48a37435607f4dfd71744df08a052a49ec918d61e52f`.
+
+`final-evidence.json` contains the retained transport, readiness, hardware and
+release observations; sample interval was at most 12.232 s. These observations
+bound this run and are not a zero-downtime guarantee.
+
+The verified customer export manifest SHA-256 is
+`530105e572683dfde7eff0c037e88c5721671e6d50536cdbe4c49aeda3916e3e`.
+The [demo acceptance record](../lynx-demo-resume-20261005/README.md) retains the
+fixture, monitoring and transfer evidence; scientific files stay private.
+
+This supports the measured one-L40S continuation path, not a blanket
+"no more timeouts", every-GPU throughput or fourteen-day soak claim. The
+[lifetime and storage analysis](LIFETIME.md) states the remaining limits,
+signed-handle correction and conservative full-target storage projection.
