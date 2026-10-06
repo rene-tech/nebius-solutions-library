@@ -29,6 +29,7 @@ from ..scientific_cpu import run_scientific_cpu
 from ..scientific_input_uploads import ScientificInputUploadRequest, ScientificInputUploadService
 from ..scientific_run_result import ArtifactRef
 from ..store import ConflictError
+from .gromacs_resume_defaults import PerformanceMode, apply_resume_defaults
 from .profile_catalog import ScientificRequestError
 from .service import ScientificBatchService
 
@@ -47,6 +48,7 @@ class ContinuationError(ScientificRequestError):
 class GromacsResumeRequest(StrictModel):
     job_id: str | None = Field(default=None, max_length=63)
     max_wall_seconds: int = Field(default=MAX_WALL_SECONDS, ge=60, le=MAX_WALL_SECONDS, strict=True)
+    performance_mode: PerformanceMode = "auto"
 
 
 def continuation_parameters(
@@ -283,11 +285,22 @@ async def resume_gromacs(
             document.canonical_json
             for document in invocation.workspace_documents
             if document.relative_path == ".fs2/request.json"
-        )
+        ),
     )
     parameters = await run_scientific_cpu(
         continuation_parameters,
-        original, checkpoint, model_id=choices["model_id"], max_wall_seconds=request.max_wall_seconds
+        original,
+        checkpoint,
+        model_id=choices["model_id"],
+        max_wall_seconds=request.max_wall_seconds,
+    )
+    parameters, adjustments = await run_scientific_cpu(
+        apply_resume_defaults,
+        parameters,
+        checkpoint,
+        model_id=choices["model_id"],
+        runtime_image_digest=batches.profiles.get(choices["model_id"]).runtime_image_digest,
+        performance_mode=request.performance_mode,
     )
     records = [
         row for row in all_records if row.shard_id == record.shard_id and row.direction is ArtifactDirection.OUTPUT
@@ -301,6 +314,7 @@ async def resume_gromacs(
         "previous_elapsed_seconds": state.get("elapsed_seconds"),
         "previous_completed_commands": state.get("completed_steps", []),
         "original_parameters_sha256": hashlib.sha256(canonical(original)).hexdigest(),
+        "resume_adjustments": adjustments,
     }
     identity = hashlib.sha256(f"{operation_id}/{choice['job_id']}/{idempotency_key}".encode()).hexdigest()
     provenance = await _upload_json(
@@ -329,10 +343,10 @@ async def resume_gromacs(
                 "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
                 "manifest_id": f"resume-{identity[:32]}",
                 "entries": entries,
-            }
+            },
         ),
     )
-    return await batches.submit(
+    result = await batches.submit(
         principal=principal,
         model_id=choices["model_id"],
         idempotency_key=f"resume-run-{identity}",
@@ -349,3 +363,13 @@ async def resume_gromacs(
             },
         },
     )
+    return {
+        **result,
+        "continuation": {
+            "source_operation_id": str(operation_id),
+            "source_job_id": choice["job_id"],
+            "checkpoint_generation": state["generation"],
+            "max_wall_seconds": request.max_wall_seconds,
+            "adjustments": adjustments,
+        },
+    }

@@ -58,6 +58,34 @@ from the original coordinates. The worker uses native `-cpi` and `-noappend`.
 Completed trajectories are ensemble simulations, not bitwise-reproducibility
 claims across different GPU shapes or engine builds.
 
+### Managed resume defaults
+
+Plain `:resume` now also applies qualified execution defaults automatically.
+The versioned registry in the control-plane package,
+`scientific_batch/gromacs_resume_profiles.json`, matches exact TPR hashes,
+worker-image digests and CPU thread counts, never tenant or customer names.
+Unknown inputs/runtimes, MPI and PLUMED keep their original execution choices.
+Any explicit performance flag also preserves the entire original tuning; we do
+not mix a customer's choices with an untested partial profile. Set
+`"performance_mode":"preserve"` to disable automatic performance tuning.
+
+The first qualified single-GPU profile adds `-nb gpu -bonded gpu -pme auto
+-update auto -pin auto -nstlist 200`, without changing the eight requested CPU
+threads. Its full-target input and separate finite qualification TPR are recorded
+by hash. Qualification is input-specific; this is not a universal performance
+claim for every molecule or GPU. Extend the registry only with matching-input
+measurements and evidence. Changing a worker digest requires requalification.
+
+For remaining `trjcat`/`eneconv` commands, omitted `nonempty` on `-f` patterns
+becomes `true`, so sparse-output empty segments do not crash native readers.
+Explicit `nonempty: false`, literal filenames and scientific output cadence stay
+unchanged. No original file is deleted; matching includes future trajectory parts.
+
+The response's `continuation.adjustments` and durable `_fs2-continuation.json`
+record the selected profile (or why none applied) and every selector adjustment.
+No downloads, reuploads or client-side repackaging are needed. The same behavior
+is available through MCP `resume_gromacs_workflow`.
+
 This is **native `.cpt` recovery**, not CUDA/CRIU GPU-process snapshot restore.
 It restages durable files and starts a compatible GROMACS process on the admitted
 shape. No measured GPU-snapshot cold-start time or transparent change from an

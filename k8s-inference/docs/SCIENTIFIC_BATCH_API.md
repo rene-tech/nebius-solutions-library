@@ -200,6 +200,12 @@ from a verified per-file manifest rather than repacking a large late-state
 archive on the API. The [continuation guide](../models/molecular-dynamics/gromacs/CONTINUATION.md)
 defines bounds, lineage, idempotency and current large-inventory acceptance.
 This is native `.cpt` continuation, **not GPU snapshotting**.
+Resume defaults to `performance_mode: "auto"`: exact input/runtime-qualified
+tuning is applied only when compatible and no explicit execution flags conflict.
+Use `"performance_mode":"preserve"` to retain performance arguments unchanged.
+The response's `continuation.adjustments` explains what was applied; remaining
+trajectory/energy input patterns default to skipping empty segments while all
+raw files are retained. No client-side data repackaging is necessary.
 
 Requests are validated before anything is queued. A request that violates the
 schema, names an operation or service class the profile does not offer, or

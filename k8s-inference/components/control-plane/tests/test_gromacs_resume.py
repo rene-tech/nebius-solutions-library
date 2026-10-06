@@ -210,7 +210,12 @@ async def test_resume_full_path_preserves_inputs_new_budget_and_idempotency(gang
         return {"operation": {"id": str(uuid5(NAMESPACE_URL, key))}}
 
     uploads = FakeUploads()
-    batches = SimpleNamespace(status=status, repository=SimpleNamespace(get=get), submit=submit)
+    batches = SimpleNamespace(
+        status=status,
+        repository=SimpleNamespace(get=get),
+        submit=submit,
+        profiles=SimpleNamespace(get=lambda model: SimpleNamespace(runtime_image_digest="test")),
+    )
     principal = SimpleNamespace(tenant_id="system", require=lambda *args: None)
     kwargs = dict(
         batches=batches,
@@ -233,6 +238,8 @@ async def test_resume_full_path_preserves_inputs_new_budget_and_idempotency(gang
     assert not request.get("parent_operation_id")
     assert request["client_context"]["correlation_id"] == str(operation_id)
     assert len(request["parameters"]["continuation_files"]) == 4
+    assert request["parameters"]["jobs"][0]["steps"][1]["args"][1]["nonempty"] is True
+    assert first["continuation"]["adjustments"]["analysis_selectors"]
     assert all(read[0] == manifest["artifact"]["artifact_id"] for read in artifacts.reads)
     assert all(len(content) < 4096 for content in uploads.contents.values())
 

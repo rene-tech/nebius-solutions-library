@@ -10,7 +10,7 @@ import logging
 import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -1088,6 +1088,7 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         idempotency_key: str,
         job_id: str | None = None,
         max_wall_seconds: int = 1209600,
+        performance_mode: Literal["auto", "preserve"] = "auto",
     ) -> dict[str, Any]:
         """Continue a failed/cancelled GROMACS or GROMACS-MPI job from its last committed checkpoint.
 
@@ -1097,6 +1098,10 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         of up to fourteen days and uses normal tenant admission and billing. Reuse
         idempotency_key on retries. Original results remain untouched. Returns
         the NEW operation_id to poll with get_scientific_status, not final output.
+        Auto applies input/runtime-qualified performance defaults only when no
+        explicit execution flags were supplied; preserve opts out. Unspecified
+        trajectory/energy pattern selectors exclude empty segments, retaining
+        all original files. The response records every adjustment.
         """
         from .scientific_batch.gromacs_resume import GromacsResumeRequest, resume_gromacs
 
@@ -1115,7 +1120,9 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                 uploads=runtime.scientific_input_uploads,
                 principal=_principal(),
                 operation_id=operation_id,
-                request=GromacsResumeRequest(job_id=job_id, max_wall_seconds=max_wall_seconds),
+                request=GromacsResumeRequest(
+                    job_id=job_id, max_wall_seconds=max_wall_seconds, performance_mode=performance_mode
+                ),
                 idempotency_key=idempotency_key,
                 require_mcp_invocable=True,
             )
