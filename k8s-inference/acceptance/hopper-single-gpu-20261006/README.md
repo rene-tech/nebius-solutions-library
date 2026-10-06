@@ -3,6 +3,39 @@
 Task: `fs2-hopper-single-gpu-lynx-performance-r20261006`.
 Clean parent: `3e25ba2ca2c716453226a82f4cafce38ccf161f0`.
 
+## Outcome
+
+Completed 2026-10-06. Best confirmed medians for this unchanged workload:
+
+| One GPU / CPU allocation | Selected settings | Native ns/day | Process-inclusive ns/day | Median paired gain |
+| --- | --- | ---: | ---: | ---: |
+| H100 / 8 CPUs | 8 threads, original PME grid | 215.811 | 213.044 | +0.668% |
+| H100 / 16 CPUs, on a full host | 16 threads, original PME grid | **220.979** | **217.940** | **+3.624%** |
+| H200 / 8 CPUs | 8 threads, original PME grid | 218.113 | 215.148 | +1.962% |
+
+Each selected setting was confirmed against an eight-thread control with three
+paired 1 ns repetitions on its own host and fixed CPU allocation. Gains are
+paired process-inclusive ratios, not ratios between unrelated host medians.
+The separate 32-CPU envelope trial confirmed a +4.231% gain from using 16 rather
+than eight threads; it does not establish that allocating 32 CPUs is preferable.
+
+Recommendation: these GPUs provide additional usable capacity, but the results
+do **not** justify moving the active L40S job for speed. Previous same-workload
+L40S tests measured about 220–222 native ns/day: [219.978 on the Intel-host
+original-PME trial](../l40s-incremental-20261006/README.md), and [222.457 median
+native / 216.956 delivered ns/day over 7.112 hours on the AMD-host
+trial](../lynx-demo-resume-20261005/README.md). Host types and trial lengths
+differ; this is a practical reference, not a statistically paired GPU ranking.
+The Hopper rates above are **not** API-to-bucket delivered throughput.
+
+105 finite simulations validated, including 24 separate 1 ns confirmations and
+one instrumented diagnostic run. Independently rehashed **1,742 files /
+2,623,973,308 bytes**. All five owned pods were removed; the customer pod was
+unchanged, Running, both containers Ready and zero restarts. No production
+image, API resource defaults, customer job, host policy or infrastructure was
+changed. This completes the single-GPU benchmark task, not a new public-release
+or busy-node packing qualification.
+
 Reuse the L40S experiment lifecycle, native measurement/validation and independent
 artifact analyzer. Each pod requests exactly one GPU; this is not multi-GPU
 execution, even when one device belongs to an eight-GPU host. The running Lynx
@@ -62,6 +95,7 @@ python3 acceptance/hopper-single-gpu-20261006/run_hopper.py \
 
 Run from `k8s-inference`. H200 uses `--gpu H200`. The optional expanded CPU
 experiment uses `--mode cpu-envelope --cpus 32` on an idle full H100 host.
+The combined setting uses `--mode cpu-pme --cpus 16` on an idle full H100 host.
 Profiling uses `--mode profile --profile-tools /opt/nvidia/nsight-systems/2025.6.3`.
 No profiling wall time is mixed into throughput comparisons.
 
@@ -69,9 +103,11 @@ No profiling wall time is mixed into throughput comparisons.
 
 Live measurements started at approximately 09:53 UTC. Evidence root:
 `/home/tux/secure-handoff/fs2-hopper-single-gpu-20261006/`.
-H100/H200 eight-CPU studies, the H100 CPU-envelope study and the diagnostic are
-complete and independently verified. The 16-CPU combination study is finishing.
-No public-default or customer-workload change has been made.
+All five cohorts completed, were independently verified, and cleaned up by
+11:04 UTC. Each directory has the supervisor receipt, requested/observed pod
+manifests, raw native results/inventory, and an independently generated
+`analysis.json`. The profiler's finite run is validated separately in its
+summary: 104 ordinary per-run receipts plus that run account for the 105 total.
 
 ## Runtime and evidence contract
 
@@ -194,3 +230,76 @@ promoted as a production recommendation.
 Each cohort completed 34 validated finite runs. After export, H100 verified
 545 files / 818,473,203 bytes, and H200 verified 545 / 818,472,485 bytes. Both
 exact pods were removed, with the protected customer pod unchanged.
+
+## Completed 16-CPU H100 combined-setting confirmation
+
+`h100-cpu16-pme-r1` used one H100 on
+`computeinstance-e00zgn138sxphp909c`, 16 requested/limited CPUs, Xeon Platinum
+8468, driver 580.173.02 and unchanged 700 W GPU limit. The measured combination
+of 16 threads and `-notunepme` won its three-repeat screen. Three paired 1 ns
+confirmations then compared it with the eight-thread/default-PME control,
+within the same 16-CPU quota and host.
+
+| Case | Native median (range), ns/day | Process-inclusive median (range), ns/day |
+| --- | --- | --- |
+| 8-thread control | 212.982 (212.635–213.138) | 210.209 (209.835–210.331) |
+| 16-thread + original PME | 220.979 (220.841–221.403) | 217.940 (217.826–218.422) |
+
+Paired gains: +3.617%, +4.092%, +3.624%; median **+3.624%**, all positive.
+Measured CPU consumption was 7.85 cores for the control versus 15.75 for the
+candidate. Candidate cgroup throttled-time counters were 3.43–3.56 seconds per
+run; these counters are not an independently additive wall-time cost. Do not
+assume exclusive physical cores or full eight-GPU-host throughput from this
+isolated one-GPU experiment. The combination is not meaningfully faster than
+the separate 16-thread-only cohort; those are different hosts, not a paired
+claim of benefit from adding PME control.
+
+All 19 finite runs validated; confirmation mean temperatures 310.049–310.115 K.
+320 files / 480,687,763 bytes independently rehashed; exact pod removed and
+customer unchanged. Across all 24 long trials, mean temperatures were
+310.043–310.121 K. Checkpoints reached the requested step, energy/trajectory
+checks passed, output cadence remained intact, and coordinates were finite
+with 185,486 atoms. This is protocol-preserving performance qualification,
+not proof of converged ensemble properties.
+
+### Tested native command
+
+In a worker allocated exactly one GPU, using the pinned image above:
+
+```bash
+/usr/local/gromacs/avx2_256/bin/gmx mdrun \
+  -s original.tpr -deffnm md -ntmpi 1 -ntomp 16 -pin auto \
+  -nb gpu -pme auto -bonded gpu -update auto -nstlist 200 \
+  -notunepme -cpt 5
+```
+
+Use `-ntomp 8` for the tested eight-CPU H100/H200 shape. Benchmark automation
+creates finite-step copies without modifying the approved original TPR.
+Existing scientific choices and restart semantics must still be respected;
+these results do not authorize overriding arbitrary customer input or using
+16-CPU requests on nodes with only 15.9 allocatable CPUs. No API worker resource
+profile or running customer command was changed by this task.
+
+## Evidence and completion
+
+| Private cohort directory | Finite runs | Verified files | Verified bytes |
+| --- | ---: | ---: | ---: |
+| h100-r1 | 34 | 545 | 818,473,203 |
+| h200-r1 | 34 | 545 | 818,472,485 |
+| h100-cpu32-r1 | 16 | 275 | 413,135,541 |
+| h100-cpu16-pme-r1 | 19 | 320 | 480,687,763 |
+| h100-profile-r1 | 2 | 57 | 93,204,316 |
+| Total | 105 | 1,742 | 2,623,973,308 |
+
+All supervisor receipts say passed, exact pod deleted/absence observed, and
+customer unchanged. Final label query returned zero task pods. Protected
+customer UID `51b9d39a-8e8b-45da-b198-1fb730ff89e5` remained on
+`computeinstance-e00xwjv9khjp8fhp3v`, Running, both containers Ready, zero
+restarts. No customer API key was used. No capacity was created or limit raised.
+
+Final local regression suite: **28 passed** (Hopper, incremental experiments,
+native CPU-resource probe, prior L40S affinity/science-preservation tests);
+`git diff --check` passed. An early offline H100 verification attempt correctly
+refused a still-in-progress download; it was rerun only after supervisor
+completion and all retained files then verified. No partial-copy evidence was
+accepted and no native simulation failed.
