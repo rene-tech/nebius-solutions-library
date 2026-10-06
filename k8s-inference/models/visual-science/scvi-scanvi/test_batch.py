@@ -15,6 +15,37 @@ from fs2_scvi.data import inspect_counts, load_counts, validate_values
 
 
 class ContractTests(unittest.TestCase):
+    def test_periodic_checkpoint_does_not_require_top_k(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        from fs2_scvi.worker import DurableCheckpoint
+
+        with tempfile.TemporaryDirectory() as root:
+            workflow = SimpleNamespace(
+                data=Path(root), parameters={"checkpoint_every_n_epochs": 5}
+            )
+            callback = DurableCheckpoint(workflow, "scvi")
+            callback._should_skip_saving_checkpoint = Mock(return_value=False)
+            callback._monitor_candidates = Mock(return_value={})
+            callback._save_last_checkpoint = Mock()
+            callback.on_train_epoch_end(SimpleNamespace(current_epoch=3), None)
+            callback._save_last_checkpoint.assert_not_called()
+            callback.on_train_epoch_end(SimpleNamespace(current_epoch=4), None)
+            callback._save_last_checkpoint.assert_called_once()
+
+    def test_rng_checkpoint_round_trips_with_weights_only_loading(self):
+        import io
+        import torch
+        from fs2_scvi.worker import RandomState
+
+        callback, checkpoint = RandomState(), {}
+        callback.on_save_checkpoint(None, None, checkpoint)
+        buffer = io.BytesIO()
+        torch.save(checkpoint, buffer)
+        buffer.seek(0)
+        loaded = torch.load(buffer, weights_only=True)
+        callback.on_load_checkpoint(None, None, loaded)
+
     def test_checkpoint_construction_uses_full_lightning_state(self):
         from types import SimpleNamespace
         from fs2_scvi.worker import DurableCheckpoint

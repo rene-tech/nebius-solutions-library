@@ -94,6 +94,15 @@ k8s-inference/models/molecular-dynamics/amber/runtime/*
 !k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber/
 !k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber/*.py
 !k8s-inference/models/molecular-dynamics/amber/runtime/fs2_amber/py.typed
+!k8s-inference/models/visual-science/
+k8s-inference/models/visual-science/*
+!k8s-inference/models/visual-science/scvi-scanvi/
+k8s-inference/models/visual-science/scvi-scanvi/*
+!k8s-inference/models/visual-science/scvi-scanvi/runtime/
+k8s-inference/models/visual-science/scvi-scanvi/runtime/*
+!k8s-inference/models/visual-science/scvi-scanvi/runtime/fs2_scvi/
+!k8s-inference/models/visual-science/scvi-scanvi/runtime/fs2_scvi/*.py
+!k8s-inference/models/visual-science/scvi-scanvi/runtime/fs2_scvi/py.typed
 
 **/.git
 **/.git/**

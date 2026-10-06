@@ -75,7 +75,8 @@ from pathlib import Path
 SCHEMA = {STAGE_COMPLETION_SCHEMA!r}
 FAILURE_SCHEMA = "fs2-serve.nebius.ai/scientific-stage-failure/v1"
 NATIVE_COLLECTORS = (
-    "gromacs-workflow-v1", "gromacs-mpi-workflow-v1", "lammps-workflow-v1", "namd-workflow-v1", "amber-workflow-v1"
+    "gromacs-workflow-v1", "gromacs-mpi-workflow-v1", "lammps-workflow-v1", "namd-workflow-v1", "amber-workflow-v1",
+    "scvi-scanvi-workflow-v1",
 )
 
 

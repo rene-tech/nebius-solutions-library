@@ -24,6 +24,11 @@ def request_schema() -> dict[str, Any]:
         "Not a clinical interpretation or a claim of biological convergence.",
         "properties": {
             "schema": {"const": PARAMETER_SCHEMA},
+            "resource_profile": {
+                "enum": ["routine", "atlas"],
+                "default": "routine",
+                "description": "Operator-defined 128/256 GiB host-memory execution shape; both use one GPU. These are resource envelopes, not measured cell-count guarantees.",
+            },
             "method": {"enum": ["scvi", "scanvi"], "default": "scvi"},
             "mode": {"enum": ["train", "map-query"], "default": "train"},
             "counts_source": {

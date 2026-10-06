@@ -1522,6 +1522,9 @@ def create_app(runtime: AppRuntime) -> FastAPI:
             },
         )
 
+    from .scientific_multipart import multipart_router
+    app.include_router(multipart_router(runtime, principal))
+
     @app.post("/v1/scientific-artifacts/uploads/{upload_id}:finalize", response_model=ArtifactRef)
     async def scientific_input_upload_finalize(
         upload_id: UUID,

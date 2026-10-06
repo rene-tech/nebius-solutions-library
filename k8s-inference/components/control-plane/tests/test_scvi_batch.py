@@ -2,9 +2,9 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
-
 from fs2_scvi import PARAMETER_SCHEMA
 from fs2_scvi.contracts import normalize, request_schema
+
 from fs2_serve.scientific_batch.adapters.scvi_scanvi import validate_entries
 from fs2_serve.scientific_batch.input_contracts import public_input_contract, validate_input_roles
 from fs2_serve.scientific_batch.models import ScientificInputArtifact
@@ -64,10 +64,50 @@ def test_shared_checkpoint_registration_has_no_gpu_imports():
     assert workflow.normalize({"schema": PARAMETER_SCHEMA})["mode"] == "train"
 
 
+@pytest.mark.parametrize("shape,ram", [("routine", 128), ("atlas", 256)])
+def test_candidate_profiles_and_compilation_use_existing_resource_shapes(shape, ram):
+    import json
+    from pathlib import Path
+
+    from jsonschema import Draft202012Validator
+
+    from fs2_serve.scientific_batch.adapters.scvi_scanvi import compile_run
+
+    root = Path(__file__).resolve().parents[3]
+    profile = json.loads((root / "models/visual-science/scvi-scanvi/activation/workload-profile.json").read_text())[
+        "profile"
+    ]
+    Draft202012Validator(
+        json.loads((root / "catalog/runtime/schema/scientific-workload-profile.schema.json").read_text())
+    ).validate(profile)
+    assert profile["route_exposed"] is False
+    request = {
+        "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "operation": "fit-transform",
+        "service_class": "customer-batch",
+        "input_manifest": {
+            "artifact_id": str(uuid4()),
+            "sha256": "a" * 64,
+            "size_bytes": 1000,
+            "media_type": "application/vnd.fs2.scientific-manifest+json",
+            "compression": "none",
+        },
+        "parameters": {"schema": PARAMETER_SCHEMA, "resource_profile": shape},
+    }
+    plan = compile_run(profile, request, operation_id=str(uuid4()), input_artifacts=(anndata(),))
+    stage = plan.controller_plan.stages[0]
+    assert stage.execution_shape.shape_id == shape
+    assert stage.resources.memory_bytes == ram * 1024**3
+    assert stage.execution_shape.accelerator_count == 1
+    assert plan.invocations[0].materializations[0].destination.endswith("/input.h5ad")
+
+
 def test_single_cell_failure_is_not_interpreted_as_an_md_job(tmp_path):
     import hashlib
     import json
+
     from fs2_gromacs.files import atomic_json
+
     from fs2_serve.scientific_batch import native_failures
     from fs2_serve.scientific_batch.adapters.staged_workspace import wrap_stage_argv
     from fs2_serve.scientific_batch.models import StageInvocation
@@ -119,3 +159,57 @@ def test_single_cell_failure_is_not_interpreted_as_an_md_job(tmp_path):
     assert output.validation["status"] == "failed"
     assert output.validation["scientific_validation_passed"] is False
     assert [item.name for item in output.artifacts] == ["failed-result"]
+
+
+def test_activation_keeps_existing_apps_and_projects_both_memory_shapes():
+    import copy
+    import hashlib
+    import importlib.util
+    import json
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[3]
+    module_path = root / "models/molecular-dynamics/gromacs/activation/prepare.py"
+    spec = importlib.util.spec_from_file_location("scvi_release_test", module_path)
+    release = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(release)
+    before = json.loads((root / "catalog/runtime/contracts/scientific-execution-map.json").read_text())
+    candidate = json.loads((root / "models/visual-science/scvi-scanvi/activation/workload-profile.json").read_text())[
+        "profile"
+    ]
+    scheduling = release.canonical(
+        {
+            "pools": {pool: {} for pool in candidate["resources"]["compatible_pool_ids"]},
+            "model_eligible_pool_ids": {"gromacs": ["l40s-1x"]},
+            "quotas": {"keep": True},
+        }
+    )
+    values = {
+        "scientificBatch": {
+            "executionMap": copy.deepcopy(before),
+            "schedulingContractSha256": hashlib.sha256(scheduling).hexdigest(),
+            "schedulingContractConfigMapName": "fixture-abc",
+            "schedulingContractNamespace": "fs2-system",
+            "schedulingContractKey": "scheduling.json",
+        },
+        "scientificArtifacts": {"mediaTypes": ["application/json"]},
+    }
+    image = "registry.test/scvi@sha256:" + "a" * 64
+    profile, row, overlay, config = release.prepare(
+        values,
+        scheduling,
+        candidate,
+        image,
+        {"runtime_image": image, "tests": [{"fixture": True}], "recorded_at": "2026-10-06T00:00:00Z"},
+        "b" * 64,
+    )
+    assert overlay["scientificBatch"]["executionMap"]["models"][:-1] == before["models"]
+    assert json.loads(config["data"]["scheduling.json"])["quotas"] == {"keep": True}
+    assert profile["qualification"]["public_completion_receipt_sha256"] is None
+    shapes = row["stages"][0]["execution_shapes"]
+    assert [(s["id"], int(s["resources"]["requests"]["memory"])) for s in shapes] == [
+        ("routine", 128 * 1024**3),
+        ("atlas", 256 * 1024**3),
+    ]
+    assert "application/x-hdf5" in overlay["scientificArtifacts"]["mediaTypes"]
+    assert "application/vnd.fs2.scvi-checkpoint+json" in overlay["scientificArtifacts"]["mediaTypes"]

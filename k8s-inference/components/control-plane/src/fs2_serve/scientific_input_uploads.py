@@ -82,6 +82,7 @@ class ScientificInputUpload(StrictModel):
     handle: UploadHandle
     content_path: str
     max_content_bytes: int
+    multipart_path: str | None = None
 
 
 class ScientificInputUploadFinalizeRequest(StrictModel):
@@ -233,6 +234,7 @@ class ScientificInputUploadService:
             upload_id=upload_id,
             content_path=content_path(operation.id, upload_id),
             max_content_bytes=self.max_content_bytes,
+            multipart_path=f"/v1/scientific-artifacts/uploads/{upload_id}/multipart",
             handle=UploadHandle(
                 method="PUT",
                 url=result.handle.url,

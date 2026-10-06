@@ -59,6 +59,9 @@ def run_components(root):
         def publish(self):
             super().publish()
             if self.state["generation"] == 1:
+                assert self.state["epoch"] == 0, (
+                    "must interrupt mid-training, not after completion"
+                )
                 raise InterruptedError(
                     "qualification: simulate worker loss after committed epoch checkpoint"
                 )

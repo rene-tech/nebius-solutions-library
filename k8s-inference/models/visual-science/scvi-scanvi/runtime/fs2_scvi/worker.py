@@ -40,9 +40,11 @@ class RandomState(Callback):
     """Persist RNG state as well as Lightning's optimizer/scheduler/loop state."""
 
     def on_save_checkpoint(self, trainer, pl_module, checkpoint):
+        numpy_state = np.random.get_state()
         checkpoint["fs2_rng"] = {
             "python": random.getstate(),
-            "numpy": np.random.get_state(),
+            # Lists/primitives retain PyTorch's weights_only loader compatibility.
+            "numpy": (numpy_state[0], numpy_state[1].tolist(), *numpy_state[2:]),
             "torch": torch.get_rng_state(),
             "cuda": torch.cuda.get_rng_state_all(),
         }
@@ -50,7 +52,14 @@ class RandomState(Callback):
     def on_load_checkpoint(self, trainer, pl_module, checkpoint):
         state = checkpoint["fs2_rng"]
         random.setstate(state["python"])
-        np.random.set_state(state["numpy"])
+        numpy_state = state["numpy"]
+        np.random.set_state(
+            (
+                numpy_state[0],
+                np.asarray(numpy_state[1], dtype=np.uint32),
+                *numpy_state[2:],
+            )
+        )
         torch.set_rng_state(state["torch"])
         torch.cuda.set_rng_state_all(state["cuda"])
 
@@ -80,6 +89,15 @@ class DurableCheckpoint(SaveCheckpoint):
     on_train_batch_end = ModelCheckpoint.on_train_batch_end
     on_exception = ModelCheckpoint.on_exception
     _update_best_and_save = ModelCheckpoint._update_best_and_save
+
+    def on_train_epoch_end(self, trainer, pl_module):
+        # Lightning 2.6 only saves `last` after a top-k save. We intentionally
+        # retain one atomic last checkpoint, not a second per-epoch copy.
+        if (
+            not self._should_skip_saving_checkpoint(trainer)
+            and (trainer.current_epoch + 1) % self._every_n_epochs == 0
+        ):
+            self._save_last_checkpoint(trainer, self._monitor_candidates(trainer))
 
     def _save_checkpoint(self, trainer, filepath):
         temporary = filepath + ".partial"
@@ -276,11 +294,11 @@ class Workflow:
                 raise ValueError(
                     "Reference method/runtime differs; use the matching published reference"
                 )
-            cls.prepare_query_anndata(adata, reference_dir)
+            cls.prepare_query_anndata(adata, str(reference_dir))
             if "query" in self.state["completed_stages"]:
                 trained = cls.load(self.data / "query", adata=adata)
             else:
-                trained = cls.load_query_data(adata, reference_dir)
+                trained = cls.load_query_data(adata, str(reference_dir))
                 self.train(trained, "query", parameters["query_max_epochs"])
             final_stage = "query"
         else:

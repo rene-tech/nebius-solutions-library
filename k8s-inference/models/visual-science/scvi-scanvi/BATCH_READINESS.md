@@ -6,8 +6,46 @@ Source starts at `19bfdf2c3`, the verified live shared-backend lineage.
 ## Status
 
 **Candidate, not customer-ready and not published.** The existing native App is
-unchanged. A 500k-cell routine target and a 1M-cell atlas target are qualification
-goals, not measured capacity. WhiteLab has not supplied representative data yet.
+unchanged. The 584,944-cell HLCA core completed on one H100; hosted API/MCP and
+1M-cell qualification remain in progress. WhiteLab has not supplied representative data yet.
+
+### Measured R5 runtime, 2026-10-06
+
+Immutable worker: `sha256:eb2835095574d290a90d289fc2790e49d984b5bb4fa4911f74156d7f172d77e5`.
+Preemptible H100, 8 CPU / 128 GiB envelope. Raw counts: 584,944 cells × 27,402
+genes, 1,138,668,948 stored entries; 2,000 batch-aware HVGs. Automatic scVI budget
+was 14 epochs, followed by 20 scANVI epochs. Timings: load/selection 76.05 s,
+scVI 111.81 s, scANVI 405.98 s, export/sample UMAP 100.90 s. Worker elapsed
+698.97 s includes hashing/checkpoint work; download is separate. Process peak
+RSS 22,125,211,648 bytes; PyTorch peak allocated GPU memory 357,876,736 bytes
+(not total device usage or a CUDA-context-inclusive measure).
+
+This is execution/capacity evidence, **not** reproduced HLCA paper accuracy or
+proof of convergence. Full-label annotation and reference mapping completed in
+the synthetic component suite, including epoch-0 interruption and full-state
+restore. 14 exact-image runtime unit tests pass. R3 failed RNG serialization;
+R4 restored state but exposed a reference-path bug and missing periodic saves;
+neither counts as a passing cohort. R2 was suspended, not successful.
+
+Hosted input staging of the real 5,873,612,847-byte file returned S3
+`400 ObjectTooLarge` through the old single-PUT handle. The candidate adds
+resumable multipart transfers using the existing immutable artifact intent,
+tenant authorization and final SHA-256 verification; no quota increase or
+new identity store. This must pass against real storage before large files are
+advertised. Existing `system/qa` received **only** an additional `scvi-scanvi`
+model grant; no credential rotation, expiry, concurrency or budget changes.
+
+Secret-free runtime receipts are retained in
+`/home/tux/secure-handoff/fs2-scvi-whitelab-20261006/runtime-r5/`;
+raw public inputs and results are on the task-owned PVC. The 1M real-cell atlas
+cohort uses a separate 128 GiB PVC and one GPU/256 GiB on an existing full H100
+node because single-GPU hosts cannot provide that host-memory envelope. It
+does not reserve eight GPUs or provision/resize any node group.
+
+Focused tests: 130 passed / 4 explicit skips, then 105 public-artifact/batch/MD
+regressions passed. A separate pre-existing native-MD publication fixture fails
+on its qualification-baseline projection; reproduced unchanged on base commit
+19bfdf2c3. It is not a new scVI regression and has not been hidden or marked passing.
 
 The batch worker now supports counts from X, raw.X or a named layer, explicit
 gene selection, separate scVI/scANVI budgets, early stopping, label probabilities,

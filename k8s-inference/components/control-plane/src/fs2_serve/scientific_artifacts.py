@@ -880,6 +880,8 @@ class ScientificArtifactControllerPort(Protocol):
 
     async def finalize_upload(self, request: FinalizeArtifactUpload) -> ArtifactRecord: ...
 
+    async def multipart_upload(self, request: FinalizeArtifactUpload, command: dict[str, Any]) -> dict[str, Any]: ...
+
     async def download(
         self, artifact_id: UUID, *, tenant_id: str, handle_ttl: timedelta | None = None
     ) -> ArtifactDownload: ...
@@ -1009,6 +1011,23 @@ class ScientificArtifactService:
             raise ArtifactPolicyError("artifact media type is outside the accepted allowlist")
         if size_bytes > self._max_artifact_bytes:
             raise ArtifactPolicyError("artifact exceeds the accepted size ceiling")
+
+    async def multipart_upload(self, request: FinalizeArtifactUpload, command: dict[str, Any]) -> dict[str, Any]:
+        """Use the existing immutable intent and attempt ownership for large files."""
+        from .scientific_multipart import MultipartCommand
+
+        selected = MultipartCommand.model_validate(command)
+        intent = await self._repository.get_upload(request)
+        attempt = await self._repository.get_attempt(intent.attempt_id, tenant_id=request.tenant_id)
+        if intent.artifact_id is not None or attempt.status.terminal:
+            raise ArtifactConflictError("a finalized upload or closed attempt cannot accept multipart writes")
+        self._check_policy(intent.media_type, intent.expected_size_bytes)
+        if selected.operation_id != request.operation_id:
+            raise ArtifactNotFoundError("upload operation not found")
+        handler = getattr(self._store, "multipart_upload", None)
+        if handler is None:
+            raise ArtifactPolicyError("multipart upload is unavailable in this object-store adapter")
+        return await handler(intent=intent, command=selected)
 
     def _ttl(self, ttl: timedelta | None) -> timedelta:
         requested = ttl or self._default_handle_ttl

@@ -124,7 +124,7 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
             )
             for entry in entries
         ),
-        workspace_documents=(StageWorkspaceDocument(".fs2/request.json", canonical(value).decode()),),
+        workspace_documents=(StageWorkspaceDocument(".fs2/request.json", canonical(value).decode().rstrip("\n")),),
     )
     return build_execution_plan(
         model_id=MODEL_ID,
@@ -132,7 +132,9 @@ def compile_run(profile: Mapping[str, object], request_value: object, *, operati
         source_revision=SOURCE_REVISION,
         request=request,
         profile=profile,
-        expansions={"workflow": ScientificStageExpansion(shard_ids=("main",))},
+        expansions={
+            "workflow": ScientificStageExpansion(shard_ids=("main",), execution_shape_id=value["resource_profile"])
+        },
         invocations=(invocation,),
         required_model_artifacts=(),
     )
@@ -183,8 +185,8 @@ def collect_companion_output(invocation: StageInvocation, workspace: Path):
 
 def collect_failed_result(invocation, path, result, parameters, exit_code):
     """Publish a failure receipt, never partial embeddings as a successful fit."""
-    from . import CollectedArtifactFile, CollectedStageOutput
     from ..native_failures import DIAGNOSTIC_ROLE
+    from . import CollectedArtifactFile, CollectedStageOutput
 
     operation = invocation.argv[invocation.argv.index("--operation-id") + 1]
     if (result.get("schema"), result.get("operation_id"), result.get("parameters")) != (

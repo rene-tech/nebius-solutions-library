@@ -45,6 +45,7 @@ CONTEXT_INPUTS = (
     SOLUTION_REL / "models/molecular-dynamics/lammps/runtime/fs2_lammps",
     SOLUTION_REL / "models/molecular-dynamics/namd/runtime/fs2_namd",
     SOLUTION_REL / "models/molecular-dynamics/amber/runtime/fs2_amber",
+    SOLUTION_REL / "models/visual-science/scvi-scanvi/runtime/fs2_scvi",
 )
 LABEL_KEYS = {
     "commit": "org.opencontainers.image.revision",

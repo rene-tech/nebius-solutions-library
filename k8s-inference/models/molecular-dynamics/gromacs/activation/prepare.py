@@ -237,12 +237,15 @@ def prepare(
         "lammps": "nvidia-2025-07-22-single-gpu-v1",
         "namd": "nvidia-3-0-2-single-gpu-v1",
         "amber": "pmemd-26-single-gpu-v1",
+        "scvi-scanvi": "scvi-tools-1-5-batch-v1",
     }
     if model_id not in variants:
-        raise ValueError("Only explicit native MD Apps are handled by this onboarding")
+        raise ValueError("Only registered native scientific Apps are handled by this onboarding")
     collector_id = f"{model_id}-workflow-v1"
     variant_id = variants[model_id]
     checkpoint_engine = "gromacs" if model_id in {"gromacs", "gromacs-mpi"} else model_id
+    if model_id == "scvi-scanvi":
+        checkpoint_engine = "scvi"
     if not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", runtime_image):
         raise ValueError("runtime image must be immutable")
     if evidence.get("runtime_image") != runtime_image or not evidence.get("tests") or not evidence.get("recorded_at"):
@@ -329,6 +332,27 @@ def prepare(
             }
         ],
     }
+    if model_id == "scvi-scanvi":
+        # Single-cell host memory comes from the profile's explicit execution
+        # shapes. Do not inherit the MD worker's fixed 16 GiB envelope.
+        def resources(value):
+            def quantities(part):
+                return {"cpu": str(part["cpu_millis"]) + "m",
+                        "memory": str(part["memory_bytes"]),
+                        "ephemeral_storage": str(part["ephemeral_storage_bytes"])}
+            return {"requests": quantities(value), "limits": quantities(value["limits"])}
+
+        stage = profile["workload"]["stages"][0]
+        row["stages"][0]["resources"] = resources(stage["resources"])
+        row["stages"][0]["execution_shapes"] = [
+            {"id": shape["id"], "resources": resources(shape["resources"])}
+            for shape in stage["execution_shapes"]
+        ]
+        row["stages"][0]["environment"] = {
+            "OMP_NUM_THREADS": "8", "MPLCONFIGDIR": "/tmp/fs2-scvi-matplotlib",
+            "NUMBA_CACHE_DIR": "/tmp/fs2-scvi-numba",
+            "PYTORCH_KERNEL_CACHE_PATH": "/tmp/fs2-scvi-kernels",
+        }
     desired = copy.deepcopy(live)
     if replace_existing:
         # A bugfix successor changes only this App's image/identity. Keep the
@@ -389,6 +413,7 @@ def prepare(
             "mediaTypes": sorted(
                 set(values["scientificArtifacts"]["mediaTypes"])
                 | {"application/x-tar", f"application/vnd.fs2.{checkpoint_engine}-checkpoint+json"}
+                | ({"application/x-hdf5"} if model_id == "scvi-scanvi" else set())
             )
         }
     return profile, row, overlay, cm
