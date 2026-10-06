@@ -20,6 +20,13 @@ it is neither a GPU reservation nor a count of MPI ranks/umbrella windows.
   its separately qualified placement and full resource requirements.
 - scVI/scANVI remains H100-only. The core shape fits single-GPU nodes; the
   256 GiB atlas shape needs a full H100 host's RAM, but allocates just one GPU.
+  On the current two full hosts, their approximately 277 GiB allocatable
+  ephemeral storage admits only two 128 GiB scratch reservations per host:
+  **four simultaneous atlas jobs**, despite having sixteen GPUs there. Standard
+  128 GiB RAM jobs qualified at eight on the single-GPU H100 nodes. Do not infer
+  job capacity from GPU count alone or shrink the scratch request without an
+  independently verified storage design. Eight atlas submissions can wait for
+  those four execution slots; immediate eight-atlas execution is not qualified.
 - Existing Kueue LocalQueues separate Lynx MD and WhiteLab single-cell work.
   Relative weights 2:1 express the eight-to-four planning balance when both
   have compatible pending work. An idle lane does not strand GPUs.
@@ -75,6 +82,19 @@ Before deployment, test exact route resolution and GPU/RAM fit with the captured
 contract. For live qualification use existing system identities, never customer
 keys. Direct Kueue job admission proves scheduler behavior, not end-to-end
 eight-operation API/customer readiness. Record those claims separately.
+
+`qualify_capacity.py --single-cell-shape routine --single-cell-concurrency 8`
+tests the eight-plus-eight resource shape. The atlas variant uses
+`--single-cell-shape atlas --single-cell-concurrency 4` for eight-plus-four.
+Each test creates one additional queued job per lane and checks that both drain
+after release, then removes its exact owned test resources. It temporarily uses
+independent system-owned queues to exercise GPU allocation without customer
+usage or key changes; this is not a production fairness-ratio benchmark. Check
+free resources before running it alongside customers.
+
+See [the October 6 qualification](../../acceptance/shared-admission-20261006/README.md)
+for live evidence, failed hypotheses and the separate pre-existing readiness
+defect that remains open.
 
 Rollback: restore the previous API contract, controller configuration and flavor
 order with the saved patches; restart/verify Kueue. Drain newly created lanes

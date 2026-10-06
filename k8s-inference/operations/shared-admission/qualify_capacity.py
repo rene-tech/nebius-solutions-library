@@ -1,4 +1,4 @@
-"""Bounded GPU admission test: eight MD-shaped and eight single-cell-shaped jobs.
+"""Bounded GPU admission test: eight MD-shaped and four/eight single-cell jobs.
 
 Uses system-owned test queues, no API/customer credentials or customer usage.
 Checks device visibility, simultaneous allocation, backlog and automatic queue
@@ -20,8 +20,17 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--run", required=True)
+    parser.add_argument(
+        "--single-cell-shape", choices=("routine", "atlas"), default="routine"
+    )
+    parser.add_argument(
+        "--single-cell-concurrency", type=int, choices=(4, 8), default=8
+    )
     parser.add_argument("--apply", action="store_true")
     args = parser.parse_args()
+    lane_counts = {"md": 8, "single-cell": args.single_cell_concurrency}
+    simultaneous_target = sum(lane_counts.values())
+    total_jobs = simultaneous_target + len(lane_counts)
     if (
         not args.run.startswith("fs2-admission-qa-")
         or not args.run.replace("-", "").isalnum()
@@ -90,10 +99,13 @@ def main():
     cq["spec"]["namespaceSelector"] = {
         "matchLabels": {"kubernetes.io/metadata.name": "fs2-models"}
     }
+    single_cell_pool = (
+        "h100-reserved-8x" if args.single_cell_shape == "atlas" else "h100-ondemand-1x"
+    )
     capacities = {
         "inference-l40s-4x": 4,
         "inference-l40s-1x": 4,
-        "inference-h100-ondemand-1x": 8,
+        "inference-" + single_cell_pool: args.single_cell_concurrency,
     }
     for group in cq["spec"]["resourceGroups"]:
         group["flavors"] = [f for f in group["flavors"] if f["name"] in capacities]
@@ -128,11 +140,13 @@ def main():
         )
     jobs = []
     for lane in ("md", "single-cell"):
-        for index in range(9):
-            pools = ["l40s-4x", "l40s-1x"] if lane == "md" else ["h100-ondemand-1x"]
+        for index in range(lane_counts[lane] + 1):
+            pools = ["l40s-4x", "l40s-1x"] if lane == "md" else [single_cell_pool]
             requests = {
                 "cpu": "8100m",
-                "memory": "16640Mi" if lane == "md" else "131328Mi",
+                "memory": "16640Mi"
+                if lane == "md"
+                else ("262400Mi" if args.single_cell_shape == "atlas" else "131328Mi"),
                 "nvidia.com/gpu": "1",
                 "ephemeral-storage": "64Gi" if lane == "md" else "128Gi",
             }
@@ -228,10 +242,16 @@ def main():
     save("objects.json", {"apiVersion": "v1", "kind": "List", "items": objects})
     save("jobs.json", {"apiVersion": "v1", "kind": "List", "items": jobs})
     if not args.apply:
-        print(json.dumps({"planned_jobs": 18, "simultaneous_target": 16}))
+        print(
+            json.dumps(
+                {"planned_jobs": total_jobs, "simultaneous_target": simultaneous_target}
+            )
+        )
         return
     receipt = {
         "scope": "GPU admission/device visibility, not model semantics or API concurrency",
+        "single_cell_shape": args.single_cell_shape,
+        "target": lane_counts,
         "run": args.run,
         "context": args.context,
         "image": args.image,
@@ -244,7 +264,12 @@ def main():
             run("create", "--dry-run=server", "-f", "-", obj=obj)
             run("create", "-f", "-", obj=obj)
             created.append(obj)
-        first = [j for j in jobs if not j["metadata"]["name"].endswith("-8")]
+        first = [
+            j
+            for j in jobs
+            if int(j["metadata"]["name"].rsplit("-", 1)[1])
+            < lane_counts[j["metadata"]["labels"]["fs2.nebius.ai/qa-lane"]]
+        ]
         for job in first:
             run("create", "-f", "-", obj=job)
             created.append(job)
@@ -253,14 +278,14 @@ def main():
             pods = get("pods")["items"]
             running = [p for p in pods if p["status"]["phase"] == "Running"]
             receipt["samples"].append({"time": time.time(), "running": len(running)})
-            if len(running) == 16:
+            if len(running) == simultaneous_target:
                 assert all(
                     "device-ready"
                     in run("logs", p["metadata"]["name"], "-n", "fs2-models")
                     for p in running
                 )
-                save("sixteen-pods.json", pods)
-                save("sixteen-workloads.json", get("workloads"))
+                save("admitted-pods.json", pods)
+                save("admitted-workloads.json", get("workloads"))
                 receipt["simultaneous"] = {
                     lane: sum(
                         p["metadata"]["labels"]["fs2.nebius.ai/qa-lane"] == lane
@@ -274,7 +299,7 @@ def main():
             time.sleep(5)
         else:
             raise TimeoutError(
-                "Sixteen GPU-shaped jobs did not become ready in eight minutes"
+                f"{simultaneous_target} GPU-shaped jobs did not become ready in eight minutes"
             )
         for job in jobs:
             if job not in first:
@@ -285,9 +310,10 @@ def main():
         receipt["backlog"] = {
             k: waiting.get(k) for k in ("admittedWorkloads", "pendingWorkloads")
         }
-        assert receipt["backlog"] == {"admittedWorkloads": 16, "pendingWorkloads": 2}, (
-            receipt["backlog"]
-        )
+        assert receipt["backlog"] == {
+            "admittedWorkloads": simultaneous_target,
+            "pendingWorkloads": 2,
+        }, receipt["backlog"]
         run(
             "patch",
             "configmap",
@@ -300,11 +326,11 @@ def main():
         )
         for _ in range(60):
             statuses = get("jobs")["items"]
-            if len(statuses) == 18 and all(
+            if len(statuses) == total_jobs and all(
                 j["status"].get("succeeded") == 1 for j in statuses
             ):
                 save("completed-jobs.json", statuses)
-                receipt["completed"] = 18
+                receipt["completed"] = total_jobs
                 receipt["passed"] = True
                 break
             if any(j["status"].get("failed", 0) for j in statuses):

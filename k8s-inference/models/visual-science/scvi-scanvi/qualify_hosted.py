@@ -33,15 +33,19 @@ def main(*, require_qa=True):
     else:
         parser.add_argument("--api-key-env", default="SCIENTIFIC_MODELS_API_KEY")
     parser.add_argument("--origin", default="https://89.169.99.188")
+    parser.add_argument("--model-id", choices=("scvi-scanvi", "gromacs"), default="scvi-scanvi",
+                        help="Reuse the same QA-only replay/poll/artifact checks for mixed-workload regression")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--request", type=Path)
     parser.add_argument("--operation-id")
     parser.add_argument("--cohort", default="a")
+    parser.add_argument("--idempotency-key", help="Explicit stable key when replaying a previously recorded qualification")
     parser.add_argument("--protocol", choices=("rest", "mcp"), default="rest")
     parser.add_argument("--discover-only", action="store_true")
     parser.add_argument("--cancel", action="store_true", help="Cancel this explicitly selected/new operation and verify final cancellation")
     parser.add_argument("--timeout", type=int, default=7200)
     args = parser.parse_args()
+    submit_tool = {"scvi-scanvi": "submit_scvi_scanvi", "gromacs": "submit_gromacs_workflow"}[args.model_id]
     os.umask(0o077)
     if require_qa:
         env = dict(line.split("=", 1) for line in args.qa_env.read_text().splitlines() if "=" in line)
@@ -87,14 +91,14 @@ def main(*, require_qa=True):
 
         if args.protocol == "mcp":
             rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
-                               "clientInfo": {"name": "fs2-internal-scvi-qualification", "version": "1"}})
+                               "clientInfo": {"name": "fs2-internal-scientific-qualification", "version": "1"}})
             response = client.post("/mcp", headers={"Accept": "application/json, text/event-stream", **session},
                                    json={"jsonrpc": "2.0", "method": "notifications/initialized"})
             response.raise_for_status()
             tools = rpc("tools/list", {})
-            selected = [item for item in tools["tools"] if item["name"] == "submit_scvi_scanvi"]
+            selected = [item for item in tools["tools"] if item["name"] == submit_tool]
             if len(selected) != 1 or "parameters" not in selected[0]["inputSchema"]["properties"]:
-                raise ValueError("Typed single-cell tool is absent")
+                raise ValueError(f"Typed {submit_tool} tool is absent")
             save(args.output / "mcp-tool.json", selected[0])
         if args.discover_only:
             print(json.dumps({"discovery": "passed", "protocol": args.protocol}))
@@ -102,11 +106,13 @@ def main(*, require_qa=True):
         operation_id = args.operation_id
         if args.request:
             body = json.loads(args.request.read_text())
-            key = "scvi-hosted-20261006-" + args.cohort
+            # Preserve existing single-cell replay keys across this extension.
+            prefix = "scvi" if args.model_id == "scvi-scanvi" else args.model_id
+            key = args.idempotency_key or prefix + "-hosted-20261006-" + args.cohort
             def submit():
                 if args.protocol == "mcp":
-                    return tool("submit_scvi_scanvi", {**body, "idempotency_key": key})
-                return checked(client.post("/v1/models/scvi-scanvi:submit", json=body, headers={"Idempotency-Key": key}))
+                    return tool(submit_tool, {**body, "idempotency_key": key})
+                return checked(client.post(f"/v1/models/{args.model_id}:submit", json=body, headers={"Idempotency-Key": key}))
             admitted = submit()
             save(args.output / "admission.json", admitted)
             operation_id = admitted["operation"]["id"]
