@@ -216,21 +216,34 @@ def profile_experiment(root, original):
         return {"status": "tool-unavailable", "tools": tools, "reason": "Nsight Systems absent in pinned production image; no host changes"}
     baseline.run_logged([tools["nsys"], "--version"], root / "nsys-version.txt")
     baseline.run_logged([tools["nsys"], "profile", "--help"], root / "nsys-help.txt")
-    tpr = finite_input(root, original, 50000)
-    measured_run(root, tpr, {"name": "warmup", "threads": 8}, 0, 50000)
+    short = finite_input(root, original, 50000)
+    measured_run(root, short, {"name": "warmup", "threads": 8}, 0, 50000)
+    tpr = finite_input(root, original, 100000)
     work = root / "profile"
     work.mkdir()
     env, _ = environment(root, 8)
-    argv = [tools["nsys"], "profile", "--trace=cuda,nvtx,osrt", "--sample=none", "--cpuctxsw=none",
-            "--delay=10", "--duration=10", "--kill=none", "--force-overwrite=true", "--export=sqlite",
+    argv = [tools["nsys"], "profile", "--trace=cuda,nvtx", "--sample=none", "--cpuctxsw=none",
+            "--delay=45", "--duration=5", "--kill=none", "--wait=all", "--force-overwrite=true", "--export=sqlite",
             "-o", str(work / "timeline"), BINARY, "mdrun", "-s", str(tpr), "-deffnm", "md", "-ntmpi", "1",
             "-ntomp", "8", "-pin", "auto", "-nb", "gpu", "-pme", "auto", "-bonded", "gpu", "-update", "auto", "-nstlist", "200"]
     code = baseline.run_logged(argv, work / "profile.log", cwd=work, env=env, timeout=300)
+    # Duration-limited capture can return before the target exits with kill=none.
+    # Never hash/copy files while that target is still writing them.
+    deadline = time.monotonic() + 240
+    while topology_tools.active_gmx_affinity():
+        if time.monotonic() > deadline:
+            raise TimeoutError("Profile target did not finish its bounded native work")
+        time.sleep(0.5)
+    validation = baseline.validate(BINARY, work, 100000, 200,
+                                   baseline.expected_trajectories((root / "original.mdp").read_text()))
+    if not validation["passed"]:
+        raise ValueError("Profile target did not finish a valid finite simulation")
     stats = None
     if (work / "timeline.nsys-rep").exists():
         stats = baseline.run_logged([tools["nsys"], "stats", "--report", "cuda_gpu_kern_sum,cuda_api_sum,cuda_gpu_mem_time_sum", str(work / "timeline.nsys-rep")], work / "stats.txt", timeout=180)
     return {"status": "captured" if code == 0 and stats == 0 else "capture-failed", "tools": tools,
-            "capture_exit": code, "stats_exit": stats, "argv": argv, "timings_are_instrumented": True}
+            "capture_exit": code, "stats_exit": stats, "argv": argv, "timings_are_instrumented": True,
+            "validation": validation, "capture_scope": "45-50 seconds after process launch, after ordinary PME tuning"}
 
 
 def main():
