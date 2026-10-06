@@ -57,6 +57,50 @@ are never pooled with uninstrumented throughput measurements.
 
 ## Status
 
-Implementation and six focused unit tests pass. Real-GPU results are pending.
+Implementation and seven focused unit tests pass. Throughput cohorts are running.
 Private evidence root: `/home/tux/secure-handoff/fs2-l40s-incremental-20261006/`.
 No production defaults have changed.
+
+## Settled GPU profile (completed)
+
+`profile-r4` captured a five-second CUDA interval starting 45 seconds into a
+100,000-step run, after the normal PME tuning period. Nsight Systems 2025.6.3
+was copied into task-pod scratch storage, including its matching importer and
+report tools. No node/driver policy, CPU sampling, hardware counters or DCGM
+changes were required. The finite simulation subsequently completed and passed
+native energy, trajectory and checkpoint validation. All 54 retained files
+(92,831,247 bytes) were independently rehashed after download.
+
+- GPU-event span: 4.982577 s; union of kernel/copy/memset intervals: 4.299756 s
+  (86.296% of that span). The union does not double-count concurrent streams.
+- H2D: 14,944,304,396 bytes in 0.651103 s of recorded copy activity.
+- D2H: 14,518,099,588 bytes in 0.572483 s of recorded copy activity.
+- Largest kernel: short-range Ewald/Lennard-Jones force-switch calculation,
+  6,093 calls and 2.826915 s summed kernel duration. GPU PME and bonded kernels
+  were present; this was not a CPU fallback.
+- CUDA event synchronization consumed 2.921442 s of host API duration. This is
+  waiting, not independent GPU execution time or proven removable overhead.
+- Runtime kernel launches: 0.282637 s; driver kernel launches: 0.137554 s.
+  Do not add overlapping CPU/GPU/API categories as an execution-time budget.
+
+These are instrumented diagnostic observations, not an uninstrumented capacity
+benchmark. They do not prove an attainable speedup or causally assign every
+copy to CMAP. Together with retained native CPU-force/CMAP evidence, they support
+investigating unnecessary CPU/GPU round trips rather than expecting a simple
+thread-count change to double throughput. Raw trace and SQLite export remain
+private under `profile-r4/results/profile/`.
+
+### Retained diagnostic attempts
+
+- `profile-r1`: profiler absent from the production worker; environment inventory
+  only, not a captured profile.
+- `profile-r2`: relocated CLI rejected a changed installation-directory layout.
+- `profile-r3`: trace captured startup PME tuning, not settled execution. The
+  bounded profiler returned while its target was still writing native output;
+  independent inventory verification correctly rejected the mutable energy
+  artifact. It is not the accepted profile/artifact cohort. `profile-r4` waits
+  for target completion before inventory, export and cleanup.
+
+All four profile pods were removed by their own UID-fenced supervisor. Their
+before/after customer observations retained the original customer pod UID,
+Ready status, image identities and zero restarts.
