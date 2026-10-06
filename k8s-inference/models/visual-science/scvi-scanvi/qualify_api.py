@@ -97,23 +97,30 @@ def multipart_file(client, objects, reserved, path, size, receipt):
     return checked(client.post(endpoint, json={**common, "action": "complete"}))
 
 
-def main():
+def main(*, require_qa=True):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--qa-env", type=Path, required=True)
+    if require_qa:
+        parser.add_argument("--qa-env", type=Path, required=True)
+    else:
+        parser.add_argument("--api-key-env", default="SCIENTIFIC_MODELS_API_KEY")
     parser.add_argument("--origin", default="https://89.169.99.188")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--input", type=Path)
     parser.add_argument("--parameters", type=Path)
     parser.add_argument("--stage-only", action="store_true")
+    parser.add_argument("--prepare-only", action="store_true", help="Upload inputs and save request.json without starting GPU work")
+    parser.add_argument("--reference", type=Path, help="Reference archive from an earlier matching scVI/scANVI run, for map-query")
+    parser.add_argument("--idempotency-key", help="Reuse on retries; choose a new value for an intentional repeat")
     parser.add_argument("--sha256", help="Previously recorded input SHA-256; the server still verifies every uploaded byte")
     args = parser.parse_args()
     os.umask(0o077)
-    values = dict(
-        line.split("=", 1)
-        for line in args.qa_env.read_text().splitlines()
-        if "=" in line
-    )
-    key = values["SCIENTIFIC_MODELS_API_KEY"]
+    if require_qa:
+        values = dict(line.split("=", 1) for line in args.qa_env.read_text().splitlines() if "=" in line)
+        key = values["SCIENTIFIC_MODELS_API_KEY"]
+    else:
+        key = os.environ.get(args.api_key_env)
+        if not key:
+            parser.error(f"Set the API key in environment variable {args.api_key_env}")
     with httpx.Client(
         base_url=args.origin,
         headers={"Authorization": "Bearer " + key},
@@ -121,16 +128,16 @@ def main():
         trust_env=False,
     ) as client:
         me = checked(client.get("/v1/me"))
-        if (me["tenant_id"], me["principal_id"]) != ("system", "qa"):
+        if require_qa and (me["tenant_id"], me["principal_id"]) != ("system", "qa"):
             raise ValueError(
                 "Qualification requires existing system/qa; never a customer key"
             )
         save(args.output / "caller.json", me)
-        print(json.dumps({"identity": "system/qa", "authenticated": True}), flush=True)
+        print(json.dumps({"identity": me["tenant_id"] + "/" + me["principal_id"], "authenticated": True}), flush=True)
         if args.input is None:
             return
 
-        def upload(path, media_type, suffix):
+        def upload(path, media_type, suffix, compression="none"):
             receipt = args.output / (suffix + "-artifact.json")
             if suffix == "anndata" and args.sha256:
                 if not re.fullmatch(r"[0-9a-f]{64}", args.sha256):
@@ -155,10 +162,10 @@ def main():
                         "sha256": digest,
                         "size_bytes": size,
                         "media_type": media_type,
-                        "compression": "none",
+                        "compression": compression,
                     },
                     headers={
-                        "Idempotency-Key": "scvi-whitelab-20261006-"
+                        "Idempotency-Key": "scvi-input-v1-"
                         + suffix
                         + "-"
                         + digest
@@ -229,6 +236,10 @@ def main():
                 }
             ],
         }
+        if args.reference:
+            reference = upload(args.reference, "application/x-tar", "reference", "gzip")
+            manifest["entries"].append({"name": "reference", "semantic_type": "scvi-reference/v1", "artifact": reference})
+        manifest["manifest_id"] = "scvi-" + hashlib.sha256(json.dumps(manifest["entries"], sort_keys=True).encode()).hexdigest()
         save(args.output / "manifest.json", manifest)
         pointer = upload(
             args.output / "manifest.json",
@@ -244,18 +255,21 @@ def main():
         }
         identity = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
         save(args.output / "request.json", body)
+        if args.prepare_only:
+            print(json.dumps({"prepared": True, "request": str(args.output / "request.json")}), flush=True)
+            return
         response = checked(
             client.post(
                 "/v1/models/scvi-scanvi:submit",
                 json=body,
-                headers={"Idempotency-Key": "scvi-whitelab-20261006-" + identity},
+                headers={"Idempotency-Key": args.idempotency_key or "scvi-run-v1-" + identity},
             )
         )
         save(args.output / "request.json", body)
         save(args.output / "admission.json", response)
         print(
             json.dumps(
-                {"submitted": True, "receipt": str(args.output / "admission.json")}
+                {"submitted": True, "operation_id": response["operation"]["id"], "receipt": str(args.output / "admission.json")}
             ),
             flush=True,
         )

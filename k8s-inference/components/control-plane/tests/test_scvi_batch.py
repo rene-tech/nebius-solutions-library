@@ -12,6 +12,36 @@ from fs2_serve.scientific_batch.native_workflows import workflow_for_collector
 from fs2_serve.scientific_batch.profile_catalog import ScientificRequestError
 
 
+@pytest.mark.parametrize(
+    "model,exit_code,reasons,retryable",
+    [
+        ("scvi-scanvi", 75, ["Error"], True),
+        ("scvi-scanvi", 1, ["Error"], False),
+        ("scvi-scanvi", 137, ["OOMKilled"], False),
+        ("scvi-scanvi", 75, ["DeadlineExceeded"], False),
+        ("scvi-scanvi", 75, ["MaximumExecutionTimeExceeded"], False),
+        ("gromacs", 75, ["Error"], False),
+    ],
+)
+def test_only_explicit_scvi_interruption_is_a_retry(model, exit_code, reasons, retryable):
+    from fs2_serve.scientific_batch.kubernetes import _reported_failure
+
+    status = {
+        "containerStatuses": [
+            {
+                "name": "scientific-stage",
+                "state": {
+                    "terminated": {"exitCode": exit_code, "reason": reasons[0]},
+                },
+            }
+        ]
+    }
+    _, kind, code = _reported_failure(reasons, [status], model_id=model)
+    assert kind.retryable is retryable
+    if retryable:
+        assert code == "SCVI_WORKER_INTERRUPTED"
+
+
 def anndata():
     return ScientificInputArtifact(
         logical_artifact_id="anndata",

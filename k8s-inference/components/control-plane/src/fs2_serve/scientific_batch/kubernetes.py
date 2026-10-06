@@ -264,6 +264,23 @@ def _reported_failure(
     job: Mapping[str, Any] | None = None,
 ) -> tuple[WorkloadState, FailureKind, str]:
     fallback = _failure(reasons)
+    # scVI's worker reserves EX_TEMPFAIL for a caught interruption, after
+    # publishing its last full training state. Treat that exact known exit as
+    # bounded recovery, not a generic Python/application failure. Never turn
+    # OOM, deadlines, other Apps, or an ambiguous multi-Pod failure into retry.
+    stage_exits = [
+        stage.get("exitCode")
+        for status in pod_statuses
+        if (stage := _container_termination(status, STAGE_CONTAINER_NAME)) is not None
+    ]
+    if (
+        model_id == "scvi-scanvi"
+        and stage_exits == [75]
+        and fallback[1] is FailureKind.APPLICATION
+        and fallback[2] != "EXECUTION_TIMEOUT"
+        and not any(reason.casefold() in {"oomkilled", "deadlineexceeded"} for reason in reasons)
+    ):
+        return WorkloadState.PREEMPTED, FailureKind.PREEMPTION, "SCVI_WORKER_INTERRUPTED"
     # The Job controller can count a taint-evicted Pending Pod as failed before
     # kubelet reports a container termination. The exact disruption condition
     # is then the only reason available (observed after real H100 node loss).

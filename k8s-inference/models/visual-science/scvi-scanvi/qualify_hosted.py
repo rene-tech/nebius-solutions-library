@@ -8,6 +8,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -25,9 +26,12 @@ def checked(response):
     return response.json()
 
 
-def main():
+def main(*, require_qa=True):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--qa-env", type=Path, required=True)
+    if require_qa:
+        parser.add_argument("--qa-env", type=Path, required=True)
+    else:
+        parser.add_argument("--api-key-env", default="SCIENTIFIC_MODELS_API_KEY")
     parser.add_argument("--origin", default="https://89.169.99.188")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--request", type=Path)
@@ -38,11 +42,17 @@ def main():
     parser.add_argument("--timeout", type=int, default=7200)
     args = parser.parse_args()
     os.umask(0o077)
-    env = dict(line.split("=", 1) for line in args.qa_env.read_text().splitlines() if "=" in line)
-    with httpx.Client(base_url=args.origin, headers={"Authorization": "Bearer " + env["SCIENTIFIC_MODELS_API_KEY"]},
+    if require_qa:
+        env = dict(line.split("=", 1) for line in args.qa_env.read_text().splitlines() if "=" in line)
+        key = env["SCIENTIFIC_MODELS_API_KEY"]
+    else:
+        key = os.environ.get(args.api_key_env)
+        if not key:
+            parser.error(f"Set the API key in environment variable {args.api_key_env}")
+    with httpx.Client(base_url=args.origin, headers={"Authorization": "Bearer " + key},
                       timeout=httpx.Timeout(300, connect=15), trust_env=False) as client:
         me = checked(client.get("/v1/me"))
-        if (me["tenant_id"], me["principal_id"]) != ("system", "qa"):
+        if require_qa and (me["tenant_id"], me["principal_id"]) != ("system", "qa"):
             raise ValueError("Internal qualification requires system/qa")
         save(args.output / "caller.json", me)
         counter = 0
@@ -152,6 +162,25 @@ def main():
                 path = download(pointer)
                 verified.append({"artifact": pointer, "local_path": str(path)})
             save(args.output / "verified-artifacts.json", verified)
+            # Reconstruct human-readable filenames using the immutable worker
+            # inventory, after every artifact has passed its hash/size checks.
+            worker_entry = next((entry for entry in manifest["entries"] if entry["name"] == "result"), None)
+            if worker_entry and worker_entry["semantic_type"] == "scvi-workflow-result/v1":
+                worker_result = json.loads((args.output / "artifacts" / worker_entry["artifact"]["artifact_id"]).read_text())
+                save(args.output / "worker-result.json", worker_result)
+                by_name = {entry["name"]: entry["artifact"] for entry in manifest["entries"]}
+                for index, item in enumerate(worker_result["files"]):
+                    relative = Path(item["path"])
+                    if relative.is_absolute() or ".." in relative.parts:
+                        raise ValueError("Invalid path in the worker inventory")
+                    pointer = by_name[f"file-{index:05d}"]
+                    if pointer["sha256"] != item["sha256"] or pointer["size_bytes"] != item["size_bytes"]:
+                        raise ValueError("Worker inventory differs from the verified artifact manifest")
+                    destination = args.output / "data" / relative
+                    if not destination.resolve().is_relative_to((args.output / "data").resolve()):
+                        raise ValueError("Output path escapes the chosen directory")
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(args.output / "artifacts" / pointer["artifact_id"], destination)
         # Keep transport failures/results visible even when the run failed.
         if state != "succeeded":
             raise ValueError(f"Hosted operation ended {state}; inspect the retained result")
