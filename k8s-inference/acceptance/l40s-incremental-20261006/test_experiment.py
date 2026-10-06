@@ -69,3 +69,29 @@ def test_aggregate_reports_median_and_all_samples():
 def test_gpu_busy_union_does_not_double_count_overlapping_streams():
     assert analyzer.interval_union([(0, 5), (3, 7), (10, 12)]) == 9
     assert analyzer.interval_union([]) == 0
+
+
+def test_comparison_uses_matched_repetitions_not_best_run():
+    rows = [{"case": case, "repeat": repeat, "steps": 500000, "simulated_ns": 1,
+             "validation_passed": True, "process_inclusive_ns_per_day": rate}
+            for case, rates in (("baseline", (100, 200, 100)), ("candidate", (101, 202, 120)))
+            for repeat, rate in enumerate(rates, start=1)]
+    result = analyzer.paired_comparison(rows, "baseline", "candidate")
+    assert result["median_paired_speed_change_percent"] == pytest.approx(1)
+    assert result["range_paired_speed_change_percent"] == pytest.approx([1, 20])
+    assert len(result["pairs"]) == 3
+    with pytest.raises(ValueError, match="unmatched"):
+        analyzer.paired_comparison(rows[:-1], "baseline", "candidate")
+    with pytest.raises(ValueError, match="duplicate"):
+        analyzer.paired_comparison(rows + [rows[0]], "baseline", "candidate")
+    rows[-1]["validation_passed"] = False
+    with pytest.raises(ValueError, match="invalid run"):
+        analyzer.paired_comparison(rows, "baseline", "candidate")
+
+
+def test_comparison_rejects_different_run_lengths():
+    rows = [{"case": case, "repeat": 1, "steps": steps, "simulated_ns": steps * 0.002 / 1000,
+             "validation_passed": True, "process_inclusive_ns_per_day": 200}
+            for case, steps in (("baseline", 500000), ("candidate", 100000))]
+    with pytest.raises(ValueError, match="different simulation lengths"):
+        analyzer.paired_comparison(rows, "baseline", "candidate")

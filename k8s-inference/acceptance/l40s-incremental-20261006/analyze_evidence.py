@@ -4,6 +4,7 @@ import argparse
 import csv
 import hashlib
 import json
+import math
 from pathlib import Path
 import re
 import sqlite3
@@ -52,6 +53,39 @@ def interval_union(intervals):
         else:
             current_end = max(current_end, end)
     return total + (current_end - current_start if current_start is not None else 0)
+
+
+def paired_comparison(runs, baseline_case, candidate_case):
+    """Compare complete, validated repetitions within one evidence root/host."""
+    arms = []
+    for name in (baseline_case, candidate_case):
+        selected = [run for run in runs if run["case"] == name]
+        indexed = {run["repeat"]: run for run in selected}
+        if not selected or len(indexed) != len(selected):
+            raise ValueError("Missing or duplicate repetitions: " + name)
+        arms.append(indexed)
+    if arms[0].keys() != arms[1].keys():
+        raise ValueError("Paired comparison has unmatched repetitions")
+    pairs = []
+    for repeat in sorted(arms[0]):
+        baseline_run, candidate_run = (arm[repeat] for arm in arms)
+        if not all(run["validation_passed"] for run in (baseline_run, candidate_run)):
+            raise ValueError("Cannot compare an invalid run")
+        if (baseline_run["steps"], baseline_run["simulated_ns"]) != (
+                candidate_run["steps"], candidate_run["simulated_ns"]):
+            raise ValueError("Paired runs have different simulation lengths")
+        baseline_rate, candidate_rate = (
+            run["process_inclusive_ns_per_day"] for run in (baseline_run, candidate_run))
+        if not all(math.isfinite(rate) and rate > 0 for rate in (baseline_rate, candidate_rate)):
+            raise ValueError("Invalid throughput")
+        pairs.append({"repeat": repeat, "baseline_ns_day": baseline_rate,
+                      "candidate_ns_day": candidate_rate,
+                      "speed_change_percent": (candidate_rate / baseline_rate - 1) * 100})
+    changes = [pair["speed_change_percent"] for pair in pairs]
+    return {"baseline": baseline_case, "candidate": candidate_case, "pairs": pairs,
+            "median_paired_speed_change_percent": statistics.median(changes),
+            "range_paired_speed_change_percent": [min(changes), max(changes)],
+            "scope": "Process-inclusive native throughput, same cohort/host; not API delivery or statistical significance"}
 
 
 def profile_summary(path):
@@ -107,6 +141,14 @@ def analyze(root):
         })
     for path in root.glob("profile/*.sqlite"):
         result["profile"] = profile_summary(path)
+    cases = {run["case"] for run in result["runs"]}
+    comparisons = [("five-minute-segments", "continuous"), ("pme-auto", "pme-original-grid"),
+                   ("wait-default", "wait-active"), ("wait-default", "wait-passive")]
+    comparisons += [("confirm-threads-8", name) for name in sorted(cases)
+                    if name.startswith("confirm-") and name != "confirm-threads-8"]
+    result["paired_comparisons"] = [paired_comparison(result["runs"], baseline_case, candidate_case)
+                                    for baseline_case, candidate_case in comparisons
+                                    if baseline_case in cases and candidate_case in cases]
     return result
 
 

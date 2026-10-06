@@ -32,6 +32,11 @@ not a production rollout or a new customer-ready claim.
 3. Profile: bounded CUDA timeline in a separate idle pod, without CPU sampling,
    hardware counters, privileged access, or changes to monitoring. Missing tools
    or permissions remain explicit rather than modifying node policy.
+4. PME: three paired 500,000-step runs with normal autotuning versus
+   `-notunepme`, retaining the original input's grid/cutoff/tolerance. This tests
+   the cost of repeated tuning, not a new electrostatics accuracy setting.
+5. OpenMP: three alternating-order 100,000-step runs for each of default,
+   `OMP_WAIT_POLICY=ACTIVE` and `PASSIVE`, with the same eight-CPU allocation.
 
 Every completed run validates native checkpoints, finite energies, trajectory
 files requested by the original input, finite coordinates and particle count.
@@ -51,15 +56,71 @@ python3 k8s-inference/acceptance/l40s-incremental-20261006/run_experiment.py \
   --output <new-private-evidence-directory>
 ```
 
-Run `checkpoint` and `profile` modes on different idle nodes in parallel. Do not
+The other modes are `checkpoint`, `profile`, `pme`, and `wait-policy`.
+Run independent cohorts on different idle nodes in parallel. Do not
 run two benchmark cohorts concurrently on one GPU/node. Profiling measurements
 are never pooled with uninstrumented throughput measurements.
 
+For profiling, pass `--profile-tools` with the complete local Nsight Systems
+installation directory. Its `target-linux-x64` and `host-linux-x64` layout must
+be retained. The accepted run used `/opt/nvidia/nsight-systems/2025.6.3`.
+
+After a supervisor exits, independently verify its downloaded artifacts:
+
+```bash
+python3 k8s-inference/acceptance/l40s-incremental-20261006/analyze_evidence.py \
+  <private-evidence-directory>/results \
+  --output <private-evidence-directory>/analysis.json
+```
+
+Comparisons are paired by repetition on one host. The analyzer rejects
+missing/duplicate pairs, different simulation lengths and invalid runs; it
+does not select the fastest observation or treat native measurements as API
+delivery rates. Three repetitions describe observed variability, not a formal
+statistical-significance or cross-workload claim.
+
 ## Status
 
-Implementation and seven focused unit tests pass. Throughput cohorts are running.
+Implementation and nine focused unit tests pass. CPU, checkpoint and PME
+confirmations are running. The profile and OpenMP cohorts are complete.
 Private evidence root: `/home/tux/secure-handoff/fs2-l40s-incremental-20261006/`.
 No production defaults have changed.
+
+## Hardware boundary
+
+The spare `l40s-1x` nodes use Intel Xeon Gold 6338, eight physical cores / sixteen
+exposed logical CPUs, and a 325 W L40S limit. Each benchmark requests and limits
+eight CPUs. A read-only observation during confirmation found software power
+capping active, no thermal slowdown, about 303.5 W average board power and
+2,385 MHz SM clock. No power limit or clock was changed.
+
+The customer job runs on an AMD-backed four-L40S node with one GPU allocated.
+A read-only NVML query showed its GPU already at the 350 W factory default;
+increasing the test nodes' power limit is therefore not an available new
+optimization for that customer job. Host-specific CPU/SIMD findings require
+an isolated matched AMD/350 W confirmation before any future promotion. Do not
+compare absolute rates across these different hosts as an A/B experiment.
+
+## Completed OpenMP screen
+
+Three 100,000-step (0.2 ns) runs per case, with alternating order. These short
+runs include startup/tuning and show variability; they are not steady-state
+throughput estimates for a fourteen-day job.
+
+| Policy | Median process-inclusive ns/day | Range | Median paired change vs default | Paired change range |
+| --- | ---: | ---: | ---: | ---: |
+| Default | 194.646 | 183.573–195.096 | — | — |
+| ACTIVE | 183.963 | 183.958–195.104 | +0.209% | −5.706% to +0.235% |
+| PASSIVE | 177.541 | 177.180–177.817 | −8.787% | −9.183% to −3.136% |
+
+The paired statistic differs from the ratio of independent medians because
+the baseline and ACTIVE both show short-run variability. ACTIVE does not show
+a repeatable speedup. PASSIVE uses about 2.36 CPU cores instead of roughly
+6.9–7.25 for default (including native checkpoint inspection), but slows this
+latency-oriented workload. Keep the existing policy. All ten runs including
+warmup passed; 173 files / 243,930,013 bytes were independently rehashed.
+The exact task pod was deleted and absence observed. Customer UID, images,
+readiness and zero restart counters were unchanged before/after.
 
 ## Settled GPU profile (completed)
 
