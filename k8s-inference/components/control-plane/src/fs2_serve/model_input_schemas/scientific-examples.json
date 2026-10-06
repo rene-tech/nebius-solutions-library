@@ -1,4 +1,34 @@
 {
+  "scvi-scanvi": {
+    "source": "https://docs.scvi-tools.org/en/stable/tutorials/notebooks/scrna/harmonization.html",
+    "request": {
+      "schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+      "operation": "fit-transform",
+      "service_class": "customer-batch",
+      "input_manifest": {
+        "artifact_id": "00000000-0000-4000-8000-000000000106",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "size_bytes": 400,
+        "media_type": "application/vnd.fs2.scientific-manifest+json",
+        "compression": "none"
+      },
+      "parameters": {
+        "schema": "fs2-serve.nebius.ai/scvi-workflow-request/v1",
+        "resource_profile": "routine",
+        "method": "scanvi",
+        "mode": "train",
+        "counts_source": "raw.X",
+        "batch_key": "dataset",
+        "labels_key": "cell_type",
+        "n_top_genes": 2000,
+        "max_epochs": null,
+        "scanvi_max_epochs": 20,
+        "visualization": "sample",
+        "output_destination": "platform-artifacts"
+      },
+      "client_context": {"display_name": "scANVI reference fit: replace the manifest placeholder and metadata keys with your own"}
+    }
+  },
   "cosmos3-lerobot-augmentation": {
     "source": "k8s-inference/models/general-media/lerobot-augmentation/fixtures/scientific-run-request.json",
     "request": {

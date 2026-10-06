@@ -192,7 +192,7 @@
     },
     {
       "model_id": "gromacs",
-      "upstream_name": "GROMACS · NVIDIA-optimized molecular dynamics",
+      "upstream_name": "GROMACS \u00b7 NVIDIA-optimized molecular dynamics",
       "backend_identity": "native-upstream",
       "status": "candidate",
       "qualification_state": "unqualified",
@@ -210,7 +210,7 @@
     },
     {
       "model_id": "gromacs-mpi",
-      "upstream_name": "GROMACS · distributed CUDA MPI",
+      "upstream_name": "GROMACS \u00b7 distributed CUDA MPI",
       "backend_identity": "native-upstream",
       "status": "candidate",
       "qualification_state": "unqualified",
@@ -228,7 +228,7 @@
     },
     {
       "model_id": "namd",
-      "upstream_name": "NAMD · NVIDIA-optimized molecular dynamics",
+      "upstream_name": "NAMD \u00b7 NVIDIA-optimized molecular dynamics",
       "backend_identity": "native-upstream",
       "status": "candidate",
       "qualification_state": "unqualified",
@@ -246,7 +246,7 @@
     },
     {
       "model_id": "lammps",
-      "upstream_name": "LAMMPS · NVIDIA-optimized molecular dynamics",
+      "upstream_name": "LAMMPS \u00b7 NVIDIA-optimized molecular dynamics",
       "backend_identity": "native-upstream",
       "status": "candidate",
       "qualification_state": "unqualified",
@@ -264,7 +264,7 @@
     },
     {
       "model_id": "amber",
-      "upstream_name": "AMBER26 · PMEMD and AmberTools",
+      "upstream_name": "AMBER26 \u00b7 PMEMD and AmberTools",
       "backend_identity": "native-upstream",
       "status": "candidate",
       "qualification_state": "unqualified",
@@ -279,6 +279,23 @@
       "access_profile": "standard",
       "access_state": "not-required",
       "notes": "Private PMEMD26/AmberTools26 OCI bundle built from the official academic PMEMD source. Operator confirms the AMBER agreement and academic use. Not an NVIDIA NIM; the source archive and licensed binaries remain private. Native and hosted qualification are separate evidence; user access uses the existing App grants."
+    },
+    {
+      "model_id": "scvi-scanvi",
+      "upstream_name": "scVI / scANVI",
+      "backend_identity": "native-upstream",
+      "status": "candidate",
+      "qualification_state": "unqualified",
+      "observation_method": "git-ls-remote-head",
+      "source": {
+        "kind": "git",
+        "repository": "scverse/scvi-tools",
+        "revision": "56520c713eb1d2b245c72a0f60bc393b74198c91",
+        "review_url": "https://github.com/scverse/scvi-tools/tree/1.5.0.post1"
+      },
+      "access_profile": "standard",
+      "access_state": "not-required",
+      "notes": "scvi-tools 1.5.0.post1 exact annotated tag, MIT license. Real H100 runtime tested; hosted qualification is separate."
     }
   ]
 }

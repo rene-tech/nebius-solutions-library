@@ -13,6 +13,7 @@ from pathlib import Path
 
 import anndata as ad
 import h5py
+import scipy.sparse as sp
 
 from fs2_gromacs.files import atomic_json, digest_file
 from fs2_scvi import PARAMETER_SCHEMA
@@ -28,7 +29,10 @@ def main():
     started = time.monotonic()
     if not source.exists():
         partial = source.with_suffix(".download")
-        with urllib.request.urlopen(SOURCE, timeout=120) as response, partial.open("wb") as handle:
+        with (
+            urllib.request.urlopen(SOURCE, timeout=120) as response,
+            partial.open("wb") as handle,
+        ):
             shutil.copyfileobj(response, handle, length=8 * 1024**2)
         partial.rename(source)
     if source.stat().st_size != 21860171922:
@@ -40,28 +44,68 @@ def main():
         with h5py.File(source) as handle:
             obs = ad.io.read_elem(handle["obs"]).iloc[:1_000_000].copy()
             var = ad.io.read_elem(handle["raw/var"])
-            counts = ad.io.sparse_dataset(handle["raw/X"])[:1_000_000, :]
+            # Avoid AnnData's backed slice depending on private SciPy matrix
+            # internals. H5AD CSR arrays have a stable public encoding.
+            matrix = handle["raw/X"]
+            if matrix.attrs["encoding-type"] != "csr_matrix":
+                raise ValueError("This cohort expects CSR raw counts")
+            indptr = matrix["indptr"][:1_000_001]
+            stop = int(indptr[-1])
+            counts = sp.csr_matrix(
+                (matrix["data"][:stop], matrix["indices"][:stop], indptr),
+                shape=(1_000_000, len(var)),
+            )
         ad.settings.allow_write_nullable_strings = True
         ad.AnnData(counts, obs=obs, var=var).write_h5ad(selected)
         del counts, obs, var
     with h5py.File(selected) as handle:
         obs = ad.io.read_elem(handle["obs"])
-    batch = next((key for key in ("dataset", "dataset_name", "donor_id") if key in obs), None)
+    batch = next(
+        (key for key in ("dataset", "dataset_name", "donor_id") if key in obs), None
+    )
     if batch is None or "cell_type" not in obs:
         raise ValueError("HLCA full metadata lacks the required batch/label columns")
-    atomic_json(ROOT / "dataset.json", {"source": SOURCE, "source_sha256": digest_file(source),
-        "source_size_bytes": source.stat().st_size, "input_sha256": digest_file(selected),
-        "input_size_bytes": selected.stat().st_size, "cells": len(obs), "selection": "first 1,000,000 real cells",
-        "license": "CC BY 4.0", "citation": "Sikkema et al. 2023, doi:10.1038/s41591-023-02327-2",
-        "preparation_seconds": time.monotonic() - started})
+    atomic_json(
+        ROOT / "dataset.json",
+        {
+            "source": SOURCE,
+            "source_sha256": digest_file(source),
+            "source_size_bytes": source.stat().st_size,
+            "input_sha256": digest_file(selected),
+            "input_size_bytes": selected.stat().st_size,
+            "cells": len(obs),
+            "selection": "first 1,000,000 real cells",
+            "license": "CC BY 4.0",
+            "citation": "Sikkema et al. 2023, doi:10.1038/s41591-023-02327-2",
+            "preparation_seconds": time.monotonic() - started,
+        },
+    )
     print(json.dumps({"event": "atlas_prepared", "cells": len(obs)}), flush=True)
-    parameters = {"schema": PARAMETER_SCHEMA, "resource_profile": "atlas", "method": "scanvi",
-        "counts_source": "X", "batch_key": batch, "labels_key": "cell_type", "n_top_genes": 2000,
-        "batch_size": 512, "visualization": "sample", "output_destination": "platform-artifacts"}
+    parameters = {
+        "schema": PARAMETER_SCHEMA,
+        "resource_profile": "atlas",
+        "method": "scanvi",
+        "counts_source": "X",
+        "batch_key": batch,
+        "labels_key": "cell_type",
+        "n_top_genes": 2000,
+        "batch_size": 512,
+        "visualization": "sample",
+        "output_destination": "platform-artifacts",
+    }
     result = Workflow(parameters, workspace, "hlca-1m-runtime-qualification").run()
     atomic_json(ROOT / "receipt.json", result)
-    print(json.dumps({"event": "atlas_completed", "cells": result["cells"],
-                     "timings": result["timings_seconds"], "public_customer_path_qualified": False}), flush=True)
+    print(
+        json.dumps(
+            {
+                "event": "atlas_completed",
+                "cells": result["cells"],
+                "timings": result["timings_seconds"],
+                "public_customer_path_qualified": False,
+            }
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

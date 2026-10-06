@@ -269,7 +269,7 @@ def test_every_scientific_profile_uses_canonical_schema_and_examples():
         "esmfold2", "esmfold2-fast", "openfold3-openbind", "protenix-v2", "alphafold3",
         "cosmos3-lerobot-augmentation",
         # Existing MD Apps belong to the same exact scientific profile inventory.
-        "gromacs", "gromacs-mpi", "lammps", "namd", "amber",
+        "gromacs", "gromacs-mpi", "lammps", "namd", "amber", "scvi-scanvi",
     }
     assert len(declared) == len(declared_models)
     assert set(catalog._profiles) == declared_models

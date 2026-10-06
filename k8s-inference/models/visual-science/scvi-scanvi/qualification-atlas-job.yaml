@@ -15,7 +15,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: scvi-whitelab-atlas-20261006-r5
+  name: scvi-whitelab-atlas-20261006-r6
   namespace: fs2-models
   labels:
     fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
@@ -60,6 +60,6 @@ spec:
         - name: work
           persistentVolumeClaim: {claimName: scvi-whitelab-atlas-20261006}
         - name: harness
-          configMap: {name: scvi-whitelab-atlas-harness-20261006-r5}
+          configMap: {name: scvi-whitelab-atlas-harness-20261006-r6}
         - name: shm
           emptyDir: {medium: Memory, sizeLimit: 8Gi}

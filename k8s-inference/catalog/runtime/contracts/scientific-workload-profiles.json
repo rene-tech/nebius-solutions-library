@@ -3105,6 +3105,188 @@
         "execution_map_sha256": "3878384303f45df9743a1ac3658b35239f4de714727795b26853cf77d68a1669",
         "qualified_at": "2026-09-23T17:09:35.509982+00:00"
       }
+    },
+    {
+      "schema": "fs2-serve.nebius.ai/scientific-workload-profile/v1",
+      "model_id": "scvi-scanvi",
+      "display_name": "scVI / scANVI \u00b7 single-cell integration and annotation",
+      "execution_mode": "scientific-batch",
+      "state": "active",
+      "route_exposed": true,
+      "source": {
+        "kind": "git",
+        "repository": "scverse/scvi-tools",
+        "revision": "56520c713eb1d2b245c72a0f60bc393b74198c91",
+        "review_url": "https://github.com/scverse/scvi-tools/tree/1.5.0.post1",
+        "classification": "qualified-input"
+      },
+      "execution_identity": {
+        "model_revision": "56520c713eb1d2b245c72a0f60bc393b74198c91",
+        "runtime_image_digest": "sha256:eb2835095574d290a90d289fc2790e49d984b5bb4fa4911f74156d7f172d77e5",
+        "runtime_recipe_sha256": "c8e134ffa078501b86fce6b3af2a37c22066e09d81182633e950de8f1718f186",
+        "workload_recipe_sha256": "0b8bff8a3fcc88aa70593280c7a89d317527bc38ade81ee9cf67035a30e50d33",
+        "artifact_manifest_digest": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "execution_identity_sha256": "b1b9e6ac9090d6627969f18582ab518956d730ca7cb8e2de8794dee61b876f45"
+      },
+      "interface": {
+        "protocol": "scientific-batch-v1",
+        "submit_endpoint": "/v1/models/scvi-scanvi:submit",
+        "request_schema": "fs2-serve.nebius.ai/scientific-run-request/v1",
+        "result_schema": "fs2-serve.nebius.ai/scientific-run-result/v1",
+        "parameter_schema": "fs2-serve.nebius.ai/scvi-workflow-request/v1",
+        "operations": [
+          "fit-transform"
+        ],
+        "service_classes": [
+          "customer-batch",
+          "bulk-backfill"
+        ],
+        "mcp": {
+          "discoverable": true,
+          "invocable": true,
+          "tool_name": "submit_scvi_scanvi",
+          "description": "Queue raw-count AnnData for scVI integration or scANVI annotation/reference mapping. Choose training and memory settings; retrieve embeddings, labels/probabilities, reference, learning curves and plots via the returned operation."
+        }
+      },
+      "access": {
+        "profile": "standard",
+        "state": "not-required",
+        "receipt_digest": null,
+        "credentials_embedded": false
+      },
+      "resources": {
+        "gpu_count": 1,
+        "gpu_topology": "single-gpu",
+        "host_architectures": [
+          "amd64"
+        ],
+        "compatible_pool_ids": [
+          "h100-1x",
+          "h100-ondemand-1x",
+          "h100-reserved-8x"
+        ],
+        "required_node_labels": {
+          "kubernetes.io/arch": "amd64"
+        }
+      },
+      "workload": {
+        "stages": [
+          {
+            "id": "workflow",
+            "needs": [],
+            "resource_class": "gpu",
+            "admission_mode": "independent-jobs",
+            "min_parallelism": 1,
+            "max_parallelism": 1,
+            "checkpoint_mode": "resume",
+            "preemption_mode": "checkpointable",
+            "placement": {
+              "class": "accelerator"
+            },
+            "resources": {
+              "cpu_millis": 8000,
+              "memory_bytes": 137438953472,
+              "ephemeral_storage_bytes": 137438953472,
+              "limits": {
+                "cpu_millis": 8000,
+                "memory_bytes": 137438953472,
+                "ephemeral_storage_bytes": 137438953472
+              }
+            },
+            "execution_shapes": [
+              {
+                "id": "routine",
+                "admission_mode": "independent-jobs",
+                "min_parallelism": 1,
+                "max_parallelism": 1,
+                "placement": {
+                  "class": "accelerator",
+                  "accelerator": {
+                    "resource_name": "nvidia.com/gpu",
+                    "count": 1,
+                    "pool_ids": [
+                      "h100-1x",
+                      "h100-ondemand-1x",
+                      "h100-reserved-8x"
+                    ]
+                  }
+                },
+                "resources": {
+                  "cpu_millis": 8000,
+                  "memory_bytes": 137438953472,
+                  "ephemeral_storage_bytes": 137438953472,
+                  "limits": {
+                    "cpu_millis": 8000,
+                    "memory_bytes": 137438953472,
+                    "ephemeral_storage_bytes": 137438953472
+                  }
+                }
+              },
+              {
+                "id": "atlas",
+                "admission_mode": "independent-jobs",
+                "min_parallelism": 1,
+                "max_parallelism": 1,
+                "placement": {
+                  "class": "accelerator",
+                  "accelerator": {
+                    "resource_name": "nvidia.com/gpu",
+                    "count": 1,
+                    "pool_ids": [
+                      "h100-reserved-8x"
+                    ]
+                  }
+                },
+                "resources": {
+                  "cpu_millis": 8000,
+                  "memory_bytes": 274877906944,
+                  "ephemeral_storage_bytes": 137438953472,
+                  "limits": {
+                    "cpu_millis": 8000,
+                    "memory_bytes": 274877906944,
+                    "ephemeral_storage_bytes": 137438953472
+                  }
+                }
+              }
+            ]
+          }
+        ],
+        "retry": {
+          "max_attempts": 3,
+          "retryable_exit_codes": [
+            75,
+            137,
+            143
+          ]
+        },
+        "cancellation": {
+          "mode": "terminate-attempt",
+          "grace_seconds": 120
+        }
+      },
+      "semantic_validation": {
+        "validator_id": "scvi-scanvi-workflow-v1",
+        "state": "active"
+      },
+      "policy": {
+        "commercial_use": "allowed",
+        "non_clinical": true,
+        "limitations": [
+          "Onboarding release: native engine runtime tested; customer REST/MCP, bucket recovery, queue/preemption and LibreChat qualification are not yet complete. Not customer-ready.",
+          "500k/1M cells and 10/25 GiB inputs are qualification targets, not measured limits.",
+          "Input memory, preprocessing and labels determine suitability. Resource profiles do not guarantee convergence.",
+          "Only the selected raw-count matrix and genes are exported; the immutable full input remains available.",
+          "Full training-state checkpoint recovery is distinct from GPU process snapshotting; no GPU snapshot speed claim.",
+          "The existing small native route is separate and retains its published bounds until deliberately migrated."
+        ]
+      },
+      "qualification": {
+        "h100_semantic_receipt_sha256": "a9e83f317e9475fe2584586506a484637ae1e67c9649ccc0f7bb2f042643203e",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "30f0e1e87fe242b26bcde0d97ab10941c12c26b60419da43c50a14e361f67f96",
+        "qualified_at": "2026-10-06T13:45:03.238498+00:00"
+      }
     }
   ]
 }

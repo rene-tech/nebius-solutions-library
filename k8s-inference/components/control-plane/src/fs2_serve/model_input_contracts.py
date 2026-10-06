@@ -2090,6 +2090,38 @@ def scientific_contract_for(
         "Example artifact references describe source fixtures, not uploads available to the caller."
     )
     _describe(schema)
+    if model_ref == "scvi-scanvi":
+        descriptions = {
+            "schema": "Versioned single-cell training parameter contract.",
+            "method": "scvi produces an integrated latent representation; scanvi additionally learns cell labels and probabilities.",
+            "mode": "train fits a new reference; map-query maps new cells using a previously exported reference artifact.",
+            "batch_key": "AnnData obs column identifying donor, experiment or technical batch; null disables batch covariates.",
+            "labels_key": "AnnData obs column containing cell labels, required for scANVI training.",
+            "unlabeled_category": "Exact obs label for unlabeled cells. It need not occur when every cell has a label.",
+            "n_top_genes": "Number of batch-aware highly variable genes to retain when gene_selection is hvg.",
+            "scanvi_max_epochs": "Separate scANVI fine-tuning epoch budget after the initial scVI fit.",
+            "query_max_epochs": "Epoch budget for reference-based query adaptation, not initial reference training.",
+            "early_stopping": "Stop training when upstream validation criteria stop improving.",
+            "early_stopping_patience": "Validation checks without improvement tolerated before early stopping.",
+            "batch_size": "Cells per training minibatch; larger batches trade memory for throughput and can change optimization.",
+            "n_latent": "Dimensionality of the learned biological latent representation.",
+            "n_hidden": "Hidden-layer width of the scVI neural network.",
+            "n_layers": "Number of hidden layers in the scVI neural network.",
+            "gene_likelihood": "Count likelihood: negative binomial, zero-inflated negative binomial or Poisson.",
+            "train_size": "Fraction of cells used for training; remaining cells support validation, not independent biological accuracy claims.",
+            "seed": "Recorded random seed for model initialization and sampling.",
+            "checkpoint_every_n_epochs": "Save full training state at this epoch interval for interrupted-job recovery.",
+            "visualization": "Create a sampled UMAP, full-data UMAP or no visualization. Full UMAP can require substantial CPU time and memory.",
+            "visualization_cells": "Maximum number of cells included in sampled visualization; all cells still receive embeddings.",
+            "write_integrated_h5ad": "Export selected counts, metadata and latent embeddings as AnnData; does not copy every original layer.",
+            "max_wall_seconds": "Maximum requested worker run time in seconds, up to 14 days.",
+            "max_output_bytes": "Maximum total retained result bytes for this operation.",
+            "output_destination": "Publish to your authorized customer bucket or platform-managed immutable artifacts.",
+            "output_prefix": "Relative output prefix inside your authorized workspace.",
+        }
+        for name, field in schema["properties"]["parameters"]["properties"].items():
+            if name in descriptions:
+                field["description"] = descriptions[name]
     if model_ref in {"gromacs", "gromacs-mpi", "namd", "lammps", "amber"}:
         md_descriptions = {
             "jobs": "Independent workflow jobs; each job executes its declared native stages in order.",

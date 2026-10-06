@@ -174,6 +174,10 @@ def test_activation_keeps_existing_apps_and_projects_both_memory_shapes():
     release = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(release)
     before = json.loads((root / "catalog/runtime/contracts/scientific-execution-map.json").read_text())
+    # Exercise first onboarding even after the source catalog includes scVI.
+    # This fixture has no prior profile claims; hash its actual retained rows.
+    before["models"] = [row for row in before["models"] if row["model_id"] != "scvi-scanvi"]
+    before["qualification_baselines"] = {}
     candidate = json.loads((root / "models/visual-science/scvi-scanvi/activation/workload-profile.json").read_text())[
         "profile"
     ]
