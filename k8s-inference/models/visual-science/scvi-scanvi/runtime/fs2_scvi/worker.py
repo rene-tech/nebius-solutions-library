@@ -60,7 +60,12 @@ class DurableCheckpoint(SaveCheckpoint):
 
     def __init__(self, workflow, stage):
         self.workflow, self.stage = workflow, stage
-        super().__init__(
+        # scVI recognizes this SaveCheckpoint subclass and does not add its own
+        # model-only callback. Initialize Lightning directly: scVI's constructor
+        # discards save_last, and its hooks replace optimizer checkpoints with
+        # model-only directories. This worker needs resumable training state.
+        ModelCheckpoint.__init__(
+            self,
             dirpath=str(workflow.data / "checkpoints" / stage),
             filename="epoch-{epoch}",
             monitor=None,
@@ -69,6 +74,12 @@ class DurableCheckpoint(SaveCheckpoint):
             every_n_epochs=workflow.parameters["checkpoint_every_n_epochs"],
             save_on_train_epoch_end=True,
         )
+
+    on_save_checkpoint = Callback.on_save_checkpoint
+    on_train_end = ModelCheckpoint.on_train_end
+    on_train_batch_end = ModelCheckpoint.on_train_batch_end
+    on_exception = ModelCheckpoint.on_exception
+    _update_best_and_save = ModelCheckpoint._update_best_and_save
 
     def _save_checkpoint(self, trainer, filepath):
         temporary = filepath + ".partial"

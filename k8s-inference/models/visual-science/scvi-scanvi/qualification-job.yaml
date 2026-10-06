@@ -16,7 +16,7 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: scvi-whitelab-qualification-20261006-r2
+  name: scvi-whitelab-qualification-20261006-r3
   namespace: fs2-models
   labels:
     fs2-serve.nebius.ai/qualification-owner: scvi-whitelab-20261006
@@ -33,6 +33,8 @@ spec:
       nodeSelector:
         accelerator.fs2.nebius/class: nvidia-h100-sxm5-80gb
         capacity.fs2.nebius/type: preemptible
+        # Qualification host with the base image already cached; not a new-node cold-start test.
+        kubernetes.io/hostname: computeinstance-e00k0hdq51xykanvqs
       tolerations:
         - key: dedicated
           operator: Equal
@@ -44,9 +46,9 @@ spec:
         fsGroup: 10001
       containers:
         - name: qualify
-          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:45bae1378c76ba0836050b3a8b4a1ca1161b096223bc9d4bf61122d3469aec18
+          image: cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/visual-science/scvi-scanvi@sha256:337122110f1d833f4588241876b9d7e9cf27cb1e8a730635d15e215b1ded4535
           command: [python, -u, /opt/fs2/qualify_runtime.py]
-          args: [--root, /work/r2]
+          args: [--root, /work/r3]
           env:
             - name: OMP_NUM_THREADS
               value: "8"
