@@ -62,3 +62,55 @@ def test_persistent_connection_failure_is_not_reported_as_success(monkeypatch):
         with pytest.raises(httpx.ConnectError):
             hosted.request_with_retry(client, "GET", "/operation")
     assert waits == [1, 2, 4, 8, 10]
+
+
+@pytest.mark.parametrize('structured', [True, False])
+def test_mcp_explicit_non_admission_waits_without_changing_request(monkeypatch, structured):
+    calls, waits = [], []
+    body = {'parameters': {'method': 'scvi'}, 'idempotency_key': 'same-logical-job'}
+    rejected = {'error': {'code': 'admission_limit_reached', 'durable_admission': False,
+                          'retryable': True, 'retry_after_seconds': 2}}
+
+    def submit():
+        calls.append(json.dumps(body, sort_keys=True))
+        if len(calls) == 1:
+            envelope = {'isError': True, 'content': [{'type': 'text', 'text': json.dumps(rejected)}]}
+            if structured:
+                envelope['structuredContent'] = rejected
+            return hosted.tool_result(envelope, admission=True)
+        return {'operation': {'id': 'only-one-job'}}
+
+    monkeypatch.setattr(hosted.time, 'sleep', waits.append)
+    result = hosted.submit_with_capacity_wait(submit, 60)
+    assert result['operation']['id'] == 'only-one-job'
+    assert len(calls) == 2 and calls[0] == calls[1] and waits == [2]
+
+
+@pytest.mark.parametrize('error', [
+    {'code': 'model_input_invalid'},
+    {'code': 'admission_limit_reached', 'durable_admission': True},
+    {'code': 'admission_limit_reached', 'retryable': False},
+    {'code': 'rate_limited'},
+])
+def test_only_explicit_unadmitted_capacity_can_wait(error):
+    envelope = {'isError': True, 'structuredContent': {'error': error}}
+    with pytest.raises(ValueError, match='MCP tool failed'):
+        hosted.tool_result(envelope, admission=True)
+
+
+def test_read_tool_error_is_not_treated_as_submission_capacity():
+    with pytest.raises(ValueError, match='MCP tool failed'):
+        hosted.tool_result({'isError': True, 'structuredContent': {
+            'error': {'code': 'admission_limit_reached', 'durable_admission': False}}})
+
+
+def test_capacity_wait_deadline_preserves_actionable_non_admission():
+    calls = []
+
+    def submit():
+        calls.append('attempt')
+        raise hosted.AdmissionCapacityError({'retry_after_seconds': 2})
+
+    with pytest.raises(RuntimeError, match='Retain uploads'):
+        hosted.submit_with_capacity_wait(submit, 0)
+    assert calls == ['attempt']

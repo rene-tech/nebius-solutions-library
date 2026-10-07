@@ -15,6 +15,51 @@ from pathlib import Path
 import httpx
 
 
+class AdmissionCapacityError(RuntimeError):
+    """An explicit rejection before durable admission; safe to wait unchanged."""
+
+    def __init__(self, error):
+        super().__init__('API key concurrent-operation slots are occupied; no job was admitted')
+        try:
+            self.delay = min(30, max(1, float(error.get('retry_after_seconds', 5))))
+        except (TypeError, ValueError):
+            self.delay = 5
+
+
+def capacity_rejection(error):
+    return isinstance(error, dict) and error.get('code', error.get('type')) in {
+        'concurrency_exceeded', 'admission_limit_reached'
+    } and error.get('durable_admission') is not True and error.get('retryable') is not False
+
+
+def submit_with_capacity_wait(submit, wait_seconds):
+    deadline = time.monotonic() + wait_seconds
+    announced = False
+    while True:
+        try:
+            return submit()
+        except AdmissionCapacityError as error:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise RuntimeError('Admission wait expired; no job admitted. Retain uploads and retry the same request/key.') from error
+            if not announced:
+                print(json.dumps({'waiting_for_key_capacity': True, 'job_admitted': False}), flush=True)
+                announced = True
+            time.sleep(min(error.delay, remaining))
+
+
+def tool_result(value, *, admission=False):
+    structured = value.get('structuredContent')
+    if structured is None:
+        structured = json.loads(next(item['text'] for item in value['content'] if item['type'] == 'text'))
+    if value.get('isError'):
+        error = structured.get('error', {}) if isinstance(structured, dict) else {}
+        if admission and capacity_rejection(error):
+            raise AdmissionCapacityError(error)
+        raise ValueError(f'MCP tool failed: {value}')
+    return structured
+
+
 def request_with_retry(client, method, url, *, retryable=None, **kwargs):
     """Retry reads/explicitly idempotent requests, never change their identity."""
     safe = method.upper() in {"GET", "HEAD"} if retryable is None else retryable
@@ -62,7 +107,11 @@ def main(*, require_qa=True):
     parser.add_argument("--discover-only", action="store_true")
     parser.add_argument("--cancel", action="store_true", help="Cancel this explicitly selected/new operation and verify final cancellation")
     parser.add_argument("--timeout", type=int, default=7200)
+    parser.add_argument("--admission-wait-seconds", type=int, default=900,
+                        help="Wait for explicit key-capacity non-admission, preserving the request and idempotency key")
     args = parser.parse_args()
+    if args.admission_wait_seconds < 0:
+        parser.error('Admission wait must be non-negative')
     submit_tool = {"scvi-scanvi": "submit_scvi_scanvi", "gromacs": "submit_gromacs_workflow"}[args.model_id]
     os.umask(0o077)
     if require_qa:
@@ -102,13 +151,9 @@ def main(*, require_qa=True):
                 raise ValueError(f"MCP failed: {value['error']}")
             return value["result"]
 
-        def tool(name, arguments):
+        def tool(name, arguments, *, admission=False):
             value = rpc("tools/call", {"name": name, "arguments": arguments})
-            if value.get("isError"):
-                raise ValueError(f"MCP tool failed: {value}")
-            if "structuredContent" in value:
-                return value["structuredContent"]
-            return json.loads(next(item["text"] for item in value["content"] if item["type"] == "text"))
+            return tool_result(value, admission=admission)
 
         if args.protocol == "mcp":
             rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
@@ -133,10 +178,18 @@ def main(*, require_qa=True):
             key = args.idempotency_key or prefix + "-hosted-20261006-" + args.cohort
             def submit():
                 if args.protocol == "mcp":
-                    return tool(submit_tool, {**body, "idempotency_key": key})
-                return checked(request_with_retry(client, "POST", f"/v1/models/{args.model_id}:submit",
-                               retryable=True, json=body, headers={"Idempotency-Key": key}))
-            admitted = submit()
+                    return tool(submit_tool, {**body, "idempotency_key": key}, admission=True)
+                response = request_with_retry(client, "POST", f"/v1/models/{args.model_id}:submit",
+                               retryable=True, json=body, headers={"Idempotency-Key": key})
+                if response.status_code == 429:
+                    try:
+                        error = response.json().get('error', {})
+                    except (ValueError, AttributeError):
+                        error = {}
+                    if capacity_rejection(error):
+                        raise AdmissionCapacityError(error)
+                return checked(response)
+            admitted = submit_with_capacity_wait(submit, args.admission_wait_seconds)
             save(args.output / "admission.json", admitted)
             operation_id = admitted["operation"]["id"]
             replay = submit()
