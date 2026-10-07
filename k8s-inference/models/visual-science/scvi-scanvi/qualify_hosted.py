@@ -15,6 +15,24 @@ from pathlib import Path
 import httpx
 
 
+def request_with_retry(client, method, url, *, retryable=None, **kwargs):
+    """Retry reads/explicitly idempotent requests, never change their identity."""
+    safe = method.upper() in {"GET", "HEAD"} if retryable is None else retryable
+    attempts = 6 if safe else 1
+    for attempt in range(attempts):
+        try:
+            response = client.request(method, url, **kwargs)
+        except httpx.TransportError:
+            if attempt == attempts - 1:
+                raise
+        else:
+            if response.status_code not in {502, 503, 504} or attempt == attempts - 1:
+                return response
+            response.close()
+        time.sleep(min(2 ** attempt, 10))
+    raise AssertionError("Unreachable retry state")
+
+
 def save(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2) + "\n")
@@ -56,7 +74,7 @@ def main(*, require_qa=True):
             parser.error(f"Set the API key in environment variable {args.api_key_env}")
     with httpx.Client(base_url=args.origin, headers={"Authorization": "Bearer " + key},
                       timeout=httpx.Timeout(300, connect=15), trust_env=False) as client:
-        me = checked(client.get("/v1/me"))
+        me = checked(request_with_retry(client, "GET", "/v1/me"))
         if require_qa and (me["tenant_id"], me["principal_id"]) != ("system", "qa"):
             raise ValueError("Internal qualification requires system/qa")
         save(args.output / "caller.json", me)
@@ -66,7 +84,10 @@ def main(*, require_qa=True):
         def rpc(method, params):
             nonlocal counter
             counter += 1
-            response = client.post("/mcp", headers={"Accept": "application/json, text/event-stream", **session},
+            # Every caller below is discovery, a read, cancellation or a submit
+            # with a stable idempotency key. Keep the same RPC id/body on retries.
+            response = request_with_retry(client, "POST", "/mcp", retryable=True,
+                                   headers={"Accept": "application/json, text/event-stream", **session},
                                    json={"jsonrpc": "2.0", "id": counter, "method": method, "params": params})
             if response.is_error:
                 checked(response)
@@ -92,7 +113,8 @@ def main(*, require_qa=True):
         if args.protocol == "mcp":
             rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
                                "clientInfo": {"name": "fs2-internal-scientific-qualification", "version": "1"}})
-            response = client.post("/mcp", headers={"Accept": "application/json, text/event-stream", **session},
+            response = request_with_retry(client, "POST", "/mcp", retryable=True,
+                                   headers={"Accept": "application/json, text/event-stream", **session},
                                    json={"jsonrpc": "2.0", "method": "notifications/initialized"})
             response.raise_for_status()
             tools = rpc("tools/list", {})
@@ -112,7 +134,8 @@ def main(*, require_qa=True):
             def submit():
                 if args.protocol == "mcp":
                     return tool(submit_tool, {**body, "idempotency_key": key})
-                return checked(client.post(f"/v1/models/{args.model_id}:submit", json=body, headers={"Idempotency-Key": key}))
+                return checked(request_with_retry(client, "POST", f"/v1/models/{args.model_id}:submit",
+                               retryable=True, json=body, headers={"Idempotency-Key": key}))
             admitted = submit()
             save(args.output / "admission.json", admitted)
             operation_id = admitted["operation"]["id"]
@@ -124,13 +147,14 @@ def main(*, require_qa=True):
             raise ValueError("Supply an existing operation or a finalized request")
         if args.cancel:
             cancelled = (tool("cancel_scientific_run", {"operation_id": operation_id}) if args.protocol == "mcp"
-                         else checked(client.post(f"/v1/operations/{operation_id}:cancel")))
+                         else checked(request_with_retry(client, "POST", f"/v1/operations/{operation_id}:cancel",
+                                      retryable=True)))
             save(args.output / "cancellation.json", cancelled)
         deadline = time.monotonic() + args.timeout
         previous = None
         while time.monotonic() < deadline:
             status = (tool("get_scientific_status", {"operation_id": operation_id}) if args.protocol == "mcp"
-                      else checked(client.get(f"/v1/operations/{operation_id}")))
+                      else checked(request_with_retry(client, "GET", f"/v1/operations/{operation_id}")))
             save(args.output / "status.json", status)
             state = status["batch"]["status"] if "batch" in status else status["status"]
             if state != previous:
@@ -148,7 +172,7 @@ def main(*, require_qa=True):
         else:
             raise TimeoutError("Operation retained; do not duplicate work")
         result = (tool("get_scientific_result", {"operation_id": operation_id}) if args.protocol == "mcp"
-                  else checked(client.get(f"/v1/operations/{operation_id}/result")))
+                  else checked(request_with_retry(client, "GET", f"/v1/operations/{operation_id}/result")))
         save(args.output / "result.json", result)
         if args.protocol == "mcp":
             generic_result = tool("get_operation_result", {"operation_id": operation_id})
