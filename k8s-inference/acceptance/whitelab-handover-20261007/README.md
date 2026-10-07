@@ -1,8 +1,28 @@
 # WhiteLab access and single-cell handover — 7 October 2026
 
-Status: **in progress**, not a general production/biological qualification.
+Status: **technical delivery verified; customer login awaits a verified email**.
+This is a scoped research-PoC qualification, not a general production/biological
+qualification or a claim that every previously granted App was retested.
 Requested delivery: REST + MCP + Nebius-branded LibreChat, shared 1,000 GB
 workspace, eight concurrent operations and no scheduled API-key expiry.
+
+Two final unchanged-release mixed cohorts passed **20/20 operations**, including
+16 single-cell jobs at 584,944 or 1,000,000 cells and four concurrent MD jobs.
+All **187/187 sampled readiness checks** passed. The actual R5 LibreChat agent
+completed training, same-operation recovery, reference reuse and authenticated
+artifact readback. Tests used internal QA identities, never the customer key.
+
+The customer-managed R5 replacement is running and verified at
+<https://port3080-zvfk1qbfp44r0yr.tunnel.applications.eu-north1.nebius.cloud>.
+It preserves the existing bucket, non-expiring key and persistent application
+state. Only Artémis Llamosi's verified login email is missing; registration stays
+closed and no customer-login success is claimed. See [CUSTOMER_GUIDE.md](CUSTOMER_GUIDE.md).
+
+Current exact release: API/controller/maintenance amd64 `aae7e6f1f7dafe528051d69da07697d62531bc15ea930de4194aaf14c66fcd61`,
+scientific collector/tools `a8fb464f2b383b099b892909f39317a7a5275c90cd88e835248b083c97ed76da`,
+training worker `063877787f8c1c1aef28887242389449b871e1d48c74edc07c267bccee340246`,
+and LibreChat index `92b18aa638f222d1b5b53c61e3c4cad9e11e5e5abc032e856a6a8d69388086fc`
+(all SHA-256). Earlier releases/failures below are retained history.
 
 ## Initial reliability release (R1)
 
@@ -135,8 +155,9 @@ never treating scientific errors or durable admission as retryable submission.
 `69493c8e-9800-4a63-935d-2327aaf8ce24`, including a client-local non-admission
 injection, unchanged request and verified idempotency replay. Only one actual
 operation was admitted. **D is not a clean cohort**; its original client failure
-is retained. E/F use the fixed client. E passed all ten operations and all 93
-sampled readiness checks; F remains in progress.
+is retained. E/F used the fixed client and both passed all ten operations.
+E passed all 93 sampled readiness checks; F passed all 94. The API image,
+training runtime and execution/scheduling contracts were unchanged throughout.
 
 | E workflow | Parallel requests | Cells per request | Accepted to completed |
 | --- | ---: | ---: | ---: |
@@ -150,6 +171,28 @@ operations. [cohort-e.json](cohort-e.json) retains timings, input/recipe/runtime
 identities, resolved scientific settings and validation evidence. Parallel API
 admission does not imply every worker starts simultaneously; E observed at most
 eight worker Pods in `Running` state at one sample.
+
+| F workflow | Parallel requests | Cells per request | Accepted to completed |
+| --- | ---: | ---: | ---: |
+| Routine scANVI | 4 | 584,944 | 15.65–16.88 minutes |
+| Atlas scANVI | 4 | 1,000,000 | 24.83–25.04 minutes |
+| Existing MD protocol | 2 | Not applicable | 54.71–58.81 seconds |
+
+[cohort-f.json](cohort-f.json) retains the second independent cohort. Across
+E/F, all 16 single-cell runs verified **640 output files / 18,524,890,537 bytes**,
+with full row/embedding/label/probability validation. The datasets are reused
+under recorded seeds; this is not a claim of 16 independent biological datasets.
+The four MD operations also passed their public-path result/artifact checks.
+These are full operation timings, not pure training speed or model cold-start
+latency. Client-side result download/validation can finish after remote completion.
+
+The admin run API was queried for all 20 final operations. Every run is attributed
+to `system/qa`, not WhiteLab, and has a GPU-allocation ledger. The public projection
+is [accounting-evidence.json](accounting-evidence.json); complete run details and
+device samples remain in the private evidence directory. Lifecycle-based
+allocated/active/idle times are explicitly **estimated**, not measured GPU-busy
+time or billing-grade accounting. Missing trace context and incomplete phase
+classification remain visible rather than being replaced with fabricated zeros.
 
 E/F explicitly publish repeated single-cell QA results to platform artifact
 storage. Earlier cohorts already exercised customer-bucket publication; the
@@ -218,7 +261,7 @@ readback. Customer S3 credentials cannot list the system QA bucket. No customer
 model calls were used for internal testing. LibreChat login awaits the verified
 initial email address; no public registration or guessed email was configured.
 
-## Workbench candidate
+## Delivered workbench
 
 Source fork `rene-tech/serverless-ai-cookbook`, commit
 `83c3ce9250526eb579c54f75adb1ed16d9238c2e` (R5).
@@ -230,18 +273,44 @@ Preserves the October 7 Nebius branding/persistent-state image; adds the pinned
 canonical single-cell file clients, recoverable workbench wrapper and corrected
 `single-cell-analysis` skill v2026.10.07.4. The canonical client comes from
 `b2aa0c2b24e3c3e9d258f9980468d4d1945a38ea` in the backend fork. The old 64 MiB
-demo path remains separate. All 33 wrapper/receipt tests passed; 36 bundled skills
+demo path remains separate. All 34 wrapper/receipt/build-context tests passed; 36 bundled skills
 and 78 files passed checksum verification. The image's installed environment
 passed dependency and actual dense/CSR/CSC backed-H5AD checks.
 
-One running temporary QA candidate, `aiendpoint-e00n6bxtd138sq8agy`, reuses existing
-system QA API/S3/provider bindings with a distinct study namespace and dedicated
-state filesystem `computefilesystem-e00y8j7zypsqv823st`. It does not replace any
-customer or the existing QA client. R1/R2/R3 predecessors are stopped; R4 was
-built but never provisioned. Retain evidence/chats and stop the temporary
-candidate at closeout; shared QA storage must not be deleted. WhiteLab's own
-managed binding and persistent state already exist on R3 and await the qualified
-R5 upgrade. Lynx and Basel are not changed by this qualification.
+The temporary QA R5 candidate used existing system QA API/S3/provider bindings,
+a distinct study namespace and dedicated state filesystem
+`computefilesystem-e00y8j7zypsqv823st`. Actual login, conversations and receipts
+survived its image replacements. R4 was built but never provisioned. No browser
+automation was used: actual hosted agent execution, login, workspace and delivered
+links were exercised through the authenticated client HTTP interface. This does
+not constitute a visual browser-interaction acceptance test.
+
+After E/F, the qualified immutable R5 release was added to the managed workbench
+release menu, preserving the existing release. The API rollout completed 3/3;
+public readiness and all ten live MCP discovery checks passed again. Only the
+release-menu setting changed, not the tested training/scheduling releases. A
+targeted rollback and desired Helm fragment are retained; do not overwrite live
+configuration with stale whole-release Helm values.
+
+Managed upgrade `8dbe8fdc-1fe9-465f-b95f-8c0eda32b3c1` succeeded on existing
+binding `68fb4fd8-cce1-4330-8341-52a766e8a1c9`. Customer endpoint
+`aiendpoint-e00zzbdhd3hkmaxtnc` uses the exact R5 index, existing state filesystem
+`computefilesystem-e00zpv5gnsct0hhat1`, bucket and credentials. Public health/title,
+Nebius logo hash, closed registration, mounted starter manifest, pinned client
+hash, SciPy/AnnData versions, persistent database and credential binding all pass.
+The private verifier initially assumed Docker's legacy config-ID format; this
+host uses the containerd image store and reports the index ID. Matching the
+immutable reference and RepoDigests resolved that verifier defect, without any
+image change. The original mismatch is retained in private finalization evidence.
+The stopped customer R3 predecessor `aiendpoint-e00hw7kkesds7smer8` is retained
+for managed rollback. Lynx and Basel were not changed.
+
+The cookbook fork now points future deployments at the qualified R5 release.
+Its ordinary directory build context includes the runtime verifier. Build stages
+and runtime checks pass, but a local legacy-Docker `--load` attempt hit inherited
+layer depth; that limitation is documented in the cookbook's single-cell release
+note. The unchanged production image was pulled and tested successfully on
+Serverless. No untested rebuild replaced it.
 
 ## Evidence and remaining work
 
@@ -250,10 +319,10 @@ Private raw evidence/credentials:
 directory. It contains only explicitly separated customer provisioning receipts
 and QA execution cohorts; hand over selected customer credentials privately.
 
-Remaining: finish E/F result/availability/accounting verification; upgrade and
-verify the existing customer binding using
-the managed lifecycle; seed its login once the verified email is supplied; close
-task-only QA resources and prepare the private handover. Do not recreate its
-tenant, user, API key, bucket or persistent filesystem.
+Remaining customer input: **Artémis's verified login email**. Seed the existing
+workbench account and verify its login once supplied. Do not recreate its tenant,
+user, API key, bucket or persistent filesystem, and do not rotate their credentials.
+The selected API/S3 credentials and instructions are handed to the owner privately;
+provider keys and raw QA evidence must not be included in a customer handover.
 The [single-cell user guide](../../models/visual-science/scvi-scanvi/README.md)
 contains REST/MCP upload, parameters, polling, output and reference-mapping usage.

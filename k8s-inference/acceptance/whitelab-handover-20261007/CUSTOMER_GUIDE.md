@@ -7,7 +7,7 @@ recorded in [README.md](README.md); this guide is not itself a readiness claim.
 
 | Interface | Address |
 | --- | --- |
-| LibreChat | https://port3080-erfrwhsyah6v68v.tunnel.applications.eu-north1.nebius.cloud |
+| LibreChat | https://port3080-zvfk1qbfp44r0yr.tunnel.applications.eu-north1.nebius.cloud |
 | REST API base | `https://89.169.99.188/v1` |
 | Streamable HTTP MCP | `https://89.169.99.188/mcp` |
 | S3 endpoint | `https://storage.eu-north1.nebius.cloud` |

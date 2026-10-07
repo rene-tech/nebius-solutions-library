@@ -1,0 +1,608 @@
+{
+  "schema": "whitelab-accounting-projection/v1",
+  "attribution_verified": "system/qa",
+  "billing_grade_claimed": false,
+  "runs": [
+    {
+      "cohort": "e",
+      "name": "e-md-08",
+      "operation_id": "fc1f119c-07fd-4c29-865e-c4ce29f91b05",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 52,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 42,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 10,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-md-09",
+      "operation_id": "5032e8a1-a92f-4c11-a122-0064abf58461",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 52,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 42,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 10,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-routine-04",
+      "operation_id": "9e209b77-adf6-4dd3-aef3-e721e990512f",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 867,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 790,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 77,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-routine-06",
+      "operation_id": "248ef9cd-ffbc-4446-b230-e25152f6783f",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 888,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 811,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 77,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-routine-07",
+      "operation_id": "ea8682ef-2245-4f37-85cb-156128331480",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 860,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 789,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 71,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-routine-05",
+      "operation_id": "14b919ae-99eb-4237-ab94-65a66def120b",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 884,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 810,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 74,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-atlas-00",
+      "operation_id": "da8b312a-02d9-44a3-aec1-8ace63d2f00d",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1455,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 1245,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 210,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-atlas-02",
+      "operation_id": "314d28d9-ae04-4fc9-8550-ce16b974710c",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1454,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 1246,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 208,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-atlas-01",
+      "operation_id": "33d56e92-acb6-4e3e-b266-16341855d7ff",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1510,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 1306,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 204,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "e",
+      "name": "e-atlas-03",
+      "operation_id": "9e288aa2-a3af-4d07-87e0-67ad7d288bf6",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1465,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 1260,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 205,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-md-08",
+      "operation_id": "c9dc78d9-aa29-452d-91b6-244f064ac82c",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 52,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 42,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 10,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "phase_classification_incomplete",
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-md-09",
+      "operation_id": "79f00edd-5567-4582-9233-fd5af67f5f4f",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 50,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 40,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 10,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-routine-04",
+      "operation_id": "c68b8d89-07ad-4fab-882d-ba40ec36603a",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 933,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 772,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 161,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-routine-06",
+      "operation_id": "db2332ed-7cd1-4015-9e83-67f331228872",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 978,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 819,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 159,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-routine-07",
+      "operation_id": "ada76e85-0619-4c18-96df-663e5cc76bb2",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 960,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 806,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 154,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-routine-05",
+      "operation_id": "4ef1a008-7b90-4c72-9aca-a5b488d55b5c",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1008,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 856,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 152,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-atlas-00",
+      "operation_id": "af4e8435-d327-4ec3-a53f-29d41c0407af",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1494,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 1184,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 310,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-atlas-01",
+      "operation_id": "3fe90ee7-2252-4a32-9dc8-d04bf040aa5e",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1485,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 1180,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 305,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-atlas-02",
+      "operation_id": "2f6fa80a-ec5c-46ad-9caa-426205664d4c",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1499,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 1189,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 310,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    },
+    {
+      "cohort": "f",
+      "name": "f-atlas-03",
+      "operation_id": "12d6c79a-bef7-447e-a3e0-ef61ded66d17",
+      "gpu_count": 1,
+      "allocated": {
+        "value": 1492,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "active": {
+        "value": 1184,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "idle": {
+        "value": 308,
+        "unit": "gpu-seconds",
+        "evidence": "estimated",
+        "source": "lifecycle-ledger",
+        "reason": "Observed attempt subtotal; lifecycle boundaries are application-observed, incomplete or unreconciled. Not device utilization."
+      },
+      "data_gaps": [
+        "trace_context_missing"
+      ]
+    }
+  ]
+}

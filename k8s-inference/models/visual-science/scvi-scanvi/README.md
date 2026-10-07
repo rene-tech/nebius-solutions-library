@@ -148,9 +148,13 @@ and whether the task is integration, annotation or reference mapping. The
 operator grants `scvi-scanvi` to their existing inference identity and workspace;
 these scripts do not create a tenant or expose an operator credential.
 
-This release covers the Python REST client and typed MCP protocol. It does not
-qualify a particular LibreChat/LLM workflow, biological accuracy, multi-GPU
-training, or an arbitrary atlas size. There is no GPU-process-snapshot claim.
+The original October 6 release covers the Python REST client and typed MCP
+protocol. The [October 7 handover](../../../acceptance/whitelab-handover-20261007/README.md)
+adds exact-release concurrent cohorts and actual R5 LibreChat training,
+same-operation collection and reference-reuse evidence. It records the customer's
+remaining login-email dependency and tested bounds. Neither release establishes
+biological accuracy, multi-GPU training or support for an arbitrary atlas size.
+There is no GPU-process-snapshot claim.
 
 ## References
 
