@@ -90,6 +90,47 @@ ProteinMPNN, MSA Search PDB70 and scVI/scANVI. Access/catalog checks confirmed
 exactly this set. Existing Apps are not all scientifically requalified by this
 single-cell release.
 
+## Agent-discovered fixes and rollout test
+
+The actual agent used a shared App that exposes both native and batch protocols.
+`get_model_schema` incorrectly returned only the native contract, and selecting
+the batch tool by name incorrectly failed before batch discovery. Backend source
+`b768003f07dc5fd5512f5bb757cbdfc873c33fdb` fixes both paths and preserves specific
+selectors, caller grants and artifact schemas. It also completes the missing
+GROMACS continuation argument descriptions. 28 MCP contract regressions passed;
+ten read-only public MCP checks passed against the real scVI App.
+
+Current backend amd64 manifest:
+`sha256:aae7e6f1f7dafe528051d69da07697d62531bc15ea930de4194aaf14c66fcd61`.
+The API/controller/maintenance image changed; scientific tools remain the prior
+`a8fb464f...` release, with training image and execution/scheduling maps unchanged.
+The exact R2 rollback patches are retained privately. Rollback target is R1
+`a8fb464f...`, not the older diagnostic-bug image.
+
+B completed all ten operations, including the four actual million-cell atlas
+jobs (23.17–23.70 minutes accepted to completion), four routine jobs and two MD
+jobs. Every artifact and full-cell output check passed. C overlapped the R2
+rolling release: two MCP status clients failed on transient upstream HTTP 503
+while their GPU jobs continued. One readiness sample reported database timeout.
+**C is not a clean cohort.** Original failures remain retained and no replacement
+GPU job is submitted to hide them.
+
+Canonical client source `b033baeb4361305fdbf756a397382de48c9c3a87` now retries
+safe reads and explicitly idempotent requests unchanged on connection errors
+and HTTP 502/503/504. Retries are bounded (six attempts with 1/2/4/8/10-second
+delays); persistent failure and non-retryable responses remain errors. Twenty-one
+client/transport tests passed. Recovery of the same two C operation IDs includes
+client-local injected 503/disconnect faults, then full artifact validation.
+Clean unchanged-release D/E cohorts follow; results remain pending.
+
+Actual LibreChat MCP operation `3b3e52b6-5c3c-4b1a-bf3c-c27a99c1d7f7` trained
+all 584,944 cells with the requested 20+20 epochs and succeeded at 08:02:03 UTC.
+The chat's initial submission-only turn made an incorrect automatic-local-download
+promise. Skill v2026.10.07.2 explicitly documents that exit 75 ends the local
+helper and recovery is needed for local collection. The final agent retrieval
+test remains pending. Existing conversations and study receipts survived the
+QA image replacement on its dedicated persistent filesystem.
+
 BindCraft is excluded because the customer explicitly deferred it without a
 Rosetta/PyRosetta licence. Standard Evo2 remains their pending choice; hosting
 their fine-tune is explicitly outside this PoC. No academic exception invented.
