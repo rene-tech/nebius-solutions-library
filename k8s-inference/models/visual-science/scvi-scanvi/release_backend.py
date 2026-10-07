@@ -24,6 +24,26 @@ TARGETS = [
 ]
 
 
+def ensure_configmap(kube, path, *, apply=False):
+    desired = json.loads(path.read_text())
+    current = subprocess.check_output([
+        *kube, "get", "configmap", desired["metadata"]["name"],
+        "--ignore-not-found", "-o", "json",
+    ])
+    if current.strip():
+        existing = json.loads(current)
+        if any(existing.get(key, {}) != desired.get(key, {}) for key in ("data", "binaryData")):
+            raise ValueError("Existing digest-named ConfigMap has different bytes; recapture before release")
+        # Older generators can omit immutable=true. Reapplying identical data
+        # with client-side apply would then attempt to unset immutability.
+        return "reused"
+    command = [*kube, "apply", "-f", str(path)]
+    subprocess.run([*command, "--dry-run=server"], check=True)
+    if apply:
+        subprocess.run(command, check=True)
+    return "created" if apply else "validated"
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--context", required=True)
@@ -74,10 +94,7 @@ def main():
         execution_path = args.output / "execution.configmap.json"
         execution_path.write_text(json.dumps(cm, indent=2) + "\n")
         for path in (execution_path, args.activation / "scheduling.configmap.json"):
-            command = [*kube, "apply", "-f", str(path)]
-            subprocess.run([*command, "--dry-run=server"], check=True)
-            if args.apply:
-                subprocess.run(command, check=True)
+            ensure_configmap(kube, path, apply=args.apply)
     changes = []
     for kind, name in TARGETS:
         obj = json.loads(
