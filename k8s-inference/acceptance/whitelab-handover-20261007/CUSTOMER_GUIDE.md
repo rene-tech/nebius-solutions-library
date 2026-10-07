@@ -7,7 +7,7 @@ recorded in [README.md](README.md); this guide is not itself a readiness claim.
 
 | Interface | Address |
 | --- | --- |
-| LibreChat | https://port3080-zvfk1qbfp44r0yr.tunnel.applications.eu-north1.nebius.cloud |
+| LibreChat | https://port3080-qxnvfnk6ancxhd3.tunnel.applications.eu-north1.nebius.cloud |
 | REST API base | `https://89.169.99.188/v1` |
 | Streamable HTTP MCP | `https://89.169.99.188/mcp` |
 | S3 endpoint | `https://storage.eu-north1.nebius.cloud` |
@@ -19,6 +19,8 @@ them into chat messages, source code or command-line arguments. The initial
 LibreChat account is created with the owner-confirmed email; its login and
 user-scoped model/workspace access are verified. Login details are supplied
 privately and public registration remains closed.
+The October 7 catalog fix replaced the old workspace URL. Existing login,
+conversation history, API/S3 keys and bucket contents are unchanged.
 The workspace already has its platform, Token Factory and Tavily integrations
 configured. The same platform key works for REST and MCP (Bearer authentication).
 

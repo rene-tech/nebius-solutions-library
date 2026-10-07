@@ -12,8 +12,8 @@ All **187/187 sampled readiness checks** passed. The actual R5 LibreChat agent
 completed training, same-operation recovery, reference reuse and authenticated
 artifact readback. Tests used internal QA identities, never the customer key.
 
-The customer-managed R5 replacement is running and verified at
-<https://port3080-zvfk1qbfp44r0yr.tunnel.applications.eu-north1.nebius.cloud>.
+The current customer-managed catalog-R2 replacement is running and verified at
+<https://port3080-qxnvfnk6ancxhd3.tunnel.applications.eu-north1.nebius.cloud>.
 It preserves the existing bucket, non-expiring key and persistent application
 state. The owner supplied Artémis's email, and the existing account seeder created
 the ordinary `USER` account without rotating its retained credentials. Public
@@ -24,8 +24,39 @@ Registration stays closed. See [CUSTOMER_GUIDE.md](CUSTOMER_GUIDE.md).
 Current exact release: API/controller/maintenance amd64 `aae7e6f1f7dafe528051d69da07697d62531bc15ea930de4194aaf14c66fcd61`,
 scientific collector/tools `a8fb464f2b383b099b892909f39317a7a5275c90cd88e835248b083c97ed76da`,
 training worker `063877787f8c1c1aef28887242389449b871e1d48c74edc07c267bccee340246`,
-and LibreChat index `92b18aa638f222d1b5b53c61e3c4cad9e11e5e5abc032e856a6a8d69388086fc`
+and LibreChat index `243ba1dc462ea8e9dc72d620509cc09add24df325297d591e7cb5e4b62438eff`
 (all SHA-256). Earlier releases/failures below are retained history.
+
+## Catalog-discovery follow-up
+
+The earlier agent treated keyword-filtered matches as its authorization list:
+14 catalog queries (13 empty) led to only 11 of WhiteLab's 16 Apps being listed.
+The shared workbench separates complete listing from literal search and updates
+core/tutorial instructions and the installed skills. Old cached `query` arguments
+cannot filter `workbench_list_apps`. No grants, keys, limits or serving runtimes
+changed.
+
+Managed upgrade `b765b3d1-692c-4a2f-9184-410b01bec163` deployed endpoint
+`aiendpoint-e00axdvs33j7ycdqt1`, preserving the same user, dedicated state
+filesystem, bucket, starter manifest and all six messages in two conversations.
+HTTPS login, all 16 App grants, updated instructions and refreshed MCP tool
+discovery passed. The R5 predecessor `aiendpoint-e00zzbdhd3hkmaxtnc` remains
+stopped for managed rollback. Both temporary catalog QA endpoints were deleted;
+shared QA storage and the original QA instance were preserved.
+
+The exact image was qualified with 58 focused offline tests and two consecutive
+hosted QA cohorts (12 turns, full final-answer checks, zero scientific App jobs).
+The internal QA key has eight Apps; a 16-App wire fixture and read-only customer
+binding checks cover the WhiteLab catalog separately. This is a discovery fix,
+not a new scientific qualification of every granted model. The later combined
+source merge preserves independent MD work and is not a different deployed image.
+
+See [client release evidence](https://github.com/rene-tech/serverless-ai-cookbook/blob/main/templates/hcls-librechat/docs/catalog-discovery-20261007.md),
+[deployment receipt](catalog-upgrade-evidence.json), and the retained
+[release-map values fragment](workbench-catalog-r2.values.json). The release map
+was added with the existing compare-and-test helper; three API replicas rolled
+successfully and all nine public website/API routing checks passed before and
+afterward. Other customer workspaces were not upgraded.
 
 ## Initial reliability release (R1)
 
