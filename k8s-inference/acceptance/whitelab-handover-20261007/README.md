@@ -131,9 +131,17 @@ MD clients. One MD submission correctly received explicit non-admission; the
 previous MCP client stopped rather than waiting. Canonical source `b2aa0c2b2`
 adds bounded waiting for this narrow rejection, preserving the request/key and
 never treating scientific errors or durable admission as retryable submission.
-29 client tests passed. The rejected MD request is recovered separately with a
-client-local non-admission injection and idempotency replay. **D is not a clean
-cohort**; E/F use the fixed client and remain pending.
+29 client tests passed. The rejected MD request recovered as operation
+`69493c8e-9800-4a63-935d-2327aaf8ce24`, including a client-local non-admission
+injection, unchanged request and verified idempotency replay. Only one actual
+operation was admitted. **D is not a clean cohort**; its original client failure
+is retained. E/F use the fixed client and remain pending.
+
+E/F explicitly publish repeated single-cell QA results to platform artifact
+storage. Earlier cohorts already exercised customer-bucket publication; the
+final actual-agent study still uses the S3-mounted workspace. This avoids filling
+the shared 100 GB QA bucket with duplicate qualification outputs. It does not
+change the customer's 1,000 GB bucket, quotas, or default workflow settings.
 
 Actual LibreChat MCP operation `3b3e52b6-5c3c-4b1a-bf3c-c27a99c1d7f7` trained
 all 584,944 cells with the requested 20+20 epochs and succeeded at 08:02:03 UTC.
@@ -149,8 +157,27 @@ also exposed the AnnData 0.12.3 / SciPy 1.17.1 backed-sparse incompatibility.
 SciPy 1.17 moved the internal indexing method used by that AnnData version;
 see [upstream release notes](https://docs.scipy.org/doc/scipy/release/1.17.0-notes.html).
 The image pins SciPy 1.16.3 and runs real dense/CSR/CSC H5AD backed-read tests.
-R5 fixed-image agent acceptance remains pending. Existing conversations and
-receipts survived replacement on the dedicated persistent filesystem.
+R5 passed the real direct-mounted recovery of operation
+`9aa9398c-59fe-4884-8fc9-f597dbf651f1`: all 584,944 cells, 18 files and
+424,932,923 bytes verified in approximately 30 seconds, without moving the study
+to scratch or creating another model job. The chat named the validation receipt
+under `run/`; the actual helper receipt is at the study root. Use the recorded
+filesystem paths, not an inferred path from prose.
+
+The fresh R5 agent scVI operation `d291df6a-d8a5-48ab-9227-73aa82c4d80a`
+used every cell and gene, seed 44, 20 epochs and the durable MCP interface. It
+succeeded remotely from 08:52:22 to 08:57:11 UTC (289.37 seconds). Collection
+through the same chat passed: all 18 files / 425,195,793 bytes, every cell and
+embedding checked. The four delivered workspace links were independently read
+back through authenticated LibreChat HTTP, including the complete 318.6 MB
+H5AD and 79.1 MB embedding table; their SHA-256 values matched. The new chat's
+validation-receipt link correctly points to the study root. No new training job
+was created during collection. The submission turn accurately distinguished a
+running remote job from downloaded results. Existing conversations and receipts survived image
+replacement on the dedicated persistent filesystem. Actual Token Factory and
+Tavily calls also passed on R5, not just configured-key presence checks.
+
+## Customer choices and storage validation
 
 BindCraft is excluded because the customer explicitly deferred it without a
 Rosetta/PyRosetta licence. Standard Evo2 remains their pending choice; hosting
@@ -166,22 +193,28 @@ initial email address; no public registration or guessed email was configured.
 
 ## Workbench candidate
 
-Source fork `rene-tech/serverless-ai-cookbook`, commits `d9782a9`, `9953c78`.
+Source fork `rene-tech/serverless-ai-cookbook`, commit
+`83c3ce9250526eb579c54f75adb1ed16d9238c2e` (R5).
 Immutable image index:
-`cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:727b9a002f4839811e9dd31b8ec33cda5e17464513f42405b5e0ca1baeacbb59`
-(amd64 manifest `sha256:b7a1c5fa360a6ba0e2dc65949e4bfc8c87560b0885369ce2b0bb2bab53110a04`).
+`cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:92b18aa638f222d1b5b53c61e3c4cad9e11e5e5abc032e856a6a8d69388086fc`
+(amd64 manifest `sha256:4e937c4178c02413d8554722e596faa443f224e17fa03ec81e161603063381f7`).
 
 Preserves the October 7 Nebius branding/persistent-state image; adds the pinned
 canonical single-cell file clients, recoverable workbench wrapper and corrected
-`single-cell-analysis` skill v2026.10.07.1. The old 64 MiB demo path remains
-separate. All 32 wrapper/receipt tests passed, skill checksums verified and image
-dependencies checked using the installed scientific Python environment.
+`single-cell-analysis` skill v2026.10.07.4. The canonical client comes from
+`b2aa0c2b24e3c3e9d258f9980468d4d1945a38ea` in the backend fork. The old 64 MiB
+demo path remains separate. All 33 wrapper/receipt tests passed; 36 bundled skills
+and 78 files passed checksum verification. The image's installed environment
+passed dependency and actual dense/CSR/CSC backed-H5AD checks.
 
-One temporary QA candidate, `aiendpoint-e00w4g4epattkvnnq6`, reuses existing
+One running temporary QA candidate, `aiendpoint-e00n6bxtd138sq8agy`, reuses existing
 system QA API/S3/provider bindings with a distinct study namespace and dedicated
 state filesystem `computefilesystem-e00y8j7zypsqv823st`. It does not replace any
-customer or the existing QA client. Retain evidence/chats and stop this temporary
-candidate at closeout; shared QA storage must not be deleted.
+customer or the existing QA client. R1/R2/R3 predecessors are stopped; R4 was
+built but never provisioned. Retain evidence/chats and stop the temporary
+candidate at closeout; shared QA storage must not be deleted. WhiteLab's own
+managed binding and persistent state already exist on R3 and await the qualified
+R5 upgrade. Lynx and Basel are not changed by this qualification.
 
 ## Evidence and remaining work
 
@@ -190,8 +223,10 @@ Private raw evidence/credentials:
 directory. It contains only explicitly separated customer provisioning receipts
 and QA execution cohorts; hand over selected customer credentials privately.
 
-Remaining: finish B/C result/availability/accounting verification; qualify the
-actual agent flow on the candidate; provision and verify the customer's own
-LibreChat binding once its login email is supplied; prepare the private handover.
+Remaining: finish E/F result/availability/accounting verification; upgrade and
+verify the existing customer binding using
+the managed lifecycle; seed its login once the verified email is supplied; close
+task-only QA resources and prepare the private handover. Do not recreate its
+tenant, user, API key, bucket or persistent filesystem.
 The [single-cell user guide](../../models/visual-science/scvi-scanvi/README.md)
 contains REST/MCP upload, parameters, polling, output and reference-mapping usage.

@@ -35,6 +35,22 @@ study-specific directory such as `/workspace/studies/my-first-integration/`.
 Chat history, account state and application settings use a separate persistent
 filesystem, so an operator image replacement need not reset the account.
 
+For large datasets, upload directly to the bucket with an S3 client, not the chat
+attachment picker. The workspace browser's upload control currently accepts up
+to 512 MiB per file; this is separate from the batch API's 25 GiB artifact limit
+and the bucket's total quota. With the privately supplied S3 credentials set in
+the standard `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` environment variables:
+
+```bash
+aws --endpoint-url https://storage.eu-north1.nebius.cloud \
+  --region eu-north1 s3 cp counts.h5ad \
+  s3://fs2-whitelab-951ca2389f78c7ca/studies/my-study/counts.h5ad
+```
+
+That file appears at `/workspace/studies/my-study/counts.h5ad`. The S3 credential
+pair is different from the platform Bearer key. The provider keys already bound
+to LibreChat do not need to be pasted into a chat.
+
 For a single-cell study, upload an H5AD containing raw, non-negative integer
 counts. Identify their location (`X`, `raw.X`, or a named layer), the batch column,
 and, for scANVI, the annotation column and explicit unlabeled category. Missing

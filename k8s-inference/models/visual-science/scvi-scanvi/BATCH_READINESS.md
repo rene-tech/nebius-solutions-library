@@ -5,6 +5,12 @@ Source starts at `19bfdf2c3`, the verified live shared-backend lineage.
 
 ## Status
 
+The **7 October customer onboarding and LibreChat qualification** is tracked in
+the [WhiteLab handover report](../../../acceptance/whitelab-handover-20261007/README.md).
+That report supersedes the historical statements below about no customer access
+having been created. It records the 1,000 GB bucket, API/MCP grants, client fixes,
+concurrency tests and any remaining handover dependency.
+
 **Deployed and tested for a scoped REST/MCP PoC, 2026-10-06.** See the
 [final acceptance report](../../../acceptance/scvi-whitelab-20261006/README.md)
 and its machine-readable results. Final R6 backend / R7 worker passed:
@@ -21,7 +27,7 @@ and its machine-readable results. Final R6 backend / R7 worker passed:
 
 No arbitrary cell/epoch cap was added. This is execution and resource-fit
 evidence, not biological convergence, a LibreChat qualification, or blanket
-production readiness. No WhiteLab tenant/key was created. Their representative
+production readiness. No WhiteLab tenant/key was created in that October 6 phase. Their representative
 data is helpful for scientific validation but not a platform-testing blocker.
 Temporary test disks/jobs are cleaned after exporting evidence; the live service
 and hosted outputs remain available. The histories below are superseded.
