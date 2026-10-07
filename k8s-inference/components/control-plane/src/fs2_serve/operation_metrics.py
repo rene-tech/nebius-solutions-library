@@ -19,6 +19,7 @@ class CustomerOperationMetric(StrictModel):
     error_class: Literal["none", "cancelled", "expired", "preempted", "retry_exhausted", "upstream", "unknown"]
     operations: int = Field(ge=0)
     recent_operations: int = Field(default=0, ge=0)
+    recent_long_running_failures: int = Field(default=0, ge=0)
 
 
 async def customer_operation_metrics(pool: Any) -> list[CustomerOperationMetric]:
@@ -45,7 +46,13 @@ async def customer_operation_metrics(pool: Any) -> list[CustomerOperationMetric]
                   ELSE 'unknown'
                 END AS error_class,
                 count(*) AS operations,
-                count(*) FILTER (WHERE f.occurred_at >= clock_timestamp()-interval '10 minutes') AS recent_operations
+                count(*) FILTER (WHERE f.occurred_at >= clock_timestamp()-interval '10 minutes') AS recent_operations,
+                count(*) FILTER (
+                    WHERE f.occurred_at >= clock_timestamp()-interval '10 minutes'
+                      AND f.status IN ('failed','expired','preempted')
+                      AND f.protocol='scientific-batch-v1'
+                      AND f.occurred_at-o.started_at >= interval '5 minutes'
+                ) AS recent_long_running_failures
             FROM fs2_usage_facts f LEFT JOIN fs2_operations o ON o.id=f.operation_id
             GROUP BY 1,2,3,4,5,6 ORDER BY 1,2,3,4,5,6 LIMIT 65537"""
         )

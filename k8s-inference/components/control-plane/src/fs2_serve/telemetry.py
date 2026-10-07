@@ -38,6 +38,7 @@ _HISTORICAL_FAMILIES = frozenset(
     {
         "fs2_serve_customer_operations_total",
         "fs2_serve_customer_operations_last_10m",
+        "fs2_serve_customer_long_running_failures_last_10m",
         "fs2_serve_requests_total",
         "fs2_serve_terminal_duration_seconds_total",
         "fs2_serve_estimated_gpu_seconds_total",
@@ -101,6 +102,12 @@ class Metrics:
         self.recent_customer_operations = Gauge(
             "fs2_serve_customer_operations_last_10m",
             "Terminal operations in the last ten minutes; a rolling gauge, not a request counter",
+            ("tenant", "model", "protocol", "outcome", "workload_class", "error_class"),
+            registry=self.registry,
+        )
+        self.recent_long_running_failures = Gauge(
+            "fs2_serve_customer_long_running_failures_last_10m",
+            "Scientific terminal failures in ten minutes after at least five minutes running; excludes retries and cancellation",
             ("tenant", "model", "protocol", "outcome", "workload_class", "error_class"),
             registry=self.registry,
         )
@@ -295,9 +302,13 @@ class Metrics:
             self.recent_customer_operations.labels(
                 row.tenant, row.model, row.protocol, row.outcome, row.workload_class, row.error_class
             ).set(row.recent_operations)
+            self.recent_long_running_failures.labels(
+                row.tenant, row.model, row.protocol, row.outcome, row.workload_class, row.error_class
+            ).set(row.recent_long_running_failures)
         for missing in self._customer_operation_labels - labels:
             self.customer_operations.labels(*missing).set(0)
             self.recent_customer_operations.labels(*missing).set(0)
+            self.recent_long_running_failures.labels(*missing).set(0)
         self._customer_operation_labels = labels
 
     def set_queue(self, counts: dict[tuple[str, str], int]) -> None:

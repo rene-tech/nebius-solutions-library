@@ -104,10 +104,17 @@ def test_auth_rejection_does_not_try_another_service(monkeypatch):
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT"])
-@pytest.mark.parametrize("error_type", [
-    httpx.RemoteProtocolError, httpx.ReadError, httpx.ReadTimeout,
-    httpx.WriteError, httpx.WriteTimeout, httpx.PoolTimeout,
-])
+@pytest.mark.parametrize(
+    "error_type",
+    [
+        httpx.RemoteProtocolError,
+        httpx.ReadError,
+        httpx.ReadTimeout,
+        httpx.WriteError,
+        httpx.WriteTimeout,
+        httpx.PoolTimeout,
+    ],
+)
 def test_upload_transport_retry_is_bounded_and_replays_identical_body(monkeypatch, method, error_type):
     seen, sleeps = [], []
     monkeypatch.setattr(companion.time, "sleep", sleeps.append)
@@ -118,12 +125,18 @@ def test_upload_transport_retry_is_bounded_and_replays_identical_body(monkeypatc
 
     with httpx.Client(transport=httpx.MockTransport(handle)) as transport:
         client = companion.WorkloadArtifactHttpClient(
-            base_url="http://ready.system.svc:8080", capability="test", client=transport,
+            base_url="http://ready.system.svc:8080",
+            capability="test",
+            client=transport,
         )
         kwargs = {"json_body": {"upload_ids": ["stable"]}} if method == "POST" else {"content": b"immutable"}
         with pytest.raises(error_type, match="injected transport failure"):
-            client._upload_request(method, client.base_url + "/internal/scientific-workloads/uploads:finalize",
-                                   headers=client.headers, **kwargs)
+            client._upload_request(
+                method,
+                client.base_url + "/internal/scientific-workloads/uploads:finalize",
+                headers=client.headers,
+                **kwargs,
+            )
     assert len(seen) == companion._ARTIFACT_UPLOAD_MAX_ATTEMPTS
     assert sleeps == [0.5, 1.0, 2.0, 4.0]
     assert all(request.content == seen[0].content for request in seen)

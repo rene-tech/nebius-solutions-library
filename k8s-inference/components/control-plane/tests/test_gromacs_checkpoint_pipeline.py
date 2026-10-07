@@ -22,7 +22,10 @@ from fs2_serve.scientific_batch.native_workflows import workflow_for_collector
 def checkpoint(tmp_path, count=192, *, model="gromacs"):
     client = Artifacts()
     transport = GromacsCheckpointTransport(
-        client, invocation(), tmp_path, workflow=workflow_for_collector(f"{model}-workflow-v1"),
+        client,
+        invocation(),
+        tmp_path,
+        workflow=workflow_for_collector(f"{model}-workflow-v1"),
     )
     transport.data.mkdir()
     for number in range(count):
@@ -90,7 +93,9 @@ def test_two_cohorts_overlap_but_final_commit_is_ordered_and_aliases_share_bytes
     assert progress["active_cohort_phases"] == {}
     assert "platform-pipeline" in progress["phase_seconds"]
     assert set(progress["cohort_phase_seconds"]) == {
-        "platform-begin", "platform-transfer", "platform-finalize",
+        "platform-begin",
+        "platform-transfer",
+        "platform-finalize",
     }
     # Parallel work is explicitly separate from non-overlapping wall phases.
     assert sum(progress["phase_seconds"].values()) <= progress["elapsed_seconds"] + 0.001
@@ -100,7 +105,10 @@ def test_two_cohorts_overlap_but_final_commit_is_ordered_and_aliases_share_bytes
 @pytest.mark.parametrize("failure", [RuntimeError, CancelledError])
 @pytest.mark.parametrize("phase", ["checkpoint", "final-rehome"])
 def test_failure_or_cancellation_drains_peer_cohort_before_return_without_committing(
-    tmp_path, monkeypatch, failure, phase,
+    tmp_path,
+    monkeypatch,
+    failure,
+    phase,
 ):
     transport, client = checkpoint(tmp_path, count=256)
     first_started, second_started, release_peer = threading.Event(), threading.Event(), threading.Event()
@@ -205,10 +213,16 @@ def test_two_http_cohorts_share_eight_put_lanes_and_keep_retry_identity(tmp_path
             with lock:
                 prepared.update((item["upload_id"], item) for item in uploads)
             begun.wait(timeout=5)
-            return httpx.Response(200, json=[{
-                "upload_id": item["upload_id"],
-                "handle": {"method": "PUT", "url": f"https://objects.test/{item['upload_id']}", "headers": {}},
-            } for item in uploads])
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "upload_id": item["upload_id"],
+                        "handle": {"method": "PUT", "url": f"https://objects.test/{item['upload_id']}", "headers": {}},
+                    }
+                    for item in uploads
+                ],
+            )
         if request.method == "PUT":
             identity = request.url.path.removeprefix("/")
             with lock:
@@ -228,12 +242,18 @@ def test_two_http_cohorts_share_eight_put_lanes_and_keep_retry_identity(tmp_path
                     active -= 1
         if request.url.path.endswith("uploads:finalize"):
             identities = json.loads(request.content)["upload_ids"]
-            return httpx.Response(200, json=[{
-                "artifact_id": identity,
-                "sha256": prepared[identity]["sha256"],
-                "size_bytes": prepared[identity]["size_bytes"],
-                "media_type": prepared[identity]["media_type"],
-            } for identity in identities])
+            return httpx.Response(
+                200,
+                json=[
+                    {
+                        "artifact_id": identity,
+                        "sha256": prepared[identity]["sha256"],
+                        "size_bytes": prepared[identity]["size_bytes"],
+                        "media_type": prepared[identity]["media_type"],
+                    }
+                    for identity in identities
+                ],
+            )
         raise AssertionError("unexpected HTTP path")
 
     monkeypatch.setattr("fs2_serve.scientific_batch.companion._ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS", 0)
@@ -245,10 +265,16 @@ def test_two_http_cohorts_share_eight_put_lanes_and_keep_retry_identity(tmp_path
     with httpx.Client(transport=httpx.MockTransport(handler)) as http:
         client = WorkloadArtifactHttpClient(base_url="https://platform.test", capability="test", client=http)
         with ThreadPoolExecutor(max_workers=2) as executor:
-            tasks = [executor.submit(
-                client.upload_files, identity="native", paths=tuple(paths[offset:offset + 64]),
-                media_type="application/octet-stream", compression=None,
-            ) for offset in (0, 64)]
+            tasks = [
+                executor.submit(
+                    client.upload_files,
+                    identity="native",
+                    paths=tuple(paths[offset : offset + 64]),
+                    media_type="application/octet-stream",
+                    compression=None,
+                )
+                for offset in (0, 64)
+            ]
             try:
                 assert eight_entered.wait(5)
                 assert active == maximum == 8
@@ -275,10 +301,16 @@ def test_native_files_recover_when_response_is_lost_after_server_acceptance(tmp_
             for item in uploads:
                 reservations.setdefault(item["upload_id"], item)
                 assert reservations[item["upload_id"]] == item
-            response = httpx.Response(200, json=[{
-                "upload_id": item["upload_id"],
-                "handle": {"method": "PUT", "url": f"https://objects.test/{item['upload_id']}", "headers": {}},
-            } for item in uploads])
+            response = httpx.Response(
+                200,
+                json=[
+                    {
+                        "upload_id": item["upload_id"],
+                        "handle": {"method": "PUT", "url": f"https://objects.test/{item['upload_id']}", "headers": {}},
+                    }
+                    for item in uploads
+                ],
+            )
         elif request.method == "PUT":
             phase = "put"
             identity = request.url.path.removeprefix("/")
@@ -293,10 +325,13 @@ def test_native_files_recover_when_response_is_lost_after_server_acceptance(tmp_
             identities = json.loads(request.content)["upload_ids"]
             for identity in identities:
                 assert identity in objects
-                committed.setdefault(identity, {
-                    "artifact_id": identity,
-                    **{key: reservations[identity][key] for key in ("sha256", "size_bytes", "media_type")},
-                })
+                committed.setdefault(
+                    identity,
+                    {
+                        "artifact_id": identity,
+                        **{key: reservations[identity][key] for key in ("sha256", "size_bytes", "media_type")},
+                    },
+                )
             response = httpx.Response(200, json=[committed[identity] for identity in identities])
         calls[phase].append(request.content)
         if phase == lost_phase and not lost:
@@ -309,8 +344,9 @@ def test_native_files_recover_when_response_is_lost_after_server_acceptance(tmp_
     path.write_bytes(b"closed native checkpoint")
     with httpx.Client(transport=httpx.MockTransport(handle)) as http:
         client = WorkloadArtifactHttpClient(base_url="https://platform.test", capability="test", client=http)
-        refs = client.upload_files(identity="native-checkpoint-67", paths=(path,),
-                                   media_type="application/octet-stream", compression=None)
+        refs = client.upload_files(
+            identity="native-checkpoint-67", paths=(path,), media_type="application/octet-stream", compression=None
+        )
     assert lost and len(reservations) == len(objects) == len(committed) == len(refs) == 1
     assert refs == list(committed.values())
     assert calls[lost_phase] == [calls[lost_phase][0]] * 2
