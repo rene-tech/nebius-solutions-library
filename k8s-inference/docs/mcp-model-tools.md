@@ -20,7 +20,17 @@ The result contains `model_id`, a `contracts` array, and (for serving models)
 `active_runtime`. Each contract has `tool_name`, `protocol`, `input_schema`,
 `examples`, `source_refs` and canonical `model_ref`. Use the returned tool name;
 independent Apps of one model have separate public identities and settings.
-Omitting `protocol` returns the model's available contracts.
+Omitting both `protocol` and `tool_name` returns all authorized contracts,
+including serving and scientific batch when one App exposes both. Use
+`summary_only: true` to discover compact tool names before selecting one exact
+contract. For large single-cell studies, for example:
+
+```json
+{"model_id":"scvi-scanvi","tool_name":"submit_scvi_scanvi"}
+```
+
+The explicit batch protocol is `scientific-batch-v1`. Selecting a batch tool by
+name must not be rejected merely because the App also has a native serving tool.
 Legacy routes may have null runtime metadata; this is unknown information, not
 a claim that their worker is currently Ready.
 

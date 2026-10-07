@@ -142,6 +142,12 @@ CORE_PARAMETER_DESCRIPTIONS = {
     "payload": "Compatibility envelope: inputs from get_model_schema. Prefer the named tool's explicit fields.",
     "request": "Batch run envelope from get_model_schema, with finalized input_manifest and model parameters.",
     "operation_id": "UUID returned by submission. Reuse it for status, result and cancellation; never invent an ID.",
+    "job_id": "Job ID from the source scientific run; required when resuming one of several jobs.",
+    "max_wall_seconds": "New continuation wall-time budget in seconds, up to fourteen days (1209600).",
+    "performance_mode": (
+        "auto applies qualified performance defaults only where explicit execution flags were absent; "
+        "preserve retains the source execution settings. Scientific parameters are not changed."
+    ),
     "artifact_id": "UUID of an authorized finalized input or published result artifact, not a filename or storage URL.",
     "upload_id": "UUID returned by an artifact-upload begin tool, paired with that reservation's operation_id.",
     "idempotency_key": "Reuse the same key when retrying the same submission/upload to avoid duplicate work.",
@@ -840,6 +846,8 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
         principal = _principal()
         principal.require(Scope.CATALOG_READ)
         await runtime.revalidate_routes()
+        serving_response: dict[str, Any] | None = None
+        selection_missed = False
         for model in runtime.registry.allowed_for_principal(principal, surface="mcp"):
             if model.id != model_id:
                 continue
@@ -869,14 +877,18 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
             if tool_name is not None:
                 contracts = [contract for contract in contracts if contract["tool_name"] == tool_name]
                 if not contracts:
-                    raise MCPError(
-                        code=INVALID_PARAMS, message="No matching tool contract for this authorized model/protocol.",
-                    )
-            return {
+                    # A shared App ID can also expose a durable batch tool.
+                    # A serving-route miss must not hide that authorized tool.
+                    selection_missed = True
+                    break
+            serving_response = {
                 "model_id": model.id,
                 "contracts": contracts,
                 "active_runtime": _model_view(model)["active_runtime"],
             }
+            if protocol is not None or tool_name is not None:
+                return serving_response
+            break
         if runtime.scientific_batches is not None and protocol in {None, "scientific-batch-v1"}:
             for discovered in _scientific_tool_profiles(runtime, principal):
                 if discovered.model_id == model_id:
@@ -884,16 +896,19 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                     profile = catalog.get(model_id)
                     contract = scientific_contract_for(profile, catalog=catalog)
                     if tool_name is not None and tool_name != profile.mcp_tool_name:
-                        raise MCPError(
-                            code=INVALID_PARAMS,
-                            message="No matching tool contract for this authorized model/protocol.",
-                        )
+                        selection_missed = True
+                        break
                     response: dict[str, Any] = {
                         "model_id": model_id,
                         "contracts": [contract_view(
                             contract, profile.mcp_tool_name, scientific=True, summary_only=summary_only,
                         )],
                     }
+                    if serving_response is not None:
+                        response = {
+                            **serving_response,
+                            "contracts": serving_response["contracts"] + response["contracts"],
+                        }
                     if summary_only:
                         return response
                     response["artifact_manifest_schema"] = catalog.artifact_manifest_schema()
@@ -903,6 +918,12 @@ def build_mcp_server(runtime: AppRuntime) -> MCPServer:
                     if input_contract is not None:
                         response["input_artifact_contract"] = input_contract
                     return response
+        if serving_response is not None:
+            return serving_response
+        if selection_missed:
+            raise MCPError(
+                code=INVALID_PARAMS, message="No matching tool contract for this authorized model/protocol.",
+            )
         raise MCPError(code=INVALID_PARAMS, message="model or protocol is outside token policy")
 
     async def invoke_model(
