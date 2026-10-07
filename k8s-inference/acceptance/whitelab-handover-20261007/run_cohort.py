@@ -37,6 +37,8 @@ def main():
     p.add_argument("--context", required=True)
     p.add_argument("--cohort", required=True)
     p.add_argument("--atlas-jobs", type=int, choices=(0, 4), default=0)
+    p.add_argument("--scvi-output-destination", choices=("customer-bucket", "platform-artifacts"),
+                   help="Choose publication storage explicitly; omitted preserves the finalized fixture")
     p.add_argument("--origin", default="https://89.169.99.188")
     args = p.parse_args()
     os.umask(0o077)
@@ -65,6 +67,8 @@ def main():
         parameters["output_prefix"] = f"runs/whitelab-final-20261007/{name}"
         if model == "scvi-scanvi":
             parameters.update(max_epochs=None, scanvi_max_epochs=20, seed=42 + index, visualization="none")
+            if args.scvi_output_destination:
+                parameters['output_destination'] = args.scvi_output_destination
         # Preserve the MD fixture's scientifically tested 10k-step protocol.
         # Cohort A's arbitrary 100k extension hit a native excluded-pair cutoff
         # error in its free-energy system. Retain that failed evidence; do not
