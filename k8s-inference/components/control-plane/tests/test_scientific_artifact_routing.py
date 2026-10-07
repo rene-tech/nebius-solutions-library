@@ -29,7 +29,7 @@ def test_fallback_setting_rejects_non_service_origins(url):
 
 
 @pytest.mark.parametrize("method", ["GET", "POST"])
-@pytest.mark.parametrize("failure", ["connect", "503"])
+@pytest.mark.parametrize("failure", ["connect", "503", "dropped-response"])
 def test_transient_internal_call_uses_fallback_within_existing_budget(monkeypatch, method, failure):
     seen = []
     monkeypatch.setattr(companion.time, "sleep", lambda _: None)
@@ -39,6 +39,8 @@ def test_transient_internal_call_uses_fallback_within_existing_budget(monkeypatc
         if len(seen) == 1:
             if failure == "connect":
                 raise httpx.ConnectError("not ready", request=request)
+            if failure == "dropped-response":
+                raise httpx.RemoteProtocolError("response lost", request=request)
             return httpx.Response(503)
         return httpx.Response(200, json={"ok": True})
 
@@ -99,3 +101,29 @@ def test_auth_rejection_does_not_try_another_service(monkeypatch):
                 read=lambda response: response,
             )
     assert len(seen) == 1
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT"])
+@pytest.mark.parametrize("error_type", [
+    httpx.RemoteProtocolError, httpx.ReadError, httpx.ReadTimeout,
+    httpx.WriteError, httpx.WriteTimeout, httpx.PoolTimeout,
+])
+def test_upload_transport_retry_is_bounded_and_replays_identical_body(monkeypatch, method, error_type):
+    seen, sleeps = [], []
+    monkeypatch.setattr(companion.time, "sleep", sleeps.append)
+
+    def handle(request):
+        seen.append(request)
+        raise error_type("injected transport failure", request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handle)) as transport:
+        client = companion.WorkloadArtifactHttpClient(
+            base_url="http://ready.system.svc:8080", capability="test", client=transport,
+        )
+        kwargs = {"json_body": {"upload_ids": ["stable"]}} if method == "POST" else {"content": b"immutable"}
+        with pytest.raises(error_type, match="injected transport failure"):
+            client._upload_request(method, client.base_url + "/internal/scientific-workloads/uploads:finalize",
+                                   headers=client.headers, **kwargs)
+    assert len(seen) == companion._ARTIFACT_UPLOAD_MAX_ATTEMPTS
+    assert sleeps == [0.5, 1.0, 2.0, 4.0]
+    assert all(request.content == seen[0].content for request in seen)

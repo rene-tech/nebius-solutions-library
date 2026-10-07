@@ -258,3 +258,60 @@ def test_two_http_cohorts_share_eight_put_lanes_and_keep_retry_identity(tmp_path
     assert [len(group) for group in results] == [64, 64]
     assert active == 0 and maximum == 8 and len(attempts) == 128
     assert sum(attempts.values()) == 129 and sorted(attempts.values())[-1] == 2
+
+
+@pytest.mark.parametrize("lost_phase", ["begin", "put", "finalize"])
+def test_native_files_recover_when_response_is_lost_after_server_acceptance(tmp_path, monkeypatch, lost_phase):
+    """Replay accepted writes; especially the batched finalize that stopped Lynx."""
+    reservations, objects, committed = {}, {}, {}
+    calls = {"begin": [], "put": [], "finalize": []}
+    lost = False
+
+    def handle(request):
+        nonlocal lost
+        if request.url.path.endswith("uploads:batch"):
+            phase = "begin"
+            uploads = json.loads(request.content)["uploads"]
+            for item in uploads:
+                reservations.setdefault(item["upload_id"], item)
+                assert reservations[item["upload_id"]] == item
+            response = httpx.Response(200, json=[{
+                "upload_id": item["upload_id"],
+                "handle": {"method": "PUT", "url": f"https://objects.test/{item['upload_id']}", "headers": {}},
+            } for item in uploads])
+        elif request.method == "PUT":
+            phase = "put"
+            identity = request.url.path.removeprefix("/")
+            content = request.read()
+            assert hashlib.sha256(content).hexdigest() == reservations[identity]["sha256"]
+            objects.setdefault(identity, content)
+            assert objects[identity] == content
+            response = httpx.Response(200)
+        else:
+            phase = "finalize"
+            assert request.url.path.endswith("uploads:finalize")
+            identities = json.loads(request.content)["upload_ids"]
+            for identity in identities:
+                assert identity in objects
+                committed.setdefault(identity, {
+                    "artifact_id": identity,
+                    **{key: reservations[identity][key] for key in ("sha256", "size_bytes", "media_type")},
+                })
+            response = httpx.Response(200, json=[committed[identity] for identity in identities])
+        calls[phase].append(request.content)
+        if phase == lost_phase and not lost:
+            lost = True
+            raise httpx.RemoteProtocolError("Server disconnected without sending a response", request=request)
+        return response
+
+    monkeypatch.setattr("fs2_serve.scientific_batch.companion._ARTIFACT_UPLOAD_BASE_BACKOFF_SECONDS", 0)
+    path = tmp_path / "production.cpt"
+    path.write_bytes(b"closed native checkpoint")
+    with httpx.Client(transport=httpx.MockTransport(handle)) as http:
+        client = WorkloadArtifactHttpClient(base_url="https://platform.test", capability="test", client=http)
+        refs = client.upload_files(identity="native-checkpoint-67", paths=(path,),
+                                   media_type="application/octet-stream", compression=None)
+    assert lost and len(reservations) == len(objects) == len(committed) == len(refs) == 1
+    assert refs == list(committed.values())
+    assert calls[lost_phase] == [calls[lost_phase][0]] * 2
+    assert all(len(requests) == (2 if phase == lost_phase else 1) for phase, requests in calls.items())

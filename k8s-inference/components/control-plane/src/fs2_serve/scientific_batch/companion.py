@@ -796,7 +796,8 @@ class WorkloadArtifactHttpClient:
         The caller supplies a deterministic upload identity for both lifecycle
         POSTs and the PUT always repeats the same complete, content-addressed
         byte string.  Retrying those operations is therefore safe when a
-        gateway address is briefly unavailable or returns 429/5xx.  Every
+        gateway address is briefly unavailable, drops a response (including
+        after accepting a finalize), or returns 429/5xx. Every
         other response, including auth, stale-capability and digest errors,
         remains fail-fast. Expired signed PUT handles may be reauthorized for
         exactly the same upload identity, using the same data retry budget.
@@ -820,7 +821,7 @@ class WorkloadArtifactHttpClient:
                 if not retry or attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
                     response.raise_for_status()
                     return response
-            except (httpx.ConnectError, httpx.ConnectTimeout):
+            except httpx.TransportError:
                 if attempt + 1 == _ARTIFACT_UPLOAD_MAX_ATTEMPTS:
                     raise
                 retry = True
