@@ -233,6 +233,16 @@ variable "alertmanager" {
   type = object({
     enabled   = optional(bool, false)
     retention = optional(string, "120h")
+    email = optional(object({
+      enabled         = optional(bool, false)
+      to              = optional(string, "")
+      from            = optional(string, "")
+      smarthost       = optional(string, "smtp.resend.com:587")
+      username        = optional(string, "resend")
+      password_secret = optional(string, "fs2-important-alert-mail")
+      password_key    = optional(string, "smtp-password")
+      admin_url       = optional(string, "")
+    }), {})
     storage = optional(object({
       storage_class_name = optional(string, "compute-csi-default-sc")
       size_gib           = optional(number, 10)

@@ -1,0 +1,42 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: AlertmanagerConfig
+metadata:
+  name: fs2-important-alerts
+spec:
+  route:
+    receiver: operator-email
+    groupBy: [alertname, tenant, model]
+    groupWait: 1m
+    groupInterval: 10m
+    repeatInterval: {{ .Values.repeatInterval }}
+    matchers:
+      - name: fs2_notification
+        matchType: "="
+        value: important
+  receivers:
+    - name: operator-email
+      emailConfigs:
+        - to: {{ required "email.to is required" .Values.email.to | quote }}
+          from: {{ required "email.from is required" .Values.email.from | quote }}
+          smarthost: {{ .Values.email.smarthost | quote }}
+          authUsername: {{ .Values.email.username | quote }}
+          authPassword:
+            name: {{ .Values.email.passwordSecret }}
+            key: {{ .Values.email.passwordKey }}
+          requireTLS: true
+          sendResolved: false
+          headers:
+            - key: Subject
+              value: '[Scientific AI] {{ "{{ .CommonLabels.alertname }}" }}'
+          text: |
+            Important Scientific AI operator notification.
+            {{ "{{ range .Alerts.Firing }}" }}
+            {{ "{{ .Annotations.summary }}" }}
+            {{ "{{ .Annotations.description }}" }}
+            Model: {{ "{{ .Labels.model }}" }} | tenant: {{ "{{ .Labels.tenant }}" }}
+            Started: {{ "{{ .StartsAt }}" }}
+            {{ "{{ end }}" }}
+            Admin: {{ .Values.adminUrl }}
+            Notifications are grouped. Retries, cancellations, internal QA,
+            ordinary capacity waiting and admission validation errors do not
+            trigger the interrupted-job rule.

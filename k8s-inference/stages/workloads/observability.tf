@@ -195,6 +195,7 @@ resource "helm_release" "dcgm_exporter" {
   # b1206338d5c446126e233f93df80f0538c285ce40b2e72e6c2f46c9db59ef223
   values = [
     file("${path.module}/values/dcgm-exporter.yaml"),
+    file("${path.module}/values/dcgm-portable-metrics.yaml"),
     yamlencode({
       imagePullSecrets = [{ name = kubernetes_secret_v1.dcgm_exporter_nvcrio[0].metadata[0].name }]
       arguments        = local.dcgm_cadence_profile.helmValues.arguments

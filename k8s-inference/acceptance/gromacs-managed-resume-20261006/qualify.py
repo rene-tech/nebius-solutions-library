@@ -15,17 +15,33 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx2
+from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent / "lynx-demo-resume-20261005"))
-from run_demo_resume import save  # noqa: E402
-from validate_resume import delivery_gate, preserved_history, restart_step, topology_equivalence  # noqa: E402
+from run_demo_resume import save
+from validate_resume import (
+    delivery_gate,
+    preserved_history,
+    restart_step,
+    topology_equivalence,
+)
 
 
 async def run(args):
-    values = dict(line.split("=", 1) for line in args.qa_env.read_text().splitlines() if "=" in line)
-    credential = values["SCIENTIFIC_MODELS_API_KEY"]
-    spec = importlib.util.spec_from_file_location("artifact_client", args.artifact_client)
+    if args.qa_env.suffix == ".json":
+        credential = json.loads(args.qa_env.read_text())["secret"]
+    else:
+        values = dict(
+            line.split("=", 1)
+            for line in args.qa_env.read_text().splitlines()
+            if "=" in line
+        )
+        credential = values["SCIENTIFIC_MODELS_API_KEY"]
+    spec = importlib.util.spec_from_file_location(
+        "artifact_client", args.artifact_client
+    )
     helper = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(helper)
     fixture = json.loads((args.fixture / "fixture.json").read_text())
@@ -46,15 +62,52 @@ async def run(args):
             return response.json()
 
         async def post(path, body, key):
-            response = await client.post(path, json=body, headers={"Idempotency-Key": key})
+            if args.resume_protocol == "mcp" and path.endswith(":resume"):
+                async with (
+                    httpx2.AsyncClient(
+                        timeout=120,
+                        trust_env=False,
+                        headers={"Authorization": "Bearer " + credential},
+                    ) as wire,
+                    Client(
+                        streamable_http_client(
+                            "https://89.169.99.188/mcp", http_client=wire
+                        )
+                    ) as mcp,
+                ):
+                    tool = next(
+                        t
+                        for t in (await mcp.list_tools()).tools
+                        if t.name == "resume_gromacs_workflow"
+                    )
+                    save(
+                        args.output / "resume-tool.json",
+                        tool.model_dump(mode="json", by_alias=True),
+                    )
+                    return await helper.call(
+                        mcp,
+                        tool.name,
+                        {
+                            "operation_id": path.split("/")[-1].removesuffix(":resume"),
+                            "idempotency_key": key,
+                        },
+                    )
+            response = await client.post(
+                path, json=body, headers={"Idempotency-Key": key}
+            )
             if response.status_code != 202:
-                save(args.output / "last-api-error.json", {"status": response.status_code, "body": response.json()})
+                save(
+                    args.output / "last-api-error.json",
+                    {"status": response.status_code, "body": response.json()},
+                )
             response.raise_for_status()
             return response.json()
 
         policy = await get("/v1/me")
         if (policy["tenant_id"], policy["principal_id"]) != ("system", "qa"):
-            raise ValueError("Only the existing system/qa identity may run internal acceptance")
+            raise ValueError(
+                "Only the existing system/qa identity may run internal acceptance"
+            )
         save(args.output / "caller-policy.json", policy)
 
         async def checkpoint(operation, label):
@@ -84,7 +137,10 @@ async def run(args):
                         flush=True,
                     )
                     previous = now
-                if now in {"succeeded", "failed", "cancelled"} and status["batch"]["result_published"]:
+                if (
+                    now in {"succeeded", "failed", "cancelled"}
+                    and status["batch"]["result_published"]
+                ):
                     return status
                 await asyncio.sleep(10)
             raise TimeoutError("Retain the operation; do not duplicate work")
@@ -117,7 +173,11 @@ async def run(args):
                 "schema": "fs2-serve.nebius.ai/scientific-artifact-manifest/v1",
                 "manifest_id": identity,
                 "entries": [
-                    {"name": "gromacs-inputs", "semantic_type": "gromacs-input-bundle/v1", "artifact": artifact}
+                    {
+                        "name": "gromacs-inputs",
+                        "semantic_type": "gromacs-input-bundle/v1",
+                        "artifact": artifact,
+                    }
                 ],
             }
             pointer = await helper.upload(
@@ -136,7 +196,9 @@ async def run(args):
                 "parameters": request,
             }
             save(args.output / "bootstrap-request.json", body)
-            admitted = await post("/v1/models/gromacs:submit", body, identity + "-bootstrap")
+            admitted = await post(
+                "/v1/models/gromacs:submit", body, identity + "-bootstrap"
+            )
             state["source_operation"] = admitted["operation"]["id"]
             save(state_path, state)
             save(args.output / "bootstrap-admission.json", admitted)
@@ -150,20 +212,46 @@ async def run(args):
         ):
             raise ValueError("Expected bounded bootstrap budget stop was not observed")
         source = await checkpoint(state["source_operation"], "source")
-        saved = max(row.get("checkpoint_step") or 0 for row in source["state"]["commands"])
+        saved = max(
+            row.get("checkpoint_step") or 0 for row in source["state"]["commands"]
+        )
         indexed = {row["path"]: row for row in source["files"]}
-        comparison = next(row for row in source["state"]["commands"] if row["step_id"] == "verify-tpr")
-        await helper.download(client, indexed[comparison["log"]]["artifact"], args.output / "tpr-comparison.log")
-        topology_equivalence((args.output / "tpr-comparison.log").read_text(), fixture["target_step"])
-        admitted = await post(f"/v1/operations/{state['source_operation']}:resume", {}, identity + "-resume")
+        comparison = next(
+            row for row in source["state"]["commands"] if row["step_id"] == "verify-tpr"
+        )
+        await helper.download(
+            client,
+            indexed[comparison["log"]]["artifact"],
+            args.output / "tpr-comparison.log",
+        )
+        topology_equivalence(
+            (args.output / "tpr-comparison.log").read_text(), fixture["target_step"]
+        )
+        admitted = await post(
+            f"/v1/operations/{state['source_operation']}:resume",
+            {},
+            identity + "-resume",
+        )
         adjustments = admitted["continuation"]["adjustments"]
-        if adjustments["profile_id"] != "single-gpu-list200-v1" or len(adjustments["analysis_selectors"]) != 2:
-            raise ValueError("Plain resume failed to apply the qualified defaults and both analysis fixes")
+        if (
+            adjustments["profile_id"] != "single-gpu-list200-v1"
+            or len(adjustments["analysis_selectors"]) != 2
+        ):
+            raise ValueError(
+                "Plain resume failed to apply the qualified defaults and both analysis fixes"
+            )
         state["resume_operation"] = admitted["operation"]["id"]
         save(state_path, state)
         save(args.output / "resume-admission.json", admitted)
-        replay = await post(f"/v1/operations/{state['source_operation']}:resume", {}, identity + "-resume")
-        if replay["operation"]["id"] != state["resume_operation"] or not replay["operation"]["reused"]:
+        replay = await post(
+            f"/v1/operations/{state['source_operation']}:resume",
+            {},
+            identity + "-resume",
+        )
+        if (
+            replay["operation"]["id"] != state["resume_operation"]
+            or not replay["operation"]["reused"]
+        ):
             raise ValueError("Idempotent replay duplicated work")
         save(args.output / "resume-replay.json", replay)
         final_status = await poll(state["resume_operation"], "resumed")
@@ -176,14 +264,29 @@ async def run(args):
 
         async def verify(row):
             async with semaphore:
-                await helper.download(client, row["artifact"], args.output / "verified-files" / row["path"])
+                await helper.download(
+                    client,
+                    row["artifact"],
+                    args.output / "verified-files" / row["path"],
+                )
 
         await asyncio.gather(*(verify(row) for row in final["files"]))
-        native = [row for row in final["state"]["commands"] if "mdrun" in row["command"]]
+        native = [
+            row for row in final["state"]["commands"] if "mdrun" in row["command"]
+        ]
         log = (args.output / "verified-files" / native[0]["log"]).read_text()
-        if restart_step(log) != saved or "-bonded gpu" not in log or "-nstlist 200" not in log:
-            raise ValueError("Native execution differs from the selected checkpoint or tuning")
+        if (
+            restart_step(log) != saved
+            or "-bonded gpu" not in log
+            or "-nstlist 200" not in log
+        ):
+            raise ValueError(
+                "Native execution differs from the selected checkpoint or tuning"
+            )
         bounded = copy.deepcopy(fixture)
+        # This bounded cohort gates functional recovery and artifact integrity.
+        # Report measured throughput without claiming a 200 ns/day performance
+        # gate; the separate customer observation explicitly enforces that rate.
         bounded.update(minimum_native_seconds=0, minimum_delivered_ns_per_day=0)
         gate = delivery_gate(bounded, saved, final_status, final)
         receipt = {
@@ -193,7 +296,9 @@ async def run(args):
             "verified_files": len(final["files"]),
             "history_files": preserved_history(fixture, final),
             "customer_key_used": False,
-            "scope": "two-ns API resume; not a new six-hour soak",
+            "resume_protocol": args.resume_protocol,
+            "performance_gate": "measurement_only",
+            "scope": f"two-ns {args.resume_protocol.upper()} resume; not a new six-hour soak",
         }
         save(args.output / "receipt.json", receipt)
         print(json.dumps(receipt), flush=True)
@@ -203,6 +308,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=["bootstrap", "qualify"])
     parser.add_argument("--cohort", required=True)
+    parser.add_argument("--resume-protocol", choices=("rest", "mcp"), default="rest")
     for name in ("qa-env", "fixture", "artifact-client", "output"):
         parser.add_argument("--" + name, type=Path, required=True)
     os.umask(0o077)

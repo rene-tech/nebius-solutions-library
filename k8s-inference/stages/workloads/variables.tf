@@ -356,6 +356,7 @@ variable "scientific_batch" {
     enabled        = optional(bool, false)
     writes_enabled = optional(bool, false)
     namespace      = optional(string, "fs2-models")
+    tools_image    = optional(string, "")
     runtime_cache = optional(object({
       enabled            = optional(bool, false)
       storage_class_name = optional(string, "csi-mounted-fs-path-sc")
@@ -382,6 +383,11 @@ variable "scientific_batch" {
     token_expiration_seconds = optional(number, 600)
   })
   default = {}
+
+  validation {
+    condition     = var.scientific_batch.tools_image == "" || can(regex("^[^\\s@]+@sha256:[a-f0-9]{64}$", var.scientific_batch.tools_image))
+    error_message = "scientific_batch.tools_image must be empty or an immutable OCI image digest."
+  }
 
   validation {
     condition = (

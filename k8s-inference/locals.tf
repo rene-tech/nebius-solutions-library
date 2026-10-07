@@ -1182,6 +1182,7 @@ locals {
       enabled                  = var.deployment.scientific_batch.enabled
       writes_enabled           = var.deployment.scientific_batch.writes_enabled
       namespace                = var.deployment.scientific_batch.namespace
+      tools_image              = var.deployment.scientific_batch.tools_image
       runtime_cache            = var.deployment.scientific_batch.runtime_cache
       execution_map            = local.scientific_execution_map
       gpu_snapshots            = local.normalized_snapshot_settings.scientific

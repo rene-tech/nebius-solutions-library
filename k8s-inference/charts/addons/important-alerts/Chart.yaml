@@ -1,0 +1,5 @@
+apiVersion: v2
+name: fs2-important-alerts
+description: Low-volume operator email for interrupted customer work and sustained outages
+type: application
+version: 0.1.0
