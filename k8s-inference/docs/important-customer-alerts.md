@@ -73,11 +73,13 @@ Check all three layers: the four rules are **loaded and healthy** in Prometheus,
 Alertmanager has the important-only route, and the SMTP provider accepts a
 clearly labelled test email. Unit rule evaluation alone proves none of delivery.
 
-October 7: one labelled delivery-proof notification increased the email-send
-counter from 15 to 16 with zero email-send failures. The first 15 notifications
-were pre-existing website traffic. The send-only Resend credential cannot read
-message delivery events; SMTP acceptance is verified, recipient inbox receipt
-is not independently asserted. No recurring synthetic test is installed.
+October 7: the labelled delivery-proof check observed the email-send counter
+increase from 15 to 16 with zero email-send failures. It later read 17. This is
+a shared counter across email receivers, not a per-recipient delivery receipt
+or proof of an exact number of test messages. The earlier timestamped probe and
+the final proof alert are both inactive; no recurring synthetic test is installed.
+The send-only Resend credential cannot read message delivery events. SMTP
+acceptance is verified, recipient inbox receipt is not independently asserted.
 
 The operation window is ten minutes; this does not retroactively notify about
 old failures predating deployment. Readiness checks do not detect every silent

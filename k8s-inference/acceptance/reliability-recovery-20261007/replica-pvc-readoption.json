@@ -1,0 +1,8 @@
+[
+  {"op":"test","path":"/metadata/uid","value":"5260b916-fee8-400e-9844-18d192323b5e"},
+  {"op":"test","path":"/metadata/resourceVersion","value":"124624529"},
+  {"op":"test","path":"/metadata/annotations/cnpg.io~1pvcStatus","value":"detached"},
+  {"op":"add","path":"/metadata/ownerReferences","value":[
+    {"apiVersion":"postgresql.cnpg.io/v1","controller":true,"kind":"Cluster","name":"fs2-control-db","uid":"7d71874f-c425-44f9-bcbd-46640917afcf"}
+  ]}
+]

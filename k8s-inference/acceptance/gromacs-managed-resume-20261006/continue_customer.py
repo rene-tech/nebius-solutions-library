@@ -34,6 +34,32 @@ def released(status):
     return bool(attempts) and all(attempt["resource_released"] for attempt in attempts)
 
 
+def verify_tuning(adjustments, checkpoint):
+    if adjustments["profile_id"] == "single-gpu-list200-v1":
+        return
+    # A second resume already contains the previously applied defaults. The
+    # server correctly preserves explicit settings rather than adding them again.
+    if adjustments["performance_reason"] != "explicit_customer_execution_settings":
+        raise ValueError("Qualified tuning was neither applied nor preserved")
+    native = [
+        row for row in checkpoint["state"]["commands"] if "mdrun" in row["command"]
+    ]
+    if not native:
+        raise ValueError("No native evidence for preserved tuning")
+    command = native[-1]["command"]
+    expected = {
+        "-nb": "gpu",
+        "-bonded": "gpu",
+        "-pme": "auto",
+        "-update": "auto",
+        "-pin": "auto",
+        "-nstlist": "200",
+    }
+    for flag, setting in expected.items():
+        if flag not in command or command[command.index(flag) + 1] != setting:
+            raise ValueError("Preserved native tuning is not the qualified profile")
+
+
 async def run(args):
     if args.action != "inspect" and not args.owner_authorized:
         raise ValueError(
@@ -183,11 +209,6 @@ async def run(args):
                     / ("resume-replay.json" if iteration else "resume-admission.json"),
                     admitted,
                 )
-                if (
-                    admitted["continuation"]["adjustments"]["profile_id"]
-                    != "single-gpu-list200-v1"
-                ):
-                    raise ValueError("Qualified performance defaults were not applied")
                 if iteration and (
                     admitted["operation"]["id"] != state["resume_operation"]
                     or not admitted["operation"]["reused"]
@@ -198,6 +219,7 @@ async def run(args):
                     "checkpoint_step"
                 ]
                 save(state_path, state)
+                verify_tuning(admitted["continuation"]["adjustments"], before)
             print(json.dumps(state), flush=True)
         else:
             operation = state["resume_operation"]

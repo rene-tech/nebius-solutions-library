@@ -1,0 +1,113 @@
+{
+  "recorded_at": "2026-10-07T14:12:19.553230+00:00",
+  "cohorts": {
+    "cohort-a": {
+      "source_operation": "1d8736d7-d814-4560-9f6c-c9143a752610",
+      "resume_operation": "8eab500d-758b-4de6-a556-1bfb263b2f5e",
+      "resumed_from_step": 14027280,
+      "checkpoint_step": 14963440,
+      "newly_completed_ns": 1.87232,
+      "native_elapsed_seconds": 740.9429857769283,
+      "accepted_to_durable_seconds": 792.222405,
+      "delivered_ns_per_day": 204.1957498033649,
+      "native_useful_ns_per_day": 218.32779458783185,
+      "native_segments": 3,
+      "zero_exit_segments": 3,
+      "verified_files": 335,
+      "history_files": 305,
+      "customer_key_used": false,
+      "status": "passed",
+      "resume_protocol": "rest",
+      "throughput_is_measurement_not_threshold_gate": true,
+      "final_release_unchanged": false,
+      "bucket_verification": {
+        "status": "passed",
+        "files": 335,
+        "unique_objects": 291,
+        "unique_bytes": 118534520,
+        "sha256_checked": true,
+        "manifest_sha256": "4fffb2054c01427d5e6277df0feba0f147751b64066e52cb86f45901db758c31"
+      }
+    },
+    "cohort-b": {
+      "source_operation": "29e443a6-681d-4262-8a84-36ebc24b1099",
+      "resume_operation": "88a448b6-6249-4563-aa28-f31e15c10f68",
+      "resumed_from_step": 14031760,
+      "checkpoint_step": 14963440,
+      "newly_completed_ns": 1.8633600000000001,
+      "native_elapsed_seconds": 754.9757751330035,
+      "accepted_to_durable_seconds": 805.759366,
+      "delivered_ns_per_day": 199.80444633143736,
+      "native_useful_ns_per_day": 213.24433088152765,
+      "native_segments": 3,
+      "zero_exit_segments": 3,
+      "verified_files": 335,
+      "history_files": 305,
+      "resume_protocol": "mcp",
+      "customer_key_used": false,
+      "status": "passed",
+      "throughput_is_measurement_not_threshold_gate": true,
+      "final_release_unchanged": true,
+      "bucket_verification": {
+        "status": "passed",
+        "files": 335,
+        "unique_objects": 291,
+        "unique_bytes": 118532904,
+        "sha256_checked": true,
+        "manifest_sha256": "38e39d87f9bf6a10196e95a7f852556f0e4b2b791847b75d1ebbe5780d8adea2"
+      }
+    },
+    "cohort-c": {
+      "source_operation": "2c210b5e-0e81-4c00-bab0-6689e957800f",
+      "resume_operation": "78e9b9a3-df40-4314-a553-08d8c19e9739",
+      "resumed_from_step": 14026480,
+      "checkpoint_step": 14963440,
+      "newly_completed_ns": 1.87392,
+      "native_elapsed_seconds": 737.9616178629221,
+      "accepted_to_durable_seconds": 789.842689,
+      "delivered_ns_per_day": 204.98599310324187,
+      "native_useful_ns_per_day": 219.397166574691,
+      "native_segments": 3,
+      "zero_exit_segments": 3,
+      "verified_files": 335,
+      "history_files": 305,
+      "resume_protocol": "rest",
+      "customer_key_used": false,
+      "status": "passed",
+      "throughput_is_measurement_not_threshold_gate": true,
+      "final_release_unchanged": true,
+      "bucket_verification": {
+        "status": "passed",
+        "files": 335,
+        "unique_objects": 291,
+        "unique_bytes": 118532987,
+        "sha256_checked": true,
+        "manifest_sha256": "b6303fe67ae10798e34740d2ecf072a0c4679b580d89313a2a79a9386d6b9394"
+      }
+    }
+  },
+  "customer_recovery": {
+    "at": "2026-10-07T14:07:24.524190+00:00",
+    "operation": "07f87c97-5a40-4bfe-b6c3-3edd76fa270c",
+    "status": "running",
+    "generation": 3,
+    "checkpoint_step": 78048800,
+    "native_ns_per_day": [
+      218.359,
+      213.73,
+      216.643
+    ],
+    "native_segments": 3,
+    "zero_exit_segments": 3,
+    "resume_from_step": 76933000,
+    "new_ns": 2.2316,
+    "accepted_to_checkpoint_seconds": 957.117119,
+    "delivered_ns_per_day": 201.44895141092968,
+    "verified_native_start_step": 76933000,
+    "original_scientific_files_retained": 979,
+    "native_performance_flags_verified": true,
+    "customer_job_left_running": true,
+    "minimum_delivered_ns_per_day": 200.0,
+    "performance_gate": "passed"
+  }
+}

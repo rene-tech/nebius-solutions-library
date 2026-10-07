@@ -25,6 +25,14 @@ could not recreate that historical WAL.
    was suspended while that volume detached. Then the same Job was resumed.
 5. The filesystem grew to about 197 GiB and the replica restarted its base backup.
    No WAL/rewind error was hidden and no forced primary failover was performed.
+6. Base backup completed at 13:54:21 UTC. The retained PVC was still deliberately
+   detached by `destroy --keep-pvc`, so the operator could not see it in its
+   owner-indexed PVC list and kept adopting the already-completed join Job.
+   After checking the completed Job and the original ownership record, restored
+   **only the original Cluster ownerReference** with UID/resource-version guards
+   (`replica-pvc-readoption.json`). This lets the operator mark the PVC ready and
+   create the replica normally; no manual Ready condition, data rewrite, primary
+   restart or repeat base backup is needed.
 
 PVC `fs2-control-db-2` kept UID `5260b916-fee8-400e-9844-18d192323b5e` and PV
 `pvc-5260b916-fee8-400e-9844-18d192323b5e` (Nebius disk
@@ -52,5 +60,8 @@ outside this narrowly authorized incident repair.
 Official procedure references:
 [CloudNativePG troubleshooting](https://github.com/cloudnative-pg/cloudnative-pg/blob/main/docs/src/troubleshooting.md)
 and [plugin instance management](https://github.com/cloudnative-pg/cloudnative-pg/blob/main/docs/src/kubectl-plugin.md).
+The exact 1.30.0 [PVC completion handler](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.0/pkg/reconciler/persistentvolumeclaim/status.go)
+and [owner-indexed reconciliation](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.0/internal/controller/cluster_controller.go)
+explain why re-adoption is needed after retaining the old PVC.
 Protected before-state and plugin evidence are under
 `/home/tux/secure-handoff/fs2-reliability-recovery-20261007/database/`.

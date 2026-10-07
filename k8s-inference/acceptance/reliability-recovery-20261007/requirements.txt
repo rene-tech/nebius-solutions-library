@@ -1,0 +1,6 @@
+# Exact client dependencies used for this acceptance and observation.
+boto3==1.43.108
+httpx==0.28.1
+httpx2==2.12.0
+jsonschema==4.26.0
+mcp==2.2.0

@@ -64,7 +64,8 @@ this does not claim an end-to-end fresh-cluster replay was performed here.
 ## Tests and measured bounds
 
 The retry/metrics regression suite passed 96 tests, including actual PostgreSQL
-durable terminal-fact projection. Separate image-patch/Helm/rule tests verify
+durable terminal-fact projection. Seven image-patch/Helm/rule/recovery-helper tests
+and two existing observability contract tests pass. These verify
 unchanged sibling configuration, correct Prometheus rule selection, important-only
 delivery and internal-tenant exclusions. Root/foundation/workloads Terraform
 validation and Helm lint pass.
@@ -80,13 +81,13 @@ horizon; successful launch alone is not the gate.
 | --- | --- | --- | --- | --- |
 | A (rollout resilience) | `1d8736d7-d814-4560-9f6c-c9143a752610` | `8eab500d-758b-4de6-a556-1bfb263b2f5e` | REST | Passed; 204.196 delivered ns/day |
 | B (final release) | `29e443a6-681d-4262-8a84-36ebc24b1099` | `88a448b6-6249-4563-aa28-f31e15c10f68` | MCP | Passed; 199.804 delivered ns/day |
-| C (final release) | `2c210b5e-0e81-4c00-bab0-6689e957800f` | `78e9b9a3-df40-4314-a553-08d8c19e9739` | REST | Running at this intermediate evidence point |
+| C (final release) | `2c210b5e-0e81-4c00-bab0-6689e957800f` | `78e9b9a3-df40-4314-a553-08d8c19e9739` | REST | Passed; 204.986 delivered ns/day |
 
 A spans the API-only metric rollout; it is not counted as an unchanged final
 release cohort. B and C use final API `a49f9835` and collector `22ee25fc`.
 Every terminal cohort checks the exact restart step, native flags, semantic
 validation, all file SHA-256/size pairs, unchanged 305-file scientific history,
-idempotent replay and independently exported S3 objects. A and B each verified
+idempotent replay and independently exported S3 objects. A, B and C each verified
 335 files / 291 unique bucket objects. Their three native segments all exit zero.
 
 These bounded recovery cohorts measure performance; their helper's zero minimum
@@ -117,13 +118,16 @@ validated separately.
 
 ## Monitoring and important email
 
-`fs2-dcgm-exporter` Helm revision 6 is healthy on 25/25 Pods after replacing
+`fs2-dcgm-exporter` Helm revision 6 reached 25/25 Ready Pods after replacing
 unsupported profiling-counter watches with portable device telemetry. Fresh
 Prometheus device series include 28 H100, 2 H200 and 12 L40S GPUs. This is an
 observed telemetry count, not guaranteed allocatable cloud capacity. No driver
 reset or scientific workload interruption was used. The persistent values are
 `stages/workloads/values/dcgm-portable-metrics.yaml`; advanced profiling counters
 need separate SKU/driver qualification.
+The live-node count briefly changed to 22/22 exporter Pods and returned to 25/25
+at the 14:10 UTC closeout check. The DaemonSet tracks live nodes rather than a
+fixed count; the intermediate sample retained the same 42 visible GPU series.
 
 The owner explicitly chose important-only email to `rene@nebius.com` instead of
 Slack. The `fs2-important-alerts` chart is deployed, four rules are loaded/healthy,
@@ -137,12 +141,65 @@ No periodic agent or customer auto-restart is installed.
 
 ## Database and actual customer recovery
 
-The failed database replica is being safely recloned while primary 1 and replica
-3 stay online. Old data is retained; only replica 2's PVC was expanded to 200 GiB.
+The failed database replica has been recloned and the cluster is **3/3 Ready,
+Cluster in healthy state** at 14:00 UTC. Primary 1 and replica 3 stayed online.
+The primary retains UID `83226fad-f19a-4295-bc4d-5355c448cae6`, its September 4
+start time and zero restarts. Replacement replica 2 has UID
+`393df9ce-1270-4bda-a254-4e1b8fe43512`. Both replicas report streaming with zero
+measured replay-byte lag. Old data is retained; only replica 2's PVC was expanded
+to 200 GiB. The retained old directory's `PG_VERSION` was verified in the new Pod.
 See [exact repair and pre-existing resilience limitations](DATABASE-RECOVERY.md).
-Final three-instance and customer-progress evidence will replace this intermediate
-status after the running checks complete. No customer recovery was submitted at
-this evidence point; the source remains failed and immutable.
+Actual recovery was submitted once at
+13:51 UTC, operation `07f87c97-5a40-4bfe-b6c3-3edd76fa270c`. Idempotent replay
+returned that same operation. The source stays failed and immutable. The native
+job's deadline is 1,211,400 seconds: fourteen days plus the existing export grace.
+
+This is a second resume, so the API correctly reports
+`explicit_customer_execution_settings`: the prior qualified flags and nonempty
+analysis selectors are already in the source. No extra defaults need adding.
+The observation helper now verifies that preserved tuning rather than requiring
+a newly applied profile ID. It records the admitted operation before evaluating
+that evidence, preventing an observation assertion from hiding a created run.
+Two helper tests cover preserving exact qualified flags and rejecting unknown
+or altered tuning. No production profile-selection semantics were changed.
+
+The customer observation gate passed at 14:07:24 UTC, after three clean native
+segments and three new committed checkpoint generations. Generation 3 saved step
+78,048,800 (156.0976 ns): **2.2316 ns of new work** from the verified native
+restart step 76,933,000. The measured admission-to-durable-checkpoint rate is
+**201.449 ns/day**, above the explicit 200 ns/day gate. Native segment rates were
+218.359, 213.730 and 216.643 ns/day. All 979 original scientific files were retained
+and the qualified native performance flags were verified. The observation helper
+exited successfully without stopping the customer job.
+
+At 14:10 UTC the customer Pod remained Running, both containers Ready, with zero
+restarts. API readiness and scientific batch readiness passed, the public website
+returned HTTP 200 with valid TLS, the database remained 3/3 healthy, and DCGM was
+25/25 Ready. The job keeps its 1,000 ns target, existing key/grants/concurrency,
+100 GB bucket and fourteen-day execution limit. This bounded observation is not
+a new six-hour or fourteen-day soak, nor proof that all future failures are
+impossible. Important-failure email covers later incidents; it does not
+automatically restart customer jobs.
+
+Sanitized machine-readable results are in [measurements.json](measurements.json)
+and [deployment.json](deployment.json). Protected raw checkpoint manifests,
+native logs, request receipts and artifact comparisons remain in the private
+evidence directory stated above.
+
+To reproduce operator observations, use the pinned dependency file rather than
+omitting the dynamically imported artifact client's dependencies:
+
+```bash
+uv run --no-project --with-requirements \
+  k8s-inference/acceptance/reliability-recovery-20261007/requirements.txt \
+  python k8s-inference/acceptance/reliability-recovery-20261007/recover_customer.py \
+  observe --owner-authorized --key-file /protected/existing-key.json \
+  --artifact-client /path/to/scientific-batch-acceptance.py \
+  --output /protected/existing-recovery-evidence
+```
+
+Do not run a different `resume` idempotency key, cancel or shorten the customer
+job to speed up acceptance. Retain the full customer continuation.
 
 ## Negative results and rollback
 
@@ -150,21 +207,31 @@ this evidence point; the source remains failed and immutable.
   the final run uses the mounted `/mnt/fs2-scientific` workspace and passes.
 - The first DCGM rollout wait timed out midway; an idempotent wait/upgrade completed
   revision 6 with 25/25 Ready. The intermediate timeout is not reported as a pass.
-- The first manually timestamped email test was suppressed before delivery;
-  the separate no-timestamp delivery proof sent exactly one labelled test.
+- The first manually timestamped email probe was specifically silenced; the
+  no-timestamp proof then verified provider acceptance. The shared email counter
+  moved 15 → 16 and later 17, so it must not be used to assert an exact number of
+  test emails. Both probe alerts are inactive; no recurring test remains.
 - Temporary WhiteLab qualification key was already explicitly revoked at its
   earlier closeout; a read-only probe received 401. The persistent system/qa key
   still works and sees scVI. An unrelated-principal historic operation returned
   404; no permissions were broadened to bypass ownership. Those probes do not
   qualify new scVI training or customer LibreChat behavior.
-- A verification command initially omitted its `jsonschema` dependency; the
-  corrected dependency set independently verified exported objects.
+- Verification commands initially omitted `jsonschema` or the dynamically
+  imported client's `mcp` dependency. These exited before customer admission;
+  the pinned dependency file fixes reproducibility. Corrected commands passed.
 - Local workload-stage init initially used read-only locking in a fresh checkout;
   normal backend-disabled initialization followed by validation passed. No cloud
   resources were changed by initialization.
 - Pytest initially warned about old unrelated root-owned temporary sockets;
   task-specific temporary test directories pass without those warnings. No other
   task's files or containers were removed.
+
+All six internal bootstrap/resume Jobs have released their GPU resources. The
+exact task-only local PostgreSQL test container `fs2-reliability-qa-pg-20261007`
+was stopped and auto-removed after tests; its disposable test database is
+reconstructable from the test suite. No production data, customer client or
+other worker's benchmark was removed. Source/receipts remain in Git/private
+evidence respectively.
 
 Protected `release/` and `release-alerts/` directories contain compare-and-test
 rollback patches; do not replay one after another owner changes the template.

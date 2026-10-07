@@ -23,4 +23,3 @@ customMetrics: |
   DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS, counter, Uncorrectable remapped rows.
   DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS, counter, Correctable remapped rows.
   DCGM_FI_DEV_ROW_REMAP_FAILURE, gauge, Row remapping failure.
-
