@@ -50,6 +50,11 @@ def summarize(root):
             'worker_cells': worker.get('cells'), 'worker_genes': worker.get('genes'),
             'worker_elapsed_seconds': worker.get('elapsed_seconds'),
             'worker_timings_seconds': worker.get('timings_seconds'),
+            'input_sha256': worker.get('input_sha256'),
+            'worker_recipe_sha256': worker.get('recipe_sha256'),
+            'worker_versions': worker.get('versions'),
+            'resolved_parameters': {key: value for key, value in worker.get('parameters', {}).items()
+                                    if key != 'output_prefix'},
             'peak_gpu_memory_bytes': worker.get('peak_gpu_memory_bytes'),
             'peak_host_rss_bytes': worker.get('peak_host_rss_bytes'),
             'gpu_snapshot_used': worker.get('gpu_snapshot_used'),
@@ -57,7 +62,8 @@ def summarize(root):
             'request_sha256': hashlib.sha256((directory / 'request.json').read_bytes()).hexdigest(),
             'scientific_parameters': {key: parameters[key] for key in (
                 'method', 'mode', 'resource_profile', 'counts_source', 'batch_key', 'labels_key',
-                'gene_selection', 'max_epochs', 'scanvi_max_epochs', 'seed', 'batch_size', 'visualization',
+                'gene_selection', 'n_top_genes', 'hvg_span', 'max_epochs', 'scanvi_max_epochs',
+                'seed', 'batch_size', 'visualization', 'visualization_cells',
                 'output_destination'
             ) if key in parameters},
         })
