@@ -4,7 +4,7 @@ Status: **in progress**, not a general production/biological qualification.
 Requested delivery: REST + MCP + Nebius-branded LibreChat, shared 1,000 GB
 workspace, eight concurrent operations and no scheduled API-key expiry.
 
-## Deployed reliability fix
+## Initial reliability release (R1)
 
 Source `a29ca0d85986a1164692bb197dd5c079dcc7ef2e` in the maintained
 `rene-tech/nebius-solutions-library` fork. Backend amd64 manifest:
@@ -65,7 +65,9 @@ hashes and full-cell output validation. Only `system/qa` credentials are used.
   as a clean mixed cohort**. No customer input or force-field cutoff was changed.
 - Follow-up cohorts B/C restore the fixture's previously tested 10k-step
   protocol (three independent simulations and native energy extraction), with
-  four million-cell atlas and four routine single-cell jobs each. Results pending.
+  four million-cell atlas and four routine single-cell jobs each. B passed all
+  ten; C's interrupted polling clients recovered the original operations.
+  See retained findings below rather than only the final successful artifacts.
 - An attempted ninth operation with the eight-slot QA key returned HTTP 429
   `concurrency_exceeded`, without a new job. This endpoint currently supplies
   no Retry-After header; clients should retain running IDs and wait for a slot.
@@ -121,15 +123,34 @@ and HTTP 502/503/504. Retries are bounded (six attempts with 1/2/4/8/10-second
 delays); persistent failure and non-retryable responses remain errors. Twenty-one
 client/transport tests passed. Recovery of the same two C operation IDs includes
 client-local injected 503/disconnect faults, then full artifact validation.
-Clean unchanged-release D/E cohorts follow; results remain pending.
+Both recoveries passed: all million-cell rows, all 40 files, unchanged retry
+bodies and zero new model submissions. Original client failures remain retained.
+
+D overlapped the actual agent test using the same two-slot internal key as the
+MD clients. One MD submission correctly received explicit non-admission; the
+previous MCP client stopped rather than waiting. Canonical source `b2aa0c2b2`
+adds bounded waiting for this narrow rejection, preserving the request/key and
+never treating scientific errors or durable admission as retryable submission.
+29 client tests passed. The rejected MD request is recovered separately with a
+client-local non-admission injection and idempotency replay. **D is not a clean
+cohort**; E/F use the fixed client and remain pending.
 
 Actual LibreChat MCP operation `3b3e52b6-5c3c-4b1a-bf3c-c27a99c1d7f7` trained
 all 584,944 cells with the requested 20+20 epochs and succeeded at 08:02:03 UTC.
 The chat's initial submission-only turn made an incorrect automatic-local-download
 promise. Skill v2026.10.07.2 explicitly documents that exit 75 ends the local
 helper and recovery is needed for local collection. The final agent retrieval
-test remains pending. Existing conversations and study receipts survived the
-QA image replacement on its dedicated persistent filesystem.
+test retrieved all 40 artifacts and passed row/probability validation, but exposed
+an S3 append-mode bug. The agent worked around it by copying to scratch. This is
+not accepted as the desired client experience: the fixed shared helper keeps
+separate per-attempt logs directly in the mounted study, preserving older logs.
+An independent scVI-only agent operation `9aa9398c-59fe-4884-8fc9-f597dbf651f1`
+also exposed the AnnData 0.12.3 / SciPy 1.17.1 backed-sparse incompatibility.
+SciPy 1.17 moved the internal indexing method used by that AnnData version;
+see [upstream release notes](https://docs.scipy.org/doc/scipy/release/1.17.0-notes.html).
+The image pins SciPy 1.16.3 and runs real dense/CSR/CSC H5AD backed-read tests.
+R5 fixed-image agent acceptance remains pending. Existing conversations and
+receipts survived replacement on the dedicated persistent filesystem.
 
 BindCraft is excluded because the customer explicitly deferred it without a
 Rosetta/PyRosetta licence. Standard Evo2 remains their pending choice; hosting
