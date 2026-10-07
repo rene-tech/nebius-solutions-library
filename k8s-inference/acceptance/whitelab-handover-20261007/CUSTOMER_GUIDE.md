@@ -51,6 +51,11 @@ That file appears at `/workspace/studies/my-study/counts.h5ad`. The S3 credentia
 pair is different from the platform Bearer key. The provider keys already bound
 to LibreChat do not need to be pasted into a chat.
 
+When preparing a new H5AD in the workbench, write it on local scratch storage,
+close and validate it, then copy the completed file into `/workspace` and verify
+the copy. An S3 mount is not a fully POSIX filesystem for HDF5's random writes.
+Preserve the original uploaded input and record any explicit cell/gene selection.
+
 For a single-cell study, upload an H5AD containing raw, non-negative integer
 counts. Identify their location (`X`, `raw.X`, or a named layer), the batch column,
 and, for scANVI, the annotation column and explicit unlabeled category. Missing

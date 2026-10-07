@@ -177,6 +177,19 @@ running remote job from downloaded results. Existing conversations and receipts 
 replacement on the dedicated persistent filesystem. Actual Token Factory and
 Tavily calls also passed on R5, not just configured-key presence checks.
 
+A separate actual-agent reference-reuse operation
+`24467cb6-2001-453e-a7ab-1a2d61252e81` mapped an explicitly selected 4,096-cell
+engineering fixture against that completed scVI reference. It preserved all
+2,000 genes, used ten query epochs and submitted exactly one mapping operation.
+Accepted-to-completed time was 37.72 seconds; worker execution 13.57 seconds.
+All 18 outputs / 22,058,276 bytes and every query embedding passed validation.
+The agent recovered two **local preparation** errors (AnnData nullable-string
+write opt-in and staging HDF5 locally before copying to the object-storage
+mount). These are retained limitations, not hidden behind a zero-error claim.
+The platform operation succeeded on its first attempt. Query cells were in the
+reference training set: this tests transport/reference reuse, not held-out
+accuracy. The customer guide now explains the local-HDF5 staging requirement.
+
 ## Customer choices and storage validation
 
 BindCraft is excluded because the customer explicitly deferred it without a
