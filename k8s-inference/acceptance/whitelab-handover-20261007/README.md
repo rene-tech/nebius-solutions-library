@@ -135,7 +135,21 @@ never treating scientific errors or durable admission as retryable submission.
 `69493c8e-9800-4a63-935d-2327aaf8ce24`, including a client-local non-admission
 injection, unchanged request and verified idempotency replay. Only one actual
 operation was admitted. **D is not a clean cohort**; its original client failure
-is retained. E/F use the fixed client and remain pending.
+is retained. E/F use the fixed client. E passed all ten operations and all 93
+sampled readiness checks; F remains in progress.
+
+| E workflow | Parallel requests | Cells per request | Accepted to completed |
+| --- | ---: | ---: | ---: |
+| Routine scANVI | 4 | 584,944 | 14.43–14.90 minutes |
+| Atlas scANVI | 4 | 1,000,000 | 24.34–25.24 minutes |
+| Existing MD protocol | 2 | Not applicable | 55.80–58.27 seconds |
+
+All eight single-cell runs verified 40 output files each, with full-cell
+embedding/label/probability checks. Each interface carried five of the ten
+operations. [cohort-e.json](cohort-e.json) retains timings, input/recipe/runtime
+identities, resolved scientific settings and validation evidence. Parallel API
+admission does not imply every worker starts simultaneously; E observed at most
+eight worker Pods in `Running` state at one sample.
 
 E/F explicitly publish repeated single-cell QA results to platform artifact
 storage. Earlier cohorts already exercised customer-bucket publication; the
