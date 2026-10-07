@@ -16,7 +16,9 @@ recorded in [README.md](README.md); this guide is not itself a readiness claim.
 
 The API key and S3 access/secret key pair are handed over privately. Do not put
 them into chat messages, source code or command-line arguments. The initial
-LibreChat login needs the customer's verified email; registration is closed.
+LibreChat account is created with the owner-confirmed email; its login and
+user-scoped model/workspace access are verified. Login details are supplied
+privately and public registration remains closed.
 The workspace already has its platform, Token Factory and Tavily integrations
 configured. The same platform key works for REST and MCP (Bearer authentication).
 

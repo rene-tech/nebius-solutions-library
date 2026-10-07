@@ -1,6 +1,6 @@
 # WhiteLab access and single-cell handover — 7 October 2026
 
-Status: **technical delivery verified; customer login awaits a verified email**.
+Status: **scoped PoC access delivered, including verified customer login**.
 This is a scoped research-PoC qualification, not a general production/biological
 qualification or a claim that every previously granted App was retested.
 Requested delivery: REST + MCP + Nebius-branded LibreChat, shared 1,000 GB
@@ -15,8 +15,11 @@ artifact readback. Tests used internal QA identities, never the customer key.
 The customer-managed R5 replacement is running and verified at
 <https://port3080-zvfk1qbfp44r0yr.tunnel.applications.eu-north1.nebius.cloud>.
 It preserves the existing bucket, non-expiring key and persistent application
-state. Only Artémis Llamosi's verified login email is missing; registration stays
-closed and no customer-login success is claimed. See [CUSTOMER_GUIDE.md](CUSTOMER_GUIDE.md).
+state. The owner supplied Artémis's email, and the existing account seeder created
+the ordinary `USER` account without rotating its retained credentials. Public
+HTTPS sign-in, agent/tool/App discovery, user-scoped settings, workspace access
+and authenticated full starter-manifest readback passed on October 7 at 10:44 UTC.
+Registration stays closed. See [CUSTOMER_GUIDE.md](CUSTOMER_GUIDE.md).
 
 Current exact release: API/controller/maintenance amd64 `aae7e6f1f7dafe528051d69da07697d62531bc15ea930de4194aaf14c66fcd61`,
 scientific collector/tools `a8fb464f2b383b099b892909f39317a7a5275c90cd88e835248b083c97ed76da`,
@@ -258,8 +261,9 @@ channel `C0BGX8K5QPL`.
 Starter pack v3: all 498 objects / 53,900,577 bytes checked against manifest
 `c8afd07ca1b6734c690839ba6d3eb4b461b65380852bcf705a863e7bd07a7709` by full S3
 readback. Customer S3 credentials cannot list the system QA bucket. No customer
-model calls were used for internal testing. LibreChat login awaits the verified
-initial email address; no public registration or guessed email was configured.
+model calls were used for internal testing. The owner supplied the initial email
+and the actual LibreChat login is verified. No public registration or guessed
+email was configured; the email/password are retained only in the private handover.
 
 ## Delivered workbench
 
@@ -328,10 +332,17 @@ Private raw evidence/credentials:
 directory. It contains only explicitly separated customer provisioning receipts
 and QA execution cohorts; hand over selected customer credentials privately.
 
-Remaining customer input: **Artémis's verified login email**. Seed the existing
-workbench account and verify its login once supplied. Do not recreate its tenant,
-user, API key, bucket or persistent filesystem, and do not rotate their credentials.
-The selected API/S3 credentials and instructions are handed to the owner privately;
-provider keys and raw QA evidence must not be included in a customer handover.
+The login-email blocker is resolved. The existing `/app/seed-user.js` seeded the
+account and its encrypted user-scoped platform credential on the persistent
+MongoDB. No endpoint replacement, image change, key/password rotation or customer
+inference was needed. A private preflight initially treated the image's standard
+service-owner account as an unexpected customer account; correcting that local
+check preserved the service owner. The final authenticated checks all passed.
+Public-safe receipt: [customer-login-evidence.json](customer-login-evidence.json).
+
+No onboarding input remains outstanding. The customer's actual H5AD metadata
+and validation criteria are study-specific inputs, not access blockers. API/S3
+credentials, login password and a ready-to-forward onboarding message are handed
+to the owner privately; provider keys and raw QA evidence are not included.
 The [single-cell user guide](../../models/visual-science/scvi-scanvi/README.md)
 contains REST/MCP upload, parameters, polling, output and reference-mapping usage.
