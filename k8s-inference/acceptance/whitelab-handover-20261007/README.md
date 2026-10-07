@@ -314,6 +314,15 @@ Serverless. No untested rebuild replaced it.
 
 ## Evidence and remaining work
 
+Closeout completed at 10:08 UTC: four exact task-only QA endpoints were removed
+after exporting their chats and specifications, and the temporary eight-slot QA
+key was revoked. Persistent QA state, the shared QA bucket, original QA client/key
+and every customer resource were retained. Endpoint containers/local ephemeral
+disks are removed; retained specifications/state/evidence allow reconstruction.
+The public API and retained customer workbench both returned HTTP 200 after
+cleanup. See [closeout.json](closeout.json). No cloud quota, GPU pool or customer
+inference limits were changed for these tests.
+
 Private raw evidence/credentials:
 `/home/tux/secure-handoff/fs2-whitelab-final-20261007/` — do not distribute whole
 directory. It contains only explicitly separated customer provisioning receipts
