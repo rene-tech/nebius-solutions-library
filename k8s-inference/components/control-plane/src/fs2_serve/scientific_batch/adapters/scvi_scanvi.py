@@ -25,7 +25,7 @@ from .common import (
     parse_public_request,
     run_workspace,
 )
-from .staged_workspace import completion_marker, contained_stable_file, wrap_stage_argv
+from .staged_workspace import atomic_publish, completion_marker, contained_stable_file, wrap_stage_argv
 
 VARIANT_ID = "scvi-tools-1-5-batch-v1"
 SOURCE_REPOSITORY = "scverse/scvi-tools"
@@ -195,23 +195,36 @@ def collect_failed_result(invocation, path, result, parameters, exit_code, *, fa
         parameters,
     ) or result.get("status") not in {"failed", "interrupted"}:
         raise ScientificAdapterError("scVI failure receipt does not match the frozen invocation")
+    evidence = {
+        "schema": "fs2-serve.nebius.ai/native-failed-diagnostics/v1",
+        "artifact_role": DIAGNOSTIC_ROLE,
+        "status": "failed",
+        "operation_id": operation,
+        "job_id": invocation.shard_id,
+        "validator_id": VALIDATOR_ID,
+        "collector_id": COLLECTOR_ID,
+        "stage_id": invocation.stage_id,
+        "shard_id": invocation.shard_id,
+        "logical_output_id": invocation.produces,
+        "exit_code": exit_code,
+        "failure_marker_sha256": failure_marker_sha256,
+        "result_sha256": result_sha256,
+        "native_status": result["status"],
+        "partial_scientific_outputs_included": False,
+        "scientific_validation_passed": False,
+        "checkpoint_generation_created": False,
+    }
+    receipt = path.parent / ".fs2/failed-diagnostics.json"
+    atomic_publish(
+        receipt,
+        json.dumps(evidence, sort_keys=True, separators=(",", ":")).encode(),
+        workspace=path.parent,
+        label="failed scVI diagnostic inventory",
+    )
     return CollectedStageOutput(
-        (CollectedArtifactFile("failed-result", "scvi-failed-result/v1", path, "application/json"),),
-        {
-            "schema": "fs2-serve.nebius.ai/native-failed-diagnostics/v1",
-            "artifact_role": DIAGNOSTIC_ROLE,
-            "status": "failed",
-            "operation_id": operation,
-            "validator_id": VALIDATOR_ID,
-            "collector_id": COLLECTOR_ID,
-            "stage_id": invocation.stage_id,
-            "shard_id": invocation.shard_id,
-            "logical_output_id": invocation.produces,
-            "exit_code": exit_code,
-            "failure_marker_sha256": failure_marker_sha256,
-            "result_sha256": result_sha256,
-            "native_status": result["status"],
-            "partial_scientific_outputs_included": False,
-            "scientific_validation_passed": False,
-        },
+        (
+            CollectedArtifactFile("failed-result", "scvi-failed-result/v1", path, "application/json"),
+            CollectedArtifactFile("failed-diagnostics", "native-failed-diagnostics/v1", receipt, "application/json"),
+        ),
+        evidence,
     )

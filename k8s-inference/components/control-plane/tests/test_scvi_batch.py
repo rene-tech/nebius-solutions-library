@@ -192,7 +192,10 @@ def test_single_cell_failure_is_not_interpreted_as_an_md_job(tmp_path, monkeypat
         (tmp_path / ".fs2/stage-failed.json").read_bytes()
     ).hexdigest()
     assert output.validation["result_sha256"] == hashlib.sha256((tmp_path / "result.json").read_bytes()).hexdigest()
-    assert [item.name for item in output.artifacts] == ["failed-result"]
+    assert output.validation["job_id"] == "main"
+    assert output.validation["checkpoint_generation_created"] is False
+    assert [item.name for item in output.artifacts] == ["failed-result", "failed-diagnostics"]
+    assert json.loads(output.artifacts[1].path.read_bytes()) == output.validation
     # Exercise the real collector/ACK boundary, not just the adapter dictionary.
     # Without the marker digest the companion crashed while the stage waited
     # for its ACK, masking exit 75 as a permanent collector application error.
@@ -204,7 +207,7 @@ def test_single_cell_failure_is_not_interpreted_as_an_md_job(tmp_path, monkeypat
         "status": "diagnostics-exported",
         "failure_marker_sha256": output.validation["failure_marker_sha256"],
     }
-    assert len(client.uploads) == 3
+    assert len(client.uploads) == 4
     assert not (tmp_path / ".fs2/stage-complete.json").exists()
 
 

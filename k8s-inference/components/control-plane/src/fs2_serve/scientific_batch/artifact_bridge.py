@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
@@ -56,6 +57,11 @@ from .worker_errors import worker_error_detail
 
 _ERROR = re.compile(r"[^A-Z0-9_]+")
 _MAX_MANIFEST_BYTES = 32 * 1024 * 1024
+LOGGER = logging.getLogger(__name__)
+
+
+class FailedDiagnosticValidationError(ScientificProfileError):
+    """Immutable failed-attempt evidence is invalid, not a service outage."""
 
 
 def _raw_digest(value: str | None) -> str | None:
@@ -718,13 +724,15 @@ class ArtifactServiceBridge:
                 if len(documents) != 1 or len(validations) != 1:
                     continue
                 document, validation_record = documents[0], validations[0]
-                validation = json.loads(
-                    await self.content_reader.read(
-                        validation_record.artifact_id,
-                        tenant_id=state.tenant_id,
-                        maximum_bytes=_MAX_MANIFEST_BYTES,
-                    )
+                validation_bytes = await self.content_reader.read(
+                    validation_record.artifact_id,
+                    tenant_id=state.tenant_id,
+                    maximum_bytes=_MAX_MANIFEST_BYTES,
                 )
+                try:
+                    validation = json.loads(validation_bytes)
+                except (ValueError, UnicodeError) as exc:
+                    raise FailedDiagnosticValidationError("failed diagnostic receipt is not valid JSON") from exc
                 if not isinstance(validation, dict) or validation.get("artifact_role") != "failed-attempt-diagnostics":
                     # A gang can fail after its head published a successful
                     # local result. That is not a failed-diagnostic manifest.
@@ -744,18 +752,18 @@ class ArtifactServiceBridge:
                     "diagnostic_manifest_sha256": document.digest.removeprefix("sha256:"),
                 }
                 if any(validation.get(key) != value for key, value in expected.items()):
-                    raise ScientificProfileError("failed diagnostic receipt differs from its frozen attempt")
-                manifest = self.profiles.validate_artifact_manifest(
-                    json.loads(
-                        await self.content_reader.read(
-                            document.artifact_id,
-                            tenant_id=state.tenant_id,
-                            maximum_bytes=_MAX_MANIFEST_BYTES,
-                        )
-                    )
+                    raise FailedDiagnosticValidationError("failed diagnostic receipt differs from its frozen attempt")
+                manifest_bytes = await self.content_reader.read(
+                    document.artifact_id,
+                    tenant_id=state.tenant_id,
+                    maximum_bytes=_MAX_MANIFEST_BYTES,
                 )
+                try:
+                    manifest = self.profiles.validate_artifact_manifest(json.loads(manifest_bytes))
+                except (ValueError, UnicodeError) as exc:
+                    raise FailedDiagnosticValidationError("failed diagnostic manifest is invalid") from exc
                 if manifest["manifest_id"] != invocation.produces:
-                    raise ScientificProfileError("failed diagnostic manifest differs from its frozen attempt")
+                    raise FailedDiagnosticValidationError("failed diagnostic manifest differs from its frozen attempt")
                 allowed = {
                     f"{workflow.engine}-failed-result/v1",
                     f"{workflow.engine}-failed-log/v1",
@@ -770,7 +778,7 @@ class ArtifactServiceBridge:
                         or record is None
                         or not _pointer_matches(record, entry["artifact"])
                     ):
-                        raise ScientificProfileError(
+                        raise FailedDiagnosticValidationError(
                             "failed diagnostic manifest references another or changed artifact"
                         )
                 results = [
@@ -782,7 +790,7 @@ class ArtifactServiceBridge:
                     or len(receipts) != 1
                     or results[0]["artifact"]["sha256"] != validation.get("result_sha256")
                 ):
-                    raise ScientificProfileError("failed diagnostic result inventory is incomplete")
+                    raise FailedDiagnosticValidationError("failed diagnostic result inventory is incomplete")
                 manifests.append(document.artifact_id)
         return await self._combine_terminal_manifests(state, tuple(manifests)) if manifests else None
 
@@ -801,6 +809,7 @@ class ArtifactServiceBridge:
         output_manifest_id: UUID | None = None
         validator_id = semantic.get("validator_id")
         validation_receipt: str | None = None
+        diagnostic_error: str | None = None
         if not isinstance(validator_id, str):
             raise ScientificProfileError("scientific profile validator identity is invalid")
         if state.status is BatchStatus.SUCCEEDED:
@@ -815,7 +824,13 @@ class ArtifactServiceBridge:
             validator_id = commits[0].validator_id
             validation_receipt = self._validation_digest(commits)
         elif state.status is BatchStatus.FAILED:
-            output_manifest_id = await self._failed_diagnostic_manifest(state)
+            try:
+                output_manifest_id = await self._failed_diagnostic_manifest(state)
+            except FailedDiagnosticValidationError as exc:
+                # Publish an honest terminal failure without endorsing invalid
+                # diagnostics. Immutable evidence cannot heal through retries.
+                # Storage/database/HTTP failures still propagate to readiness.
+                diagnostic_error = str(exc)
         access = ArtifactAccess(
             profile=ArtifactAccessProfile(state.access_context.profile),
             receipt_digest=state.access_context.receipt_digest,
@@ -823,6 +838,17 @@ class ArtifactServiceBridge:
         error_code = None
         if state.status is BatchStatus.FAILED:
             error_code = _ERROR.sub("_", (state.failure_code or "SCIENTIFIC_RUN_FAILED").upper()).strip("_")
+        error_message = (
+            (worker_error_detail(state.model_id, error_code) or "scientific run did not succeed")
+            if error_code
+            else None
+        )
+        if diagnostic_error is not None:
+            error_message = (
+                f"Scientific run failed ({error_code}). Failure diagnostics were rejected: {diagnostic_error}. "
+                "Original artifacts are retained; contact platform support with the operation ID."
+            )
+            error_code = "SCIENTIFIC_DIAGNOSTICS_INVALID"
         await self._require_service().commit_run_result(
             RunResultDraft(
                 operation_id=state.operation_id,
@@ -854,12 +880,15 @@ class ArtifactServiceBridge:
                 ),
                 validation_receipt_digest=validation_receipt,
                 error_code=error_code,
-                error_message=(worker_error_detail(state.model_id, error_code) or "scientific run did not succeed")
-                if error_code is not None
-                else None,
+                error_message=error_message,
                 error_retryable=False if error_code is not None else None,
             )
         )
+        if diagnostic_error is not None:
+            LOGGER.warning(
+                "published failed scientific result without invalid diagnostics",
+                extra={"operation_id": str(state.operation_id), "diagnostic_error": diagnostic_error},
+            )
 
     async def result_response(self, operation_id: UUID, *, tenant_id: str) -> Mapping[str, Any]:
         state = await self.batches.get(operation_id, tenant_id=tenant_id)

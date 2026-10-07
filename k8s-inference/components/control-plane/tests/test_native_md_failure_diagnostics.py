@@ -10,6 +10,7 @@ from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -35,12 +36,12 @@ from fs2_serve.scientific_artifacts import (
     ScientificArtifactService,
 )
 from fs2_serve.scientific_batch import companion, native_failures
-from fs2_serve.scientific_batch.gromacs_checkpoints import GromacsCheckpointTransport
 from fs2_serve.scientific_batch.adapters import ScientificAdapterError
 from fs2_serve.scientific_batch.adapters.staged_workspace import wrap_stage_argv
-from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge
+from fs2_serve.scientific_batch.artifact_bridge import ArtifactServiceBridge, FailedDiagnosticValidationError
 from fs2_serve.scientific_batch.execution import _invocation_json
-from fs2_serve.scientific_batch.models import AttemptOutcome, StageInvocation
+from fs2_serve.scientific_batch.gromacs_checkpoints import GromacsCheckpointTransport
+from fs2_serve.scientific_batch.models import AttemptOutcome, BatchStatus, StageInvocation
 from fs2_serve.scientific_batch.native_workflows import WORKFLOWS, workflow_for_collector
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileError
 
@@ -219,10 +220,16 @@ def test_broken_native_collector_notifies_the_waiting_worker_without_ack(tmp_pat
     monkeypatch.setattr(companion, "collect_stage_output", broken)
     with pytest.raises(KeyError):
         companion.collect_and_commit(
-            client=None, collector_id=invocation.collector_id, validator_id=invocation.validator_id,
-            invocation_json=_invocation_json(invocation), workspace=tmp_path, catalog_dir=CATALOG,
-            collection_deadline_seconds=5, poll_seconds=.01,
-            max_artifacts=invocation.max_output_artifacts, max_output_bytes=invocation.max_output_bytes,
+            client=None,
+            collector_id=invocation.collector_id,
+            validator_id=invocation.validator_id,
+            invocation_json=_invocation_json(invocation),
+            workspace=tmp_path,
+            catalog_dir=CATALOG,
+            collection_deadline_seconds=5,
+            poll_seconds=0.01,
+            max_artifacts=invocation.max_output_artifacts,
+            max_output_bytes=invocation.max_output_bytes,
         )
     assert json.loads((tmp_path / ".fs2/transport-error.json").read_text()) == {"status": "failed", "phase": "collect"}
     assert not (tmp_path / ".fs2/checkpoint-ack.json").exists()
@@ -361,8 +368,7 @@ def test_failed_log_reuses_checkpoint_upload_identity_without_certifying_progres
             assert identity == native_identity, "conflicting upload reservation for checkpointed failure log"
             assert media_type == "application/octet-stream"
             assert compression in (None, "none")
-        return original_upload(self, identity=identity, content=content,
-                               media_type=media_type, compression=compression)
+        return original_upload(self, identity=identity, content=content, media_type=media_type, compression=compression)
 
     monkeypatch.setattr(Client, "upload", content_addressed_upload)
     client = collect(invocation, tmp_path, monkeypatch)
@@ -372,8 +378,7 @@ def test_failed_log_reuses_checkpoint_upload_identity_without_certifying_progres
     assert not (tmp_path / ".fs2/stage-complete.json").exists()
 
 
-@pytest.mark.asyncio
-async def test_failed_artifacts_remain_owner_scoped_and_not_committed_science(tmp_path, monkeypatch):
+async def failed_artifact_fixture(tmp_path, monkeypatch):
     invocation, _, _ = fixture(tmp_path)
     client = collect(invocation, tmp_path, monkeypatch)
     repository = MemoryArtifactRepository(clock=lambda: datetime.now(UTC))
@@ -452,6 +457,15 @@ async def test_failed_artifacts_remain_owner_scoped_and_not_committed_science(tm
         execution_plan=SimpleNamespace(invocation=lambda *_: invocation),
         stages=[SimpleNamespace(attempts=[attempt_state])],
     )
+    return bridge, state, service, repository, stored, input_record, invocation
+
+
+@pytest.mark.asyncio
+async def test_failed_artifacts_remain_owner_scoped_and_not_committed_science(tmp_path, monkeypatch):
+    bridge, state, service, repository, stored, input_record, invocation = await failed_artifact_fixture(
+        tmp_path, monkeypatch
+    )
+    operation = state.operation_id
     identity = await bridge._failed_diagnostic_manifest(state)
     assert identity is not None
     with pytest.raises(ArtifactNotFoundError):
@@ -480,8 +494,11 @@ async def test_failed_artifacts_remain_owner_scoped_and_not_committed_science(tm
     assert result.result.semantic_validation.status == "failed"
     assert result.result.output_manifest.artifact_id == str(identity)
     assert result.result.attempts[0].checkpoint_output is None
-    validation_id = next(identity for identity, raw in stored.items()
-                         if raw.startswith(b"{") and json.loads(raw).get("diagnostic_manifest_sha256") is not None)
+    validation_id = next(
+        identity
+        for identity, raw in stored.items()
+        if raw.startswith(b"{") and json.loads(raw).get("diagnostic_manifest_sha256") is not None
+    )
     original_validation = stored[validation_id]
     # A successful head result in a failed gang is not a failed-diagnostic set.
     stored[validation_id] = b'{"status":"passed"}'
@@ -492,4 +509,84 @@ async def test_failed_artifacts_remain_owner_scoped_and_not_committed_science(tm
     bad["entries"][0]["artifact"]["artifact_id"] = str(uuid4())
     stored[identity] = json.dumps(bad).encode()
     with pytest.raises(ScientificProfileError, match="another or changed"):
+        await bridge._failed_diagnostic_manifest(state)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("invalid", ["missing", "null", "owner", "malformed", "manifest", "inventory"])
+async def test_invalid_failed_receipt_publishes_actionable_failure_not_science(tmp_path, monkeypatch, invalid):
+    bridge, state, service, _, stored, input_record, _ = await failed_artifact_fixture(tmp_path, monkeypatch)
+    validation_id = next(
+        key
+        for key, raw in stored.items()
+        if raw.startswith(b"{") and json.loads(raw).get("diagnostic_manifest_sha256") is not None
+    )
+    validation = json.loads(stored[validation_id])
+    if invalid in {"missing", "null"}:
+        # Exact scVI legacy shape: these fields were absent, not false/main.
+        for key in ("job_id", "checkpoint_generation_created"):
+            if invalid == "missing":
+                validation.pop(key)
+            else:
+                validation[key] = None
+    elif invalid == "owner":
+        validation["operation_id"] = str(uuid4())
+    stored[validation_id] = b"{" if invalid == "malformed" else json.dumps(validation).encode()
+    if invalid in {"manifest", "inventory"}:
+        manifest_id = next(
+            key
+            for key, raw in stored.items()
+            if raw.startswith(b"{") and json.loads(raw).get("manifest_id") is not None
+        )
+        document = json.loads(stored[manifest_id])
+        if invalid == "manifest":
+            document["manifest_id"] = "another.run"
+        else:
+            document["entries"] = [e for e in document["entries"] if e["name"] == "failed-result"]
+        stored[manifest_id] = json.dumps(document).encode()
+    with pytest.raises(FailedDiagnosticValidationError):
+        await bridge._failed_diagnostic_manifest(state)
+
+    state.status = BatchStatus.FAILED
+    state.result_published = False
+    state.input_manifest = SimpleNamespace(manifest_artifact_id=input_record.artifact_id)
+    state.variant_id = "canonical-runtime"
+    state.failure_code = "NATIVE_COMMAND_FAILED"
+    state.access_context = SimpleNamespace(profile="public", receipt_digest=None)
+    identity = execution_identity()
+    identity["artifact_manifest_digest"] = identity["model_artifact_manifest_digest"]
+    monkeypatch.setattr(
+        bridge.profiles,
+        "get",
+        lambda *_, **__: SimpleNamespace(
+            value={
+                "execution_identity": identity,
+                "semantic_validation": {"validator_id": "lammps-workflow-v1"},
+            }
+        ),
+    )
+    bridge.store.get_operation = AsyncMock(return_value=SimpleNamespace(accepted_at=datetime.now(UTC)))
+    monkeypatch.setattr(
+        bridge, "_terminal_event", AsyncMock(return_value=SimpleNamespace(occurred_at=datetime.now(UTC)))
+    )
+    monkeypatch.setattr(bridge, "_scheduling_snapshot", lambda _: scheduling_snapshot(("workflow",)))
+    publish = AsyncMock()
+    monkeypatch.setattr(service, "commit_run_result", publish)
+    await bridge.publish_terminal(state)
+    draft = publish.call_args.args[0]
+    assert draft.terminal_status == "failed"
+    assert draft.validation_status == "failed"
+    assert draft.validation_receipt_digest is None
+    assert draft.output_manifest_artifact_id is None
+    assert draft.error_code == "SCIENTIFIC_DIAGNOSTICS_INVALID"
+    assert "NATIVE_COMMAND_FAILED" in draft.error_message
+    assert "contact platform support" in draft.error_message
+    assert draft.error_retryable is False
+
+
+@pytest.mark.asyncio
+async def test_diagnostic_shared_storage_outage_is_not_reclassified_as_bad_receipt(tmp_path, monkeypatch):
+    bridge, state, _, _, _, _, _ = await failed_artifact_fixture(tmp_path, monkeypatch)
+    monkeypatch.setattr(bridge.content_reader, "read", AsyncMock(side_effect=ConnectionError("storage unavailable")))
+    with pytest.raises(ConnectionError, match="storage unavailable"):
         await bridge._failed_diagnostic_manifest(state)
