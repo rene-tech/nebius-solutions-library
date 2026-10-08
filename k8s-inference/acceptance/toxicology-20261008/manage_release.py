@@ -265,11 +265,20 @@ def rollout(args):
     kubectl(
         args,
         "apply",
+        "--server-side",
+        "--field-manager=fs2-toxicology-release",
         "--dry-run=server",
         "-f",
         str(args.directory / "registration-configmaps.json"),
     )
-    kubectl(args, "apply", "-f", str(args.directory / "registration-configmaps.json"))
+    kubectl(
+        args,
+        "apply",
+        "--server-side",
+        "--field-manager=fs2-toxicology-release",
+        "-f",
+        str(args.directory / "registration-configmaps.json"),
+    )
     receipts = []
     for name in DEPLOYMENTS:
         current = get(args, "deployment", name)
@@ -441,12 +450,23 @@ def grant(args):
             )
             scopes = before["scopes"]
         else:
-            assert not record.exists(), "grant already recorded; reconcile"
-            write(args.directory, "before-qa-grants", key)
+            if record.exists():
+                before = json.loads(record.read_text())
+                assert all(
+                    key[field] == before[field]
+                    for field in ("models", "scopes", "max_concurrency")
+                ), "grant policy changed since recording; reconcile"
+            else:
+                write(args.directory, "before-qa-grants", key)
             desired = sorted(set(key["models"]) | set(MODELS))
             scopes = sorted(set(key["scopes"]) | {"artifacts.write"})
         response = client.patch(
             "/admin/api/v1/keys/" + key_id, json={"models": desired, "scopes": scopes}
+        )
+        write(
+            args.directory,
+            "qa-grant-response",
+            {"status": response.status_code, "body": response.json()},
         )
         response.raise_for_status()
         print(
@@ -461,10 +481,165 @@ def grant(args):
         )
 
 
+def backend_patch(args):
+    """Image-only patch on this task's registered backend; preserve execution specs."""
+    assert args.image and "@sha256:" in args.image
+    before = {name: get(args, "deployment", name) for name in DEPLOYMENTS}
+    for item in before.values():
+        assert item["spec"]["template"]["spec"]["containers"][0]["image"].endswith(
+            "@sha256:c9a62777716d98d4a9b770e7ef1d0b74a703aaa794f680cd1fdda4c2b17f847a"
+        ), "backend changed; reconcile before patch"
+    args.directory = args.directory / "error-detail-patch"
+    args.directory.mkdir(mode=0o700, exist_ok=False)
+    write(args.directory, "before-deployments", before)
+    for name, current in before.items():
+        expected = copy.deepcopy(current["spec"]["template"])
+        expected["spec"]["containers"][0]["image"] = args.image
+        patch = [
+            {
+                "op": "test",
+                "path": "/metadata/resourceVersion",
+                "value": current["metadata"]["resourceVersion"],
+            },
+            {
+                "op": "replace",
+                "path": "/spec/template/spec/containers/0/image",
+                "value": args.image,
+            },
+        ]
+        kubectl(
+            args,
+            "-n",
+            "fs2-system",
+            "patch",
+            "deployment",
+            name,
+            "--type=json",
+            "--dry-run=server",
+            "-p",
+            json.dumps(patch),
+        )
+        kubectl(
+            args,
+            "-n",
+            "fs2-system",
+            "patch",
+            "deployment",
+            name,
+            "--type=json",
+            "-p",
+            json.dumps(patch),
+        )
+        assert get(args, "deployment", name)["spec"]["template"] == expected
+        write(
+            args.directory, name, {"patch": patch, "all_configuration_preserved": True}
+        )
+        print(json.dumps({"patched": name, "image": args.image}), flush=True)
+
+
+def promote(args):
+    """Publish measured qualification only; do not change either App's execution spec."""
+    receipt = json.loads(
+        (Path(__file__).parent / "hosted-qualification.json").read_text()
+    )
+    assert len(receipt["cohorts"]) == 2 and all(
+        row["passed"] for row in receipt["cohorts"]
+    )
+    before = {name: get(args, "deployment", name) for name in DEPLOYMENTS}
+    image = before[DEPLOYMENTS[-1]]["spec"]["template"]["spec"]["containers"][0][
+        "image"
+    ]
+    assert image.endswith("@" + receipt["backend_image_digest"])
+    configs = {}
+    replacements = []
+    mapping = {}
+    for volume in before[DEPLOYMENTS[-1]]["spec"]["template"]["spec"]["volumes"]:
+        config = volume.get("configMap", {})
+        keys = {entry["key"] for entry in config.get("items", [])}
+        if not keys.intersection(
+            {"infrastructure-envelope.json", "deployment-runtimes.json"}
+        ):
+            continue
+        old = get(args, "configmap", config["name"])
+        configs[config["name"]] = old
+        data = copy.deepcopy(old["data"])
+        if "infrastructure-envelope.json" in data:
+            envelope = json.loads(data["infrastructure-envelope.json"])
+            for model in MODELS:
+                assert receipt["scaling"][model] == {
+                    "max_ready": 2,
+                    "natural_scale_zero": True,
+                }
+                envelope["qualifications"][model]["scaleToZeroQualified"] = True
+            envelope.pop("revision")
+            envelope["revision"] = canonical_digest(envelope)
+            InfrastructureEnvelope.model_validate(envelope)
+            data["infrastructure-envelope.json"] = canonical_json(envelope).decode()
+        if "deployment-runtimes.json" in data:
+            selections = json.loads(data["deployment-runtimes.json"])
+            for model in MODELS:
+                selected = json.loads(
+                    (
+                        ROOT / f"catalog/runtime/deployment-runtimes/{model}-cpu.json"
+                    ).read_text()
+                )
+                original = selections["models"][model]
+                assert selected["record"] == original["record"], (
+                    "execution identity must not change"
+                )
+                assert (
+                    selected["record"]["runtime"]["image"]["reference"]
+                    == receipt["model_images"][model]
+                )
+                assert all(selected["qualification"]["states"].values())
+                selections["models"][model] = selected
+            data["deployment-runtimes.json"] = canonical_json(selections).decode()
+        name = "fs2-toxicology-" + canonical_digest(data).split(":")[1][:16]
+        assert name != config["name"], "qualification already published"
+        mapping[config["name"]] = name
+        replacements.append(
+            {
+                "apiVersion": "v1",
+                "kind": "ConfigMap",
+                "immutable": True,
+                "metadata": {
+                    "name": name,
+                    "namespace": "fs2-system",
+                    "labels": {"workload.fs2.nebius/owner": "toxicology-20261008"},
+                },
+                "data": data,
+            }
+        )
+    assert len(replacements) == 2
+    args.directory = args.directory / "qualification-promotion"
+    args.directory.mkdir(mode=0o700, exist_ok=False)
+    for name, value in (
+        ("before-deployments", before),
+        ("before-configmaps", configs),
+        ("configmap-mapping", mapping),
+        (
+            "registration-configmaps",
+            {"apiVersion": "v1", "kind": "List", "items": replacements},
+        ),
+    ):
+        write(args.directory, name, value)
+    args.image = image
+    rollout(args)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "command", choices=["prepare", "rollout", "apply", "grant", "website"]
+        "command",
+        choices=[
+            "prepare",
+            "rollout",
+            "apply",
+            "grant",
+            "website",
+            "promote",
+            "backend-patch",
+        ],
     )
     parser.add_argument(
         "--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a"
@@ -482,4 +657,6 @@ if __name__ == "__main__":
         "apply": apply_apps,
         "grant": grant,
         "website": website,
+        "promote": promote,
+        "backend-patch": backend_patch,
     }[args.command](args)

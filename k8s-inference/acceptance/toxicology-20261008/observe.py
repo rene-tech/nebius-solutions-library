@@ -44,7 +44,7 @@ def main(args):
                         "generation": resource["metadata"].get("generation"),
                         "created_at": resource["metadata"].get("creationTimestamp"),
                         "spec": resource.get("spec"),
-                        "status": resource.get("status"),
+                        "status": resource.get("status") or {},
                     }
                 )
             row[kind] = selected

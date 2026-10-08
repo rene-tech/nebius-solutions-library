@@ -77,6 +77,14 @@ async def invoke(registry, payload, *, model_id="molmim", status=422, model=None
     ("genmol", 503, GENMOL, "generation_exhausted", "accepted 15 of 16"),
     ("molmim", 422, INVALID, "invalid_molecule", "Supply valid SMILES"),
     ("evo2-40b", 500, EVO2_OOM, "model_memory_exhausted", "correct runtime memory use"),
+    ("admet-ai", 422, {"detail": {"code": "no_valid_molecules", "message": PRIVATE_MESSAGE}},
+     "no_valid_molecules", "SMILES or SDF"),
+    ("ctoxpred2", 422, {"detail": {"code": "unknown_endpoint", "message": PRIVATE_MESSAGE}},
+     "unknown_endpoint", "get_model_schema"),
+    ("admet-ai", 422, {"detail": [{"msg": PRIVATE_MESSAGE, "input": PRIVATE_MESSAGE}]},
+     "invalid_molecular_input", "exactly one"),
+    ("ctoxpred2", 422, {"detail": {"code": "invalid_molecular_input", "message": PRIVATE_MESSAGE}},
+     "invalid_molecular_input", "unique molecule IDs"),
 ])
 async def test_recognized_failure_retains_original_debug_but_public_static_counts_only(
     registry, model_id, status, payload, code, fragment,
@@ -102,6 +110,8 @@ async def test_recognized_failure_retains_original_debug_but_public_static_count
     ("evo2-40b", 500, {"detail": {**EVO2_OOM["detail"], "retryable": True}}),
     ("evo2-40b", 500, {"detail": {**EVO2_OOM["detail"], "input_length": 8193}}),
     ("evo2-40b", 500, {"detail": {**EVO2_OOM["detail"], "num_tokens": True}}),
+    ("admet-ai", 500, {"detail": {"code": "no_valid_molecules"}}),
+    ("ctoxpred2", 422, {"detail": {"code": "UNKNOWN", "message": PRIVATE_MESSAGE}}),
 ])
 async def test_unrecognized_failures_remain_payload_free(registry, model_id, status, payload):
     result, _ = await invoke(registry, payload, model_id=model_id, status=status)
@@ -199,6 +209,8 @@ def test_detail_sanitizer_accepts_only_exact_static_templates():
     ("evo2-40b", 500, EVO2_OOM, "model_memory_exhausted", 1),
     ("evo2-40b", 503, {"status": "loading"}, "upstream_http_error", 2),
     ("evo2-40b", 500, {"detail": {"code": "UNKNOWN"}}, "upstream_http_error", 2),
+    ("admet-ai", 422, {"detail": {"code": "no_valid_molecules"}}, "no_valid_molecules", 1),
+    ("ctoxpred2", 422, {"detail": [{"msg": PRIVATE_MESSAGE}]}, "invalid_molecular_input", 1),
 ])
 async def test_real_runtime_worker_store_retains_actionable_failure_without_replaying_search(
     registry, cipher, hasher, monkeypatch, model_id, status, payload, code, expected_attempts,

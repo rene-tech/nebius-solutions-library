@@ -14,6 +14,7 @@ import hashlib
 import json
 import math
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -51,6 +52,58 @@ def save(args, name, value):
 async def run(args):
     os.umask(0o077)
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.wait_for_cold:
+        observations = []
+        deadline = time.monotonic() + 900
+        while time.monotonic() < deadline:
+            resources = json.loads(
+                await asyncio.to_thread(
+                    subprocess.check_output,
+                    [
+                        "kubectl",
+                        "--context",
+                        args.context,
+                        "-n",
+                        "fs2-models",
+                        "get",
+                        "deployments,pods",
+                        "-o",
+                        "json",
+                    ],
+                    text=True,
+                )
+            )["items"]
+            selected = [
+                item
+                for item in resources
+                if any(
+                    item["metadata"]["name"] == model
+                    or item["metadata"]["name"].startswith(model + "-")
+                    for model in MODELS
+                )
+            ]
+            deployments = [item for item in selected if item["kind"] == "Deployment"]
+            pods = [item for item in selected if item["kind"] == "Pod"]
+            state = {
+                "deployments": {
+                    item["metadata"]["name"]: item["spec"]["replicas"]
+                    for item in deployments
+                },
+                "pods": [item["metadata"]["name"] for item in pods],
+            }
+            if not observations or state != observations[-1]:
+                observations.append(state)
+                save(args, "cold-prerequisite", observations)
+                print(json.dumps({"waiting_for_natural_scale_zero": state}), flush=True)
+            if (
+                len(deployments) == len(MODELS)
+                and not pods
+                and all(value == 0 for value in state["deployments"].values())
+            ):
+                break
+            await asyncio.sleep(10)
+        else:
+            raise TimeoutError("Apps did not naturally scale to zero within 15 minutes")
     key = json.loads(args.key_file.read_text())
     receipts = []
     async with httpx2.AsyncClient(
@@ -205,6 +258,10 @@ async def run(args):
                     )
                     if failure:
                         assert operation["status"] == "failed", operation
+                        assert operation["error_code"] == "no_valid_molecules", (
+                            operation
+                        )
+                        assert "SMILES" in operation["error_detail"], operation
                         trace["passed"] = True
                         return trace
                     assert operation["status"] == "succeeded", operation
@@ -382,6 +439,11 @@ async def run(args):
                     },
                 )
                 assert response.status_code in {400, 422}, response.status_code
+                rejected = response.json()
+                assert (
+                    rejected["operation"]["error_code"] == "invalid_molecular_input"
+                ), rejected
+                assert "exactly one" in rejected["operation"]["error_detail"], rejected
                 save(
                     args,
                     model + "-invalid-contract",
@@ -405,4 +467,8 @@ if __name__ == "__main__":
     parser.add_argument("--key-file", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cohort", required=True)
+    parser.add_argument("--wait-for-cold", action="store_true")
+    parser.add_argument(
+        "--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a"
+    )
     asyncio.run(run(parser.parse_args()))

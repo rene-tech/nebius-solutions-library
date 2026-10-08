@@ -107,6 +107,21 @@ _PAIDF_CHAT_MODELS = {
     "qwen2-5-14b-instruct": ("Qwen/Qwen2.5-14B-Instruct", "cf98f3b3bbb457ad9e2bb7baf9a0125b6b88caa8"),
 }
 _SCIENTIFIC_ERROR_DETAILS = {
+    "no_valid_molecules": (
+        "No valid molecular structures were supplied. Check the SMILES or SDF structures "
+        "and resubmit corrected input."
+    ),
+    "unknown_endpoint": (
+        "An endpoint name is not supported by this model. Use get_model_schema to select supported endpoints."
+    ),
+    "invalid_molecular_input": (
+        "Invalid molecular input. Check CSV column names, unique molecule IDs, file format "
+        "and the 1,000-molecule limit."
+    ),
+    "invalid_molecular_request": (
+        "Invalid molecular request. Supply exactly one of smiles, molecules, csv or sdf, "
+        "with at most 1,000 molecules. Check get_model_schema for field types and supported values."
+    ),
     "evo2_memory_exhausted": (
         "Evo2 exhausted GPU memory while processing this accepted request. "
         "The operation was not automatically retried on the same runtime. "
@@ -870,6 +885,16 @@ class RuntimeClient:
             payload = json.loads(body)
         except (ValueError, UnicodeError, RecursionError):
             return None
+        if source_model in {"admet-ai", "ctoxpred2"} and status == 422 and isinstance(payload, dict):
+            detail = payload.get("detail")
+            messages = {code: _SCIENTIFIC_ERROR_DETAILS[code] for code in (
+                "no_valid_molecules", "unknown_endpoint", "invalid_molecular_input",
+            )}
+            if isinstance(detail, dict) and detail.get("code") in messages:
+                code = detail["code"]
+                return code, messages[code]
+            if isinstance(detail, list) and detail:
+                return "invalid_molecular_input", _SCIENTIFIC_ERROR_DETAILS["invalid_molecular_request"]
         if not isinstance(payload, dict) or not isinstance(payload.get("detail"), dict):
             return None
         detail = payload["detail"]
@@ -1188,7 +1213,7 @@ class RuntimeClient:
                 if not response.is_success:
                     scientific_error = None
                     if (model.binding.backend_class == "local-kubernetes" and operation.protocol == "native"
-                            and source_model in {"molmim", "genmol", "evo2-40b"}
+                            and source_model in {"molmim", "genmol", "evo2-40b", "admet-ai", "ctoxpred2"}
                             and response.status_code in {422, 500, 503}
                             and content_type == "application/json"):
                         rejected_body = await self._scientific_error_body(response)

@@ -204,6 +204,20 @@ def outputs(model_id, image, receipt, source_commit):
         key: key in {"registered", "runtime_ready", "semantic_qualified"}
         for key in q["states"]
     }
+    hosted_path = ROOT / "acceptance/toxicology-20261008/hosted-qualification.json"
+    if hosted_path.exists():
+        hosted = json.loads(hosted_path.read_text())
+        if (
+            hosted["model_images"][model_id] != image
+            or not all(cohort["passed"] for cohort in hosted["cohorts"])
+            or len(hosted["cohorts"]) < 2
+        ):
+            raise ValueError("Hosted evidence does not qualify this exact image")
+        q["states"] = {key: True for key in q["states"]}
+        q["evidence"] = {
+            key: hashlib.sha256(hosted_path.read_bytes()).hexdigest()
+            for key in q["evidence"]
+        }
     schema = REQUEST_TYPES[model_id].model_json_schema()
     endpoint_array = next(
         branch
