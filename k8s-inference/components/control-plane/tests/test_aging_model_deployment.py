@@ -98,7 +98,7 @@ def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_el
     }
     value["cache"].update(tier=cache_tier)
     value["queue"]["localQueue"] = local_queue
-    value["exposure"].update(openAI=False, openAIAliases=[], mcpToolName=model_id)
+    value["exposure"].update(openAI=False, openAIAliases=[], mcpToolName=model_id.replace("-", "_"))
     spec = ModelDeploymentSpec.model_validate(value)
     qualification = ModelQualification.model_validate(
         {
@@ -113,7 +113,7 @@ def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_el
             "templateRefs": {f"{model_id}.legacy-v1": template_digest},
             "templateCacheTiers": {template_digest: cache_tier},
             "openAIQualified": False,
-            "mcpToolName": model_id,
+            "mcpToolName": model_id.replace("-", "_"),
             "scaleToZeroQualified": False,
             **({**placement_resources, "localQueue": local_queue} if gpu_count == 0 else {}),
         }
