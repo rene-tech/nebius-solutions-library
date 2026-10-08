@@ -1,0 +1,20 @@
+FROM python:3.10-slim-bookworm@sha256:5be5aaecb962a41567bc8041f1e9e3432cb085b037fe057f9a562630b2e4b370
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 CUDA_VISIBLE_DEVICES="" \
+    TOX_MODEL=ctoxpred2 TOX_CPU_THREADS=2 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 \
+    MPLCONFIGDIR=/tmp/matplotlib HOME=/tmp
+RUN apt-get update && apt-get install -y --no-install-recommends git libarchive-tools libgomp1 && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/fs2
+COPY requirements-http.txt requirements-ctox.txt constraints-ctox.txt ./
+RUN pip install --no-cache-dir --no-deps torch==1.12.1+cpu --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -c constraints-ctox.txt -r requirements-http.txt -r requirements-ctox.txt \
+    && pip check
+RUN git clone https://github.com/issararab/CToxPred2.git /opt/ctoxpred2 \
+    && cd /opt/ctoxpred2 && git checkout 2a31aa119e27b6b69a5588d18a01f2a27fef4524 \
+    && cd CToxPred2/models \
+    && bsdtar -xf decriptors_preprocessing.rar && bsdtar -xf model_weights.rar && bsdtar -xf random_forest.rar
+RUN apt-get update && apt-get install -y --no-install-recommends libxrender1 libxt6 libxext6 libfontconfig1 libfreetype6 libpng16-16 && rm -rf /var/lib/apt/lists/*
+COPY toxicology ./toxicology
+USER 65532:65532
+RUN python -c "from toxicology.ctox import CToxRuntime; r=CToxRuntime(); assert len(r.predict(['CCO','CC(=O)Oc1ccccc1C(=O)O'])) == 2"
+EXPOSE 8000
+CMD ["python", "-m", "uvicorn", "toxicology.server:app", "--host", "0.0.0.0", "--port", "8000"]

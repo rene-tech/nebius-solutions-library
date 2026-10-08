@@ -280,6 +280,7 @@ def deployment_runtime_model_schema(catalog_dir: Path) -> dict[str, Any]:
     schema["properties"]["model"]["properties"]["family"]["enum"].extend(
         [
             "biological-age",
+            "toxicology",
             "microscopy",
             "single-cell",
             "speech-recognition",

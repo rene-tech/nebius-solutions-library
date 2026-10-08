@@ -1,0 +1,15 @@
+FROM python:3.11-slim-bookworm@sha256:0a310eeecf4e1f5a0743f9a6520c90c88d089c903ca5fd283f501e3a805f5f89
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 CUDA_VISIBLE_DEVICES="" \
+    TOX_MODEL=admet-ai TOX_CPU_THREADS=2 OMP_NUM_THREADS=2 MKL_NUM_THREADS=2 \
+    MPLCONFIGDIR=/tmp/matplotlib HOME=/tmp
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
+WORKDIR /opt/fs2
+COPY requirements-http.txt requirements-admet.txt constraints-admet.txt ./
+RUN pip install --no-cache-dir --no-deps torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu \
+    && pip install --no-cache-dir -c constraints-admet.txt -r requirements-http.txt -r requirements-admet.txt \
+    && pip check
+COPY toxicology ./toxicology
+USER 65532:65532
+RUN python -c "from toxicology.admet import ADMETRuntime; r=ADMETRuntime(); assert len(r.predict(['CCO','CC(=O)Oc1ccccc1C(=O)O'])) == 2"
+EXPOSE 8000
+CMD ["python", "-m", "uvicorn", "toxicology.server:app", "--host", "0.0.0.0", "--port", "8000"]

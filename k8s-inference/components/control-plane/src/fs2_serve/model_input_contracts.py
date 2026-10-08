@@ -301,6 +301,8 @@ _PURPOSES = {
     "evo2-40b": "Continue a DNA sequence with Evo2-40B; returns generated DNA and elapsed milliseconds per token.",
     "altumage": "Predict methylation-based chronological age from the full CpG panel; returns age by sample ID.",
     "phenoage": "Calculate clinical phenotypic age from age and nine blood biomarkers; returns results by sample ID.",
+    "admet-ai": "Screen small molecules with ADMET-AI: 41 learned ADMET/assay endpoints plus 11 calculated descriptors and alerts. Returns per-molecule scores with endpoint units and species; not a human-safety verdict.",
+    "ctoxpred2": "Screen small molecules for hERG, Nav1.5 and Cav1.2 ion-channel inhibition with CToxPred2. Returns channel-specific model scores and labels, not clinical cardiotoxicity or arrhythmia risk.",
     "qwen3-8b": "General-purpose text chat and reasoning; returns an OpenAI-compatible assistant completion and usage.",
     "nv-reason-cxr-3b": "Chest-X-ray reasoning from image and text; returns an assistant response, not a diagnosis.",
     "glm-5-2-fp8": "GLM text chat and reasoning; returns a completion when a compatible deployment is available.",
@@ -417,6 +419,19 @@ def _pydantic_contract(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
         )
     elif model_ref == "phenoage":
         schema["description"] = "Clinical PhenoAge from age plus nine blood biomarkers, not DNA-methylation PhenoAge."
+    elif model_ref in {"admet-ai", "ctoxpred2"}:
+        for name, materialization, media in (
+            ("molecules", "json", ("application/json",)),
+            ("csv", "utf-8", ("text/csv", "text/plain")),
+            ("sdf", "utf-8", ("chemical/x-mdl-sdfile", "text/plain")),
+        ):
+            props[name] = _transportable(props[name], materialization=materialization, media_types=media, max_bytes=16 * 1024 * 1024)
+        schema["description"] = (
+            "Supply exactly one of smiles, molecules, csv or sdf. Batch records retain caller IDs and row errors; "
+            "up to 1000 molecules per operation. File inputs can use immutable tenant artifact references. "
+            "No salt stripping or tautomer replacement is added. Unknown endpoint names are errors. "
+            "Use small-molecule structures, not protein sequences; review applicability and assay definitions."
+        )
     _describe(schema)
     return schema, (record["source"],)
 
