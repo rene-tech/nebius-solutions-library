@@ -2660,6 +2660,10 @@ class ModelDeploymentController:
                     previous_pool = _mapping(raw.get("status")).get("admittedPoolRef")
                     if not observed_order and isinstance(previous_pool, str):
                         observed_order = [previous_pool]
+                    demand = await self.active_operations.active_operations(
+                        tenant_id=spec.tenant_id,
+                        model_ref=spec.public_model_id,
+                    )
                     order = serving_pool_order(
                         pools=context.eligible_pools,
                         default_order=[
@@ -2671,7 +2675,10 @@ class ModelDeploymentController:
                             )
                         ],
                         observed_order=observed_order,
-                        nodes=await self.api.list_pool_nodes(),
+                        # Failover is driven by requests, not fleet-wide idle
+                        # reconciliation. Avoid creating replacement HPAs for
+                        # every cold App when a pool disappears.
+                        nodes=await self.api.list_pool_nodes() if demand is not None and demand > 0 else None,
                         has_scheduled_pods=any(pod.scheduled for pod in discovery.pods),
                         now=evaluation_time,
                     )

@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from test_model_deployment import model_spec, renderer, reserved_and_preemptible_envelope
-from test_model_deployment_controller import FakeApi, controller, fence, model_object
+from test_model_deployment_controller import FakeApi, MutableActiveOperations, controller, fence, model_object
 
 from fs2_serve.model_deployment import WORKLOAD_POOL_ANNOTATION, RenderContext
 from fs2_serve.model_deployment_controller import ModelKey
@@ -117,20 +117,24 @@ async def test_controller_handoff_and_restart_keep_actual_fallback_status():
 
     api = NodeApi(model)
     api.nodes = None
-    subject = controller(api)
+    demand = MutableActiveOperations(0)
+    subject = controller(api, active_operations=demand)
     subject.envelope = reserved_and_preemptible_envelope()
     key = ModelKey(namespace="fs2-models", name="qwen-live")
     for _ in range(8):
         await subject.reconcile(key, fence())
     assert api.model["status"]["admittedPoolRef"] == ORDER[0]
     api.nodes = [node(ORDER[0], "Unknown"), node(ORDER[1])]
+    await subject.reconcile(key, fence())
+    assert api.model["status"]["admittedPoolRef"] == ORDER[0]
+    demand.value = 2
     for _ in range(8):
         await subject.reconcile(key, fence())
     assert api.model["status"]["admittedPoolRef"] == ORDER[1]
     assert {item["poolRef"] for item in api.model["status"]["placements"]} == {ORDER[1]}
     identities = set(api.resources)
     api.nodes = None
-    restarted = controller(api)
+    restarted = controller(api, active_operations=demand)
     restarted.envelope = subject.envelope
     await restarted.reconcile(key, fence())
     assert set(api.resources) == identities

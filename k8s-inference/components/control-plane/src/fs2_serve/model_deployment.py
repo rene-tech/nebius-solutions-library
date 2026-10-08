@@ -2176,7 +2176,14 @@ def _segmented_operation_demand_promql(
     return f"clamp_max(clamp_min(({base}) - {lower}, 0), {upper})"
 
 
-def startup_retention_promql(*, namespace: str, deployment: str, timeout_seconds: int, target_queue_depth: int) -> str:
+def startup_retention_promql(
+    *,
+    namespace: str,
+    deployment: str,
+    timeout_seconds: int,
+    target_queue_depth: int,
+    model_ref: str | None = None,
+) -> str:
     """Retain already-requested capacity during a bounded startup, never activate it.
 
     KEDA's normal idle cooldown is shorter than a fresh-node image pull. A
@@ -2236,10 +2243,19 @@ def startup_retention_promql(*, namespace: str, deployment: str, timeout_seconds
         "unless on (namespace, pod, uid) "
         f"max by (namespace, pod, uid) (kube_pod_deletion_timestamp{{{scope}}})"
     )
+    # A new HPA/SSA handoff can momentarily default a Deployment to one replica.
+    # That is not customer demand. Retain startup only if this model had actual
+    # queued/activating/running work in the last minute (also tolerates a short
+    # metrics gap during an API rollout). Never keep an idle bootstrap alive.
+    demand_guard = (
+        f" and on () (max_over_time(({operation_demand_promql(model_ref)})[1m:5s]) > 0)"
+        if model_ref is not None
+        else ""
+    )
     return (
         f"(sum((max by (namespace, deployment) ({desired}) > 0) "
         f"and on (namespace, deployment) (({scale_out}) or ({created})) "
-        f"and on () (count({starting}) > 0)) * {target_queue_depth}) OR vector(0)"
+        f"and on () (count({starting}) > 0)) * {target_queue_depth}{demand_guard}) OR vector(0)"
     )
 
 
@@ -2941,6 +2957,7 @@ class LegacyManifestRenderer:
                                     deployment=workload_name,
                                     timeout_seconds=spec.availability.startup_timeout_seconds or 900,
                                     target_queue_depth=spec.availability.target_queue_depth,
+                                    model_ref=spec.public_model_id,
                                 ),
                                 "threshold": str(spec.availability.target_queue_depth),
                                 "activationThreshold": "0",
