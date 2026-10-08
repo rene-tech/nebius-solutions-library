@@ -15,8 +15,9 @@ release, or a measurement of unrestricted multi-tenant sustainable capacity.
 - Existing `batch-cpu` pool; 2 CPU / 2 GiB per replica, min 0 / max 2, 300-second
   cooldown. No GPU, node-pool, cloud-quota or customer-key change.
 - Existing internal `system/qa` inference principal, concurrency 2. Only this key
-  temporarily receives both new model grants and artifact-write permission.
-  Restore its previous policy at closeout; never use a customer key.
+  temporarily received both new model grants and artifact-write permission.
+  Its exact previous grants, scopes, concurrency and expiry were verified
+  restored at closeout; no customer key was used or changed.
 - Backend image source `fb9e21e75bfe9d5b166335cf69800a5b9fc8ef2d`, based on the
   previously deployed reliability source `b12fa656dc92d7c851bc4cd69604b71576133e6b`.
 - Backend image manifest `sha256:71dd5ea5a352c91aabfedd55c4baa6e83f6f31376d9d86c0b53a37cdc2c33756`.
@@ -62,9 +63,52 @@ details. The backend r2 patch preserves recognized molecular error codes and
 operator-owned guidance through the existing failure path, without forwarding
 arbitrary runtime messages. A further 147 focused tests passed; final hosted
 cohorts additionally assert the public error code and explanation.
-See the final machine-readable receipt for final-release cold-cohort results
-and the exact supported bound. No broad customer-ready verdict follows from
-the first cohort alone.
+See [hosted-qualification.json](hosted-qualification.json) for immutable final
+release evidence and [release-closeout.json](release-closeout.json) for live
+publication, healthy replica, unchanged App-spec and restored-key checks.
+No broad customer-ready verdict follows from the first cohort alone.
+
+### Final deployed result
+
+Two completed full cohorts on the same backend digest passed: **r3 cold** and
+**r5 warm**, each with 13 execution cases and two expected invalid-contract
+checks. Both Apps naturally reached zero Pods and activated to two Ready
+replicas. A subsequent publication-only check passed one REST and one typed MCP
+request per App; these four requests are not counted as another full cohort.
+
+| App | Cold activation, accepted to ready | Cold 1,000-row end-to-end | Warm 1,000-row end-to-end |
+| --- | --- | --- | --- |
+| ADMET-AI | 8.43–13.22 s | 31.12 s | 19.24 s |
+| CToxPred2 | 9.49–12.69 s | 119.42 s | 111.93 s |
+
+Activation includes queuing and scheduling on existing CPU nodes; it is not
+pure weight loading or new-node provisioning. End-to-end time includes submit,
+idempotent replay, polling and result download. These are individual measured
+runs, not latency percentiles. The 1,000-row batching fixture cycles 12 structures.
+The 250-record hosted outputs match the retained direct runtime outputs exactly
+for ADMET and within approximately 1e-16 for CTox.
+
+The intermediate **r4** cohort aborted in the test client: an invalid-input job
+finished before its idempotent replay, correctly returning the same terminal
+HTTP 422 operation. The harness incorrectly treated that replay as a transport
+failure. It now accepts the terminal error envelope while checking identical
+operation identity and expected error details. The failed r4 receipt remains
+retained; it is neither excluded as a model success nor called a completed pass.
+
+Live publication changed only qualification metadata: envelope
+`fs2-toxicology-b740dccb30340079`, selections/routes
+`fs2-toxicology-37e3489429db9acb`, with unchanged renderer bundle
+`fs2-toxicology-bc20e3892388faf0`. The qualification receipt SHA-256 is
+`311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69`.
+Runtime images and App execution specs remained unchanged. Final read-only
+closeout verified 3/3 API, 2/2 controller and 2/2 website replicas healthy, and
+the original QA-key policy restored. The Apps remain deployed with min 0/max 2.
+
+Supported qualification is two concurrent internal operations and up to 1,000
+molecules per operation. Independent cross-tenant saturation, LibreChat/LLM
+workflows, preemption, node provisioning, GPU execution and snapshots were not
+qualified. These CPU-first Apps do not advertise GPU snapshot support or
+clinical/regulatory suitability.
 
 Unit-test notes: the existing Starlette HTTP-422 constant deprecation and old
 pytest temporary PostgreSQL socket-cleanup warnings predate this feature. They
@@ -85,6 +129,13 @@ falls back to a timestamped last-known catalog. The check requires `status=ok`
 and therefore rejects `stale` as well as `unavailable`; these receipts alone do
 not prove an empty catalog. Both checks recovered. The post-rollout 546 checks
 all passed. No DNS, Gateway, HTTPRoute or hostname redirect was modified.
+
+The r2 error-detail rollout recorded four non-fresh checks out of 1,344, followed
+by 570 checks with no failures. The final qualification-metadata rollout recorded
+one non-fresh check out of 834. All **414** final post-publication checks passed.
+The strict fresh-catalog transients remain a recorded rollout limitation; they
+are not presented as proof of uninterrupted freshness or an empty customer
+catalog. Final verification never requested or changed the Forge hostname.
 
 Retained implementation failures: client-side apply exceeded Kubernetes'
 last-applied annotation limit during **server dry-run**, before any mutation;

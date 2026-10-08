@@ -378,6 +378,12 @@ async def run(args):
                     "get_model_schema", {"model_id": model, "protocol": "native"}
                 )
                 save(args, model + "-schema", schema)
+                if args.publication_probe:
+                    await asyncio.gather(
+                        case(model, "publication-rest", {"smiles": "CCO"}, "rest"),
+                        case(model, "publication-mcp", {"smiles": "CCO"}, "mcp"),
+                    )
+                    continue
                 dataset = json.loads(
                     (
                         Path(__file__).parent / f"{model}-public-evaluation.json"
@@ -484,6 +490,11 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--cohort", required=True)
     parser.add_argument("--wait-for-cold", action="store_true")
+    parser.add_argument(
+        "--publication-probe",
+        action="store_true",
+        help="Post-metadata-publication recheck, not full qualification",
+    )
     parser.add_argument(
         "--context", default="nebius-mk8s-k8s-inference-h100-e00j5z9te7x5dd9g6a"
     )
