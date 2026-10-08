@@ -8,7 +8,8 @@
     "nemotron-speech-multilingual-0-6b",
     "parakeet-realtime-eou-120m-v1",
     "magpie-tts-multilingual-357m",
-    "diar-streaming-sortformer-4spk-v2-1"
+    "diar-streaming-sortformer-4spk-v2-1",
+    "ctoxpred2"
   ],
   "workload_placements": {
     "nemotron-speech-en-0-6b": {
@@ -517,6 +518,11 @@
       "deployment": "diar-streaming-sortformer-4spk-v2-1",
       "gpu_count": 1,
       "ephemeral_storage_request_gib": 16
+    },
+    "ctoxpred2": {
+      "deployment": "ctoxpred2",
+      "gpu_count": 0,
+      "ephemeral_storage_request_gib": 0.0625
     }
   },
   "common_keeper_paths": [
@@ -686,6 +692,13 @@
     "diar-streaming-sortformer-4spk-v2-1": {
       "manifest_paths": [
         "models/voice-agent/k8s/diar-streaming-sortformer-4spk-v2-1.yaml"
+      ],
+      "keeper_paths": [],
+      "required_secrets": []
+    },
+    "ctoxpred2": {
+      "manifest_paths": [
+        "models/toxicology/k8s/ctoxpred2.yaml"
       ],
       "keeper_paths": [],
       "required_secrets": []

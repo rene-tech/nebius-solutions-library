@@ -1,0 +1,736 @@
+{
+  "benchmarks": [
+    {
+      "case": "dl-sl-fixed-seed-replay",
+      "molecules": 12,
+      "passed": true
+    },
+    {
+      "case": "repeated-public-fixture-throughput",
+      "molecules": 1,
+      "molecules_per_second": 3.3678396705533604,
+      "seconds": 0.29692624881863594,
+      "unique_structures": 1
+    },
+    {
+      "case": "repeated-public-fixture-throughput",
+      "molecules": 32,
+      "molecules_per_second": 17.73465725285173,
+      "seconds": 1.8043765686452389,
+      "unique_structures": 12
+    },
+    {
+      "case": "repeated-public-fixture-throughput",
+      "molecules": 1000,
+      "molecules_per_second": 17.46138145512648,
+      "seconds": 57.26923740655184,
+      "unique_structures": 12
+    }
+  ],
+  "environment": {
+    "cpu_threads": "2",
+    "machine": "x86_64",
+    "packages": {
+      "MolVS": "0.1.1",
+      "PyBioMed": "1.0",
+      "annotated-types": "0.8.0",
+      "anyio": "4.15.1",
+      "autocommand": "2.2.2",
+      "backports.tarfile": "1.2.0",
+      "click": "8.5.0",
+      "exceptiongroup": "1.3.1",
+      "fastapi": "0.115.12",
+      "h11": "0.16.0",
+      "idna": "3.20",
+      "importlib_metadata": "8.0.0",
+      "inflect": "7.3.1",
+      "jaraco.collections": "5.1.0",
+      "jaraco.context": "5.3.0",
+      "jaraco.functools": "4.0.1",
+      "jaraco.text": "3.12.1",
+      "joblib": "1.3.2",
+      "mordred": "1.2.0",
+      "more-itertools": "10.3.0",
+      "networkx": "2.8.8",
+      "numpy": "1.23.5",
+      "openbabel-wheel": "3.1.1.23",
+      "packaging": "24.2",
+      "pandas": "2.0.3",
+      "pillow": "12.3.0",
+      "pip": "23.0.1",
+      "platformdirs": "4.2.2",
+      "prometheus_client": "0.22.1",
+      "pydantic": "2.11.4",
+      "pydantic_core": "2.33.2",
+      "python-dateutil": "2.9.0.post0",
+      "pytz": "2026.5",
+      "rdkit": "2023.9.6",
+      "scikit-learn": "1.3.1",
+      "scipy": "1.11.4",
+      "setuptools": "79.0.1",
+      "six": "1.17.0",
+      "starlette": "0.46.2",
+      "threadpoolctl": "3.7.0",
+      "tomli": "2.0.1",
+      "torch": "1.12.1+cpu",
+      "typeguard": "4.3.0",
+      "typing-inspection": "0.4.4",
+      "typing_extensions": "4.12.2",
+      "tzdata": "2026.5",
+      "uvicorn": "0.34.2",
+      "wheel": "0.45.1",
+      "zipp": "3.19.2"
+    },
+    "python": "3.10.22"
+  },
+  "hosted_qualified": false,
+  "limits": [
+    "Direct local CPU inference, not public REST/MCP or autoscaling acceptance.",
+    "Repeated-fixture timing is a throughput test, not validation of predictive accuracy or chemical applicability."
+  ],
+  "load_seconds": 3.1452122628688812,
+  "max_rss_kib": 790780,
+  "metadata": {
+    "device": "cpu",
+    "endpoints": {
+      "Cav1.2": {
+        "name": "Cav1.2 cardiac calcium-channel liability",
+        "task_type": "classification",
+        "units": "unitless model score"
+      },
+      "Nav1.5": {
+        "name": "Nav1.5 cardiac sodium-channel liability",
+        "task_type": "classification",
+        "units": "unitless model score"
+      },
+      "hERG": {
+        "name": "hERG cardiac potassium-channel liability",
+        "task_type": "classification",
+        "units": "unitless model score"
+      }
+    },
+    "limitations": [
+      "Cardiac ion-channel screening, not a clinical arrhythmia prediction.",
+      "Model probabilities and dropout dispersion are not calibrated human-safety confidence.",
+      "No validated applicability-domain estimate is supplied."
+    ],
+    "mc_dropout_iterations": 100,
+    "methods": [
+      "rf-ssl",
+      "dl-sl"
+    ],
+    "model_id": "ctoxpred2",
+    "model_version": "2a31aa119e27b6b69a5588d18a01f2a27fef4524",
+    "positive_class_definition": "Ion-channel blocker: experimental IC50 <= 10 micromolar (pIC50 >= 5), per the upstream training labels. Not clinical cardiotoxicity.",
+    "preprocessing": "Pinned upstream ECFP2 (1024 bits), PubChem (881 bits), Mordred 2D and released sklearn pipelines; no extra molecular standardization.",
+    "training_empty_descriptors": {
+      "Cav1.2": [
+        "SpAbs_Dt",
+        "SpMax_Dt",
+        "SpDiam_Dt",
+        "SpAD_Dt",
+        "SpMAD_Dt",
+        "LogEE_Dt",
+        "SM1_Dt",
+        "VE1_Dt",
+        "VE2_Dt",
+        "VE3_Dt",
+        "VR1_Dt",
+        "VR2_Dt",
+        "VR3_Dt",
+        "DetourIndex",
+        "MAXsLi",
+        "MAXssBe",
+        "MAXssssBe",
+        "MAXssBH",
+        "MAXsssB",
+        "MAXssssB",
+        "MAXddC",
+        "MAXsNH3",
+        "MAXssNH2",
+        "MAXdNH",
+        "MAXsssNH",
+        "MAXssssN",
+        "MAXsSiH3",
+        "MAXssSiH2",
+        "MAXsssSiH",
+        "MAXssssSi",
+        "MAXsPH2",
+        "MAXssPH",
+        "MAXsssP",
+        "MAXdsssP",
+        "MAXsssssP",
+        "MAXsSH",
+        "MAXdssS",
+        "MAXsGeH3",
+        "MAXssGeH2",
+        "MAXsssGeH",
+        "MAXssssGe",
+        "MAXsAsH2",
+        "MAXssAsH",
+        "MAXsssAs",
+        "MAXsssdAs",
+        "MAXsssssAs",
+        "MAXsSeH",
+        "MAXdSe",
+        "MAXssSe",
+        "MAXaaSe",
+        "MAXdssSe",
+        "MAXddssSe",
+        "MAXsSnH3",
+        "MAXssSnH2",
+        "MAXsssSnH",
+        "MAXssssSn",
+        "MAXsPbH3",
+        "MAXssPbH2",
+        "MAXsssPbH",
+        "MAXssssPb",
+        "MINsLi",
+        "MINssBe",
+        "MINssssBe",
+        "MINssBH",
+        "MINsssB",
+        "MINssssB",
+        "MINddC",
+        "MINsNH3",
+        "MINssNH2",
+        "MINdNH",
+        "MINsssNH",
+        "MINssssN",
+        "MINsSiH3",
+        "MINssSiH2",
+        "MINsssSiH",
+        "MINssssSi",
+        "MINsPH2",
+        "MINssPH",
+        "MINsssP",
+        "MINdsssP",
+        "MINsssssP",
+        "MINsSH",
+        "MINdssS",
+        "MINsGeH3",
+        "MINssGeH2",
+        "MINsssGeH",
+        "MINssssGe",
+        "MINsAsH2",
+        "MINssAsH",
+        "MINsssAs",
+        "MINsssdAs",
+        "MINsssssAs",
+        "MINsSeH",
+        "MINdSe",
+        "MINssSe",
+        "MINaaSe",
+        "MINdssSe",
+        "MINddssSe",
+        "MINsSnH3",
+        "MINssSnH2",
+        "MINsssSnH",
+        "MINssssSn",
+        "MINsPbH3",
+        "MINssPbH2",
+        "MINsssPbH",
+        "MINssssPb"
+      ],
+      "Nav1.5": [
+        "SpAbs_Dt",
+        "SpMax_Dt",
+        "SpDiam_Dt",
+        "SpAD_Dt",
+        "SpMAD_Dt",
+        "LogEE_Dt",
+        "SM1_Dt",
+        "VE1_Dt",
+        "VE2_Dt",
+        "VE3_Dt",
+        "VR1_Dt",
+        "VR2_Dt",
+        "VR3_Dt",
+        "DetourIndex",
+        "MAXsLi",
+        "MAXssBe",
+        "MAXssssBe",
+        "MAXssBH",
+        "MAXsssB",
+        "MAXssssB",
+        "MAXddC",
+        "MAXsNH3",
+        "MAXssNH2",
+        "MAXsssNH",
+        "MAXsSiH3",
+        "MAXssSiH2",
+        "MAXsssSiH",
+        "MAXsPH2",
+        "MAXssPH",
+        "MAXsssP",
+        "MAXdsssP",
+        "MAXsssssP",
+        "MAXsSH",
+        "MAXdS",
+        "MAXdssS",
+        "MAXsGeH3",
+        "MAXssGeH2",
+        "MAXsssGeH",
+        "MAXssssGe",
+        "MAXsAsH2",
+        "MAXssAsH",
+        "MAXsssAs",
+        "MAXsssdAs",
+        "MAXsssssAs",
+        "MAXsSeH",
+        "MAXdSe",
+        "MAXssSe",
+        "MAXaaSe",
+        "MAXdssSe",
+        "MAXddssSe",
+        "MAXsSnH3",
+        "MAXssSnH2",
+        "MAXsssSnH",
+        "MAXssssSn",
+        "MAXsPbH3",
+        "MAXssPbH2",
+        "MAXsssPbH",
+        "MAXssssPb",
+        "MINsLi",
+        "MINssBe",
+        "MINssssBe",
+        "MINssBH",
+        "MINsssB",
+        "MINssssB",
+        "MINddC",
+        "MINsNH3",
+        "MINssNH2",
+        "MINsssNH",
+        "MINsSiH3",
+        "MINssSiH2",
+        "MINsssSiH",
+        "MINsPH2",
+        "MINssPH",
+        "MINsssP",
+        "MINdsssP",
+        "MINsssssP",
+        "MINsSH",
+        "MINdS",
+        "MINdssS",
+        "MINsGeH3",
+        "MINssGeH2",
+        "MINsssGeH",
+        "MINssssGe",
+        "MINsAsH2",
+        "MINssAsH",
+        "MINsssAs",
+        "MINsssdAs",
+        "MINsssssAs",
+        "MINsSeH",
+        "MINdSe",
+        "MINssSe",
+        "MINaaSe",
+        "MINdssSe",
+        "MINddssSe",
+        "MINsSnH3",
+        "MINssSnH2",
+        "MINsssSnH",
+        "MINssssSn",
+        "MINsPbH3",
+        "MINssPbH2",
+        "MINsssPbH",
+        "MINssssPb"
+      ],
+      "rf-ssl": [
+        "SpAbs_Dt",
+        "SpMax_Dt",
+        "SpDiam_Dt",
+        "SpAD_Dt",
+        "SpMAD_Dt",
+        "LogEE_Dt",
+        "SM1_Dt",
+        "VE1_Dt",
+        "VE2_Dt",
+        "VE3_Dt",
+        "VR1_Dt",
+        "VR2_Dt",
+        "VR3_Dt",
+        "DetourIndex",
+        "MAXsLi",
+        "MAXssBe",
+        "MAXssssBe",
+        "MAXsSiH3",
+        "MAXsGeH3",
+        "MAXssGeH2",
+        "MAXsssGeH",
+        "MAXssssGe",
+        "MAXsAsH2",
+        "MAXssAsH",
+        "MAXsssssAs",
+        "MAXsSnH3",
+        "MAXssSnH2",
+        "MAXsssSnH",
+        "MAXsPbH3",
+        "MAXssPbH2",
+        "MAXsssPbH",
+        "MAXssssPb",
+        "MINsLi",
+        "MINssBe",
+        "MINssssBe",
+        "MINsSiH3",
+        "MINsGeH3",
+        "MINssGeH2",
+        "MINsssGeH",
+        "MINssssGe",
+        "MINsAsH2",
+        "MINssAsH",
+        "MINsssssAs",
+        "MINsSnH3",
+        "MINssSnH2",
+        "MINsssSnH",
+        "MINsPbH3",
+        "MINssPbH2",
+        "MINsssPbH",
+        "MINssssPb"
+      ]
+    },
+    "upstream_revision": "2a31aa119e27b6b69a5588d18a01f2a27fef4524"
+  },
+  "model_id": "ctoxpred2",
+  "passed": true,
+  "schema": "fs2-toxicology-runtime-qualification/v1",
+  "scientific_accuracy_claimed": false,
+  "semantic_requests": [
+    {
+      "id": "toxicity-panel-0",
+      "payload_sha256": "43cdcd193b5b8eeaf9452b884c90ea5497aa87758eb673dcf2d1071bb89f3de9",
+      "predictions": [
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.35,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.385,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.35283333333333333,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.2875,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.39375,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.6954166666666666,
+              "predicted_class": 1,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.315,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.4375,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.3566666666666667,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.255,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.54625,
+              "predicted_class": 1,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.1718452380952381,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.1725,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.1875,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.105,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.31,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.36,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.86375,
+              "predicted_class": 1,
+              "uncertainty": null
+            }
+          }
+        }
+      ],
+      "result_sha256": "5ef45178e8402a31083c104485802ffde37f0e499b51d83410f06d914449f09a",
+      "seconds": 0.5389920677989721
+    },
+    {
+      "id": "toxicity-panel-1",
+      "payload_sha256": "e9dbee424625d82204f4c277ca6982d795fc2037d12a55db22b0fdf2a8e109c3",
+      "predictions": [
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.08,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.9175,
+              "predicted_class": 1,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.9375,
+              "predicted_class": 1,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.4275,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.5125,
+              "predicted_class": 1,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.04333333333333333,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.3425,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.415,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.18625,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.3425,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.3875,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.32875,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.2425,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.39875,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.16678571428571431,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        },
+        {
+          "method": "rf-ssl",
+          "predictions": {
+            "Cav1.2": {
+              "positive_class_score": 0.33,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "Nav1.5": {
+              "positive_class_score": 0.3675,
+              "predicted_class": 0,
+              "uncertainty": null
+            },
+            "hERG": {
+              "positive_class_score": 0.4926785714285714,
+              "predicted_class": 0,
+              "uncertainty": null
+            }
+          }
+        }
+      ],
+      "result_sha256": "846ebcefba66014cf18030e4134899fc5ee33464a688582673176282e3e3af49",
+      "seconds": 0.3865323159843683
+    }
+  ],
+  "upstream_parity_max_absolute_difference": 0,
+  "weight_files": [
+    {
+      "bytes": 90375,
+      "path": "models/decriptors_preprocessing/Cav1.2/cav_descriptors_preprocessing_pipeline.sav",
+      "sha256": "ca39a6606a9f266cc1ccc597f19a85a8d1f8f6f6281516f55323c0ea9a17d4f5"
+    },
+    {
+      "bytes": 90475,
+      "path": "models/decriptors_preprocessing/Cav1.2/cav_descriptors_preprocessing_pipeline_2.sav",
+      "sha256": "b9c0bbf45714b40f314c956a0f98bb0219e21eeea459a5eff39b56ced65d4485"
+    },
+    {
+      "bytes": 90495,
+      "path": "models/decriptors_preprocessing/Nav1.5/nav_descriptors_preprocessing_pipeline.sav",
+      "sha256": "19fe8e009b402f269b5291d77c00229e00c6b78fa4c84c5e9e0eb56aa8526cba"
+    },
+    {
+      "bytes": 90595,
+      "path": "models/decriptors_preprocessing/Nav1.5/nav_descriptors_preprocessing_pipeline_2.sav",
+      "sha256": "e9db2020262a4f42a27512db4874b90f2c7ab4a050e8bc1d35f86fbe6982be57"
+    },
+    {
+      "bytes": 92317,
+      "path": "models/decriptors_preprocessing/global_preprocessing_pipeline.sav",
+      "sha256": "58ca80d195ca2f261aa50e68e88a82aebdccdc106149f89d5bb9d10d54e7f301"
+    },
+    {
+      "bytes": 91509,
+      "path": "models/decriptors_preprocessing/hERG/herg_descriptors_preprocessing_pipeline.sav",
+      "sha256": "7e40cbade5b562808e9dfc3f6522b92e1f5fc5272a5104727a18427c4f22c859"
+    },
+    {
+      "bytes": 2234007,
+      "path": "models/model_weights/Cav1.2/_cav12_checkpoint.model",
+      "sha256": "5d87dc23b0b949f41803e4551c840fd5f11b4f2f372df4421cdeb00d32c25081"
+    },
+    {
+      "bytes": 2243685,
+      "path": "models/model_weights/Cav1.2/_cav12_checkpoint_2.model",
+      "sha256": "ffad40c70c7fdd50db11e0e59e18f4849e0d72de11bb68e71888c2fb9ef096e4"
+    },
+    {
+      "bytes": 2127639,
+      "path": "models/model_weights/Nav1.5/_nav15_checkpoint.model",
+      "sha256": "8c2db5743f41a7c22874ccef119adc42bb9ed56bdc9c4c432aacd2624beff12a"
+    },
+    {
+      "bytes": 2138549,
+      "path": "models/model_weights/Nav1.5/_nav15_checkpoint_2.model",
+      "sha256": "609c61db54ade32fad000c5615270a063b1b782f4cccb3a078e857a6d69aae25"
+    },
+    {
+      "bytes": 1689239,
+      "path": "models/model_weights/hERG/_herg_checkpoint.model",
+      "sha256": "c28e8bb8ffb5daebbf0caf1c0ae8efdcd8336740c959f61fafe3d74fc6567e8b"
+    },
+    {
+      "bytes": 1698907,
+      "path": "models/model_weights/hERG/_herg_checkpoint_old.model",
+      "sha256": "35c0b29f5008b0513c66d462c8cb5d94c48936f2a437f24b8cfb825336308f78"
+    },
+    {
+      "bytes": 4486313,
+      "path": "models/random_forest/Cav1.2/_ssl_cav_model.joblib",
+      "sha256": "d7be3bcb59890058208a18167246c395d5ac4ad5b9d762ff07b0b0643ac375e9"
+    },
+    {
+      "bytes": 11434377,
+      "path": "models/random_forest/Nav1.5/_ssl_nav_model.joblib",
+      "sha256": "0b57bc75c80518c1ec01a597f0fde3cbeb5a6a55f8f48d7afc26ea5b8ff30b8b"
+    },
+    {
+      "bytes": 143037737,
+      "path": "models/random_forest/hERG/_ssl_herg_model.joblib",
+      "sha256": "1060d8afee2df325410e11fe5b1a6457656f158f63dc4baab0dc1ccc9a0a98c6"
+    }
+  ],
+  "image": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/fs2-models/toxicology/ctoxpred2@sha256:d7579452d45024fa159a8e25929f112fe4cf5569d6bcd17dec956655cba8aa2c",
+  "source_commit": "66f94843bd0bc268add6ff37c9791fc6c579bd78"
+}

@@ -496,5 +496,248 @@
       "title": "ClinicalRequest",
       "type": "object"
     }
+  },
+  "ctoxpred2": {
+    "schema": {
+      "$defs": {
+        "Molecule": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "Caller-owned molecule identifier; preserved in results.",
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Id",
+              "type": "string"
+            },
+            "smiles": {
+              "description": "Molecular SMILES, including any intended stereochemistry.",
+              "maxLength": 16384,
+              "minLength": 1,
+              "title": "Smiles",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "smiles"
+          ],
+          "title": "Molecule",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "smiles": {
+          "anyOf": [
+            {
+              "maxLength": 16384,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "One molecule; alternatively supply molecules, csv or sdf.",
+          "title": "Smiles"
+        },
+        "molecules": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Molecule"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Ordered molecule records. Duplicate structures are preserved, but IDs must be unique.",
+          "title": "Molecules"
+        },
+        "csv": {
+          "anyOf": [
+            {
+              "maxLength": 16777216,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CSV content with a SMILES column. The platform also accepts an immutable tenant artifact reference here.",
+          "title": "Csv"
+        },
+        "sdf": {
+          "anyOf": [
+            {
+              "maxLength": 16777216,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SDF content. Each record is converted to isomeric SMILES; coordinates are not model inputs.",
+          "title": "Sdf"
+        },
+        "smiles_column": {
+          "default": "smiles",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Smiles Column",
+          "type": "string"
+        },
+        "id_column": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id Column"
+        },
+        "endpoints": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional endpoint IDs from this App's metadata. Omit for the full panel; unknown IDs are rejected.",
+          "title": "Endpoints"
+        },
+        "method": {
+          "default": "rf-ssl",
+          "description": "Upstream semi-supervised random forest or supervised neural networks with MC dropout.",
+          "enum": [
+            "rf-ssl",
+            "dl-sl"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "seed": {
+          "default": 0,
+          "description": "Recorded seed for the neural-network MC-dropout draws; RF predictions are deterministic.",
+          "maximum": 2147483647,
+          "minimum": 0,
+          "title": "Seed",
+          "type": "integer"
+        }
+      },
+      "title": "CToxRequest",
+      "type": "object",
+      "oneOf": [
+        {
+          "required": [
+            "smiles"
+          ],
+          "properties": {
+            "smiles": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "molecules": {
+              "type": "null"
+            },
+            "csv": {
+              "type": "null"
+            },
+            "sdf": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "required": [
+            "molecules"
+          ],
+          "properties": {
+            "smiles": {
+              "type": "null"
+            },
+            "molecules": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "csv": {
+              "type": "null"
+            },
+            "sdf": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "required": [
+            "csv"
+          ],
+          "properties": {
+            "smiles": {
+              "type": "null"
+            },
+            "molecules": {
+              "type": "null"
+            },
+            "csv": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "sdf": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "required": [
+            "sdf"
+          ],
+          "properties": {
+            "smiles": {
+              "type": "null"
+            },
+            "molecules": {
+              "type": "null"
+            },
+            "csv": {
+              "type": "null"
+            },
+            "sdf": {
+              "not": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "source": "k8s-inference/models/toxicology/toxicology/contracts.py"
   }
 }

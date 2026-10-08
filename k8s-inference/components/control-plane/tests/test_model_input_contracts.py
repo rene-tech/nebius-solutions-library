@@ -105,6 +105,8 @@ NATIVE_MODELS = (
     "wan2-2-t2v-nim",
     "wan2-2-i2v-nim",
     "ace-step-1-5",
+    "admet-ai",
+    "ctoxpred2",
 )
 
 
@@ -114,7 +116,9 @@ def test_native_fields_descriptions_and_examples(registry, model_id):
     Draft202012Validator.check_schema(contract.input_schema)
     assert contract.model_ref == model_id and contract.source_refs
     assert contract.input_schema["type"] == "object"
-    assert contract.input_schema["required"]
+    # A union can require one of several input forms without a root required
+    # list. What matters is that an empty request cannot silently run a model.
+    assert not Draft202012Validator(contract.input_schema).is_valid({})
     assert contract.input_schema["additionalProperties"] is False
     assert not {"payload", "request"} & contract.input_schema["properties"].keys()
     assert all(field["description"] for field in contract.input_schema["properties"].values())
@@ -230,6 +234,26 @@ def test_aging_units_and_full_panel_not_replaced_by_toy(registry):
             "samples": [{"sample_id": "toy", "beta_values": [0.5]}],
         }
     )
+
+
+@pytest.mark.parametrize("model_id", ["admet-ai", "ctoxpred2"])
+def test_toxicology_typed_molecules_files_and_one_input(registry, model_id):
+    contract = contract_for(selected(registry, model_id), "native")
+    validator = Draft202012Validator(contract.input_schema)
+    assert validator.is_valid({"smiles": "CCO"})
+    assert validator.is_valid({"molecules": [{"id": "ethanol", "smiles": "CCO"}]})
+    assert validator.is_valid({"csv": "id,smiles\nethanol,CCO", "id_column": "id"})
+    for value in ({}, {"smiles": "CCO", "csv": "smiles\nCCO"}, {"smiles": None},
+                  {"molecules": []}, {"smiles": "CCO", "undeclared": True}):
+        assert not validator.is_valid(value)
+    artifact = {"artifact_id": "00000000-0000-4000-8000-000000000001", "sha256": "a" * 64,
+                "size_bytes": 100, "media_type": "text/csv", "compression": "none"}
+    assert validator.is_valid({"csv": artifact})
+    assert contract.input_schema["properties"]["csv"]["x-fs2-artifact-materialization"] == "utf-8"
+    assert contract.input_schema["properties"]["molecules"]["x-fs2-artifact-materialization"] == "json"
+    if model_id == "ctoxpred2":
+        assert validator.is_valid({"smiles": "CCO", "method": "dl-sl", "seed": 17})
+        assert not validator.is_valid({"smiles": "CCO", "method": "unknown"})
 
 
 def test_segment_contract_publishes_a_real_deterministic_nifti_fixture(registry):
@@ -363,6 +387,8 @@ def test_all_catalog_source_endpoints_are_covered(registry):
         "wan2-2-t2v-nim",
         "wan2-2-i2v-nim",
         "ace-step-1-5",
+        "admet-ai",
+        "ctoxpred2",
     } | {
         "qwen3-8b",
         "nv-reason-cxr-3b",

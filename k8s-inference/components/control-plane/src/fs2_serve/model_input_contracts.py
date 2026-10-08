@@ -420,6 +420,8 @@ def _pydantic_contract(model_ref: str) -> tuple[Schema, tuple[str, ...]]:
     elif model_ref == "phenoage":
         schema["description"] = "Clinical PhenoAge from age plus nine blood biomarkers, not DNA-methylation PhenoAge."
     elif model_ref in {"admet-ai", "ctoxpred2"}:
+        props["smiles_column"]["description"] = "CSV column containing molecular SMILES; defaults to smiles."
+        props["id_column"]["description"] = "Optional CSV identifier column; otherwise stable row IDs are generated."
         for name, materialization, media in (
             ("molecules", "json", ("application/json",)),
             ("csv", "utf-8", ("text/csv", "text/plain")),
