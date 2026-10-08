@@ -81,6 +81,9 @@ def create_app(model_id=None, *, runtime_factory=None):
         try:
             rows = await asyncio.to_thread(parse_rows, payload)
             valid, results = await asyncio.to_thread(prepare_rows, rows)
+            if not valid:
+                state["invalid_molecules"] += len(rows)
+                raise HTTPException(422, detail={"code": "no_valid_molecules", "results": [results[i] for i in range(len(rows))]})
             for offset in range(0, len(valid), chunk_size):
                 chunk = valid[offset:offset + chunk_size]
                 # asyncio.Lock is FIFO: each operation yields after a chunk,
@@ -114,6 +117,9 @@ def create_app(model_id=None, *, runtime_factory=None):
                 "endpoint_metadata": {key: value for key, value in runtime.endpoints.items() if not payload.endpoints or key in payload.endpoints},
                 "limitations": runtime.metadata()["limitations"],
             }
+        except HTTPException:
+            state["failures"] += 1
+            raise
         except ValueError as exc:
             state["failures"] += 1
             raise HTTPException(422, detail={"code": "invalid_molecular_input", "message": str(exc)}) from exc
