@@ -199,6 +199,22 @@ async def run(args):
                             "x-fs2-deadline-seconds": "900",
                         },
                     )
+                    trace.setdefault("admission_http_statuses", []).append(
+                        response.status_code
+                    )
+                    if response.status_code >= 400:
+                        # An already terminal failed operation replays its 4xx
+                        # status, even when wait_seconds=0. This is the same
+                        # durable operation, not a failed admission or new job.
+                        value = response.json()
+                        terminal = (
+                            value.get("operation") if isinstance(value, dict) else None
+                        )
+                        if (
+                            isinstance(terminal, dict)
+                            and terminal.get("status") in TERMINAL
+                        ):
+                            return terminal
                     response.raise_for_status()
                     if response.status_code == 200:
                         response = await http.get(

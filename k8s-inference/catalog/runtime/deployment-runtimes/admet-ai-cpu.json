@@ -171,14 +171,14 @@
       }
     },
     "evidence": {
-      "audited_catalog_sha256": "2f07d91471672719d41fe39b73783e23f4ff65de6e03595a6cd1d0366dcc278a",
-      "audited_live_routes_sha256": "2f07d91471672719d41fe39b73783e23f4ff65de6e03595a6cd1d0366dcc278a",
-      "cold_start_acceptance_sha256": "2f07d91471672719d41fe39b73783e23f4ff65de6e03595a6cd1d0366dcc278a",
-      "elasticity_acceptance_sha256": "2f07d91471672719d41fe39b73783e23f4ff65de6e03595a6cd1d0366dcc278a",
-      "http_mcp_acceptance_sha256": "2f07d91471672719d41fe39b73783e23f4ff65de6e03595a6cd1d0366dcc278a",
-      "mcp_discovery_sha256": "2f07d91471672719d41fe39b73783e23f4ff65de6e03595a6cd1d0366dcc278a",
-      "model_discovery_sha256": "2f07d91471672719d41fe39b73783e23f4ff65de6e03595a6cd1d0366dcc278a",
-      "retained_deployments_sha256": "2f07d91471672719d41fe39b73783e23f4ff65de6e03595a6cd1d0366dcc278a"
+      "audited_catalog_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "audited_live_routes_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "cold_start_acceptance_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "elasticity_acceptance_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "http_mcp_acceptance_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "mcp_discovery_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "model_discovery_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "retained_deployments_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69"
     },
     "model_id": "admet-ai",
     "policy": {
@@ -196,12 +196,12 @@
     },
     "states": {
       "registered": true,
-      "route_active": false,
+      "route_active": true,
       "runtime_ready": true,
       "semantic_qualified": true,
-      "http_mcp_qualified": false,
-      "cold_start_qualified": false,
-      "elasticity_qualified": false
+      "http_mcp_qualified": true,
+      "cold_start_qualified": true,
+      "elasticity_qualified": true
     },
     "variant_id": "admet-ai-cpu-v1"
   }

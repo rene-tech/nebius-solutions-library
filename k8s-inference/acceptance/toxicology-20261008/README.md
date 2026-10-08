@@ -17,9 +17,9 @@ release, or a measurement of unrestricted multi-tenant sustainable capacity.
 - Existing internal `system/qa` inference principal, concurrency 2. Only this key
   temporarily receives both new model grants and artifact-write permission.
   Restore its previous policy at closeout; never use a customer key.
-- Backend image source `6c67a33cb33b73b55c3eb098ec00bce055c010e7`, based on the
+- Backend image source `fb9e21e75bfe9d5b166335cf69800a5b9fc8ef2d`, based on the
   previously deployed reliability source `b12fa656dc92d7c851bc4cd69604b71576133e6b`.
-- Backend image manifest `sha256:c9a62777716d98d4a9b770e7ef1d0b74a703aaa794f680cd1fdda4c2b17f847a`.
+- Backend image manifest `sha256:71dd5ea5a352c91aabfedd55c4baa6e83f6f31376d9d86c0b53a37cdc2c33756`.
 - ADMET-AI image `sha256:2a6d0ee5e0f48d761d295eb20c91f25bfbb652ce5223bf9ba80425092dfeefdf`.
 - CToxPred2 image `sha256:d7579452d45024fa159a8e25929f112fe4cf5569d6bcd17dec956655cba8aa2c`.
 - Website image `sha256:0b814885a4f9e6265354ef125cc200958bc60b99e64e69a1b991c0488d95ac07`,
@@ -56,10 +56,19 @@ scientific limitations and reproduction commands are in
 
 Private raw evidence is retained at
 `/home/tux/secure-handoff/fs2-toxicology-20261008/`; never commit credentials.
-The first hosted cohort passed 13 execution cases and two invalid-contract
-checks. See the final machine-readable receipt for subsequent cold-cohort results
+The first two hosted cohorts passed 13 execution cases and two invalid-contract
+checks each, but inspection showed their 422 responses dropped actionable error
+details. The backend r2 patch preserves recognized molecular error codes and
+operator-owned guidance through the existing failure path, without forwarding
+arbitrary runtime messages. A further 147 focused tests passed; final hosted
+cohorts additionally assert the public error code and explanation.
+See the final machine-readable receipt for final-release cold-cohort results
 and the exact supported bound. No broad customer-ready verdict follows from
 the first cohort alone.
+
+Unit-test notes: the existing Starlette HTTP-422 constant deprecation and old
+pytest temporary PostgreSQL socket-cleanup warnings predate this feature. They
+do not represent unexplained model-runtime warnings or change deployment code.
 
 ## Rollout observations and limitations
 
@@ -89,6 +98,10 @@ CTox's upstream imputer warnings about 50 training-empty features are explained
 and reflected in model metadata; no customer-data fitting or warning suppression
 was introduced. Brief CPU scheduling contention was observed and queued work
 completed; this pool has not been qualified for unlimited concurrent customers.
+Per-operation CPU Pod/node identity may remain unknown behind a multi-replica
+Service; App container/resource observations are available, but this is not a
+claim of complete per-request CPU occupancy attribution. The retained operation
+and lifecycle receipts expose these unknown fields explicitly.
 
 ## Rollback
 

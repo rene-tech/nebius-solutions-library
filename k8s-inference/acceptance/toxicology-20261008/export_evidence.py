@@ -59,6 +59,7 @@ def export(directory, cohort_ids, cold_cohort, backend_image, backend_source):
                     "completed_at",
                     "cold_start_seconds",
                     "error_code",
+                    "error_detail",
                     "http_status",
                     "estimated_gpu_seconds",
                     "runtime",
@@ -66,6 +67,11 @@ def export(directory, cohort_ids, cold_cohort, backend_image, backend_source):
             }
             assert case["operation"]["tenant_id"] == "system"
             assert case["operation"]["estimated_gpu_seconds"] == 0
+            if row.get("result_artifact"):
+                case["result_artifact"] = {
+                    key: row["result_artifact"].get(key)
+                    for key in ("artifact_id", "sha256", "size_bytes", "media_type")
+                }
             cases.append(case)
         invalid = {}
         for model in MODELS:

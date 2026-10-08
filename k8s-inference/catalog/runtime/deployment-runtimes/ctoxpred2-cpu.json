@@ -171,14 +171,14 @@
       }
     },
     "evidence": {
-      "audited_catalog_sha256": "1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d",
-      "audited_live_routes_sha256": "1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d",
-      "cold_start_acceptance_sha256": "1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d",
-      "elasticity_acceptance_sha256": "1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d",
-      "http_mcp_acceptance_sha256": "1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d",
-      "mcp_discovery_sha256": "1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d",
-      "model_discovery_sha256": "1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d",
-      "retained_deployments_sha256": "1b516cdb7b4ac1ab900871f9d7e9dee06144e163db964d3185b587a4931a998d"
+      "audited_catalog_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "audited_live_routes_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "cold_start_acceptance_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "elasticity_acceptance_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "http_mcp_acceptance_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "mcp_discovery_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "model_discovery_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69",
+      "retained_deployments_sha256": "311441f5e7cde626d2f28cc0a35e8a95a4022e58b4565a70798ac3ba31a5ed69"
     },
     "model_id": "ctoxpred2",
     "policy": {
@@ -196,12 +196,12 @@
     },
     "states": {
       "registered": true,
-      "route_active": false,
+      "route_active": true,
       "runtime_ready": true,
       "semantic_qualified": true,
-      "http_mcp_qualified": false,
-      "cold_start_qualified": false,
-      "elasticity_qualified": false
+      "http_mcp_qualified": true,
+      "cold_start_qualified": true,
+      "elasticity_qualified": true
     },
     "variant_id": "ctoxpred2-cpu-v1"
   }
