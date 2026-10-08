@@ -66,6 +66,7 @@ from .model_deployment import (
     MODEL_DEPLOYMENT_LABEL,
     WORKLOAD_POOL_ANNOTATION,
     WORKLOAD_ROLE_ANNOTATION,
+    WORKLOAD_SEGMENT_OFFSET_ANNOTATION,
     AdoptionMode,
     DesiredState,
     DrainObservation,
@@ -82,6 +83,7 @@ from .model_deployment import (
     RenderPlan,
     SnapshotPreference,
     ValidationDisposition,
+    _ordered_burst_pools,
     _validate_serving_snapshot_selection,
     bounded_label_value,
     canonical_digest,
@@ -92,6 +94,7 @@ from .model_deployment import (
     validate_model_deployment,
 )
 from .models import StrictModel
+from .serving_pool_recovery import serving_pool_order
 
 if TYPE_CHECKING:
     from .settings import Settings
@@ -228,6 +231,8 @@ class ModelControllerApi(Protocol):
     async def list_models(self, namespace: str) -> list[dict[str, Any]]: ...
 
     async def get_model(self, key: ModelKey) -> dict[str, Any] | None: ...
+
+    async def list_pool_nodes(self) -> list[dict[str, Any]] | None: ...
 
     async def discover(
         self,
@@ -538,6 +543,9 @@ class HttpKubernetesModelClient:
         self.token_file = token_file
         self.writes_enabled = writes_enabled
         self._owns_client = client is None
+        self._pool_nodes: list[dict[str, Any]] | None = None
+        self._pool_nodes_at: datetime | None = None
+        self._pool_nodes_lock = asyncio.Lock()
         self.client = client or httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             verify=str(ca_file),
@@ -685,6 +693,29 @@ class HttpKubernetesModelClient:
     async def get_model(self, key: ModelKey) -> dict[str, Any] | None:
         response = await self._request("GET", MODEL_ENDPOINT.item(key.namespace, key.name))
         return None if response.status_code == 404 else response.json()
+
+    async def list_pool_nodes(self) -> list[dict[str, Any]] | None:
+        # One bounded read per polling interval, shared by all model workers.
+        async with self._pool_nodes_lock:
+            now = _utc_now()
+            if self._pool_nodes_at is not None and (now - self._pool_nodes_at).total_seconds() < 5:
+                return self._pool_nodes
+            try:
+                response = await self._request("GET", "/api/v1/nodes", params={"limit": "10000"})
+                body = response.json()
+                nodes = body.get("items")
+                if (
+                    not isinstance(nodes, list)
+                    or not all(isinstance(node, dict) for node in nodes)
+                    or body.get("metadata", {}).get("continue")
+                ):
+                    raise ControllerError("node inventory is incomplete")
+                self._pool_nodes = nodes
+            except (ControllerError, ValueError):
+                LOGGER.warning("serving pool health unavailable; retaining observed placement")
+                self._pool_nodes = None
+            self._pool_nodes_at = now
+            return self._pool_nodes
 
     @staticmethod
     def _endpoint(api_version: str, kind: str) -> ResourceEndpoint:
@@ -2240,6 +2271,14 @@ def build_status(
         status["fastStart"] = _fast_start_status_payload(fast_start)
     if plan.validation.admitted_pool_ref is not None:
         status["admittedPoolRef"] = plan.validation.admitted_pool_ref
+    if plan.render is not None and effective_hot_floor(spec.availability, at=observed_at) == 0:
+        # Validation reports static eligibility. Serving status must report
+        # the actual generated burst destination after a health-aware failover.
+        for resource in plan.render.resources:
+            annotations = _mapping(_metadata(resource.manifest).get("annotations"))
+            if resource.kind == "Deployment" and annotations.get(WORKLOAD_ROLE_ANNOTATION) == "burst":
+                status["admittedPoolRef"] = annotations[WORKLOAD_POOL_ANNOTATION]
+                break
     if plan.render is not None:
         status["renderDigest"] = plan.render.render_digest
         endpoint = plan.render.endpoint
@@ -2601,6 +2640,46 @@ class ModelDeploymentController:
             else:
                 plan = None
                 discovery = await self.api.discover(key=key, owner_uid=uid, render=render)
+                if len(context.eligible_pools) > 1:
+                    # Observed segment order is durable state, not a process-
+                    # local retry counter. Preserve it on restart and recovery.
+                    burst_annotations = [
+                        _mapping(_metadata(item.raw).get("annotations"))
+                        for item in discovery.resources
+                        if item.observed.kind == "Deployment"
+                        and item.observed.controller_owner_uid == uid
+                        and _mapping(_metadata(item.raw).get("annotations")).get(WORKLOAD_ROLE_ANNOTATION) == "burst"
+                    ]
+                    observed_order = [
+                        str(item[WORKLOAD_POOL_ANNOTATION])
+                        for item in sorted(
+                            burst_annotations, key=lambda item: int(item.get(WORKLOAD_SEGMENT_OFFSET_ANNOTATION, 0))
+                        )
+                        if WORKLOAD_POOL_ANNOTATION in item
+                    ]
+                    previous_pool = _mapping(raw.get("status")).get("admittedPoolRef")
+                    if not observed_order and isinstance(previous_pool, str):
+                        observed_order = [previous_pool]
+                    order = serving_pool_order(
+                        pools=context.eligible_pools,
+                        default_order=[
+                            pool.pool_id
+                            for pool in _ordered_burst_pools(
+                                context.eligible_pools,
+                                spec.placement.accelerators_per_replica,
+                                spec.placement.cpu_resources,
+                            )
+                        ],
+                        observed_order=observed_order,
+                        nodes=await self.api.list_pool_nodes(),
+                        has_scheduled_pods=any(pod.scheduled for pod in discovery.pods),
+                        now=evaluation_time,
+                    )
+                    context = context.model_copy(update={"burst_pool_order": order})
+                    # Discover the newly selected exact identities too, so a
+                    # foreign collision cannot evade the existing SSA fence.
+                    render = self.renderer.render(spec, context)
+                    discovery = await self.api.discover(key=key, owner_uid=uid, render=render)
         else:
             # The planner returns before rendering for invalid or
             # infrastructure-required revisions; an empty authoritative

@@ -1708,6 +1708,9 @@ class RenderContext(KubernetesModel):
     generation: int = Field(ge=1)
     pool: PoolEnvelope
     eligible_pools: list[PoolEnvelope] = Field(default_factory=list, max_length=32)
+    # Live controller preference within the already-qualified pool set. This
+    # changes only burst ordering, never the global ceiling or the hot floor.
+    burst_pool_order: list[str] = Field(default_factory=list, max_length=32)
     prometheus_server_address: str = Field(min_length=1, max_length=2048)
     evaluation_time: AwareDatetime = Field(default_factory=lambda: datetime.now(UTC))
     minimum_total_replicas_override: int | None = Field(default=None, ge=0, le=10000)
@@ -1742,6 +1745,11 @@ class RenderContext(KubernetesModel):
         if not self.preview and self.uid is None:
             raise ValueError("a non-preview render requires the ModelDeployment UID")
         pools = self.eligible_pools or [self.pool]
+        if self.burst_pool_order and (
+            len(self.burst_pool_order) != len(set(self.burst_pool_order))
+            or set(self.burst_pool_order) != {item.pool_id for item in pools}
+        ):
+            raise ValueError("burst pool order must be a permutation of the qualified pools")
         if len({item.pool_id for item in pools}) != len(pools):
             raise ValueError("render context eligible pools must be unique")
         if self.pool.pool_id not in {item.pool_id for item in pools}:
@@ -2123,7 +2131,12 @@ def _workload_segments(
         requested_total_floor - hot_floor,
         burst_remaining,
     )
-    for pool in _ordered_burst_pools(pools, spec.placement.accelerators_per_replica, spec.placement.cpu_resources):
+    burst_pools = (
+        [by_id[pool_ref] for pool_ref in context.burst_pool_order]
+        if context.burst_pool_order
+        else _ordered_burst_pools(pools, spec.placement.accelerators_per_replica, spec.placement.cpu_resources)
+    )
+    for pool in burst_pools:
         capacity = min(burst_remaining, pool_remaining[pool.pool_id])
         if capacity <= 0:
             continue
