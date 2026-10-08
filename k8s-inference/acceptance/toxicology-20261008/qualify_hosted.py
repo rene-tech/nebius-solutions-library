@@ -242,7 +242,7 @@ async def run(args):
                     assert len(native["results"]) == count
                     assert native["status"] == ("partial" if partial else "succeeded")
                     for row in native["results"]:
-                        if row["status"] == "failed":
+                        if row["status"] == "error":
                             assert partial and row["error"]["code"] in {
                                 "invalid_smiles",
                                 "missing_smiles",

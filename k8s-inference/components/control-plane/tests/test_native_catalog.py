@@ -88,6 +88,8 @@ def test_native_records_do_not_rewrite_archival_digests_or_qualification(archive
     assert set(augmented.records) == set(archive.records) | {
         "phenoage",
         "altumage",
+        "admet-ai",
+        "ctoxpred2",
         "nemotron-speech-en-0-6b",
         "nemotron-speech-en-medical-0-6b",
         "nemotron-speech-multilingual-0-6b",

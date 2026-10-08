@@ -616,11 +616,17 @@
           "anyOf": [
             {
               "items": {
-                "type": "string"
+                "type": "string",
+                "enum": [
+                  "Cav1.2",
+                  "Nav1.5",
+                  "hERG"
+                ]
               },
               "maxItems": 64,
               "minItems": 1,
-              "type": "array"
+              "type": "array",
+              "uniqueItems": true
             },
             {
               "type": "null"
@@ -650,6 +656,287 @@
         }
       },
       "title": "CToxRequest",
+      "type": "object",
+      "oneOf": [
+        {
+          "required": [
+            "smiles"
+          ],
+          "properties": {
+            "smiles": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "molecules": {
+              "type": "null"
+            },
+            "csv": {
+              "type": "null"
+            },
+            "sdf": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "required": [
+            "molecules"
+          ],
+          "properties": {
+            "smiles": {
+              "type": "null"
+            },
+            "molecules": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "csv": {
+              "type": "null"
+            },
+            "sdf": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "required": [
+            "csv"
+          ],
+          "properties": {
+            "smiles": {
+              "type": "null"
+            },
+            "molecules": {
+              "type": "null"
+            },
+            "csv": {
+              "not": {
+                "type": "null"
+              }
+            },
+            "sdf": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "required": [
+            "sdf"
+          ],
+          "properties": {
+            "smiles": {
+              "type": "null"
+            },
+            "molecules": {
+              "type": "null"
+            },
+            "csv": {
+              "type": "null"
+            },
+            "sdf": {
+              "not": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "source": "k8s-inference/models/toxicology/toxicology/contracts.py"
+  },
+  "admet-ai": {
+    "schema": {
+      "$defs": {
+        "Molecule": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "description": "Caller-owned molecule identifier; preserved in results.",
+              "maxLength": 256,
+              "minLength": 1,
+              "title": "Id",
+              "type": "string"
+            },
+            "smiles": {
+              "description": "Molecular SMILES, including any intended stereochemistry.",
+              "maxLength": 16384,
+              "minLength": 1,
+              "title": "Smiles",
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "smiles"
+          ],
+          "title": "Molecule",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "description": "ADMET-AI 2.0.1: learned endpoints and deterministic descriptors.",
+      "properties": {
+        "smiles": {
+          "anyOf": [
+            {
+              "maxLength": 16384,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "One molecule; alternatively supply molecules, csv or sdf.",
+          "title": "Smiles"
+        },
+        "molecules": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Molecule"
+              },
+              "maxItems": 1000,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Ordered molecule records. Duplicate structures are preserved, but IDs must be unique.",
+          "title": "Molecules"
+        },
+        "csv": {
+          "anyOf": [
+            {
+              "maxLength": 16777216,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "CSV content with a SMILES column. The platform also accepts an immutable tenant artifact reference here.",
+          "title": "Csv"
+        },
+        "sdf": {
+          "anyOf": [
+            {
+              "maxLength": 16777216,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "SDF content. Each record is converted to isomeric SMILES; coordinates are not model inputs.",
+          "title": "Sdf"
+        },
+        "smiles_column": {
+          "default": "smiles",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Smiles Column",
+          "type": "string"
+        },
+        "id_column": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Id Column"
+        },
+        "endpoints": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AMES",
+                  "BBB_Martins",
+                  "BRENK_alert",
+                  "Bioavailability_Ma",
+                  "CYP1A2_Veith",
+                  "CYP2C19_Veith",
+                  "CYP2C9_Substrate_CarbonMangels",
+                  "CYP2C9_Veith",
+                  "CYP2D6_Substrate_CarbonMangels",
+                  "CYP2D6_Veith",
+                  "CYP3A4_Substrate_CarbonMangels",
+                  "CYP3A4_Veith",
+                  "Caco2_Wang",
+                  "Carcinogens_Lagunin",
+                  "Clearance_Hepatocyte_AZ",
+                  "Clearance_Microsome_AZ",
+                  "ClinTox",
+                  "DILI",
+                  "HIA_Hou",
+                  "Half_Life_Obach",
+                  "HydrationFreeEnergy_FreeSolv",
+                  "LD50_Zhu",
+                  "Lipinski",
+                  "Lipophilicity_AstraZeneca",
+                  "NIH_alert",
+                  "NR-AR",
+                  "NR-AR-LBD",
+                  "NR-AhR",
+                  "NR-Aromatase",
+                  "NR-ER",
+                  "NR-ER-LBD",
+                  "NR-PPAR-gamma",
+                  "PAINS_alert",
+                  "PAMPA_NCATS",
+                  "PPBR_AZ",
+                  "Pgp_Broccatelli",
+                  "QED",
+                  "SR-ARE",
+                  "SR-ATAD5",
+                  "SR-HSE",
+                  "SR-MMP",
+                  "SR-p53",
+                  "Skin_Reaction",
+                  "Solubility_AqSolDB",
+                  "VDss_Lombardo",
+                  "hERG",
+                  "hydrogen_bond_acceptors",
+                  "hydrogen_bond_donors",
+                  "logP",
+                  "molecular_weight",
+                  "stereo_centers",
+                  "tpsa"
+                ]
+              },
+              "maxItems": 64,
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional endpoint IDs from this App's metadata. Omit for the full panel; unknown IDs are rejected.",
+          "title": "Endpoints"
+        }
+      },
+      "title": "ADMETRequest",
       "type": "object",
       "oneOf": [
         {

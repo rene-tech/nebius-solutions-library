@@ -436,6 +436,9 @@ def grant(args):
                 "concurrent key update; reconcile"
             )
             desired = before["models"]
+            assert set(key["scopes"]) == set(before["scopes"]) | {"artifacts.write"}, (
+                "concurrent scope update; reconcile"
+            )
             scopes = before["scopes"]
         else:
             assert not record.exists(), "grant already recorded; reconcile"

@@ -205,6 +205,13 @@ def outputs(model_id, image, receipt, source_commit):
         for key in q["states"]
     }
     schema = REQUEST_TYPES[model_id].model_json_schema()
+    endpoint_array = next(
+        branch
+        for branch in schema["properties"]["endpoints"]["anyOf"]
+        if branch.get("type") == "array"
+    )
+    endpoint_array["items"]["enum"] = sorted(receipt["metadata"]["endpoints"])
+    endpoint_array["uniqueItems"] = True
     inputs = ("smiles", "molecules", "csv", "sdf")
     schema["oneOf"] = [
         {

@@ -9,7 +9,8 @@
     "parakeet-realtime-eou-120m-v1",
     "magpie-tts-multilingual-357m",
     "diar-streaming-sortformer-4spk-v2-1",
-    "ctoxpred2"
+    "ctoxpred2",
+    "admet-ai"
   ],
   "workload_placements": {
     "nemotron-speech-en-0-6b": {
@@ -523,6 +524,11 @@
       "deployment": "ctoxpred2",
       "gpu_count": 0,
       "ephemeral_storage_request_gib": 0.0625
+    },
+    "admet-ai": {
+      "deployment": "admet-ai",
+      "gpu_count": 0,
+      "ephemeral_storage_request_gib": 0.0625
     }
   },
   "common_keeper_paths": [
@@ -699,6 +705,13 @@
     "ctoxpred2": {
       "manifest_paths": [
         "models/toxicology/k8s/ctoxpred2.yaml"
+      ],
+      "keeper_paths": [],
+      "required_secrets": []
+    },
+    "admet-ai": {
+      "manifest_paths": [
+        "models/toxicology/k8s/admet-ai.yaml"
       ],
       "keeper_paths": [],
       "required_secrets": []

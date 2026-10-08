@@ -39,7 +39,9 @@ from fs2_serve.native_catalog import augment_native_catalog
 from fs2_serve.scientific_batch.podset_envelope import effective_pod_requests
 
 
-@pytest.mark.parametrize("model_id,variant", [("phenoage", "cpu"), ("altumage", "cuda"), ("admet-ai", "cpu"), ("ctoxpred2", "cpu")])
+@pytest.mark.parametrize(
+    "model_id,variant", [("phenoage", "cpu"), ("altumage", "cuda"), ("admet-ai", "cpu"), ("ctoxpred2", "cpu")]
+)
 def test_actual_aging_native_runtime_can_render_and_publish_without_inventing_elasticity(tmp_path, model_id, variant):
     archive = load_catalog(CATALOG_ROOT, repo_root=REPO_ROOT)
     catalog = augment_native_catalog(archive, CATALOG_ROOT, repo_root=REPO_ROOT)
