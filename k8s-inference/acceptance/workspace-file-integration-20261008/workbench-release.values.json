@@ -1,0 +1,10 @@
+{
+  "workbenches": {
+    "releases": {
+      "catalog-20261007-r2": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:243ba1dc462ea8e9dc72d620509cc09add24df325297d591e7cb5e4b62438eff",
+      "customer-state-20261002-r3": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:873be148673dec6dc191ba30d2933c01acee4622fd3fa14888388378539f13d3",
+      "single-cell-20261007-r5": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:92b18aa638f222d1b5b53c61e3c4cad9e11e5e5abc032e856a6a8d69388086fc",
+      "workspace-20261008-r3": "cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:752a860b307e85e69b8ad3b5983ac158f78ad5121bb8dbf4f5ec6e89a30e0c1b"
+    }
+  }
+}
