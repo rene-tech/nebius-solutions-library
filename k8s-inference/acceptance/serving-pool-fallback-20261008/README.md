@@ -64,6 +64,11 @@ first Ready replica (Pod UID `9b240f02-e0c9-46b1-9bf1-e6eff7960c3d`, one GPU,
 regular capacity, first attempt); this is concurrent public-request coverage,
 not proof that both GPUs executed.
 The second requested replica was still pulling on the other qualified node.
+At 14:26 UTC KEDA reduced DiffDock to zero and both Pods disappeared without
+manual scaling. All GPU serving Deployments were then at zero; the CPU MSA
+service remained at one. The normal 300-second cooldown begins after the last
+active scaling signal (14:20:56), including the bounded startup-retention
+history, not necessarily exactly at the last HTTP completion.
 
 Before the final release, candidate A also completed both operations, but
 required ~269 seconds to readiness on a fresh image cache. It is not counted
