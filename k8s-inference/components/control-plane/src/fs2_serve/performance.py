@@ -15,8 +15,9 @@ from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, RootModel, model_validator
+from pydantic import BaseModel, ConfigDict, Field, RootModel, model_serializer, model_validator
 
+from .placement_cost import ComputeRate, PlacementTarget, cost_profiles
 from .store import ConflictError, NotFoundError
 
 Identifier = Annotated[str, Field(min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_.:-]+$")]
@@ -39,6 +40,14 @@ class BenchmarkCase(Contract):
     requested_pool: Identifier | None = None
     cache_condition: Literal["uncontrolled", "warm", "cold", "snapshot"] = "uncontrolled"
     unavailable_reason: str | None = Field(default=None, min_length=1, max_length=512)
+    compute_rate: ComputeRate | None = None
+
+    @model_serializer(mode="wrap")
+    def compatible_payload(self, handler):
+        payload = handler(self)
+        if self.compute_rate is None:
+            payload.pop("compute_rate", None)
+        return payload
 
 
 class CampaignCreate(Contract):
@@ -47,6 +56,14 @@ class CampaignCreate(Contract):
     catalog_sha256: Digest
     max_parallel: int = Field(default=2, ge=1, le=16)
     cases: list[BenchmarkCase] = Field(min_length=1, max_length=512)
+    placement_target: PlacementTarget | None = None
+
+    @model_serializer(mode="wrap")
+    def compatible_payload(self, handler):
+        payload = handler(self)
+        if self.placement_target is None:
+            payload.pop("placement_target", None)
+        return payload
 
     @model_validator(mode="after")
     def distinct(self) -> CampaignCreate:
@@ -54,6 +71,24 @@ class CampaignCreate(Contract):
             raise ValueError("case IDs must be unique")
         if sum(case.repetitions for case in self.cases) > 4096:
             raise ValueError("a campaign may contain at most 4096 trials")
+        if self.placement_target is not None:
+            target = self.placement_target
+            if len({case.fixture_sha256 for case in self.cases}) != 1:
+                raise ValueError("cost placement requires identical input across pools")
+            if len({case.requested_pool for case in self.cases}) != len(self.cases):
+                raise ValueError("cost placement requires one matched case per pool")
+            if any(
+                case.model_id != target.model_id
+                or case.workload_class != target.workload_class
+                or case.cache_condition != target.cache_condition
+                or case.compute_rate is None
+                or not case.requested_pool
+                or case.repetitions < 3
+                for case in self.cases
+            ):
+                raise ValueError(
+                    "cost placement requires matching model/workload/cache, pool rates and at least three trials"
+                )
         return self
 
 
@@ -92,9 +127,17 @@ class TrialResult(TrialLease):
     startup_seconds: Seconds | None = None
     execution_seconds: Seconds | None = None
     gpu_occupied_seconds: Seconds | None = None
+    allocated_compute_seconds: Seconds | None = None
     hardware: HardwareObservation | None = None
     receipt_sha256: Digest
     artifact_uri: str = Field(min_length=1, max_length=1024, pattern=r"^(s3|artifact)://[^?]+$")
+
+    @model_serializer(mode="wrap")
+    def compatible_payload(self, handler):
+        payload = handler(self)
+        if self.allocated_compute_seconds is None:
+            payload.pop("allocated_compute_seconds", None)
+        return payload
 
     @model_validator(mode="after")
     def valid_success(self) -> TrialResult:
@@ -157,6 +200,37 @@ def decode(row: Any) -> dict[str, Any]:
 class PerformanceRepository:
     def __init__(self, pool: Any):
         self.pool = pool
+
+    async def placement_profiles(
+        self,
+        *,
+        model_id: str,
+        runtime_image: str,
+        accelerators_per_replica: int,
+        cache_condition: str,
+    ) -> list[dict[str, Any]]:
+        # Join by the existing model index; never scan operations or request
+        # bodies. The newest fully qualified campaign is the durable revision.
+        rows = await self.pool.fetch(
+            """SELECT DISTINCT c.id,c.created_at FROM fs2_benchmark_campaigns c
+               JOIN fs2_benchmark_trials t ON t.campaign_id=c.id
+               WHERE t.model_id=$1 AND c.spec->'placement_target'->>'runtime_image'=$2
+                 AND c.spec->'placement_target'->>'accelerators_per_replica'=$3
+                 AND c.spec->'placement_target'->>'cache_condition'=$4
+               ORDER BY c.created_at DESC,c.id LIMIT 20""",
+            model_id,
+            runtime_image,
+            str(accelerators_per_replica),
+            cache_condition,
+        )
+        for row in rows:
+            campaign = await self.detail(row["id"])
+            profiles = cost_profiles(campaign)
+            # Do not mix old/new cohorts, cherry-pick early successes, or use a
+            # half-completed multi-pool experiment to change preferences.
+            if len(profiles) == len(campaign["spec"]["cases"]):
+                return profiles
+        return []
 
     async def create(self, spec: CampaignCreate, actor: str) -> dict[str, Any]:
         payload = canonical(spec.model_dump(mode="json"))

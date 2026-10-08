@@ -94,7 +94,9 @@ from .model_deployment import (
     validate_model_deployment,
 )
 from .models import StrictModel
-from .serving_pool_recovery import serving_pool_order
+from .performance import PerformanceRepository
+from .placement_cost import ranked_pools
+from .serving_pool_recovery import pool_headroom, serving_pool_order
 
 if TYPE_CHECKING:
     from .settings import Settings
@@ -233,6 +235,8 @@ class ModelControllerApi(Protocol):
     async def get_model(self, key: ModelKey) -> dict[str, Any] | None: ...
 
     async def list_pool_nodes(self) -> list[dict[str, Any]] | None: ...
+
+    async def list_allocated_pods(self) -> list[dict[str, Any]] | None: ...
 
     async def discover(
         self,
@@ -546,6 +550,9 @@ class HttpKubernetesModelClient:
         self._pool_nodes: list[dict[str, Any]] | None = None
         self._pool_nodes_at: datetime | None = None
         self._pool_nodes_lock = asyncio.Lock()
+        self._allocated_pods: list[dict[str, Any]] | None = None
+        self._allocated_pods_at: datetime | None = None
+        self._allocated_pods_lock = asyncio.Lock()
         self.client = client or httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
             verify=str(ca_file),
@@ -723,6 +730,28 @@ class HttpKubernetesModelClient:
             return RESOURCE_ENDPOINTS[(api_version, kind)]
         except KeyError as exc:
             raise ControllerError("rendered resource GVK is outside the writer allowlist") from exc
+
+    async def list_allocated_pods(self) -> list[dict[str, Any]] | None:
+        async with self._allocated_pods_lock:
+            now = _utc_now()
+            if self._allocated_pods_at is not None and (now - self._allocated_pods_at).total_seconds() < 5:
+                return self._allocated_pods
+            try:
+                response = await self._request("GET", "/api/v1/pods", params={"limit": "10000"})
+                body = response.json()
+                pods = body.get("items")
+                if (
+                    not isinstance(pods, list)
+                    or not all(isinstance(pod, dict) for pod in pods)
+                    or body.get("metadata", {}).get("continue")
+                ):
+                    raise ControllerError("Pod allocation inventory is incomplete")
+                self._allocated_pods = pods
+            except (ControllerError, ValueError):
+                LOGGER.warning("serving allocation evidence unavailable; retaining health-only fallback")
+                self._allocated_pods = None
+            self._allocated_pods_at = now
+            return self._allocated_pods
 
     async def _get_resource(self, api_version: str, kind: str, namespace: str, name: str) -> dict[str, Any] | None:
         endpoint = (
@@ -2513,6 +2542,7 @@ class ModelDeploymentController:
         prometheus_server_address: str,
         writes_enabled: bool,
         active_operations: ActiveOperationsReader | None = None,
+        performance: PerformanceRepository | None = None,
         lease_namespace: str = "fs2-system",
         lease_name: str = "fs2-model-controller",
         lease_duration_seconds: int = 15,
@@ -2528,6 +2558,7 @@ class ModelDeploymentController:
         self.prometheus_server_address = prometheus_server_address
         self.writes_enabled = writes_enabled
         self.active_operations = active_operations or UnknownActiveOperations()
+        self.performance = performance
         self.lease_namespace = lease_namespace
         self.lease_name = lease_name
         self.lease_duration_seconds = lease_duration_seconds
@@ -2664,22 +2695,77 @@ class ModelDeploymentController:
                         tenant_id=spec.tenant_id,
                         model_ref=spec.public_model_id,
                     )
+                    has_scheduled_pods = any(pod.scheduled for pod in discovery.pods)
+                    preferred = [
+                        pool.pool_id
+                        for pool in _ordered_burst_pools(
+                            context.eligible_pools,
+                            spec.placement.accelerators_per_replica,
+                            spec.placement.cpu_resources,
+                        )
+                    ]
+                    nodes = None
+                    headroom = None
+                    if demand is not None and demand > 0 and not has_scheduled_pods:
+                        if self.performance is not None:
+                            try:
+                                async with asyncio.timeout(2):
+                                    profiles = await self.performance.placement_profiles(
+                                        model_id=spec.public_model_id,
+                                        runtime_image=spec.runtime.image,
+                                        accelerators_per_replica=spec.placement.accelerators_per_replica,
+                                        cache_condition="cold",
+                                    )
+                                preferred = ranked_pools(preferred, profiles)
+                            except (asyncpg.PostgresError, TimeoutError, ValueError):
+                                LOGGER.warning(
+                                    "cost evidence unavailable for model %s; keeping qualified fallback order", key.name
+                                )
+                        nodes = await self.api.list_pool_nodes()
+                        allocated_pods = await self.api.list_allocated_pods()
+                        if nodes is not None and allocated_pods is not None:
+                            pod_specs = {}
+                            for pool in context.eligible_pools:
+                                candidate = self.renderer.render(
+                                    spec,
+                                    context.model_copy(
+                                        update={
+                                            "burst_pool_order": [
+                                                pool.pool_id,
+                                                *(other.pool_id for other in context.eligible_pools if other != pool),
+                                            ],
+                                        }
+                                    ),
+                                )
+                                for resource in candidate.resources:
+                                    manifest = resource.manifest
+                                    if (
+                                        resource.kind == "Deployment"
+                                        and manifest["metadata"]["annotations"].get(WORKLOAD_POOL_ANNOTATION)
+                                        == pool.pool_id
+                                    ):
+                                        pod_specs[pool.pool_id] = manifest["spec"]["template"]["spec"]
+                            try:
+                                headroom = pool_headroom(
+                                    pools=context.eligible_pools,
+                                    nodes=nodes,
+                                    pods=allocated_pods,
+                                    pod_specs=pod_specs,
+                                )
+                            except (ValueError, TypeError, KeyError):
+                                LOGGER.warning(
+                                    "invalid capacity quantities for model %s; retaining health-only fallback", key.name
+                                )
                     order = serving_pool_order(
                         pools=context.eligible_pools,
-                        default_order=[
-                            pool.pool_id
-                            for pool in _ordered_burst_pools(
-                                context.eligible_pools,
-                                spec.placement.accelerators_per_replica,
-                                spec.placement.cpu_resources,
-                            )
-                        ],
+                        default_order=preferred,
                         observed_order=observed_order,
                         # Failover is driven by requests, not fleet-wide idle
                         # reconciliation. Avoid creating replacement HPAs for
                         # every cold App when a pool disappears.
-                        nodes=await self.api.list_pool_nodes() if demand is not None and demand > 0 else None,
-                        has_scheduled_pods=any(pod.scheduled for pod in discovery.pods),
+                        nodes=nodes,
+                        headroom=headroom,
+                        has_scheduled_pods=has_scheduled_pods,
                         now=evaluation_time,
                     )
                     context = context.model_copy(update={"burst_pool_order": order})
@@ -3101,6 +3187,7 @@ async def run_model_controller(settings: Settings) -> None:
         prometheus_server_address=settings.model_controller_prometheus_server_address,
         writes_enabled=settings.model_controller_writes_enabled,
         active_operations=active_operations,
+        performance=PerformanceRepository(active_operations.pool),
         lease_namespace=settings.model_controller_system_namespace,
         lease_name=settings.model_controller_lease_name,
         lease_duration_seconds=settings.model_controller_lease_duration_seconds,

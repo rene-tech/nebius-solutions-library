@@ -1,4 +1,4 @@
-"""Render/apply only the chart's read-only node inventory RBAC."""
+"""Render/apply only the chart's read-only node and allocation inventory RBAC."""
 import argparse
 import json
 import os
@@ -37,7 +37,7 @@ def main():
                 if item and item.get("metadata", {}).get("name") == NAME]
     assert {item["kind"] for item in selected} == {"ClusterRole", "ClusterRoleBinding"}
     role = next(item for item in selected if item["kind"] == "ClusterRole")
-    assert role["rules"] == [{"apiGroups": [""], "resources": ["nodes"], "verbs": ["list"]}]
+    assert role["rules"] == [{"apiGroups": [""], "resources": ["nodes", "pods"], "verbs": ["list"]}]
     path = args.output / "pool-reader.yaml"
     path.write_text(yaml.safe_dump_all(selected))
     command = ["kubectl", "--context", CONTEXT, "apply", "-f", str(path)]

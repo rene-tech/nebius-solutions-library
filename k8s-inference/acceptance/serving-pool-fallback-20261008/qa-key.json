@@ -1,6 +1,6 @@
 {
   "name": "qa-shared-serving",
   "models": ["diffdock"],
-  "scopes": ["inference.invoke", "mcp.invoke", "catalog.read", "operations.read", "operations.cancel"],
+  "scopes": ["inference.invoke", "mcp.invoke", "catalog.read", "operations.read", "operations.result", "operations.cancel"],
   "max_concurrency": 2
 }

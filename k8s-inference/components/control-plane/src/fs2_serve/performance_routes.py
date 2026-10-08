@@ -59,6 +59,32 @@ def performance_router(
         await access.authorize_global(identity, OperatorRole.VIEWER, action="benchmark.list")
         return envelope({"items": await repository().list(limit), "mode": "advisory"})
 
+    @router.get("/placement/{model_id}", response_model=AdminEnvelope[PerformanceCampaignData], responses=responses)
+    async def placement(
+        model_id: str,
+        runtime_image: str = Query(min_length=1, max_length=512),
+        accelerators_per_replica: int = Query(ge=0, le=1024),
+        cache_condition: str = Query(default="cold", pattern="^(cold|warm|snapshot)$"),
+        identity: OperatorPrincipal = operator_dep,
+    ) -> Any:
+        await access.authorize_global(identity, OperatorRole.VIEWER, action="benchmark.placement")
+        profiles = await repository().placement_profiles(
+            model_id=model_id,
+            runtime_image=runtime_image,
+            accelerators_per_replica=accelerators_per_replica,
+            cache_condition=cache_condition,
+        )
+        return envelope(
+            {
+                "model_id": model_id,
+                "objective": "usd_per_successful_request",
+                "profiles": profiles,
+                "measured_order": [profile["pool"] for profile in profiles],
+                "state": "measured" if profiles else "unmeasured",
+                "fallback": "qualified available capacity; missing cost evidence never blocks admission",
+            }
+        )
+
     @router.post(
         "/campaigns",
         status_code=201,

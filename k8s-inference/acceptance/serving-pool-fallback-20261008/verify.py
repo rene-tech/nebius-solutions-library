@@ -66,6 +66,13 @@ async def run(args):
                         "operation": "dock", "payload": payload,
                     }, headers={"Idempotency-Key": idempotency, "x-fs2-wait-seconds": "0"})
                     response.raise_for_status()
+                    # An idempotent replay after completion returns native
+                    # output synchronously and identifies the same operation
+                    # in its header, not in a second admission envelope.
+                    if response.status_code == 200:
+                        replay_id = response.headers["x-fs2-operation-id"]
+                        response = await http.get(f"/v1/operations/{replay_id}")
+                        response.raise_for_status()
                     return response.json()
 
                 started = time.monotonic()
@@ -98,9 +105,27 @@ async def run(args):
                 response = await http.get(f"/v1/operations/{operation_id}/result")
                 response.raise_for_status()
                 result = response.json()
-                native = result.get("result", result)
-                validation = validator._validate_response(native, fixture)
                 (args.output / f"{path}-result.json").write_text(json.dumps(result))
+                native = result.get("result", result)
+                if native.get("schema") == "fs2-serve.nebius.ai/operation-artifact-result/v1":
+                    artifact = native["artifact"]
+                    if path == "mcp":
+                        handle_document = _mcp_result(await client.call_tool("download_model_artifact", {"artifact_id": artifact["artifact_id"]}))
+                    else:
+                        handle_response = await http.get(f"/v1/artifacts/{artifact['artifact_id']}/download")
+                        handle_response.raise_for_status()
+                        handle_document = handle_response.json()
+                    handle = handle_document["handle"]
+                    # Do not send the platform API key to the object store.
+                    async with httpx2.AsyncClient(timeout=60, trust_env=False) as download:
+                        artifact_response = await download.request(handle["method"], handle["url"], headers=handle["headers"])
+                        artifact_response.raise_for_status()
+                    raw = artifact_response.content
+                    assert len(raw) == artifact["size_bytes"]
+                    assert hashlib.sha256(raw).hexdigest() == artifact["sha256"]
+                    native = json.loads(raw)
+                    (args.output / f"{path}-native.json").write_bytes(raw)
+                validation = validator._validate_response(native, fixture)
                 receipt = {
                     "operation_id": operation_id, "path": path, "status": operation["status"],
                     "payload_sha256": digest(payload), "result_sha256": digest(result),
