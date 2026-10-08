@@ -105,6 +105,10 @@ async def run(args):
                 response = await http.get(f"/v1/operations/{operation_id}/result")
                 response.raise_for_status()
                 result = response.json()
+                if path == "mcp":
+                    mcp_result = _mcp_result(await client.call_tool("get_operation_result", {"operation_id": operation_id}))
+                    assert mcp_result["operation"]["id"] == operation_id
+                    assert mcp_result["result"] == result
                 (args.output / f"{path}-result.json").write_text(json.dumps(result))
                 native = result.get("result", result)
                 if native.get("schema") == "fs2-serve.nebius.ai/operation-artifact-result/v1":
