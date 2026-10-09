@@ -20,9 +20,9 @@ Lynx, not independently billable inference users. Signup remains disabled.
 | Key limit | Eight concurrent model operations total, not eight per login or eight reserved GPUs |
 | Apps | `amber`, `gromacs`, `gromacs-mpi`, `lammps`, `namd` |
 | Shared bucket | `fs2-lynx-c327dcc386444425`, mounted at `/workspace`, 5 GB shared quota |
-| Shared client | `aiendpoint-e00kybbs8a1sbxcfyw` in `project-e00rene` |
-| Portal | <https://port3080-ryp41kr9mq9015r.tunnel.applications.eu-north1.nebius.cloud> |
-| Client image | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:16b34a377caf015553d4d51ef78721ce1eb142d6e5c9a57ccd7cffdf7b9cdc65` |
+| Shared client | `aiendpoint-e00a5xqzhy0d3zjg56` in `project-e00rene` (migrated October 2) |
+| Portal | <https://port3080-nh8b93sq9rprrv0.tunnel.applications.eu-north1.nebius.cloud> |
+| Client image | `cr.eu-north1.nebius.cloud/e00akg9ndpx77eaexh/lc@sha256:e96a66501807a2c446c17413f66c042b4a6ae2bdee2c32b9b05adcd1d378fd63` |
 
 AMBER26 access for both logins was explicitly requested by the owner. No
 additional inference key, GPU resources, quota changes or private model copies
@@ -68,6 +68,34 @@ evidence are retained privately. Short-run science checks do not establish
 equilibrium, converged free energies, or an all-workflows production release.
 
 ## Retention and future maintenance
+
+### October 2 migration
+
+The owner requested migration to the qualified Kimi K3 default image. Both
+existing accounts/password hashes, all five original conversations / 28 messages,
+the same API key and bucket were preserved. The predecessor
+`aiendpoint-e00kybbs8a1sbxcfyw` is stopped; do not restart it alongside the new
+same-owner workbench. Both real browser logins, chat isolation, the five MD App
+grants and a browser CSV download were checked. No model, quota or GPU capacity
+change was made.
+
+Fourteen replay requests completed, with thirteen clean technical cases and one
+self-recovered Gemmi API mistake in an inventory query. Both hosted GROMACS runs
+and all 318 output objects passed independent file checks. The recovered case
+remains a failed clean-agent acceptance case, not a zero-error release claim.
+Private evidence and verified full-database backups are under
+`/home/tux/secure-handoff/fs2-lynx-kimi-migration-20261002/`; the cookbook report is
+`templates/hcls-librechat/docs/lynx-kimi-migration-20261002.md`.
+
+Do not stop the application container to copy a database on Serverless: the
+provider terminates the underlying VM. The successful restore kept it alive,
+verified a complete staged MongoDB import, and re-encrypted the same saved API
+credentials with the new instance's local keys. First-user password bootstrap is
+omitted to prevent password resets. Existing customer passwords and API/S3 keys
+are unchanged. MongoDB needed a process open-file soft limit of 64000 for staging
+duplicate indexes (not a cloud quota increase); retain that migration prerequisite.
+
+### Original onboarding records
 
 Private operational root:
 `/home/tux/secure-handoff/fs2-lynx-onboarding-20260929/`.

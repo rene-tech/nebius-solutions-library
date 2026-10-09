@@ -34,8 +34,8 @@
       "key_sharing": "Explicit owner exception: one shared API key, max_concurrency 8, across both LibreChat logins; attribution is tenant/service-principal level.",
       "librechat_mode": "tenant-shared",
       "librechat_members": [
-        {"member": "gyorgy", "endpoint_id": "aiendpoint-e00kybbs8a1sbxcfyw"},
-        {"member": "daniel", "endpoint_id": "aiendpoint-e00kybbs8a1sbxcfyw"}
+        {"member": "gyorgy", "endpoint_id": "aiendpoint-e00a5xqzhy0d3zjg56"},
+        {"member": "daniel", "endpoint_id": "aiendpoint-e00a5xqzhy0d3zjg56"}
       ],
       "note": "Owner explicitly clarified on 2026-09-29: one shared LibreChat instance with two distinct local logins, overriding the per-user-instance default for Lynx. Includes AMBER26 and one shared 5 GB bucket fs2-lynx-c327dcc386444425. Chats are account-scoped; workspace files and model usage are shared. No public signup. Do not split the instance or issue two eight-slot keys."
     },
