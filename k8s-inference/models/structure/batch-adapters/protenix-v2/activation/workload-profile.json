@@ -6,7 +6,7 @@
     "model_id": "protenix-v2",
     "display_name": "Protenix v2.0.0",
     "execution_mode": "scientific-batch",
-    "state": "qualified",
+    "state": "active",
     "route_exposed": true,
     "source": {
       "kind": "git",
@@ -127,13 +127,13 @@
     },
     "semantic_validation": {
       "validator_id": "protenix-v2-upstream-v2-0-0",
-      "state": "qualified"
+      "state": "active"
     },
     "qualification": {
       "h100_semantic_receipt_sha256": "e2935d0c8596573d7934a25468a6740dace8cb1e53fec3b8bf8cd5c5e52cb33a",
-      "public_completion_receipt_sha256": "07578f238ccb4a2ecc540b083ec0c1609f66369acd5d49db13aeaf80200386d1",
-      "scheduler_eligibility_receipt_sha256": "9a06de39243ff565e4e44032f912d1bb102e7052d2c61b225ffd742fef4ac085",
-      "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
       "qualified_at": "2026-09-06T22:46:13.905481Z"
     },
     "policy": {
@@ -143,7 +143,8 @@
         "Localization-compatible image sha256:ac8f7c2c...69980e completed exact-digest semantic H100 inference against the localized composite runtime tree; public completion and scheduler eligibility receipts remain pending.",
         "The v2 checkpoint was recovered from the immutable third-party mirror TMF001/protenix-v2-weights@653edab2 and is not yet byte-compared with the publisher CDN object.",
         "The source payload 8e14bb80...12eca is transformed by localization manifest a093d28e...cc6b7 into the exact shared-filesystem runtime tree 5e1c3b54...74d48 with localization receipt ea301407...04b4; all identities remain distinct.",
-        "Only msa_mode none is admitted; precomputed MSA waits for a validated relocation contract and no mode contacts an MSA server."
+        "Only msa_mode none is admitted; precomputed MSA waits for a validated relocation contract and no mode contacts an MSA server.",
+        "Historical acceptance retained unchanged: completion=07578f238ccb4a2ecc540b083ec0c1609f66369acd5d49db13aeaf80200386d1, scheduler=9a06de39243ff565e4e44032f912d1bb102e7052d2c61b225ffd742fef4ac085. Current execution identity/map requires new public acceptance; active serving is preserved."
       ]
     },
     "runtime_artifacts": [

@@ -86,7 +86,7 @@ Primary sources (accessed 2026-10-03):
 - [Exact GROMACS query detection](https://github.com/gromacs/gromacs/blob/da9e013175bae98b31b34384f6b4864ff29f65a5/cmake/gmxManageGpuAwareMpi.cmake)
 
 Private raw evidence is in
-`/home/tux/secure-handoff/fs2-gromacs-mpinat-20261003/runtime-cuda-aware-r2/`.
+`${FS2_OPERATOR_EVIDENCE}/fs2-gromacs-mpinat-20261003/runtime-cuda-aware-r2/`.
 The original configuration is preserved under `original-build/`. A first build
 attempt failed before compilation because the existing worker `.dockerignore`
 excluded the new probe files; its log remains retained. The additive

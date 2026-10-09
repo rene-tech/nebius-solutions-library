@@ -6,7 +6,7 @@
     "model_id": "esmfold2-fast",
     "display_name": "ESMFold2-Fast v3.4.0 (Biohub esm)",
     "execution_mode": "scientific-batch",
-    "state": "qualified",
+    "state": "active",
     "route_exposed": true,
     "source": {
       "kind": "git",
@@ -129,7 +129,7 @@
     },
     "semantic_validation": {
       "validator_id": "esmfold2-fast-biohub-v3-4-0",
-      "state": "qualified"
+      "state": "active"
     },
     "policy": {
       "commercial_use": "allowed",
@@ -137,7 +137,8 @@
       "limitations": [
         "Localization-compatible image sha256:6eaf386a9bb4...c8fa35 completed exact-digest semantic H100 inference with the checksum-verified trunk, ESMC-6B and CCD objects; public completion and scheduler eligibility receipts remain pending.",
         "The shared ESMC-6B object is bound by terminal localization receipt 14599935...0962 and mounted read-only with storage supplemental group 1000.",
-        "The fast trunk, ESMC-6B and CCD objects are bound by immutable localization receipts and mounted read-only from content-addressed generations."
+        "The fast trunk, ESMC-6B and CCD objects are bound by immutable localization receipts and mounted read-only from content-addressed generations.",
+        "Historical acceptance retained unchanged: completion=d970dad8f184c15f09d1c6556dfa2ac5492f6b66eea9b7f92babc7e671b1571b, scheduler=f32ad35d5c3992bc6255e15ce97fda84f854e54fe69180a8d8ed9e5a8d14b6d3. Current execution identity/map requires new public acceptance; active serving is preserved."
       ]
     },
     "runtime_artifacts": [
@@ -264,9 +265,9 @@
     ],
     "qualification": {
       "h100_semantic_receipt_sha256": "b78dce5a942472b9427ca4f84a2a0b00baed1c3beca40d230913f1745c7df545",
-      "public_completion_receipt_sha256": "d970dad8f184c15f09d1c6556dfa2ac5492f6b66eea9b7f92babc7e671b1571b",
-      "scheduler_eligibility_receipt_sha256": "f32ad35d5c3992bc6255e15ce97fda84f854e54fe69180a8d8ed9e5a8d14b6d3",
-      "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
       "qualified_at": "2026-09-06T22:51:46.640834Z"
     }
   }

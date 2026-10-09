@@ -7,6 +7,7 @@ on:
       - 'modules/**'
       - 'README.md'
       - '.github/workflows/k8s-inference.yml'
+      - 'docs/scientific-ai/public-export-history.json'
   push:
     branches:
       - main
@@ -15,6 +16,7 @@ on:
       - 'modules/**'
       - 'README.md'
       - '.github/workflows/k8s-inference.yml'
+      - 'docs/scientific-ai/public-export-history.json'
   workflow_dispatch:
 
 permissions:

@@ -184,7 +184,7 @@ AMBER feature, broaden the operator-confirmed academic scope, or qualify GPU
 process snapshots.
 
 Private raw evidence lives under
-`/home/tux/secure-handoff/fs2-pmemd26-build.FtlWsT/`. Source, native inputs,
+`${FS2_OPERATOR_EVIDENCE}/fs2-pmemd26-build.FtlWsT/`. Source, native inputs,
 upstream reference data, failed attempts and full logs remain private; do not
 copy them into Git. The complete four-engine comparison and final client release
 are tracked separately in the [MD evidence map](../README.md); native-only

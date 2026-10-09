@@ -89,6 +89,67 @@ following against the exact candidate release:
 Secrets and customer payloads remain outside Git. Receipts must contain stable
 identities, hashes, status and timings without credentials or private inputs.
 
+## Shared-model concurrency, capacity and scaling
+
+Every production App is a shared, multi-customer service by default. This applies
+to every model family, not only speech. A single-tenant example is not a production
+serving architecture. Reuse platform tenant grants, durable operation state,
+idempotency, artifact authorization and usage attribution; do not introduce a
+shared demo bearer or process-global customer result namespace as substitutes.
+
+The existing release gate must include the following evidence:
+
+- **Isolation and scheduling:** overlap distinct customer identities with
+  distinguishable inputs. Prove transcript/output, decoder/cache state, artifact,
+  cancellation and idempotency isolation. A lock held for an entire live session
+  is not an acceptable default wrapper. Use bounded admission and a runtime-safe,
+  fair scheduler or supported batching. Removing a lock without isolating state
+  is unsafe. A genuinely single-execution runtime must declare that measured
+  constraint and prove shared service through adequate replicas; it must not be
+  advertised as concurrent sessions per GPU.
+- **Measured capacity envelope:** pin model and runtime revisions, image,
+  GPU class/count (and partition), precision, settings, input/output shape,
+  session duration, streaming chunk/context profile and customer/workload mix.
+  Define the throughput/latency/error/quality objectives before the run. Measure
+  sustained load, bursts, mixed interactive/batch traffic and overload/recovery
+  through customer routes. For live audio, pace input in real time; file decode
+  speed alone is not live-session capacity. Report latency distributions,
+  queue growth, completion/error counts, quality, real-time factor and resource
+  use with sample counts, duration and repeatability. State the highest qualified
+  concurrency and the first failing or untested bound, not an unqualified exact
+  universal maximum. GPU-group results must not be divided into a per-GPU promise
+  without validating that topology. Other models use their native work units
+  (requests, tokens, frames or jobs) and representative input sizes.
+- **Saturation and headroom:** expose active work, bounded pending work, oldest
+  wait, admission/rejection, cancellation, completion and runtime pressure in the
+  existing operator telemetry. Streaming services additionally expose buffered
+  audio/chunks and processing/transcript lag. Derive headroom from the measured
+  envelope, not GPU utilization alone or a configured request limit. Missing,
+  stale or unsupported telemetry is unknown, never zero capacity or zero load.
+  Keep metric labels bounded; correlate opaque customer/request identities in
+  authorized logs/traces without logging audio, transcripts or credentials.
+- **Scaling and failure:** bind admission limits and scale-out thresholds to the
+  measured envelope, observed warm-up time and chosen reserve. Record hysteresis,
+  replica ceilings and capacity-unavailable behavior. Prove scale-out under load,
+  fair batch/live service, cancellation/disconnect cleanup, graceful session drain
+  on scale-in and explicit worker-loss errors. Verify the new-node path separately
+  when advertised; replica creation does not prove GPU node provisioning. Retest
+  the actual deployment substrate: Kubernetes evidence does not qualify a
+  Serverless Endpoint's autoscaling. Keep FS2/KEDA/Kueue and infrastructure
+  ownership intact, rather than adding a competing scaling writer.
+
+Use `docs/QUEUE_AND_GPU_TELEMETRY.md` and
+`components/admin-console/docs/CAPACITY-OBSERVABILITY-CONTRACT.md` as the existing
+telemetry contracts. Store the capacity profile and thresholds with the exact
+qualified release, expose their freshness and limitations to operators, and
+rerun affected measurements after model, adapter, GPU, precision or workload
+changes. Throughput-priority service may accept more latency, but must still
+declare bounded buffering/timeouts and show sustainable queues and recovery.
+
+No customer-ready production claim passes without this evidence. Existing Apps
+with missing measurements remain explicitly unqualified for their untested
+capacity/scaling claims; this policy does not retroactively qualify them.
+
 ## Claim discipline
 
 - `unit-tested`, `schema-validated`, `runtime-probed`, `model-qualified`, and

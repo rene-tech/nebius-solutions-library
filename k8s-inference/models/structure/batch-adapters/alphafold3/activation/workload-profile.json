@@ -6,7 +6,7 @@
     "model_id": "alphafold3",
     "display_name": "AlphaFold 3 v3.0.4",
     "execution_mode": "scientific-batch",
-    "state": "qualified",
+    "state": "active",
     "route_exposed": true,
     "source": {
       "kind": "git",
@@ -127,13 +127,13 @@
     },
     "semantic_validation": {
       "validator_id": "alphafold3-upstream-v3-0-4",
-      "state": "qualified"
+      "state": "active"
     },
     "qualification": {
       "h100_semantic_receipt_sha256": "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75",
-      "public_completion_receipt_sha256": "533836c49169edaadbcce9dc587e1b40aafb196bab4165e5cb2fc893aea6058c",
-      "scheduler_eligibility_receipt_sha256": "db490a792ade3513474b09194b3c6bb1d09c4797a76bdb1bd2876b76cca88a36",
-      "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+      "public_completion_receipt_sha256": null,
+      "scheduler_eligibility_receipt_sha256": null,
+      "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
       "qualified_at": "2026-09-06T22:44:00.468714Z"
     },
     "policy": {
@@ -144,7 +144,8 @@
         "The licensed parameter file remains tenant-private and is authorized once by the deployment; exact in-place PVC localization receipt 9c89f122...38bd4 is distinct from the deployment authorization document, and callers do not provide a per-request license receipt.",
         "The public database tree d27b8956...dfaea has canonical terminal localization receipt b049e698...f6a6 on the reference-data plane; inference never mounts that public host root.",
         "Raw-input preprocessing runs only in the 16 CPU, 64 GiB reference-data class; the live reference pool nodes are 8 vCPU / 32 GiB and cannot admit it until a larger reference class exists.",
-        "OpenFold3 is an independent operational alternative and never satisfies an alphafold3 request."
+        "OpenFold3 is an independent operational alternative and never satisfies an alphafold3 request.",
+        "Historical acceptance retained unchanged: completion=533836c49169edaadbcce9dc587e1b40aafb196bab4165e5cb2fc893aea6058c, scheduler=db490a792ade3513474b09194b3c6bb1d09c4797a76bdb1bd2876b76cca88a36. Current execution identity/map requires new public acceptance; active serving is preserved."
       ]
     },
     "runtime_artifacts": [

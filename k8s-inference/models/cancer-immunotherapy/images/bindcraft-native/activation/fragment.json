@@ -43,7 +43,7 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-public-accepted",
+      "state": "semantic-qualified-active-awaiting-public-acceptance",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
         "models/cancer-immunotherapy/images/bindcraft-native/evidence/live-h100-20260905/bindcraft-r20-h100-semantic-qualification.json"
@@ -61,7 +61,7 @@
       "model_id": "bindcraft",
       "display_name": "BindCraft academic",
       "execution_mode": "scientific-batch",
-      "state": "qualified",
+      "state": "active",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -171,13 +171,13 @@
       },
       "semantic_validation": {
         "validator_id": "bindcraft-v1",
-        "state": "qualified"
+        "state": "active"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "9f4d97dd49666b2a67fd54d0ff5ba2133b99757a6e6e794bdebd003df540c66f",
-        "public_completion_receipt_sha256": "5e105c7c53f129a7a7719ae720811c14f167217db5d9c55b780e3f77737cf189",
-        "scheduler_eligibility_receipt_sha256": "4381714913c69643c3ef0fe2cc32734b8367c21a58c9e066651e8fff44e12a8e",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:53:07.977893Z"
       },
       "policy": {
@@ -185,7 +185,8 @@
         "non_clinical": true,
         "limitations": [
           "The exact r20 image and private PyRosetta tree passed real H100 semantics under the authorized academic PoC path, including a two-row upstream overshoot reduced to its exact one-design shard quota.",
-          "The active bridge is anchored to the r20 exact-digest receipt, mixed-plane mounts, collection contract, and H100 semantic evidence; public completion and scheduler acceptance receipts remain pending."
+          "The active bridge is anchored to the r20 exact-digest receipt, mixed-plane mounts, collection contract, and H100 semantic evidence; public completion and scheduler acceptance receipts remain pending.",
+          "Historical acceptance retained unchanged: completion=5e105c7c53f129a7a7719ae720811c14f167217db5d9c55b780e3f77737cf189, scheduler=4381714913c69643c3ef0fe2cc32734b8367c21a58c9e066651e8fff44e12a8e. Current execution identity/map requires new public acceptance; active serving is preserved."
         ]
       },
       "runtime_artifacts": [
@@ -394,6 +395,6 @@
   "activation_gate": {
     "route_exposed": true,
     "ready_for_route": true,
-    "public_platform_run_required": false
+    "public_platform_run_required": true
   }
 }

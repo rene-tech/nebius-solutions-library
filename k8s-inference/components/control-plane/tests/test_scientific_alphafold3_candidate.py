@@ -11,6 +11,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+from scientific_qualification_assertions import assert_active_qualification_history
 
 from fs2_serve.scientific_batch import (
     ArtifactAccessContext,
@@ -190,13 +191,9 @@ def test_active_bridge_keeps_academic_planes_separate() -> None:
         "095e4d8da54621329d65a1bdae0e9f5b70d9bb305165d7d3f8e26315fe604b75"
     )
     if active_profile["state"] == "active":
-        assert qualification["public_completion_receipt_sha256"] is None
-        assert qualification["scheduler_eligibility_receipt_sha256"] is None
-        assert qualification["qualified_at"] == "2026-09-04T16:57:43Z"
+        assert_active_qualification_history(active_profile, "2026-09-04T16:57:43Z")
     else:
-        assert re.fullmatch(
-            r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"]
-        )
+        assert re.fullmatch(r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"])
         assert re.fullmatch(
             r"[a-f0-9]{64}",
             qualification["scheduler_eligibility_receipt_sha256"],

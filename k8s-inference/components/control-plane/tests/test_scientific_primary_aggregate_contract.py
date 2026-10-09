@@ -6,6 +6,7 @@ import re
 
 from conftest import CATALOG_ROOT
 from jsonschema import Draft202012Validator, FormatChecker
+from scientific_qualification_assertions import assert_active_qualification_history
 
 SOLUTION_ROOT = CATALOG_ROOT.parents[1]
 PRIMARY_ACTIVE_BRIDGE = {
@@ -223,9 +224,11 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
             recorded_identity = identity_payload.pop("execution_identity_sha256")
             assert recorded_identity == _canonical_sha256(identity_payload)
             assert qualification["h100_semantic_receipt_sha256"] == selected_evidence["receipt_sha256"]
-            if candidate is profile:
+            if candidate is profile or model_id not in PRIMARY_SUCCESSORS:
                 baseline_ids = execution_document["qualification_baselines"][qualification["execution_map_sha256"]]
                 assert model_id in baseline_ids
+                if candidate is projected_profile:
+                    assert projected_profile == profile
             else:
                 # Historical activation evidence remains unchanged; only the
                 # canonical reference is rebased to the exact preserved rows.
@@ -233,9 +236,7 @@ def test_primary_active_bridge_is_schema_valid_and_exactly_evidence_anchored() -
                     "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521"
                 )
             if candidate["state"] == "active":
-                assert qualification["public_completion_receipt_sha256"] is None
-                assert qualification["scheduler_eligibility_receipt_sha256"] is None
-                assert qualification["qualified_at"] == selected_evidence["qualified_at"]
+                assert_active_qualification_history(candidate, selected_evidence["qualified_at"])
             else:
                 assert re.fullmatch(
                     r"[a-f0-9]{64}",

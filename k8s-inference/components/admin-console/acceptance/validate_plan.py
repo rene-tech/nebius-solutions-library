@@ -13,6 +13,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_ROUTE_IDS = {
+    "apps",
     "overview",
     "models",
     "model-detail",

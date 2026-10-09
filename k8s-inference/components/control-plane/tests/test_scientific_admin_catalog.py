@@ -233,8 +233,19 @@ async def test_delivered_catalog_joins_every_published_candidate(registry: Regis
     assert openfold.backend.model_revision == "c4771653c5d0a3ebb0b3af71b05efd64bc44ee86"
     assert "qualified-evidence" in openfold.missing_evidence
     assert by_candidate["mosaic"].workload_profile == "published"
-    assert by_candidate["mosaic"].readiness == "qualified"
-    assert "qualified-evidence" not in by_candidate["mosaic"].missing_evidence
+    # Serving remains published, but changed identities cannot inherit the
+    # earlier scheduler receipt's qualification in the admin projection.
+    for candidate_id in (
+        "bindcraft",
+        "mosaic",
+        "rfdiffusion-upstream",
+        "esmfold2",
+        "esmfold2-fast",
+        "protenix-v2",
+        "alphafold3",
+    ):
+        assert by_candidate[candidate_id].readiness == "candidate"
+        assert "qualified-evidence" in by_candidate[candidate_id].missing_evidence
     rfdiffusion = by_candidate["rfdiffusion-upstream"]
     assert rfdiffusion.model_id == "rfdiffusion"
     assert rfdiffusion.workload_profile == "published"

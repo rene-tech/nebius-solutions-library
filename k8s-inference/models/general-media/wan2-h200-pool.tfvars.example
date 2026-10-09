@@ -1,6 +1,6 @@
 # Merge this entry into deployment.accelerator_pools in the deployment's
 # terraform.tfvars. Do not apply this fragment over a populated root map.
-# The existing eu-north1 group is mk8snodegroup-e00prf74rw5vnbqcxq; import/adopt
+# For an existing group, resolve its ID from the operator's state and import/adopt
 # that exact group using the infrastructure owner's reviewed state workflow,
 # never create a duplicate group merely to match this example.
 #

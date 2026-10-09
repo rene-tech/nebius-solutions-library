@@ -71,8 +71,17 @@
   },
   "routes": [
     {
-      "id": "overview",
+      "id": "apps",
       "path": "/admin",
+      "label": "Apps",
+      "page": "AppsPage",
+      "components": ["AppsPage"],
+      "bff": ["/admin/api/v1/apps"],
+      "vertical_slice": false
+    },
+    {
+      "id": "overview",
+      "path": "/admin/overview",
       "label": "Overview",
       "page": "OverviewPage",
       "components": [

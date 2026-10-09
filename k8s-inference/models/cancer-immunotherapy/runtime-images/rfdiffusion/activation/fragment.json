@@ -44,7 +44,7 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-public-accepted",
+      "state": "semantic-qualified-active-awaiting-public-acceptance",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
         "models/cancer-immunotherapy/runtime-images/rfdiffusion/evidence/h100-r13-split-root-qualification-20260904.json",
@@ -66,7 +66,7 @@
       "model_id": "rfdiffusion",
       "display_name": "RFdiffusion v1.1.0",
       "execution_mode": "scientific-batch",
-      "state": "qualified",
+      "state": "active",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -177,13 +177,13 @@
       },
       "semantic_validation": {
         "validator_id": "rfdiffusion-v1-1-0",
-        "state": "qualified"
+        "state": "active"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "1f392018020143dbc81695632cdfef02b9582f49e0187f72e6a172c0e8b80765",
-        "public_completion_receipt_sha256": "80c3759306c6d10817ca9f31876607b02426a66732cb54d163d93e1f3f12bd4a",
-        "scheduler_eligibility_receipt_sha256": "a09fc3116de46369353308e418aea6ee570a93f570475ea1220a7d8442b592c1",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:48:25.077842Z"
       },
       "policy": {
@@ -191,7 +191,8 @@
         "non_clinical": true,
         "limitations": [
           "The exact r13 successor digest passed both operations on real H100 nodes with independent request and checkpoint roots; historical r12 evidence remains only a separately reproduced baseline.",
-          "Route activation remains disabled until this serialized platform controller workflow completes public submission, collection, and scheduling qualification."
+          "Routes are active; public submission, collection and scheduling acceptance must be repeated for the current execution identity.",
+          "Historical acceptance retained unchanged: completion=80c3759306c6d10817ca9f31876607b02426a66732cb54d163d93e1f3f12bd4a, scheduler=a09fc3116de46369353308e418aea6ee570a93f570475ea1220a7d8442b592c1. Current execution identity/map requires new public acceptance; active serving is preserved."
         ]
       },
       "runtime_artifacts": [
@@ -291,6 +292,6 @@
   "activation_gate": {
     "route_exposed": true,
     "ready_for_route": true,
-    "public_platform_run_required": false
+    "public_platform_run_required": true
   }
 }

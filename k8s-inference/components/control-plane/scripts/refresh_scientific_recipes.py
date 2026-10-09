@@ -36,6 +36,7 @@ PRIMARY_FRAGMENT_SCHEMA = "fs2.nebius.ai/primary-scientific-activation-fragment/
 SECONDARY_PROJECTION_SCHEMA = "fs2-serve.nebius.ai/scientific-workload-profile-projection/v1"
 PROFILE_MERGE_TARGET = "catalog/runtime/contracts/scientific-workload-profiles.json"
 PENDING_RESULT_ERROR = "PUBLIC_ACCEPTANCE_PENDING"
+PRIMARY_AWAITING_STATE = "semantic-qualified-active-awaiting-public-acceptance"
 
 sys.path.insert(0, str(CONTROL_PLANE_ROOT / "src"))
 
@@ -196,7 +197,54 @@ def _derive_contracts(
             f"{model_id} qualification execution_map_sha256",
             drifted,
         )
+        _invalidate_stale_qualification(profile, solution_root=solution_root, drifted=drifted)
     return drifted
+
+
+def _invalidate_stale_qualification(profile: dict[str, Any], *, solution_root: Path, drifted: list[str]) -> None:
+    """Keep serving active revisions without carrying acceptance to new identities.
+
+    Scheduler receipts are immutable observations, not generated recipe metadata.
+    Never rehash or rewrite a successful receipt to make a refreshed recipe pass.
+    """
+    if profile.get("state") != "qualified":
+        return
+    qualification = profile["qualification"]
+    digest = qualification.get("scheduler_eligibility_receipt_sha256")
+    receipt: dict[str, Any] = {}
+    if isinstance(digest, str) and len(digest) == 64 and all(c in "0123456789abcdef" for c in digest):
+        paths = list(solution_root.glob(f"models/**/activation/qualification/scheduler-eligibility-{digest}.json"))
+        if len(paths) == 1:
+            try:
+                raw = paths[0].read_bytes()
+                value = json.loads(raw)
+                if hashlib.sha256(raw).hexdigest() == digest and isinstance(value, dict):
+                    receipt = value
+            except (OSError, ValueError):
+                pass
+    expected = {
+        "model_id": profile["model_id"],
+        "execution_identity_sha256": profile["execution_identity"]["execution_identity_sha256"],
+        "execution_map_sha256": qualification["execution_map_sha256"],
+        "public_completion_receipt_sha256": qualification.get("public_completion_receipt_sha256"),
+        "qualified_at": qualification.get("qualified_at"),
+    }
+    if receipt and all(receipt.get(key) == value for key, value in expected.items()):
+        return
+
+    note = (
+        "Historical acceptance retained unchanged: completion="
+        f"{qualification.get('public_completion_receipt_sha256')}, scheduler={digest}. "
+        "Current execution identity/map requires new public acceptance; active serving is preserved."
+    )
+    notes = profile.setdefault("policy", {}).setdefault("limitations", [])
+    if note not in notes:
+        notes.append(note)
+    profile["state"] = "active"
+    profile["semantic_validation"]["state"] = "active"
+    qualification["public_completion_receipt_sha256"] = None
+    qualification["scheduler_eligibility_receipt_sha256"] = None
+    drifted.append(f"{profile['model_id']} stale qualification -> active; historical receipts unchanged")
 
 
 def _stage_payload(path: Path, payload: bytes, purpose: str) -> Path:
@@ -260,6 +308,8 @@ def _profile_owner_payloads(
     *,
     solution_root: Path,
     drifted: list[str],
+    refresh_results: bool = True,
+    selected_only: bool = False,
 ) -> dict[Path, bytes]:
     """Project refreshed profiles back to their model-owned source documents.
 
@@ -299,7 +349,7 @@ def _profile_owner_payloads(
 
     if not owners:
         return {}
-    if set(owners) != set(profiles):
+    if not set(profiles).issubset(owners) or (not selected_only and set(owners) != set(profiles)):
         missing = sorted(set(profiles) - set(owners))
         extra = sorted(set(owners) - set(profiles))
         raise SystemExit(f"scientific profile owner set differs (missing={missing}, extra={extra})")
@@ -311,11 +361,14 @@ def _profile_owner_payloads(
         if owned_profile != profile:
             if primary:
                 document["profile_projection"]["profile"] = profile
+                if owned_profile.get("state") == "qualified" and profile.get("state") == "active":
+                    document["accepted_evidence"]["h100"]["state"] = PRIMARY_AWAITING_STATE
+                    document["activation_gate"]["public_platform_run_required"] = True
             else:
                 document["profile"] = profile
             drifted.append(f"{model_id} model-owned profile projection")
             payloads[path] = (json.dumps(document, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-        if primary:
+        if primary and refresh_results:
             pending_result = _pending_result_payload(
                 model_id,
                 profile,
@@ -414,44 +467,68 @@ def _pending_result_payload(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="report drift instead of rewriting")
+    parser.add_argument(
+        "--qualification-only",
+        action="store_true",
+        help="reconcile acceptance identities without changing recipes, execution maps or runtime fixtures",
+    )
     options = parser.parse_args(argv)
 
     profile_document = json.loads(PROFILE_PATH.read_text(encoding="utf-8"))
     execution_map = json.loads(EXECUTION_MAP_PATH.read_text(encoding="utf-8"))
     if not isinstance(profile_document, dict) or not isinstance(execution_map, dict):
         raise SystemExit("scientific profile and execution-map contracts must be JSON objects")
-    drifted = _derive_contracts(
-        profile_document,
-        execution_map,
-        solution_root=SOLUTION_ROOT,
-        recipe_digest=runtime_recipe_sha256,
-    )
+    if options.qualification_only:
+        drifted = []
+        qualification_models = {
+            profile["model_id"] for profile in profile_document["profiles"] if profile.get("state") == "qualified"
+        }
+        for profile in profile_document["profiles"]:
+            _invalidate_stale_qualification(profile, solution_root=SOLUTION_ROOT, drifted=drifted)
+    else:
+        drifted = _derive_contracts(
+            profile_document,
+            execution_map,
+            solution_root=SOLUTION_ROOT,
+            recipe_digest=runtime_recipe_sha256,
+        )
     profiles = {
         profile["model_id"]: profile
         for profile in profile_document["profiles"]
         if isinstance(profile, dict) and isinstance(profile.get("model_id"), str)
     }
     owner_payloads = _profile_owner_payloads(
-        profiles,
+        (
+            {model_id: profile for model_id, profile in profiles.items() if model_id in qualification_models}
+            if options.qualification_only
+            else profiles
+        ),
         solution_root=SOLUTION_ROOT,
         drifted=drifted,
+        refresh_results=not options.qualification_only,
+        selected_only=options.qualification_only,
     )
 
     if not drifted:
-        print("scientific runtime recipes are current")
+        print(
+            "scientific qualification identities are current"
+            if options.qualification_only
+            else "scientific runtime recipes are current"
+        )
         return 0
     if options.check:
         for row in drifted:
             print(f"drift: {row}")
-        print("run scripts/refresh_scientific_recipes.py to update them")
+        suffix = " --qualification-only" if options.qualification_only else ""
+        print(f"run scripts/refresh_scientific_recipes.py{suffix} to update them")
         return 1
-    _atomic_write(
-        {
-            PROFILE_PATH: (json.dumps(profile_document, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
-            EXECUTION_MAP_PATH: (json.dumps(execution_map, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
-            **owner_payloads,
-        }
-    )
+    payloads = {
+        PROFILE_PATH: (json.dumps(profile_document, indent=2, ensure_ascii=False) + "\n").encode("utf-8"),
+        **owner_payloads,
+    }
+    if not options.qualification_only:
+        payloads[EXECUTION_MAP_PATH] = (json.dumps(execution_map, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+    _atomic_write(payloads)
     for row in drifted:
         print(f"updated {row}")
     return 0

@@ -343,8 +343,15 @@ class AdminConsolePlanTests(unittest.TestCase):
         self.assertIn('method: "PUT"', client_source)
 
         app_source = (ROOT / "src" / "app" / "App.tsx").read_text()
-        self.assertIn('<Route path="scientific-runs" element={<ScientificRunsPage />} />', app_source)
-        self.assertIn('<Route path="scientific-runs/:runId" element={<ScientificRunDetailPage />} />', app_source)
+        for path, page in (
+            ("scientific-runs", "ScientificRunsPage"),
+            ("scientific-runs/:runId", "ScientificRunDetailPage"),
+        ):
+            self.assertRegex(
+                app_source,
+                rf'<Route\s+path="{re.escape(path)}"\s+'
+                rf'element=\{{<{page}\s*/>\}}\s*/>',
+            )
 
 
 if __name__ == "__main__":

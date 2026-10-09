@@ -44,7 +44,7 @@
       ]
     },
     "h100": {
-      "state": "semantic-qualified-public-accepted",
+      "state": "semantic-qualified-active-awaiting-public-acceptance",
       "accelerator_class": "nvidia-h100-sxm5-80gb",
       "evidence_paths": [
         "models/cancer-immunotherapy/runtime-images/mosaic/evidence/h100-v6-split-root-qualification-20260904.json",
@@ -64,7 +64,7 @@
       "model_id": "mosaic",
       "display_name": "Mosaic protein design",
       "execution_mode": "scientific-batch",
-      "state": "qualified",
+      "state": "active",
       "route_exposed": true,
       "source": {
         "kind": "git",
@@ -174,13 +174,13 @@
       },
       "semantic_validation": {
         "validator_id": "mosaic-boltz2-proteinmpnn-v1",
-        "state": "qualified"
+        "state": "active"
       },
       "qualification": {
         "h100_semantic_receipt_sha256": "9eeef6c219c3ee0e9754e9d45be9de3f77ccec7824ce9e6b3f0fa17405aef339",
-        "public_completion_receipt_sha256": "df57f86a7e936b9dc693879c3af084121e591f7c8febc9b7e0600e7c6fe3ff5f",
-        "scheduler_eligibility_receipt_sha256": "db8e9a979429a1cff6cd4803faa850729ce33de659152beb6a62e0ba194c5dd2",
-        "execution_map_sha256": "840e0d0970ac3806e24d3666893e3a4c78ce26f08d3f9cc57e52b8db67902521",
+        "public_completion_receipt_sha256": null,
+        "scheduler_eligibility_receipt_sha256": null,
+        "execution_map_sha256": "7e49691255ea73d46e85c3b93cf17d6fd3ff55ce5fcd54bf3e4203d0cf4aea45",
         "qualified_at": "2026-09-06T22:52:32.995117Z"
       },
       "policy": {
@@ -188,7 +188,8 @@
         "non_clinical": true,
         "limitations": [
           "The exact adapter-v6 successor digest passed its bounded design and aggregate workflow on a real H100 with independent request and model-artifact roots; adapter-v5 evidence remains only a separately reproduced baseline.",
-          "Route activation remains disabled until this serialized platform controller workflow completes public submission, collection, and scheduling qualification."
+          "Routes are active; public submission, collection and scheduling acceptance must be repeated for the current execution identity.",
+          "Historical acceptance retained unchanged: completion=df57f86a7e936b9dc693879c3af084121e591f7c8febc9b7e0600e7c6fe3ff5f, scheduler=db8e9a979429a1cff6cd4803faa850729ce33de659152beb6a62e0ba194c5dd2. Current execution identity/map requires new public acceptance; active serving is preserved."
         ]
       },
       "runtime_artifacts": [
@@ -354,6 +355,6 @@
   "activation_gate": {
     "route_exposed": true,
     "ready_for_route": true,
-    "public_platform_run_required": false
+    "public_platform_run_required": true
   }
 }

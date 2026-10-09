@@ -73,7 +73,7 @@ image inspection runs on existing H100-node capacity without requesting a GPU.
 
 The reviewed [canary manifest](canary-20260920.yaml) runs
 `fs2-models/cosmos-transfer25-canary-20260920-r2` on the existing
-`computeinstance-e00jqs4xxntre6eycf` H100 node. Pod UID:
+H100 node identified in the operator-owned canary manifest. Pod UID:
 `0cafd90b-835b-4c08-a575-ce4d31abdd17`; container started
 2026-09-20T04:26:33Z. It requests one H100, creates no new node or PVC, has a
 two-hour deadline, and has no public Service or gateway route.

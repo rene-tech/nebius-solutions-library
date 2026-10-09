@@ -126,7 +126,7 @@ new identity store. This passed against real storage. Existing `system/qa` recei
 model grant; no credential rotation, expiry, concurrency or budget changes.
 
 Secret-free runtime receipts are retained in
-`/home/tux/secure-handoff/fs2-scvi-whitelab-20261006/runtime-r5/`;
+`${FS2_OPERATOR_EVIDENCE}/fs2-scvi-whitelab-20261006/runtime-r5/`;
 raw public inputs and results are on the task-owned PVC. The 1M real-cell atlas
 cohort uses a separate 128 GiB PVC and one GPU/256 GiB on an existing full H100
 node because single-GPU hosts cannot provide that host-memory envelope. It

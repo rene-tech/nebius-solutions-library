@@ -96,6 +96,107 @@ def test_helm_to_json_bytes_match_go_html_and_unicode_rules() -> None:
     )
 
 
+@pytest.mark.parametrize("changed", ["identity", "map", "receipt-bytes", "missing", None])
+def test_refresh_preserves_receipts_and_invalidates_only_stale_qualification(tmp_path: Path, changed) -> None:
+    module = load_script()
+    profile = {
+        "model_id": "boltzgen",
+        "state": "qualified",
+        "route_exposed": True,
+        "semantic_validation": {"state": "qualified"},
+        "execution_identity": {"execution_identity_sha256": "a" * 64},
+        "qualification": {
+            "execution_map_sha256": "b" * 64,
+            "public_completion_receipt_sha256": "c" * 64,
+            "qualified_at": "2026-09-06T00:00:00Z",
+        },
+    }
+    receipt = {
+        "model_id": profile["model_id"],
+        "execution_identity_sha256": "a" * 64,
+        **profile["qualification"],
+    }
+    raw = json.dumps(receipt).encode()
+    digest = hashlib.sha256(raw).hexdigest()
+    path = tmp_path / f"models/example/activation/qualification/scheduler-eligibility-{digest}.json"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(raw if changed != "receipt-bytes" else raw + b"\n")
+    profile["qualification"]["scheduler_eligibility_receipt_sha256"] = digest
+    if changed == "identity":
+        profile["execution_identity"]["execution_identity_sha256"] = "d" * 64
+    elif changed == "map":
+        profile["qualification"]["execution_map_sha256"] = "e" * 64
+    elif changed == "missing":
+        path.unlink()
+    before = path.read_bytes() if path.exists() else None
+    drifted = []
+    module._invalidate_stale_qualification(profile, solution_root=tmp_path, drifted=drifted)
+    assert profile["route_exposed"] is True
+    assert (path.read_bytes() if path.exists() else None) == before
+    if changed is None:
+        assert profile["state"] == "qualified"
+        assert profile["qualification"]["scheduler_eligibility_receipt_sha256"] == digest
+        assert drifted == []
+    else:
+        assert profile["state"] == profile["semantic_validation"]["state"] == "active"
+        assert profile["qualification"]["scheduler_eligibility_receipt_sha256"] is None
+        assert profile["qualification"]["public_completion_receipt_sha256"] is None
+        assert digest in profile["policy"]["limitations"][-1]
+        assert drifted
+        module._invalidate_stale_qualification(profile, solution_root=tmp_path, drifted=[])
+
+
+def test_qualification_only_preserves_runtime_and_receipts_and_updates_owner(tmp_path: Path, monkeypatch) -> None:
+    module = load_script()
+    profile_path, execution_map_path = write_fixture(tmp_path)
+    configure(module, monkeypatch, tmp_path, profile_path, execution_map_path)
+    document = json.loads(profile_path.read_text())
+    profile = document["profiles"][0]
+    profile.update(state="qualified", semantic_validation={"state": "qualified"}, route_exposed=True)
+    profile["qualification"].update(
+        public_completion_receipt_sha256="a" * 64,
+        scheduler_eligibility_receipt_sha256="b" * 64,
+        qualified_at="2026-09-06T00:00:00Z",
+    )
+    profile_path.write_text(json.dumps(document))
+    owner = tmp_path / "models/example/activation/fragment.json"
+    owner.parent.mkdir(parents=True)
+    owner.write_text(
+        json.dumps(
+            {
+                "schema": module.PRIMARY_FRAGMENT_SCHEMA,
+                "model_id": "boltzgen",
+                "profile_projection": {"merge_target": module.PROFILE_MERGE_TARGET, "profile": profile},
+                "accepted_evidence": {"h100": {"state": "qualified"}},
+                "activation_gate": {"public_platform_run_required": False},
+            }
+        )
+    )
+    receipt = owner.parent / "qualification/scheduler-eligibility-historical.json"
+    receipt.parent.mkdir()
+    receipt.write_text('{"historical": true}\n')
+    original = {path: path.read_bytes() for path in (profile_path, execution_map_path, owner, receipt)}
+
+    assert module.main(["--qualification-only", "--check"]) == 1
+    assert all(path.read_bytes() == content for path, content in original.items())
+    assert module.main(["--qualification-only"]) == 0
+    refreshed = json.loads(profile_path.read_text())["profiles"][0]
+    assert refreshed["execution_identity"] == profile["execution_identity"]
+    assert refreshed["workload"] == profile["workload"]
+    assert refreshed["route_exposed"] is True
+    assert refreshed["state"] == "active"
+    owned = json.loads(owner.read_text())
+    assert owned["profile_projection"]["profile"] == refreshed
+    assert owned["activation_gate"]["public_platform_run_required"] is True
+    assert owned["accepted_evidence"]["h100"]["state"] == module.PRIMARY_AWAITING_STATE
+    assert execution_map_path.read_bytes() == original[execution_map_path]
+    assert receipt.read_bytes() == original[receipt]
+    after = {path: path.read_bytes() for path in original}
+    assert module.main(["--qualification-only", "--check"]) == 0
+    assert module.main(["--qualification-only"]) == 0
+    assert all(path.read_bytes() == content for path, content in after.items())
+
+
 @pytest.mark.parametrize("model_id", SCIENTIFIC_FLEET)
 def test_every_scientific_fleet_recipe_has_an_exact_source_closure(model_id: str) -> None:
     module = load_script()
@@ -242,9 +343,7 @@ def test_derivation_failure_writes_neither_contract(tmp_path: Path, monkeypatch)
     assert execution_map_path.read_bytes() == original_map
 
 
-def test_mapped_candidate_refreshes_recipes_but_retains_null_promotion_identity(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_mapped_candidate_refreshes_recipes_but_retains_null_promotion_identity(tmp_path: Path, monkeypatch) -> None:
     module = load_script()
     profile_path, execution_map_path = write_fixture(tmp_path, qualification=False)
     profiles = json.loads(profile_path.read_text(encoding="utf-8"))
@@ -264,9 +363,10 @@ def test_mapped_candidate_refreshes_recipes_but_retains_null_promotion_identity(
     refreshed_map = json.loads(execution_map_path.read_text(encoding="utf-8"))
     refreshed_identity = refreshed_profile["execution_identity"]
     assert refreshed_identity["runtime_recipe_sha256"] == "9" * 64
-    assert refreshed_identity["workload_recipe_sha256"] == hashlib.sha256(
-        module._canonical_bytes(refreshed_profile["workload"])
-    ).hexdigest()
+    assert (
+        refreshed_identity["workload_recipe_sha256"]
+        == hashlib.sha256(module._canonical_bytes(refreshed_profile["workload"])).hexdigest()
+    )
     assert refreshed_identity["artifact_manifest_digest"] is None
     assert refreshed_identity["execution_identity_sha256"] is None
     assert "qualification" not in refreshed_profile

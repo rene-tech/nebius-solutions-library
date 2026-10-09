@@ -6,6 +6,7 @@ import re
 from pathlib import PurePosixPath
 
 from conftest import CATALOG_ROOT, SCIENTIFIC_FLEET, SOLUTION_ROOT
+from scientific_qualification_assertions import assert_active_qualification_history
 
 from fs2_serve.scientific_batch.execution import FileScientificManifestRenderer
 from fs2_serve.scientific_batch.profile_catalog import ScientificProfileCatalog
@@ -141,9 +142,7 @@ def test_complete_fleet_has_consistent_public_acceptance_evidence_state() -> Non
         if model_id == "openfold3-openbind":
             assert profile["state"] == "active"
         if profile["state"] == "active":
-            assert qualification["public_completion_receipt_sha256"] is None
-            assert qualification["scheduler_eligibility_receipt_sha256"] is None
-            assert qualification["qualified_at"] == expected["qualified_at"]
+            assert_active_qualification_history(profile, expected["qualified_at"])
         else:
             assert re.fullmatch(r"[a-f0-9]{64}", qualification["public_completion_receipt_sha256"])
             assert re.fullmatch(
